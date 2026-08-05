@@ -1,26 +1,26 @@
 diff --git a/Nembra.xcodeproj/project.pbxproj b/Nembra.xcodeproj/project.pbxproj
 --- a/Nembra.xcodeproj/project.pbxproj
 +++ b/Nembra.xcodeproj/project.pbxproj
-@@ -34,6 +34,7 @@
+@@ -34,4 +34,5 @@
  		A00000000000000000000029 /* LiveDistanceIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000029 /* LiveDistanceIntegration.swift */; };
  		A00000000000000000000011 /* UnverifiedScooterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* UnverifiedScooterService.swift */; };
  		A00000000000000000000030 /* NembraUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000030 /* NembraUITests.swift */; };
 +		A00000000000000000000032 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardView.swift */; };
  /* End PBXBuildFile section */
-@@ -79,6 +80,7 @@
+@@ -79,4 +80,5 @@
  		B00000000000000000000013 /* UnverifiedScooterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UnverifiedScooterService.swift; path = Packages/NembraCore/Sources/NembraCore/UnverifiedScooterService.swift; sourceTree = SOURCE_ROOT; };
  		B00000000000000000000030 /* NembraUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraUITests.swift; sourceTree = "<group>"; };
  		B00000000000000000000031 /* NembraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NembraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 +		B00000000000000000000032 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
  /* End PBXFileReference section */
-@@ -105,6 +107,7 @@
+@@ -105,5 +107,6 @@
  				100000000000000000000003 /* App */,
  				100000000000000000000004 /* DesignSystem */,
  				100000000000000000000005 /* Home */,
 +				100000000000000000000032 /* Dashboard */,
  				100000000000000000000009 /* Resources */,
  			);
-@@ -131,6 +134,12 @@
+@@ -131,4 +134,10 @@
  			path = Features/Home;
  			sourceTree = "<group>";
  		};
@@ -32,7 +32,7 @@ diff --git a/Nembra.xcodeproj/project.pbxproj b/Nembra.xcodeproj/project.pbxproj
 +			sourceTree = "<group>";
 +		};
  		100000000000000000000006 /* Core */ = {
-@@ -249,7 +258,7 @@
+@@ -249,6 +258,6 @@
  		300000000000000000000001 = {
  			isa = PBXSourcesBuildPhase;
  			buildActionMask = 2147483647;
