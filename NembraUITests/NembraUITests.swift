@@ -36,7 +36,15 @@ final class NembraUITests: XCTestCase {
         let confirmLock = app.sheets.buttons["Lock"]
         XCTAssertTrue(confirmLock.waitForExistence(timeout: 2))
         confirmLock.tap()
-        XCTAssertTrue(waitForLabelFragment("Secured", element: lock))
+
+        // Re-query after the confirmation dialog dismisses. XCTest can retain a stale
+        // accessibility snapshot for the pre-command button even though SwiftUI has
+        // already re-rendered the confirmed state from the scooter service.
+        let securedLock = button(containing: "Secured", in: app)
+        XCTAssertTrue(
+            securedLock.waitForExistence(timeout: 3),
+            "The lock control must expose the scooter-confirmed secured state after acknowledgement."
+        )
 
         let controls = app.buttons["Vehicle controls"]
         XCTAssertTrue(controls.exists)
