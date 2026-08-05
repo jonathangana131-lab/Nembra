@@ -25,8 +25,8 @@ struct HomeView: View {
                 vehicleSection
             }
             .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 36)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
         }
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("Nembra")
@@ -112,7 +112,12 @@ struct HomeView: View {
             }
 
             HStack(spacing: 0) {
-                statusMetric(title: "Battery", value: batteryText, icon: "battery.75percent")
+                statusMetric(
+                    title: "Battery",
+                    value: batteryText,
+                    icon: batteryIcon,
+                    valueStyle: batteryValueStyle
+                )
                 metricDivider
                 statusMetric(
                     title: "Trip",
@@ -149,16 +154,18 @@ struct HomeView: View {
         title: String,
         value: String,
         icon: String,
-        accessibilityTitle: String? = nil
+        accessibilityTitle: String? = nil,
+        valueStyle: Color = .primary
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: icon)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
                 .lineLimit(1)
 
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
+                .foregroundStyle(valueStyle)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -170,7 +177,7 @@ struct HomeView: View {
     }
 
     private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Controls")
 
             HStack(spacing: 12) {
@@ -181,7 +188,8 @@ struct HomeView: View {
                         icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
                         active: vehicle.state.isHeadlightOn == true,
                         pending: vehicle.pendingCommands.contains(.headlight),
-                        available: vehicle.state.isHeadlightOn != nil
+                        available: vehicle.state.isHeadlightOn != nil,
+                        enabled: true
                     ) {
                         guard let isOn = vehicle.state.isHeadlightOn else { return }
                         Task { await vehicle.setHeadlight(!isOn) }
@@ -190,12 +198,13 @@ struct HomeView: View {
 
                 if vehicle.profile.capabilities.supportsLock {
                     actionControl(
-                        title: "Lock",
+                        title: lockControlTitle,
                         subtitle: lockSubtitle,
                         icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
                         active: vehicle.state.isLocked == true,
                         pending: vehicle.pendingCommands.contains(.lock),
-                        available: vehicle.state.isLocked != nil
+                        available: vehicle.state.isLocked != nil,
+                        enabled: canChangeLockState
                     ) {
                         showLockConfirmation = true
                     }
@@ -211,21 +220,22 @@ struct HomeView: View {
         active: Bool,
         pending: Bool,
         available: Bool,
+        enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 11) {
                 ZStack {
                     Circle()
                         .fill(active ? Color.primary.opacity(0.10) : Color.primary.opacity(0.055))
-                        .frame(width: 38, height: 38)
+                        .frame(width: 36, height: 36)
 
                     if pending {
                         ProgressView()
                             .controlSize(.small)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                     }
                 }
 
@@ -242,17 +252,22 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 13)
-            .frame(height: 62)
+            .frame(height: 58)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .nembraGlassControl()
-        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || !available)
+        .disabled(
+            vehicle.state.connection != .connected ||
+            vehicle.isVehicleCommandPending ||
+            !available ||
+            !enabled
+        )
     }
 
     private var modeSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Ride Mode")
 
             HStack(spacing: 4) {
@@ -297,7 +312,7 @@ struct HomeView: View {
     }
 
     private var vehicleSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Vehicle")
 
             VStack(spacing: 0) {
@@ -328,13 +343,13 @@ struct HomeView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
-                    .frame(minHeight: 50)
+                    .frame(minHeight: 48)
                 }
             }
             .padding(.horizontal, 14)
             .background(
                 Color(uiColor: .secondarySystemBackground),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
         }
     }
@@ -357,7 +372,7 @@ struct HomeView: View {
                 .monospacedDigit()
         }
         .font(.body)
-        .frame(minHeight: 50)
+        .frame(minHeight: 48)
         .accessibilityElement(children: .combine)
     }
 
@@ -567,9 +582,43 @@ struct HomeView: View {
         return enabled ? "On" : "Off"
     }
 
+    private var lockControlTitle: String {
+        if isVehicleMoving && vehicle.state.isLocked != true { return "Lock" }
+        return vehicle.state.isLocked == true ? "Unlock" : "Lock"
+    }
+
     private var lockSubtitle: String {
         guard let locked = vehicle.state.isLocked else { return "Unknown" }
+        if !locked && isVehicleMoving { return "Stop to lock" }
         return locked ? "Secured" : "Ready"
+    }
+
+    private var isVehicleMoving: Bool {
+        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    }
+
+    private var canChangeLockState: Bool {
+        vehicle.state.isLocked == true || !isVehicleMoving
+    }
+
+    private var isBatteryLow: Bool {
+        guard let battery = vehicle.state.batteryPercent else { return false }
+        return battery <= 15
+    }
+
+    private var batteryIcon: String {
+        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        switch battery {
+        case ...15: return "battery.0percent"
+        case ...35: return "battery.25percent"
+        case ...60: return "battery.50percent"
+        case ...85: return "battery.75percent"
+        default: return "battery.100percent"
+        }
+    }
+
+    private var batteryValueStyle: Color {
+        isBatteryLow ? .red : .primary
     }
 
     private var vehicleStatusText: String {
