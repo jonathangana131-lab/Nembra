@@ -2,15 +2,13 @@ name: Wire landscape Dashboard
 
 on:
   push:
-    branches:
-      - feature/landscape-dashboard
+    branches: ["feature/landscape-dashboard"]
 
 permissions:
   contents: write
 
 jobs:
   wire:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -18,77 +16,18 @@ jobs:
           ref: feature/landscape-dashboard
           fetch-depth: 0
 
-      - name: Add DashboardView to Xcode project
+      - name: Wire Dashboard source
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('Nembra.xcodeproj/project.pbxproj')
-          text = path.read_text()
-
-          if 'B00000000000000000000032 /* DashboardView.swift */' not in text:
-              text = text.replace(
-                  '\t\tA00000000000000000000030 /* NembraUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000030 /* NembraUITests.swift */; };\n',
-                  '\t\tA00000000000000000000030 /* NembraUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000030 /* NembraUITests.swift */; };\n'
-                  '\t\tA00000000000000000000032 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardView.swift */; };\n'
-              )
-              text = text.replace(
-                  '\t\tB00000000000000000000031 /* NembraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NembraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };\n',
-                  '\t\tB00000000000000000000031 /* NembraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NembraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };\n'
-                  '\t\tB00000000000000000000032 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };\n'
-              )
-              text = text.replace(
-                  '\t\t\t\t100000000000000000000005 /* Home */,\n\t\t\t\t100000000000000000000009 /* Resources */,\n',
-                  '\t\t\t\t100000000000000000000005 /* Home */,\n\t\t\t\t100000000000000000000032 /* Dashboard */,\n\t\t\t\t100000000000000000000009 /* Resources */,\n'
-              )
-              home_group = '''\t\t100000000000000000000005 /* Home */ = {
-\t\t\tisa = PBXGroup;
-\t\t\tchildren = (B00000000000000000000005, B00000000000000000000006, B0000000000000000000000F);
-\t\t\tname = Home;
-\t\t\tpath = Features/Home;
-\t\t\tsourceTree = "<group>";
-\t\t};
-'''
-              dashboard_group = '''\t\t100000000000000000000032 /* Dashboard */ = {
-\t\t\tisa = PBXGroup;
-\t\t\tchildren = (B00000000000000000000032);
-\t\t\tname = Dashboard;
-\t\t\tpath = Features/Dashboard;
-\t\t\tsourceTree = "<group>";
-\t\t};
-'''
-              if home_group not in text:
-                  raise SystemExit('Home PBX group anchor not found')
-              text = text.replace(home_group, home_group + dashboard_group)
-
-              source_anchor = 'A00000000000000000000028, A00000000000000000000029);'
-              if source_anchor not in text:
-                  raise SystemExit('App sources anchor not found')
-              text = text.replace(
-                  source_anchor,
-                  'A00000000000000000000028, A00000000000000000000029, A00000000000000000000032);'
-              )
-
-              required = [
-                  'A00000000000000000000032 /* DashboardView.swift in Sources */',
-                  'B00000000000000000000032 /* DashboardView.swift */',
-                  '100000000000000000000032 /* Dashboard */',
-              ]
-              if not all(marker in text for marker in required):
-                  raise SystemExit('Dashboard Xcode wiring did not complete')
-              path.write_text(text)
-          PY
-
-          plutil -lint Nembra.xcodeproj/project.pbxproj
+          python3 scripts/wire_dashboard_project.py
           scripts/validate_pbxproj_references.py
 
-      - name: Commit wiring and remove one-shot workflow
+      - name: Commit project wiring
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/workflows/wire-landscape-dashboard.yml
           git add Nembra.xcodeproj/project.pbxproj
           if git diff --cached --quiet; then
+            echo 'No project changes required.'
             exit 0
           fi
           git commit -m 'build: wire landscape Dashboard into Xcode project'
