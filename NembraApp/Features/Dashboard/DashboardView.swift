@@ -1,8 +1,10 @@
+import Dispatch
 import Foundation
 import SwiftUI
 
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
+    @State private var speedInstrumentModel = SpeedInstrumentModel()
     @State private var showLockConfirmation = false
 
     var body: some View {
@@ -24,6 +26,13 @@ struct DashboardView: View {
         }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
+        .task {
+            let stream = await vehicle.speedTelemetryUpdates()
+            speedInstrumentModel.start(stream: stream)
+        }
+        .onDisappear {
+            speedInstrumentModel.stop()
+        }
         .confirmationDialog(
             vehicle.state.isLocked == true ? "Unlock scooter?" : "Lock scooter?",
             isPresented: $showLockConfirmation,
@@ -79,17 +88,30 @@ struct DashboardView: View {
     }
 
     private var speedInstrument: some View {
-        VStack(spacing: -2) {
+        let fallbackConfirmedSpeed = vehicle.state.speedKilometersPerHour
+
+        return TimelineView(.animation) { _ in
+            let frame = speedInstrumentModel.frame(
+                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                fallbackConfirmedKilometersPerHour: fallbackConfirmedSpeed
+            )
+            speedInstrumentContent(frame: frame)
+        }
+    }
+
+    private func speedInstrumentContent(frame: SpeedInstrumentDisplayFrame?) -> some View {
+        let displayedValue = displayedSpeedValue(kilometersPerHour: frame?.kilometersPerHour)
+
+        return VStack(spacing: -2) {
             Spacer(minLength: 0)
 
             HStack(alignment: .lastTextBaseline, spacing: 12) {
-                Text(speedValueText)
+                RollingSpeedValueView(value: displayedValue)
                     .font(.system(size: 146, weight: .medium, design: .rounded))
                     .monospacedDigit()
                     .tracking(-7)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
-                    .contentTransition(.numericText())
                     .accessibilityHidden(true)
 
                 Text(speedUnitText)
@@ -101,7 +123,7 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            .accessibilityValue(speedAccessibilityValue)
+            .accessibilityValue(speedAccessibilityValue(kilometersPerHour: frame?.kilometersPerHour))
             .accessibilityIdentifier("dashboard.speed")
 
             if vehicle.state.dataAvailability == .retained {
@@ -263,18 +285,19 @@ struct DashboardView: View {
         }
     }
 
-    private var speedValueText: String {
-        guard let kilometersPerHour = vehicle.state.speedKilometersPerHour else { return "—" }
-        let value = VehicleDisplayFormatting.usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
-        return String(format: "%.0f", max(0, value))
+    private func displayedSpeedValue(kilometersPerHour: Double?) -> Double? {
+        guard let kilometersPerHour else { return nil }
+        return VehicleDisplayFormatting.usesMetric
+            ? kilometersPerHour
+            : kilometersPerHour * 0.621_371
     }
 
     private var speedUnitText: String {
         VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
     }
 
-    private var speedAccessibilityValue: String {
-        VehicleDisplayFormatting.speed(kilometersPerHour: vehicle.state.speedKilometersPerHour)
+    private func speedAccessibilityValue(kilometersPerHour: Double?) -> String {
+        VehicleDisplayFormatting.speed(kilometersPerHour: kilometersPerHour)
     }
 
     private var tripText: String {
