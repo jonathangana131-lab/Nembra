@@ -23,11 +23,10 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(drive.exists)
         drive.tap()
 
-        let confirmedDriveMetric = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@ AND value == %@", "Mode", "Drive"))
-            .firstMatch
+        let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
+        XCTAssertTrue(confirmedDriveMetric.waitForExistence(timeout: 3))
         XCTAssertTrue(
-            confirmedDriveMetric.waitForExistence(timeout: 3),
+            waitForValue("Drive", element: confirmedDriveMetric),
             "The status metric must expose the scooter-confirmed Drive mode, not merely a tapped segment."
         )
 
@@ -81,6 +80,13 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForLabelFragment(_ fragment: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "label CONTAINS %@", fragment)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "value == %@", value)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
