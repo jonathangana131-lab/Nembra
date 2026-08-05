@@ -192,6 +192,7 @@ public actor SimulatedScooterService: ScooterService {
     private var commandInFlight = false
     private var connectionGeneration: UInt64 = 0
     private let commandLatencyNanoseconds: UInt64
+    private let commandAcknowledgementGate: (@Sendable () async throws -> Void)?
 
     public init(
         profile: VehicleProfile = .maxshotV1SPro,
@@ -200,8 +201,26 @@ public actor SimulatedScooterService: ScooterService {
     ) {
         self.profile = profile
         self.commandLatencyNanoseconds = commandLatencyNanoseconds
+        self.commandAcknowledgementGate = nil
+        self.state = initialState ?? Self.defaultInitialState()
+    }
 
-        self.state = initialState ?? VehicleState(
+    /// Test-only timing injection used to prove command ordering without relying
+    /// on scheduler-sensitive wall-clock sleeps. Kept internal so production
+    /// callers continue to use the real simulated latency contract above.
+    init(
+        profile: VehicleProfile = .maxshotV1SPro,
+        initialState: VehicleState? = nil,
+        commandAcknowledgementGate: @escaping @Sendable () async throws -> Void
+    ) {
+        self.profile = profile
+        self.commandLatencyNanoseconds = 0
+        self.commandAcknowledgementGate = commandAcknowledgementGate
+        self.state = initialState ?? Self.defaultInitialState()
+    }
+
+    private static func defaultInitialState() -> VehicleState {
+        VehicleState(
             connection: .disconnected,
             batteryPercent: 92,
             speedKilometersPerHour: 0,
@@ -209,7 +228,7 @@ public actor SimulatedScooterService: ScooterService {
             tripKilometers: 4.6,
             rideMode: .sport,
             startMode: .zeroStart,
-            speedLimitsKilometersPerHour: Self.representativeSpeedLimits,
+            speedLimitsKilometersPerHour: representativeSpeedLimits,
             isLocked: false,
             isHeadlightOn: false,
             isCruiseEnabled: false,
@@ -440,7 +459,11 @@ public actor SimulatedScooterService: ScooterService {
     }
 
     private func acknowledgeLatency(expectedConnectionGeneration: UInt64) async throws {
-        try await Task.sleep(nanoseconds: commandLatencyNanoseconds)
+        if let commandAcknowledgementGate {
+            try await commandAcknowledgementGate()
+        } else {
+            try await Task.sleep(nanoseconds: commandLatencyNanoseconds)
+        }
         guard connectionGeneration == expectedConnectionGeneration else {
             throw ScooterCommandError.disconnected
         }

@@ -1,6 +1,40 @@
 import Testing
 @testable import NembraCore
 
+private actor CommandAcknowledgementGate {
+    private var hasEntered = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForRelease() async {
+        hasEntered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        if hasEntered { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
 @Suite("Simulated scooter command semantics")
 struct SimulatedScooterServiceTests {
     @Test("commands fail while disconnected and do not lie about state")
@@ -86,17 +120,21 @@ struct SimulatedScooterServiceTests {
 
     @Test("service rejects overlapping state-changing commands")
     func overlappingCommandsAreRejected() async throws {
-        let service = SimulatedScooterService(commandLatencyNanoseconds: 120_000_000)
+        let gate = CommandAcknowledgementGate()
+        let service = SimulatedScooterService(commandAcknowledgementGate: {
+            await gate.waitForRelease()
+        })
         await service.connect()
 
         let firstCommand = Task {
             try await service.setHeadlight(true)
         }
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await gate.waitUntilEntered()
 
         await #expect(throws: ScooterCommandError.commandInProgress) {
             try await service.setCruise(true)
         }
+        await gate.release()
         try await firstCommand.value
 
         let snapshot = await service.snapshot()
@@ -106,15 +144,19 @@ struct SimulatedScooterServiceTests {
 
     @Test("disconnect and fast reconnect still invalidates the old command")
     func reconnectCannotResurrectOldCommand() async {
-        let service = SimulatedScooterService(commandLatencyNanoseconds: 120_000_000)
+        let gate = CommandAcknowledgementGate()
+        let service = SimulatedScooterService(commandAcknowledgementGate: {
+            await gate.waitForRelease()
+        })
         await service.connect()
 
         let command = Task {
             try await service.setHeadlight(true)
         }
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await gate.waitUntilEntered()
         await service.simulateConnectionDrop()
         await service.simulateReconnected()
+        await gate.release()
 
         await #expect(throws: ScooterCommandError.disconnected) {
             try await command.value
@@ -126,14 +168,18 @@ struct SimulatedScooterServiceTests {
 
     @Test("connection loss during command latency prevents a false commit")
     func disconnectDuringCommandPreventsCommit() async {
-        let service = SimulatedScooterService(commandLatencyNanoseconds: 100_000_000)
+        let gate = CommandAcknowledgementGate()
+        let service = SimulatedScooterService(commandAcknowledgementGate: {
+            await gate.waitForRelease()
+        })
         await service.connect()
 
         let command = Task {
             try await service.setHeadlight(true)
         }
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await gate.waitUntilEntered()
         await service.simulateConnectionDrop()
+        await gate.release()
 
         await #expect(throws: ScooterCommandError.disconnected) {
             try await command.value
