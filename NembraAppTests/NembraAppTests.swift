@@ -110,16 +110,16 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testSpeedInstrumentUsesConfirmedVehicleStateUntilFreshRawTelemetryArrives() {
+    func testSpeedInstrumentUsesConfirmedVehicleStateUntilFreshRawTelemetryArrives() throws {
         let model = SpeedInstrumentModel()
-        let frame = model.frame(
+        let frame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_000_000_000,
             fallbackConfirmedKilometersPerHour: 18.4
-        )
+        ))
 
-        XCTAssertEqual(frame?.kilometersPerHour, 18.4, accuracy: 0.000_1)
-        XCTAssertEqual(frame?.origin, .confirmedVehicleState)
-        XCTAssertNil(frame?.latestMeasuredKilometersPerHour)
+        XCTAssertEqual(frame.kilometersPerHour, 18.4, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .confirmedVehicleState)
+        XCTAssertNil(frame.latestMeasuredKilometersPerHour)
         XCTAssertEqual(model.measurementRevision, 0)
     }
 
@@ -130,28 +130,28 @@ final class NembraAppTests: XCTestCase {
         let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
 
         model.accept(first)
-        let firstFrame = model.frame(
+        let firstFrame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_000_000_000,
             fallbackConfirmedKilometersPerHour: nil
-        )
-        XCTAssertEqual(firstFrame?.kilometersPerHour, 10, accuracy: 0.000_1)
-        XCTAssertEqual(firstFrame?.origin, .measuredTelemetry)
+        ))
+        XCTAssertEqual(firstFrame.kilometersPerHour, 10, accuracy: 0.000_1)
+        XCTAssertEqual(firstFrame.origin, .measuredTelemetry)
 
         model.accept(second)
-        let midpoint = model.frame(
+        let midpoint = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_280_000_000,
             fallbackConfirmedKilometersPerHour: nil
-        )
-        XCTAssertEqual(midpoint?.kilometersPerHour, 15, accuracy: 0.000_1)
-        XCTAssertEqual(midpoint?.latestMeasuredKilometersPerHour, 20, accuracy: 0.000_1)
-        XCTAssertEqual(midpoint?.origin, .visuallyInterpolated)
+        ))
+        XCTAssertEqual(midpoint.kilometersPerHour, 15, accuracy: 0.000_1)
+        XCTAssertEqual(midpoint.latestMeasuredKilometersPerHour, 20)
+        XCTAssertEqual(midpoint.origin, .visuallyInterpolated)
 
-        let settled = model.frame(
+        let settled = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_400_000_000,
             fallbackConfirmedKilometersPerHour: nil
-        )
-        XCTAssertEqual(settled?.kilometersPerHour, 20, accuracy: 0.000_1)
-        XCTAssertEqual(settled?.origin, .measuredTelemetry)
+        ))
+        XCTAssertEqual(settled.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(settled.origin, .measuredTelemetry)
     }
 
     @MainActor
@@ -173,12 +173,12 @@ final class NembraAppTests: XCTestCase {
         model.accept(estimate)
         XCTAssertEqual(model.measurementRevision, 1)
 
-        let frame = model.frame(
+        let frame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 2_500_000_000,
             fallbackConfirmedKilometersPerHour: 99
-        )
-        XCTAssertEqual(frame?.kilometersPerHour, 12, accuracy: 0.000_1)
-        XCTAssertEqual(frame?.origin, .measuredTelemetry)
+        ))
+        XCTAssertEqual(frame.kilometersPerHour, 12, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .measuredTelemetry)
     }
 
     private func speedSample(
