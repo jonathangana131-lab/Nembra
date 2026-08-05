@@ -1,0 +1,68 @@
+name: Wire Speed Instrumentation
+
+on:
+  push:
+    branches:
+      - feature/speed-instrumentation
+    paths:
+      - .github/workflows/wire-speed-instrumentation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/speed-instrumentation
+          fetch-depth: 0
+      - name: Wire speed sources into Nembra target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Nembra.xcodeproj/project.pbxproj')
+          s = p.read_text()
+          replacements = [
+              (
+                  '\t\tA00000000000000000000032 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardView.swift */; };\n',
+                  '\t\tA00000000000000000000032 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardView.swift */; };\n'
+                  '\t\tA00000000000000000000033 /* SpeedInstrumentModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000033 /* SpeedInstrumentModel.swift */; };\n'
+                  '\t\tA00000000000000000000034 /* RollingSpeedValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000034 /* RollingSpeedValueView.swift */; };\n'
+              ),
+              (
+                  '\t\tB00000000000000000000032 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };\n',
+                  '\t\tB00000000000000000000032 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };\n'
+                  '\t\tB00000000000000000000033 /* SpeedInstrumentModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeedInstrumentModel.swift; sourceTree = "<group>"; };\n'
+                  '\t\tB00000000000000000000034 /* RollingSpeedValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollingSpeedValueView.swift; sourceTree = "<group>"; };\n'
+              ),
+              (
+                  '\t\t\tchildren = (B00000000000000000000032);\n\t\t\tname = Dashboard;\n',
+                  '\t\t\tchildren = (B00000000000000000000032, B00000000000000000000033, B00000000000000000000034);\n\t\t\tname = Dashboard;\n'
+              ),
+              (
+                  'A00000000000000000000028, A00000000000000000000029, A00000000000000000000032);\n',
+                  'A00000000000000000000028, A00000000000000000000029, A00000000000000000000032, A00000000000000000000033, A00000000000000000000034);\n'
+              ),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'Expected project pattern not found:\n{old}')
+              s = s.replace(old, new, 1)
+          for token in [
+              'A00000000000000000000033', 'A00000000000000000000034',
+              'B00000000000000000000033', 'B00000000000000000000034',
+              'SpeedInstrumentModel.swift', 'RollingSpeedValueView.swift'
+          ]:
+              if token not in s:
+                  raise SystemExit(f'Missing wired token: {token}')
+          p.write_text(s)
+          PY
+      - name: Commit project wiring
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Nembra.xcodeproj/project.pbxproj
+          git commit -m "build: wire speed instrumentation into app target"
+          git push origin HEAD:feature/speed-instrumentation
