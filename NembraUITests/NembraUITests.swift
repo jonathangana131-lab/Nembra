@@ -1,28 +1,19 @@
 import XCTest
 
-@MainActor
 final class NembraUITests: XCTestCase {
-    private var app: XCUIApplication!
-
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
         executionTimeAllowance = 60
-        XCUIDevice.shared.orientation = .portrait
-        app = XCUIApplication()
     }
 
-    override func tearDown() {
-        XCUIDevice.shared.orientation = .portrait
-        super.tearDown()
-    }
-
+    @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
-        launch(scenario: "connected-stopped")
+        let app = launch(scenario: "connected-stopped")
 
         XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
 
-        let light = button(containing: "Light")
+        let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertTrue(light.label.contains("Off"))
         light.tap()
@@ -31,11 +22,16 @@ final class NembraUITests: XCTestCase {
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
         drive.tap()
-        let modeMetric = app.descendants(matching: .any)["Mode"]
-        XCTAssertTrue(modeMetric.waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue("Drive", element: modeMetric))
 
-        let lock = button(containing: "Lock")
+        let confirmedDriveMetric = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ AND value == %@", "Mode", "Drive"))
+            .firstMatch
+        XCTAssertTrue(
+            confirmedDriveMetric.waitForExistence(timeout: 3),
+            "The status metric must expose the scooter-confirmed Drive mode, not merely a tapped segment."
+        )
+
+        let lock = button(containing: "Lock", in: app)
         XCTAssertTrue(lock.exists)
         lock.tap()
         let confirmLock = app.sheets.buttons["Lock"]
@@ -49,8 +45,9 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
     }
 
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
-        launch(scenario: "scooter-unavailable")
+        let app = launch(scenario: "scooter-unavailable")
 
         XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 3))
         let reconnect = app.buttons["Reconnect scooter"]
@@ -59,30 +56,31 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))
     }
 
+    @MainActor
     func testPermissionDeniedOffersSettingsInsteadOfFakeReconnect() {
-        launch(scenario: "permission-denied")
+        let app = launch(scenario: "permission-denied")
         XCTAssertTrue(app.staticTexts["Bluetooth access is off"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Open Nembra settings"].exists)
         XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
     }
 
-    private func launch(scenario: String) {
+    @MainActor
+    private func launch(scenario: String) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
         app.launch()
+        return app
     }
 
-    private func button(containing fragment: String) -> XCUIElement {
+    @MainActor
+    private func button(containing fragment: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
     }
 
+    @MainActor
     private func waitForLabelFragment(_ fragment: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "label CONTAINS %@", fragment)
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
-    }
-
-    private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
-        let predicate = NSPredicate(format: "value == %@", value)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
