@@ -64,6 +64,48 @@ final class NembraUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
     }
 
+    func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
+        XCUIDevice.shared.orientation = .landscapeRight
+        launch(scenario: "riding")
+
+        let cockpit = app.otherElements["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 2))
+        XCTAssertFalse((speed.value as? String ?? "").isEmpty)
+
+        XCTAssertTrue(app.staticTexts["Controls available when stopped"].exists)
+        XCTAssertFalse(app.buttons["Lock scooter"].exists)
+        XCTAssertFalse(app.buttons["Turn light on"].exists)
+        XCTAssertFalse(app.buttons["Turn light off"].exists)
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Dashboard Riding Landscape"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testLandscapeDashboardStoppedControlsConfirmMode() {
+        XCUIDevice.shared.orientation = .landscapeRight
+        launch(scenario: "connected-stopped")
+
+        XCTAssertTrue(app.otherElements["dashboard.cockpit"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Sport"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Turn light on"].exists)
+        XCTAssertTrue(app.buttons["Lock scooter"].exists)
+
+        app.buttons["Sport"].tap()
+        let mode = app.descendants(matching: .any)["dashboard.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForValue("Sport", element: mode))
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Dashboard Stopped Landscape"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     private func launch(scenario: String) {
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
         app.launch()
