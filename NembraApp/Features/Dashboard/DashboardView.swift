@@ -293,7 +293,7 @@ struct DashboardView: View {
 
     private var batteryIcon: String {
         guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
-        switch battery {
+        return switch battery {
         case ...15: "battery.0percent"
         case ...35: "battery.25percent"
         case ...60: "battery.50percent"
