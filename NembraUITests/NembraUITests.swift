@@ -1,5 +1,6 @@
 import XCTest
 
+@MainActor
 final class NembraUITests: XCTestCase {
     private var app: XCUIApplication!
 
