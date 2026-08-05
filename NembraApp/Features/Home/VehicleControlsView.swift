@@ -71,7 +71,7 @@ struct VehicleControlsView: View {
     }
 
     private var modeSection: some View {
-        Section("Ride Mode") {
+        Section {
             ForEach(supportedModes, id: \.self) { mode in
                 Button {
                     Task { await vehicle.setMode(mode) }
@@ -90,13 +90,15 @@ struct VehicleControlsView: View {
                 }
                 .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
             }
+        } header: {
+            Text("Ride Mode")
         } footer: {
             Text("Nembra changes the displayed mode only after the scooter service confirms the command.")
         }
     }
 
     private var cruiseSection: some View {
-        Section("Cruise Control") {
+        Section {
             confirmedChoiceRow(
                 title: "Off",
                 selected: vehicle.state.isCruiseEnabled == false,
@@ -112,13 +114,15 @@ struct VehicleControlsView: View {
             ) {
                 await vehicle.setCruise(true)
             }
+        } header: {
+            Text("Cruise Control")
         } footer: {
             Text("Cruise availability and behavior remain governed by the scooter firmware.")
         }
     }
 
     private var startModeSection: some View {
-        Section("Start Behavior") {
+        Section {
             ForEach(StartMode.allCases, id: \.self) { mode in
                 confirmedChoiceRow(
                     title: mode.displayName,
@@ -128,6 +132,8 @@ struct VehicleControlsView: View {
                     await vehicle.setStartMode(mode)
                 }
             }
+        } header: {
+            Text("Start Behavior")
         } footer: {
             Text("Kick Start requires the scooter to be rolling before throttle engages. Zero Start allows throttle from a stop when supported and enabled by the vehicle.")
         }
