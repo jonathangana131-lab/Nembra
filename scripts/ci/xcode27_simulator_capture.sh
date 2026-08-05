@@ -6,8 +6,11 @@ cd "$ROOT"
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
+RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
+ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs"
+mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
+rm -rf "$RESULT_BUNDLE"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -61,6 +64,7 @@ echo "simulator_udid=$UDID" >> "$ARTIFACTS_DIR/environment.txt"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
 
+set +e
 set -o pipefail
 xcodebuild \
   -project Nembra.xcodeproj \
@@ -68,6 +72,7 @@ xcodebuild \
   -configuration Debug \
   -destination "platform=iOS Simulator,id=$UDID" \
   -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 60 \
   -maximum-test-execution-time-allowance 60 \
@@ -75,6 +80,28 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
+TEST_STATUS=${PIPESTATUS[0]}
+set -e
+
+if [[ -d "$RESULT_BUNDLE" ]]; then
+  if xcrun xcresulttool export attachments \
+    --path "$RESULT_BUNDLE" \
+    --output-path "$ATTACHMENTS_DIR" \
+    > "$ARTIFACTS_DIR/logs/xcresult-attachments.log" 2>&1; then
+    find "$ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+      > "$ARTIFACTS_DIR/test-attachments.txt" || true
+  else
+    {
+      echo "Attachment export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help export attachments || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-attachments.log" 2>&1
+  fi
+fi
+
+if [[ "$TEST_STATUS" -ne 0 ]]; then
+  echo "xcodebuild test failed with status $TEST_STATUS; preserving diagnostics before failing the job." >&2
+  exit "$TEST_STATUS"
+fi
 
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
 if [[ ! -d "$APP_PATH" ]]; then
