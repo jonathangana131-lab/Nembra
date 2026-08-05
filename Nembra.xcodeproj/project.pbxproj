@@ -1,0 +1,234 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* NembraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* NembraApp.swift */; };
+		A00000000000000000000002 /* VehicleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002 /* VehicleStore.swift */; };
+		A00000000000000000000003 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000003 /* AppRootView.swift */; };
+		A00000000000000000000004 /* NembraVisuals.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* NembraVisuals.swift */; };
+		A00000000000000000000005 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000005 /* HomeView.swift */; };
+		A00000000000000000000006 /* VehicleHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006 /* VehicleHeroView.swift */; };
+		A00000000000000000000007 /* VehicleDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000007 /* VehicleDomain.swift */; };
+		A00000000000000000000008 /* ScooterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008 /* ScooterService.swift */; };
+		A00000000000000000000009 /* SimulatedScooterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* SimulatedScooterService.swift */; };
+		A0000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000A /* Assets.xcassets */; };
+		A0000000000000000000000B /* NembraAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000B /* NembraAppTests.swift */; };
+		A0000000000000000000000C /* VehicleDisplayFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000E /* VehicleDisplayFormatting.swift */; };
+		A0000000000000000000000D /* VehicleControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000F /* VehicleControlsView.swift */; };
+		A0000000000000000000000E /* AppBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000010 /* AppBootstrap.swift */; };
+		A0000000000000000000000F /* SpeedTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SpeedTelemetry.swift */; };
+		A00000000000000000000010 /* TelemetryBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* TelemetryBenchmark.swift */; };
+		A00000000000000000000021 /* SpeedDisplayInterpolation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* SpeedDisplayInterpolation.swift */; };
+		A00000000000000000000022 /* RollingNumberModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000022 /* RollingNumberModel.swift */; };
+		A00000000000000000000023 /* SimulationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000023 /* SimulationConfiguration.swift */; };
+		A00000000000000000000024 /* RideEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000024 /* RideEngine.swift */; };
+		A00000000000000000000025 /* RideCheckpointPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000025 /* RideCheckpointPersistence.swift */; };
+		A00000000000000000000026 /* RideCheckpointCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000026 /* RideCheckpointCoordinator.swift */; };
+		A00000000000000000000027 /* RideHistoryCommit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000027 /* RideHistoryCommit.swift */; };
+		A00000000000000000000028 /* RideDistanceReconciliation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000028 /* RideDistanceReconciliation.swift */; };
+		A00000000000000000000029 /* LiveDistanceIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000029 /* LiveDistanceIntegration.swift */; };
+		A00000000000000000000011 /* UnverifiedScooterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* UnverifiedScooterService.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C00000000000000000000001 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E00000000000000000000001;
+			remoteInfo = Nembra;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B00000000000000000000001 /* NembraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraApp.swift; sourceTree = "<group>"; };
+		B00000000000000000000002 /* VehicleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000003 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
+		B00000000000000000000004 /* NembraVisuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraVisuals.swift; sourceTree = "<group>"; };
+		B00000000000000000000005 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		B00000000000000000000006 /* VehicleHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleHeroView.swift; sourceTree = "<group>"; };
+		B00000000000000000000007 /* VehicleDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VehicleDomain.swift; path = Packages/NembraCore/Sources/NembraCore/VehicleDomain.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000008 /* ScooterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScooterService.swift; path = Packages/NembraCore/Sources/NembraCore/ScooterService.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000009 /* SimulatedScooterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SimulatedScooterService.swift; path = Packages/NembraCore/Sources/NembraCore/SimulatedScooterService.swift; sourceTree = SOURCE_ROOT; };
+		B0000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B0000000000000000000000B /* NembraAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraAppTests.swift; sourceTree = "<group>"; };
+		B0000000000000000000000C /* Nembra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nembra.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0000000000000000000000D /* NembraAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NembraAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0000000000000000000000E /* VehicleDisplayFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleDisplayFormatting.swift; sourceTree = "<group>"; };
+		B0000000000000000000000F /* VehicleControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleControlsView.swift; sourceTree = "<group>"; };
+		B00000000000000000000010 /* AppBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBootstrap.swift; sourceTree = "<group>"; };
+		B00000000000000000000011 /* SpeedTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SpeedTelemetry.swift; path = Packages/NembraCore/Sources/NembraCore/SpeedTelemetry.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000012 /* TelemetryBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TelemetryBenchmark.swift; path = Packages/NembraCore/Sources/NembraCore/TelemetryBenchmark.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000021 /* SpeedDisplayInterpolation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SpeedDisplayInterpolation.swift; path = Packages/NembraCore/Sources/NembraCore/SpeedDisplayInterpolation.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000022 /* RollingNumberModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RollingNumberModel.swift; path = Packages/NembraCore/Sources/NembraCore/RollingNumberModel.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000023 /* SimulationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SimulationConfiguration.swift; path = Packages/NembraCore/Sources/NembraCore/SimulationConfiguration.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000024 /* RideEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideEngine.swift; path = Packages/NembraCore/Sources/NembraCore/RideEngine.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000025 /* RideCheckpointPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideCheckpointPersistence.swift; path = Packages/NembraCore/Sources/NembraCore/RideCheckpointPersistence.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000026 /* RideCheckpointCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideCheckpointCoordinator.swift; path = Packages/NembraCore/Sources/NembraCore/RideCheckpointCoordinator.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000027 /* RideHistoryCommit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideHistoryCommit.swift; path = Packages/NembraCore/Sources/NembraCore/RideHistoryCommit.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000028 /* RideDistanceReconciliation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideDistanceReconciliation.swift; path = Packages/NembraCore/Sources/NembraCore/RideDistanceReconciliation.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000029 /* LiveDistanceIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiveDistanceIntegration.swift; path = Packages/NembraCore/Sources/NembraCore/LiveDistanceIntegration.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000013 /* UnverifiedScooterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UnverifiedScooterService.swift; path = Packages/NembraCore/Sources/NembraCore/UnverifiedScooterService.swift; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		F00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		100000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000002 /* NembraApp */,
+				100000000000000000000006 /* Core */,
+				100000000000000000000007 /* NembraAppTests */,
+				100000000000000000000008 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		100000000000000000000002 /* NembraApp */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000003 /* App */,
+				100000000000000000000004 /* DesignSystem */,
+				100000000000000000000005 /* Home */,
+				100000000000000000000009 /* Resources */,
+			);
+			path = NembraApp;
+			sourceTree = "<group>";
+		};
+		100000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B0000000000000000000000E, B00000000000000000000010);
+			path = App;
+			sourceTree = "<group>";
+		};
+		100000000000000000000004 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (B00000000000000000000004);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		100000000000000000000005 /* Home */ = {
+			isa = PBXGroup;
+			children = (B00000000000000000000005, B00000000000000000000006, B0000000000000000000000F);
+			name = Home;
+			path = Features/Home;
+			sourceTree = "<group>";
+		};
+		100000000000000000000006 /* Core */ = {
+			isa = PBXGroup;
+			children = (B00000000000000000000007, B00000000000000000000008, B00000000000000000000009, B00000000000000000000011, B00000000000000000000012, B00000000000000000000013, B00000000000000000000021, B00000000000000000000022, B00000000000000000000023, B00000000000000000000024, B00000000000000000000025, B00000000000000000000026, B00000000000000000000027, B00000000000000000000028, B00000000000000000000029);
+			name = Core;
+			sourceTree = "<group>";
+		};
+		100000000000000000000007 /* NembraAppTests */ = {
+			isa = PBXGroup;
+			children = (B0000000000000000000000B);
+			path = NembraAppTests;
+			sourceTree = "<group>";
+		};
+		100000000000000000000008 /* Products */ = {
+			isa = PBXGroup;
+			children = (B0000000000000000000000C, B0000000000000000000000D);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		100000000000000000000009 /* Resources */ = {
+			isa = PBXGroup;
+			children = (B0000000000000000000000A);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E00000000000000000000001 /* Nembra */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 200000000000000000000002;
+			buildPhases = (300000000000000000000001, F00000000000000000000001, 300000000000000000000002);
+			buildRules = ();
+			dependencies = ();
+			name = Nembra;
+			productName = Nembra;
+			productReference = B0000000000000000000000C;
+			productType = "com.apple.product-type.application";
+		};
+		E00000000000000000000002 /* NembraAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 200000000000000000000003;
+			buildPhases = (300000000000000000000003, F00000000000000000000002);
+			buildRules = ();
+			dependencies = (C00000000000000000000002 /* PBXTargetDependency */);
+			name = NembraAppTests;
+			productName = NembraAppTests;
+			productReference = B0000000000000000000000D;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					E00000000000000000000001 = {CreatedOnToolsVersion = 27.0;};
+					E00000000000000000000002 = {CreatedOnToolsVersion = 27.0; TestTargetID = E00000000000000000000001;};
+				};
+			};
+			buildConfigurationList = 200000000000000000000001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = 100000000000000000000001;
+			productRefGroup = 100000000000000000000008;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (E00000000000000000000001, E00000000000000000000002);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		300000000000000000000002 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000A); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		300000000000000000000001 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A00000000000000000000004, A00000000000000000000005, A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A00000000000000000000009, A0000000000000000000000C, A0000000000000000000000D, A0000000000000000000000E, A0000000000000000000000F, A00000000000000000000010, A00000000000000000000011, A00000000000000000000021, A00000000000000000000022, A00000000000000000000023, A00000000000000000000024, A00000000000000000000025, A00000000000000000000026, A00000000000000000000027, A00000000000000000000028, A00000000000000000000029);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		300000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000B); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C00000000000000000000002 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E00000000000000000000001; targetProxy = C00000000000000000000001; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		400000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_OPTIMIZATION_LEVEL = 0; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_VERSION = 6.0;}; name = Debug;};
+		400000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 6.0; VALIDATE_PRODUCT = YES;}; name = Release;};
+		400000000000000000000003 /* App Debug */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; ENABLE_PREVIEWS = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Nembra; INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect automatically to your scooter and keep ride data in sync."; INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Map your rides while you’re riding."; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; IPHONEOS_DEPLOYMENT_TARGET = 27.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Debug;};
+		400000000000000000000004 /* App Release */ = {isa = XCBuildConfiguration; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; ENABLE_PREVIEWS = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Nembra; INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect automatically to your scooter and keep ride data in sync."; INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Map your rides while you’re riding."; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; IPHONEOS_DEPLOYMENT_TARGET = 27.0; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Release;};
+		400000000000000000000005 /* Tests Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Nembra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Nembra";}; name = Debug;};
+		400000000000000000000006 /* Tests Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Nembra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Nembra";}; name = Release;};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		200000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (400000000000000000000001, 400000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		200000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (400000000000000000000003, 400000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		200000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (400000000000000000000005, 400000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+/* End XCConfigurationList section */
+	};
+	rootObject = D00000000000000000000001 /* Project object */;
+}

@@ -1,0 +1,160 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class VehicleStore {
+    enum PendingCommand: Hashable {
+        case headlight
+        case lock
+        case cruise
+        case mode
+        case startMode
+        case speedLimit
+        case connect
+    }
+
+    let profile: VehicleProfile
+    private let service: any ScooterService
+
+    var state: VehicleState
+    var pendingCommands: Set<PendingCommand> = []
+    var pendingRideMode: RideMode?
+    var pendingCruiseValue: Bool?
+    var pendingStartMode: StartMode?
+    var pendingSpeedLimit: (slot: SpeedLimitSlot, kilometersPerHour: Int)?
+    var lastErrorMessage: String?
+
+    var isVehicleCommandPending: Bool {
+        pendingCommands.contains { $0 != .connect }
+    }
+
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var didStart = false
+    @ObservationIgnored private let shouldAutoConnectOnStart: Bool
+
+    init(
+        service: any ScooterService,
+        initialState: VehicleState? = nil,
+        shouldAutoConnectOnStart: Bool = true
+    ) {
+        self.service = service
+        self.profile = service.profile
+        self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
+        self.state = initialState ?? VehicleState(
+            connection: .disconnected,
+            batteryPercent: nil,
+            speedKilometersPerHour: nil,
+            odometerKilometers: nil,
+            tripKilometers: nil,
+            rideMode: nil,
+            startMode: nil,
+            speedLimitsKilometersPerHour: [:],
+            isLocked: nil,
+            isHeadlightOn: nil,
+            isCruiseEnabled: nil,
+            powerWatts: nil,
+            currentAmps: nil
+        )
+    }
+
+    deinit {
+        updatesTask?.cancel()
+    }
+
+    func start() async {
+        guard !didStart else { return }
+        didStart = true
+
+        updatesTask = Task { [weak self, service] in
+            let stream = await service.stateUpdates()
+            for await state in stream {
+                guard let self, !Task.isCancelled else { break }
+                self.state = state
+            }
+        }
+
+        if shouldAutoConnectOnStart {
+            await connect()
+        }
+    }
+
+    func connect() async {
+        guard !pendingCommands.contains(.connect), !isVehicleCommandPending else { return }
+        pendingCommands.insert(.connect)
+        lastErrorMessage = nil
+        defer { pendingCommands.remove(.connect) }
+        await service.connect()
+    }
+
+    func setHeadlight(_ enabled: Bool) async {
+        guard canBeginVehicleCommand else { return }
+        await perform(.headlight) { try await service.setHeadlight(enabled) }
+    }
+
+    func setLocked(_ locked: Bool) async {
+        guard canBeginVehicleCommand else { return }
+        await perform(.lock) { try await service.setLocked(locked) }
+    }
+
+    func setCruise(_ enabled: Bool) async {
+        guard canBeginVehicleCommand else { return }
+        pendingCruiseValue = enabled
+        defer { pendingCruiseValue = nil }
+        await perform(.cruise) { try await service.setCruise(enabled) }
+    }
+
+    func setMode(_ mode: RideMode) async {
+        guard canBeginVehicleCommand else { return }
+        pendingRideMode = mode
+        defer { pendingRideMode = nil }
+        await perform(.mode) { try await service.setRideMode(mode) }
+    }
+
+    func setStartMode(_ mode: StartMode) async {
+        guard canBeginVehicleCommand else { return }
+        pendingStartMode = mode
+        defer { pendingStartMode = nil }
+        await perform(.startMode) { try await service.setStartMode(mode) }
+    }
+
+    func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async {
+        guard canBeginVehicleCommand else { return }
+        pendingSpeedLimit = (slot, kilometersPerHour)
+        defer { pendingSpeedLimit = nil }
+        await perform(.speedLimit) {
+            try await service.setSpeedLimit(kilometersPerHour: kilometersPerHour, slot: slot)
+        }
+    }
+
+    private var canBeginVehicleCommand: Bool {
+        !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    }
+
+    private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
+        guard command != .connect, canBeginVehicleCommand else { return }
+        pendingCommands.insert(command)
+        lastErrorMessage = nil
+        defer { pendingCommands.remove(command) }
+
+        do {
+            try await operation()
+        } catch ScooterCommandError.disconnected {
+            lastErrorMessage = "Scooter disconnected before the command was confirmed."
+        } catch ScooterCommandError.commandRejected {
+            lastErrorMessage = "The scooter rejected that command in its current state."
+        } catch ScooterCommandError.commandInProgress {
+            lastErrorMessage = "Another scooter change is still being confirmed."
+        } catch ScooterCommandError.valueOutOfRange {
+            lastErrorMessage = "That value is outside the scooter’s verified supported range."
+        } catch ScooterCommandError.unsupportedCapability {
+            lastErrorMessage = "This scooter does not expose that control."
+        } catch ScooterCommandError.unsupportedMode {
+            lastErrorMessage = "That ride mode is not supported by this scooter."
+        } catch ScooterCommandError.unsupportedSpeedLimitSlot {
+            lastErrorMessage = "That speed-limit setting is not supported by this scooter."
+        } catch {
+            lastErrorMessage = "That change could not be confirmed."
+        }
+    }
+}
