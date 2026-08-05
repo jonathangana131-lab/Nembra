@@ -147,12 +147,11 @@ struct DashboardView: View {
 
             Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
                 .font(.title2.weight(.semibold))
-                .contentTransition(.numericText())
-                .accessibilityIdentifier("dashboard.mode")
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ride mode")
         .accessibilityValue(vehicle.state.rideMode?.displayName ?? "Unknown")
+        .accessibilityIdentifier("dashboard.mode")
     }
 
     private var stoppedControls: some View {
@@ -165,9 +164,16 @@ struct DashboardView: View {
                         } label: {
                             Text(modeAbbreviation(mode))
                                 .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
+                                .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
                                 .frame(width: 34, height: 34)
+                                .background {
+                                    if vehicle.state.rideMode == mode {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(.white.opacity(0.12))
+                                    }
+                                }
                         }
-                        .buttonStyle(vehicle.state.rideMode == mode ? .glassProminent : .glass)
+                        .buttonStyle(.glass)
                         .disabled(vehicle.isVehicleCommandPending)
                         .accessibilityLabel(mode.displayName)
                     }
