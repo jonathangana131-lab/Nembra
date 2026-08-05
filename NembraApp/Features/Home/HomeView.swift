@@ -116,6 +116,7 @@ struct HomeView: View {
                     title: "Battery",
                     value: batteryText,
                     icon: batteryIcon,
+                    accessibilityIdentifier: "home.metric.battery",
                     valueStyle: batteryValueStyle
                 )
                 metricDivider
@@ -123,13 +124,15 @@ struct HomeView: View {
                     title: "Trip",
                     value: tripDistanceText,
                     icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                    accessibilityTitle: "Scooter Trip"
+                    accessibilityTitle: "Scooter Trip",
+                    accessibilityIdentifier: "home.metric.trip"
                 )
                 metricDivider
                 statusMetric(
                     title: "Mode",
                     value: vehicle.state.rideMode?.displayName ?? "—",
-                    icon: "gauge.with.dots.needle.67percent"
+                    icon: "gauge.with.dots.needle.67percent",
+                    accessibilityIdentifier: "home.metric.mode"
                 )
             }
         }
@@ -155,6 +158,7 @@ struct HomeView: View {
         value: String,
         icon: String,
         accessibilityTitle: String? = nil,
+        accessibilityIdentifier: String,
         valueStyle: Color = .primary
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -174,6 +178,7 @@ struct HomeView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle ?? title)
         .accessibilityValue(value)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 
     private var controlsSection: some View {
