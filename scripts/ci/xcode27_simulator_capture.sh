@@ -75,6 +75,7 @@ xcodebuild \
   -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 60 \
   -maximum-test-execution-time-allowance 60 \
+  -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
