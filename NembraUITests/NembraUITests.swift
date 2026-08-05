@@ -7,6 +7,7 @@ final class NembraUITests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+        executionTimeAllowance = 60
         XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication()
     }
