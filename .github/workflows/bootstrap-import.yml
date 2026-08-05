@@ -8,8 +8,6 @@ on:
 permissions:
   contents: write
 
-group: bootstrap-nembra-source
-
 jobs:
   import:
     if: ${{ github.actor != 'github-actions[bot]' }}
