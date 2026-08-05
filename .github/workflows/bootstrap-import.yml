@@ -1,0 +1,115 @@
+name: Bootstrap Nembra + Xcode 27 QA
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  import-and-qa:
+    runs-on: xcode-27
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout staging repository
+        uses: actions/checkout@v6
+
+      - name: Verify exact import payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT="$(find .import2 -type f -name 'part*' | wc -l | tr -d ' ')"
+          test "$COUNT" = "23"
+          : > /tmp/nembra_import.b64
+          while IFS= read -r part; do
+            cat "$part" >> /tmp/nembra_import.b64
+          done < <(find .import2 -type f -name 'part*' | sort)
+          ACTUAL="$(shasum -a 256 /tmp/nembra_import.b64 | awk '{print $1}')"
+          EXPECTED="57e2ed322c5a19f10b65bf405f49e3207b965ca1f2a51cacea63f478fe556371"
+          echo "payload sha256: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Restore production source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/nembra-source /tmp/nembra.tar
+          mkdir -p /tmp/nembra-source
+          python3 - <<'PY'
+          import base64
+          import gzip
+          from pathlib import Path
+
+          encoded = Path('/tmp/nembra_import.b64').read_text()
+          compressed = base64.b64decode(encoded, validate=True)
+          Path('/tmp/nembra.tar').write_bytes(gzip.decompress(compressed))
+          PY
+          tar -xf /tmp/nembra.tar -C /tmp/nembra-source
+          test -f /tmp/nembra-source/Nembra.xcodeproj/project.pbxproj
+          test -f /tmp/nembra-source/.github/workflows/xcode27-simulator.yml
+          test -f /tmp/nembra-source/scripts/ci/xcode27_simulator_capture.sh
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/nembra-source/. .
+
+          test ! -e .bootstrap
+          test ! -e .import2
+
+      - name: Validate imported project structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          python3 scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          plutil -lint Nembra.xcodeproj/xcshareddata/xcschemes/Nembra.xcscheme
+
+      - name: Publish production Nembra tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status --short
+          git commit -m "import production Nembra codebase"
+          git push origin HEAD:main
+
+      - name: Record Apple toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR"
+          sw_vers | tee "$ARTIFACTS_DIR/macos.txt"
+          xcodebuild -version | tee "$ARTIFACTS_DIR/xcode-version.txt"
+          xcrun simctl list runtimes | tee "$ARTIFACTS_DIR/simulator-runtimes.txt"
+          xcrun simctl list devicetypes | tee "$ARTIFACTS_DIR/simulator-device-types.txt"
+
+      - name: Run NembraCore tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Packages/NembraCore
+          swift test 2>&1 | tee "$ARTIFACTS_DIR/swift-test.log"
+
+      - name: Build, run, interact, and capture iOS 27 Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/xcode27_simulator_capture.sh
+          scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Xcode and Simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-xcode27-bootstrap
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 14
