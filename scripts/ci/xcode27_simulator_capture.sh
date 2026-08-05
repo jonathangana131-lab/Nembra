@@ -72,11 +72,13 @@ xcodebuild \
   -destination "platform=iOS Simulator,id=$UDID" \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 60 \
+  -maximum-test-execution-time-allowance 60 \
   CODE_SIGNING_ALLOWED=NO \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 
-# Keep UI-test screenshots easy to inspect without opening Xcode.
 if xcrun xcresulttool export attachments \
   --path "$RESULT_BUNDLE" \
   --output-path "$ATTACHMENTS_DIR" \
@@ -99,7 +101,6 @@ fi
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
-# Make screenshot state deterministic where Simulator supports these overrides.
 xcrun simctl status_bar "$UDID" override \
   --time 9:41 \
   --batteryState charged \
