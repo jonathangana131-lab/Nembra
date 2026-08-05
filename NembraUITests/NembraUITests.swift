@@ -31,11 +31,10 @@ final class NembraUITests: XCTestCase {
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
         drive.tap()
-        let confirmedDriveMetric = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@ AND value == %@", "Mode", "Drive"))
-            .firstMatch
+        let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
+        XCTAssertTrue(confirmedDriveMetric.waitForExistence(timeout: 3))
         XCTAssertTrue(
-            confirmedDriveMetric.waitForExistence(timeout: 3),
+            waitForValue("Drive", element: confirmedDriveMetric),
             "The status metric must expose the scooter-confirmed Drive mode, not merely a tapped segment."
         )
 
