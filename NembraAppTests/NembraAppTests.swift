@@ -108,4 +108,89 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(snapshot.isCruiseEnabled, false)
         XCTAssertFalse(store.isVehicleCommandPending)
     }
+
+    @MainActor
+    func testSpeedInstrumentUsesConfirmedVehicleStateUntilFreshRawTelemetryArrives() {
+        let model = SpeedInstrumentModel()
+        let frame = model.frame(
+            atUptimeNanoseconds: 1_000_000_000,
+            fallbackConfirmedKilometersPerHour: 18.4
+        )
+
+        XCTAssertEqual(frame?.kilometersPerHour, 18.4, accuracy: 0.000_1)
+        XCTAssertEqual(frame?.origin, .confirmedVehicleState)
+        XCTAssertNil(frame?.latestMeasuredKilometersPerHour)
+        XCTAssertEqual(model.measurementRevision, 0)
+    }
+
+    @MainActor
+    func testSpeedInstrumentInterpolatesOnlyBetweenAuthoritativeMeasurements() throws {
+        let model = SpeedInstrumentModel()
+        let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
+        let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
+
+        model.accept(first)
+        let firstFrame = model.frame(
+            atUptimeNanoseconds: 1_000_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        )
+        XCTAssertEqual(firstFrame?.kilometersPerHour, 10, accuracy: 0.000_1)
+        XCTAssertEqual(firstFrame?.origin, .measuredTelemetry)
+
+        model.accept(second)
+        let midpoint = model.frame(
+            atUptimeNanoseconds: 1_280_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        )
+        XCTAssertEqual(midpoint?.kilometersPerHour, 15, accuracy: 0.000_1)
+        XCTAssertEqual(midpoint?.latestMeasuredKilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(midpoint?.origin, .visuallyInterpolated)
+
+        let settled = model.frame(
+            atUptimeNanoseconds: 1_400_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        )
+        XCTAssertEqual(settled?.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(settled?.origin, .measuredTelemetry)
+    }
+
+    @MainActor
+    func testSpeedInstrumentRejectsStaleAndEstimatedSamples() throws {
+        let model = SpeedInstrumentModel()
+        model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+
+        model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 1_900_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+
+        let estimate = try SpeedTelemetrySample(
+            source: .motionAssist,
+            provenance: .shortHorizonEstimate,
+            metersPerSecond: 9,
+            receivedAtUptimeNanoseconds: 2_100_000_000,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+        model.accept(estimate)
+        XCTAssertEqual(model.measurementRevision, 1)
+
+        let frame = model.frame(
+            atUptimeNanoseconds: 2_500_000_000,
+            fallbackConfirmedKilometersPerHour: 99
+        )
+        XCTAssertEqual(frame?.kilometersPerHour, 12, accuracy: 0.000_1)
+        XCTAssertEqual(frame?.origin, .measuredTelemetry)
+    }
+
+    private func speedSample(
+        kilometersPerHour: Double,
+        uptimeNanoseconds: UInt64
+    ) throws -> SpeedTelemetrySample {
+        try SpeedTelemetrySample(
+            source: .scooterBluetooth,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: kilometersPerHour / 3.6,
+            receivedAtUptimeNanoseconds: uptimeNanoseconds,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+    }
 }
