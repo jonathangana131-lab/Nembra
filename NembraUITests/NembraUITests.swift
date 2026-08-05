@@ -26,7 +26,7 @@ final class NembraUITests: XCTestCase {
         light.tap()
         XCTAssertTrue(waitForLabelFragment("On", element: light))
 
-        let drive = app.buttons["Drive"]
+        let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
         drive.tap()
         let modeMetric = app.descendants(matching: .any)["Mode"]

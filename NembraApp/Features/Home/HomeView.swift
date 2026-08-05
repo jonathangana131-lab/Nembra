@@ -299,6 +299,8 @@ struct HomeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+                    .accessibilityLabel(mode.displayName)
+                    .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
                 }
             }
             .padding(4)
@@ -306,7 +308,6 @@ struct HomeView: View {
                 Color.primary.opacity(0.055),
                 in: RoundedRectangle(cornerRadius: 17, style: .continuous)
             )
-            .accessibilityLabel("Ride mode")
         }
         .sensoryFeedback(.selection, trigger: vehicle.state.rideMode)
     }
