@@ -1,36 +1,77 @@
 # CONTINUATION PROMPT
 
-Use GPT-5.6 Sol High / GPT-5.6 Thinking with @GitHub and @Build iOS Apps. This is an **EXISTING** production project. Do **not** create a new app, do not reuse NovaForge/Jarvis/GitHub Pages, and do not regenerate completed work just because a fresh chat lacks visual context.
+Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/Sol High, @GitHub, @Build iOS Apps, current Apple documentation, Xcode 27, and iOS 27 Simulator. Do not create a new repository or new app and do not resurrect rejected prototype/UI work.
 
-1. Locate the existing **public** Nembra repository `jonathangana131-lab/Nembra`. Do not create another repository.
-2. Read `PROJECT_STATE.md` **FIRST**.
-3. Read `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN_SYSTEM.md`, `docs/APPLE_PLATFORM_NOTES.md`, `docs/RESEARCH_MAXSHOT.md`, and `docs/SOURCE_LEDGER.md`.
-4. Inspect recent commits and the current branch. The current unfinished branch is expected to be `feature/live-distance-accumulator` unless PROJECT_STATE says otherwise. It is based on committed ride-recovery/reconciliation, telemetry, and Home work; do not recreate those layers.
-5. After the remote exists, inspect/run `.github/workflows/xcode27-simulator.yml` and its uploaded logs/screenshots; it is prepared but has not yet run. Then build the app **BEFORE changing anything** on the macOS continuation. Do not assume CI scaffolding or the manually-authored project is valid until Xcode 27 proves it.
-6. Run it on an iOS 27 Simulator, using iPhone 12 as the explicit performance/visual baseline when available.
-7. Inspect the existing Home UI rather than recreating it. Use `docs/SIMULATION.md` launch scenarios to test cold-disconnected, reconnecting, connected-stopped, riding, low-battery, bluetooth-off, permission-denied, scooter-unavailable, and unsupported-configuration states; then test reconnect, light, lock, mode changes, All Controls, cruise, and start behavior. Speed-limit editing is deliberately absent from normal UI until DP101–103 can be mapped to user-facing semantics without guessing.
-8. Capture real Simulator screenshots of the relevant Home states. Critique spacing, hierarchy, safe areas, Dynamic Type, glass use, disconnected state, and pending-command truthfulness. Fix issues before declaring Home complete. If direct XcodeBuildMCP/Simulator tools are not available, use the committed `.github/workflows/xcode27-simulator.yml` on GitHub's `xcode-27` macOS runner and retrieve its screenshot artifact through @GitHub.
-9. Preserve the production bootstrap boundary: normal launch uses `UnverifiedScooterService`; simulation is opt-in only. Never make a missing launch flag silently produce a fake connected scooter.
-10. Preserve the raw speed telemetry evidence boundary: BLE/GPS are absolute measurements, motion assist is a short-horizon estimate, and the raw telemetry stream must never replay cached UI state as though a fresh packet arrived. `TelemetryBenchmarkCollector` is diagnostics only; it does not interpolate speed.
-11. Preserve stale-state truthfulness: transport loss is not telemetry. A disconnect/permission/range failure must not overwrite last confirmed speed/power/current with fabricated zero values. Preserve `VehicleDataAvailability`: `unavailable` = never observed, `live` = current connected session, `retained` = last confirmed/read-only. Only an authoritative measurement may establish a new zero.
-12. Preserve simulation configuration fail-closed behavior: invalid environment values, malformed/missing launch values, or duplicate simulation flags must not be guessed or fall through; ordinary hardware-gated state is safer.
-13. Preserve simulator reconnect truthfulness: an explicit simulated successful reconnect may fill fields that were never observed, but must not overwrite retained confirmed values. Simulator hydration is a QA fixture, never a production protocol assumption.
-14. Preserve the rolling-number contract: fixed digit slots, upward carry when values rise, downward borrow when values fall, stable fraction digits, conservative 15-slot `Double` precision, and no timing/sensor semantics in `RollingNumberModel`. It consumes display values after interpolation and is presentation state only.
-15. Preserve the render-only speed model: `SpeedDisplayFrame` is visual output, not telemetry; only authoritative measurements enter the interpolator; do not hard-code transition timing before real MAXSHOT cadence + iPhone 12 QA.
-16. Preserve command-confirmation semantics: one state-changing command at a time, confirmed state only, and connection-generation invalidation so a write cannot survive a disconnect/reconnect boundary. Preserve the capability-based `ScooterService` architecture. Real Bluetooth remains observation-first; never invent writes, VESC tuning, telemetry, UUIDs, or protocol acknowledgements.
-17. Read Apple TN3115 and evaluate AccessorySetupKit once real advertisement/service identity is available. Do not promise automatic relaunch after user force-quit.
-18. Do not label the scooter's device trip counter as “Today.” Daily mileage belongs to the later persisted Nembra ride ledger.
-19. Do not map DP101/102/103 speed-limit slots to Walk/Eco/Drive/Sport unless MAXSHOT-specific capture proves the relationship. Generic YouFS claims that each gear speed is adjustable are supporting evidence only, not a mapping.
-20. Keep vehicle state-changing commands serialized until the real protocol proves safe concurrent behavior.
-21. Read `docs/TELEMETRY.md`. Preserve the raw-measurement vs short-horizon-estimate distinction and never feed display interpolation back into benchmark/ride evidence.
-22. Read `docs/RIDE_ENGINE.md`, `docs/RIDE_PERSISTENCE.md`, `docs/RIDE_RECONCILIATION.md`, and `docs/LIVE_DISTANCE_INTEGRATION.md`. Preserve the automatic ride-engine contract: policy thresholds are injected, motion alone never confirms a ride, only fresh authoritative speed may start/sustain movement, GPS enters as screened incremental distance, late ODO baselines are not backdated, transport loss alone never ends a confirmed ride, ODO growth remains movement evidence, failed observations are transactional, and reconnect keeps the same session. Preserve the two-stage recovery journal: never persist monotonic uptime, restore in-progress rides conservatively as temporarily disconnected, journal completed evidence as `completedPendingCommit` before clearing active recovery state, and never clear that handoff before a matching permanent-history durable commit. Preserve the idempotent history-handoff contract and explicit complete/partial/unknown distance coverage: never average raw sources, never treat unknown coverage as complete, and never let partial/unknown ODO "recover" another source. Preserve live-distance truth: only one injected authoritative speed source may add mileage per segment, never integrate across an oversized packet gap, never use motion/display interpolation as evidence, never expose finalized coverage on a live snapshot, and start a new monotonic segment after recovery. Do not claim the concrete SwiftData ledger, crash-safe ride-level live-distance aggregation, production calibration, or background integration is complete yet.
-23. After every major slice: build, run, interact, screenshot, self-critique, fix, edge-test, profile when relevant, add tests, commit/push, update PROJECT_STATE.md/DECISIONS.md/PROTOCOL_NOTES.md as needed, and update this continuation prompt.
+## Start here
+1. Repository: public `jonathangana131-lab/Nembra`.
+2. Read `PROJECT_STATE.md` first, then `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN_SYSTEM.md`, and relevant docs under `docs/`.
+3. Inspect recent commits/current branch and GitHub Actions before changing code.
+4. Build/test the existing project first on the `xcode-27` GitHub Mac gate (or direct Xcode 27 tooling if available).
+5. Preserve completed architecture; do not regenerate telemetry/ride/persistence work.
 
-Current validated non-iOS checkpoint from the originating harness:
-- NembraCore: 156 Swift Testing tests pass on Swift 6.2.1 Linux at the authoritative live-distance segment checkpoint.
-- Core + VehicleStore + formatting strict-concurrency typecheck passes.
-- All Swift source parses.
-- `Nembra.xcodeproj/project.pbxproj` passes `plutil -lint` and `scripts/validate_pbxproj_references.py`; this still does not replace a real Xcode build.
-- Actual iOS 27 compilation/Simulator QA is still required.
+## Product truth
+- Product: Nembra.
+- First vehicle: MAXSHOT V1S Pro.
+- Multi-scooter architecture is capability-based, but no random additional vehicles until MAXSHOT is excellent.
+- Ordinary production launch is hardware-gated through `UnverifiedScooterService`; simulation is explicit QA only.
+- Never invent Bluetooth writes, UUIDs, acknowledgements, VESC tuning, phase/battery current, field weakening, regen current, or telemetry.
+- DP101/102/103 speed-limit slots remain independent until MAXSHOT-specific capture proves user-facing semantics/mode mapping.
+- Device Trip is never labeled Today.
 
-Originating harness blockers: Linux-only, no Xcode/simctl/XcodeBuildMCP; local `gh` is absent. The public GitHub repository now exists and is writable through the connected @GitHub tool. A macOS/Codex continuation must use the existing repository, build it before changing anything, and Xcode-validate the existing project instead of starting over.
+## Current Home design rule
+The rejected giant scooter-art Home direction is dead. Portrait Home is status-first:
+vehicle identity + connection/lock → Battery/Trip/Mode → Light/Lock → Walk/Eco/Drive/Sport → vehicle details/ride context. A large scooter render is optional and must never displace useful information. Future exact graphics require verified physical references and a clear product purpose.
+
+Home moving-state Lock must remain disabled with `Stop to lock`; service/domain rejection remains authoritative. Low battery receives semantic priority. Retained values remain explicitly last-known/read-only.
+
+## QA rules
+- GitHub workflow `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, uses iPhone 12/iOS 27 where available, runs core/app/UI tests, and captures deterministic Simulator states.
+- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme. Extend it for critical future interactions.
+- Never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
+- Show real Simulator screenshots; do not substitute generated mockups. User explicitly requested no image generation in this work stream.
+
+## Preserve these architecture boundaries
+- `ScooterService` / capability model separates SwiftUI from transport.
+- One state-changing command at a time until real protocol proves concurrency safe.
+- Connection-generation token invalidates writes spanning disconnect/reconnect.
+- `VehicleDataAvailability`: unavailable/live/retained; disconnect never fabricates zero telemetry.
+- Raw speed evidence is separate from render interpolation.
+- Motion assist cannot masquerade as authoritative speed.
+- `SpeedDisplayInterpolator` outputs visual frames only and is non-predictive.
+- `RollingNumberModel` uses fixed slots and correct carry/borrow direction; presentation only.
+- Automatic `RideEngine` preserves confirmed ride identity through disconnect.
+- Crash recovery uses two-slot generation journal; never persist monotonic uptime across process lifetime.
+- `completedPendingCommit` prevents ride loss between detector completion and history storage.
+- History handoff is idempotent/readback-verified.
+- ODO/GPS/live distance stay independent with explicit complete/partial/unknown coverage; never average them.
+- Live distance integrates one injected authoritative raw speed source and never integrates over oversized packet gaps.
+
+## Current/next milestone
+Check `PROJECT_STATE.md` for the exact active branch. If Home PR is already merged, proceed immediately to **Phase 9 dedicated landscape Dashboard Mode**. If its final UI-test gate is still pending/failing, finish that first and merge Home only when green.
+
+### Phase 9 Dashboard v1
+Build a dedicated landscape cockpit selected on iPhone landscape; portrait remains the Home NavigationStack. It is not rotated portrait UI.
+First vertical slice only:
+- enormous confirmed speed
+- mode
+- battery
+- trip
+- connection/model identity
+- stopped-only compact Light/Lock where valid
+- excellent safe-area readability on iPhone 12 landscape
+- no map/navigation yet
+- no fake throttle/current/power gauge
+- no interpolation presented as measurement yet
+
+Use XCUITest to rotate `XCUIDevice.shared.orientation` and validate the landscape composition. Capture an actual landscape Simulator screenshot/attachment and critique/fix before graduating the slice.
+
+### Phase 10 immediately afterward
+Wire existing raw speed telemetry into the render-only interpolation/rolling-digit system. Benchmark real/simulated cadence separately from render rate. Keep measured speed and displayed interpolated frames explicitly distinct. Do not choose MAXSHOT production interpolation timing until hardware cadence is measured; Simulator timing can be an injected QA profile only.
+
+Then continue autonomously through mode-responsive Dashboard, ride engine app/persistence wiring, background Bluetooth, background location/route capture, MapKit rides, Dashboard navigation transformation, history/stats, acceleration tests, BLE diagnostics/protocol validation, real scooter validation, cloud/accounts, leaderboard, Live Activities/widgets/App Intents, accessibility/performance/error hardening, end-to-end/release prep. Do not stop after a single screen or ask whether to continue.
+
+## Hardware validation still outstanding
+Real MAXSHOT advertisement identity, BLE services/characteristics, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, and AccessorySetupKit descriptors. Separate APP COMPLETE from HARDWARE VALIDATION REQUIRED.
+
+## Recovery requirement
+After every significant milestone update `PROJECT_STATE.md`, `DECISIONS.md`, `PROTOCOL_NOTES.md` when relevant, `DESIGN_SYSTEM.md` when visual rules change, and this file. Keep enough information here that a fresh chat can locate the existing repo, build it before edits, inspect recent commits/screenshots, and continue the exact unfinished milestone without asking the user to re-explain the project.
