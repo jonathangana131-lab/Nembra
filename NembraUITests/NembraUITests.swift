@@ -8,12 +8,6 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    override func tearDown() {
-        XCUIDevice.shared.orientation = .portrait
-        super.tearDown()
-    }
-
-    @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
@@ -76,6 +70,7 @@ final class NembraUITests: XCTestCase {
 
     @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
+        defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
@@ -94,6 +89,7 @@ final class NembraUITests: XCTestCase {
 
     @MainActor
     func testLandscapeDashboardStoppedControlsConfirmMode() {
+        defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
