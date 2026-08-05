@@ -32,8 +32,10 @@ jobs:
           gzip -dc /tmp/nembra.tar.gz > /tmp/nembra.tar
           tar -xf /tmp/nembra.tar
 
+          # Workflow-file mutations are performed afterward through the connected
+          # GitHub app. The Actions token intentionally imports source only.
           rm -rf .bootstrap
-          rm -f .github/workflows/bootstrap-import.yml
+          rm -f .github/workflows/xcode27-simulator.yml
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
