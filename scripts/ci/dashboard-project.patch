@@ -20,7 +20,7 @@ diff --git a/Nembra.xcodeproj/project.pbxproj b/Nembra.xcodeproj/project.pbxproj
 +				100000000000000000000032 /* Dashboard */,
  				100000000000000000000009 /* Resources */,
  			);
-@@ -131,4 +134,10 @@
+@@ -131,4 +134,11 @@
  			path = Features/Home;
  			sourceTree = "<group>";
  		};
