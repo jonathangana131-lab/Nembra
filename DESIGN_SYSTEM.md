@@ -1,16 +1,16 @@
-# NEMBRA DESIGN SYSTEM — v0.1
+# NEMBRA DESIGN SYSTEM — v0.2
 
 ## Personality
-Quiet precision. Native iOS at rest; instrument-grade while riding. No gamer RGB, fake carbon fiber, fake analog gauges, or giant grids of glass cards.
+Quiet precision. Native iOS in portrait; instrument-grade while riding. No gamer RGB, fake carbon fiber, fake analog gauges, giant grids of glass cards, or decorative vehicle imagery that displaces useful information.
 
 ## Brand mark direction
 An abstract `N` built from two route/trajectory strokes with a small forward cut. It should read as motion without looking like a racing logo.
 
 ## Typography
 - System/SF family only in app UI.
-- Portrait: semantic text styles wherever possible.
-- Dashboard: fixed, tabular monospaced digits only where stable instrumentation demands it.
-- Numeric units are visually subordinate and never cause width jumps.
+- Portrait: semantic text styles wherever practical.
+- Dashboard: fixed/tabular digits only where stable instrumentation requires them.
+- Numeric units are subordinate and never cause width jumps.
 
 ## Spacing
 Base rhythm: 4 pt.
@@ -21,44 +21,53 @@ Base rhythm: 4 pt.
 - section: 24
 - major separation: 32
 
-Avoid arbitrary one-off spacing unless optical alignment genuinely needs it.
+Use optical corrections sparingly; do not accumulate arbitrary spacing values.
 
 ## Radius
 - compact control: 14
 - regular control/surface: 20
-- hero surface: 28
-Do not stack multiple rounded rectangles merely to make “cards.”
+- rare hero surface: 28
+Do not stack rounded rectangles merely to manufacture “cards.”
 
 ## Materials
-- Normal content: solid/system backgrounds and restrained gradients.
-- Liquid Glass: navigation chrome, primary floating controls, compact mode/action controls where interaction benefits from glass response.
-- Never place a glass panel over another glass panel without a hierarchy reason.
+- Normal content: system backgrounds/secondary backgrounds and restrained depth.
+- Liquid Glass: interactive chrome, floating actions, compact controls where the physical response earns it.
+- Never place glass on every informational surface.
+- Never stack glass panels without a hierarchy reason.
+
+## Portrait Home
+1. Vehicle status and useful information outrank artwork.
+2. Default hierarchy: vehicle identity + connection/lock → Battery/Trip/Mode → immediate controls → mode → vehicle details/ride context.
+3. A large scooter hero is not required. Exact vehicle art is contextual and must earn its space.
+4. Disconnected/reconnecting values must read as last-known, not live.
+5. Safety-sensitive controls reflect obvious domain restrictions before tap, while the service remains authoritative.
+6. Low battery gets semantic priority; avoid turning the entire screen into a warning theme.
+7. Avoid a dashboard-card mosaic. Prefer one or two coherent grouped surfaces plus native rows.
 
 ## Color behavior
-Use semantic system colors plus one restrained Nembra accent. Mode personality comes from hierarchy, motion, and subtle tint—not completely different RGB themes.
+Use semantic system colors plus one restrained Nembra accent. Mode personality comes from hierarchy, motion, and subtle tint—not separate RGB themes. Red is reserved for meaningful warnings/errors, not Sport decoration.
 
 ## Motion
-- Controls acknowledge immediately with haptic/pressed feedback.
-- Domain state does not visually commit until confirmed by service state.
+- Controls provide immediate pressed/haptic feedback; domain state commits only after service confirmation.
 - Springs are short and interruptible.
-- Reduce Motion replaces spatial transforms with fades/state changes.
-- Dashboard speed animation is display-only interpolation; raw telemetry is untouched.
-- Rolling digits reserve fixed slot geometry. Carries roll upward when the display value rises; borrows roll downward when it falls. Leading digits appear/disappear inside reserved slots instead of resizing the number.
-- Decimal precision and unit placement remain stable during motion; do not animate the unit itself.
-- Rolling digits reserve fixed slot geometry. Carries roll upward when the value rises; borrows roll downward when it falls. Leading digits appear/disappear inside reserved slots instead of resizing the number.
-- Decimal precision and unit placement remain stable during motion; do not animate the unit itself.
+- Reduce Motion replaces spatial transformations with fades/state changes.
+- Dashboard interpolation is display-only; raw telemetry is untouched.
+- Rolling digits reserve fixed geometry. Carries roll upward when value rises; borrows roll downward when it falls.
+- Units/decimal precision remain stable during motion.
 
 ## Haptics
-- light: selection/mode stepping
-- rigid/medium: confirmed lock action
-- success: important command confirmed where appropriate
-- error: command failure/invalid test
-Avoid haptic spam from continuously changing telemetry.
+- light/selection: mode selection
+- rigid/medium: confirmed lock action where appropriate
+- success: important command confirmation sparingly
+- error: failed command/invalid performance test
+- never haptic-spam continuously changing telemetry
 
-## Dashboard principles
-1. speed is dominant,
-2. glance time is minimal,
-3. stopped controls disappear/reduce while moving,
-4. nav transforms the composition instead of opening a separate-looking page,
-5. mode changes personality subtly without hurting readability,
-6. battery/connection warnings outrank decorative telemetry.
+## Landscape Dashboard principles
+1. Dashboard is a dedicated cockpit, not portrait Home rotated.
+2. Speed is dominant and glance time minimal.
+3. Battery/mode/connection/ride distance remain visible without competing with speed.
+4. Stopped controls disappear or reduce while moving.
+5. Navigation later transforms the same composition rather than opening a separate-looking page.
+6. Mode personality is subtle and must not hurt readability.
+7. Battery/connection warnings outrank decorative telemetry.
+8. Render rate may exceed sensor rate, but visual frames are never stored as measured telemetry.

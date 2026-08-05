@@ -8,26 +8,38 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: NembraMetrics.major) {
-                VehicleHeroView(profile: vehicle.profile, state: vehicle.state)
+            LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
+                vehicleHeader
 
                 if vehicle.state.connection != .connected {
                     connectionRecovery
                 }
 
-                primaryStatus
-                quickControls
-                vehicleDetails
+                statusPanel
+                controlsSection
+
+                if !supportedModes.isEmpty {
+                    modeSection
+                }
+
+                vehicleSection
             }
             .padding(.horizontal, 20)
+            .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(Color(uiColor: .systemBackground))
         .navigationTitle("Nembra")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                connectionBadge
+                NavigationLink {
+                    VehicleControlsView()
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityLabel("Vehicle controls")
             }
         }
         .alert("Command not confirmed", isPresented: errorPresented) {
@@ -40,11 +52,14 @@ struct HomeView: View {
             isPresented: $showLockConfirmation,
             titleVisibility: .visible
         ) {
-            Button(vehicle.state.isLocked == true ? "Unlock" : "Lock", role: vehicle.state.isLocked == true ? nil : .destructive) {
+            Button(
+                vehicle.state.isLocked == true ? "Unlock" : "Lock",
+                role: vehicle.state.isLocked == true ? nil : .destructive
+            ) {
                 Task { await vehicle.setLocked(!(vehicle.state.isLocked ?? false)) }
             }
         } message: {
-            Text("The state changes only after the scooter confirms the command.")
+            Text("Nembra changes the lock state only after the scooter confirms the command.")
         }
     }
 
@@ -55,20 +70,334 @@ struct HomeView: View {
         )
     }
 
+    private var vehicleHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(vehicle.profile.identity.displayName)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Label {
+                    Text(vehicleStatusText)
+                } icon: {
+                    Circle()
+                        .fill(connectionIndicatorColor)
+                        .frame(width: 7, height: 7)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            if let isLocked = vehicle.state.isLocked {
+                Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isLocked ? .primary : .secondary)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.055), in: Capsule())
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if vehicle.state.connection != .connected && hasRetainedSummaryData {
+                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+            }
+
+            HStack(spacing: 0) {
+                statusMetric(
+                    title: "Battery",
+                    value: batteryText,
+                    icon: batteryIcon,
+                    accessibilityIdentifier: "home.metric.battery",
+                    valueStyle: batteryValueStyle
+                )
+                metricDivider
+                statusMetric(
+                    title: "Trip",
+                    value: tripDistanceText,
+                    icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                    accessibilityTitle: "Scooter Trip",
+                    accessibilityIdentifier: "home.metric.trip"
+                )
+                metricDivider
+                statusMetric(
+                    title: "Mode",
+                    value: vehicle.state.rideMode?.displayName ?? "—",
+                    icon: "gauge.with.dots.needle.67percent",
+                    accessibilityIdentifier: "home.metric.mode"
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.primary.opacity(0.045))
+        }
+    }
+
+    private var metricDivider: some View {
+        Divider()
+            .frame(height: 44)
+            .padding(.horizontal, 12)
+    }
+
+    private func statusMetric(
+        title: String,
+        value: String,
+        icon: String,
+        accessibilityTitle: String? = nil,
+        accessibilityIdentifier: String,
+        valueStyle: Color = .primary
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.caption)
+                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
+                .lineLimit(1)
+
+            Text(value)
+                .font(.title3.weight(.semibold).monospacedDigit())
+                .foregroundStyle(valueStyle)
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityTitle ?? title)
+        .accessibilityValue(value)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private var controlsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(title: "Controls")
+
+            HStack(spacing: 12) {
+                if vehicle.profile.capabilities.supportsHeadlight {
+                    actionControl(
+                        title: "Light",
+                        subtitle: lightSubtitle,
+                        icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
+                        active: vehicle.state.isHeadlightOn == true,
+                        pending: vehicle.pendingCommands.contains(.headlight),
+                        available: vehicle.state.isHeadlightOn != nil,
+                        enabled: true
+                    ) {
+                        guard let isOn = vehicle.state.isHeadlightOn else { return }
+                        Task { await vehicle.setHeadlight(!isOn) }
+                    }
+                }
+
+                if vehicle.profile.capabilities.supportsLock {
+                    actionControl(
+                        title: lockControlTitle,
+                        subtitle: lockSubtitle,
+                        icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
+                        active: vehicle.state.isLocked == true,
+                        pending: vehicle.pendingCommands.contains(.lock),
+                        available: vehicle.state.isLocked != nil,
+                        enabled: canChangeLockState
+                    ) {
+                        showLockConfirmation = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func actionControl(
+        title: String,
+        subtitle: String,
+        icon: String,
+        active: Bool,
+        pending: Bool,
+        available: Bool,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 11) {
+                ZStack {
+                    Circle()
+                        .fill(active ? Color.primary.opacity(0.10) : Color.primary.opacity(0.055))
+                        .frame(width: 36, height: 36)
+
+                    if pending {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(available ? subtitle : "Unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 13)
+            .frame(height: 58)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .nembraGlassControl()
+        .disabled(
+            vehicle.state.connection != .connected ||
+            vehicle.isVehicleCommandPending ||
+            !available ||
+            !enabled
+        )
+    }
+
+    private var modeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(title: "Ride Mode")
+
+            HStack(spacing: 4) {
+                ForEach(supportedModes, id: \.self) { mode in
+                    Button {
+                        Task { await vehicle.setMode(mode) }
+                    } label: {
+                        ZStack {
+                            if vehicle.state.rideMode == mode {
+                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .fill(Color(uiColor: .systemBackground))
+                                    .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+                            }
+
+                            HStack(spacing: 5) {
+                                Text(mode.displayName)
+                                    .font(.subheadline.weight(vehicle.state.rideMode == mode ? .semibold : .medium))
+
+                                if vehicle.pendingRideMode == mode {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                }
+                            }
+                            .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+                    .accessibilityLabel(mode.displayName)
+                    .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
+                }
+            }
+            .padding(4)
+            .background(
+                Color.primary.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 17, style: .continuous)
+            )
+        }
+        .sensoryFeedback(.selection, trigger: vehicle.state.rideMode)
+    }
+
+    private var vehicleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(title: "Vehicle")
+
+            VStack(spacing: 0) {
+                ForEach(vehicleDetailItems.indices, id: \.self) { index in
+                    let item = vehicleDetailItems[index]
+                    detailRow(title: item.title, value: item.value, icon: item.icon)
+
+                    if index < vehicleDetailItems.index(before: vehicleDetailItems.endIndex) {
+                        Divider().padding(.leading, 42)
+                    }
+                }
+
+                if !vehicleDetailItems.isEmpty {
+                    Divider().padding(.leading, 42)
+                }
+
+                NavigationLink {
+                    VehicleControlsView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "slider.horizontal.3")
+                            .frame(width: 26)
+                            .foregroundStyle(.secondary)
+                        Text("All Vehicle Controls")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(minHeight: 48)
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(
+                Color(uiColor: .secondarySystemBackground),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+        }
+    }
+
+    private func sectionHeader(title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(.primary)
+    }
+
+    private func detailRow(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .frame(width: 26)
+                .foregroundStyle(.secondary)
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .font(.body)
+        .frame(minHeight: 48)
+        .accessibilityElement(children: .combine)
+    }
+
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
 
-        return HStack(spacing: 14) {
+        return HStack(spacing: 12) {
             Image(systemName: presentation.icon)
-                .font(.title2)
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(presentation.title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                 Text(presentation.message)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
@@ -106,206 +435,11 @@ struct HomeView: View {
                 EmptyView()
             }
         }
-    }
-
-    private var primaryStatus: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 20) {
-                    metric(title: "Battery", value: batteryText, systemImage: "battery.75percent")
-                    Divider().frame(height: 42)
-                    metric(title: "Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath", accessibilityTitle: "Scooter Trip")
-                    Divider().frame(height: 42)
-                    metric(title: "Mode", value: vehicle.state.rideMode?.displayName ?? "—", systemImage: "gauge.with.dots.needle.67percent")
-                }
-
-                VStack(spacing: 12) {
-                    metric(title: "Battery", value: batteryText, systemImage: "battery.75percent")
-                    Divider()
-                    metric(title: "Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath", accessibilityTitle: "Scooter Trip")
-                    Divider()
-                    metric(title: "Mode", value: vehicle.state.rideMode?.displayName ?? "—", systemImage: "gauge.with.dots.needle.67percent")
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
-    }
-
-    private var quickControls: some View {
-        VStack(alignment: .leading, spacing: NembraMetrics.group) {
-            HStack {
-                Text("Quick Controls")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                NavigationLink("All Controls") {
-                    VehicleControlsView()
-                }
-                .font(.subheadline.weight(.semibold))
-            }
-
-            if vehicle.profile.capabilities.supportsHeadlight || vehicle.profile.capabilities.supportsLock {
-                HStack(spacing: 12) {
-                    if vehicle.profile.capabilities.supportsHeadlight {
-                        controlButton(
-                            title: "Light",
-                            icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
-                            active: vehicle.state.isHeadlightOn == true,
-                            pending: vehicle.pendingCommands.contains(.headlight),
-                            available: vehicle.state.isHeadlightOn != nil
-                        ) {
-                            guard let isOn = vehicle.state.isHeadlightOn else { return }
-                            Task { await vehicle.setHeadlight(!isOn) }
-                        }
-                    }
-
-                    if vehicle.profile.capabilities.supportsLock {
-                        controlButton(
-                            title: vehicle.state.isLocked == true ? "Locked" : "Lock",
-                            icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
-                            active: vehicle.state.isLocked == true,
-                            pending: vehicle.pendingCommands.contains(.lock),
-                            available: vehicle.state.isLocked != nil
-                        ) {
-                            showLockConfirmation = true
-                        }
-                    }
-                }
-            }
-
-            if !supportedModes.isEmpty {
-                modeSelector
-            }
-        }
-    }
-
-    private var modeSelector: some View {
-        HStack(spacing: 8) {
-            ForEach(supportedModes, id: \.self) { mode in
-                Button {
-                    Task { await vehicle.setMode(mode) }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(mode.displayName)
-                            .font(.subheadline.weight(vehicle.state.rideMode == mode ? .semibold : .medium))
-                        if vehicle.pendingRideMode == mode {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
-                .background {
-                    if vehicle.state.rideMode == mode {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(.primary.opacity(0.08))
-                    }
-                }
-                .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
-            }
-        }
-        .padding(5)
-        .nembraGlassControl()
-        .accessibilityLabel("Ride mode")
-    }
-
-    @ViewBuilder
-    private var vehicleDetails: some View {
-        if !vehicleDetailItems.isEmpty {
-            VStack(alignment: .leading, spacing: NembraMetrics.group) {
-                Text("Vehicle")
-                    .font(.title3.weight(.semibold))
-
-                ForEach(vehicleDetailItems.indices, id: \.self) { index in
-                    let item = vehicleDetailItems[index]
-                    detailRow(title: item.title, value: item.value, icon: item.icon)
-                    if index < vehicleDetailItems.index(before: vehicleDetailItems.endIndex) {
-                        Divider()
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func controlButton(
-        title: String,
-        icon: String,
-        active: Bool,
-        pending: Bool,
-        available: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                if pending {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: icon)
-                }
-                Text(title).fontWeight(.semibold)
-                Spacer()
-                if active && !pending {
-                    Image(systemName: "checkmark")
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 54)
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-        .nembraGlassControl()
-        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || !available)
-    }
-
-    private func metric(title: String, value: String, systemImage: String, accessibilityTitle: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: systemImage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Text(value)
-                .font(.headline.monospacedDigit())
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(accessibilityTitle ?? title), \(value)")
-    }
-
-    private func detailRow(title: String, value: String, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .frame(width: 24)
-                .foregroundStyle(.secondary)
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
-        .font(.body)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var connectionBadge: some View {
-        Label(connectionText, systemImage: connectionIcon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(vehicle.state.connection == .connected ? .green : .secondary)
-            .accessibilityLabel("Scooter connection: \(connectionText)")
+        .padding(14)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
     }
 
     private enum ConnectionRecoveryAction {
@@ -359,21 +493,21 @@ struct HomeView: View {
         switch vehicle.state.connection {
         case .connecting:
             return ConnectionRecoveryPresentation(
-                title: "Connecting to scooter",
-                message: "Nembra is establishing a vehicle connection.",
+                title: "Connecting",
+                message: "Establishing a confirmed vehicle connection.",
                 icon: "antenna.radiowaves.left.and.right",
                 action: .progress
             )
         case .reconnecting:
             return ConnectionRecoveryPresentation(
-                title: "Trying to reconnect",
-                message: "Your last confirmed vehicle state stays read-only while the link recovers.",
+                title: "Reconnecting",
+                message: "Last confirmed values stay read-only until the scooter returns.",
                 icon: "antenna.radiowaves.left.and.right",
                 action: .progress
             )
         case .disconnected:
             return ConnectionRecoveryPresentation(
-                title: "Scooter is offline",
+                title: "Scooter offline",
                 message: "Controls stay read-only until the vehicle connection is confirmed.",
                 icon: "bolt.horizontal.circle",
                 action: .reconnect
@@ -396,6 +530,7 @@ struct HomeView: View {
 
     private var vehicleDetailItems: [VehicleDetailItem] {
         var items: [VehicleDetailItem] = []
+
         if vehicle.profile.capabilities.supportsOdometer {
             items.append(VehicleDetailItem(
                 title: "Odometer",
@@ -403,6 +538,7 @@ struct HomeView: View {
                 icon: "road.lanes"
             ))
         }
+
         if vehicle.profile.capabilities.supportsStartMode {
             items.append(VehicleDetailItem(
                 title: "Start",
@@ -410,6 +546,7 @@ struct HomeView: View {
                 icon: "figure.walk.motion"
             ))
         }
+
         if vehicle.profile.capabilities.supportsCruise {
             items.append(VehicleDetailItem(
                 title: "Cruise",
@@ -417,6 +554,7 @@ struct HomeView: View {
                 icon: "gauge.open.with.lines.needle.33percent"
             ))
         }
+
         return items
     }
 
@@ -445,29 +583,77 @@ struct HomeView: View {
         return enabled ? "On" : "Off"
     }
 
-    private var connectionText: String {
+    private var lightSubtitle: String {
+        guard let enabled = vehicle.state.isHeadlightOn else { return "Unknown" }
+        return enabled ? "On" : "Off"
+    }
+
+    private var lockControlTitle: String {
+        if isVehicleMoving && vehicle.state.isLocked != true { return "Lock" }
+        return vehicle.state.isLocked == true ? "Unlock" : "Lock"
+    }
+
+    private var lockSubtitle: String {
+        guard let locked = vehicle.state.isLocked else { return "Unknown" }
+        if !locked && isVehicleMoving { return "Stop to lock" }
+        return locked ? "Secured" : "Ready"
+    }
+
+    private var isVehicleMoving: Bool {
+        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    }
+
+    private var canChangeLockState: Bool {
+        vehicle.state.isLocked == true || !isVehicleMoving
+    }
+
+    private var isBatteryLow: Bool {
+        guard let battery = vehicle.state.batteryPercent else { return false }
+        return battery <= 15
+    }
+
+    private var batteryIcon: String {
+        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        switch battery {
+        case ...15: return "battery.0percent"
+        case ...35: return "battery.25percent"
+        case ...60: return "battery.50percent"
+        case ...85: return "battery.75percent"
+        default: return "battery.100percent"
+        }
+    }
+
+    private var batteryValueStyle: Color {
+        isBatteryLow ? .red : .primary
+    }
+
+    private var vehicleStatusText: String {
         if let issue = vehicle.state.connectionIssue {
             switch issue {
             case .bluetoothPoweredOff: return "Bluetooth Off"
             case .bluetoothPermissionDenied: return "Permission Needed"
             case .scooterUnavailable: return "Not Found"
-            case .unsupportedConfiguration: return "Unsupported"
+            case .unsupportedConfiguration: return "Unsupported Configuration"
             }
         }
 
         switch vehicle.state.connection {
-        case .connected: return "Connected"
+        case .connected:
+            if let speed = vehicle.state.speedKilometersPerHour, speed > 0.5 {
+                return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
+            }
+            return "Connected"
         case .connecting: return "Connecting"
         case .reconnecting: return "Reconnecting"
         case .disconnected: return "Offline"
         }
     }
 
-    private var connectionIcon: String {
-        if vehicle.state.connection == .connected { return "checkmark.circle.fill" }
-        if vehicle.state.connection == .connecting || vehicle.state.connection == .reconnecting {
-            return "antenna.radiowaves.left.and.right"
+    private var connectionIndicatorColor: Color {
+        switch vehicle.state.connection {
+        case .connected: .green
+        case .connecting, .reconnecting: .orange
+        case .disconnected: .secondary
         }
-        return "antenna.radiowaves.left.and.right.slash"
     }
 }

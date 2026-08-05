@@ -34,6 +34,20 @@
                ReferencedContainer = "container:Nembra.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E00000000000000000000030"
+               BuildableName = "NembraUITests.xctest"
+               BlueprintName = "NembraUITests"
+               ReferencedContainer = "container:Nembra.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -48,6 +62,15 @@
                BlueprintIdentifier = "E00000000000000000000002"
                BuildableName = "NembraAppTests.xctest"
                BlueprintName = "NembraAppTests"
+               ReferencedContainer = "container:Nembra.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E00000000000000000000030"
+               BuildableName = "NembraUITests.xctest"
+               BlueprintName = "NembraUITests"
                ReferencedContainer = "container:Nembra.xcodeproj">
             </BuildableReference>
          </TestableReference>

@@ -1,6 +1,36 @@
 import XCTest
 @testable import Nembra
 
+private actor AppCommandAcknowledgementGate {
+    private var entered = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForRelease() async {
+        entered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
 final class NembraAppTests: XCTestCase {
     func testMaxshotIdentityIsHumanReadable() {
         XCTAssertEqual(VehicleProfile.maxshotV1SPro.identity.displayName, "MAXSHOT V1S Pro")
@@ -51,9 +81,12 @@ final class NembraAppTests: XCTestCase {
     @MainActor
     func testVehicleStoreSerializesStateChangingCommands() async {
         let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let gate = AppCommandAcknowledgementGate()
         let service = SimulatedScooterService(
             initialState: initialState,
-            commandLatencyNanoseconds: 120_000_000
+            commandAcknowledgementGate: {
+                await gate.waitForRelease()
+            }
         )
         let store = VehicleStore(
             service: service,
@@ -63,10 +96,11 @@ final class NembraAppTests: XCTestCase {
         await store.start()
 
         let firstCommand = Task { await store.setHeadlight(true) }
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        await gate.waitUntilEntered()
         XCTAssertTrue(store.isVehicleCommandPending)
 
         await store.setCruise(true)
+        await gate.release()
         await firstCommand.value
 
         let snapshot = await service.snapshot()
@@ -74,5 +108,4 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(snapshot.isCruiseEnabled, false)
         XCTAssertFalse(store.isVehicleCommandPending)
     }
-
 }
