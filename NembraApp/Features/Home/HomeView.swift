@@ -121,7 +121,7 @@ struct HomeView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 20) {
                     metric(title: "Battery", value: batteryText, systemImage: "battery.75percent")
                     Divider().frame(height: 42)
-                    metric(title: "Scooter Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath")
+                    metric(title: "Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath", accessibilityTitle: "Scooter Trip")
                     Divider().frame(height: 42)
                     metric(title: "Mode", value: vehicle.state.rideMode?.displayName ?? "—", systemImage: "gauge.with.dots.needle.67percent")
                 }
@@ -129,7 +129,7 @@ struct HomeView: View {
                 VStack(spacing: 12) {
                     metric(title: "Battery", value: batteryText, systemImage: "battery.75percent")
                     Divider()
-                    metric(title: "Scooter Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath")
+                    metric(title: "Trip", value: tripDistanceText, systemImage: "point.bottomleft.forward.to.point.topright.scurvepath", accessibilityTitle: "Scooter Trip")
                     Divider()
                     metric(title: "Mode", value: vehicle.state.rideMode?.displayName ?? "—", systemImage: "gauge.with.dots.needle.67percent")
                 }
@@ -269,7 +269,7 @@ struct HomeView: View {
         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || !available)
     }
 
-    private func metric(title: String, value: String, systemImage: String) -> some View {
+    private func metric(title: String, value: String, systemImage: String, accessibilityTitle: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: systemImage)
                 .font(.caption)
@@ -282,6 +282,8 @@ struct HomeView: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(accessibilityTitle ?? title), \(value)")
     }
 
     private func detailRow(title: String, value: String, icon: String) -> some View {
