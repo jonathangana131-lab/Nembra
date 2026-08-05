@@ -68,6 +68,9 @@ xcodebuild \
   -configuration Debug \
   -destination "platform=iOS Simulator,id=$UDID" \
   -derivedDataPath "$DERIVED_DATA" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 60 \
+  -maximum-test-execution-time-allowance 60 \
   CODE_SIGNING_ALLOWED=NO \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
@@ -81,7 +84,6 @@ fi
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
-# Make screenshot state deterministic where Simulator supports these overrides.
 xcrun simctl status_bar "$UDID" override \
   --time 9:41 \
   --batteryState charged \
