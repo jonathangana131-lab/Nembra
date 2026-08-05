@@ -6,7 +6,13 @@ final class NembraUITests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication()
+    }
+
+    override func tearDown() {
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
     }
 
     func testConnectedHomeControlsConfirmStateAndNavigate() {
@@ -30,7 +36,7 @@ final class NembraUITests: XCTestCase {
         let lock = button(containing: "Lock")
         XCTAssertTrue(lock.exists)
         lock.tap()
-        let confirmLock = app.buttons["Lock"]
+        let confirmLock = app.sheets.buttons["Lock"]
         XCTAssertTrue(confirmLock.waitForExistence(timeout: 2))
         confirmLock.tap()
         XCTAssertTrue(waitForLabelFragment("Secured", element: lock))
