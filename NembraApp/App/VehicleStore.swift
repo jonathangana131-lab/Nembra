@@ -79,6 +79,13 @@ final class VehicleStore {
         }
     }
 
+    /// Raw speed evidence is exposed as a dedicated stream so the cockpit can
+    /// animate locally without making high-frequency render frames part of the
+    /// globally observed `VehicleState`.
+    func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample> {
+        await service.speedTelemetryUpdates()
+    }
+
     func connect() async {
         guard !pendingCommands.contains(.connect), !isVehicleCommandPending else { return }
         pendingCommands.insert(.connect)
