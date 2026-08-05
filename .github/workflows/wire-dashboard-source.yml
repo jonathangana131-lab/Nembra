@@ -6,6 +6,7 @@ on:
       - feature/landscape-dashboard
     paths:
       - .github/workflows/wire-dashboard-source.yml
+      - scripts/ci/dashboard-project.patch
 
 permissions:
   contents: write
