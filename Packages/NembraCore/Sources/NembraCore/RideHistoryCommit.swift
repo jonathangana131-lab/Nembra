@@ -7,6 +7,7 @@ public enum RideHistoryCommitResult: Equatable, Sendable {
 
 public enum RideHistoryStoreError: Error, Equatable, Sendable {
     case sessionConflict(UUID)
+    case corruptedRecord(UUID)
 }
 
 /// The durable completed-ride payload owned by local ride history.
@@ -28,6 +29,8 @@ public struct RideHistoryRecord: Codable, Equatable, Sendable {
 /// idempotent by session UUID: committing an equivalent record again returns
 /// `alreadyPresent`; the same UUID with different durable evidence must fail
 /// with `RideHistoryStoreError.sessionConflict` rather than overwrite history.
+/// Corrupt on-disk evidence must be surfaced as `corruptedRecord` and preserved
+/// for diagnostics instead of being silently replaced.
 public protocol RideHistoryStore: Sendable {
     func commit(_ record: RideHistoryRecord) async throws -> RideHistoryCommitResult
     func record(sessionID: UUID) async throws -> RideHistoryRecord?
