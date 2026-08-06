@@ -16,6 +16,9 @@ jobs:
     name: Resolve ungated ready PR heads
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: nembra-xcode27-sweep-resolver
+      cancel-in-progress: false
     permissions:
       actions: read
       contents: read
