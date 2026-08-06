@@ -79,6 +79,13 @@ final class VehicleStore {
         }
     }
 
+    /// Exposes raw speed evidence independently from `VehicleState` so the
+    /// Dashboard can animate locally without publishing render frames back into
+    /// globally observed vehicle state, ride history, distance, or diagnostics.
+    func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample> {
+        await service.speedTelemetryUpdates()
+    }
+
     func connect() async {
         guard !pendingCommands.contains(.connect), !isVehicleCommandPending else { return }
         pendingCommands.insert(.connect)
