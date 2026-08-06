@@ -241,7 +241,10 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
               confirmedAtDate.timeIntervalSinceReferenceDate.isFinite,
               endedAtDate.timeIntervalSinceReferenceDate.isFinite,
               qualityScreenedGPSDistanceMeters.isFinite,
-              qualityScreenedGPSDistanceMeters >= 0 else {
+              qualityScreenedGPSDistanceMeters >= 0,
+              !(continuity == .recoveredCheckpoint && transportGapEvidence == .noneObserved) else {
+            // A recovered ride contains a known unobserved process interval, so
+            // it cannot truthfully claim whole-ride no-disconnect observation.
             throw CompletedRideEvidenceError.invalidEvidence
         }
 
