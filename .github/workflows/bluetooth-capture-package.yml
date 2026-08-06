@@ -32,5 +32,14 @@ jobs:
             exit 1
           fi
 
-      - name: Test NembraBluetoothCapture
+      - name: Test NembraBluetoothCapture on macOS runner
         run: swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build NembraBluetoothCapture for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
