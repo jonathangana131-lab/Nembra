@@ -1,0 +1,65 @@
+name: Repair ride application PBX delimiters
+
+on:
+  push:
+    branches:
+      - feature/ride-application
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/ride-application
+          fetch-depth: 0
+
+      - name: Repair malformed list delimiters
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('Nembra.xcodeproj/project.pbxproj')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  'B00000000000000000000010\n\t\t\t\tB00000000000000000000035',
+                  'B00000000000000000000010,\n\t\t\t\tB00000000000000000000035',
+              ),
+              (
+                  'B00000000000000000000029\n\t\t\t\tB00000000000000000000036',
+                  'B00000000000000000000029,\n\t\t\t\tB00000000000000000000036',
+              ),
+              (
+                  'A00000000000000000000034 A00000000000000000000035, A00000000000000000000036, A00000000000000000000037,);',
+                  'A00000000000000000000034, A00000000000000000000035, A00000000000000000000036, A00000000000000000000037);',
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'Expected malformed PBX sequence not found: {old}')
+              text = text.replace(old, new, 1)
+
+          forbidden = [old for old, _ in replacements]
+          if any(value in text for value in forbidden):
+              raise SystemExit('Malformed PBX delimiter remains after repair')
+
+          path.write_text(text)
+          PY
+
+          scripts/validate_pbxproj_references.py
+
+      - name: Commit repair and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-ride-pbx.yml
+          git add Nembra.xcodeproj/project.pbxproj
+          git commit -m 'build: repair ride application Xcode project lists'
+          git push origin HEAD:feature/ride-application
