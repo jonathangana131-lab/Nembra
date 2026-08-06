@@ -38,10 +38,10 @@ jobs:
               '\t\tB00000000000000000000037 /* RideApplicationRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RideApplicationRuntime.swift; path = Packages/NembraCore/Sources/NembraCore/RideApplicationRuntime.swift; sourceTree = SOURCE_ROOT; };',
           ]
 
-          if 'A00000000000000000000035 /* RideStore.swift in Sources */' not in text:
+          if 'A00000000000000000000035 /* RideStore.swift in Sources */ = {isa = PBXBuildFile;' not in text:
               marker = '/* End PBXBuildFile section */'
               text = text.replace(marker, '\n'.join(build_entries) + '\n' + marker, 1)
-          if 'B00000000000000000000035 /* RideStore.swift */' not in text:
+          if 'B00000000000000000000035 /* RideStore.swift */ = {isa = PBXFileReference;' not in text:
               marker = '/* End PBXFileReference section */'
               text = text.replace(marker, '\n'.join(file_entries) + '\n' + marker, 1)
 
@@ -90,12 +90,12 @@ jobs:
               text = text[:source_phase.start()] + replacement + text[source_phase.end():]
 
           required = [
-              'A00000000000000000000035 /* RideStore.swift in Sources */',
-              'A00000000000000000000036 /* RideHistoryPersistence.swift in Sources */',
-              'A00000000000000000000037 /* RideApplicationRuntime.swift in Sources */',
-              'B00000000000000000000035 /* RideStore.swift */',
-              'B00000000000000000000036 /* RideHistoryPersistence.swift */',
-              'B00000000000000000000037 /* RideApplicationRuntime.swift */',
+              'A00000000000000000000035 /* RideStore.swift in Sources */ = {isa = PBXBuildFile;',
+              'A00000000000000000000036 /* RideHistoryPersistence.swift in Sources */ = {isa = PBXBuildFile;',
+              'A00000000000000000000037 /* RideApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile;',
+              'B00000000000000000000035 /* RideStore.swift */ = {isa = PBXFileReference;',
+              'B00000000000000000000036 /* RideHistoryPersistence.swift */ = {isa = PBXFileReference;',
+              'B00000000000000000000037 /* RideApplicationRuntime.swift */ = {isa = PBXFileReference;',
           ]
           if not all(marker in text for marker in required):
               raise SystemExit('Ride application Xcode wiring incomplete')
