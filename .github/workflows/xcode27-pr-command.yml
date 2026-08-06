@@ -3,6 +3,8 @@ name: Xcode 27 PR Exact-Head QA
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -15,11 +17,15 @@ jobs:
   resolve:
     name: Resolve trusted same-repo PR head
     if: >-
-      github.event.issue.pull_request &&
-      github.event.comment.body == '/xcode27' &&
-      (github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'COLLABORATOR')
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       github.event.comment.body == '/xcode27' &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR')) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
@@ -32,11 +38,17 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            })
+            let pr
+            if (context.eventName === 'pull_request') {
+              pr = context.payload.pull_request
+            } else {
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              })
+              pr = response.data
+            }
 
             const repository = `${context.repo.owner}/${context.repo.repo}`
             core.setOutput('head_sha', pr.head.sha)
@@ -48,7 +60,7 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.same_repo == 'true'
     concurrency:
-      group: nembra-xcode27-pr-command-${{ github.event.issue.number }}
+      group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}
       cancel-in-progress: true
     runs-on: xcode-27
     timeout-minutes: 30
