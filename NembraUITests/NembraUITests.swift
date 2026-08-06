@@ -98,8 +98,21 @@ final class NembraUITests: XCTestCase {
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
-        XCTAssertTrue(app.buttons["dashboard.control.light"].exists)
-        XCTAssertTrue(app.buttons["dashboard.control.lock"].exists)
+
+        let light = app.buttons["dashboard.control.light"]
+        let lock = app.buttons["dashboard.control.lock"]
+        assertMinimumTouchTarget(light, named: "Dashboard light")
+        assertMinimumTouchTarget(lock, named: "Dashboard lock")
+
+        let modeIdentifiers = [
+            "dashboard.mode.walk",
+            "dashboard.mode.eco",
+            "dashboard.mode.drive",
+            "dashboard.mode.sport"
+        ]
+        for identifier in modeIdentifiers {
+            assertMinimumTouchTarget(app.buttons[identifier], named: identifier)
+        }
 
         let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
         XCTAssertTrue(confirmedMode.waitForExistence(timeout: 2))
@@ -152,6 +165,31 @@ final class NembraUITests: XCTestCase {
             "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
         )
         keepScreenshot(named: screenshotName)
+    }
+
+    @MainActor
+    private func assertMinimumTouchTarget(
+        _ element: XCUIElement,
+        named name: String,
+        minimum: CGFloat = 44,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: 2), "\(name) control must exist.", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            minimum,
+            "\(name) touch target width must be at least \(minimum) pt.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            minimum,
+            "\(name) touch target height must be at least \(minimum) pt.",
+            file: file,
+            line: line
+        )
     }
 
     @MainActor
