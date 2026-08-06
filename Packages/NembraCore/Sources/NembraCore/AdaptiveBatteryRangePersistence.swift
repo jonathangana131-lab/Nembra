@@ -66,9 +66,9 @@ public struct AdaptiveBatteryRangePersistedState: Equatable, Codable, Sendable {
         guard historicalConsumed.isFinite,
               historicalConsumed >= 0,
               acceptedWindowCount >= 0,
-              // `ingest` increments this counter for every accepted window. A
-              // restored Int.max value would therefore make the next legitimate
-              // accepted window trap on integer overflow instead of failing closed.
+              // The live model independently rejects another accepted window at
+              // Int.max. Persistence is stricter: do not restore a terminal state
+              // that can no longer extend its learned history legitimately.
               acceptedWindowCount < Int.max,
               model.recentSamples.count <= acceptedWindowCount else {
             throw AdaptiveBatteryRangePersistedStateError.invalidHistoricalBounds
