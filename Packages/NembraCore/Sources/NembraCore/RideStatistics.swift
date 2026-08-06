@@ -121,6 +121,22 @@ public enum RideStatisticsPeriod: String, Codable, CaseIterable, Equatable, Send
     case allTime
 }
 
+/// Completeness of the numeric distance represented by one statistics summary.
+/// This classifies only the supplied ride collection; it does not claim that an
+/// upstream sync/history store itself has complete global coverage.
+public enum RideStatisticsDistanceAvailability: String, Codable, Equatable, Sendable {
+    /// The selected period contains no completed rides.
+    case noRides
+    /// Completed rides exist, but none has distance trustworthy enough to sum.
+    case unavailable
+    /// Some completed rides have trustworthy distance and others do not. The
+    /// numeric value is a known subtotal and must not be labeled a full total.
+    case partial
+    /// Every completed ride in the supplied period contributes trustworthy
+    /// distance to the numeric total.
+    case complete
+}
+
 /// Aggregated completed-ride statistics. The memberwise initializer remains
 /// module-internal so external callers cannot manufacture internally
 /// inconsistent summary counts.
@@ -130,9 +146,12 @@ public struct RideStatisticsSummary: Equatable, Sendable {
     public let ridingDayCount: Int
     public let trustworthyDistanceRideCount: Int
     public let excludedDistanceRideCount: Int
-    /// Nil means the period has no trustworthy distance evidence. A real zero
-    /// remains representable when at least one included ride legitimately has a
-    /// zero reconciled distance.
+    public let distanceAvailability: RideStatisticsDistanceAvailability
+    /// Nil means the period has no trustworthy distance evidence. When
+    /// `distanceAvailability == .partial`, this is only the sum of trustworthy
+    /// rides and must be presented as a known subtotal rather than the period's
+    /// complete mileage. A real zero remains representable when at least one
+    /// included ride legitimately has a zero reconciled distance.
     public let totalDistanceMeters: Double?
     public let longestRideDistanceMeters: Double?
     public let longestRideSessionID: UUID?
@@ -187,6 +206,17 @@ public enum RideStatisticsAggregator {
             }
         }
 
+        let distanceAvailability: RideStatisticsDistanceAvailability
+        if periodRides.isEmpty {
+            distanceAvailability = .noRides
+        } else if trustworthyDistanceRideCount == 0 {
+            distanceAvailability = .unavailable
+        } else if excludedDistanceRideCount == 0 {
+            distanceAvailability = .complete
+        } else {
+            distanceAvailability = .partial
+        }
+
         let ridingDays = Set(periodRides.map { calendar.startOfDay(for: $0.attributedDate) })
         let longestStreak = longestConsecutiveDayStreak(
             days: ridingDays,
@@ -199,6 +229,7 @@ public enum RideStatisticsAggregator {
             ridingDayCount: ridingDays.count,
             trustworthyDistanceRideCount: trustworthyDistanceRideCount,
             excludedDistanceRideCount: excludedDistanceRideCount,
+            distanceAvailability: distanceAvailability,
             totalDistanceMeters: totalDistanceMeters,
             longestRideDistanceMeters: longestRideDistanceMeters,
             longestRideSessionID: longestRideSessionID,
