@@ -40,7 +40,7 @@ Every authoritative callback from the locked/required source advances `lastObser
 
 If a GPS sample at uptime 300 fails the accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the run invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
 
-When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose/poison the future run source.
+When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose or poison the future run source.
 
 ### Accepted timing evidence
 
@@ -62,7 +62,19 @@ A run begins from a verified stationary anchor.
 
 Timing-window construction is evaluator-owned. Callers receive immutable window evidence but cannot publicly construct contradictory/reversed windows and trigger a precondition through the public API.
 
-Example:
+### Retained timing-evidence sample count
+
+`AccelerationRunResult.timingEvidenceSampleCount` is deliberately **not** named an authoritative-callback count. It counts the accepted measurements actually retained by the final timing trace:
+
+- the newest stationary measurement that forms the launch window;
+- the first moving measurement;
+- each accepted post-launch measurement through the target crossing.
+
+Earlier stationary measurements that were superseded by a newer stationary launch anchor are real observations, but they are not part of the final run timing window and therefore are not counted as retained timing evidence.
+
+Example: stationary samples at 1.0 s and 2.0 s, first movement at 3.0 s, and target at 4.0 s produce a launch window `[2.0, 3.0]` and a retained timing-evidence count of **3**, not 4.
+
+## Bounded timing example
 
 - stationary packet at 1.0 s;
 - first moving packet at 2.0 s;
@@ -103,10 +115,11 @@ This slice does **not**:
 
 ## Software verification
 
-The revised focused Swift 6.2.1 package passed **14/14 deterministic tests** covering:
+The revised focused Swift 6.2.1 package passed **15/15 deterministic tests** covering:
 
 - rolling-start rejection;
 - packet-bounded elapsed timing;
+- retained timing-evidence count excluding superseded stationary anchors;
 - sparse immediate target crossing;
 - motion-estimate rejection;
 - source-change invalidation;
