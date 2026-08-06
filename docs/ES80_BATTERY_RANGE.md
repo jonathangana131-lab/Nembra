@@ -1,30 +1,35 @@
 # AOVOPRO ES80 Battery + Adaptive Range
 
-Status: permanent product/engineering contract. Hardware behavior remains unverified until real ES80 captures prove it.
+Status: permanent product/engineering contract. Hardware protocol semantics remain unverified until real ES80 captures prove them.
 
 ## Product target
 
-The AOVOPRO ES80 is Nembra's primary real scooter target. Battery/range must become one of Nembra's signature systems and must feel like a premium EV instrument while remaining technically honest.
+The **newer 2025-generation AOVOPRO ES80** is Nembra's primary real scooter target. Battery/range must become one of Nembra's signature systems and must feel like a premium EV instrument while remaining technically honest.
 
-The stock Tuya app visibly shows a battery percentage. That observation proves a user-facing percentage exists somewhere in the stock stack; it does **not** prove the scooter directly transmits a true 1%-resolution 0–100 SoC.
+The physical 2025 target's stock app visibly exposes a numeric battery percentage and, in its details/device-information surface, live voltage, amps/current, and wattage/power. Those direct app observations prove the values exist somewhere in the current stock stack; they do **not** yet prove exact BLE/Tuya DP identifiers, raw units/scaling/signedness, native cadence, whether wattage is independently transmitted versus derived, or whether the scooter directly transmits a true 1%-resolution 0–100 SoC.
+
+Public/provenance research for this generation is tracked in `docs/ES80_PUBLIC_RESEARCH.md`.
 
 ## Hardware battery investigation
 
 Real ES80 capture must determine:
-- BLE/Tuya DP or characteristic carrying battery information
-- whether percentage is transmitted directly or derived by Tuya
+- BLE/Tuya DP or characteristic carrying battery percentage
+- whether percentage is transmitted directly or derived by firmware/Tuya
 - percentage resolution/quantization
 - update frequency and latency
 - whether it updates while riding
 - whether it freezes then jumps several points
-- whether pack voltage is exposed
-- whether charging state is exposed
-- behavior under acceleration/load
+- raw voltage DP/field source, scale, units, and cadence
+- raw current DP/field source, scale, signedness, cadence, and whether it represents battery/controller input current
+- whether visible wattage/power is independently reported or calculated from other fields
+- whether charging state is separately exposed
+- behavior of voltage/current/power under acceleration/load
+- current/power behavior during regenerative/electronic braking
 - recovery after stopping/rest
 - low-SoC/cutoff behavior
 - firmware/batch differences
 
-Do not promote any of those items to VERIFIED without packet/GATT evidence.
+Do not promote raw DP/characteristic semantics to VERIFIED merely because a value is visible in the stock app. The app-visible values are legitimate correlation anchors for passive capture.
 
 ## One battery/range domain
 
@@ -43,6 +48,7 @@ Conceptually preserve:
 - MEASURED SOC
 - ESTIMATED SOC
 - DISPLAY SOC
+- VERIFIED ELECTRICAL TELEMETRY
 - EFFICIENCY MODEL
 - ESTIMATED RANGE
 - RANGE CONFIDENCE
@@ -70,9 +76,23 @@ If only bars exist, do not invent precise percentage.
 
 ## Voltage and sag
 
-If verified voltage exists, research the real ES80 pack configuration/chemistry before using it for SoC/range corroboration.
+The stock app visibly exposes live voltage on the physical 2025 target. Before Nembra uses that value as measured evidence, capture must establish its exact raw source/scale/cadence and research the real ES80 pack configuration/chemistry.
 
 Under load, visible battery must not bounce absurdly because of voltage sag. Use evidence-backed filtering/hysteresis/rest behavior as appropriate. Never directly convert an instantaneous sagging voltage reading into precise SoC or remaining range.
+
+## Current, power, and future energy evidence
+
+The stock app also visibly exposes live amps/current and wattage/power on the physical 2025 target. Treat those as high-value correlation anchors, not yet as authoritative Nembra energy telemetry.
+
+Before consuming current/power in production logic, determine:
+- whether current is battery current, controller input current, or another measurement
+- signedness and behavior during electronic/regen braking
+- native report cadence and timestamp quality
+- whether power is independently transmitted or derived from voltage × current
+- whether values update synchronously enough for integration
+- behavior at zero load, acceleration, cruising, braking, and charging
+
+Only after those semantics are verified may Nembra consider energy integration. A stock-app watt number by itself does not justify Wh/mi.
 
 ## Interactive primary battery instrument
 
@@ -98,9 +118,11 @@ Core question:
 
 > How much real distance has this specific ES80 historically traveled for the battery energy/percentage it consumed under conditions similar to right now?
 
-When percentage is the best battery evidence, learn from actual distance versus authoritative percentage consumed over meaningful windows. Avoid using one tiny 1% movement as a decisive efficiency sample because quantization/noise can dominate it.
+When percentage is the best verified battery evidence, learn from actual distance versus authoritative percentage consumed over meaningful windows. Avoid using one tiny 1% movement as a decisive efficiency sample because quantization/noise can dominate it.
 
 Candidate useful windows may be 5%, 10%, 20%, or larger, but the actual minimum window must be chosen after real ES80 percentage behavior is measured.
+
+If later capture proves current/power timing is trustworthy enough for energy integration, the estimator may evolve beyond percent-based learning without discarding the percent-based historical model.
 
 ## Recent + historical model
 
@@ -115,12 +137,11 @@ Range prediction should combine:
 - verified ride mode only when its effect is empirically supported
 - legitimate elevation/hill evidence where route/elevation quality supports it
 - verified voltage evidence where available
+- verified current/power/energy evidence only if raw semantics and timing are proven
 - historical ES80 efficiency
 - observed aging/degradation
 
-Do not invent motor current, watts, power, energy, or Wh/mi if the vehicle does not expose the required evidence.
-
-If future verified battery current/power/energy exists, architecture may evolve toward energy-based efficiency.
+Do not invent motor current, watts, power, energy, or Wh/mi from app presentation alone. App-visible electrical values become estimator evidence only after their raw source and timing semantics are verified.
 
 ## Adaptive behavior while riding
 
@@ -196,6 +217,7 @@ Where legitimately available, completed rides may contribute:
 - speed behavior
 - route/elevation evidence where legitimate
 - verified voltage evidence
+- verified energy evidence in a future model only when raw current/power timing supports integration
 
 Estimated display trajectories may be persisted separately only if genuinely useful and never as measured hardware telemetry.
 
@@ -213,7 +235,8 @@ Treat adaptive range as its own serious vertical slice. Deterministic tests must
 - incomplete rides
 - low battery
 - aging over many rides
-- voltage sag when voltage exists
+- voltage sag when voltage is verified
+- current/power discontinuity or cadence gaps if an energy-based path is later enabled
 
 Verify that the model:
 - adapts
@@ -235,5 +258,6 @@ Battery/range belongs in the mandatory Production Visual Overhaul. Final experie
 - excellent low-battery treatment
 - verified charging treatment
 - stable learned range
+- rich electrical details only when telemetry semantics are verified
 - no generic Tuya progress bar
 - no fake precision
