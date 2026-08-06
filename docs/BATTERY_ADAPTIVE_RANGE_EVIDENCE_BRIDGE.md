@@ -32,6 +32,26 @@ The worker-owned delta is five files:
 
 If a dependency moves or lands, this lane must reconcile to its accepted exact head before final QA and production retargeting.
 
+## Public API boundary
+
+Production consumers are deliberately forced through `BatteryAdaptiveRangeLearningPipeline`.
+
+The pure semantic `BatteryAdaptiveRangeEvidenceAdapter`, the stateful `BatteryAdaptiveRangeEvidenceBridge`, the bridge's stream validator, and the pipeline's internal `BatteryRangeLearningWindowAssembler` state are all internal to NembraCore. Tests can inspect them through `@testable`, but app/UI code cannot bypass the atomic pipeline or use ephemeral anchors/distance as presentation truth.
+
+`BatteryAdaptiveRangePipelineResult` is public and read-only, but its initializer is internal: consumers can inspect a result returned by the validated pipeline but cannot manufacture one that appears to have passed the seam.
+
+A disposable external-client build plus Swift symbol graph extraction confirmed the exported worker surface contains only:
+
+- `BatteryAdaptiveRangeLearningPipeline.init()`;
+- `markUnobservedInterval()`;
+- `recordDistance(deltaMeters:coverage:)`;
+- `recordTransportGap()`;
+- `acceptBatteryObservation(_:policy:)`;
+- public read-only `BatteryAdaptiveRangePipelineResult` properties;
+- the public action enum carried by that result.
+
+The adapter, internal bridge, ephemeral assembler property, and result initializer were absent from the exported symbol graph.
+
 ## Value-authority rule
 
 Only `verifiedVehicleMeasurement + stateOfChargePercent` may become a `BatterySOCReading` for adaptive range.
@@ -50,7 +70,7 @@ The reset does not promote the attached value. A later verified SoC enters only 
 
 This intentionally corrects the first bridge draft, which reset only for verified measurements and could therefore have allowed a later verified SoC to close a span across an interval already known to be unobserved.
 
-An explicit boundary is also accepted conservatively when it arrives without a prior local `markUnobservedInterval()` call. The parent stream validator treats that as a fresh continuity epoch, and this pipeline simultaneously resets the assembler. The higher layer does not get to erase a reported gap merely because it failed to preannounce it locally.
+An explicit boundary is also accepted conservatively when it arrives without a prior local `markUnobservedInterval()` call. It starts a fresh uptime epoch even if the new process-local uptime is numerically lower than the prior epoch, and the pipeline simultaneously resets the assembler.
 
 ## Non-SoC electrical fields
 
@@ -60,18 +80,18 @@ This layer performs no voltage→SoC conversion, current/power integration, watt
 
 ## Truth actions
 
-`BatteryAdaptiveRangeEvidenceAdapter` emits:
+`BatteryAdaptiveRangeEvidenceAdapter` internally emits:
 
 - `ignore` — continuous observation has no production range-learning effect;
 - `resetContinuity` — discard the in-flight consumption span without promoting this value;
 - `ingestSOC` — continuous verified SoC may enter adaptive-range assembly;
 - `resetContinuityAndIngestSOC` — discard the old span first, then establish verified SoC as fresh evidence.
 
-The explicit action avoids a lossy optional-reading API where continuity could disappear merely because the attached value itself was not learning-eligible.
+The explicit action avoids a lossy optional-reading seam where continuity could disappear merely because the attached value itself was not learning-eligible.
 
 ## Stateful battery stream validation
 
-`BatteryAdaptiveRangeEvidenceBridge` wraps PR #34's `BatteryEvidenceStreamValidator`.
+The internal bridge wraps PR #34's `BatteryEvidenceStreamValidator`.
 
 It preserves the parent contract:
 
@@ -82,7 +102,7 @@ It preserves the parent contract:
 - an explicit post-gap boundary starts a fresh uptime epoch, including after process/boot changes;
 - a spontaneous explicit boundary is conservatively accepted as a new epoch rather than ignored.
 
-The bridge validates on a candidate validator and commits only after acceptance succeeds.
+Validation occurs on a candidate validator and commits only after acceptance succeeds.
 
 ## Atomic evidence → window pipeline
 
@@ -131,9 +151,9 @@ The pipeline does not infer which case occurred; a higher layer must classify it
 
 `recordDistance(deltaMeters:coverage:)` delegates to PR #54's assembler. This layer does not select odometer versus GPS, upgrade partial/unknown coverage to complete, reconstruct distance across missing intervals, or infer ride/session identity.
 
-Distance coverage remains monotonic within a span: complete can degrade to partial or unknown and is preserved on the emitted candidate. Invalid/nonfinite/negative distance fails before state mutation.
+Distance coverage remains monotonic within a span: complete can degrade to partial or unknown and is preserved on the emitted candidate. Invalid/nonfinite/negative distance and finite-addition overflow fail before accumulator mutation in the parent assembler.
 
-Distance observed after a non-authoritative post-gap boundary but before the first verified SoC anchor is also not allowed to leak into the later learning span. The assembler may temporarily hold that distance while it has no anchor, but the first authoritative SoC establishes a new anchor via rebase and clears the pre-anchor distance. Only distance observed after that verified anchor can close a candidate.
+Distance observed after a non-authoritative post-gap boundary but before the first verified SoC anchor is not allowed to leak into the later learning span. The assembler may temporarily hold that distance while it has no anchor, but the first authoritative SoC establishes a new anchor via rebase and clears the pre-anchor distance. Only distance observed after that verified anchor can close a candidate.
 
 ## Model boundary stays separate
 
@@ -157,14 +177,14 @@ Covers truth-role gating, every explicit gap reset, non-SoC exclusion, stream bo
 
 ### PR #54 seam suite
 
-`BatteryAdaptiveRangePipelineIntegrationTests.swift` now adds eight explicit integration cases:
+`BatteryAdaptiveRangePipelineIntegrationTests.swift` covers eight integration cases:
 
 - partial→unknown distance coverage propagation;
 - invalid distance atomicity;
 - `markUnobservedInterval()` clearing anchor, latest-authoritative cursor, distance, coverage, and gap state;
 - direct verified first-post-gap SoC reset + re-anchor;
 - pre-anchor post-gap distance discarded when the first verified SoC establishes a clean anchor;
-- spontaneous explicit boundary resetting stream and assembler without a prior local gap marker;
+- spontaneous lower-uptime explicit boundary resetting stream and assembler without a prior local gap marker;
 - `80 → 77 → 79` measured recovery rebasing at the latest authoritative reading and later clean `79 → 76` candidate formation;
 - continuous stock-app SoC unable to advance the latest-authoritative cursor.
 
@@ -181,7 +201,9 @@ Covers truth-role gating, every explicit gap reset, non-SoC exclusion, stream bo
 
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window pipeline harness: **6/6 passed**;
-- PR #54 seam + model harness after latest continuity additions: **12/12 debug passed** and **12/12 release passed**.
+- current latest-assembler + seam + model harness: **12/12 debug passed** and **12/12 release passed**;
+- external-client build/run passed against the narrowed public API;
+- Swift symbol graph extraction confirmed internal seam types/properties/result initializer are not exported.
 
 The first two attempts to run an earlier compressed seam harness hit syntax mistakes only in the disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used normal valid Swift syntax. After correcting the disposable copy, all subsequent debug/release contract runs were green. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
 
