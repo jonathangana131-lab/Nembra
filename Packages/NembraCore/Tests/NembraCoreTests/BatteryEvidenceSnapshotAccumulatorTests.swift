@@ -77,6 +77,31 @@ struct BatteryEvidenceSnapshotAccumulatorTests {
         #expect(accumulator == before)
     }
 
+    @Test("replaying identical boundary evidence does not erase same-uptime fields")
+    func duplicateBoundaryIsGloballyIdempotent() throws {
+        var accumulator = BatteryEvidenceSnapshotAccumulator()
+        let socBoundary = try observation(
+            field: .stateOfChargePercent,
+            uptime: 4,
+            numericValue: 54,
+            continuity: .afterUnobservedInterval
+        )
+        let voltage = try observation(
+            field: .voltageVolts,
+            uptime: 4,
+            numericValue: 39.5
+        )
+
+        try accumulator.ingest(socBoundary)
+        try accumulator.ingest(voltage)
+        let beforeReplay = accumulator
+
+        try accumulator.ingest(socBoundary)
+
+        #expect(accumulator == beforeReplay)
+        #expect(accumulator.currentSnapshot[.voltageVolts] == voltage)
+    }
+
     @Test("conflicting same-field same-uptime evidence fails atomically")
     func conflictingSameUptimeFieldFailsClosed() throws {
         var accumulator = BatteryEvidenceSnapshotAccumulator()
