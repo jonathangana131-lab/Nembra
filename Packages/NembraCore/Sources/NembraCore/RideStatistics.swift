@@ -298,7 +298,16 @@ public enum RideStatisticsAggregator {
             recordsBySessionID[ride.sessionID] = ride
             uniqueRides.append(ride)
         }
-        return uniqueRides
+
+        // History/persistence fetch order is not semantic evidence. Establish a
+        // stable order before floating-point aggregation so the same immutable
+        // ride set yields the same summary independent of upstream ordering.
+        return uniqueRides.sorted { lhs, rhs in
+            if lhs.attributedDate != rhs.attributedDate {
+                return lhs.attributedDate < rhs.attributedDate
+            }
+            return lhs.sessionID.uuidString < rhs.sessionID.uuidString
+        }
     }
 
     private static func contains(
