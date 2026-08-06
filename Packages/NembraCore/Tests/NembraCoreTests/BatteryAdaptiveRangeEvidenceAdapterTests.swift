@@ -22,7 +22,7 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
     @Test("verified continuous SoC becomes authoritative adaptive-range evidence")
     func verifiedSOCMapsExactly() throws {
         let source = try observation(
-            value: .stateOfChargePercent(73.5),
+            value: BatterySemanticValue.stateOfChargePercent(73.5),
             role: .verifiedVehicleMeasurement,
             uptime: 42
         )
@@ -49,10 +49,11 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
 
         for role in roles {
             let source = try observation(
-                value: .stateOfChargePercent(61),
+                value: BatterySemanticValue.stateOfChargePercent(61),
                 role: role
             )
-            #expect(try BatteryAdaptiveRangeEvidenceAdapter.action(for: source) == .ignore)
+            let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: source)
+            #expect(action == .ignore)
         }
     }
 
@@ -67,21 +68,22 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
 
         for role in roles {
             let source = try observation(
-                value: .stateOfChargePercent(60),
+                value: BatterySemanticValue.stateOfChargePercent(60),
                 role: role,
                 continuity: .afterUnobservedInterval
             )
-            #expect(try BatteryAdaptiveRangeEvidenceAdapter.action(for: source) == .ignore)
+            let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: source)
+            #expect(action == .ignore)
         }
     }
 
     @Test("verified non-SoC battery fields never become percentage learning evidence")
     func verifiedElectricalValuesDoNotTrainRange() throws {
         let values: [BatterySemanticValue] = [
-            try .voltageVolts(39.8),
-            try .currentAmps(-2.5),
-            try .powerWatts(98),
-            try .chargingState(false)
+            try BatterySemanticValue.voltageVolts(39.8),
+            try BatterySemanticValue.currentAmps(-2.5),
+            try BatterySemanticValue.powerWatts(98),
+            try BatterySemanticValue.chargingState(false)
         ]
 
         for value in values {
@@ -89,25 +91,62 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
                 value: value,
                 role: .verifiedVehicleMeasurement
             )
-            #expect(try BatteryAdaptiveRangeEvidenceAdapter.action(for: source) == .ignore)
+            let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: source)
+            #expect(action == .ignore)
         }
     }
 
-    @Test("verified non-SoC first value after a gap still resets range continuity")
+    @Test("every verified non-SoC first value after a gap resets range continuity")
     func verifiedElectricalGapResetsContinuity() throws {
-        let source = try observation(
-            value: .voltageVolts(40.2),
+        let values: [BatterySemanticValue] = [
+            try BatterySemanticValue.voltageVolts(40.2),
+            try BatterySemanticValue.currentAmps(-1.5),
+            try BatterySemanticValue.powerWatts(60),
+            try BatterySemanticValue.chargingState(true)
+        ]
+
+        for value in values {
+            let source = try observation(
+                value: value,
+                role: .verifiedVehicleMeasurement,
+                continuity: .afterUnobservedInterval
+            )
+            let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: source)
+            #expect(action == .resetContinuity)
+        }
+    }
+
+    @Test("verified non-SoC gap can reset before a later continuous SoC becomes clean evidence")
+    func verifiedNonSOCGapThenSOCProducesSeparateActions() throws {
+        let firstAfterGap = try observation(
+            value: BatterySemanticValue.voltageVolts(40.2),
             role: .verifiedVehicleMeasurement,
+            uptime: 4_999,
             continuity: .afterUnobservedInterval
         )
+        let laterSOC = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(52.25),
+            role: .verifiedVehicleMeasurement,
+            uptime: 5_000,
+            continuity: .continuous
+        )
 
-        #expect(try BatteryAdaptiveRangeEvidenceAdapter.action(for: source) == .resetContinuity)
+        let resetAction = try BatteryAdaptiveRangeEvidenceAdapter.action(for: firstAfterGap)
+        let socAction = try BatteryAdaptiveRangeEvidenceAdapter.action(for: laterSOC)
+
+        #expect(resetAction == .resetContinuity)
+        guard case let .ingestSOC(reading) = socAction else {
+            Issue.record("Expected later continuous verified SoC to become clean evidence")
+            return
+        }
+        #expect(reading.percentage == 52.25)
+        #expect(reading.receivedAtUptimeNanoseconds == 5_000)
     }
 
     @Test("verified SoC after an unobserved interval resets then establishes new evidence")
     func verifiedSOCAfterGapResetsAndIngests() throws {
         let source = try observation(
-            value: .stateOfChargePercent(52.25),
+            value: BatterySemanticValue.stateOfChargePercent(52.25),
             role: .verifiedVehicleMeasurement,
             uptime: 5_000,
             continuity: .afterUnobservedInterval
@@ -128,7 +167,7 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
     func socBoundariesArePreserved() throws {
         for percentage in [0.0, 100.0] {
             let source = try observation(
-                value: .stateOfChargePercent(percentage),
+                value: BatterySemanticValue.stateOfChargePercent(percentage),
                 role: .verifiedVehicleMeasurement
             )
 
@@ -144,7 +183,7 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
     @Test("wall clock metadata is not substituted for process-local range ordering")
     func bridgeUsesMonotonicUptimeEvidence() throws {
         let source = try BatteryEvidenceObservation(
-            value: .stateOfChargePercent(48),
+            value: BatterySemanticValue.stateOfChargePercent(48),
             role: .verifiedVehicleMeasurement,
             receivedAtUptimeNanoseconds: 9_999,
             receivedAtDate: Date(timeIntervalSince1970: 10),
