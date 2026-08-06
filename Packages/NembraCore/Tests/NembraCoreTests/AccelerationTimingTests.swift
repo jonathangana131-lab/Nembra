@@ -268,5 +268,8 @@ struct AccelerationTimingTests {
         #expect(throws: AccelerationRunPolicyError.invalidMaximumSampleInterval) {
             try AccelerationRunPolicy(targetMetersPerSecond: 5, maximumSampleIntervalNanoseconds: 0)
         }
+        #expect(throws: AccelerationRunPolicyError.invalidRequiredSource) {
+            try AccelerationRunPolicy(targetMetersPerSecond: 5, requiredSource: .motionAssist)
+        }
     }
 }
