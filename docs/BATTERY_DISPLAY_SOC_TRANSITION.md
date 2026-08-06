@@ -32,6 +32,16 @@ The planner is intentionally stateless. If a new battery target arrives while an
 
 The planner produces at most 100 frames because normalized display SoC is restricted to `0...100`.
 
+## App-target visibility
+
+The Xcode app target currently compiles selected NembraCore source files through explicit `project.pbxproj` entries rather than automatically compiling every package source. The transition planner therefore lives in `BatteryPrimaryReadoutState.swift`, the same battery presentation source that the active Dashboard readout integration already wires into the app target. This avoids creating a second manual project-file entry and prevents a package-green/app-target-missing-source failure mode.
+
+The transition types remain a package-domain boundary. This co-location is build integration only; it does not merge presentation frames with battery evidence or give the planner permission to mutate readout state.
+
+## Rolling-number relationship
+
+`RollingNumberModel` remains complementary. It describes per-digit movement between numeric display snapshots; this planner describes whole battery-percent presentation frames so a future battery UI can keep percent text and battery fill synchronized while preserving the distinction between rendered intermediates and source evidence.
+
 ## Validation
 
 Focused deterministic Swift 6.2.1 tests cover:
@@ -44,6 +54,9 @@ Focused deterministic Swift 6.2.1 tests cover:
 - unknown/invalid target display values;
 - valid `0%` and `100%` boundaries;
 - the bounded `100 -> 0` full-scale correction;
-- interruption/replanning from the currently rendered integer.
+- interruption/replanning from the currently rendered integer;
+- every changed valid `0...100` endpoint pair, exhaustively checking bounded sequential frames and final target-role termination.
+
+The focused harness passes 10/10 tests in both debug and release configurations after co-location into `BatteryPrimaryReadoutState.swift`.
 
 This is software presentation behavior only. It does not verify any physical AOVOPRO ES80 battery source, resolution, cadence, voltage behavior, charging semantics, or Tuya data point.
