@@ -47,6 +47,20 @@ struct RideRouteEvidenceSummaryTests {
         #expect(summary.hasKnownGaps)
     }
 
+    @Test("complete recorded coverage can expose a drawable path without gaps")
+    func completePath() throws {
+        let summary = try RideRouteEvidenceSummary(
+            coverage: .complete,
+            segmentPointCounts: [4],
+            knownGapCount: 0
+        )
+        #expect(summary.coverage == .complete)
+        #expect(summary.shape == .drawablePath)
+        #expect(summary.segmentCount == 1)
+        #expect(summary.pointCount == 4)
+        #expect(!summary.hasKnownGaps)
+    }
+
     @Test("complete coverage cannot coexist with known route gaps")
     func completeWithGapRejected() {
         #expect(throws: RideRouteEvidenceSummaryError.inconsistentEvidence) {
@@ -89,6 +103,17 @@ struct RideRouteEvidenceSummaryTests {
         )
         #expect(summary.shape == .drawablePath)
         #expect(summary.coverage == .unknown)
+    }
+
+    @Test("point-count overflow fails closed")
+    func pointCountOverflowRejected() {
+        #expect(throws: RideRouteEvidenceSummaryError.countOverflow) {
+            _ = try RideRouteEvidenceSummary(
+                coverage: .partial,
+                segmentPointCounts: [Int.max, 1],
+                knownGapCount: 1
+            )
+        }
     }
 
     @Test("empty or impossible topology is rejected")
