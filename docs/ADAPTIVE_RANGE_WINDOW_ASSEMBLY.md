@@ -1,6 +1,6 @@
 # Adaptive Range Learning Window Assembly
 
-Status: software evidence-assembly contract. Depends on the adaptive range core in PR #10 / its coordinator-owned recovery. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
+Status: software evidence-assembly contract. Depends on coordinator recovery PR #40 of the original PR #10 adaptive-range core. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
 
 ## Purpose
 
