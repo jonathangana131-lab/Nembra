@@ -242,9 +242,10 @@ struct AdaptiveBatteryRangePersistenceTests {
             object["acceptedWindowCount"] = Int.max
         }
 
-        // The parent model decoder permits this shape because its retained sample
-        // count still fits the accepted count. The persistence envelope must reject
-        // it before a future accepted ingest evaluates `acceptedWindowCount += 1`.
+        // The parent decoder permits this structurally valid terminal count and
+        // the live model now safely rejects any additional accepted ingest. The
+        // persistence envelope is intentionally stricter: do not restore learned
+        // history in a state that can never extend again.
         let shapeValidModel = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: rawData)
         #expect(shapeValidModel.acceptedWindowCount == Int.max)
 
