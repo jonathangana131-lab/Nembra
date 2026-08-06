@@ -31,6 +31,10 @@ public enum PassiveBluetoothCharacteristicProperty: String, CaseIterable, Codabl
 public enum PassiveBluetoothValueOrigin: String, CaseIterable, Codable, Sendable {
     case notification
     case indication
+    /// A subscribed value callback where the acquisition API cannot truthfully
+    /// distinguish notification from indication. CoreBluetooth may require this
+    /// classification instead of guessing between the two GATT mechanisms.
+    case subscriptionUpdate
     case readResponse
 }
 
@@ -192,6 +196,53 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case value(PassiveBluetoothValueObservation)
     case stockAppState(PassiveBluetoothStockAppObservation)
     case interruption(PassiveBluetoothCaptureInterruption)
+
+    /// Synthesized Codable initializers on nested evidence structs do not call
+    /// their public validating initializers. Reconstructing each event here
+    /// ensures imported artifacts cannot bypass field-level truth constraints.
+    fileprivate func validateForCapture() throws {
+        switch self {
+        case let .advertisement(observation):
+            _ = try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                localName: observation.localName,
+                rssi: observation.rssi,
+                isConnectable: observation.isConnectable,
+                manufacturerData: observation.manufacturerData,
+                serviceUUIDs: observation.serviceUUIDs,
+                serviceData: observation.serviceData
+            )
+        case let .service(observation):
+            _ = try PassiveBluetoothServiceObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                serviceUUID: observation.serviceUUID,
+                isPrimary: observation.isPrimary
+            )
+        case let .characteristic(observation):
+            _ = try PassiveBluetoothCharacteristicObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                serviceUUID: observation.serviceUUID,
+                characteristicUUID: observation.characteristicUUID,
+                properties: observation.properties
+            )
+        case let .value(observation):
+            _ = try PassiveBluetoothValueObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                serviceUUID: observation.serviceUUID,
+                characteristicUUID: observation.characteristicUUID,
+                origin: observation.origin,
+                payload: observation.payload
+            )
+        case let .stockAppState(observation):
+            _ = try PassiveBluetoothStockAppObservation(
+                field: observation.field,
+                displayedValue: observation.displayedValue,
+                note: observation.note
+            )
+        case let .interruption(observation):
+            _ = try PassiveBluetoothCaptureInterruption(reason: observation.reason)
+        }
+    }
 }
 
 /// One ordered record in a capture session.
@@ -250,8 +301,9 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
     }
 
     /// Decoding deliberately replays records through the same validation path
-    /// as live appends. Imported/corrupt JSON therefore cannot bypass sequence
-    /// or monotonic-time truth constraints through synthesized `Codable`.
+    /// as live appends. Imported/corrupt JSON therefore cannot bypass sequence,
+    /// monotonic-time, or nested evidence truth constraints through synthesized
+    /// `Codable` initializers.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decode(UUID.self, forKey: .id)
@@ -268,6 +320,7 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
     }
 
     public mutating func append(_ record: PassiveBluetoothCaptureRecord) throws {
+        try record.event.validateForCapture()
         if let last = records.last {
             guard record.sequenceNumber > last.sequenceNumber else {
                 throw PassiveBluetoothCaptureValidationError.nonMonotonicSequence
@@ -297,18 +350,19 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
 }
 
 /// Stable JSON codec for sharing a capture artifact between physical-device
-/// sessions and offline parser/tests. Sorted keys keep diffs reviewable.
+/// sessions and offline parser/tests. Sorted keys keep diffs reviewable while
+/// millisecond epoch dates preserve sub-second correlation metadata.
 public enum PassiveBluetoothCaptureJSON {
     public static func encode(_ session: PassiveBluetoothCaptureSession, prettyPrinted: Bool = true) throws -> Data {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .millisecondsSince1970
         encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
         return try encoder.encode(session)
     }
 
     public static func decode(_ data: Data) throws -> PassiveBluetoothCaptureSession {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .millisecondsSince1970
         return try decoder.decode(PassiveBluetoothCaptureSession.self, from: data)
     }
 }

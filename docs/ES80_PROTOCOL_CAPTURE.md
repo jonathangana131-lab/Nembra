@@ -10,7 +10,7 @@ The core capture artifact therefore records:
 - advertisements and their raw manufacturer/service bytes
 - discovered services
 - discovered characteristics and advertised properties
-- notification, indication, and explicitly requested read-response payloads
+- notification, indication, ambiguous subscribed-value, and explicitly requested read-response payloads
 - stock-app state markers such as a visibly displayed battery value
 - explicit capture interruptions/continuity gaps
 - strict process-local ordering using monotonic receipt uptime
@@ -70,11 +70,12 @@ Recording that a characteristic advertises `.write` or `.writeWithoutResponse` i
 1. Preserve raw bytes. Do not replace a payload with a decoded interpretation.
 2. Unknown UUIDs/values remain unknown rather than being normalized to a guessed Tuya meaning.
 3. Stock-app observations are correlation markers, not decoded protocol facts.
-4. Monotonic uptime is the ordering clock. Wall-clock dates are metadata and cannot repair event order.
-5. Disconnects, Bluetooth transitions, process restarts, and observer restarts create explicit continuity breaks.
-6. A capture session is tied to a vehicle identity, but the current ES80 profile identity does not assert a verified protocol family implementation.
-7. Parser/decoder output should later live beside raw evidence rather than overwrite it.
-8. Software/Simulator fixtures never become real-hardware verification.
+4. Monotonic uptime is the ordering clock. Wall-clock dates are correlation metadata and cannot repair event order.
+5. Imported capture artifacts must be revalidated for nested evidence validity plus sequence/uptime ordering; Codable decoding is not a trust boundary.
+6. Disconnects, Bluetooth transitions, process restarts, and observer restarts create explicit continuity breaks.
+7. A capture session is tied to a vehicle identity, but the current ES80 profile identity does not assert a verified protocol family implementation.
+8. Parser/decoder output should later live beside raw evidence rather than overwrite it.
+9. Software/Simulator fixtures never become real-hardware verification.
 
 ## Battery investigation workflow
 
@@ -90,9 +91,12 @@ Then correlate changes against raw notifications/read responses and discovered G
 
 ## Software artifact
 
-`PassiveBluetoothCaptureSession` is intentionally platform-neutral and Codable so physical-device tooling can export raw observations for offline parser/tests. The current model records only non-mutating value origins:
-- notification
-- indication
+`PassiveBluetoothCaptureSession` is intentionally platform-neutral and Codable so physical-device tooling can export raw observations for offline parser/tests. JSON export preserves sub-second wall-clock correlation metadata while monotonic uptime remains the ordering authority.
+
+The current model records only non-mutating value origins:
+- notification, when the acquisition source can prove it
+- indication, when the acquisition source can prove it
+- subscribed-value update when the acquisition API cannot truthfully distinguish notification from indication
 - read response
 
-A future CoreBluetooth acquisition adapter may feed this model, but it must preserve the same evidence boundaries and must not quietly add vehicle writes.
+A future CoreBluetooth acquisition adapter may feed this model, but it must use the ambiguous subscribed-value classification when CoreBluetooth cannot prove notification versus indication. It must preserve the same evidence boundaries and must not quietly add vehicle writes.

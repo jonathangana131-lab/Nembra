@@ -45,9 +45,9 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.serviceData["FD50"] == Data([0xAA, 0x55]))
     }
 
-    @Test("captured value origins contain no motorized write action")
+    @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
     func valueOriginsAreNonMutating() {
-        #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .readResponse])
+        #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
     }
 
     @Test("session rejects sequence regression")
@@ -115,23 +115,23 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.displayedValue == "73%")
     }
 
-    @Test("JSON export round trips raw bytes, identity, and continuity markers")
+    @Test("JSON export round trips raw bytes, identity, continuity markers, and sub-second dates")
     func jsonRoundTrip() throws {
         let value = try PassiveBluetoothValueObservation(
             peripheralIdentifier: "physical-es80-placeholder",
             serviceUUID: "FD50",
             characteristicUUID: "00000001-0000-0000-0000-000000000000",
-            origin: .notification,
+            origin: .subscriptionUpdate,
             payload: Data([0x55, 0xAA, 0x01, 0x7F])
         )
         let gap = try PassiveBluetoothCaptureInterruption(reason: "disconnect")
         var session = try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000081")!,
             vehicleIdentity: es80,
-            startedAt: Date(timeIntervalSince1970: 1_000)
+            startedAt: Date(timeIntervalSince1970: 1_000.123)
         )
-        try session.append(.value(value), sequenceNumber: 1, receivedAtUptimeNanoseconds: 10, receivedAtDate: Date(timeIntervalSince1970: 1_001))
-        try session.append(.interruption(gap), sequenceNumber: 2, receivedAtUptimeNanoseconds: 11, receivedAtDate: Date(timeIntervalSince1970: 1_002))
+        try session.append(.value(value), sequenceNumber: 1, receivedAtUptimeNanoseconds: 10, receivedAtDate: Date(timeIntervalSince1970: 1_001.456))
+        try session.append(.interruption(gap), sequenceNumber: 2, receivedAtUptimeNanoseconds: 11, receivedAtDate: Date(timeIntervalSince1970: 1_002.789))
 
         let data = try PassiveBluetoothCaptureJSON.encode(session)
         let decoded = try PassiveBluetoothCaptureJSON.decode(data)
@@ -170,11 +170,36 @@ struct PassiveBluetoothCaptureTests {
         )
 
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .millisecondsSince1970
         let data = try encoder.encode(payload)
 
         #expect(throws: PassiveBluetoothCaptureValidationError.nonMonotonicSequence) {
             _ = try PassiveBluetoothCaptureJSON.decode(data)
+        }
+    }
+
+    @Test("JSON import cannot bypass nested evidence validation")
+    func jsonImportRevalidatesNestedEvidence() throws {
+        let service = try PassiveBluetoothServiceObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            isPrimary: true
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 3_000))
+        try session.append(
+            .service(service),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 30,
+            receivedAtDate: Date(timeIntervalSince1970: 3_001)
+        )
+
+        let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        var json = String(decoding: encoded, as: UTF8.self)
+        #expect(json.contains("\"serviceUUID\":\"FD50\""))
+        json = json.replacingOccurrences(of: "\"serviceUUID\":\"FD50\"", with: "\"serviceUUID\":\"   \"")
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier) {
+            _ = try PassiveBluetoothCaptureJSON.decode(Data(json.utf8))
         }
     }
 
