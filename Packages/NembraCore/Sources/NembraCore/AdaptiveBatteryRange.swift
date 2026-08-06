@@ -422,6 +422,10 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             }
         }
 
+        guard acceptedWindowCount < Int.max else {
+            return rejected(.numericalOverflow, policy: policy)
+        }
+
         let oldConsumed = historicalConsumedPercentagePoints
         if let historical = historicalEfficiencyMetersPerPercentagePoint {
             let totalConsumed = oldConsumed + consumed
@@ -587,6 +591,7 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         guard historicalConsumed.isFinite,
               historicalConsumed >= 0,
               acceptedWindowCount >= 0,
+              acceptedWindowCount < Int.max,
               recentSamples.count <= acceptedWindowCount else {
             throw Self.corruptedStateError(container)
         }
