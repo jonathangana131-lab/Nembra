@@ -9,7 +9,7 @@ This document is the durable live-validation record for Nembra's exact-head Xcod
 
 The v5 swarm needs a way to obtain required exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator proof even when connector-authored `parallel/**` branch updates do not emit the repository's older push workflow.
 
-The evidence below distinguishes failed event-trigger experiments from the schedule-based fallback now present on default `main`.
+The evidence below distinguishes failed event-trigger experiments, the schedule-based fallback now present on default `main`, and an exact-SHA `feature/**` proxy experiment against the repository's already-proven push workflow.
 
 ## Live trigger evidence
 
@@ -36,7 +36,7 @@ Its base already contained PR #39's `pull_request` trigger support. After PR #42
 
 Result: **CONNECTOR-CREATED PR OPEN DID NOT EMIT AN ACTIONS RUN IN THIS RUNTIME.**
 
-Because two separate connector-originated event families produced no Actions run, event-driven triggers remain supplemental rather than the swarm's autonomous acceptance mechanism.
+Because two separate connector-originated event families produced no Actions run, event-driven PR/comment triggers remain supplemental rather than the swarm's autonomous acceptance mechanism.
 
 ## Schedule fallback now on default main
 
@@ -64,15 +64,21 @@ A selected head must be:
 
 Priority metadata can reorder eligible work but cannot bypass those gates.
 
-## This evidence PR's current preparation
+As of the preparation of this commit, GitHub had registered the scheduler active but had not yet emitted this repository's first recorded `schedule` workflow run. That absence is not treated as green or as proof that scheduled Actions are disabled.
 
-After PR #58 merged, this branch was reconciled with fresh `main` through a normal two-parent merge while preserving this one evidence document.
+## Exact-SHA `feature/**` proxy experiment
 
-The PR remains same-repository, `parallel/**`, non-draft, and carries:
+The established `.github/workflows/xcode27-simulator.yml` already watches `main` and `feature/**`, and recent ordinary `feature/**` Xcode runs prove that workflow path is operational.
 
-`XCODE27_SCHEDULE_PRIORITY: true`
+A CI-only ref was therefore created:
 
-This document update is intentionally made **before** the live scheduler proof. Its resulting commit becomes the candidate whose status/run must be inspected. The PR must not be merged merely because the scheduler exists.
+`feature/xcode27-exact-pr42-chat-f2k7q`
+
+The ref was created at current `main`, then fast-forwarded without force to PR #42's exact current commit. A ref-only move did not immediately emit a workflow run.
+
+This document update is now being committed **on that watched feature ref** as a real evidence change. After GitHub returns the resulting commit SHA, PR #42's own `parallel/**` ref will be fast-forwarded to the exact same commit SHA. If the normal `feature/**` push workflow is emitted for this commit, its Xcode result is therefore exact-head proof for PR #42 rather than merely equivalent-tree proof.
+
+No product source is changed to create this gate. The commit is a real durable CI-evidence update that belongs in PR #42.
 
 ## Evidence state
 
@@ -84,40 +90,39 @@ This document update is intentionally made **before** the live scheduler proof. 
 
 `scheduler fresh-main eligibility hardening`: **MERGED**
 
-`scheduled resolver selected an exact current PR head`: **PENDING LIVE PROOF**
+`repository has emitted a schedule run`: **PENDING LIVE PROOF**
 
-`pending commit status published`: **PENDING LIVE PROOF**
+`feature proxy ref-only update emitted push QA`: **NOT OBSERVED**
 
-`immutable Xcode checkout expected SHA == actual SHA`: **PENDING LIVE PROOF**
+`feature proxy real commit emitted push QA`: **PENDING LIVE PROOF**
+
+`immutable Xcode run head equals PR #42 head`: **PENDING LIVE PROOF**
 
 `NembraCore + Xcode 27 / iPhone 12 Simulator gate`: **PENDING LIVE PROOF**
 
 `artifact upload`: **PENDING LIVE PROOF**
 
-`final exact-head commit status`: **PENDING LIVE PROOF**
-
 No physical AOVOPRO ES80 behavior is tested or implied by this workflow evidence.
 
-## What counts as live scheduler proof
+## What counts as exact-head proof
 
-A real scheduled run must be inspected for all of the following:
+A real acceptance run must be inspected for all of the following:
 
-1. event is `schedule` (or a genuine human `workflow_dispatch`, if used independently);
-2. resolver selects an eligible current same-repo `parallel/**` PR and records its immutable SHA;
-3. pending status `Nembra/Xcode27 Exact Head` targets that same SHA/run;
-4. the self-hosted Xcode job prints expected and actual checkout SHA and they are identical;
-5. project validation and NembraCore tests execute;
-6. Xcode 27/iPhone 12 Simulator build/test/capture executes;
-7. artifacts/logs are inspectable;
-8. final success/failure/error status targets the same exact SHA.
+1. the run's `head_sha` exactly equals the current PR #42 head SHA;
+2. project validation and NembraCore tests execute;
+3. Xcode 27/iPhone 12 Simulator build/test/capture executes;
+4. artifacts/logs are inspectable;
+5. the PR head remains unchanged after the successful run.
+
+For the scheduled workflow specifically, additionally require resolver selection, exact pending/final status, and immutable checkout equality.
 
 A failure is still useful live infrastructure evidence if it is diagnosed truthfully. It does not become a green product gate.
 
 ## Final-head rule for this evidence PR
 
-If the first scheduled run succeeds on this document's new head, the run ID/result/artifact evidence must be written back into this file. That evidence update creates another SHA.
+If a run succeeds on this commit, the run ID/result/artifact evidence still needs to be written back into this file. That evidence update creates another SHA.
 
-Therefore PR #42 itself requires **one more exact-head scheduled gate on that final evidence SHA** before it can merge. If `main` advances first, reconcile again and gate the new current SHA.
+Therefore PR #42 itself requires one more exact-head gate on that final evidence SHA before merge. If `main` advances first, reconcile again and gate the new current SHA.
 
 This intentionally demonstrates the same final-head rule other Nembra workers must follow rather than granting the CI-evidence lane an exception.
 
