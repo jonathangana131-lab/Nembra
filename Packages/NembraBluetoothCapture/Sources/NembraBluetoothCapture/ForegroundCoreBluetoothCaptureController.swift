@@ -402,7 +402,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         rssi RSSI: NSNumber
     ) {
         peripheralByIdentifier[peripheral.identifier] = peripheral
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber)?.boolValue
+        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         let discovery = DiscoveredPeripheral(
             id: peripheral.identifier,
             localName: advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name,
