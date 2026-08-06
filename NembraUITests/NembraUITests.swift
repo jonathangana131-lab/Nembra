@@ -92,6 +92,38 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardBatteryReadoutToggleFailsClosedWithoutRangeEstimate() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+        assertMinimumTouchTarget(battery, named: "Dashboard battery")
+
+        // AppStorage deliberately remembers this user-facing preference across
+        // launches. Normalize the starting presentation without assuming test
+        // execution order, then prove range mode fails closed when no estimate
+        // has been supplied by the app integration.
+        if (battery.value as? String) == "Estimated range unavailable" {
+            battery.tap()
+            XCTAssertTrue(waitForValue("92 percent", element: battery))
+        } else {
+            XCTAssertTrue(waitForValue("92 percent", element: battery))
+        }
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable", element: battery),
+            "Range mode must not synthesize a mileage estimate from battery percentage."
+        )
+        keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape")
+
+        // Restore the stable percentage preference for following UI tests.
+        battery.tap()
+        XCTAssertTrue(waitForValue("92 percent", element: battery))
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
