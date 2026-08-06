@@ -10,6 +10,21 @@ Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/So
 5. Build/test the existing project before unnecessary architecture changes.
 6. Continue autonomously through normal build/test/commit/PR steps. Do not stop because one tool call, screenshot, commit, or workflow finished.
 
+## Continuous execution contract — permanent
+A progress update is never a stopping point. While concrete Nembra work is available and tools remain usable, stay in the same assistant turn and immediately continue making tool calls after each meaningful status update.
+
+Before every final response, perform this internal gate: **“Is there another concrete tool action I can perform right now that advances Nembra?”** If yes, do not finalize. Make the tool call and continue. Repeat until a genuine external dependency requires user input, available tools physically cannot perform the next required action, or the platform itself forcibly ends execution.
+
+Operational rules:
+- Never send a final response merely saying work is continuing, a build is running, a checkpoint was made, or the next inspection is planned. Those are status messages, not completion messages.
+- Give concise visible updates only when something meaningful changes: implementation completed, build started/failed/passed, important bug found, Simulator screenshot inspected, QA gate passed, PR merged, or the next substantial vertical slice started.
+- After every status update, immediately continue using tools in the same response. Never wait for the user to say “continue” because a progress update was sent.
+- Git checkpoints protect progress; they do not end work. The sequence is `work → commit/push checkpoint → immediately continue working`.
+- If Xcode GitHub Actions is queued or running, do not voluntarily stop when independent safe work exists. Inspect source, tests, prior Simulator artifacts, docs, or other safe parts of the same slice, then re-check CI. Never merge or accept a phase before its required exact-head gate passes.
+- If the platform itself forcibly terminates a Thinking run, keep GitHub continuously recoverable. On the next turn, inspect the latest branch/head first, do not re-explain completed work, do not send a standalone continuation message, and immediately resume the exact unfinished action.
+- The cadence is tool → tool → tool → meaningful status → tool → tool → tool. Do not interrupt execution merely to narrate.
+- After one vertical slice is genuinely accepted and merged, immediately determine and begin the next planned substantial slice from fresh repository state unless a real dependency blocks it.
+
 ## Product / engineering truth
 - Nembra is a premium native iOS 27 scooter companion platform.
 - MAXSHOT V1S Pro is the first supported vehicle.
@@ -193,6 +208,6 @@ Real MAXSHOT advertisement identity, services/characteristics/properties, notifi
 Keep **APP IMPLEMENTED** separate from **VERIFIED ON REAL MAXSHOT HARDWARE**.
 
 ## Communication / recovery contract
-During long work, give concise visible status updates when builds/gates/screenshots/PR state meaningfully change. Do not reveal hidden chain-of-thought. Do not stop merely because one test, screenshot, commit, or workflow finished. Keep working until the active vertical slice is accepted or a genuine external dependency blocks execution.
+During long work, give concise visible status updates when builds/gates/screenshots/PR state meaningfully change. Do not reveal hidden chain-of-thought. A progress update is never a completion event. After every update, immediately resume tool execution while actionable Nembra work remains.
 
 Before context loss or long failure-prone operations, commit/push valid work and update `PROJECT_STATE.md` plus this continuation file so a fresh chat can continue from GitHub without asking the user to restate the project.
