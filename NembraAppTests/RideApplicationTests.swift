@@ -400,6 +400,56 @@ final class RideApplicationTests: XCTestCase {
         XCTAssertEqual(geometry.segments[1].points.map(\.sequence), [2, 3])
     }
 
+    func testRouteRecorderSequenceOverflowDoesNotMaterializePendingGap() async throws {
+        let directory = temporaryDirectory(name: "route-sequence-overflow")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+
+        let persistedPoint = try RideRoutePoint(
+            sequence: UInt64.max - 1,
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            sourceMeasurementDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        let persistedChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0),
+            points: [persistedPoint]
+        )
+        _ = try await store.commit(persistedChunk)
+
+        let recorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await recorder.begin(sessionID: sessionID)
+
+        do {
+            try await recorder.append(
+                latitude: 45.6391,
+                longitude: -122.6607,
+                capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+                horizontalAccuracyMeters: 4
+            )
+            XCTFail("A resumed recorder must reject a point when its durable sequence cannot advance.")
+        } catch let error as RideRouteRecorderError {
+            XCTAssertEqual(error, .sequenceOverflow)
+        }
+
+        let manifest = try await recorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 1)
+        XCTAssertEqual(manifest.knownGapCount, 0)
+        XCTAssertEqual(manifest.pointCount, 1)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [UInt64.max - 1])
+        XCTAssertFalse(geometry.hasDrawablePath)
+    }
+
     @MainActor
     func testStateOnlyAcknowledgementsDoNotReplayRawSpeedEvidence() async throws {
         let directory = temporaryDirectory(name: "single-use-speed")

@@ -383,9 +383,9 @@ actor RideRouteRecorder {
             sourceMeasurementDate: sourceMeasurementDate,
             horizontalAccuracyMeters: horizontalAccuracyMeters
         )
+        guard nextSequence < UInt64.max else { throw RideRouteRecorderError.sequenceOverflow }
         try materializePendingGap(sessionID: sessionID)
 
-        guard nextSequence < UInt64.max else { throw RideRouteRecorderError.sequenceOverflow }
         nextSequence += 1
         buffer.append(point)
         if segmentCount == 0 { segmentCount = 1 }
