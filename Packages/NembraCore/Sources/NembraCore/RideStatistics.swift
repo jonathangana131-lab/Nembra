@@ -157,6 +157,8 @@ public struct RideStatisticsSummary: Equatable, Sendable {
     /// included ride legitimately has a zero reconciled distance.
     public let totalDistanceMeters: Double?
     public let longestRideDistanceMeters: Double?
+    /// Equal-distance ties are resolved deterministically by attributed date,
+    /// then by UUID, so history fetch order cannot change the selected session.
     public let longestRideSessionID: UUID?
     public let longestRidingDayStreakDays: Int
 }
@@ -186,6 +188,7 @@ public enum RideStatisticsAggregator {
         var excludedDistanceRideCount = 0
         var totalDistanceMeters: Double?
         var longestRideDistanceMeters: Double?
+        var longestRideAttributedDate: Date?
         var longestRideSessionID: UUID?
 
         for ride in periodRides {
@@ -203,8 +206,16 @@ public enum RideStatisticsAggregator {
             trustworthyDistanceRideCount += 1
             totalDistanceMeters = nextTotal
 
-            if longestRideDistanceMeters.map({ distance > $0 }) ?? true {
+            if shouldReplaceLongestRide(
+                candidateDistance: distance,
+                candidateDate: ride.attributedDate,
+                candidateSessionID: ride.sessionID,
+                currentDistance: longestRideDistanceMeters,
+                currentDate: longestRideAttributedDate,
+                currentSessionID: longestRideSessionID
+            ) {
                 longestRideDistanceMeters = distance
+                longestRideAttributedDate = ride.attributedDate
                 longestRideSessionID = ride.sessionID
             }
         }
@@ -238,6 +249,35 @@ public enum RideStatisticsAggregator {
             longestRideSessionID: longestRideSessionID,
             longestRidingDayStreakDays: longestStreak
         )
+    }
+
+    private static func shouldReplaceLongestRide(
+        candidateDistance: Double,
+        candidateDate: Date,
+        candidateSessionID: UUID,
+        currentDistance: Double?,
+        currentDate: Date?,
+        currentSessionID: UUID?
+    ) -> Bool {
+        guard let currentDistance else {
+            return true
+        }
+
+        if candidateDistance != currentDistance {
+            return candidateDistance > currentDistance
+        }
+
+        guard let currentDate else {
+            return true
+        }
+        if candidateDate != currentDate {
+            return candidateDate < currentDate
+        }
+
+        guard let currentSessionID else {
+            return true
+        }
+        return candidateSessionID.uuidString < currentSessionID.uuidString
     }
 
     private static func deduplicated(
