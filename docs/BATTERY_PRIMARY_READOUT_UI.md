@@ -17,7 +17,7 @@ The Dashboard battery metric is now a normal-tap control whose presentation pref
 
 The Dashboard deliberately does **not** calculate range from battery percentage, advertised range, trip distance, or any invented energy value. Until an accepted adaptive-range integration supplies a legitimate estimate, switching to range mode displays an unavailable value rather than a fabricated distance.
 
-The battery icon and low-battery warning remain charge-oriented in either readout mode. Toggling changes presentation preference only; it does not mutate scooter telemetry, battery evidence, adaptive-range learning, ride evidence, persistence of measured data, or any motorized-hardware state.
+The visible eyebrow is mode-aware: percentage mode says `BATTERY`, while estimated-range mode says `RANGE`. This keeps a fail-closed `RANGE —` state visually distinct from an unknown battery reading. The battery icon and low-battery warning remain charge-oriented in either readout mode. Toggling changes presentation preference only; it does not mutate scooter telemetry, battery evidence, adaptive-range learning, ride evidence, persistence of measured data, or any motorized-hardware state.
 
 ## Accessibility and interaction
 
