@@ -194,7 +194,11 @@ public enum RideStatisticsAggregator {
         }
 
         var excludedDistanceRideCount = 0
-        var trustworthyRides: [(ride: RideStatisticsRide, distance: Double)] = []
+        var trustworthyRides: [(
+            ride: RideStatisticsRide,
+            distance: Double,
+            sessionKey: String
+        )] = []
         trustworthyRides.reserveCapacity(periodRides.count)
 
         for ride in periodRides {
@@ -203,19 +207,23 @@ public enum RideStatisticsAggregator {
                 excludedDistanceRideCount += 1
                 continue
             }
-            trustworthyRides.append((ride: ride, distance: distance))
+            trustworthyRides.append((
+                ride: ride,
+                distance: distance,
+                sessionKey: ride.sessionID.uuidString
+            ))
         }
 
         // Only trustworthy rides inside the requested period need a stable
         // arithmetic order. Do not sort years of unrelated history merely to
-        // summarize Today/Week/Month. The date+UUID order is semantic-neutral:
-        // it exists only so persistence fetch order cannot perturb floating-
-        // point aggregation.
+        // summarize Today/Week/Month. UUID string keys are materialized once
+        // per selected ride so comparison-heavy sorts do not repeatedly allocate
+        // the same deterministic identity representation.
         trustworthyRides.sort { lhs, rhs in
             if lhs.ride.attributedDate != rhs.ride.attributedDate {
                 return lhs.ride.attributedDate < rhs.ride.attributedDate
             }
-            return lhs.ride.sessionID.uuidString < rhs.ride.sessionID.uuidString
+            return lhs.sessionKey < rhs.sessionKey
         }
 
         let trustworthyDistanceRideCount = trustworthyRides.count
@@ -223,6 +231,7 @@ public enum RideStatisticsAggregator {
         var distanceCompensation = 0.0
         var longestRideDistanceMeters: Double?
         var longestRideSessionID: UUID?
+        var longestRideSessionKey: String?
 
         for trustworthyRide in trustworthyRides {
             let ride = trustworthyRide.ride
@@ -253,12 +262,13 @@ public enum RideStatisticsAggregator {
 
             if shouldReplaceLongestRide(
                 candidateDistance: distance,
-                candidateSessionID: ride.sessionID,
+                candidateSessionKey: trustworthyRide.sessionKey,
                 currentDistance: longestRideDistanceMeters,
-                currentSessionID: longestRideSessionID
+                currentSessionKey: longestRideSessionKey
             ) {
                 longestRideDistanceMeters = distance
                 longestRideSessionID = ride.sessionID
+                longestRideSessionKey = trustworthyRide.sessionKey
             }
         }
 
@@ -306,9 +316,9 @@ public enum RideStatisticsAggregator {
 
     private static func shouldReplaceLongestRide(
         candidateDistance: Double,
-        candidateSessionID: UUID,
+        candidateSessionKey: String,
         currentDistance: Double?,
-        currentSessionID: UUID?
+        currentSessionKey: String?
     ) -> Bool {
         guard let currentDistance else {
             return true
@@ -318,10 +328,10 @@ public enum RideStatisticsAggregator {
             return candidateDistance > currentDistance
         }
 
-        guard let currentSessionID else {
+        guard let currentSessionKey else {
             return true
         }
-        return candidateSessionID.uuidString < currentSessionID.uuidString
+        return candidateSessionKey < currentSessionKey
     }
 
     private static func deduplicated(
