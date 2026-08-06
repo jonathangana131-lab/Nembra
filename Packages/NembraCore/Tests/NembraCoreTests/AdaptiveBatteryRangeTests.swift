@@ -20,6 +20,8 @@ struct AdaptiveBatteryRangeTests {
         distanceMeters: Double,
         startPercentage: Double,
         endPercentage: Double,
+        distanceCoverage: BatteryRangeDistanceCoverage = .complete,
+        transportGapOccurred: Bool = false,
         startProvenance: BatterySOCProvenance = .authoritativeMeasurement,
         endProvenance: BatterySOCProvenance = .authoritativeMeasurement,
         startUptime: UInt64 = 1,
@@ -27,6 +29,8 @@ struct AdaptiveBatteryRangeTests {
     ) throws -> BatteryRangeLearningWindow {
         try BatteryRangeLearningWindow(
             distanceMeters: distanceMeters,
+            distanceCoverage: distanceCoverage,
+            transportGapOccurred: transportGapOccurred,
             startSOC: reading(startPercentage, provenance: startProvenance, uptime: startUptime),
             endSOC: reading(endPercentage, provenance: endProvenance, uptime: endUptime)
         )
@@ -41,6 +45,7 @@ struct AdaptiveBatteryRangeTests {
         outlierUpperEfficiencyRatio: Double = 2.5,
         estimateDeadbandFraction: Double = 0.05,
         estimateSmoothingFactor: Double = 0.25,
+        provisionalEfficiencyMetersPerPercentagePoint: Double? = nil,
         lowSOCCautionThresholdPercent: Double? = nil,
         lowSOCEfficiencyMultiplier: Double? = nil,
         lowConfidenceConsumedPercentagePoints: Double = 10,
@@ -56,6 +61,7 @@ struct AdaptiveBatteryRangeTests {
             outlierUpperEfficiencyRatio: outlierUpperEfficiencyRatio,
             estimateDeadbandFraction: estimateDeadbandFraction,
             estimateSmoothingFactor: estimateSmoothingFactor,
+            provisionalEfficiencyMetersPerPercentagePoint: provisionalEfficiencyMetersPerPercentagePoint,
             lowSOCCautionThresholdPercent: lowSOCCautionThresholdPercent,
             lowSOCEfficiencyMultiplier: lowSOCEfficiencyMultiplier,
             lowConfidenceConsumedPercentagePoints: lowConfidenceConsumedPercentagePoints,
@@ -86,6 +92,9 @@ struct AdaptiveBatteryRangeTests {
             _ = try policy(recentWindowCapacity: 0)
         }
         #expect(throws: BatteryRangeValidationError.self) {
+            _ = try policy(provisionalEfficiencyMetersPerPercentagePoint: 0)
+        }
+        #expect(throws: BatteryRangeValidationError.self) {
             _ = try policy(
                 lowSOCCautionThresholdPercent: 20,
                 lowSOCEfficiencyMultiplier: nil
@@ -110,6 +119,36 @@ struct AdaptiveBatteryRangeTests {
         #expect(result.sample == nil)
         #expect(model.hasLearnedEfficiency == false)
         #expect(model.acceptedWindowCount == 0)
+    }
+
+    @Test("incomplete distance and reconnect gaps cannot poison efficiency")
+    func incompleteDistanceDoesNotTrain() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        let partial = model.ingest(
+            try window(
+                distanceMeters: 2_000,
+                startPercentage: 80,
+                endPercentage: 60,
+                distanceCoverage: .partial
+            ),
+            policy: p
+        )
+        #expect(partial.disposition == .rejected(.incompleteDistanceEvidence))
+
+        let gap = model.ingest(
+            try window(
+                distanceMeters: 2_000,
+                startPercentage: 80,
+                endPercentage: 60,
+                transportGapOccurred: true
+            ),
+            policy: p
+        )
+        #expect(gap.disposition == .rejected(.transportGap))
+        #expect(model.hasLearnedEfficiency == false)
+        #expect(model.historicalConsumedPercentagePoints == 0)
     }
 
     @Test("tiny percentage drops are not treated as trustworthy efficiency windows")
@@ -189,16 +228,49 @@ struct AdaptiveBatteryRangeTests {
         #expect(model == before)
     }
 
-    @Test("range is unavailable until the scooter has learned real consumption")
-    func coldStartStaysUnavailable() throws {
+    @Test("cold start can use a classified conservative seed without calling it learned")
+    func coldStartProvisionalSeed() throws {
         let model = AdaptiveBatteryRangeModel()
-        let estimate = model.estimateRemainingRange(
+        let withoutSeed = model.estimateRemainingRange(
             at: try reading(80, uptime: 1),
             policy: try policy()
         )
+        #expect(withoutSeed == nil)
 
-        #expect(estimate == nil)
-        #expect(model.typicalFullChargeRangeMeters(using: try policy()) == nil)
+        let seededPolicy = try policy(provisionalEfficiencyMetersPerPercentagePoint: 80)
+        let provisional = model.estimateRemainingRange(
+            at: try reading(80, uptime: 2),
+            policy: seededPolicy
+        )
+        #expect(provisional?.basis == .provisionalSeed)
+        #expect(provisional?.confidence == .learning)
+        #expect(abs((provisional?.rawRemainingMeters ?? 0) - 6_400) < 0.000_001)
+        #expect(model.typicalFullChargeRangeMeters(using: seededPolicy) == nil)
+    }
+
+    @Test("real learned history replaces the provisional seed")
+    func learnedHistoryReplacesSeed() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy(provisionalEfficiencyMetersPerPercentagePoint: 80)
+
+        let before = model.estimateRemainingRange(
+            at: try reading(50, uptime: 1),
+            policy: p
+        )
+        #expect(before?.basis == .provisionalSeed)
+        #expect(abs((before?.rawRemainingMeters ?? 0) - 4_000) < 0.000_001)
+
+        _ = model.ingest(
+            try window(distanceMeters: 2_000, startPercentage: 80, endPercentage: 60),
+            policy: p
+        )
+        let after = model.estimateRemainingRange(
+            at: try reading(50, uptime: 3),
+            policy: p
+        )
+
+        #expect(after?.basis == .learned)
+        #expect(abs((after?.rawRemainingMeters ?? 0) - 5_000) < 0.000_001)
     }
 
     @Test("estimated display SoC stays classified while using learned efficiency")
@@ -215,6 +287,7 @@ struct AdaptiveBatteryRangeTests {
             policy: p
         )
 
+        #expect(estimate?.basis == .learned)
         #expect(estimate?.socProvenance == .estimate)
         #expect(abs((estimate?.rawRemainingMeters ?? 0) - 5_000) < 0.000_001)
     }
@@ -311,6 +384,48 @@ struct AdaptiveBatteryRangeTests {
             policy: p
         )
         #expect(model.confidence(using: p) == .high)
+    }
+
+    @Test("repeated higher-consumption riding progressively lowers learned range")
+    func degradationAndRecentBehaviorAdapt() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy(
+            recentWindowCapacity: 2,
+            recentWeight: 0.7,
+            outlierLowerEfficiencyRatio: 0.5,
+            outlierUpperEfficiencyRatio: 2
+        )
+
+        _ = model.ingest(
+            try window(distanceMeters: 2_000, startPercentage: 100, endPercentage: 80),
+            policy: p
+        )
+        let baseline = model.estimateRemainingRange(
+            at: try reading(50, uptime: 3),
+            policy: p
+        )?.rawRemainingMeters ?? 0
+
+        _ = model.ingest(
+            try window(distanceMeters: 1_400, startPercentage: 80, endPercentage: 60, startUptime: 4, endUptime: 5),
+            policy: p
+        )
+        let afterOne = model.estimateRemainingRange(
+            at: try reading(50, uptime: 6),
+            policy: p
+        )?.rawRemainingMeters ?? 0
+
+        _ = model.ingest(
+            try window(distanceMeters: 1_400, startPercentage: 60, endPercentage: 40, startUptime: 7, endUptime: 8),
+            policy: p
+        )
+        let afterTwo = model.estimateRemainingRange(
+            at: try reading(50, uptime: 9),
+            policy: p
+        )?.rawRemainingMeters ?? 0
+
+        #expect(afterOne < baseline)
+        #expect(afterTwo < afterOne)
+        #expect(afterTwo > 0)
     }
 
     @Test("learning state is Codable for persistence across launches")
