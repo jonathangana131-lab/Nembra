@@ -3,6 +3,7 @@ import Foundation
 public enum SpeedTelemetryQualityPolicyError: Error, Equatable, Sendable {
     case invalidMinimumAcceptedSampleCount
     case invalidMaximumRejectedSampleFraction
+    case invalidMinimumDeliveryLatencySampleFraction
     case invalidThreshold
 }
 
@@ -17,6 +18,7 @@ public struct SpeedTelemetryQualityPolicy: Equatable, Sendable {
     public let maximumMeanIntervalMilliseconds: Double?
     public let maximumObservedIntervalMilliseconds: Double?
     public let maximumJitterStandardDeviationMilliseconds: Double?
+    public let minimumDeliveryLatencySampleFraction: Double?
     public let maximumMeanDeliveryLatencyMilliseconds: Double?
     public let maximumEmpiricalSpeedStepKilometersPerHour: Double?
 
@@ -27,6 +29,7 @@ public struct SpeedTelemetryQualityPolicy: Equatable, Sendable {
         maximumMeanIntervalMilliseconds: Double? = nil,
         maximumObservedIntervalMilliseconds: Double? = nil,
         maximumJitterStandardDeviationMilliseconds: Double? = nil,
+        minimumDeliveryLatencySampleFraction: Double? = nil,
         maximumMeanDeliveryLatencyMilliseconds: Double? = nil,
         maximumEmpiricalSpeedStepKilometersPerHour: Double? = nil
     ) throws {
@@ -37,6 +40,12 @@ public struct SpeedTelemetryQualityPolicy: Equatable, Sendable {
             guard maximumRejectedSampleFraction.isFinite,
                   (0...1).contains(maximumRejectedSampleFraction) else {
                 throw SpeedTelemetryQualityPolicyError.invalidMaximumRejectedSampleFraction
+            }
+        }
+        if let minimumDeliveryLatencySampleFraction {
+            guard minimumDeliveryLatencySampleFraction.isFinite,
+                  (0...1).contains(minimumDeliveryLatencySampleFraction) else {
+                throw SpeedTelemetryQualityPolicyError.invalidMinimumDeliveryLatencySampleFraction
             }
         }
         let thresholds = [
@@ -59,6 +68,7 @@ public struct SpeedTelemetryQualityPolicy: Equatable, Sendable {
         self.maximumMeanIntervalMilliseconds = maximumMeanIntervalMilliseconds
         self.maximumObservedIntervalMilliseconds = maximumObservedIntervalMilliseconds
         self.maximumJitterStandardDeviationMilliseconds = maximumJitterStandardDeviationMilliseconds
+        self.minimumDeliveryLatencySampleFraction = minimumDeliveryLatencySampleFraction
         self.maximumMeanDeliveryLatencyMilliseconds = maximumMeanDeliveryLatencyMilliseconds
         self.maximumEmpiricalSpeedStepKilometersPerHour = maximumEmpiricalSpeedStepKilometersPerHour
     }
@@ -73,6 +83,7 @@ public enum SpeedTelemetryQualityFailure: Equatable, Sendable {
     case observedIntervalExceeded(maximumMilliseconds: Double, actualMilliseconds: Double)
     case jitterExceeded(maximumMilliseconds: Double, actualMilliseconds: Double)
     case missingDeliveryLatencyEvidence
+    case deliveryLatencySampleFractionBelowMinimum(minimum: Double, actual: Double)
     case deliveryLatencyExceeded(maximumMilliseconds: Double, actualMilliseconds: Double)
     case missingSpeedResolutionEvidence
     case speedResolutionStepExceeded(
@@ -156,18 +167,33 @@ public extension TelemetryBenchmarkSummary {
             }
         }
 
-        if let maximum = policy.maximumMeanDeliveryLatencyMilliseconds {
-            if let actual = meanDeliveryLatencyMilliseconds,
-               deliveryLatencySampleCount > 0 {
-                if actual > maximum {
-                    failures.append(.deliveryLatencyExceeded(
-                        maximumMilliseconds: maximum,
-                        actualMilliseconds: actual
-                    ))
-                }
-            } else {
-                failures.append(.missingDeliveryLatencyEvidence)
+        let requiresDeliveryLatencyEvidence =
+            policy.minimumDeliveryLatencySampleFraction != nil ||
+            policy.maximumMeanDeliveryLatencyMilliseconds != nil
+        if requiresDeliveryLatencyEvidence && deliveryLatencySampleCount == 0 {
+            failures.append(.missingDeliveryLatencyEvidence)
+        }
+
+        if let minimum = policy.minimumDeliveryLatencySampleFraction {
+            let actualFraction = acceptedSampleCount > 0
+                ? Double(deliveryLatencySampleCount) / Double(acceptedSampleCount)
+                : 0
+            if actualFraction < minimum {
+                failures.append(.deliveryLatencySampleFractionBelowMinimum(
+                    minimum: minimum,
+                    actual: actualFraction
+                ))
             }
+        }
+
+        if let maximum = policy.maximumMeanDeliveryLatencyMilliseconds,
+           let actual = meanDeliveryLatencyMilliseconds,
+           deliveryLatencySampleCount > 0,
+           actual > maximum {
+            failures.append(.deliveryLatencyExceeded(
+                maximumMilliseconds: maximum,
+                actualMilliseconds: actual
+            ))
         }
 
         if let maximum = policy.maximumEmpiricalSpeedStepKilometersPerHour {
