@@ -83,6 +83,44 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertLessThan(recordedDistances.reduce(0) { $0 + $1.meters }, 22)
     }
 
+    func testSessionScopedDistanceSinkCarriesCaptureIdentity() async throws {
+        let source = TestRideLocationSource()
+        let distances = SessionDistanceCollector()
+        let sessionID = UUID()
+        let coordinator = try RideLocationCaptureCoordinator(
+            source: source,
+            qualityPolicy: try testPolicy(),
+            routeStore: nil,
+            sessionScopedDistanceSink: { emittedSessionID, meters, uptime in
+                await distances.append(
+                    sessionID: emittedSessionID,
+                    meters: meters,
+                    uptime: uptime
+                )
+            }
+        )
+        try await coordinator.begin(sessionID: sessionID, requestedCoverage: .complete)
+
+        await source.emit(event(sample: try sample(
+            latitude: 45.638700,
+            longitude: -122.661500,
+            uptime: 1_000_000_000,
+            dateOffset: 0
+        )))
+        await source.emit(event(sample: try sample(
+            latitude: 45.638790,
+            longitude: -122.661500,
+            uptime: 2_000_000_000,
+            dateOffset: 1
+        )))
+
+        _ = try await coordinator.finish()
+        let recorded = await distances.values()
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.sessionID, sessionID)
+        XCTAssertEqual(recorded.first?.uptime, 2_000_000_000)
+    }
+
     func testMissingRouteStoreDoesNotDiscardScreenedGPSDistance() async throws {
         let source = TestRideLocationSource()
         let distances = DistanceCollector()
@@ -230,6 +268,60 @@ final class RideLocationCaptureTests: XCTestCase {
         rideStore.stop()
     }
 
+    @MainActor
+    func testCompletedRideRejectsLateSessionScopedGPSDelta() async throws {
+        let directory = temporaryDirectory(name: "location-session-scope")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "location-session-scope"),
+            baseDirectoryURL: directory
+        )
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let rideStore = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await rideStore.start()
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Simulator movement should start a confirmed ride.") {
+            rideStore.status == .active
+        }
+        let completedSessionID = try XCTUnwrap(rideStore.activeSessionID)
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("The ride should complete before delayed GPS is delivered.") {
+            rideStore.status == .idle
+                && rideStore.lastCompletedSessionID == completedSessionID
+        }
+        XCTAssertNil(rideStore.activeSessionID)
+
+        await rideStore.ingestQualityScreenedGPSDistanceDelta(
+            25,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            for: completedSessionID
+        )
+        try await Task.sleep(nanoseconds: 75_000_000)
+
+        XCTAssertEqual(
+            rideStore.status,
+            .idle,
+            "A delayed coordinate from a completed ride must not become fresh movement for a later ride."
+        )
+        XCTAssertNil(rideStore.activeSessionID)
+        XCTAssertEqual(rideStore.lastCompletedSessionID, completedSessionID)
+        rideStore.stop()
+    }
+
     private func testPolicy() throws -> RideLocationQualityPolicy {
         try RideLocationQualityPolicy(
             maximumHorizontalAccuracyMeters: 20,
@@ -321,6 +413,24 @@ private actor DistanceCollector {
 
     func append(meters: Double, uptime: UInt64) {
         recorded.append(Value(meters: meters, uptime: uptime))
+    }
+
+    func values() -> [Value] {
+        recorded
+    }
+}
+
+private actor SessionDistanceCollector {
+    struct Value: Equatable, Sendable {
+        let sessionID: UUID
+        let meters: Double
+        let uptime: UInt64
+    }
+
+    private var recorded: [Value] = []
+
+    func append(sessionID: UUID, meters: Double, uptime: UInt64) {
+        recorded.append(Value(sessionID: sessionID, meters: meters, uptime: uptime))
     }
 
     func values() -> [Value] {
