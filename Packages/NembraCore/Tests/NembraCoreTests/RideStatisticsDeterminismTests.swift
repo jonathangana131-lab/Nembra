@@ -277,6 +277,45 @@ struct RideStatisticsDeterminismTests {
         #expect(yesterday.rideCount == 0)
     }
 
+    @Test("week month and year exclude the exact next-period boundary")
+    func largerPeriodsExcludeExactEndBoundary() throws {
+        var calendar = calendar()
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let referenceDate = calendar.date(
+            from: DateComponents(year: 2026, month: 8, day: 6, hour: 12)
+        )!
+        let cases: [(RideStatisticsPeriod, Calendar.Component)] = [
+            (.week, .weekOfYear),
+            (.month, .month),
+            (.year, .year)
+        ]
+
+        for (period, component) in cases {
+            let interval = calendar.dateInterval(of: component, for: referenceDate)!
+            let startRide = try ride(
+                id: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!,
+                date: interval.start,
+                distanceMeters: 1_000
+            )
+            let nextPeriodStart = try ride(
+                id: UUID(uuidString: "88888888-8888-8888-8888-888888888888")!,
+                date: interval.end,
+                distanceMeters: 2_000
+            )
+
+            let summary = try RideStatisticsAggregator.summarize(
+                period: period,
+                rides: [startRide, nextPeriodStart],
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+
+            #expect(summary.rideCount == 1)
+            #expect(summary.totalDistanceMeters == 1_000)
+            #expect(summary.longestRideSessionID == startRide.sessionID)
+        }
+    }
+
     @Test("representable Pacific dates keep calendar-day streaks across daylight saving time")
     func daylightSavingStreakRemainsCalendarBased() throws {
         var calendar = calendar()
