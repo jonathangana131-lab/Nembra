@@ -251,8 +251,8 @@ enum AppBootstrap {
         } else {
             // Production history/route storage may be opened for truthful
             // read-only presentation, but no production ride detector or
-            // location-capture policy is selected until real MAXSHOT timing and
-            // field location behavior are measured.
+            // location-capture policy is selected until real AOVOPRO ES80 timing
+            // and field location behavior are measured.
             rideStore = RideApplicationStore(
                 service: bootstrap.service,
                 initialState: bootstrap.initialState,
