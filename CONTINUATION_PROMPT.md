@@ -12,67 +12,71 @@ Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.
 5. Read only the relevant sections of `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN_SYSTEM.md`, and `docs/` needed for the active slice.
 6. Immediately continue the exact unfinished action. Do not stop at a status update while another safe tool action can advance the project.
 
-## Expected live handoff when this checkpoint first lands
-- Stable base before Phase 13: `main` at `ea0dfd64f7cb0a6af64d14612c594f141ae1d2d0`.
-- Active branch: `feature/completed-ride-history`.
-- Active PR: **#6 — Expose truthful completed ride history**.
-- Accepted implementation head: `5e2e4b93cdc41af148dc7e029f6da88465dea7ff`.
-- This documentation checkpoint is a descendant of that implementation head; resolve its exact SHA from GitHub rather than assuming one from this prose.
+## Expected live handoff when this checkpoint lands
+- Stable base before Phase 14: `main` at `c79dec497bee7bc7047601963204b568acec8d5e`.
+- Active branch: `feature/durable-ride-routes`.
+- Active PR: **#7 — Persist and present truthful completed-ride route geometry**.
+- Accepted implementation head before memory-only commits: `088c849757a1a688255acc1538c96aa725b24a12`.
+- Resolve the exact current branch SHA from GitHub; documentation commits after that implementation head intentionally require a fresh exact-head CI gate.
 
-## Phase 13 accepted implementation
-The branch exposes the existing exact SwiftData completed-ride ledger through a native portrait Rides surface using a root-owned `RideHistoryPresentationStore`.
+## Phase 14 accepted implementation
+The branch adds truthful durable route geometry while keeping production Core Location capture disabled until its real permission/quality/background/energy policy is implemented and field-tested.
 
-Preserve these truth boundaries:
-- completed records remain immutable exact ride evidence.
-- ODO and GPS distances are labeled separately; neither is silently called final distance without reconciliation/coverage evidence.
-- no stored coordinates means **No route geometry recorded** and no fake map.
-- do not fabricate duration from formatted wall-clock timestamps.
-- production automatic ride detection remains disabled pending real MAXSHOT cadence/latency/reconnect validation.
-- `NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE=1` is explicit Simulator-only QA and drives the real ride engine/persistence/history path rather than inserting fake rows.
-- simulation persistence remains isolated from production.
+Preserve these boundaries:
+- route chunks/manifests are immutable and idempotent by exact identity; conflicting evidence never overwrites prior geometry.
+- persisted indexed identity and decoded payload identity must agree.
+- corrupt/missing/reordered chunks fail closed rather than producing a plausible map.
+- process recovery and known route gaps create explicit geometry segment boundaries; presentation never draws across them.
+- a route with a known gap/recovery cannot claim complete coverage.
+- route storage is isolated from completed history/recovery so an additive route-store failure cannot erase ride history.
+- no stored coordinates means **No route geometry recorded**; corrupt/unavailable storage is an error, not successful emptiness.
+- MapKit draws only validated stored coordinates.
+- map geometry never becomes final distance evidence by itself.
+- Simulator route coordinates are deterministic QA-only, isolated from production, classified partial, and do not fabricate `qualityScreenedGPSDistanceMeters`.
+- production automatic ride detection and production Core Location route recording remain hardware/field-gated.
 
-Implementation-head Xcode evidence is already accepted:
-- run `31073268597`
-- job `92525538715`
-- artifact `8956630995`
-- macOS 26.5.2 / Xcode 27.0 (`27A5228h`) / iOS 27.0 (`24A5390f`)
-- app/core tests: **21/21**, zero failures
-- UI tests: **7/7**, zero failures
-- end-to-end history UI test verifies completed row, detail, nonzero odometer evidence, and explicit unavailable route geometry.
-- inspected iPhone 12 attachments: **Completed Ride History** and **Completed Ride Details**.
+Implementation-head Xcode evidence already accepted:
+- head `088c849757a1a688255acc1538c96aa725b24a12`
+- workflow run `31082309937`
+- job `92553689585`
+- artifact `8960225545` / `nembra-xcode27-simulator-222-1`
+- conclusion **success**
+- app/core Xcode tests **27/27**, zero failures
+- UI tests **7/7**, zero failures
+- inspected iPhone 12 attachments: **Completed Ride History** and **Completed Ride Details With Route**.
+- Route detail visibly shows real MapKit rendering from stored simulated coordinates and **Partial recorded coverage** while keeping `ODO 0.2 mi` separate.
 
-Those captures are accepted as Phase 13 functional systems evidence only. The Rides presentation is not final product-design acceptance and remains subject to the mandatory Production Visual Overhaul.
+Those captures are functional systems evidence only. The Rides/Route visual treatment remains subject to the mandatory Production Visual Overhaul.
 
-## Exact unfinished action after this memory checkpoint
-1. Resolve the newest exact `feature/completed-ride-history` head.
-2. Inspect the **Xcode 27 Simulator QA** run for that exact docs head.
-3. Freeze the branch while the exact-head gate runs. Do not reopen accepted Phase 13 architecture unless the gate exposes a real regression.
-4. If green, mark PR #6 ready for review.
-5. Squash merge PR #6 with `expected_head_sha` set to that exact green head.
-6. Verify the merged PR and fresh `main` head.
-7. Re-inspect fresh `main`, open PRs, branches, newest commits, Actions, and project-memory files.
-8. Determine the next substantial vertical slice from fresh repository state. Do not infer it from old phase numbering.
-9. Create the next branch from fresh `main` and immediately begin the slice.
+## Exact unfinished action after this checkpoint
+1. Resolve the newest exact `feature/durable-ride-routes` head after `PROJECT_STATE.md` and this file are committed.
+2. Wait for **Xcode 27 Simulator QA** on that exact head while doing only safe read/review work; do not mutate the branch unless a real issue is discovered.
+3. Verify all jobs green and preserve exact run/job/artifact identifiers.
+4. Verify PR #7 has no unresolved review threads/comments and is mergeable.
+5. Mark PR #7 ready for review.
+6. Squash merge PR #7 with `expected_head_sha` set to the exact green head.
+7. Verify merged PR and fresh `main` SHA.
+8. Re-inspect fresh `main`, open PRs, branches, newest commits, Actions, and project-memory files.
+9. Determine the next substantial vertical slice from fresh repository state, create its branch, and immediately begin implementation. Do not stop at the Phase 14 merge boundary.
 
 ## Systems that must not be casually rebuilt
 - capability-based `VehicleProfile` / `ScooterService` boundary.
 - explicit `SimulatedScooterService` and hardware-gated `UnverifiedScooterService`.
 - typed connection failures plus live/retained/unavailable state semantics.
 - serialized pessimistic confirmed commands with connection-generation invalidation.
-- raw authoritative speed evidence separate from state and display interpolation.
-- fixed-slot rolling-number model and localized Dashboard speed rendering.
-- confirmed-mode-only Dashboard personality.
+- raw authoritative speed evidence separate from state/display interpolation.
+- fixed-slot rolling speed model and confirmed-mode-only Dashboard personality.
 - automatic `RideEngine` with disconnect continuity.
 - two-slot crash-recovery journal and `completedPendingCommit` handoff.
-- root-owned ride application coordinator.
-- exact SwiftData completed-history adapter and idempotent readback-verified commit contract.
+- exact SwiftData completed-history adapter and readback-verified idempotent commit contract.
 - independent ODO/GPS/live-distance coverage and reconciliation architecture.
-- root-owned completed-history presentation store.
+- root-owned history and route presentation stores.
+- immutable route chunk/manifest persistence and explicit route-gap topology.
 
-## Hardware truth still unresolved
-Real MAXSHOT advertisement identity, services/characteristics/properties, notification cadence/latency/jitter/resolution, packet framing/checksum, read/write acknowledgements, firmware differences, DP101/102/103 user-facing semantics, and AccessorySetupKit descriptors.
+## Hardware/field truth still unresolved
+Real MAXSHOT advertisement identity, BLE services/characteristics/properties, notification cadence/latency/jitter/resolution, packet framing/checksum, read/write acknowledgements, firmware differences, DP101/102/103 semantics, AccessorySetupKit descriptors, real iOS 27 Core Location authorization/background behavior, outdoor GPS quality policy, energy behavior, and physical iPhone 12 profiling.
 
-Do not send unknown writes or expose fake VESC/tuning controls.
+Do not send unknown motorized-vehicle writes or expose fake VESC/tuning controls.
 
 ## Execution reminder
-A progress update, passing build, screenshot, commit, merge, or phase boundary is not a conversation stop. While another safe tool action can advance Nembra, keep executing. If the platform forcibly ends the run, GitHub is the recovery memory.
+A progress update, passing build, screenshot, commit, PR, merge, or phase boundary is not a conversation stop. While another safe tool action can advance Nembra, keep executing. If the platform forcibly ends the run, GitHub is the recovery memory.

@@ -115,6 +115,341 @@ final class RideApplicationTests: XCTestCase {
         }
     }
 
+    func testSwiftDataRouteStorePersistsExactIdempotentGeometryAcrossReopen() async throws {
+        let directory = temporaryDirectory(name: "route-history")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let sessionID = UUID()
+
+        let firstChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0),
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6391, longitude: -122.6607)
+            ]
+        )
+        let secondChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 1),
+            points: [
+                try routePoint(sequence: 2, latitude: 45.6397, longitude: -122.6599),
+                try routePoint(sequence: 3, latitude: 45.6402, longitude: -122.6590)
+            ]
+        )
+        let manifest = try RideRouteManifest(
+            sessionID: sessionID,
+            coverage: .complete,
+            segmentCount: 1,
+            pointCount: 4,
+            knownGapCount: 0
+        )
+
+        do {
+            let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+            let store = SwiftDataRideRouteStore(modelContainer: container)
+
+            let firstInsert = try await store.commit(firstChunk)
+            let firstDuplicate = try await store.commit(firstChunk)
+            let secondInsert = try await store.commit(secondChunk)
+            let manifestInsert = try await store.commit(manifest)
+            let manifestDuplicate = try await store.commit(manifest)
+            XCTAssertEqual(firstInsert, .inserted)
+            XCTAssertEqual(firstDuplicate, .alreadyPresent)
+            XCTAssertEqual(secondInsert, .inserted)
+            XCTAssertEqual(manifestInsert, .inserted)
+            XCTAssertEqual(manifestDuplicate, .alreadyPresent)
+
+            let loadedGeometry = try await store.geometry(sessionID: sessionID)
+            let geometry = try XCTUnwrap(loadedGeometry)
+            XCTAssertEqual(geometry.coverage, .complete)
+            XCTAssertEqual(geometry.pointCount, 4)
+            XCTAssertEqual(geometry.segments.count, 1)
+            XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1, 2, 3])
+        }
+
+        do {
+            let reopenedContainer = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+            let reopenedStore = SwiftDataRideRouteStore(modelContainer: reopenedContainer)
+            let loadedGeometry = try await reopenedStore.geometry(sessionID: sessionID)
+            let geometry = try XCTUnwrap(loadedGeometry)
+            XCTAssertEqual(geometry.pointCount, 4)
+            XCTAssertEqual(geometry.segments[0].points, firstChunk.points + secondChunk.points)
+        }
+    }
+
+    func testSwiftDataRouteStoreRejectsConflictingChunkAndManifestEvidence() async throws {
+        let directory = temporaryDirectory(name: "route-conflicts")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+        let chunkID = RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0)
+
+        let originalChunk = try RideRouteChunk(
+            id: chunkID,
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6391, longitude: -122.6607)
+            ]
+        )
+        let conflictingChunk = try RideRouteChunk(
+            id: chunkID,
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6500, longitude: -122.6500)
+            ]
+        )
+        _ = try await store.commit(originalChunk)
+
+        do {
+            _ = try await store.commit(conflictingChunk)
+            XCTFail("The same route chunk identity with different coordinates must never overwrite durable evidence.")
+        } catch let error as RideRouteStoreError {
+            XCTAssertEqual(error, .chunkConflict(chunkID))
+        }
+
+        let completeManifest = try RideRouteManifest(
+            sessionID: sessionID,
+            coverage: .complete,
+            segmentCount: 1,
+            pointCount: 2,
+            knownGapCount: 0
+        )
+        let conflictingManifest = try RideRouteManifest(
+            sessionID: sessionID,
+            coverage: .partial,
+            segmentCount: 1,
+            pointCount: 2,
+            knownGapCount: 0
+        )
+        _ = try await store.commit(completeManifest)
+
+        do {
+            _ = try await store.commit(conflictingManifest)
+            XCTFail("A final route manifest must be immutable once its session identity is committed.")
+        } catch let error as RideRouteStoreError {
+            XCTAssertEqual(error, .manifestConflict(sessionID))
+        }
+    }
+
+    func testSwiftDataRouteStoreRejectsCorruptIndexedIdentityAndIncompleteGeometry() async throws {
+        let directory = temporaryDirectory(name: "route-corruption")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+
+        let requestedSessionID = UUID()
+        let requestedID = RideRouteChunkID(
+            sessionID: requestedSessionID,
+            segmentIndex: 0,
+            chunkIndex: 0
+        )
+        let foreignID = RideRouteChunkID(
+            sessionID: UUID(),
+            segmentIndex: 0,
+            chunkIndex: 0
+        )
+        let foreignChunk = try RideRouteChunk(
+            id: foreignID,
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6391, longitude: -122.6607)
+            ]
+        )
+        let context = ModelContext(container)
+        let requestedStorageID = "\(requestedSessionID.uuidString)|0|0"
+        context.insert(
+            StoredRideRouteChunk(
+                storageID: requestedStorageID,
+                sessionID: requestedSessionID,
+                segmentIndex: 0,
+                chunkIndex: 0,
+                payload: try JSONEncoder().encode(foreignChunk)
+            )
+        )
+        try context.save()
+
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        do {
+            _ = try await store.chunk(id: requestedID)
+            XCTFail("Indexed route identity and encoded route identity must agree exactly.")
+        } catch let error as RideHistoryPersistenceError {
+            XCTAssertEqual(error, .corruptRouteChunk(requestedStorageID))
+        }
+
+        let missingSessionID = UUID()
+        let missingManifest = try RideRouteManifest(
+            sessionID: missingSessionID,
+            coverage: .complete,
+            segmentCount: 1,
+            pointCount: 2,
+            knownGapCount: 0
+        )
+        _ = try await store.commit(missingManifest)
+
+        do {
+            _ = try await store.geometry(sessionID: missingSessionID)
+            XCTFail("A final manifest cannot make absent route chunks look drawable.")
+        } catch let error as RideRouteEvidenceError {
+            XCTAssertEqual(error, .nonContiguousSegments)
+        }
+
+        let orphanSessionID = UUID()
+        let orphanChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: orphanSessionID, segmentIndex: 0, chunkIndex: 0),
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6391, longitude: -122.6607)
+            ]
+        )
+        _ = try await store.commit(orphanChunk)
+
+        do {
+            _ = try await store.geometry(sessionID: orphanSessionID)
+            XCTFail("Persisted coordinates without a final manifest must not be mislabeled as no route data.")
+        } catch let error as RideHistoryPersistenceError {
+            XCTAssertEqual(error, .corruptRouteManifest(orphanSessionID))
+        }
+    }
+
+    func testRouteRecorderTrailingGapDoesNotCreateEmptySegment() async throws {
+        let directory = temporaryDirectory(name: "route-trailing-gap")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let recorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        let sessionID = UUID()
+
+        try await recorder.begin(sessionID: sessionID)
+        try await recorder.append(
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        try await recorder.append(
+            latitude: 45.6391,
+            longitude: -122.6607,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+            horizontalAccuracyMeters: 4
+        )
+        try await recorder.markKnownGap()
+        try await recorder.markKnownGap()
+
+        let manifest = try await recorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 1)
+        XCTAssertEqual(manifest.knownGapCount, 0)
+        XCTAssertEqual(manifest.pointCount, 2)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+    }
+
+    func testRouteRecorderResumeStartsNewSegmentInsteadOfBridgingPersistedDraft() async throws {
+        let directory = temporaryDirectory(name: "route-resume-gap")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+
+        let firstRecorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await firstRecorder.begin(sessionID: sessionID)
+        try await firstRecorder.append(
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        try await firstRecorder.append(
+            latitude: 45.6391,
+            longitude: -122.6607,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+            horizontalAccuracyMeters: 4
+        )
+
+        let recoveredRecorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await recoveredRecorder.begin(sessionID: sessionID)
+        try await recoveredRecorder.append(
+            latitude: 45.6400,
+            longitude: -122.6598,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_010),
+            horizontalAccuracyMeters: 4
+        )
+        try await recoveredRecorder.append(
+            latitude: 45.6405,
+            longitude: -122.6590,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_011),
+            horizontalAccuracyMeters: 4
+        )
+
+        let manifest = try await recoveredRecorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 2)
+        XCTAssertEqual(manifest.knownGapCount, 1)
+        XCTAssertEqual(manifest.pointCount, 4)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 2)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+        XCTAssertEqual(geometry.segments[1].points.map(\.sequence), [2, 3])
+    }
+
+    func testRouteRecorderSequenceOverflowDoesNotMaterializePendingGap() async throws {
+        let directory = temporaryDirectory(name: "route-sequence-overflow")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+
+        let persistedPoint = try RideRoutePoint(
+            sequence: UInt64.max - 1,
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            sourceMeasurementDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        let persistedChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0),
+            points: [persistedPoint]
+        )
+        _ = try await store.commit(persistedChunk)
+
+        let recorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await recorder.begin(sessionID: sessionID)
+
+        do {
+            try await recorder.append(
+                latitude: 45.6391,
+                longitude: -122.6607,
+                capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+                horizontalAccuracyMeters: 4
+            )
+            XCTFail("A resumed recorder must reject a point when its durable sequence cannot advance.")
+        } catch let error as RideRouteRecorderError {
+            XCTAssertEqual(error, .sequenceOverflow)
+        }
+
+        let manifest = try await recorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 1)
+        XCTAssertEqual(manifest.knownGapCount, 0)
+        XCTAssertEqual(manifest.pointCount, 1)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [UInt64.max - 1])
+        XCTAssertFalse(geometry.hasDrawablePath)
+    }
+
     @MainActor
     func testStateOnlyAcknowledgementsDoNotReplayRawSpeedEvidence() async throws {
         let directory = temporaryDirectory(name: "single-use-speed")
@@ -199,8 +534,6 @@ final class RideApplicationTests: XCTestCase {
         await store.start()
         XCTAssertEqual(store.status, .idle)
 
-        // Deliberately invert the two independent service streams: the raw
-        // packet reaches RideApplicationStore before its connected state does.
         try await service.emitSpeed(kilometersPerHour: 12)
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(
@@ -321,6 +654,21 @@ final class RideApplicationTests: XCTestCase {
             endingOdometerKilometers: endingOdometerKilometers,
             qualityScreenedGPSDistanceMeters: 1_900,
             continuity: .uninterruptedProcess
+        )
+    }
+
+    private func routePoint(
+        sequence: UInt64,
+        latitude: Double,
+        longitude: Double
+    ) throws -> RideRoutePoint {
+        try RideRoutePoint(
+            sequence: sequence,
+            latitude: latitude,
+            longitude: longitude,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000 + Double(sequence)),
+            sourceMeasurementDate: Date(timeIntervalSince1970: 1_700_000_000 + Double(sequence)),
+            horizontalAccuracyMeters: 4.5
         )
     }
 
