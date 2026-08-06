@@ -66,6 +66,10 @@ public struct AdaptiveBatteryRangePersistedState: Equatable, Codable, Sendable {
         guard historicalConsumed.isFinite,
               historicalConsumed >= 0,
               acceptedWindowCount >= 0,
+              // `ingest` increments this counter for every accepted window. A
+              // restored Int.max value would therefore make the next legitimate
+              // accepted window trap on integer overflow instead of failing closed.
+              acceptedWindowCount < Int.max,
               model.recentSamples.count <= acceptedWindowCount else {
             throw AdaptiveBatteryRangePersistedStateError.invalidHistoricalBounds
         }
