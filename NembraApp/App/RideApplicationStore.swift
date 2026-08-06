@@ -8,7 +8,7 @@ struct RideApplicationConfiguration: Sendable {
 
     /// Explicit Simulator QA policy only. These thresholds exist so the real
     /// application/recovery path can be exercised deterministically; they are
-    /// not MAXSHOT hardware timing or speed claims.
+    /// not AOVOPRO ES80 hardware timing or speed claims.
     static func simulatorQA() throws -> RideApplicationConfiguration {
         RideApplicationConfiguration(
             detectionPolicy: try RideDetectionPolicy(
@@ -182,10 +182,9 @@ final class RideApplicationStore {
         pendingAuthoritativeSpeedSample = nil
     }
 
-    /// Accepts only distance that has already passed the phone-location quality
-    /// screen. Route geometry remains a separate durable evidence stream; this
-    /// delta is fed into the existing RideEngine GPS-distance input and never
-    /// recomputed later from a rendered MapKit polyline.
+    /// Candidate-level/internal entry for already screened GPS evidence. This is
+    /// intentionally not the production ride-location lifecycle API because an
+    /// unscoped delayed delta could otherwise be assigned to a later ride.
     func ingestQualityScreenedGPSDistanceDelta(
         _ meters: Double,
         receivedAtUptimeNanoseconds: UInt64
@@ -194,6 +193,22 @@ final class RideApplicationStore {
             speedSample: nil,
             qualityScreenedGPSDistanceDeltaMeters: meters,
             minimumUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
+    /// Ride-scoped GPS evidence entry used by the phone-location capture path.
+    /// The capture owns the UUID it began with. If that ride has ended or a new
+    /// ride has taken over, a late coordinate delta is dropped instead of being
+    /// allowed to seed movement for the wrong `RideEngine` session.
+    func ingestQualityScreenedGPSDistanceDelta(
+        _ meters: Double,
+        receivedAtUptimeNanoseconds: UInt64,
+        for sessionID: UUID
+    ) async {
+        guard activeSessionID == sessionID else { return }
+        await ingestQualityScreenedGPSDistanceDelta(
+            meters,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
         )
     }
 
