@@ -95,6 +95,9 @@ struct AdaptiveBatteryRangeTests {
             _ = try policy(provisionalEfficiencyMetersPerPercentagePoint: 0)
         }
         #expect(throws: BatteryRangeValidationError.self) {
+            _ = try policy(provisionalEfficiencyMetersPerPercentagePoint: .greatestFiniteMagnitude)
+        }
+        #expect(throws: BatteryRangeValidationError.self) {
             _ = try policy(
                 lowSOCCautionThresholdPercent: 20,
                 lowSOCEfficiencyMultiplier: nil
@@ -226,6 +229,26 @@ struct AdaptiveBatteryRangeTests {
 
         #expect(result.disposition == .rejected(.efficiencyOutlier))
         #expect(model == before)
+    }
+
+    @Test("numerically impossible efficiency is rejected before it can persist")
+    func numericalOverflowRejected() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(
+            try window(
+                distanceMeters: .greatestFiniteMagnitude,
+                startPercentage: 100,
+                endPercentage: 99
+            ),
+            policy: try policy(
+                minimumConsumedPercentagePoints: 1,
+                minimumDistanceMeters: 1
+            )
+        )
+
+        #expect(result.disposition == .rejected(.numericalOverflow))
+        #expect(model.hasLearnedEfficiency == false)
+        #expect(model.acceptedWindowCount == 0)
     }
 
     @Test("cold start can use a classified conservative seed without calling it learned")
@@ -441,5 +464,35 @@ struct AdaptiveBatteryRangeTests {
         let decoded = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
 
         #expect(decoded == model)
+    }
+
+    @Test("corrupt persisted learning state fails closed")
+    func corruptPersistenceRejected() throws {
+        var model = AdaptiveBatteryRangeModel()
+        _ = model.ingest(
+            try window(distanceMeters: 2_400, startPercentage: 80, endPercentage: 60),
+            policy: try policy()
+        )
+
+        let validData = try JSONEncoder().encode(model)
+        let validObject = try #require(
+            JSONSerialization.jsonObject(with: validData) as? [String: Any]
+        )
+
+        var invalidHistory = validObject
+        invalidHistory["historicalEfficiencyMetersPerPercentagePoint"] = -1.0
+        let invalidHistoryData = try JSONSerialization.data(withJSONObject: invalidHistory)
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: invalidHistoryData)
+        }
+
+        var invalidSampleState = validObject
+        var samples = try #require(invalidSampleState["recentSamples"] as? [[String: Any]])
+        samples[0]["consumedPercentagePoints"] = 0.0
+        invalidSampleState["recentSamples"] = samples
+        let invalidSampleData = try JSONSerialization.data(withJSONObject: invalidSampleState)
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: invalidSampleData)
+        }
     }
 }
