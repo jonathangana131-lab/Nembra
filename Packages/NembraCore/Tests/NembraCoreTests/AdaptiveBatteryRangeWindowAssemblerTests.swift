@@ -88,6 +88,30 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler.accumulatedDistanceMeters == 0)
     }
 
+    @Test("current policy threshold is applied when a candidate closes")
+    func currentPolicyThresholdControlsClosure() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let loose = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
+        let strict = try policy(minimumConsumedPercentagePoints: 4, minimumDistanceMeters: 100)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
+        try assembler.recordDistance(deltaMeters: 200)
+
+        #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.accumulatedDistanceMeters == 200)
+
+        let window = try #require(
+            assembler.ingestSOC(reading(76, uptime: 3), policy: strict)
+        )
+        #expect(window.consumedPercentagePoints == 4)
+
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(window, policy: strict)
+        #expect(result.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("distance threshold can mature while SoC remains flat")
     func flatSOCKeepsAnchor() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
