@@ -422,17 +422,22 @@ struct DashboardView: View {
             baseValue = batteryReadoutMode == .estimatedRange ? "Estimated range unavailable" : "Unavailable"
         }
 
-        guard vehicle.state.dataAvailability == .retained,
-              batteryReadoutPresentation.batteryFillPercent != nil else {
-            return baseValue
+        var qualifiers: [String] = []
+        if isBatteryLow {
+            qualifiers.append("low battery")
+        }
+        if vehicle.state.dataAvailability == .retained,
+           batteryReadoutPresentation.batteryFillPercent != nil {
+            switch batteryReadoutMode {
+            case .percentage:
+                qualifiers.append("last known vehicle data")
+            case .estimatedRange:
+                qualifiers.append("battery charge is last known vehicle data")
+            }
         }
 
-        switch batteryReadoutMode {
-        case .percentage:
-            return "\(baseValue), last known vehicle data"
-        case .estimatedRange:
-            return "\(baseValue), battery charge is last known vehicle data"
-        }
+        guard !qualifiers.isEmpty else { return baseValue }
+        return ([baseValue] + qualifiers).joined(separator: ", ")
     }
 
     private var batteryReadoutAccessibilityHint: String {
