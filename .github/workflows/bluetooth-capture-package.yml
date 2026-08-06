@@ -25,5 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Guard passive adapter against application writes
+        run: |
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture adapter must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
       - name: Test NembraBluetoothCapture
         run: swift test --package-path Packages/NembraBluetoothCapture
