@@ -12,7 +12,7 @@ Updated: 2026-08-05
 - Active branch: `feature/landscape-dashboard`
 - Stable branch: `main`
 - Stable Home merge: `254b95a8d62d7d143df937cc0d8aa73f45548266`
-- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode**
+- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode, final polish gate**
 - Next milestone after Dashboard acceptance: **Phase 10 — measured-speed instrumentation / render-only interpolation**
 
 ## Portrait Home — accepted and merged
@@ -24,20 +24,20 @@ Updated: 2026-08-05
 - Reconnecting/offline telemetry is explicitly last-known/read-only.
 - Speed-limit editing remains absent until DP101/102/103 user-facing semantics are verified.
 - Real UI interaction gate passed on Xcode 27 run `31056673050` after fixing stale XCTest element reuse for confirmed Lock state.
-- PR #1 was merged to `main` only after the latest Xcode 27 build/test/capture job completed successfully.
+- PR #1 merged to `main` only after the latest Xcode 27 build/test/capture job completed successfully.
 
 ## Phase 9 Dashboard implementation
 - Compact-height iPhone landscape routes to a dedicated `DashboardView`; portrait remains Home.
 - Dashboard is an instrument-first black cockpit, not rotated portrait content.
 - Left rail: MAXSHOT identity, truthful connection status, battery, scooter Trip.
-- Center: dominant confirmed speed and unit. Phase 9 does not yet inject interpolation into the display.
+- Center: dominant confirmed speed and unit. Phase 9 does not inject interpolation into the display.
 - Right rail: confirmed ride mode plus compact stopped-only controls.
-- While moving, state-changing controls disappear and the cockpit says they are available when stopped.
+- While moving, state-changing controls remain hidden. The final polish replaces dead `Controls available when stopped` space with read-only confirmed Headlight + Lock status.
 - Lock still uses a confirmation dialog and service acknowledgement semantics.
-- Stable accessibility identifiers exist for cockpit, speed, mode, battery/trip, mode buttons, Light and Lock.
+- Stable accessibility identifiers exist for cockpit, speed, mode, battery/trip, mode buttons, Light/Lock controls, and moving-state readouts.
 - Root dashboard accessibility explicitly contains children so the cockpit marker does not hide instrument/control descendants from XCTest.
-- Landscape XCUITests cover riding/hidden-controls and stopped/mode-confirmation states and keep screenshots as XCTest attachments.
-- CI now preserves the full `.xcresult` and exports test attachments even when `xcodebuild test` fails, so visual/interaction failures remain inspectable.
+- Landscape XCUITests cover riding/hidden-controls/read-only state and stopped/mode-confirmation states and keep screenshots as XCTest attachments.
+- CI preserves the full `.xcresult` and exports test attachments even when `xcodebuild test` fails.
 
 ## Real Xcode / Simulator proof
 GitHub-hosted `xcode-27` is the remote Mac gate.
@@ -46,7 +46,18 @@ GitHub-hosted `xcode-27` is the remote Mac gate.
 - `NembraCore`: **156/156 tests passing** on the Mac gate.
 - Portrait Home latest interaction gate: **PASS** (`31056673050`).
 - Simulator capture states already cover cold-disconnected, reconnecting, connected-stopped, riding, low-battery, Bluetooth-off, permission-denied, scooter-unavailable, unsupported-configuration, and representative dark states.
-- Phase 9 Dashboard is not accepted until the latest landscape branch Xcode 27 run is green and the exported landscape attachments are visually reviewed.
+- Phase 9 run `31058989306` at `f3394cac` was **PASS** including landscape XCUITests and exported screenshots.
+- Screenshot review found the stopped cockpit acceptable but the riding right rail underused. Final polish commits `cfb0f9fc` + `75fd6622` replace that dead space with truthful read-only Headlight/Lock state and test it.
+- Latest final-polish run: `31059807152` at `75fd662222f344e4323554c6763a034cd0e775ae`; queued at this checkpoint. Do not merge PR #2 until this exact/newer lineage is green and its riding screenshot is visually inspected.
+
+## Phase 10 work already available for selective reuse
+- Old branch `feature/speed-instrumentation` diverged before accepted Home/Phase 9 and **must not be merged wholesale**.
+- Valid pieces to transplant only after Phase 9 merge:
+  - narrow `VehicleStore.speedTelemetryUpdates()` service stream
+  - `SpeedInstrumentModel`
+  - `RollingSpeedValueView`
+  - targeted app tests for confirmed fallback / measured / interpolated / stale / estimated behavior
+- Core `SpeedDisplayInterpolator` and `RollingNumberModel` are already on the accepted lineage and have interruption, no-overshoot, truth-boundary, carry/borrow, fixed-slot, and invalid-value tests.
 
 ## Core architecture already implemented
 - Capability-based `VehicleProfile` / `ScooterService` boundary.
@@ -80,13 +91,14 @@ GitHub-hosted `xcode-27` is the remote Mac gate.
 - AccessorySetupKit descriptors based on observed advertisement/service identity.
 
 ## Next exact actions
-1. Let the latest `feature/landscape-dashboard` Xcode 27 run exercise the dedicated cockpit and real landscape XCUITests.
-2. Fix any compile, layout, accessibility, interaction, or orientation defect instead of weakening the tests.
-3. Download the latest workflow artifact and inspect `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments at the iPhone 12 baseline.
-4. Refine spacing/typography/control hierarchy if screenshot evidence shows clipping, cramped rails, weak speed dominance, or excessive chrome.
-5. Mark PR #2 ready and merge only when the latest Dashboard lineage is green and visually accepted.
-6. Immediately continue to **Phase 10**: rebase the existing measured-speed instrumentation ideas onto the accepted Dashboard, wire raw authoritative speed to render-only interpolation/rolling digits, and preserve telemetry truth boundaries.
-7. Continue into ride persistence/app wiring, background Bluetooth/location, maps, navigation, history/stats, acceleration tests, BLE diagnostics/real hardware, cloud/leaderboard, system integrations, and hardening per the master directive.
+1. Wait for Xcode 27 run `31059807152` (or newer head-equivalent final-polish run) to execute the final Phase 9 riding-state readout change.
+2. If it fails, inspect the exact Mac/XCTest artifact and fix the real issue; do not weaken tests.
+3. If it passes, download the exported `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments and inspect them at the iPhone 12 baseline.
+4. If visually accepted, mark PR #2 ready and merge Phase 9 to `main`.
+5. Immediately create a fresh Phase 10 branch from the merged `main`; do **not** merge the old divergent speed branch.
+6. Selectively transplant the narrow raw-speed stream, `SpeedInstrumentModel`, `RollingSpeedValueView`, and targeted app tests; wire them into the accepted Dashboard.
+7. Run Xcode 27 + landscape screenshot QA again, tune Simulator interpolation only from observed simulated cadence, and keep production MAXSHOT timing hardware-gated until real cadence is measured.
+8. Continue autonomously through mode-responsive Dashboard, ride persistence/app wiring, background Bluetooth/location, maps/navigation, history/stats, acceleration tests, BLE diagnostics/real hardware, cloud/leaderboard, system integrations, and hardening per the master directive.
 
 ## Key files
 - `DESIGN_SYSTEM.md`
