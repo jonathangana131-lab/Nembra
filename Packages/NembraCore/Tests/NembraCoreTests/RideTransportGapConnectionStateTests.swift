@@ -56,11 +56,10 @@ struct RideTransportGapConnectionStateTests {
                 observation(uptime: 2_000, connection: state)
             )
 
-            let checkpoint = try #require(
-                engine.recoveryCheckpoint(
-                    checkpointedAtDate: Date(timeIntervalSince1970: 1_700_200_100)
-                )
+            let optionalCheckpoint = try engine.recoveryCheckpoint(
+                checkpointedAtDate: Date(timeIntervalSince1970: 1_700_200_100)
             )
+            let checkpoint = try #require(optionalCheckpoint)
             #expect(checkpoint.persistedPhase == .temporarilyDisconnected)
             #expect(checkpoint.transportGapEvidence == .observed)
         }
