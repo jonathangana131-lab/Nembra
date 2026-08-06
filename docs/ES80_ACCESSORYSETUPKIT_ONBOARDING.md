@@ -33,7 +33,7 @@ AccessorySetupKit authorization is therefore not ES80 protocol decoding and is n
 
 ### App declaration is a safety-critical contract
 
-For Bluetooth discovery, Apple's current documentation requires the app to declare AccessorySetupKit support and the Bluetooth families it intends to configure. Current Info.plist documentation includes:
+For Bluetooth discovery, Apple's current documentation requires the app to declare AccessorySetupKit support and the Bluetooth families it intends to configure. Current Info.plist symbol documentation includes:
 
 - `NSAccessorySetupSupports` with `Bluetooth` for Bluetooth/LE setup;
 - `NSAccessorySetupBluetoothCompanyIdentifiers` for allowed Bluetooth company identifiers;
@@ -43,6 +43,12 @@ For Bluetooth discovery, Apple's current documentation requires the app to decla
 Apple's current discovery guide warns that attempting Bluetooth setup discovery without the required declarations, or using identifiers/names/services that are not declared, can terminate the app.
 
 Nembra must therefore never populate these keys from speculative ES80 family fingerprints merely to "see what appears."
+
+#### Current Apple documentation key-name discrepancy
+
+As of 2026-08-06, Apple's AccessorySetupKit framework/property-list symbol pages expose the support key as `NSAccessorySetupSupports`, while the narrative `Discovering and configuring accessories` guide currently spells the raw key `NSAccessorySetupKitSupports` in its prose.
+
+Treat this as an Apple documentation inconsistency, not permission to guess. This research note uses the canonical framework/property-list symbol name `NSAccessorySetupSupports`, but a production implementation must verify the installed Xcode 27 SDK's symbol/raw generated Info.plist behavior and run the real-device setup path before acceptance. Do not hand-edit a speculative raw key based only on one prose page.
 
 ### Discovery descriptors
 
@@ -109,6 +115,8 @@ The passive CoreBluetooth research lane remains the right place to establish raw
 ### Existing-accessory migration
 
 Apple supports migration of an already-known Bluetooth accessory to AccessorySetupKit using `ASMigrationDisplayItem` and a previously known peripheral identifier.
+
+Current Apple guidance also states that an app should **not initialize `CBCentralManager` before AccessorySetupKit migration completes**; doing so causes the migration picker flow to report an error/fail to appear. A future Nembra migration path therefore needs explicit startup ordering between AccessorySetupKit migration and the root CoreBluetooth owner.
 
 Nembra should only build a migration path if an earlier production release legitimately managed an ES80 outside AccessorySetupKit and has a trustworthy saved peripheral handle. The current app has no reason to manufacture a migration record during research.
 
