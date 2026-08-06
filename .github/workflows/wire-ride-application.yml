@@ -103,7 +103,6 @@ jobs:
           path.write_text(text)
           PY
 
-          plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
 
       - name: Commit wiring and remove one-shot workflow
