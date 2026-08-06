@@ -36,24 +36,14 @@ enum BatteryAdaptiveRangeEvidenceAdapter {
         let requiresReset = observation.requiresNewContinuityAnchor
 
         guard observation.isAuthoritativeVehicleMeasurement else {
-            // A stock-app/simulation/estimate/presentation value still cannot
-            // train range. However, if the evidence stream explicitly says an
-            // interval was unobserved, that known gap must close any in-flight
-            // learning span so later verified SoC cannot bridge across it.
             return requiresReset ? .resetContinuity : .ignore
         }
 
         guard observation.value.field == .stateOfChargePercent else {
-            // Verified voltage/current/power/charging evidence does not teach
-            // percentage-based efficiency, but an explicit first-post-gap
-            // marker still resets the range-learning continuity boundary.
             return requiresReset ? .resetContinuity : .ignore
         }
 
         guard let percentage = observation.value.numericValue else {
-            // BatterySemanticValue normally makes this state impossible, and its
-            // Codable path revalidates the same invariant. Keep the bridge
-            // fail-closed if that upstream contract ever changes.
             throw BatteryEvidenceValidationError.invalidSemanticValue
         }
 
@@ -82,9 +72,6 @@ struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
         self.streamValidator = streamValidator
     }
 
-    /// Records that evidence was missed before the next observation arrives.
-    /// The next observation must carry `.afterUnobservedInterval` or stream
-    /// validation fails closed.
     mutating func markUnobservedInterval() {
         streamValidator.markUnobservedInterval()
     }
@@ -122,18 +109,17 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
 /// End-to-end ephemeral pipeline from normalized battery evidence to candidate
 /// adaptive-range learning windows.
 ///
-/// This type still does not select a distance source, classify route coverage,
-/// decode BLE/Tuya, or train/persist `AdaptiveBatteryRangeModel`. It keeps the
-/// evidence-stream truth boundary and the in-flight window assembler in one
-/// atomic state transition so known gaps cannot leak across the seam.
+/// This type does not select a distance source, classify route coverage, decode
+/// BLE/Tuya, train/persist `AdaptiveBatteryRangeModel`, or expose its ephemeral
+/// assembler state as UI truth. It keeps evidence ordering and window assembly
+/// in one atomic transition so known gaps cannot leak across the seam.
 public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
-    /// Internal on purpose: external production consumers must not mutate or
-    /// independently advance the stream validator outside this atomic pipeline.
     private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
 
-    /// Read-only externally for diagnostics/UI research. Mutations remain
-    /// constrained to the pipeline methods below.
-    public private(set) var windowAssembler: BatteryRangeLearningWindowAssembler
+    /// Internal on purpose. Anchor/latest/distance state is learning machinery,
+    /// not a public presentation model. Tests use `@testable` for invariant
+    /// checks; production consumers receive only validated actions/windows.
+    private(set) var windowAssembler: BatteryRangeLearningWindowAssembler
 
     public init() {
         evidenceBridge = BatteryAdaptiveRangeEvidenceBridge()
