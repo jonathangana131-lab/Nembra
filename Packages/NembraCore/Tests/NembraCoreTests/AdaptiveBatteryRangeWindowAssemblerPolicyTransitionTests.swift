@@ -90,4 +90,38 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         #expect(model.ingest(window, policy: loose).disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
     }
+
+    @Test("tightening the live distance threshold retains the span until new distance satisfies it")
+    func tightenedDistancePolicyRetainsSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let loose = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 100
+        )
+        let strict = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 300
+        )
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
+        try assembler.recordDistance(deltaMeters: 200)
+
+        #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 200)
+
+        try assembler.recordDistance(deltaMeters: 100)
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: strict)
+        let window = try #require(assembled)
+
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+        #expect(window.consumedPercentagePoints == 3)
+        #expect(window.distanceMeters == 300)
+
+        var model = AdaptiveBatteryRangeModel()
+        #expect(model.ingest(window, policy: strict).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
 }
