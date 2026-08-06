@@ -29,6 +29,8 @@ Deterministic package tests cover:
 - bounded transition descriptors across a large display jump;
 - fractional-slot visibility on the exact integer path.
 
+Focused pre-CI verification on the committed rolling source used Swift 6.2.1 and passed the combined pre-existing `RollingNumberModelTests` plus the new hardening suite: **17/17 tests**. This is a source/test harness result only; it is not repository-wide Xcode 27, Simulator, or physical-device evidence.
+
 The source-level allocation reduction is intentionally not labeled as a measured runtime speedup. Final performance acceptance still requires real Xcode 27 / iPhone 12 / iOS 27 Simulator profiling during the Production Visual + Performance Overhaul.
 
 ## Hardware status
