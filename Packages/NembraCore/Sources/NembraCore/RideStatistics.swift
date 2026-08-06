@@ -4,6 +4,7 @@ public enum RideStatisticsError: Error, Equatable, Sendable {
     case invalidRide
     case invalidReferenceDate
     case aggregateOverflow
+    case sessionConflict(UUID)
 }
 
 public enum RideStatisticsDistanceDisposition: String, Codable, Equatable, Sendable {
@@ -102,38 +103,22 @@ public enum RideStatisticsPeriod: String, Codable, CaseIterable, Equatable, Send
     case allTime
 }
 
+/// Aggregated completed-ride statistics. The memberwise initializer remains
+/// module-internal so external callers cannot manufacture internally
+/// inconsistent summary counts.
 public struct RideStatisticsSummary: Equatable, Sendable {
     public let period: RideStatisticsPeriod
     public let rideCount: Int
     public let ridingDayCount: Int
     public let trustworthyDistanceRideCount: Int
     public let excludedDistanceRideCount: Int
-    public let totalDistanceMeters: Double
+    /// Nil means the period has no trustworthy distance evidence. A real zero
+    /// remains representable when at least one included ride legitimately has a
+    /// zero reconciled distance.
+    public let totalDistanceMeters: Double?
     public let longestRideDistanceMeters: Double?
     public let longestRideSessionID: UUID?
     public let longestRidingDayStreakDays: Int
-
-    public init(
-        period: RideStatisticsPeriod,
-        rideCount: Int,
-        ridingDayCount: Int,
-        trustworthyDistanceRideCount: Int,
-        excludedDistanceRideCount: Int,
-        totalDistanceMeters: Double,
-        longestRideDistanceMeters: Double?,
-        longestRideSessionID: UUID?,
-        longestRidingDayStreakDays: Int
-    ) {
-        self.period = period
-        self.rideCount = rideCount
-        self.ridingDayCount = ridingDayCount
-        self.trustworthyDistanceRideCount = trustworthyDistanceRideCount
-        self.excludedDistanceRideCount = excludedDistanceRideCount
-        self.totalDistanceMeters = totalDistanceMeters
-        self.longestRideDistanceMeters = longestRideDistanceMeters
-        self.longestRideSessionID = longestRideSessionID
-        self.longestRidingDayStreakDays = longestRidingDayStreakDays
-    }
 }
 
 public enum RideStatisticsAggregator {
@@ -147,7 +132,8 @@ public enum RideStatisticsAggregator {
             throw RideStatisticsError.invalidReferenceDate
         }
 
-        let periodRides = try rides.filter { ride in
+        let uniqueRides = try deduplicated(rides)
+        let periodRides = try uniqueRides.filter { ride in
             try contains(
                 ride.attributedDate,
                 period: period,
@@ -158,7 +144,7 @@ public enum RideStatisticsAggregator {
 
         var trustworthyDistanceRideCount = 0
         var excludedDistanceRideCount = 0
-        var totalDistanceMeters = 0.0
+        var totalDistanceMeters: Double?
         var longestRideDistanceMeters: Double?
         var longestRideSessionID: UUID?
 
@@ -169,7 +155,7 @@ public enum RideStatisticsAggregator {
                 continue
             }
 
-            let nextTotal = totalDistanceMeters + distance
+            let nextTotal = (totalDistanceMeters ?? 0) + distance
             guard nextTotal.isFinite else {
                 throw RideStatisticsError.aggregateOverflow
             }
@@ -202,6 +188,27 @@ public enum RideStatisticsAggregator {
         )
     }
 
+    private static func deduplicated(
+        _ rides: [RideStatisticsRide]
+    ) throws -> [RideStatisticsRide] {
+        var recordsBySessionID: [UUID: RideStatisticsRide] = [:]
+        var uniqueRides: [RideStatisticsRide] = []
+        uniqueRides.reserveCapacity(rides.count)
+
+        for ride in rides {
+            if let existing = recordsBySessionID[ride.sessionID] {
+                guard existing == ride else {
+                    throw RideStatisticsError.sessionConflict(ride.sessionID)
+                }
+                continue
+            }
+
+            recordsBySessionID[ride.sessionID] = ride
+            uniqueRides.append(ride)
+        }
+        return uniqueRides
+    }
+
     private static func contains(
         _ date: Date,
         period: RideStatisticsPeriod,
@@ -219,11 +226,26 @@ public enum RideStatisticsAggregator {
             }
             return calendar.isDate(date, inSameDayAs: yesterday)
         case .week:
-            return try contains(date, component: .weekOfYear, referenceDate: referenceDate, calendar: calendar)
+            return try contains(
+                date,
+                component: .weekOfYear,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
         case .month:
-            return try contains(date, component: .month, referenceDate: referenceDate, calendar: calendar)
+            return try contains(
+                date,
+                component: .month,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
         case .year:
-            return try contains(date, component: .year, referenceDate: referenceDate, calendar: calendar)
+            return try contains(
+                date,
+                component: .year,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
         }
     }
 
