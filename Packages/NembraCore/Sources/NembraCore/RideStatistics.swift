@@ -19,7 +19,11 @@ public enum RideStatisticsDistanceDisposition: String, Codable, Equatable, Senda
 /// reused as a monotonic ride-duration source. `distanceDisposition` keeps bad
 /// or incomplete distance evidence visible to the statistics layer without
 /// silently counting it into totals.
-public struct RideStatisticsRide: Codable, Equatable, Sendable {
+///
+/// This is intentionally a derived runtime value rather than a persisted
+/// payload. Durable history remains owned by `RideHistoryRecord` and its
+/// validated evidence types.
+public struct RideStatisticsRide: Equatable, Sendable {
     public let sessionID: UUID
     public let attributedDate: Date
     public let distanceMeters: Double?
