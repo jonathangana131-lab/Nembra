@@ -42,14 +42,16 @@ Read `PROJECT_STATE.md` first, then `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN
 - ODO/GPS/live-speed distance remain independent and reconciliation never averages sources merely to make a clean result.
 - live distance integrates one authoritative raw speed source and never crosses oversized packet gaps.
 
-## Current ride-application decision
-Use **one shared `ScooterService` instance** for VehicleStore and ride processing. The simulated service supports multiple broadcast subscribers.
+## Current ride-application implementation
+Use **one shared `ScooterService` instance** for VehicleStore and ride processing.
 
-A dedicated serial ride runtime will merge:
-- raw authoritative speed packets,
-- connection changes,
-- scooter ODO evidence,
-- later quality-screened GPS/motion evidence.
+Pushed on `feature/ride-application`:
+- `AtomicRideHistoryStore`: atomic per-session durable JSON history, exact readback, idempotent equivalent commit, UUID conflict rejection, corrupt-record preservation.
+- `RideApplicationRuntime`: serial actor around existing `RideCheckpointCoordinator` + `RideHistoryCommitCoordinator`.
+- `RideStore`: observable app read model; no second detector and no fake UI ride state.
+- `NembraRuntime`: starts ride recovery/history handoff before VehicleStore auto-connect or QA movement.
+- explicit Simulator QA-only ride policy/cadence and optional raw-packet QA script.
+- core tests for history persistence, raw-vs-cached speed truth, ride start/journal, disconnect continuity, completion handoff, and pending-completion startup flush.
 
 State-only updates are not zero-speed measurements. For state/ODO events, include only a still-valid latest authoritative raw speed sample; otherwise speed is unknown. A disconnect is only a connection transition.
 
@@ -58,16 +60,22 @@ Core ride thresholds and checkpoint cadence intentionally have no MAXSHOT produc
 - explicit Simulator QA may inject documented QA-only values to exercise the full architecture;
 - do not convert Simulator timing into MAXSHOT claims.
 
+## Xcode project checkpoint
+The ride sources are wired into `Nembra.xcodeproj`.
+- wiring bot commit: `5c673858ce85351bc755f70befd39d2e534ec497`
+- the first generated PBX lists were malformed because the helper dropped three commas.
+- that exact PBX corruption was isolated before Swift compilation and repaired by a one-shot bot workflow; the repair helper removed itself after committing.
+- current connector-authored checkpoint after repair must be validated by the normal GitHub `xcode-27` workflow. Do not claim the app runtime compiles until that Mac gate passes `plutil`, core tests, app tests and UI tests.
+
 ## Exact active work
-1. Add a real durable local `RideHistoryStore` implementation, idempotent by session UUID and conflict/corruption safe, with core tests.
-2. Add the serial ride application runtime around the **existing** `RideCheckpointCoordinator`; do not build a second detector/recovery architecture.
-3. Refactor app bootstrap into shared dependencies so VehicleStore and ride runtime share one scooter service.
-4. Recover journal state before accepting new observations. If startup has `completedPendingCommit`, commit/read-back/acknowledge it first.
-5. Add explicit Simulator QA policy/script that drives the same runtime; never fake a SwiftUI ride state.
-6. Expose a minimal trustworthy current-ride read model to Home/Dashboard only after runtime wiring works. Do not add placeholder Rides/Stats tabs.
-7. Add core/app/UI tests for start, active ride, disconnect continuity, recovery/handoff, and false-start prevention.
-8. Run the real GitHub `xcode-27` Mac gate on iPhone 12/iOS 27, inspect screenshots/interactions, fix, update memory, merge.
-9. Immediately continue into the next master-directive subsystem after acceptance.
+1. Run the repaired fully wired target on the real Xcode 27 Mac. Fix exact project/Swift 6/runtime failures rather than skipping tests.
+2. Add app bootstrap tests proving ordinary production RideStore is disabled and explicit Simulator QA enables the real ride runtime.
+3. Expose a minimal trustworthy current-ride read model to Home only after runtime wiring is green. Do not add placeholder Rides/Stats tabs.
+4. Add XCUITest for `NEMBRA_RIDE_QA_SCRIPT=active`: wait for `home.currentRide`, verify the state is driven through raw simulated packets and the real RideEngine, retain screenshot attachment.
+5. Inspect/fix real iPhone 12/iOS 27 Home active-ride screenshot and interactions.
+6. Keep core coverage for disconnect continuity, recovery/handoff, false-start prevention, and corrupt-history safety green.
+7. Update decisions/memory, open PR, merge only when latest-lineage Mac build/tests + Simulator review are accepted.
+8. Immediately continue into the next master-directive subsystem after acceptance.
 
 ## Stable Phase 10 proof
 Accepted Phase 10 implementation passed Xcode 27 run `31061900280` / job `92491409069`:
