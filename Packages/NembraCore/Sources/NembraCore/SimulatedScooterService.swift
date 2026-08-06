@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
@@ -188,7 +189,11 @@ public actor SimulatedScooterService: ScooterService {
     private var state: VehicleState
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
     private var speedTelemetryContinuations: [UUID: AsyncStream<SpeedTelemetrySample>.Continuation] = [:]
-    private var simulatedUptimeNanoseconds: UInt64 = 1
+    /// Tracks the last raw packet-arrival timestamp only to guarantee strict
+    /// monotonic ordering if two simulated packets are emitted in the same tick.
+    /// Ride `elapsedSeconds` is distance/time evidence and must not be used as a
+    /// fake packet-arrival clock.
+    private var lastTelemetryUptimeNanoseconds: UInt64 = 0
     private var commandInFlight = false
     private var connectionGeneration: UInt64 = 0
     private let commandLatencyNanoseconds: UInt64
@@ -376,22 +381,26 @@ public actor SimulatedScooterService: ScooterService {
             state.batteryPercent = max(0, battery - drain)
         }
 
-        let availableNanoseconds = UInt64.max - simulatedUptimeNanoseconds
-        let requestedNanoseconds = elapsedSeconds * 1_000_000_000
-        let elapsedNanoseconds: UInt64
-        if availableNanoseconds == 0 {
-            elapsedNanoseconds = 0
-        } else if !requestedNanoseconds.isFinite || requestedNanoseconds >= Double(availableNanoseconds) {
-            elapsedNanoseconds = availableNanoseconds
+        // `receivedAtUptimeNanoseconds` is packet-arrival evidence in the same
+        // monotonic clock domain used by the Dashboard renderer. Do not advance
+        // it by `elapsedSeconds`: a test may simulate ten minutes of ride
+        // distance in one immediate call, but the raw packet still arrived now.
+        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let sampleUptimeNanoseconds: UInt64
+        if currentUptimeNanoseconds > lastTelemetryUptimeNanoseconds {
+            sampleUptimeNanoseconds = currentUptimeNanoseconds
+        } else if lastTelemetryUptimeNanoseconds < UInt64.max {
+            sampleUptimeNanoseconds = lastTelemetryUptimeNanoseconds + 1
         } else {
-            elapsedNanoseconds = max(1, UInt64(requestedNanoseconds))
+            sampleUptimeNanoseconds = UInt64.max
         }
-        simulatedUptimeNanoseconds &+= elapsedNanoseconds
-        if elapsedNanoseconds > 0, let sample = try? SpeedTelemetrySample(
+        lastTelemetryUptimeNanoseconds = sampleUptimeNanoseconds
+
+        if let sample = try? SpeedTelemetrySample(
             source: .scooterBluetooth,
             provenance: .absoluteMeasurement,
             metersPerSecond: speed / 3.6,
-            receivedAtUptimeNanoseconds: simulatedUptimeNanoseconds,
+            receivedAtUptimeNanoseconds: sampleUptimeNanoseconds,
             receivedAtDate: .now
         ) {
             publishSpeedTelemetry(sample)
