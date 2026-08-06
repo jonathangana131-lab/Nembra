@@ -133,7 +133,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard centralManager.state == .poweredOn else {
             throw ControllerError.bluetoothNotPoweredOn
         }
-        guard timeout.isFinite, timeout > 0 else {
+        guard let timeoutNanoseconds = PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(timeout) else {
             throw ControllerError.invalidConnectionTimeout
         }
         guard connectionPhase == .idle else {
@@ -151,7 +151,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         activePeripheral = peripheral
         peripheral.delegate = self
         centralManager.connect(peripheral, options: nil)
-        scheduleConnectionTimeout(for: peripheral, timeout: timeout)
+        scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)
     }
 
     public func cancelActiveConnection() {
@@ -192,11 +192,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         return try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
     }
 
-    private func scheduleConnectionTimeout(for peripheral: CBPeripheral, timeout: TimeInterval) {
+    private func scheduleConnectionTimeout(for peripheral: CBPeripheral, nanoseconds: UInt64) {
         connectionTimeoutTask?.cancel()
         let identifier = peripheral.identifier
         connectionTimeoutTask = Task { @MainActor [weak self, weak peripheral] in
-            let nanoseconds = UInt64(min(timeout * 1_000_000_000, Double(UInt64.max)))
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard !Task.isCancelled,
                   let self,
@@ -403,7 +402,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         rssi RSSI: NSNumber
     ) {
         peripheralByIdentifier[peripheral.identifier] = peripheral
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
+        let connectable = (advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber)?.boolValue
         let discovery = DiscoveredPeripheral(
             id: peripheral.identifier,
             localName: advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name,
