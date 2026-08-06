@@ -24,7 +24,8 @@ jobs:
           text = p.read_text()
 
           build_anchor = '\t\tA00000000000000000000032 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardView.swift */; };\n'
-          if 'A00000000000000000000033 /* SpeedInstrumentModel.swift in Sources */' not in text:
+          build_definition = 'A00000000000000000000033 /* SpeedInstrumentModel.swift in Sources */ = {isa = PBXBuildFile;'
+          if build_definition not in text:
               if build_anchor not in text:
                   raise SystemExit('Dashboard build-file anchor missing')
               text = text.replace(
@@ -36,7 +37,8 @@ jobs:
               )
 
           file_anchor = '\t\tB00000000000000000000032 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };\n'
-          if 'B00000000000000000000033 /* SpeedInstrumentModel.swift */' not in text:
+          file_definition = 'B00000000000000000000033 /* SpeedInstrumentModel.swift */ = {isa = PBXFileReference;'
+          if file_definition not in text:
               if file_anchor not in text:
                   raise SystemExit('Dashboard file-reference anchor missing')
               text = text.replace(
@@ -58,10 +60,10 @@ jobs:
               text = text.replace(source_old, source_new, 1)
 
           required = [
-              'A00000000000000000000033 /* SpeedInstrumentModel.swift in Sources */',
-              'A00000000000000000000034 /* RollingSpeedValueView.swift in Sources */',
-              'B00000000000000000000033 /* SpeedInstrumentModel.swift */',
-              'B00000000000000000000034 /* RollingSpeedValueView.swift */',
+              build_definition,
+              'A00000000000000000000034 /* RollingSpeedValueView.swift in Sources */ = {isa = PBXBuildFile;',
+              file_definition,
+              'B00000000000000000000034 /* RollingSpeedValueView.swift */ = {isa = PBXFileReference;',
               source_new,
           ]
           if not all(x in text for x in required):
