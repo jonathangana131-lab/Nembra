@@ -2,15 +2,15 @@
 /// considered for the adaptive percentage-based range domain.
 ///
 /// The adapter is intentionally action-oriented so a caller cannot accidentally
-/// discard a verified continuity break merely because the first resumed battery
-/// field was voltage/current/power instead of SoC.
+/// discard a known continuity break merely because the first resumed battery
+/// field is non-SoC or carries a non-authoritative truth role.
 public enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
-    /// This observation must not affect production adaptive-range learning.
+    /// This continuous observation must not affect production adaptive-range learning.
     case ignore
 
-    /// Verified vehicle battery evidence resumed after an interval Nembra did
-    /// not observe. Any in-flight range-learning anchor/window must be discarded
-    /// before later SoC evidence is accepted.
+    /// Battery evidence resumed after an interval Nembra did not observe. Any
+    /// in-flight range-learning anchor/window must be discarded before later
+    /// authoritative SoC evidence is accepted.
     case resetContinuity
 
     /// A continuous, physically verified vehicle SoC reading that is eligible
@@ -24,26 +24,31 @@ public enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
     case resetContinuityAndIngestSOC(BatterySOCReading)
 }
 
-/// Bridges the strict battery-evidence truth boundary into the adaptive-range
-/// SoC domain without promoting stock-app, Simulator, estimated, or display-only
-/// values into measured scooter evidence.
+/// Pure semantic bridge from the strict battery-evidence truth boundary into
+/// the adaptive-range SoC domain.
+///
+/// Continuity is evidence about observation coverage, not about whether the
+/// numeric value is authoritative. Therefore every explicit
+/// `.afterUnobservedInterval` boundary resets in-flight range learning, while
+/// only a verified vehicle SoC value is ever promoted to authoritative SoC.
 public enum BatteryAdaptiveRangeEvidenceAdapter {
     public static func action(
         for observation: BatteryEvidenceObservation
     ) throws -> BatteryAdaptiveRangeEvidenceAction {
-        // Only physically verified target-vehicle measurements are allowed to
-        // influence production range learning or its evidence continuity.
-        guard observation.isAuthoritativeVehicleMeasurement else {
-            return .ignore
-        }
-
         let requiresReset = observation.requiresNewContinuityAnchor
 
+        guard observation.isAuthoritativeVehicleMeasurement else {
+            // A stock-app/simulation/estimate/presentation value still cannot
+            // train range. However, if the evidence stream explicitly says an
+            // interval was unobserved, that known gap must close any in-flight
+            // learning span so later verified SoC cannot bridge across it.
+            return requiresReset ? .resetContinuity : .ignore
+        }
+
         guard observation.value.field == .stateOfChargePercent else {
-            // A verified non-SoC field cannot teach percentage-based efficiency,
-            // but its first-post-gap continuity marker is still important. If we
-            // ignored it, a later continuous SoC could accidentally close a
-            // learning window across an interval Nembra never observed.
+            // Verified voltage/current/power/charging evidence does not teach
+            // percentage-based efficiency, but an explicit first-post-gap
+            // marker still resets the range-learning continuity boundary.
             return requiresReset ? .resetContinuity : .ignore
         }
 
@@ -63,5 +68,39 @@ public enum BatteryAdaptiveRangeEvidenceAdapter {
         return requiresReset
             ? .resetContinuityAndIngestSOC(reading)
             : .ingestSOC(reading)
+    }
+}
+
+/// Stateful entry point that enforces the battery evidence stream's ordering
+/// contract before returning an adaptive-range action.
+///
+/// Higher layers should prefer this type over calling the pure adapter directly
+/// when consuming a live/persisted sequence. The stream validator and semantic
+/// action advance atomically: an ordering/continuity validation failure never
+/// mutates the accepted-stream baseline and never returns an ingest action.
+public struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
+    public private(set) var streamValidator: BatteryEvidenceStreamValidator
+
+    public init(streamValidator: BatteryEvidenceStreamValidator = .init()) {
+        self.streamValidator = streamValidator
+    }
+
+    /// Records that evidence was missed before the next observation arrives.
+    /// The next observation must carry `.afterUnobservedInterval` or stream
+    /// validation fails closed.
+    public mutating func markUnobservedInterval() {
+        streamValidator.markUnobservedInterval()
+    }
+
+    public mutating func accept(
+        _ observation: BatteryEvidenceObservation
+    ) throws -> BatteryAdaptiveRangeEvidenceAction {
+        let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: observation)
+
+        var candidateValidator = streamValidator
+        try candidateValidator.accept(observation)
+        streamValidator = candidateValidator
+
+        return action
     }
 }
