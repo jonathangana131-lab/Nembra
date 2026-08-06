@@ -43,6 +43,118 @@ protocol RideLocationSource: Sendable {
     func stop() async
 }
 
+/// Explicit Simulator-only location transport used by the end-to-end completed
+/// ride fixture. It deliberately emits ordinary raw `RideLocationSample` values
+/// into the same source boundary as Core Location; no coordinate is written
+/// directly to route persistence and no GPS distance is injected by the fixture.
+///
+/// Receipt uptime and wall-clock dates are sampled at actual delivery time. The
+/// small scripted path exists only to exercise software semantics and is not a
+/// claim about AOVOPRO ES80 motion, outdoor GPS quality, or production cadence.
+actor SimulatorRideLocationSource: RideLocationSource {
+    private struct Coordinate: Sendable {
+        let latitude: Double
+        let longitude: Double
+    }
+
+    private let coordinates: [Coordinate]
+    private let intervalNanoseconds: UInt64
+    private var continuation: AsyncStream<RideLocationSourceEvent>.Continuation?
+    private var deliveryTask: Task<Void, Never>?
+    private var activeGeneration: UUID?
+
+    static func completedRideQA() -> SimulatorRideLocationSource {
+        SimulatorRideLocationSource(
+            coordinates: [
+                Coordinate(latitude: 37.334900, longitude: -122.009020),
+                Coordinate(latitude: 37.334927, longitude: -122.009020),
+                Coordinate(latitude: 37.334954, longitude: -122.009020),
+                Coordinate(latitude: 37.334981, longitude: -122.009020)
+            ],
+            intervalNanoseconds: 180_000_000
+        )
+    }
+
+    private init(
+        coordinates: [Coordinate],
+        intervalNanoseconds: UInt64
+    ) {
+        self.coordinates = coordinates
+        self.intervalNanoseconds = intervalNanoseconds
+    }
+
+    func events() -> AsyncStream<RideLocationSourceEvent> {
+        activeGeneration = nil
+        deliveryTask?.cancel()
+        deliveryTask = nil
+        continuation?.finish()
+
+        let pair = AsyncStream<RideLocationSourceEvent>.makeStream()
+        continuation = pair.continuation
+        return pair.stream
+    }
+
+    func start() {
+        guard deliveryTask == nil else { return }
+        let generation = UUID()
+        activeGeneration = generation
+        deliveryTask = Task { [weak self] in
+            await self?.deliverScript(generation: generation)
+        }
+    }
+
+    func stop() {
+        activeGeneration = nil
+        deliveryTask?.cancel()
+        deliveryTask = nil
+        continuation?.finish()
+        continuation = nil
+    }
+
+    private func deliverScript(generation: UUID) async {
+        for (index, coordinate) in coordinates.enumerated() {
+            guard !Task.isCancelled,
+                  activeGeneration == generation else { return }
+
+            let receivedAtDate = Date.now
+            do {
+                let sample = try RideLocationSample(
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude,
+                    sourceMeasurementDate: receivedAtDate,
+                    receivedAtDate: receivedAtDate,
+                    receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    horizontalAccuracyMeters: 4,
+                    isAccuracyLimited: false,
+                    isSimulatedBySoftware: true
+                )
+                continuation?.yield(
+                    RideLocationSourceEvent(
+                        sample: sample,
+                        issue: nil,
+                        isStationary: false
+                    )
+                )
+            } catch {
+                continuation?.yield(
+                    RideLocationSourceEvent(
+                        sample: nil,
+                        issue: .invalidLocation,
+                        isStationary: false
+                    )
+                )
+            }
+
+            guard index < coordinates.count - 1 else { continue }
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+
+        if activeGeneration == generation {
+            deliveryTask = nil
+        }
+    }
+}
+
 /// Foreground Core Location adapter for a scooter ride.
 ///
 /// Apple explicitly includes scooters in `.otherNavigation`. Nembra starts this
