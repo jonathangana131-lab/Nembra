@@ -52,6 +52,12 @@ Focused `NembraAppTests` assertions cover the new authoritative anchor:
 
 A Swift 6.2 parser check of the modified `SpeedInstrumentModel.swift` is clean in the available local runtime. That is only syntax evidence; it is not an iOS/SwiftUI build or Simulator result.
 
+### Exact-head acceptance gate
+
+Current `main` now includes the same-repository exact-head PR gate from PR #39. That workflow freezes a non-draft PR's immutable head SHA before any code reaches the `xcode-27` runner and listens for acceptance-ready pull-request activity including `synchronize`.
+
+The connector-issued `ready_for_review` transition for this PR did not immediately surface an Actions run. This documentation checkpoint is therefore also a real, reviewable `synchronize` event on the already-ready performance PR. Its purpose is not to manufacture CI churn: it records the current gate contract and gives GitHub the exact event path PR #39 was designed to use. No green result is claimed until a workflow run is actually present for the resulting exact head.
+
 The final implementation head still requires the repository's Xcode 27 / iPhone 12 Simulator gate before merge.
 
 ## Risks deliberately not refactored from code inspection alone
