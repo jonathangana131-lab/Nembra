@@ -152,6 +152,38 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
+    @Test("an efficiency outlier closes its span without poisoning later clean evidence")
+    func rejectedEfficiencyOutlierDoesNotPoisonNextSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 300)
+        let baselineCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let baseline = try #require(baselineCandidate)
+        #expect(model.ingest(baseline, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+
+        try assembler.recordDistance(deltaMeters: 1_000)
+        let outlierCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let outlier = try #require(outlierCandidate)
+        #expect(model.ingest(outlier, policy: p).disposition == .rejected(.efficiencyOutlier))
+        #expect(model.acceptedWindowCount == 1)
+        #expect(assembler.anchorSOC?.percentage == 74)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+
+        try assembler.recordDistance(deltaMeters: 300)
+        let cleanCandidate = try assembler.ingestSOC(reading(71, uptime: 4), policy: p)
+        let clean = try #require(cleanCandidate)
+
+        #expect(clean.startSOC.percentage == 74)
+        #expect(clean.endSOC.percentage == 71)
+        #expect(clean.distanceMeters == 300)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 2)
+    }
+
     @Test("known post-gap anchor discards pre-gap evidence before clean learning resumes")
     func explicitContinuityResetStartsCleanSpan() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
