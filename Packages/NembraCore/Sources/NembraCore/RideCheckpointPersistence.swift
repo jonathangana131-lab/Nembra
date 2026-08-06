@@ -347,6 +347,13 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
             let probe = try decoder.decode(SchemaProbe.self, from: data)
             switch probe.schemaVersion {
             case Self.schemaVersion:
+                // Current schema must explicitly carry the field. The nested
+                // models remain tolerant so legacy history/checkpoint payloads
+                // can decode, but a v2 journal that loses this field is corrupt
+                // rather than being silently reclassified as legacy unknown.
+                guard currentEnvelopeCarriesTransportGapEvidence(data) else {
+                    return .corrupt
+                }
                 return .valid(try decoder.decode(Envelope.self, from: data))
 
             case Self.legacySchemaVersion:
@@ -368,6 +375,32 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
             }
         } catch {
             return .corrupt
+        }
+    }
+
+    private func currentEnvelopeCarriesTransportGapEvidence(_ data: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let root = object as? [String: Any],
+              let checkpoint = root["checkpoint"] as? [String: Any],
+              let kind = checkpoint["kind"] as? String else {
+            return false
+        }
+
+        switch kind {
+        case "inProgress":
+            guard let value = checkpoint["inProgress"] as? [String: Any] else {
+                return false
+            }
+            return value["transportGapEvidence"] != nil
+
+        case "completedPendingCommit":
+            guard let value = checkpoint["completedPendingCommit"] as? [String: Any] else {
+                return false
+            }
+            return value["transportGapEvidence"] != nil
+
+        default:
+            return false
         }
     }
 
