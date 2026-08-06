@@ -29,6 +29,7 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 final class SpeedInstrumentModel {
     private(set) var measurementRevision: UInt64 = 0
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
+    private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
@@ -86,6 +87,7 @@ final class SpeedInstrumentModel {
 
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestMeasurementSource = sample.source
+        latestMeasuredKilometersPerHour = sample.kilometersPerHour
         measurementRevision &+= 1
 
         let startsInterpolating = interpolator
@@ -185,9 +187,10 @@ final class SpeedInstrumentModel {
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
 ///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// confirmed/raw domain state rather than the rendered interpolation frame.
+/// Only the rolling speed readout redraws on SwiftUI's animation timeline.
+/// Status, accessibility formatting, vehicle controls, ride detection,
+/// persistence, distance, and safety continue to consume confirmed/raw domain
+/// state rather than the rendered interpolation frame.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -197,57 +200,29 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        TimelineView(
-            .animation(
-                minimumInterval: 1.0 / 60.0,
-                paused: reduceMotion || !model.isAnimationActive
-            )
-        ) { _ in
-            let frame = model.frame(
-                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour,
-                prefersReducedMotion: reduceMotion
-            )
+        let fallbackConfirmedKilometersPerHour = vehicle.state.speedKilometersPerHour
+        let usesMetric = VehicleDisplayFormatting.usesMetric
 
-            instrumentContent(frame: frame)
-        }
-        .task {
-            model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
-            let stream = await vehicle.speedTelemetryUpdates()
-            model.start(stream: stream)
-        }
-        .onDisappear {
-            model.stop()
-        }
-    }
-
-    private func instrumentContent(frame: SpeedInstrumentDisplayFrame?) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                RollingSpeedValueView(value: displayedValue(kilometersPerHour: frame?.kilometersPerHour))
-                    .font(.system(size: 148, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .tracking(-7)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
-                    .accessibilityHidden(true)
-
-                Text(speedUnitText)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 18)
-                    .accessibilityHidden(true)
-            }
+            speedReadout(
+                fallbackConfirmedKilometersPerHour: fallbackConfirmedKilometersPerHour,
+                usesMetric: usesMetric
+            )
             .frame(maxWidth: .infinity)
             .scaleEffect(modePersonality.speedScale)
             .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
-            // VoiceOver announces the newest authoritative/confirmed value,
-            // never a visual midpoint that no sensor actually measured.
-            .accessibilityValue(accessibilitySpeed(frame: frame))
+            // VoiceOver stays anchored to the newest authoritative/raw speed,
+            // never a 60 Hz visual interpolation midpoint.
+            .accessibilityValue(
+                VehicleDisplayFormatting.speed(
+                    kilometersPerHour: model.latestMeasuredKilometersPerHour
+                        ?? fallbackConfirmedKilometersPerHour
+                )
+            )
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
@@ -267,22 +242,61 @@ struct DashboardSpeedInstrumentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
+        .task {
+            model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
+            let stream = await vehicle.speedTelemetryUpdates()
+            model.start(stream: stream)
+        }
+        .onDisappear {
+            model.stop()
+        }
     }
 
-    private func displayedValue(kilometersPerHour: Double?) -> Double? {
+    private func speedReadout(
+        fallbackConfirmedKilometersPerHour: Double?,
+        usesMetric: Bool
+    ) -> some View {
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 60.0,
+                paused: reduceMotion || !model.isAnimationActive
+            )
+        ) { _ in
+            let frame = model.frame(
+                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                fallbackConfirmedKilometersPerHour: fallbackConfirmedKilometersPerHour,
+                prefersReducedMotion: reduceMotion
+            )
+
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                RollingSpeedValueView(
+                    value: displayedValue(
+                        kilometersPerHour: frame?.kilometersPerHour,
+                        usesMetric: usesMetric
+                    )
+                )
+                .font(.system(size: 148, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .tracking(-7)
+                .lineLimit(1)
+                .minimumScaleFactor(0.58)
+
+                Text(usesMetric ? "KM/H" : "MPH")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 18)
+            }
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func displayedValue(
+        kilometersPerHour: Double?,
+        usesMetric: Bool
+    ) -> Double? {
         guard let kilometersPerHour else { return nil }
         let nonnegative = max(0, kilometersPerHour)
-        return VehicleDisplayFormatting.usesMetric ? nonnegative : nonnegative * 0.621_371
-    }
-
-    private func accessibilitySpeed(frame: SpeedInstrumentDisplayFrame?) -> String {
-        let authoritativeKilometersPerHour = frame?.latestMeasuredKilometersPerHour
-            ?? vehicle.state.speedKilometersPerHour
-        return VehicleDisplayFormatting.speed(kilometersPerHour: authoritativeKilometersPerHour)
-    }
-
-    private var speedUnitText: String {
-        VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
+        return usesMetric ? nonnegative : nonnegative * 0.621_371
     }
 
     private var isVehicleMoving: Bool {
