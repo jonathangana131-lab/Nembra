@@ -44,6 +44,32 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
+    func testDashboardModePersonalityIsVisualOnlyAndDistinct() {
+        let unknown = DashboardModePersonality.resolved(for: nil)
+        let walk = DashboardModePersonality.resolved(for: .walk)
+        let eco = DashboardModePersonality.resolved(for: .eco)
+        let drive = DashboardModePersonality.resolved(for: .drive)
+        let sport = DashboardModePersonality.resolved(for: .sport)
+
+        XCTAssertNil(unknown.mode)
+        XCTAssertEqual(walk.mode, .walk)
+        XCTAssertEqual(eco.mode, .eco)
+        XCTAssertEqual(drive.mode, .drive)
+        XCTAssertEqual(sport.mode, .sport)
+
+        XCTAssertLessThan(walk.speedScale, eco.speedScale)
+        XCTAssertLessThan(eco.speedScale, drive.speedScale)
+        XCTAssertLessThan(drive.speedScale, sport.speedScale)
+        XCTAssertLessThan(walk.ambientOpacity, eco.ambientOpacity)
+        XCTAssertLessThan(eco.ambientOpacity, drive.ambientOpacity)
+        XCTAssertLessThan(drive.ambientOpacity, sport.ambientOpacity)
+
+        // Mode personality is presentation state only. The verified MAXSHOT
+        // protocol model must remain unmapped until real hardware proves a
+        // relationship between ride modes and the three speed-limit slots.
+        XCTAssertTrue(VehicleProfile.maxshotV1SPro.capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
+    }
+
     func testSimulationScenarioLaunchArgumentParsing() {
         let scenario = AppBootstrap.simulationScenario(
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
