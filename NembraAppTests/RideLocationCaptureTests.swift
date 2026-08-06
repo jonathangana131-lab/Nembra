@@ -450,6 +450,7 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTFail(failureMessage)
     }
 
+    @MainActor
     private func waitForSessionEventCount(
         _ collector: SessionEventCollector,
         count: Int,
