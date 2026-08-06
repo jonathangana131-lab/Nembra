@@ -67,22 +67,23 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
             throw BatteryEvidenceSnapshotError.stream(error)
         }
 
-        var candidateLatest = latestByField
-
-        if observation.continuity == .afterUnobservedInterval {
-            candidateLatest.removeAll(keepingCapacity: true)
-        }
-
-        if let existing = candidateLatest[observation.value.field],
+        // Check same-field/same-uptime idempotency before applying a continuity reset.
+        // Replaying an already-accepted boundary observation must not erase other fields
+        // subsequently decoded at the same receipt uptime in this current segment.
+        if let existing = latestByField[observation.value.field],
            existing.receivedAtUptimeNanoseconds == observation.receivedAtUptimeNanoseconds {
             guard existing == observation else {
                 throw BatteryEvidenceSnapshotError.conflictingSameUptimeFieldEvidence
             }
 
-            // Exact duplicate evidence is idempotent.
             streamValidator = candidateValidator
-            latestByField = candidateLatest
             return
+        }
+
+        var candidateLatest = latestByField
+
+        if observation.continuity == .afterUnobservedInterval {
+            candidateLatest.removeAll(keepingCapacity: true)
         }
 
         candidateLatest[observation.value.field] = observation
