@@ -40,6 +40,14 @@ enum RideApplicationStatus: Equatable, Sendable {
     case failed
 }
 
+/// Root-lifetime session boundary for subsystems that must follow the exact ride
+/// identity rather than a SwiftUI screen. Disconnect/ending phases deliberately
+/// retain the same session and therefore do not manufacture stop/start events.
+enum RideApplicationSessionEvent: Equatable, Sendable {
+    case becameActive(UUID)
+    case ended(UUID)
+}
+
 /// Root-owned application bridge from scooter evidence into the already-tested
 /// ride engine, crash-recovery journal, and completed-history handoff.
 ///
@@ -67,6 +75,7 @@ final class RideApplicationStore {
     @ObservationIgnored private var coordinator: RideCheckpointCoordinator?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     @ObservationIgnored private var speedTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionEventContinuation: AsyncStream<RideApplicationSessionEvent>.Continuation?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var latestVehicleState: VehicleState
     @ObservationIgnored private var pendingAuthoritativeSpeedSample: SpeedTelemetrySample?
@@ -93,6 +102,7 @@ final class RideApplicationStore {
     deinit {
         stateTask?.cancel()
         speedTask?.cancel()
+        sessionEventContinuation?.finish()
     }
 
     var shouldPresentStatus: Bool {
@@ -128,6 +138,20 @@ final class RideApplicationStore {
         case .failed:
             "Ride tracking needs attention"
         }
+    }
+
+    /// One root-level lifecycle stream. Replacing the consumer closes the older
+    /// stream; AppRuntime is the intended owner. If a ride was restored before
+    /// the consumer attaches, its current UUID is replayed once so location
+    /// capture can join the durable session without polling published state.
+    func rideSessionEvents() -> AsyncStream<RideApplicationSessionEvent> {
+        sessionEventContinuation?.finish()
+        let pair = AsyncStream<RideApplicationSessionEvent>.makeStream()
+        sessionEventContinuation = pair.continuation
+        if let activeSessionID {
+            pair.continuation.yield(.becameActive(activeSessionID))
+        }
+        return pair.stream
     }
 
     func start() async {
@@ -180,6 +204,8 @@ final class RideApplicationStore {
         stateTask = nil
         speedTask = nil
         pendingAuthoritativeSpeedSample = nil
+        sessionEventContinuation?.finish()
+        sessionEventContinuation = nil
     }
 
     /// Candidate-level/internal entry for already screened GPS evidence. This is
@@ -400,8 +426,15 @@ final class RideApplicationStore {
         sessionID newSessionID: UUID?,
         continuity newContinuity: RideSessionContinuity?
     ) {
-        if activeSessionID != newSessionID {
+        let previousSessionID = activeSessionID
+        if previousSessionID != newSessionID {
+            if let previousSessionID {
+                sessionEventContinuation?.yield(.ended(previousSessionID))
+            }
             activeSessionID = newSessionID
+            if let newSessionID {
+                sessionEventContinuation?.yield(.becameActive(newSessionID))
+            }
         }
         if continuity != newContinuity {
             continuity = newContinuity
