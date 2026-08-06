@@ -68,6 +68,20 @@ When `RideEngine` declares a ride complete, AppRuntime's completion barrier stop
 
 No SwiftUI view appearance/disappearance controls this lifetime.
 
+## Crash-window route recovery
+
+A process can stop after `RideEngine` has made `completedPendingCommit` durable but before the route recorder commits its final manifest. In that window, immutable route chunks may already exist even though completed route geometry cannot yet be loaded.
+
+`RideRouteDraftFinalizer` handles only that already-durable evidence. Before `RideApplicationStore.start()` commits and clears pending completed history, `AppRuntime` checks for a pending-completed checkpoint and, when route chunks exist without a manifest:
+
+- loads only those existing chunks,
+- builds a conservative `.partial` manifest,
+- validates the proposed result through the accepted `RideRouteGeometry` validator,
+- commits the manifest idempotently,
+- verifies the manifest by reading it back.
+
+Recovery never invents coordinates, reorders points, joins unknown gaps, or measures stored geometry to manufacture missing GPS ride distance. An empty draft produces no manifest. Malformed/noncontiguous evidence fails closed. Route-recovery failure remains additive and does not block the existing idempotent completed-history recovery path.
+
 ## Explicit Simulator QA source
 
 `SimulatorRideLocationSource` is an injected `RideLocationSource` used only by the opt-in completed-ride Simulator fixture.
@@ -78,10 +92,14 @@ It emits ordinary raw `RideLocationSample` values through the exact same source 
 
 The fixture does **not** write `RideRouteRecorder` directly, does not inject a completed-history row, and does not fabricate GPS distance separately from screened adjacent coordinates. Its coordinates, cadence, accuracy, and policy are deterministic QA data only; they are not AOVOPRO ES80 motion evidence or outdoor iPhone GPS measurements.
 
+The strengthened completed-ride fixture uses two approximately 45 m legs delivered over real two-second intervals. This remains below the injected Simulator QA implied-speed ceiling while producing enough legitimate screened GPS distance to render visibly as about `0.1 mi`/`0.1 km` instead of merely existing internally and rounding to `0.0` in the completed-ride UI.
+
 The completed-ride UI test requires all of the following to remain independently observable:
-- durable odometer distance evidence from the simulated scooter service,
-- quality-screened GPS distance evidence from the injected location source,
+- durable nonzero odometer distance evidence from the simulated scooter service,
+- quality-screened GPS distance evidence from the injected location source with a visibly nonzero localized value,
 - durable route geometry rendered by the real route/history presentation path.
+
+A preserved pre-hardening iPhone 12 Simulator screenshot proved why the stronger visible assertion is useful: that earlier path already produced legitimate nonzero GPS evidence and route geometry, but one-decimal presentation rounded the GPS row to `0.0 mi`.
 
 ## Current truth boundaries
 
@@ -99,13 +117,14 @@ The completed-ride UI test requires all of the following to remain independently
 
 Implemented on the current worker branch, with exact-head Xcode 27/iPhone 12 Simulator acceptance still required before merge:
 
-1. Exercise the capture coordinator through an explicit injected Simulator location source and verify route plus separate GPS-distance evidence through the real ride/history UI path.
+1. Exercise the capture coordinator through an explicit injected Simulator location source and verify route plus separate visibly nonzero GPS-distance evidence through the real ride/history UI path.
 2. Drive capture begin/end from authoritative root-owned ride session identity rather than a SwiftUI view lifetime, including a deterministic regression for ending-candidate recovery preserving one session.
+3. Verify crash-recovered route chunks finalize conservatively and idempotently as partial coverage while empty/malformed drafts fail closed.
 
 Still required before production activation:
 
-3. Implement and test foreground/background transitions using current iOS 27 location lifecycle APIs.
-4. Measure real outdoor traces on the target iPhone class and select production accuracy/staleness/gap/jump thresholds from evidence.
-5. Validate energy impact and stationary behavior.
-6. Verify permission denial, reduced accuracy, global location disablement, interruption, process recovery, and route-store failure states.
-7. Keep production activation separate from AOVOPRO ES80 BLE validation; neither validates the other.
+4. Implement and test foreground/background transitions using current iOS 27 location lifecycle APIs.
+5. Measure real outdoor traces on the target iPhone class and select production accuracy/staleness/gap/jump thresholds from evidence.
+6. Validate energy impact and stationary behavior.
+7. Verify permission denial, reduced accuracy, global location disablement, interruption, process recovery, and route-store failure states on real lifecycle paths.
+8. Keep production activation separate from AOVOPRO ES80 BLE validation; neither validates the other.
