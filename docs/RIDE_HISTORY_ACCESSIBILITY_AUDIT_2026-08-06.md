@@ -6,13 +6,13 @@ Role: source-backed, docs-only accessibility QA
 
 ## Scope and evidence basis
 
-This audit is deliberately narrow. It reviews the current completed-ride list/details accessibility contract on `main@a2f8ab5535b0c311112e9cfd4fb1bed4c8529f66` without editing the high-contention `AppRootView.swift` surface.
+This audit is deliberately narrow. It reviews the current completed-ride list/details accessibility contract on `main@045a7a7c466e049d933439f608d387658f111ebf` without editing the high-contention `AppRootView.swift` surface.
 
 Primary repository evidence:
 - `NembraApp/App/AppRootView.swift` — current `RideHistoryView`, `RideHistoryRowView`, `RideHistoryDetailView`, and `RideRouteMapView` implementation;
 - `NembraUITests/RideUITests.swift` — current end-to-end ride/history UI coverage;
 - `docs/PRODUCTION_VISUAL_PERFORMANCE_OVERHAUL.md` — permanent requirement that accessibility is part of final runtime acceptance;
-- active visual-audit lane PR #63 — screenshot-backed finding that Ride Details content can be obscured by floating tab chrome and that evidence terminology is too dominant in the product hierarchy.
+- merged `docs/PRODUCTION_VISUAL_AUDIT_2026-08-06.md` from PR #63 — screenshot-backed finding that Ride Details content can be obscured by floating tab chrome and that evidence terminology is too dominant in the product hierarchy.
 
 Current Apple accessibility documentation was checked on 2026-08-06 for the semantics used here:
 - SwiftUI standard controls receive basic accessibility automatically, while custom composition can add explicit labels/values;
@@ -120,7 +120,7 @@ Automated audit success is necessary evidence, not final proof. VoiceOver traver
 
 ## P0 — floating tab/content collision is also an accessibility-operability defect
 
-PR #63's real-Simulator visual audit documents the floating Home/Rides tab control overlapping the Ride Details route/coverage region.
+The merged production visual audit from PR #63 documents the floating Home/Rides tab control overlapping the Ride Details route/coverage region in real Simulator evidence.
 
 That is not only a visual polish issue. At final acceptance, bottom content must remain reachable and unobscured for:
 - direct touch;
@@ -164,7 +164,7 @@ A future implementation may switch to a vertical/adaptive composition. This audi
 
 ## P1 — evidence prose needs progressive disclosure for VoiceOver efficiency too
 
-The current Rides list footer and Ride Details distance/route explanations truthfully describe evidence separation. The active visual audit correctly recommends moving detailed evidence architecture behind progressive disclosure in the final product hierarchy.
+The current Rides list footer and Ride Details distance/route explanations truthfully describe evidence separation. The merged production visual audit correctly recommends moving detailed evidence architecture behind progressive disclosure in the final product hierarchy.
 
 That recommendation has an accessibility benefit as well: a user should be able to traverse ride history efficiently without repeatedly stepping through long implementation-oriented explanations on every ordinary visit.
 
@@ -246,12 +246,12 @@ This audit should **not** become a competing `AppRootView.swift` implementation 
 
 Recommended sequencing:
 1. preserve this document as the Ride History accessibility acceptance contract;
-2. allow current ride-location recovery and visual-audit work to settle;
+2. allow current ride-location recovery and other high-contention integration work to settle;
 3. when the final Rides redesign/integration owner touches `AppRootView.swift`, implement the semantic fixes and adaptive layout together rather than creating another conflicting root branch;
 4. add focused UI accessibility assertions at that same integration checkpoint;
 5. run exact-head Xcode 27 / iPhone 12 / iOS 27 Simulator QA and inspect both automated audit output and real assistive-technology behavior.
 
-The active production visual audit remains owner of layout/product-hierarchy critique. This lane owns only the accessibility acceptance contract for completed rides and does not change production Swift.
+The merged production visual audit remains the visual/product-hierarchy baseline. This lane owns only the accessibility acceptance contract for completed rides and does not change production Swift.
 
 ## Truth / hardware boundary
 
