@@ -15,7 +15,8 @@ struct RideRouteRecorderTests {
             maximumPointsPerChunk: 2
         )
 
-        #expect(try await recorder.start() == .new)
+        let startResult = try await recorder.start()
+        #expect(startResult == .new)
         let first = try await recorder.append(
             latitude: 45.6387,
             longitude: -122.6615,
@@ -130,8 +131,9 @@ struct RideRouteRecorderTests {
             store: store,
             maximumPointsPerChunk: 2
         )
+        let resumeResult = try await resumed.start()
         #expect(
-            try await resumed.start() == .resumed(
+            resumeResult == .resumed(
                 persistedPointCount: 2,
                 nextSegmentIndex: 1
             )
@@ -171,7 +173,8 @@ struct RideRouteRecorderTests {
         let manifest = try await first.finish(coverage: .partial)
 
         let reopened = try RideRouteRecorder(sessionID: sessionID, store: store)
-        #expect(try await reopened.start() == .alreadyFinalized(manifest))
+        let reopenResult = try await reopened.start()
+        #expect(reopenResult == .alreadyFinalized(manifest))
 
         do {
             _ = try await reopened.append(
