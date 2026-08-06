@@ -8,7 +8,7 @@ struct RideApplicationConfiguration: Sendable {
 
     /// Explicit Simulator QA policy only. These thresholds exist so the real
     /// application/recovery path can be exercised deterministically; they are
-    /// not MAXSHOT hardware timing or speed claims.
+    /// not AOVOPRO ES80 hardware timing or speed claims.
     static func simulatorQA() throws -> RideApplicationConfiguration {
         RideApplicationConfiguration(
             detectionPolicy: try RideDetectionPolicy(
@@ -182,6 +182,36 @@ final class RideApplicationStore {
         pendingAuthoritativeSpeedSample = nil
     }
 
+    /// Candidate-level/internal entry for already screened GPS evidence. This is
+    /// intentionally not the production ride-location lifecycle API because an
+    /// unscoped delayed delta could otherwise be assigned to a later ride.
+    func ingestQualityScreenedGPSDistanceDelta(
+        _ meters: Double,
+        receivedAtUptimeNanoseconds: UInt64
+    ) async {
+        await ingestObservation(
+            speedSample: nil,
+            qualityScreenedGPSDistanceDeltaMeters: meters,
+            minimumUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
+    /// Ride-scoped GPS evidence entry used by the phone-location capture path.
+    /// The capture owns the UUID it began with. If that ride has ended or a new
+    /// ride has taken over, a late coordinate delta is dropped instead of being
+    /// allowed to seed movement for the wrong `RideEngine` session.
+    func ingestQualityScreenedGPSDistanceDelta(
+        _ meters: Double,
+        receivedAtUptimeNanoseconds: UInt64,
+        for sessionID: UUID
+    ) async {
+        guard activeSessionID == sessionID else { return }
+        await ingestQualityScreenedGPSDistanceDelta(
+            meters,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
     private func subscribeToEvidenceStreams() async {
         guard stateTask == nil, speedTask == nil else { return }
 
@@ -259,12 +289,19 @@ final class RideApplicationStore {
         }
     }
 
-    private func ingestObservation(speedSample: SpeedTelemetrySample?) async {
+    private func ingestObservation(
+        speedSample: SpeedTelemetrySample?,
+        qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
+        minimumUptimeNanoseconds: UInt64 = 0
+    ) async {
         guard let coordinator,
               let historyStore,
               configuration != nil else { return }
 
-        let minimumUptime = speedSample?.receivedAtUptimeNanoseconds ?? 0
+        let minimumUptime = max(
+            speedSample?.receivedAtUptimeNanoseconds ?? 0,
+            minimumUptimeNanoseconds
+        )
         guard let observationUptime = nextObservationUptime(minimum: minimumUptime) else {
             fail(RideEngineError.nonMonotonicObservation, persistence: false)
             return
@@ -277,7 +314,7 @@ final class RideApplicationStore {
                 connection: latestVehicleState.connection,
                 speedSample: speedSample,
                 odometerKilometers: latestVehicleState.odometerKilometers,
-                qualityScreenedGPSDistanceDeltaMeters: nil,
+                qualityScreenedGPSDistanceDeltaMeters: qualityScreenedGPSDistanceDeltaMeters,
                 motionIndicatesMovement: false
             )
             let update = try await coordinator.ingest(observation)

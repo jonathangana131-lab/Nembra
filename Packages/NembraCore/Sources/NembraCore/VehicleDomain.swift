@@ -51,11 +51,12 @@ public enum VehicleConnectionIssue: String, Codable, Sendable {
     }
 }
 
-/// A protocol-level speed-limit slot exposed by the scooter.
+/// A protocol-level speed-limit slot exposed by a scooter profile.
 ///
-/// The MAXSHOT protocol audit has verified three independent writable Tuya
-/// datapoints (DP101/102/103), but has not established a trustworthy mapping
+/// The deferred MAXSHOT protocol audit verified three independent writable
+/// Tuya datapoints (DP101/102/103), but never established a trustworthy mapping
 /// between those slots and DP15 ride modes. Keep that distinction explicit.
+/// AOVOPRO ES80 slot/range semantics remain empty until real capture proves them.
 public enum SpeedLimitSlot: Int, CaseIterable, Codable, Sendable {
     case limit1 = 1
     case limit2 = 2
@@ -240,12 +241,47 @@ public struct VehicleProfile: Equatable, Sendable {
         self.capabilities = capabilities
     }
 
+    /// Primary real hardware-validation target.
+    ///
+    /// Public/user-observed app behavior corroborates lock, light, cruise,
+    /// start-mode/speed configuration, speed, mileage, and a user-facing battery
+    /// percentage. Their exact ES80 BLE/Tuya data points, scales, mode mapping,
+    /// limiter ranges, acknowledgement semantics, and whether the battery value
+    /// is direct or Tuya-derived remain hardware-validation work. Therefore this
+    /// profile advertises broad product capabilities but intentionally leaves
+    /// protocol-specific ride-mode/range mappings empty and does not claim
+    /// current/power telemetry despite some stock-app detail screens showing it.
+    public static let aovoproES80 = VehicleProfile(
+        identity: VehicleIdentity(
+            manufacturer: "AOVOPRO",
+            model: "ES80",
+            displayName: "AOVOPRO ES80",
+            protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+        ),
+        capabilities: VehicleCapabilities(
+            supportsLock: true,
+            supportsHeadlight: true,
+            supportsCruise: true,
+            supportsStartMode: true,
+            supportsSpeedLimit: true,
+            supportsOdometer: true,
+            supportsLiveSpeed: true,
+            supportsBatteryPercent: true,
+            supportsPowerWatts: false,
+            supportsCurrentAmps: false,
+            supportedRideModes: [],
+            speedLimitRangesBySlot: [:],
+            verifiedSpeedLimitSlotByRideMode: [:]
+        )
+    )
+
+    /// Deferred/unverified profile retained from the original first target.
     public static let maxshotV1SPro = VehicleProfile(
         identity: VehicleIdentity(
             manufacturer: "MAXSHOT",
             model: "V1S Pro",
             displayName: "MAXSHOT V1S Pro",
-            protocolFamily: "Tuya / YouFS (hardware validation pending)"
+            protocolFamily: "Tuya / YouFS (hardware validation deferred)"
         ),
         capabilities: VehicleCapabilities(
             supportsLock: true,

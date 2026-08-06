@@ -12,7 +12,7 @@ public actor UnverifiedScooterService: ScooterService {
     private var state: VehicleState
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
 
-    public init(profile: VehicleProfile = .maxshotV1SPro) {
+    public init(profile: VehicleProfile = .aovoproES80) {
         self.profile = profile
         self.state = Self.initialState()
     }
