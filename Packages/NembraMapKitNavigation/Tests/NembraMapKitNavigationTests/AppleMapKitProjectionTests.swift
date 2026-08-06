@@ -88,11 +88,14 @@ struct AppleMapKitProjectionTests {
         ]
 
         let projected = try AppleMapKitRouteProjection.coordinates(from: polyline(points))
+        let expected0 = try coordinate(45.0, -122.0)
+        let expected1 = try coordinate(45.1, -122.1)
+        let expected2 = try coordinate(45.2, -122.2)
 
         #expect(projected.count == 3)
-        #expect(projected[0] == try coordinate(45.0, -122.0))
-        #expect(projected[1] == try coordinate(45.1, -122.1))
-        #expect(projected[2] == try coordinate(45.2, -122.2))
+        #expect(projected[0] == expected0)
+        #expect(projected[1] == expected1)
+        #expect(projected[2] == expected2)
     }
 
     @Test("route projection preserves provider route and step facts")
