@@ -79,33 +79,55 @@ struct CoreBluetoothCaptureMappingTests {
         )
     }
 
-    @Test("service and characteristic mapping keep UUID identity and primary metadata")
+    @Test("service characteristic included-service and descriptor mappings preserve GATT topology")
     func gattDiscoveryMapping() throws {
         let peripheralID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
         let service = CBMutableService(type: CBUUID(string: "A201"), primary: false)
+        let includedService = CBMutableService(type: CBUUID(string: "180A"), primary: true)
         let characteristic = CBMutableCharacteristic(
             type: CBUUID(string: "2B10"),
             properties: [.notify, .read],
             value: nil,
             permissions: [.readable]
         )
+        let descriptor = CBMutableDescriptor(
+            type: CBUUID(string: CBUUIDCharacteristicUserDescriptionString),
+            value: "telemetry"
+        )
+        characteristic.descriptors = [descriptor]
         service.characteristics = [characteristic]
+        service.includedServices = [includedService]
 
         let mappedService = try CoreBluetoothCaptureMapping.service(
             peripheralIdentifier: peripheralID,
             service: service
         )
+        let mappedIncludedService = try CoreBluetoothCaptureMapping.includedService(
+            peripheralIdentifier: peripheralID,
+            parentService: service,
+            includedService: includedService
+        )
         let mappedCharacteristic = try CoreBluetoothCaptureMapping.characteristic(
             peripheralIdentifier: peripheralID,
             characteristic: characteristic
+        )
+        let mappedDescriptor = try CoreBluetoothCaptureMapping.descriptor(
+            peripheralIdentifier: peripheralID,
+            descriptor: descriptor
         )
 
         #expect(mappedService.peripheralIdentifier == peripheralID.uuidString)
         #expect(mappedService.serviceUUID == "A201")
         #expect(mappedService.isPrimary == false)
+        #expect(mappedIncludedService.parentServiceUUID == "A201")
+        #expect(mappedIncludedService.includedServiceUUID == "180A")
+        #expect(mappedIncludedService.includedServiceIsPrimary == true)
         #expect(mappedCharacteristic.serviceUUID == "A201")
         #expect(mappedCharacteristic.characteristicUUID == "2B10")
         #expect(mappedCharacteristic.properties == [.notify, .read])
+        #expect(mappedDescriptor.serviceUUID == "A201")
+        #expect(mappedDescriptor.characteristicUUID == "2B10")
+        #expect(mappedDescriptor.descriptorUUID == CBUUIDCharacteristicUserDescriptionString.uppercased())
     }
 
     @Test("value mapping preserves raw bytes without interpreting Tuya framing")
