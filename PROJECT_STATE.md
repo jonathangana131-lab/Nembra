@@ -1,6 +1,6 @@
 # PROJECT STATE
 
-Updated: 2026-08-05
+Updated: 2026-08-06
 
 ## Product
 - Product: **Nembra**
@@ -9,44 +9,58 @@ Updated: 2026-08-05
 - Product stance: native iOS 27 scooter platform; MAXSHOT first; truthful telemetry and command confirmation; multi-vehicle architecture only after MAXSHOT quality is established.
 
 ## Current branch / milestone
-- Active branch: `feature/landscape-dashboard`
+- Active branch: `feature/speed-instrumentation-v2`
 - Stable branch: `main`
 - Stable Home merge: `254b95a8d62d7d143df937cc0d8aa73f45548266`
-- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode**
-- Next milestone after Dashboard acceptance: **Phase 10 — measured-speed instrumentation / render-only interpolation**
+- Stable Dashboard merge: `51613a990eb058ee83741645d8c551082d4ef268`
+- Active milestone: **Phase 10 — measured-speed instrumentation / render-only interpolation**
 
 ## Portrait Home — accepted and merged
-- The rejected giant scooter-art Home direction is no longer used in the composition.
-- Portrait Home prioritizes: human-readable vehicle identity, connection/lock truth, Battery/Trip/Mode, Light/Lock controls, Walk/Eco/Drive/Sport selector, and native vehicle details.
-- Moving state disables Lock and says `Stop to lock`; the service remains the final safety boundary.
-- Locked state offers `Unlock` rather than presenting a misleading Lock action.
-- Battery <=15% receives semantic low-battery priority without recoloring the entire interface.
-- Reconnecting/offline telemetry is explicitly last-known/read-only.
-- Speed-limit editing remains absent until DP101/102/103 user-facing semantics are verified.
-- Real UI interaction gate passed on Xcode 27 run `31056673050` after fixing stale XCTest element reuse for confirmed Lock state.
-- PR #1 was merged to `main` only after the latest Xcode 27 build/test/capture job completed successfully.
+- Status-first Home is merged and remains the portrait experience.
+- Large rejected scooter artwork is not part of the composition.
+- Moving state disables Lock; locked state offers Unlock; low battery gets semantic priority.
+- Retained telemetry is explicitly last-known/read-only.
+- Real interaction gate passed before merge.
 
-## Phase 9 Dashboard implementation
-- Compact-height iPhone landscape routes to a dedicated `DashboardView`; portrait remains Home.
-- Dashboard is an instrument-first black cockpit, not rotated portrait content.
-- Left rail: MAXSHOT identity, truthful connection status, battery, scooter Trip.
-- Center: dominant confirmed speed and unit. Phase 9 does not yet inject interpolation into the display.
-- Right rail: confirmed ride mode plus compact stopped-only controls.
-- While moving, state-changing controls disappear and the cockpit says they are available when stopped.
-- Lock still uses a confirmation dialog and service acknowledgement semantics.
-- Stable accessibility identifiers exist for cockpit, speed, mode, battery/trip, mode buttons, Light and Lock.
-- Root dashboard accessibility explicitly contains children so the cockpit marker does not hide instrument/control descendants from XCTest.
-- Landscape XCUITests cover riding/hidden-controls and stopped/mode-confirmation states and keep screenshots as XCTest attachments.
-- CI now preserves the full `.xcresult` and exports test attachments even when `xcodebuild test` fails, so visual/interaction failures remain inspectable.
+## Phase 9 Dashboard — accepted and merged
+- Dedicated compact-height iPhone landscape `DashboardView`; portrait remains Home.
+- Instrument-first black cockpit, not rotated portrait content.
+- Dominant confirmed speed, battery, scooter Trip, mode, connection/model identity.
+- Stopped-only Light/Lock and ride-mode controls; moving state removes state-changing controls.
+- No fake throttle/current/power gauge and no interpolation presented as measurement in Phase 9.
+- Landscape XCUITests passed on Xcode 27 / iPhone 12 / iOS 27.
+- Riding and stopped landscape screenshots were visually reviewed and accepted.
+- Final Phase 9 Mac gate: workflow run `31058989306` PASS.
+- PR #2 merged to `main` at `51613a990eb058ee83741645d8c551082d4ef268`.
+
+## Phase 10 current implementation
+Already pushed on `feature/speed-instrumentation-v2`:
+- `VehicleStore.speedTelemetryUpdates()` exposes raw speed evidence without publishing render frames into `VehicleState`.
+- `SpeedInstrumentModel` is a main-actor presentation model around the existing core `SpeedDisplayInterpolator`.
+- It accepts only authoritative `SpeedTelemetrySample` evidence.
+- Stale packets and motion-assist estimates cannot move presentation state.
+- Before fresh raw telemetry arrives, the instrument may display the latest already-confirmed `VehicleState` speed as an explicitly different origin.
+- Animation duration derives from observed packet cadence and is bounded 50–300 ms; this is a presentation heuristic, not a claim about MAXSHOT notification rate.
+- `RollingSpeedValueView` uses the existing fixed-slot `RollingNumberModel`; it is presentation-only.
+- App tests now cover fallback confirmed state, authoritative interpolation, stale/estimated rejection, and long-gap duration bounding.
+
+## Phase 10 next quality gates
+1. Wire `SpeedInstrumentModel.swift` and `RollingSpeedValueView.swift` into the real Nembra app target.
+2. Run Xcode 27 app/unit/UI tests before changing the visible cockpit.
+3. Replace only the Dashboard center speed digits with a narrow local render loop; do not make the whole Dashboard redraw at display cadence.
+4. Subscribe once to raw speed evidence and keep the render model local to the speed instrument.
+5. Keep moving-state safety, ride detection, trip persistence, and stats driven by confirmed/raw evidence—not interpolated frames.
+6. Run landscape Simulator QA and inspect riding/stopped frames for visual jitter, clipping, digit width changes, and unit alignment.
+7. Add/adjust interaction or instrumentation tests if screenshot/runtime evidence exposes defects.
+8. Merge Phase 10 only after Mac gate + visual review are green, then continue immediately into mode-responsive Dashboard / ride-engine app wiring.
 
 ## Real Xcode / Simulator proof
 GitHub-hosted `xcode-27` is the remote Mac gate.
-- macOS 26.5.2 / Xcode 27.0 beta build 27A5228h / iOS 27 Simulator has been proven by artifacts.
+- macOS 26.5.2 / Xcode 27.0 beta build 27A5228h / iOS 27 Simulator proven by artifacts.
 - Explicit visual baseline: iPhone 12 / iOS 27.
 - `NembraCore`: **156/156 tests passing** on the Mac gate.
-- Portrait Home latest interaction gate: **PASS** (`31056673050`).
-- Simulator capture states already cover cold-disconnected, reconnecting, connected-stopped, riding, low-battery, Bluetooth-off, permission-denied, scooter-unavailable, unsupported-configuration, and representative dark states.
-- Phase 9 Dashboard is not accepted until the latest landscape branch Xcode 27 run is green and the exported landscape attachments are visually reviewed.
+- UI-test harness allows 120 seconds total for cold hosted-runner automation bootstrap while individual assertion waits remain tight.
+- CI preserves the `.xcresult` and exports XCTest screenshot attachments on failure or success.
 
 ## Core architecture already implemented
 - Capability-based `VehicleProfile` / `ScooterService` boundary.
@@ -79,27 +93,19 @@ GitHub-hosted `xcode-27` is the remote Mac gate.
 - MAXSHOT-specific DP101/102/103 semantics.
 - AccessorySetupKit descriptors based on observed advertisement/service identity.
 
-## Next exact actions
-1. Let the latest `feature/landscape-dashboard` Xcode 27 run exercise the dedicated cockpit and real landscape XCUITests.
-2. Fix any compile, layout, accessibility, interaction, or orientation defect instead of weakening the tests.
-3. Download the latest workflow artifact and inspect `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments at the iPhone 12 baseline.
-4. Refine spacing/typography/control hierarchy if screenshot evidence shows clipping, cramped rails, weak speed dominance, or excessive chrome.
-5. Mark PR #2 ready and merge only when the latest Dashboard lineage is green and visually accepted.
-6. Immediately continue to **Phase 10**: rebase the existing measured-speed instrumentation ideas onto the accepted Dashboard, wire raw authoritative speed to render-only interpolation/rolling digits, and preserve telemetry truth boundaries.
-7. Continue into ride persistence/app wiring, background Bluetooth/location, maps, navigation, history/stats, acceleration tests, BLE diagnostics/real hardware, cloud/leaderboard, system integrations, and hardening per the master directive.
-
 ## Key files
 - `DESIGN_SYSTEM.md`
 - `DECISIONS.md`
 - `PROTOCOL_NOTES.md`
 - `CONTINUATION_PROMPT.md`
 - `NembraApp/Features/Home/HomeView.swift`
-- `NembraApp/Features/Home/VehicleControlsView.swift`
 - `NembraApp/Features/Dashboard/DashboardView.swift`
+- `NembraApp/Features/Dashboard/SpeedInstrumentModel.swift`
+- `NembraApp/Features/Dashboard/RollingSpeedValueView.swift`
 - `NembraUITests/NembraUITests.swift`
 - `Packages/NembraCore/Sources/NembraCore/`
 - `.github/workflows/xcode27-simulator.yml`
 - `scripts/ci/xcode27_simulator_capture.sh`
 
 ## Visual QA acceptance criteria
-A vertical slice is accepted only when its latest code lineage has: Mac build/test success, representative Simulator screenshots, dark/light review where applicable, failure-state review, moving-state command review, and real UI interaction coverage. A screenshot looking clean is not by itself completion.
+A vertical slice is accepted only when its latest code lineage has Mac build/test success, representative Simulator screenshots, dark/light review where applicable, failure-state review, moving-state command review, and real UI interaction coverage. A screenshot looking clean is not by itself completion.
