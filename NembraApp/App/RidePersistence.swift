@@ -81,7 +81,14 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
         sessionID: UUID
     ) throws -> RideHistoryRecord {
         do {
-            return try JSONDecoder().decode(RideHistoryRecord.self, from: stored.payload)
+            let decoded = try JSONDecoder().decode(RideHistoryRecord.self, from: stored.payload)
+            guard stored.sessionID == sessionID,
+                  decoded.sessionID == sessionID else {
+                throw RideHistoryPersistenceError.corruptRecord(sessionID)
+            }
+            return decoded
+        } catch let error as RideHistoryPersistenceError {
+            throw error
         } catch {
             throw RideHistoryPersistenceError.corruptRecord(sessionID)
         }
