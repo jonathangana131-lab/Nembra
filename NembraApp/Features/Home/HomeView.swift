@@ -3,6 +3,7 @@ import UIKit
 
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
+    @Environment(RideStore.self) private var ride
     @Environment(\.openURL) private var openURL
     @State private var showLockConfirmation = false
 
@@ -10,6 +11,10 @@ struct HomeView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
                 vehicleHeader
+
+                if ride.presentation.isVisibleOnHome {
+                    currentRideStatus
+                }
 
                 if vehicle.state.connection != .connected {
                     connectionRecovery
@@ -100,6 +105,87 @@ struct HomeView: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private struct CurrentRidePresentation {
+        let title: String
+        let message: String
+        let icon: String
+    }
+
+    private var currentRidePresentation: CurrentRidePresentation {
+        switch ride.presentation {
+        case .active:
+            CurrentRidePresentation(
+                title: "Ride active",
+                message: "Tracking automatically",
+                icon: "location.fill"
+            )
+        case .reconnecting:
+            CurrentRidePresentation(
+                title: "Ride continuing",
+                message: "Reconnecting to scooter",
+                icon: "antenna.radiowaves.left.and.right"
+            )
+        case .finishing:
+            CurrentRidePresentation(
+                title: "Checking ride end",
+                message: "Waiting for confirmed stop",
+                icon: "hourglass"
+            )
+        case .saving:
+            CurrentRidePresentation(
+                title: "Saving ride",
+                message: "Securing ride history",
+                icon: "arrow.down.doc.fill"
+            )
+        case .blocked:
+            CurrentRidePresentation(
+                title: "Ride tracking paused",
+                message: "Ride data is preserved",
+                icon: "exclamationmark.shield.fill"
+            )
+        case .unavailable, .idle:
+            CurrentRidePresentation(
+                title: "Ride tracking",
+                message: "Waiting for movement",
+                icon: "circle"
+            )
+        }
+    }
+
+    private var currentRideStatus: some View {
+        let presentation = currentRidePresentation
+
+        return HStack(spacing: 12) {
+            Image(systemName: presentation.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presentation.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(presentation.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            if ride.presentation == .saving {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(14)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.currentRide")
     }
 
     private var statusPanel: some View {
