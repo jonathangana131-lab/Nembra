@@ -43,7 +43,7 @@ final class SpeedInstrumentModel {
     }
 
     /// Policy must be chosen by app bootstrap, not inferred from the vehicle
-    /// model. Production remains disabled until real MAXSHOT cadence is measured.
+    /// model. Production remains disabled until real AOVOPRO ES80 cadence is measured.
     func configureInterpolationPolicy(_ policy: SpeedInstrumentInterpolationPolicy) {
         guard measurementRevision == 0 else { return }
         interpolationPolicy = policy
