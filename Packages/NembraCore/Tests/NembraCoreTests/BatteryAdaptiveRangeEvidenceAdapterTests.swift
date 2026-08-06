@@ -19,6 +19,28 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
         )
     }
 
+    private func policy(
+        minimumConsumedPercentagePoints: Double = 3,
+        minimumDistanceMeters: Double = 100
+    ) throws -> AdaptiveBatteryRangePolicy {
+        try AdaptiveBatteryRangePolicy(
+            minimumConsumedPercentagePoints: minimumConsumedPercentagePoints,
+            minimumDistanceMeters: minimumDistanceMeters,
+            recentWindowCapacity: 3,
+            recentWeight: 0.5,
+            outlierLowerEfficiencyRatio: 0.4,
+            outlierUpperEfficiencyRatio: 2.5,
+            estimateDeadbandFraction: 0.05,
+            estimateSmoothingFactor: 0.25,
+            provisionalEfficiencyMetersPerPercentagePoint: nil,
+            lowSOCCautionThresholdPercent: nil,
+            lowSOCEfficiencyMultiplier: nil,
+            lowConfidenceConsumedPercentagePoints: 10,
+            normalConfidenceConsumedPercentagePoints: 30,
+            highConfidenceConsumedPercentagePoints: 60
+        )
+    }
+
     @Test("verified continuous SoC becomes authoritative adaptive-range evidence")
     func verifiedSOCMapsExactly() throws {
         let source = try observation(
@@ -292,5 +314,199 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
         }
         #expect(reading.percentage == 68)
         #expect(bridge.streamValidator.lastAcceptedUptimeNanoseconds == 200)
+    }
+
+    @Test("pipeline emits a learning window only from verified SoC plus classified distance")
+    func pipelineEmitsLearningWindow() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
+
+        let start = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 1
+        )
+        let end = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(77),
+            role: .verifiedVehicleMeasurement,
+            uptime: 2
+        )
+
+        let startResult = try pipeline.acceptBatteryObservation(start, policy: p)
+        #expect(startResult.learningWindow == nil)
+        try pipeline.recordDistance(deltaMeters: 360, coverage: .complete)
+        let endResult = try pipeline.acceptBatteryObservation(end, policy: p)
+
+        guard let window = endResult.learningWindow else {
+            Issue.record("Expected a complete learning window")
+            return
+        }
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+        #expect(window.distanceMeters == 360)
+        #expect(window.distanceCoverage == .complete)
+        #expect(window.transportGapOccurred == false)
+    }
+
+    @Test("known unobserved interval immediately discards pre-gap distance and anchor")
+    func pipelineKnownGapDiscardsPreGapSpan() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
+
+        let preGapAnchor = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 100
+        )
+        _ = try pipeline.acceptBatteryObservation(preGapAnchor, policy: p)
+        try pipeline.recordDistance(deltaMeters: 500)
+
+        pipeline.markUnobservedInterval()
+        #expect(pipeline.windowAssembler.anchorSOC == nil)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        let boundary = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(60),
+            role: .stockAppCorrelationAnchor,
+            uptime: 1,
+            continuity: .afterUnobservedInterval
+        )
+        let freshAnchor = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(59),
+            role: .verifiedVehicleMeasurement,
+            uptime: 2
+        )
+        let freshEnd = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(56),
+            role: .verifiedVehicleMeasurement,
+            uptime: 3
+        )
+
+        let boundaryResult = try pipeline.acceptBatteryObservation(boundary, policy: p)
+        #expect(boundaryResult.action == .resetContinuity)
+        #expect(boundaryResult.learningWindow == nil)
+
+        _ = try pipeline.acceptBatteryObservation(freshAnchor, policy: p)
+        try pipeline.recordDistance(deltaMeters: 300)
+        let endResult = try pipeline.acceptBatteryObservation(freshEnd, policy: p)
+
+        guard let window = endResult.learningWindow else {
+            Issue.record("Expected only the fresh post-gap span to close")
+            return
+        }
+        #expect(window.startSOC.percentage == 59)
+        #expect(window.endSOC.percentage == 56)
+        #expect(window.distanceMeters == 300)
+    }
+
+    @Test("continuous stock-app SoC cannot disturb an authoritative assembler span")
+    func pipelineIgnoresContinuousStockAppSOC() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        let anchor = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 1
+        )
+        let stockApp = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(62),
+            role: .stockAppCorrelationAnchor,
+            uptime: 2
+        )
+
+        _ = try pipeline.acceptBatteryObservation(anchor, policy: p)
+        try pipeline.recordDistance(deltaMeters: 125)
+        let result = try pipeline.acceptBatteryObservation(stockApp, policy: p)
+
+        #expect(result.action == .ignore)
+        #expect(result.learningWindow == nil)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 125)
+    }
+
+    @Test("observed transport gap remains attached to emitted candidate rather than being erased")
+    func pipelinePreservesObservedTransportGap() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
+
+        let start = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 1
+        )
+        let end = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(77),
+            role: .verifiedVehicleMeasurement,
+            uptime: 2
+        )
+
+        _ = try pipeline.acceptBatteryObservation(start, policy: p)
+        try pipeline.recordDistance(deltaMeters: 300)
+        pipeline.recordTransportGap()
+        let result = try pipeline.acceptBatteryObservation(end, policy: p)
+
+        guard let window = result.learningWindow else {
+            Issue.record("Expected tainted candidate to be preserved for model rejection")
+            return
+        }
+        #expect(window.transportGapOccurred)
+        #expect(window.distanceMeters == 300)
+    }
+
+    @Test("stream rejection leaves range-window state unchanged")
+    func pipelineStreamFailureIsAtomic() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        let anchor = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 100
+        )
+        let regressed = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(79),
+            role: .verifiedVehicleMeasurement,
+            uptime: 99
+        )
+
+        _ = try pipeline.acceptBatteryObservation(anchor, policy: p)
+        try pipeline.recordDistance(deltaMeters: 200)
+
+        #expect(throws: BatteryEvidenceStreamValidationError.nonMonotonicUptime) {
+            _ = try pipeline.acceptBatteryObservation(regressed, policy: p)
+        }
+
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 100)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 200)
+    }
+
+    @Test("assembler rejection after stream acceptance is atomic across both pipeline components")
+    func pipelineAssemblerFailureIsAtomic() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        let anchor = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(80),
+            role: .verifiedVehicleMeasurement,
+            uptime: 100
+        )
+        let duplicateTimestampSOC = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(79),
+            role: .verifiedVehicleMeasurement,
+            uptime: 100
+        )
+
+        _ = try pipeline.acceptBatteryObservation(anchor, policy: p)
+        try pipeline.recordDistance(deltaMeters: 200)
+
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try pipeline.acceptBatteryObservation(duplicateTimestampSOC, policy: p)
+        }
+
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 100)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 200)
     }
 }
