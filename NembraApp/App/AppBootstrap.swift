@@ -53,17 +53,26 @@ final class AppRuntime {
                   let speed = snapshot.speedKilometersPerHour,
                   speed > 0 else { return }
 
-            // Normal riding QA emits one fresh authoritative packet without
-            // adding distance. The opt-in completed-history fixture also adds a
-            // small explicit ODO/trip delta so the real persisted UI can prove
-            // distance evidence without inventing a database row. Simulated
-            // elapsed distance never becomes packet-arrival cadence.
+            // First establish fresh authoritative motion without advancing the
+            // simulated odometer. This lets RideEngine establish the ride's ODO
+            // baseline before the completed-history fixture adds movement.
             await simulatorService.simulateRide(
                 speedKilometersPerHour: speed,
-                elapsedSeconds: simulatorAutoCompletesRide ? 60 : 0
+                elapsedSeconds: 0
             )
 
             guard simulatorAutoCompletesRide else { return }
+
+            // The opt-in history fixture then advances a real Simulator ODO/trip
+            // delta through the production service/ride path. `elapsedSeconds`
+            // affects simulated distance only; packet timestamps still use the
+            // real monotonic arrival clock and never fabricate cadence.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await simulatorService.simulateRide(
+                speedKilometersPerHour: speed,
+                elapsedSeconds: 60
+            )
 
             // Explicit end-to-end history fixture used only when a UI/QA launch
             // opts in through the Simulator environment. It drives the real ride
