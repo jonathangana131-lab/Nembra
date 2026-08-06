@@ -209,6 +209,38 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
+    @Test("a numerical-overflow rejection closes its span so later clean evidence can train")
+    func numericalOverflowRejectionDoesNotPoisonNextSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: .greatestFiniteMagnitude, coverage: .complete)
+
+        let overflowCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let overflow = try #require(overflowCandidate)
+        #expect(overflow.distanceMeters == .greatestFiniteMagnitude)
+        #expect(overflow.distanceCoverage == .complete)
+        #expect(model.ingest(overflow, policy: p).disposition == .rejected(.numericalOverflow))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceMeters == 300)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("an efficiency outlier closes its span without poisoning later clean evidence")
     func rejectedEfficiencyOutlierDoesNotPoisonNextSpan() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
