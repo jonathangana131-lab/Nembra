@@ -74,9 +74,26 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
     }
 }
 
+public enum PassiveBluetoothCapturePeripheralRelationship: String, Sendable {
+    /// Both captures conservatively resolved to the same CoreBluetooth
+    /// peripheral identifier. This is useful continuity evidence, not a globally
+    /// stable hardware identity claim.
+    case sameObservedIdentifier
+
+    /// Both captures resolved to exactly one GATT peripheral, but the identifiers
+    /// differ. The comparison must not be presented as proven same-scooter data.
+    case differentObservedIdentifiers
+
+    /// At least one capture has no single unambiguous GATT peripheral.
+    case unresolved
+}
+
 public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let baselineRecordCount: Int
     public let comparisonRecordCount: Int
+    public let baselinePeripheralIdentifier: String?
+    public let comparisonPeripheralIdentifier: String?
+    public let peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship
     public let baselineServices: Set<String>
     public let comparisonServices: Set<String>
     public let addedServices: Set<String>
@@ -87,6 +104,9 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public init(
         baselineRecordCount: Int,
         comparisonRecordCount: Int,
+        baselinePeripheralIdentifier: String?,
+        comparisonPeripheralIdentifier: String?,
+        peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship,
         baselineServices: Set<String>,
         comparisonServices: Set<String>,
         addedServices: Set<String>,
@@ -96,6 +116,9 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     ) {
         self.baselineRecordCount = baselineRecordCount
         self.comparisonRecordCount = comparisonRecordCount
+        self.baselinePeripheralIdentifier = baselinePeripheralIdentifier
+        self.comparisonPeripheralIdentifier = comparisonPeripheralIdentifier
+        self.peripheralRelationship = peripheralRelationship
         self.baselineServices = baselineServices
         self.comparisonServices = comparisonServices
         self.addedServices = addedServices
@@ -110,6 +133,10 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// Useful examples are `charger disconnected` vs `charger connected`, or
 /// `stationary/rested` vs `after a short ride`. The comparison is intentionally
 /// byte/statistics based. It never declares a stream to be voltage/current/etc.
+///
+/// The report also exposes whether both sessions conservatively resolved to the
+/// same CoreBluetooth peripheral identifier. That identifier is process/system
+/// evidence only; it is not promoted to a permanent physical scooter identity.
 public enum PassiveBluetoothCaptureComparison {
     public static func compare(
         baseline: PassiveBluetoothCaptureSession,
@@ -159,10 +186,18 @@ public enum PassiveBluetoothCaptureComparison {
 
         let baselineServices = baselineFingerprint.observedServiceUUIDs
         let comparisonServices = comparisonFingerprint.observedServiceUUIDs
+        let baselineIdentifier = nonEmpty(baselineFingerprint.peripheralIdentifier)
+        let comparisonIdentifier = nonEmpty(comparisonFingerprint.peripheralIdentifier)
 
         return PassiveBluetoothCaptureComparisonReport(
             baselineRecordCount: baseline.records.count,
             comparisonRecordCount: comparison.records.count,
+            baselinePeripheralIdentifier: baselineIdentifier,
+            comparisonPeripheralIdentifier: comparisonIdentifier,
+            peripheralRelationship: relationship(
+                baseline: baselineIdentifier,
+                comparison: comparisonIdentifier
+            ),
             baselineServices: baselineServices,
             comparisonServices: comparisonServices,
             addedServices: comparisonServices.subtracting(baselineServices),
@@ -223,5 +258,19 @@ public enum PassiveBluetoothCaptureComparison {
             return nil
         }
         return lhsLast != rhsLast
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
+    }
+
+    private static func relationship(
+        baseline: String?,
+        comparison: String?
+    ) -> PassiveBluetoothCapturePeripheralRelationship {
+        guard let baseline, let comparison else { return .unresolved }
+        return baseline == comparison
+            ? .sameObservedIdentifier
+            : .differentObservedIdentifiers
     }
 }
