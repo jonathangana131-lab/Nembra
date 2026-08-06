@@ -22,6 +22,11 @@ private struct PortraitRootView: View {
         TabView {
             NavigationStack {
                 HomeView()
+                    // iOS 27's floating tab bar intentionally overlays the tab
+                    // content. Give the Home scroll view extra safe-area room so
+                    // its final vehicle row can scroll clear of that glass bar
+                    // instead of sitting underneath an interactive control.
+                    .safeAreaPadding(.bottom, 72)
                     .safeAreaInset(edge: .top, spacing: 0) {
                         if rides.shouldPresentStatus {
                             RideStatusStrip()
