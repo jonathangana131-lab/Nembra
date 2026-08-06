@@ -17,6 +17,16 @@ final class NembraUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
 
+        let homeModeIdentifiers = [
+            "home.mode.walk",
+            "home.mode.eco",
+            "home.mode.drive",
+            "home.mode.sport"
+        ]
+        for identifier in homeModeIdentifiers {
+            assertMinimumTouchTarget(app.buttons[identifier], named: identifier)
+        }
+
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertTrue(light.label.contains("Off"))
