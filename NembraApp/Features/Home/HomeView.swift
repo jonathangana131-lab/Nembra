@@ -233,35 +233,48 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: NembraMetrics.control) {
             sectionHeader(title: "Quick Controls")
 
-            HStack(spacing: NembraMetrics.control) {
-                if vehicle.profile.capabilities.supportsHeadlight {
-                    actionControl(
-                        title: "Light",
-                        subtitle: lightSubtitle,
-                        icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
-                        active: vehicle.state.isHeadlightOn == true,
-                        pending: vehicle.pendingCommands.contains(.headlight),
-                        available: vehicle.state.isHeadlightOn != nil,
-                        enabled: true
-                    ) {
-                        guard let isOn = vehicle.state.isHeadlightOn else { return }
-                        Task { await vehicle.setHeadlight(!isOn) }
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: NembraMetrics.control) {
+                        quickControlButtons
+                    }
+                } else {
+                    HStack(spacing: NembraMetrics.control) {
+                        quickControlButtons
                     }
                 }
+            }
+        }
+    }
 
-                if vehicle.profile.capabilities.supportsLock {
-                    actionControl(
-                        title: lockControlTitle,
-                        subtitle: lockSubtitle,
-                        icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
-                        active: vehicle.state.isLocked == true,
-                        pending: vehicle.pendingCommands.contains(.lock),
-                        available: vehicle.state.isLocked != nil,
-                        enabled: canChangeLockState
-                    ) {
-                        showLockConfirmation = true
-                    }
-                }
+    @ViewBuilder
+    private var quickControlButtons: some View {
+        if vehicle.profile.capabilities.supportsHeadlight {
+            actionControl(
+                title: "Light",
+                subtitle: lightSubtitle,
+                icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
+                active: vehicle.state.isHeadlightOn == true,
+                pending: vehicle.pendingCommands.contains(.headlight),
+                available: vehicle.state.isHeadlightOn != nil,
+                enabled: true
+            ) {
+                guard let isOn = vehicle.state.isHeadlightOn else { return }
+                Task { await vehicle.setHeadlight(!isOn) }
+            }
+        }
+
+        if vehicle.profile.capabilities.supportsLock {
+            actionControl(
+                title: lockControlTitle,
+                subtitle: lockSubtitle,
+                icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
+                active: vehicle.state.isLocked == true,
+                pending: vehicle.pendingCommands.contains(.lock),
+                available: vehicle.state.isLocked != nil,
+                enabled: canChangeLockState
+            ) {
+                showLockConfirmation = true
             }
         }
     }
@@ -305,7 +318,7 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 13)
-            .frame(height: 58)
+            .frame(minHeight: 58)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
@@ -323,37 +336,19 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: NembraMetrics.control) {
             sectionHeader(title: "Ride Mode")
 
-            HStack(spacing: 4) {
-                ForEach(supportedModes, id: \.self) { mode in
-                    Button {
-                        Task { await vehicle.setMode(mode) }
-                    } label: {
-                        ZStack {
-                            if vehicle.state.rideMode == mode {
-                                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                    .fill(Color(uiColor: .systemBackground))
-                                    .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
-                            }
-
-                            HStack(spacing: 5) {
-                                Text(mode.displayName)
-                                    .font(.subheadline.weight(vehicle.state.rideMode == mode ? .semibold : .medium))
-
-                                if vehicle.pendingRideMode == mode {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                }
-                            }
-                            .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 4) {
+                        ForEach(supportedModes, id: \.self) { mode in
+                            modeControl(mode, expanded: true)
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
-                    .accessibilityLabel(mode.displayName)
-                    .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(supportedModes, id: \.self) { mode in
+                            modeControl(mode, expanded: false)
+                        }
+                    }
                 }
             }
             .padding(4)
@@ -363,6 +358,39 @@ struct HomeView: View {
             )
         }
         .sensoryFeedback(.selection, trigger: vehicle.state.rideMode)
+    }
+
+    private func modeControl(_ mode: RideMode, expanded: Bool) -> some View {
+        Button {
+            Task { await vehicle.setMode(mode) }
+        } label: {
+            ZStack {
+                if vehicle.state.rideMode == mode {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color(uiColor: .systemBackground))
+                        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+                }
+
+                HStack(spacing: 5) {
+                    Text(mode.displayName)
+                        .font(.subheadline.weight(vehicle.state.rideMode == mode ? .semibold : .medium))
+
+                    if vehicle.pendingRideMode == mode {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
+                }
+                .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 44)
+            .padding(.vertical, expanded ? 8 : 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+        .accessibilityLabel(mode.displayName)
+        .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
     }
 
     private var vehicleSection: some View {
