@@ -49,6 +49,68 @@ final class RideApplicationTests: XCTestCase {
     }
 
     @MainActor
+    func testStateOnlyAcknowledgementsDoNotReplayRawSpeedEvidence() async throws {
+        let directory = temporaryDirectory(name: "single-use-speed")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "single-use-speed"),
+            baseDirectoryURL: directory
+        )
+        let configuration = RideApplicationConfiguration(
+            detectionPolicy: try RideDetectionPolicy(
+                candidateSpeedKilometersPerHour: 1,
+                confirmationSpeedKilometersPerHour: 3,
+                confirmationDurationNanoseconds: 250_000_000,
+                confirmationOdometerDeltaKilometers: 10,
+                confirmationGPSDistanceMeters: 10_000,
+                endingDurationNanoseconds: 450_000_000,
+                maximumSpeedSampleAgeNanoseconds: 1_000_000_000
+            ),
+            checkpointCadence: try RideCheckpointCadence(
+                minimumIntervalNanoseconds: 100_000_000
+            )
+        )
+
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let store = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: configuration,
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await store.start()
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("One raw packet should start only a ride candidate.") {
+            store.status == .candidate
+        }
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try await service.setHeadlight(true)
+        try await Task.sleep(nanoseconds: 75_000_000)
+
+        XCTAssertEqual(
+            store.status,
+            .candidate,
+            "A headlight acknowledgement must not replay the previous speed packet and confirm a ride."
+        )
+        XCTAssertNil(store.activeSessionID)
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("A second fresh raw packet may confirm the candidate after the duration gate.") {
+            store.status == .active
+        }
+        XCTAssertNotNil(store.activeSessionID)
+        store.stop()
+    }
+
+    @MainActor
     func testRideApplicationRestoresSameSessionAndCommitsHistory() async throws {
         let directory = temporaryDirectory(name: "recovery")
         defer { try? FileManager.default.removeItem(at: directory) }
