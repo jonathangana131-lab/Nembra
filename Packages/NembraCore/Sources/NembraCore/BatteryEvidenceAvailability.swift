@@ -50,11 +50,14 @@ public enum BatteryEvidenceFieldAvailability: Equatable, Sendable {
     }
 }
 
-/// Availability view over every battery semantic field for one current segment.
+/// Availability view over every battery semantic field for one validated current segment.
 public struct BatteryEvidenceAvailabilitySnapshot: Equatable, Sendable {
     public let availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]
 
-    public init(availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]) {
+    /// Raw snapshot construction stays inside NembraCore. Production consumers obtain
+    /// this aggregate only from `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`,
+    /// preventing arbitrary `.fresh` labels from bypassing uptime/policy evaluation.
+    init(availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]) {
         self.availabilityByField = availabilityByField
     }
 
@@ -68,6 +71,8 @@ public struct BatteryEvidenceAvailabilitySnapshot: Equatable, Sendable {
 /// Wall-clock dates are intentionally ignored. This layer does not infer transport gaps,
 /// erase stale evidence, promote truth roles, or select production thresholds.
 public enum BatteryEvidenceAvailabilityEvaluator {
+    /// Field-level classification remains public because it performs the real injected
+    /// uptime-policy calculation itself; callers do not provide a preclassified state.
     public static func availability(
         for observation: BatteryEvidenceObservation?,
         atUptimeNanoseconds nowUptimeNanoseconds: UInt64,

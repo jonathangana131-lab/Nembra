@@ -15,6 +15,14 @@ Nembra therefore needs a separate freshness/availability layer after:
 
 Freshness must not be hidden inside any of those earlier layers because age does not change what the evidence *is*.
 
+## Construction boundary
+
+`BatteryEvidenceAvailabilitySnapshot` is a public read-only output type, but its raw dictionary initializer is module-internal.
+
+External code cannot assemble a fake aggregate containing arbitrary `.fresh` cases and then pass that aggregate deeper into the trusted live-truth path. Production aggregate construction flows through `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`, which evaluates every field against process-local uptime and the injected policy.
+
+The field-level `availability(for:atUptimeNanoseconds:policy:)` API remains public because it performs that actual calculation itself rather than accepting a preclassified freshness state.
+
 ## No guessed ES80 thresholds
 
 `BatteryEvidenceFreshnessPolicy` contains injected per-field maximum ages.

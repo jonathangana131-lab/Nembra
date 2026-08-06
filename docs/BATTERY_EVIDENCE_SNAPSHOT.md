@@ -15,6 +15,14 @@ Example of what must not happen:
 
 `BatteryEvidenceSnapshotAccumulator` prevents that class of stale/fresh mixing.
 
+## Construction boundary
+
+`BatteryEvidenceCurrentSegmentSnapshot` is public as a read-only output type, but its raw dictionary initializer is intentionally module-internal.
+
+External app/framework code therefore cannot manufacture an arbitrary "current segment" and feed it into later freshness/live-truth stages while bypassing stream ordering and continuity. The production construction path is `BatteryEvidenceSnapshotAccumulator.currentSnapshot`.
+
+NembraCore's `@testable` tests may still construct fixtures directly where necessary; that is test access, not a production trust path.
+
 ## Current-segment semantics
 
 The accumulator keeps at most one latest observation per `BatteryEvidenceField` inside the current uninterrupted evidence segment.

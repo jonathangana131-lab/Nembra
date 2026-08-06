@@ -37,7 +37,9 @@ public enum BatteryEvidenceLiveTruthState: Equatable, Sendable {
 public struct BatteryEvidenceLiveTruthSnapshot: Equatable, Sendable {
     public let stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]
 
-    public init(stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]) {
+    /// Raw aggregate construction remains inside NembraCore so external consumers cannot
+    /// manually label fields `.verifiedLive` and bypass freshness/provenance resolution.
+    init(stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]) {
         self.stateByField = stateByField
     }
 
@@ -50,9 +52,13 @@ public struct BatteryEvidenceLiveTruthSnapshot: Equatable, Sendable {
     }
 }
 
-/// Pure projection from freshness/availability into product live-truth state.
+/// Pure projection from validated freshness/availability into product live-truth state.
 public enum BatteryEvidenceLiveTruthResolver {
-    public static func resolve(
+    /// Field-level projection is deliberately module-internal. `BatteryEvidenceFieldAvailability`
+    /// is a public descriptive enum whose cases can be constructed by callers; exposing this
+    /// overload would let external code forge `.fresh` and then obtain `verifiedLive` without
+    /// passing through the aggregate availability evaluator.
+    static func resolve(
         _ availability: BatteryEvidenceFieldAvailability
     ) -> BatteryEvidenceLiveTruthState {
         switch availability {
@@ -74,6 +80,8 @@ public enum BatteryEvidenceLiveTruthResolver {
         }
     }
 
+    /// Production live-truth construction accepts only an aggregate produced by the
+    /// NembraCore availability pipeline. Its raw initializer is not externally visible.
     public static func resolve(
         _ availabilitySnapshot: BatteryEvidenceAvailabilitySnapshot
     ) -> BatteryEvidenceLiveTruthSnapshot {
