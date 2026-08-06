@@ -12,7 +12,10 @@ public enum BatteryEvidenceSnapshotError: Error, Equatable, Sendable {
 public struct BatteryEvidenceCurrentSegmentSnapshot: Equatable, Sendable {
     public let observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]
 
-    public init(observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]) {
+    /// Raw snapshot construction stays inside NembraCore. External consumers receive
+    /// snapshots only from `BatteryEvidenceSnapshotAccumulator.currentSnapshot`, so they
+    /// cannot bypass stream ordering/continuity by assembling arbitrary field mixtures.
+    init(observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]) {
         self.observationsByField = observationsByField
     }
 
