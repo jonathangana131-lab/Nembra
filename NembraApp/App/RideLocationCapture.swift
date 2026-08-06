@@ -177,9 +177,11 @@ actor RideLocationCaptureCoordinator {
     typealias DistanceSink = @Sendable (_ meters: Double, _ receivedAtUptimeNanoseconds: UInt64) async -> Void
 
     private let source: any RideLocationSource
+    private let routeStore: (any RideRouteStore)?
+    private let routeChunkSize: Int
+    private let distanceSink: DistanceSink
     private var qualityScreen: RideLocationQualityScreen
     private var routeRecorder: RideRouteRecorder?
-    private let distanceSink: DistanceSink
 
     private var sessionID: UUID?
     private var requestedCoverage: RideDistanceCoverage = .unknown
@@ -195,18 +197,14 @@ actor RideLocationCaptureCoordinator {
         routeChunkSize: Int = 8,
         distanceSink: @escaping DistanceSink
     ) throws {
+        guard routeChunkSize > 0 else {
+            throw RideRouteRecorderError.invalidChunkSize
+        }
         self.source = source
+        self.routeStore = routeStore
+        self.routeChunkSize = routeChunkSize
         self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
         self.distanceSink = distanceSink
-        if let routeStore {
-            self.routeRecorder = try RideRouteRecorder(
-                store: routeStore,
-                chunkSize: routeChunkSize
-            )
-        } else {
-            self.routeRecorder = nil
-            self.routePersistenceFailed = true
-        }
     }
 
     func begin(
@@ -221,19 +219,26 @@ actor RideLocationCaptureCoordinator {
         self.requestedCoverage = requestedCoverage
         acceptedPointCount = 0
         qualityScreenedDistanceMeters = 0
+        routePersistenceFailed = routeStore == nil
+        routeRecorder = nil
         qualityScreen.reset()
 
-        if let routeRecorder {
+        if let routeStore {
             do {
-                try await routeRecorder.begin(
+                let recorder = try RideRouteRecorder(
+                    store: routeStore,
+                    chunkSize: routeChunkSize
+                )
+                try await recorder.begin(
                     sessionID: sessionID,
                     coverageAlreadyPartial: requestedCoverage != .complete
                 )
+                routeRecorder = recorder
             } catch {
                 // Location/distance evidence remains useful even if the additive
                 // route store cannot begin. Do not turn a map-storage failure
                 // into loss of the ride engine's independent GPS evidence.
-                self.routeRecorder = nil
+                routeRecorder = nil
                 routePersistenceFailed = true
             }
         }
@@ -346,6 +351,8 @@ actor RideLocationCaptureCoordinator {
     private func resetAfterFinish() {
         sessionID = nil
         requestedCoverage = .unknown
+        eventsTask = nil
+        routeRecorder = nil
         qualityScreen.reset()
         acceptedPointCount = 0
         qualityScreenedDistanceMeters = 0
