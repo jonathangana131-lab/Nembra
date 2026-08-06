@@ -42,6 +42,8 @@ The policy can optionally require:
 
 There are no production defaults for cadence, jitter, latency, latency coverage, rejection rate, or resolution. An unconstrained policy requires only one accepted sample and does not silently demand metrics the caller never requested.
 
+An explicitly supplied `minimumDeliveryLatencySampleFraction` of `0` means exactly **no minimum coverage requirement**. It does not create a hidden demand for timestamped latency evidence.
+
 A future physical ES80 validation pass can populate feature-specific requirements from measured evidence. Simulator-friendly numbers must not become those requirements automatically.
 
 ## Missing evidence is different from passing evidence
@@ -51,7 +53,7 @@ When a caller requests a metric that the benchmark does not have, the assessment
 Examples:
 
 - a one-sample benchmark cannot satisfy a requested interval requirement and reports `missingIntervalEvidence`;
-- BLE data without a source measurement timestamp cannot satisfy a requested latency requirement and reports `missingDeliveryLatencyEvidence`;
+- BLE data without a source measurement timestamp cannot satisfy a positive requested latency-coverage or mean-latency requirement and reports `missingDeliveryLatencyEvidence`;
 - a trace with no observed nonzero speed change cannot satisfy a requested resolution bound and reports `missingSpeedResolutionEvidence`.
 
 The quality gate never substitutes zero, advertised specifications, a different source, or a display estimate for missing evidence.
@@ -62,7 +64,7 @@ A good mean latency from a tiny timestamped subset must not automatically qualif
 
 For example, if four GPS samples are accepted but only one has a usable source measurement timestamp, the measured latency fraction is `0.25`. A caller requiring `0.75` latency coverage fails with `deliveryLatencySampleFractionBelowMinimum` even if that single observed latency happens to be excellent.
 
-If zero accepted samples carry latency evidence and latency evidence was requested, the assessment reports `missingDeliveryLatencyEvidence`; if a minimum coverage fraction was also requested, it additionally reports the unmet `0.0` coverage fraction. This preserves both facts instead of collapsing them into one vague failure.
+If zero accepted samples carry latency evidence and a **positive** latency coverage or mean-latency requirement was requested, the assessment reports `missingDeliveryLatencyEvidence`; if a positive minimum coverage fraction was also requested, it additionally reports the unmet `0.0` coverage fraction. This preserves both facts instead of collapsing them into one vague failure.
 
 ## Complete failure reporting
 
@@ -78,15 +80,16 @@ If zero accepted samples carry latency evidence and latency evidence was request
 
 That matters for field-validation tooling because fixing one evidence gap should not hide the others.
 
-## Relationship to acceleration timing
+## Relationship to acceleration timing and peak speed
 
-The separate acceleration-timing worker can use this quality boundary later, after its required physical evidence exists. The responsibilities remain separate:
+The separate acceleration-timing and peak-speed workers can use this quality boundary later, after their required physical evidence exists. The responsibilities remain separate:
 
 - `TelemetryBenchmarkCollector` measures source behavior;
 - `SpeedTelemetryQualityPolicy` evaluates measured behavior against explicit requirements;
-- `AccelerationRunEvaluator` bounds a run using accepted authoritative speed measurements.
+- `AccelerationRunEvaluator` bounds a run using accepted authoritative speed measurements;
+- `PeakSpeedEvidenceAccumulator` preserves the highest accepted measurement and observation continuity.
 
-This lane does not make the acceleration worker depend on a guessed BLE cadence and does not wire either subsystem into production UI.
+This lane does not make those workers depend on a guessed BLE cadence and does not wire any subsystem into production UI.
 
 ## Software verification
 
@@ -99,11 +102,12 @@ Deterministic repository tests cover:
 - simultaneous mean/worst-interval/jitter failures;
 - simultaneous missing latency and speed-resolution evidence;
 - sparse latency timestamps failing requested representative coverage even when observed mean latency looks good;
-- zero latency samples reporting both missing evidence and unmet requested coverage;
+- zero latency samples reporting both missing evidence and unmet positive requested coverage;
+- zero minimum latency coverage imposing no hidden timestamp requirement;
 - measured latency and empirical resolution independently exceeding policy;
 - unconstrained policy remaining qualified without unrequested metrics.
 
-The revised focused Swift 6.2.1 package, using the same collector/summary behavior and quality API, passed **10/10 tests**. Repository-wide NembraCore/Xcode 27 QA is still required before merge.
+The revised focused Swift 6.2.1 package, using the same collector/summary behavior and quality API, passed **11/11 tests**. Repository-wide NembraCore/Xcode 27 QA is still required before merge.
 
 ## Hardware validation still required
 
