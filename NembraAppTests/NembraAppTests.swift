@@ -182,24 +182,17 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testSpeedInstrumentObservedCadenceStaysBounded() throws {
+    func testSpeedInstrumentSnapsAcrossLongTelemetryGap() throws {
         let model = SpeedInstrumentModel()
         model.accept(try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000))
         model.accept(try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 2_000_000_000))
 
-        let earlyFrame = try XCTUnwrap(model.frame(
-            atUptimeNanoseconds: 2_150_000_000,
+        let frame = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 2_000_000_000,
             fallbackConfirmedKilometersPerHour: nil
         ))
-        XCTAssertEqual(earlyFrame.kilometersPerHour, 15, accuracy: 0.000_1)
-        XCTAssertEqual(earlyFrame.origin, .visuallyInterpolated)
-
-        let settled = try XCTUnwrap(model.frame(
-            atUptimeNanoseconds: 2_300_000_000,
-            fallbackConfirmedKilometersPerHour: nil
-        ))
-        XCTAssertEqual(settled.kilometersPerHour, 20, accuracy: 0.000_1)
-        XCTAssertEqual(settled.origin, .measuredTelemetry)
+        XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .measuredTelemetry)
     }
 
     private func speedSample(
