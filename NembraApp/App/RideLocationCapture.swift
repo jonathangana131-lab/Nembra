@@ -54,10 +54,19 @@ actor CoreLocationRideLocationSource: RideLocationSource {
     private var continuation: AsyncStream<RideLocationSourceEvent>.Continuation?
     private var updatesTask: Task<Void, Never>?
     private var serviceSession: CLServiceSession?
+    private var activeGeneration: UUID?
 
     func events() -> AsyncStream<RideLocationSourceEvent> {
-        let pair = AsyncStream<RideLocationSourceEvent>.makeStream()
+        // Replacing a consumer invalidates any older producer generation first.
+        // This protects reuse across rides even if an old Core Location task is
+        // still unwinding from cancellation when the next stream is created.
+        activeGeneration = nil
+        updatesTask?.cancel()
+        updatesTask = nil
+        serviceSession = nil
         continuation?.finish()
+
+        let pair = AsyncStream<RideLocationSourceEvent>.makeStream()
         continuation = pair.continuation
         return pair.stream
     }
@@ -69,13 +78,18 @@ actor CoreLocationRideLocationSource: RideLocationSource {
         // for the lifetime of this ride-location source. The project already has
         // NSLocationWhenInUseUsageDescription; this call is made only from a
         // user-visible ride/location flow, never as a surprise at cold launch.
+        let generation = UUID()
+        activeGeneration = generation
         serviceSession = CLServiceSession(authorization: .whenInUse)
         updatesTask = Task { [weak self] in
-            await self?.consumeLiveUpdates()
+            await self?.consumeLiveUpdates(generation: generation)
         }
     }
 
     func stop() {
+        // Invalidate before cancellation so an old task cannot report into a new
+        // stream if Core Location completes asynchronously after stop returns.
+        activeGeneration = nil
         updatesTask?.cancel()
         updatesTask = nil
         serviceSession = nil
@@ -83,15 +97,17 @@ actor CoreLocationRideLocationSource: RideLocationSource {
         continuation = nil
     }
 
-    private func consumeLiveUpdates() async {
+    private func consumeLiveUpdates(generation: UUID) async {
         do {
             for try await update in CLLocationUpdate.liveUpdates(.otherNavigation) {
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled,
+                      activeGeneration == generation else { break }
                 continuation?.yield(makeEvent(from: update))
             }
         } catch is CancellationError {
-            // Normal stop path.
+            // Normal stop/replacement path.
         } catch {
+            guard activeGeneration == generation else { return }
             continuation?.yield(
                 RideLocationSourceEvent(
                     sample: nil,
