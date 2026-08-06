@@ -8,7 +8,8 @@ Nembra's v5 swarm needs exact-head Xcode 27 evidence before accepting worker pul
 
 - connector-authored worker branch/content updates did not reliably emit the normal push-triggered workflow;
 - owner `/xcode27` comments created through the connected GitHub App were persisted by GitHub but emitted no `issue_comment` Actions run;
-- a same-repository validation PR transitioned from draft to ready-for-review through the same connected GitHub path and still produced no `Xcode 27 PR Exact-Head QA` run.
+- a same-repository validation PR transitioned from draft to ready-for-review through the same connected GitHub path and still produced no `Xcode 27 PR Exact-Head QA` run;
+- creating a matching `feature/**` mirror ref through the same connector also emitted no normal `Xcode 27 Simulator QA` push run.
 
 This is runtime evidence about the connected path, not a claim that GitHub UI or other authenticated clients cannot emit those events.
 
@@ -65,6 +66,8 @@ Explicit `/xcode27` retry requests still win so a worker can rerun an unchanged 
 
 ## Load control
 
+Resolver jobs share a repository-wide concurrency group so overlapping scheduled/manual sweeps cannot both claim the same unmarked head before the first resolver writes its marker.
+
 A sweep selects at most three PR heads and runs the self-hosted matrix with `max-parallel: 1`. Explicit retries are prioritized, then older ready work. Per-PR concurrency cancels an older in-progress sweep job if a newer one for the same PR is legitimately queued.
 
 This is deliberately conservative so a large swarm cannot create an unbounded Xcode-runner burst.
@@ -77,5 +80,7 @@ A scheduled run is valid evidence only for the frozen head printed by its verifi
 - confirm the PR's current head is unchanged from the frozen successful head;
 - reconcile fresh `main` and active overlap when required;
 - merge with expected-head protection.
+
+The scheduled workflow itself cannot be live-tested until it exists on the default branch. Before that integration, only static workflow validation and deterministic resolver tests are legitimate evidence for this fallback.
 
 No CI result proves physical AOVOPRO ES80 behavior, outdoor GPS behavior, or physical iPhone performance.
