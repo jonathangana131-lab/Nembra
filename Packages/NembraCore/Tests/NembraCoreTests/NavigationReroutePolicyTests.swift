@@ -81,7 +81,8 @@ struct NavigationReroutePolicyTests {
 
         _ = try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 1)
         _ = try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 3)
-        #expect(try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 5).recommendation == .requestNewRoute)
+        let firstRequest = try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 5)
+        #expect(firstRequest.recommendation == .requestNewRoute)
         _ = try tracker.ingest(distanceFromRouteMeters: 5, receiptUptime: 6)
         _ = try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 10)
         _ = try tracker.ingest(distanceFromRouteMeters: 25, receiptUptime: 12)
