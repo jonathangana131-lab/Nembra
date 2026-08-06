@@ -118,9 +118,21 @@ final class NembraUITests: XCTestCase {
         )
         keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape")
 
+        // Prove the user-facing choice is actually durable, not merely local
+        // SwiftUI state. Relaunching the same installed app must preserve range
+        // mode through AppStorage.
+        app.terminate()
+        app.launch()
+        let relaunchedBattery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(relaunchedBattery.waitForExistence(timeout: 4))
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable", element: relaunchedBattery),
+            "The stored battery/range presentation preference must survive app relaunch."
+        )
+
         // Restore the stable percentage preference for following UI tests.
-        battery.tap()
-        XCTAssertTrue(waitForValue("92 percent", element: battery))
+        relaunchedBattery.tap()
+        XCTAssertTrue(waitForValue("92 percent", element: relaunchedBattery))
     }
 
     @MainActor
