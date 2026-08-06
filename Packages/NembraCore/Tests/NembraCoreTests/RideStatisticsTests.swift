@@ -49,13 +49,15 @@ struct RideStatisticsTests {
 
     private func completedRide(
         id: UUID = UUID(),
-        beganAtDate: Date
+        beganAtDate: Date,
+        endedAtDate: Date? = nil
     ) throws -> CompletedRideEvidence {
-        try CompletedRideEvidence(
+        let end = endedAtDate ?? beganAtDate.addingTimeInterval(600)
+        return try CompletedRideEvidence(
             sessionID: id,
             beganAtDate: beganAtDate,
             confirmedAtDate: beganAtDate.addingTimeInterval(5),
-            endedAtDate: beganAtDate.addingTimeInterval(600),
+            endedAtDate: end,
             startingOdometerKilometers: nil,
             endingOdometerKilometers: nil,
             qualityScreenedGPSDistanceMeters: 0,
@@ -111,7 +113,8 @@ struct RideStatisticsTests {
                 distance: 2_400,
                 confidence: .singleSource,
                 status: .complete
-            )
+            ),
+            calendarAttribution: .rideBegan
         )
         #expect(complete.attributedDate == beganAtDate)
         #expect(complete.distanceMeters == 2_400)
@@ -123,7 +126,8 @@ struct RideStatisticsTests {
                 distance: 2_300,
                 confidence: .singleSource,
                 status: .coverageIncomplete
-            )
+            ),
+            calendarAttribution: .rideBegan
         )
         #expect(incomplete.distanceDisposition == .excludedIncompleteCoverage)
 
@@ -133,7 +137,8 @@ struct RideStatisticsTests {
                 distance: 2_500,
                 confidence: .conflicting,
                 status: .disagreementRequiresReview
-            )
+            ),
+            calendarAttribution: .rideBegan
         )
         #expect(conflicting.distanceDisposition == .excludedConflict)
 
@@ -143,9 +148,56 @@ struct RideStatisticsTests {
                 distance: nil,
                 confidence: .unavailable,
                 status: .insufficientEvidence
-            )
+            ),
+            calendarAttribution: .rideBegan
         )
         #expect(unavailable.distanceDisposition == .excludedInsufficientEvidence)
+    }
+
+    @Test("calendar attribution is explicit for rides crossing midnight")
+    func calendarAttributionIsExplicit() throws {
+        let calendar = calendar()
+        let began = date(2026, 8, 5, 23, calendar: calendar)
+        let ended = date(2026, 8, 6, 1, calendar: calendar)
+        let completed = try completedRide(
+            beganAtDate: began,
+            endedAtDate: ended
+        )
+        let distance = reconciliation(
+            distance: 2_000,
+            confidence: .singleSource,
+            status: .complete
+        )
+
+        let byBeginning = try RideStatisticsRide(
+            completedRide: completed,
+            reconciledDistance: distance,
+            calendarAttribution: .rideBegan
+        )
+        let byEnding = try RideStatisticsRide(
+            completedRide: completed,
+            reconciledDistance: distance,
+            calendarAttribution: .rideEnded
+        )
+
+        #expect(byBeginning.attributedDate == began)
+        #expect(byEnding.attributedDate == ended)
+
+        let reference = date(2026, 8, 6, 12, calendar: calendar)
+        let beginningToday = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: [byBeginning],
+            referenceDate: reference,
+            calendar: calendar
+        )
+        let endingToday = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: [byEnding],
+            referenceDate: reference,
+            calendar: calendar
+        )
+        #expect(beginningToday.rideCount == 0)
+        #expect(endingToday.rideCount == 1)
     }
 
     @Test("known coverage-gap recovery remains countable without reconstructing geometry")
@@ -157,7 +209,8 @@ struct RideStatisticsTests {
                 distance: 4_600,
                 confidence: .recoverySupported,
                 status: .vehicleDistanceRecoveredAcrossCoverageGap
-            )
+            ),
+            calendarAttribution: .rideBegan
         )
         #expect(ride.distanceDisposition == .included)
         #expect(ride.distanceMeters == 4_600)
