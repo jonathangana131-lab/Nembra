@@ -234,8 +234,8 @@ private struct RideHistoryRowView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Completed ride")
-        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue), \(continuityLabel)")
+        .accessibilityLabel(continuityLabel)
+        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue)")
     }
 
     private func evidenceLine(label: String, value: String) -> some View {
