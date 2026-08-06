@@ -205,6 +205,19 @@ struct SpeedTelemetryQualityTests {
         ])
     }
 
+    @Test("zero minimum latency coverage imposes no hidden timestamp requirement")
+    func zeroLatencyCoverageRequirementIsNoMinimum() throws {
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+        collector.record(try sample(metersPerSecond: 0, milliseconds: 0))
+
+        let policy = try SpeedTelemetryQualityPolicy(
+            minimumDeliveryLatencySampleFraction: 0
+        )
+        let assessment = collector.summary.qualityAssessment(using: policy)
+        #expect(assessment.isQualified)
+        #expect(assessment.failures.isEmpty)
+    }
+
     @Test("measured latency and empirical speed step can independently exceed requirements")
     func latencyAndResolutionFailures() throws {
         var collector = TelemetryBenchmarkCollector(source: .gps)
