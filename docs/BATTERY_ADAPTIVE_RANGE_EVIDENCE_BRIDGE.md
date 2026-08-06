@@ -6,21 +6,19 @@ Status: dependent software truth bridge. No physical AOVOPRO ES80 battery semant
 
 Nembra now has two deliberately separate software domains under active development:
 
-- the battery-evidence truth boundary, where normalized SoC/voltage/current/power/charging values retain an explicit evidence role;
+- the battery-evidence truth boundary, where normalized SoC/voltage/current/power/charging values retain explicit role, continuity, and process-local ordering evidence;
 - the adaptive percentage-based range model, which may learn only from authoritative measured SoC plus trustworthy distance windows.
 
-This bridge is the narrow conversion boundary between them. It exists so higher layers cannot casually turn a plausible battery number into measured range-learning evidence.
+This bridge is the narrow conversion boundary between them. It exists so higher layers cannot casually turn a plausible battery number into measured range-learning evidence or accidentally learn across a known observation gap.
 
 ## Dependency lineage
 
-This worker lane is explicitly based on both exact parent heads:
+This worker lane depends on:
 
-- adaptive-range core PR #10 at `0a3a4c1a30ebcbe9abd2767b8aae3a01651ef088`;
-- battery-evidence-domain PR #34 at `2d2f0b976f6cc2485b69918445a638aa89b43858`.
+- adaptive-range core PR #10;
+- battery-evidence-domain PR #34, including its `BatteryEvidenceStreamValidator` ordering/continuity contract.
 
-The branch contains those exact parent artifacts as a two-parent dependency composition. This document and the bridge source/tests are the worker-owned delta on top.
-
-After either parent moves or lands, this lane must reconcile to the accepted parent head before final QA. It must not freeze stale copies of either domain.
+The branch is composed from exact parent heads before this worker's source/tests/doc are applied. If either parent moves or lands, this lane must reconcile to the accepted parent head before final QA. It must not freeze stale copies of either domain.
 
 ## Accepted conversion
 
@@ -36,18 +34,24 @@ Wall-clock `Date` remains correlation metadata and is not substituted for monoto
 
 ## Evidence that is never promoted
 
-The bridge returns `ignore` for SoC values whose roles are:
+Continuous SoC values whose roles are the following remain outside production range learning:
 
 - `stockAppCorrelationAnchor`;
 - `simulationFixture`;
 - `derivedEstimate`;
 - `presentationOnly`.
 
-That remains true even if their numeric value looks plausible.
-
 A stock Tuya screen showing `73%` is useful physical/app correlation evidence. It is not measured scooter SoC for adaptive range until the target ES80 raw source, scaling, semantics, and behavior are physically verified.
 
 Likewise, a Simulator fixture can exercise software but never becomes physical ES80 efficiency history.
+
+## Continuity truth is independent of value authority
+
+An explicit `afterUnobservedInterval` marker is factual evidence that Nembra missed part of the battery-evidence stream. The bridge therefore resets any in-flight range-learning span for **every** such marker, even when the attached value is stock-app, simulated, derived, presentation-only, or a verified non-SoC electrical field.
+
+That reset does **not** promote the attached number. A non-authoritative SoC still cannot become `BatterySOCReading`, and voltage/current/power/charging still cannot teach percentage-based efficiency.
+
+This distinction is necessary because the first normalized battery observation after a real gap may not be authoritative SoC. If the bridge ignored the continuity boundary solely because the attached numeric value was non-authoritative, a later continuous verified SoC could accidentally close a learning window across an interval Nembra already knows it did not observe.
 
 ## Non-SoC electrical fields
 
@@ -64,24 +68,30 @@ This bridge performs no:
 
 A future energy model may use physically verified electrical telemetry through a separate evidence-backed design. This bridge does not pre-empt that work.
 
-## Continuity is an action, not a forgotten boolean
+## Actions instead of a lossy optional value
 
 The bridge emits `BatteryAdaptiveRangeEvidenceAction` rather than only returning an optional SoC reading.
 
 Actions are:
 
-- `ignore` — observation must not affect production adaptive-range learning;
-- `resetContinuity` — verified battery evidence resumed after an unobserved interval, but this particular field is not SoC;
+- `ignore` — a continuous observation does not affect production adaptive-range learning;
+- `resetContinuity` — discard any in-flight battery-consumption span because a known unobserved interval ended here, while not promoting this value to SoC;
 - `ingestSOC` — continuous verified SoC may enter the adaptive-range domain;
-- `resetContinuityAndIngestSOC` — discard any in-flight range-learning span first, then accept the verified SoC as the new clean evidence point.
+- `resetContinuityAndIngestSOC` — discard the old span first, then accept verified SoC as the new clean evidence point.
 
-The explicit reset-only action matters because the first verified battery value after a process/observation gap might be voltage rather than SoC. If a bridge ignored that event solely because it was not SoC, a later apparently continuous SoC reading could accidentally close a range-learning window across an interval Nembra never observed.
+## Stateful stream validation
 
-## Non-authoritative gaps do not control production learning
+`BatteryAdaptiveRangeEvidenceBridge` wraps the parent's `BatteryEvidenceStreamValidator` and should be preferred when consuming an ordered sequence.
 
-An `afterUnobservedInterval` marker attached to stock-app correlation, simulation, derived, or presentation-only evidence does not reset production range learning.
+It preserves the parent contract:
 
-Only physically verified vehicle measurements are allowed to influence the production adaptive-range evidence timeline. This prevents UI/simulation lifecycle artifacts from changing real learned history.
+- process-local uptime is the ordering authority;
+- equal uptimes are legitimate because one callback may produce several normalized battery fields;
+- uptime regression inside one observed epoch fails closed;
+- after a higher layer calls `markUnobservedInterval()`, the next observation must carry `afterUnobservedInterval`;
+- the first explicit post-gap boundary may establish a fresh uptime epoch even when its numeric uptime is lower than the prior process/boot epoch.
+
+Stream validation and bridge action advance atomically. If ordering/continuity validation fails, the accepted-stream baseline is not advanced and no range-ingest action is returned.
 
 ## Future learning-window integration
 
