@@ -346,6 +346,285 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     }
 }
 
+enum RideRouteRecorderError: Error, Equatable, Sendable {
+    case invalidChunkSize
+    case alreadyRecording(UUID)
+    case noActiveSession
+    case finalizedSession(UUID)
+    case corruptDraft(UUID)
+    case sequenceOverflow
+}
+
+/// App-lifetime route writer. Location producers hand it only already
+/// quality-screened coordinates; it assigns durable order and writes immutable
+/// chunks through the same store used by history presentation. A caller must
+/// explicitly classify coverage rather than letting the recorder infer that a
+/// visually continuous path proves whole-ride coverage.
+actor RideRouteRecorder {
+    private let store: any RideRouteStore
+    private let chunkSize: Int
+
+    private var sessionID: UUID?
+    private var segmentIndex: UInt32 = 0
+    private var chunkIndex: UInt32 = 0
+    private var nextSequence: UInt64 = 0
+    private var buffer: [RideRoutePoint] = []
+    private var persistedPointCount = 0
+    private var segmentCount = 0
+    private var knownGapCount = 0
+    private var forcedPartialCoverage = false
+
+    init(store: any RideRouteStore, chunkSize: Int = 8) throws {
+        guard chunkSize > 0 else {
+            throw RideRouteRecorderError.invalidChunkSize
+        }
+        self.store = store
+        self.chunkSize = chunkSize
+    }
+
+    func begin(
+        sessionID: UUID,
+        startsAfterKnownGap: Bool = false,
+        coverageAlreadyPartial: Bool = false
+    ) async throws {
+        if let active = self.sessionID {
+            throw RideRouteRecorderError.alreadyRecording(active)
+        }
+        if try await store.manifest(sessionID: sessionID) != nil {
+            throw RideRouteRecorderError.finalizedSession(sessionID)
+        }
+
+        let existing = try await store.chunks(sessionID: sessionID)
+        let draft = try Self.validateDraft(existing, sessionID: sessionID)
+
+        self.sessionID = sessionID
+        persistedPointCount = draft.pointCount
+        nextSequence = draft.nextSequence
+        forcedPartialCoverage = coverageAlreadyPartial || startsAfterKnownGap
+
+        if let lastSegment = draft.lastSegmentIndex {
+            segmentCount = Int(lastSegment) + 1
+            knownGapCount = Int(lastSegment)
+            if startsAfterKnownGap {
+                guard lastSegment < UInt32.max else {
+                    reset()
+                    throw RideRouteRecorderError.corruptDraft(sessionID)
+                }
+                segmentIndex = lastSegment + 1
+                chunkIndex = 0
+                segmentCount += 1
+                knownGapCount += 1
+            } else {
+                segmentIndex = lastSegment
+                chunkIndex = draft.nextChunkIndex
+            }
+        } else {
+            segmentIndex = 0
+            chunkIndex = 0
+            segmentCount = 0
+            knownGapCount = 0
+        }
+    }
+
+    func append(
+        latitude: Double,
+        longitude: Double,
+        capturedAtDate: Date,
+        sourceMeasurementDate: Date? = nil,
+        horizontalAccuracyMeters: Double? = nil
+    ) async throws {
+        guard sessionID != nil else {
+            throw RideRouteRecorderError.noActiveSession
+        }
+        let point = try RideRoutePoint(
+            sequence: nextSequence,
+            latitude: latitude,
+            longitude: longitude,
+            capturedAtDate: capturedAtDate,
+            sourceMeasurementDate: sourceMeasurementDate,
+            horizontalAccuracyMeters: horizontalAccuracyMeters
+        )
+
+        guard nextSequence < UInt64.max else {
+            throw RideRouteRecorderError.sequenceOverflow
+        }
+        nextSequence += 1
+        buffer.append(point)
+        if segmentCount == 0 {
+            segmentCount = 1
+        }
+
+        if buffer.count >= chunkSize {
+            try await flush()
+        }
+    }
+
+    func markKnownGap() async throws {
+        guard let sessionID else {
+            throw RideRouteRecorderError.noActiveSession
+        }
+        try await flush()
+        forcedPartialCoverage = true
+
+        guard persistedPointCount > 0 else { return }
+        guard segmentIndex < UInt32.max else {
+            throw RideRouteRecorderError.corruptDraft(sessionID)
+        }
+        segmentIndex += 1
+        chunkIndex = 0
+        segmentCount += 1
+        knownGapCount += 1
+    }
+
+    @discardableResult
+    func finish(requestedCoverage: RideDistanceCoverage) async throws -> RideRouteManifest {
+        guard let sessionID else {
+            throw RideRouteRecorderError.noActiveSession
+        }
+        try await flush()
+
+        let manifest: RideRouteManifest
+        if persistedPointCount == 0 {
+            manifest = try RideRouteManifest(
+                sessionID: sessionID,
+                coverage: .unknown,
+                segmentCount: 0,
+                pointCount: 0,
+                knownGapCount: 0
+            )
+        } else {
+            let coverage: RideDistanceCoverage
+            if forcedPartialCoverage || knownGapCount > 0 {
+                coverage = .partial
+            } else {
+                coverage = requestedCoverage
+            }
+            manifest = try RideRouteManifest(
+                sessionID: sessionID,
+                coverage: coverage,
+                segmentCount: segmentCount,
+                pointCount: persistedPointCount,
+                knownGapCount: knownGapCount
+            )
+        }
+
+        _ = try await store.commit(manifest)
+        reset()
+        return manifest
+    }
+
+    private func flush() async throws {
+        guard let sessionID,
+              !buffer.isEmpty else { return }
+
+        let chunk = try RideRouteChunk(
+            id: RideRouteChunkID(
+                sessionID: sessionID,
+                segmentIndex: segmentIndex,
+                chunkIndex: chunkIndex
+            ),
+            points: buffer
+        )
+        _ = try await store.commit(chunk)
+        persistedPointCount += buffer.count
+        buffer.removeAll(keepingCapacity: true)
+        guard chunkIndex < UInt32.max else {
+            throw RideRouteRecorderError.corruptDraft(sessionID)
+        }
+        chunkIndex += 1
+    }
+
+    private func reset() {
+        sessionID = nil
+        segmentIndex = 0
+        chunkIndex = 0
+        nextSequence = 0
+        buffer.removeAll(keepingCapacity: false)
+        persistedPointCount = 0
+        segmentCount = 0
+        knownGapCount = 0
+        forcedPartialCoverage = false
+    }
+
+    private struct DraftState {
+        let lastSegmentIndex: UInt32?
+        let nextChunkIndex: UInt32
+        let nextSequence: UInt64
+        let pointCount: Int
+    }
+
+    private static func validateDraft(
+        _ chunks: [RideRouteChunk],
+        sessionID: UUID
+    ) throws -> DraftState {
+        guard !chunks.isEmpty else {
+            return DraftState(
+                lastSegmentIndex: nil,
+                nextChunkIndex: 0,
+                nextSequence: 0,
+                pointCount: 0
+            )
+        }
+
+        let ordered = chunks.sorted { lhs, rhs in
+            if lhs.id.segmentIndex != rhs.id.segmentIndex {
+                return lhs.id.segmentIndex < rhs.id.segmentIndex
+            }
+            return lhs.id.chunkIndex < rhs.id.chunkIndex
+        }
+
+        var expectedSegment: UInt32 = 0
+        var expectedChunk: UInt32 = 0
+        var currentSegment: UInt32?
+        var previousSequence: UInt64?
+        var pointCount = 0
+
+        for chunk in ordered {
+            guard chunk.id.sessionID == sessionID else {
+                throw RideRouteRecorderError.corruptDraft(sessionID)
+            }
+            if currentSegment != chunk.id.segmentIndex {
+                guard chunk.id.segmentIndex == expectedSegment else {
+                    throw RideRouteRecorderError.corruptDraft(sessionID)
+                }
+                currentSegment = chunk.id.segmentIndex
+                expectedChunk = 0
+                guard expectedSegment < UInt32.max else {
+                    throw RideRouteRecorderError.corruptDraft(sessionID)
+                }
+                expectedSegment += 1
+            }
+            guard chunk.id.chunkIndex == expectedChunk else {
+                throw RideRouteRecorderError.corruptDraft(sessionID)
+            }
+            guard expectedChunk < UInt32.max else {
+                throw RideRouteRecorderError.corruptDraft(sessionID)
+            }
+            expectedChunk += 1
+
+            for point in chunk.points {
+                if let previousSequence, point.sequence <= previousSequence {
+                    throw RideRouteRecorderError.corruptDraft(sessionID)
+                }
+                previousSequence = point.sequence
+                pointCount += 1
+            }
+        }
+
+        guard let lastSegmentIndex = currentSegment,
+              let lastSequence = previousSequence,
+              lastSequence < UInt64.max else {
+            throw RideRouteRecorderError.corruptDraft(sessionID)
+        }
+        return DraftState(
+            lastSegmentIndex: lastSegmentIndex,
+            nextChunkIndex: expectedChunk,
+            nextSequence: lastSequence + 1,
+            pointCount: pointCount
+        )
+    }
+}
+
 enum RideHistoryPresentationStatus: Equatable, Sendable {
     case idle
     case loading
@@ -412,6 +691,79 @@ final class RideHistoryPresentationStore {
         if status != newStatus {
             status = newStatus
         }
+    }
+}
+
+enum RideRoutePresentationStatus: Equatable, Sendable {
+    case idle
+    case loading
+    case ready
+    case unavailable
+    case failed
+}
+
+@MainActor
+@Observable
+final class RideRoutePresentationStore {
+    private(set) var revision = 0
+
+    @ObservationIgnored private let routeStore: SwiftDataRideRouteStore?
+    @ObservationIgnored private let startupPersistenceError: String?
+    @ObservationIgnored private var geometries: [UUID: RideRouteGeometry] = [:]
+    @ObservationIgnored private var statuses: [UUID: RideRoutePresentationStatus] = [:]
+    @ObservationIgnored private var errors: [UUID: String] = [:]
+
+    init(
+        routeStore: SwiftDataRideRouteStore?,
+        startupPersistenceError: String? = nil
+    ) {
+        self.routeStore = routeStore
+        self.startupPersistenceError = startupPersistenceError
+    }
+
+    func geometry(sessionID: UUID) -> RideRouteGeometry? {
+        _ = revision
+        return geometries[sessionID]
+    }
+
+    func status(sessionID: UUID) -> RideRoutePresentationStatus {
+        _ = revision
+        return statuses[sessionID] ?? .idle
+    }
+
+    func errorMessage(sessionID: UUID) -> String? {
+        _ = revision
+        return errors[sessionID]
+    }
+
+    func refresh(sessionID: UUID) async {
+        guard let routeStore else {
+            geometries.removeValue(forKey: sessionID)
+            statuses[sessionID] = .unavailable
+            errors[sessionID] = startupPersistenceError ?? "Local route storage is unavailable."
+            revision &+= 1
+            return
+        }
+
+        statuses[sessionID] = .loading
+        revision &+= 1
+        do {
+            if let geometry = try await routeStore.geometry(sessionID: sessionID),
+               geometry.hasRecordedGeometry {
+                geometries[sessionID] = geometry
+                statuses[sessionID] = .ready
+                errors.removeValue(forKey: sessionID)
+            } else {
+                geometries.removeValue(forKey: sessionID)
+                statuses[sessionID] = .unavailable
+                errors.removeValue(forKey: sessionID)
+            }
+        } catch {
+            geometries.removeValue(forKey: sessionID)
+            statuses[sessionID] = .failed
+            errors[sessionID] = "Stored route geometry could not be verified safely."
+        }
+        revision &+= 1
     }
 }
 

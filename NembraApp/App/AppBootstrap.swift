@@ -5,10 +5,12 @@ final class AppRuntime {
     let vehicleStore: VehicleStore
     let rideStore: RideApplicationStore
     let rideHistoryStore: RideHistoryPresentationStore
+    let rideRouteStore: RideRoutePresentationStore
 
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
+    private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
 
@@ -16,16 +18,20 @@ final class AppRuntime {
         vehicleStore: VehicleStore,
         rideStore: RideApplicationStore,
         rideHistoryStore: RideHistoryPresentationStore,
+        rideRouteStore: RideRoutePresentationStore,
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
-        simulatorAutoCompletesRide: Bool
+        simulatorAutoCompletesRide: Bool,
+        simulatorRouteRecorder: RideRouteRecorder?
     ) {
         self.vehicleStore = vehicleStore
         self.rideStore = rideStore
         self.rideHistoryStore = rideHistoryStore
+        self.rideRouteStore = rideRouteStore
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
+        self.simulatorRouteRecorder = simulatorRouteRecorder
     }
 
     deinit {
@@ -74,6 +80,42 @@ final class AppRuntime {
                 elapsedSeconds: 60
             )
 
+            // The route fixture is also explicit Simulator-only evidence. It is
+            // written through RideRouteRecorder and the production route-store
+            // contract; it never mutates completed-history distance evidence and
+            // is classified partial because recording starts only after the ride
+            // has already reached confirmed active state.
+            if let sessionID = await waitForActiveRideSessionID(),
+               let simulatorRouteRecorder {
+                do {
+                    try await simulatorRouteRecorder.begin(
+                        sessionID: sessionID,
+                        coverageAlreadyPartial: true
+                    )
+                    let now = Date()
+                    let route = [
+                        (37.33490, -122.00902),
+                        (37.33535, -122.00840),
+                        (37.33586, -122.00773),
+                        (37.33642, -122.00712)
+                    ]
+                    for (index, coordinate) in route.enumerated() {
+                        try await simulatorRouteRecorder.append(
+                            latitude: coordinate.0,
+                            longitude: coordinate.1,
+                            capturedAtDate: now.addingTimeInterval(Double(index)),
+                            sourceMeasurementDate: now.addingTimeInterval(Double(index)),
+                            horizontalAccuracyMeters: 4
+                        )
+                    }
+                    _ = try await simulatorRouteRecorder.finish(requestedCoverage: .partial)
+                } catch {
+                    // The UI test requires route evidence for this opt-in QA
+                    // scenario, so a recorder failure remains observable as the
+                    // truthful no-route/error state instead of being fabricated.
+                }
+            }
+
             // Explicit end-to-end history fixture used only when a UI/QA launch
             // opts in through the Simulator environment. It drives the real ride
             // engine and persistence path instead of inserting a fake row.
@@ -91,6 +133,17 @@ final class AppRuntime {
                 elapsedSeconds: 0
             )
         }
+    }
+
+    private func waitForActiveRideSessionID() async -> UUID? {
+        for _ in 0..<20 {
+            if let sessionID = rideStore.activeSessionID {
+                return sessionID
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            if Task.isCancelled { return nil }
+        }
+        return nil
     }
 }
 
@@ -158,6 +211,10 @@ enum AppBootstrap {
             historyStore: persistence?.historyStore,
             startupPersistenceError: persistenceError
         )
+        let rideRouteStore = RideRoutePresentationStore(
+            routeStore: persistence?.routeStore,
+            startupPersistenceError: persistenceError
+        )
 
         let rideStore: RideApplicationStore
         if bootstrap.scenario != nil {
@@ -192,9 +249,10 @@ enum AppBootstrap {
                 )
             }
         } else {
-            // Production history storage may be opened for truthful read-only
-            // presentation, but no production ride detector policy is selected
-            // until real MAXSHOT speed cadence/latency/reconnect is measured.
+            // Production history/route storage may be opened for truthful
+            // read-only presentation, but no production ride detector or
+            // location-capture policy is selected until real MAXSHOT timing and
+            // field location behavior are measured.
             rideStore = RideApplicationStore(
                 service: bootstrap.service,
                 initialState: bootstrap.initialState,
@@ -206,14 +264,26 @@ enum AppBootstrap {
 
         let simulatorAutoCompletesRide = bootstrap.scenario == .riding
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
+        let simulatorRouteRecorder: RideRouteRecorder?
+        if bootstrap.scenario != nil,
+           let routeStore = persistence?.routeStore {
+            simulatorRouteRecorder = try? RideRouteRecorder(
+                store: routeStore,
+                chunkSize: 2
+            )
+        } else {
+            simulatorRouteRecorder = nil
+        }
 
         return AppRuntime(
             vehicleStore: vehicleStore,
             rideStore: rideStore,
             rideHistoryStore: rideHistoryStore,
+            rideRouteStore: rideRouteStore,
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
-            simulatorAutoCompletesRide: simulatorAutoCompletesRide
+            simulatorAutoCompletesRide: simulatorAutoCompletesRide,
+            simulatorRouteRecorder: simulatorRouteRecorder
         )
     }
 

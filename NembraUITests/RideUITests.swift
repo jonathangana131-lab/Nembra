@@ -37,7 +37,7 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
-    func testCompletedRideAppearsInHistoryThroughRealRidePipeline() {
+    func testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline() {
         XCUIDevice.shared.orientation = .portrait
 
         let app = XCUIApplication()
@@ -73,8 +73,19 @@ final class RideUITests: XCTestCase {
             "The end-to-end QA fixture must establish the ride baseline before advancing odometer evidence."
         )
 
-        XCTAssertTrue(app.descendants(matching: .any)["rides.route-unavailable"].exists)
-        keepScreenshot(named: "Completed Ride Details")
+        let routeMap = app.descendants(matching: .any)["rides.route-map"]
+        if !routeMap.waitForExistence(timeout: 3) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            routeMap.waitForExistence(timeout: 3),
+            "The explicit QA route fixture must pass through RideRouteRecorder, exact durable route storage, and MapKit presentation."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["rides.route-unavailable"].exists,
+            "A ride with verified persisted route geometry must not fall back to the no-route state."
+        )
+        keepScreenshot(named: "Completed Ride Details With Route")
     }
 
     @MainActor

@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 import UIKit
 
@@ -282,6 +283,7 @@ private struct RideHistoryRowView: View {
 }
 
 private struct RideHistoryDetailView: View {
+    @Environment(RideRoutePresentationStore.self) private var routes
     let record: RideHistoryRecord
 
     var body: some View {
@@ -335,18 +337,88 @@ private struct RideHistoryDetailView: View {
                 Text("Nembra keeps independent sources separate until coverage can be reconciled. Neither value is silently promoted into a final ride distance.")
             }
 
-            Section("Route") {
-                Label("No route geometry recorded", systemImage: "map")
-                    .font(.subheadline.weight(.semibold))
-                Text("A map will appear only after Nembra has stored real quality-screened route points. This record contains no coordinates to draw truthfully.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("rides.route-unavailable")
-            }
+            routeSection
         }
         .navigationTitle("Ride Details")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("rides.detail")
+        .task(id: record.sessionID) {
+            await routes.refresh(sessionID: record.sessionID)
+        }
+    }
+
+    @ViewBuilder
+    private var routeSection: some View {
+        Section("Route") {
+            if let geometry = routes.geometry(sessionID: record.sessionID) {
+                if geometry.hasDrawablePath {
+                    RideRouteMapView(geometry: geometry)
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .accessibilityIdentifier("rides.route-map")
+                } else {
+                    Label("Route points recorded", systemImage: "mappin.and.ellipse")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Nembra stored real coordinates, but this ride does not contain enough continuous points to draw a path.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("rides.route-points-only")
+                }
+
+                LabeledContent("Coverage") {
+                    Text(routeCoverageLabel(geometry.coverage))
+                }
+                LabeledContent("Recorded points") {
+                    Text("\(geometry.pointCount)")
+                        .monospacedDigit()
+                }
+                if geometry.knownGapCount > 0 {
+                    LabeledContent("Known route gaps") {
+                        Text("\(geometry.knownGapCount)")
+                            .monospacedDigit()
+                    }
+                }
+            } else {
+                switch routes.status(sessionID: record.sessionID) {
+                case .idle, .loading:
+                    ProgressView("Loading route…")
+                        .accessibilityIdentifier("rides.route-loading")
+                case .unavailable:
+                    routeUnavailableContent
+                case .failed:
+                    Label("Route unavailable", systemImage: "exclamationmark.triangle")
+                        .font(.subheadline.weight(.semibold))
+                    Text(routes.errorMessage(sessionID: record.sessionID) ?? "Stored route geometry could not be verified safely.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("rides.route-error")
+                case .ready:
+                    routeUnavailableContent
+                }
+            }
+        }
+    }
+
+    private var routeUnavailableContent: some View {
+        Group {
+            Label("No route geometry recorded", systemImage: "map")
+                .font(.subheadline.weight(.semibold))
+            Text("A map appears only when Nembra has durably stored real quality-screened route points. This record contains no coordinates to draw truthfully.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("rides.route-unavailable")
+        }
+    }
+
+    private func routeCoverageLabel(_ coverage: RideDistanceCoverage) -> String {
+        switch coverage {
+        case .complete:
+            "Complete recorded coverage"
+        case .partial:
+            "Partial recorded coverage"
+        case .unknown:
+            "Coverage unknown"
+        }
     }
 
     private var odometerDeltaKilometers: Double? {
@@ -359,5 +431,57 @@ private struct RideHistoryDetailView: View {
 
     private func timestamp(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct RideRouteMapView: View {
+    let geometry: RideRouteGeometry
+
+    var body: some View {
+        Map(initialPosition: .region(routeRegion)) {
+            ForEach(geometry.segments, id: \.index) { segment in
+                if segment.points.count >= 2 {
+                    MapPolyline(coordinates: coordinates(for: segment))
+                        .stroke(.primary, lineWidth: 4)
+                }
+            }
+        }
+    }
+
+    private func coordinates(for segment: RideRouteSegment) -> [CLLocationCoordinate2D] {
+        segment.points.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        }
+    }
+
+    private var routeRegion: MKCoordinateRegion {
+        let allPoints = geometry.segments.flatMap(\.points)
+        guard let first = allPoints.first else {
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
+            )
+        }
+
+        var minimumLatitude = first.latitude
+        var maximumLatitude = first.latitude
+        var minimumLongitude = first.longitude
+        var maximumLongitude = first.longitude
+        for point in allPoints.dropFirst() {
+            minimumLatitude = min(minimumLatitude, point.latitude)
+            maximumLatitude = max(maximumLatitude, point.latitude)
+            minimumLongitude = min(minimumLongitude, point.longitude)
+            maximumLongitude = max(maximumLongitude, point.longitude)
+        }
+
+        let center = CLLocationCoordinate2D(
+            latitude: (minimumLatitude + maximumLatitude) / 2,
+            longitude: (minimumLongitude + maximumLongitude) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((maximumLatitude - minimumLatitude) * 1.6, 0.002),
+            longitudeDelta: max((maximumLongitude - minimumLongitude) * 1.6, 0.002)
+        )
+        return MKCoordinateRegion(center: center, span: span)
     }
 }
