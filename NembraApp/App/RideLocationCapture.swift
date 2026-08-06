@@ -190,7 +190,14 @@ struct RideLocationCaptureSummary: Equatable, Sendable {
 /// later and promoted into ride distance. Both domains originate from the same
 /// screened samples but remain independently truthful after that boundary.
 actor RideLocationCaptureCoordinator {
-    typealias DistanceSink = @Sendable (_ meters: Double, _ receivedAtUptimeNanoseconds: UInt64) async -> Void
+    /// Production lifecycle sink. Every GPS delta carries the exact ride UUID
+    /// this capture began with so the application layer can reject delayed
+    /// evidence after that ride ends or another ride becomes active.
+    typealias DistanceSink = @Sendable (
+        _ sessionID: UUID,
+        _ meters: Double,
+        _ receivedAtUptimeNanoseconds: UInt64
+    ) async -> Void
 
     private let source: any RideLocationSource
     private let routeStore: (any RideRouteStore)?
@@ -211,7 +218,7 @@ actor RideLocationCaptureCoordinator {
         qualityPolicy: RideLocationQualityPolicy,
         routeStore: (any RideRouteStore)?,
         routeChunkSize: Int = 8,
-        distanceSink: @escaping DistanceSink
+        sessionScopedDistanceSink: @escaping DistanceSink
     ) throws {
         guard routeChunkSize > 0 else {
             throw RideRouteRecorderError.invalidChunkSize
@@ -220,7 +227,31 @@ actor RideLocationCaptureCoordinator {
         self.routeStore = routeStore
         self.routeChunkSize = routeChunkSize
         self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
-        self.distanceSink = distanceSink
+        self.distanceSink = sessionScopedDistanceSink
+    }
+
+    /// Transitional/test convenience for code that only observes emitted deltas
+    /// and does not route them into application ride state. Production ride
+    /// lifecycle wiring should use `sessionScopedDistanceSink` instead.
+    init(
+        source: any RideLocationSource,
+        qualityPolicy: RideLocationQualityPolicy,
+        routeStore: (any RideRouteStore)?,
+        routeChunkSize: Int = 8,
+        distanceSink: @escaping @Sendable (
+            _ meters: Double,
+            _ receivedAtUptimeNanoseconds: UInt64
+        ) async -> Void
+    ) throws {
+        try self.init(
+            source: source,
+            qualityPolicy: qualityPolicy,
+            routeStore: routeStore,
+            routeChunkSize: routeChunkSize,
+            sessionScopedDistanceSink: { _, meters, uptime in
+                await distanceSink(meters, uptime)
+            }
+        )
     }
 
     func begin(
@@ -333,9 +364,11 @@ actor RideLocationCaptureCoordinator {
             await appendRoutePointIfAvailable(accepted.sample)
             acceptedPointCount += 1
 
-            if let distanceDeltaMeters = accepted.distanceDeltaMeters {
+            if let distanceDeltaMeters = accepted.distanceDeltaMeters,
+               let sessionID {
                 qualityScreenedDistanceMeters += distanceDeltaMeters
                 await distanceSink(
+                    sessionID,
                     distanceDeltaMeters,
                     accepted.sample.receivedAtUptimeNanoseconds
                 )
