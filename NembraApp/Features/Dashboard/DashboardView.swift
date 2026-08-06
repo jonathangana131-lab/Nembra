@@ -307,7 +307,7 @@ struct DashboardView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -432,12 +432,12 @@ struct DashboardView: View {
     }
 
     private var isBatteryLow: Bool {
-        guard let battery = vehicle.state.batteryPercent else { return false }
+        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return false }
         return battery <= 15
     }
 
     private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return "battery.0percent" }
         return switch battery {
         case ...15: "battery.0percent"
         case ...35: "battery.25percent"
