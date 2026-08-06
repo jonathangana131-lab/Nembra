@@ -177,7 +177,10 @@ final class SpeedInstrumentModel {
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = SpeedInstrumentModel()
+
+    let modePersonality: DashboardModePersonality
 
     var body: some View {
         TimelineView(
@@ -223,6 +226,8 @@ struct DashboardSpeedInstrumentView: View {
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity)
+            .scaleEffect(modePersonality.speedScale)
+            .animation(modeAnimation, value: modePersonality.speedScale)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
             // VoiceOver announces the newest authoritative/confirmed value,
@@ -241,7 +246,8 @@ struct DashboardSpeedInstrumentView: View {
             }
             .font(.caption2.weight(.bold))
             .tracking(2.2)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
+            .animation(modeAnimation, value: modePersonality.statusOpacity)
 
             Spacer(minLength: 0)
         }
@@ -266,5 +272,9 @@ struct DashboardSpeedInstrumentView: View {
 
     private var isVehicleMoving: Bool {
         (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    }
+
+    private var modeAnimation: Animation? {
+        reduceMotion ? nil : .snappy(duration: 0.26)
     }
 }
