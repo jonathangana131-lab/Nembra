@@ -168,7 +168,7 @@ public extension TelemetryBenchmarkSummary {
         }
 
         let requiresDeliveryLatencyEvidence =
-            policy.minimumDeliveryLatencySampleFraction != nil ||
+            (policy.minimumDeliveryLatencySampleFraction ?? 0) > 0 ||
             policy.maximumMeanDeliveryLatencyMilliseconds != nil
         if requiresDeliveryLatencyEvidence && deliveryLatencySampleCount == 0 {
             failures.append(.missingDeliveryLatencyEvidence)
