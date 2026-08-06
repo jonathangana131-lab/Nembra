@@ -50,6 +50,8 @@ The reset does not promote the attached value. A later verified SoC enters only 
 
 This intentionally corrects the first bridge draft, which reset only for verified measurements and could therefore have allowed a later verified SoC to close a span across an interval already known to be unobserved.
 
+An explicit boundary is also accepted conservatively when it arrives without a prior local `markUnobservedInterval()` call. The parent stream validator treats that as a fresh continuity epoch, and this pipeline simultaneously resets the assembler. The higher layer does not get to erase a reported gap merely because it failed to preannounce it locally.
+
 ## Non-SoC electrical fields
 
 Verified voltage, current, power, or charging-state observations do not become percentage-based range samples.
@@ -77,7 +79,8 @@ It preserves the parent contract:
 - equal uptimes are valid because one callback may produce multiple normalized battery fields;
 - backwards uptime inside one observed epoch fails closed;
 - `markUnobservedInterval()` requires the next observation to carry an explicit boundary;
-- an explicit post-gap boundary starts a fresh uptime epoch, including after process/boot changes.
+- an explicit post-gap boundary starts a fresh uptime epoch, including after process/boot changes;
+- a spontaneous explicit boundary is conservatively accepted as a new epoch rather than ignored.
 
 The bridge validates on a candidate validator and commits only after acceptance succeeds.
 
@@ -130,6 +133,8 @@ The pipeline does not infer which case occurred; a higher layer must classify it
 
 Distance coverage remains monotonic within a span: complete can degrade to partial or unknown and is preserved on the emitted candidate. Invalid/nonfinite/negative distance fails before state mutation.
 
+Distance observed after a non-authoritative post-gap boundary but before the first verified SoC anchor is also not allowed to leak into the later learning span. The assembler may temporarily hold that distance while it has no anchor, but the first authoritative SoC establishes a new anchor via rebase and clears the pre-anchor distance. Only distance observed after that verified anchor can close a candidate.
+
 ## Model boundary stays separate
 
 `BatteryAdaptiveRangeLearningPipeline` deliberately stops at a `BatteryRangeLearningWindow` candidate. It does **not** own or persist `AdaptiveBatteryRangeModel`.
@@ -152,14 +157,15 @@ Covers truth-role gating, every explicit gap reset, non-SoC exclusion, stream bo
 
 ### PR #54 seam suite
 
-`BatteryAdaptiveRangePipelineIntegrationTests.swift` adds:
+`BatteryAdaptiveRangePipelineIntegrationTests.swift` now adds eight explicit integration cases:
 
 - partial→unknown distance coverage propagation;
 - invalid distance atomicity;
 - `markUnobservedInterval()` clearing anchor, latest-authoritative cursor, distance, coverage, and gap state;
 - direct verified first-post-gap SoC reset + re-anchor;
-- `80 → 77 → 79` measured recovery rebasing at the latest authoritative reading;
-- later clean `79 → 76` candidate formation;
+- pre-anchor post-gap distance discarded when the first verified SoC establishes a clean anchor;
+- spontaneous explicit boundary resetting stream and assembler without a prior local gap marker;
+- `80 → 77 → 79` measured recovery rebasing at the latest authoritative reading and later clean `79 → 76` candidate formation;
 - continuous stock-app SoC unable to advance the latest-authoritative cursor.
 
 ### Adaptive-model boundary suite
@@ -175,10 +181,9 @@ Covers truth-role gating, every explicit gap reset, non-SoC exclusion, stream bo
 
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window pipeline harness: **6/6 passed**;
-- latest PR #54 seam harness: **6/6 debug passed** and **6/6 release passed**;
-- combined latest-assembler + model-boundary harness: **10/10 debug passed** and **10/10 release passed**.
+- PR #54 seam + model harness after latest continuity additions: **12/12 debug passed** and **12/12 release passed**.
 
-The first two attempts to run the latest seam harness hit syntax mistakes only in the intentionally compressed disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used normal valid Swift syntax. After correcting the disposable copy, debug and release both passed. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
+The first two attempts to run an earlier compressed seam harness hit syntax mistakes only in the disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used normal valid Swift syntax. After correcting the disposable copy, all subsequent debug/release contract runs were green. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
 
 ## Remaining merge boundary
 
@@ -195,7 +200,7 @@ Before production merge:
 7. an exact-head repository Xcode 27/iPhone 12 Simulator gate passes on the unchanged final head;
 8. merge uses expected-head protection.
 
-Main now contains PR #49's schedule-based exact-head QA fallback. The workflow is registered and active, but no scheduled run had been emitted at the latest check. Missing scheduler execution is never considered green; acceptance remains tied to the immutable final SHA and durable `Nembra/Xcode27 Exact Head` status.
+Main contains the schedule-based exact-head QA fallback plus its stale-head eligibility guard. Missing scheduler execution is never considered green; acceptance remains tied to the immutable final SHA and durable `Nembra/Xcode27 Exact Head` status.
 
 ## Hardware status
 
