@@ -8,7 +8,7 @@ Nembra stores route geometry as evidence that is separate from ride-distance evi
 
 ## Durable model
 
-Route evidence is keyed by the completed ride `sessionID` and persisted in a separate local SwiftData store (`RideRoutes.store`).
+Route evidence is keyed by the completed ride `sessionID` and persisted in a separate local SwiftData store (`RideRoutes.store`). The accepted completed-ride ledger remains in `RideHistory.store`; adding, losing, or failing to open route storage does not rewrite or disable that ledger or its recovery journal.
 
 Each accepted coordinate becomes a `RideRoutePoint` with:
 - a ride-local monotonic `sequence` assigned by the recorder
@@ -17,13 +17,13 @@ Each accepted coordinate becomes a `RideRoutePoint` with:
 - optional source measurement date
 - optional horizontal accuracy retained as evidence
 
-Coordinates and horizontal accuracy are validated before the point can exist.
+Coordinates and horizontal accuracy are validated before the point can exist. Decoding persisted point, chunk, and manifest JSON runs through the same validating initializers, so malformed disk payloads cannot bypass the in-memory invariants.
 
 Points are saved in immutable `RideRouteChunk` batches. Chunk identity is:
 
 `sessionID + segmentIndex + chunkIndex`
 
-Equivalent retries are idempotent. Reusing the same chunk identity for different coordinates is a conflict and never overwrites the original evidence.
+Equivalent retries are idempotent. Reusing the same chunk identity for different coordinates is a conflict and never overwrites the original evidence. Indexed SwiftData identity is also checked against the decoded payload before route data can be returned.
 
 A completed route gets one immutable `RideRouteManifest` containing:
 - session ID
@@ -52,10 +52,13 @@ A segment boundary is a real discontinuity in Nembra's evidence. Presentation dr
 
 It:
 - accepts only coordinates that a location-quality layer has already screened
+- validates a coordinate before changing segment topology
 - assigns durable point sequence numbers
 - writes immutable chunks incrementally rather than holding an entire ride in memory
-- can validate and resume an unfinished persisted draft
-- can start a new segment after a known gap
+- validates and resumes an unfinished persisted draft
+- treats process recovery of an unfinished draft as a discontinuity before the next accepted point
+- collapses repeated gap notifications until another accepted coordinate actually creates a new segment
+- never creates an empty trailing segment merely because recording ended after a gap notification
 - requires the caller to supply final coverage instead of inferring it from visual continuity
 
 The recorder is not a GPS-quality filter. Production Core Location capture must remain disabled until Nembra has an explicit permission, quality-screening, ride-lifecycle, background, and energy policy.
@@ -74,7 +77,7 @@ When no coordinates were stored, Nembra shows a truthful no-route state and no m
 
 When coordinates exist but cannot form a two-point continuous path, Nembra says that points were recorded but does not draw a line.
 
-When persisted geometry fails validation, Nembra shows a route error rather than rendering plausible corrupted geometry.
+When persisted geometry fails validation, Nembra shows a route error rather than rendering plausible corrupted geometry. If the additive route store itself cannot be opened, ride history remains available and the detail surface reports route storage as unavailable instead of claiming that the ride definitely had no coordinates.
 
 ## Simulator QA
 
