@@ -94,4 +94,31 @@ struct BatteryDisplaySOCTransitionTests {
             ])
         )
     }
+
+    @Test("every valid endpoint pair stays bounded, sequential, and target-terminated")
+    func exhaustiveValidEndpointInvariant() {
+        for current in 0...100 {
+            for target in 0...100 where target != current {
+                let transition = BatteryDisplaySOCTransitionPlanner.plan(from: current, to: target)
+                guard case let .animate(frames) = transition else {
+                    Issue.record("Every changed valid endpoint pair must animate")
+                    continue
+                }
+
+                let direction = target > current ? 1 : -1
+                let expectedPercents = Array(stride(
+                    from: current + direction,
+                    through: target,
+                    by: direction
+                ))
+
+                #expect(
+                    frames.map(\.percent) == expectedPercents &&
+                    frames.allSatisfy { (0...100).contains($0.percent) } &&
+                    frames.dropLast().allSatisfy { $0.role == .presentationIntermediate } &&
+                    frames.last?.role == .targetDisplayValue
+                )
+            }
+        }
+    }
 }
