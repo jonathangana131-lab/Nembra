@@ -146,6 +146,51 @@ final class RideApplicationTests: XCTestCase {
     }
 
     @MainActor
+    func testRawSpeedArrivingBeforeConnectedStateIsConsumedOnceWhenStateCatchesUp() async throws {
+        let directory = temporaryDirectory(name: "cross-stream-reconnect")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .reconnecting, namespace: "cross-stream-reconnect"),
+            baseDirectoryURL: directory
+        )
+        let configuration = try RideApplicationConfiguration.simulatorQA()
+        let reconnectingState = SimulatedScooterService.state(for: .reconnecting)
+        let service = ControlledScooterService(initialState: reconnectingState)
+        let store = RideApplicationStore(
+            service: service,
+            initialState: reconnectingState,
+            configuration: configuration,
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await store.start()
+        XCTAssertEqual(store.status, .idle)
+
+        // Deliberately invert the two independent service streams: the raw
+        // packet reaches RideApplicationStore before its connected state does.
+        try await service.emitSpeed(kilometersPerHour: 12)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(
+            store.status,
+            .idle,
+            "A packet observed while the state stream still says reconnecting must not be assigned to that unconfirmed connection."
+        )
+
+        var connectedState = reconnectingState
+        connectedState.connection = .connected
+        connectedState.connectionIssue = nil
+        connectedState.lastUpdated = .now
+        await service.emitState(connectedState)
+
+        try await waitUntil("The buffered fresh packet should be consumed exactly once when the connected state catches up.") {
+            store.status == .active
+        }
+        XCTAssertNotNil(store.activeSessionID)
+        store.stop()
+    }
+
+    @MainActor
     func testRideApplicationRestoresSameSessionAndCommitsHistory() async throws {
         let directory = temporaryDirectory(name: "recovery")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -221,6 +266,15 @@ final class RideApplicationTests: XCTestCase {
         recoveredStore.stop()
     }
 
+    @MainActor
+    func testOrdinaryRuntimeKeepsAutomaticRideDetectionDisabled() {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: [:]
+        )
+        XCTAssertEqual(runtime.rideStore.status, .disabled)
+    }
+
     private func completedEvidence(
         sessionID: UUID,
         endingOdometerKilometers: Double
@@ -255,4 +309,72 @@ final class RideApplicationTests: XCTestCase {
         }
         XCTFail(failureMessage)
     }
+}
+
+private actor ControlledScooterService: ScooterService {
+    nonisolated let profile = VehicleProfile.maxshotV1SPro
+
+    private var state: VehicleState
+    private var stateContinuation: AsyncStream<VehicleState>.Continuation?
+    private var speedContinuation: AsyncStream<SpeedTelemetrySample>.Continuation?
+
+    init(initialState: VehicleState) {
+        state = initialState
+    }
+
+    func stateUpdates() async -> AsyncStream<VehicleState> {
+        let pair = AsyncStream<VehicleState>.makeStream()
+        stateContinuation = pair.continuation
+        return pair.stream
+    }
+
+    func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample> {
+        let pair = AsyncStream<SpeedTelemetrySample>.makeStream()
+        speedContinuation = pair.continuation
+        return pair.stream
+    }
+
+    func snapshot() async -> VehicleState {
+        state
+    }
+
+    func emitState(_ newState: VehicleState) {
+        state = newState
+        stateContinuation?.yield(newState)
+    }
+
+    func emitSpeed(kilometersPerHour: Double) throws {
+        let sample = try SpeedTelemetrySample(
+            source: .scooterBluetooth,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: kilometersPerHour / 3.6,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            receivedAtDate: .now,
+            measurementDate: nil,
+            speedAccuracyMetersPerSecond: nil
+        )
+        speedContinuation?.yield(sample)
+    }
+
+    func connect() async {
+        var connected = state
+        connected.connection = .connected
+        connected.connectionIssue = nil
+        connected.lastUpdated = .now
+        emitState(connected)
+    }
+
+    func disconnect() async {
+        var disconnected = state
+        disconnected.connection = .disconnected
+        disconnected.lastUpdated = .now
+        emitState(disconnected)
+    }
+
+    func setHeadlight(_ enabled: Bool) async throws {}
+    func setLocked(_ locked: Bool) async throws {}
+    func setCruise(_ enabled: Bool) async throws {}
+    func setRideMode(_ mode: RideMode) async throws {}
+    func setStartMode(_ mode: StartMode) async throws {}
+    func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws {}
 }
