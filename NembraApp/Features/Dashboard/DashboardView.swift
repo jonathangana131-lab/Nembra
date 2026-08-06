@@ -223,10 +223,7 @@ struct DashboardView: View {
     private var stoppedControls: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if !supportedModes.isEmpty {
-                // Four 44 pt hit targets exactly fill the 176 pt context rail.
-                // Their accepted 34 pt glass visuals remain inset, preserving a
-                // clear 10 pt visual gap between adjacent mode controls.
-                HStack(spacing: 0) {
+                HStack(spacing: 5) {
                     ForEach(supportedModes, id: \.self) { mode in
                         Button {
                             Task { await vehicle.setMode(mode) }
@@ -249,8 +246,6 @@ struct DashboardView: View {
                             .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.glass)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
                         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
                         .accessibilityLabel(mode.displayName)
                         .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
@@ -276,8 +271,6 @@ struct DashboardView: View {
                         .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.glass)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
                     .accessibilityValue(isOn ? "On" : "Off")
@@ -293,8 +286,6 @@ struct DashboardView: View {
                             .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.glass)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
                     .accessibilityValue(isLocked ? "Secured" : "Ready")
