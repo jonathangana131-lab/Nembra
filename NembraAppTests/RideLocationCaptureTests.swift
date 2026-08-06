@@ -358,7 +358,8 @@ final class RideLocationCaptureTests: XCTestCase {
         }
         let sessionID = try XCTUnwrap(rideStore.activeSessionID)
         try await waitForSessionEventCount(events, count: 1)
-        XCTAssertEqual(await events.values(), [.becameActive(sessionID)])
+        let initialEvents = await events.values()
+        XCTAssertEqual(initialEvents, [.becameActive(sessionID)])
 
         await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
         try await waitUntil("Zero speed should enter the ending candidate without ending the session.") {
@@ -372,8 +373,9 @@ final class RideLocationCaptureTests: XCTestCase {
         }
         XCTAssertEqual(rideStore.activeSessionID, sessionID)
         try await Task.sleep(nanoseconds: 75_000_000)
+        let recoveredEvents = await events.values()
         XCTAssertEqual(
-            await events.values(),
+            recoveredEvents,
             [.becameActive(sessionID)],
             "Ending-candidate recovery must not restart root-owned location capture."
         )
@@ -385,8 +387,9 @@ final class RideLocationCaptureTests: XCTestCase {
             rideStore.status == .idle
         }
         try await waitForSessionEventCount(events, count: 2)
+        let completedEvents = await events.values()
         XCTAssertEqual(
-            await events.values(),
+            completedEvents,
             [.becameActive(sessionID), .ended(sessionID)]
         )
 
@@ -454,7 +457,8 @@ final class RideLocationCaptureTests: XCTestCase {
     ) async throws {
         let start = DispatchTime.now().uptimeNanoseconds
         while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
-            if await collector.values().count >= count { return }
+            let values = await collector.values()
+            if values.count >= count { return }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTFail("Timed out waiting for \(count) ride session lifecycle events.")
