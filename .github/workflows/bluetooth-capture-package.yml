@@ -1,0 +1,29 @@
+name: Bluetooth Capture Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'parallel/es80-corebluetooth-adapter/**'
+      - 'feature/es80-corebluetooth-adapter-**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-bluetooth-capture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-tests:
+    name: Build and test CoreBluetooth adapter
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Test NembraBluetoothCapture
+        run: swift test --package-path Packages/NembraBluetoothCapture
