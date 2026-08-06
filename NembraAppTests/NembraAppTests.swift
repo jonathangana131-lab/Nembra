@@ -76,6 +76,16 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(store.state.connectionIssue, .unsupportedConfiguration)
         XCTAssertNil(store.state.speedKilometersPerHour)
         XCTAssertNil(store.state.batteryPercent)
+        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)
+    }
+
+    @MainActor
+    func testExplicitSimulationInjectsQAInterpolationPolicy() {
+        let store = AppBootstrap.makeVehicleStore(
+            arguments: ["Nembra"],
+            environment: ["NEMBRA_SIMULATION_SCENARIO": "riding"]
+        )
+        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .simulatorQA)
     }
 
     @MainActor
@@ -124,8 +134,24 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testSpeedInstrumentInterpolatesOnlyBetweenAuthoritativeMeasurements() throws {
+    func testUncalibratedSpeedInstrumentSnapsEvenAcrossCloseMeasurements() throws {
         let model = SpeedInstrumentModel()
+        model.accept(try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000))
+        model.accept(try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000))
+
+        let frame = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 1_200_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        ))
+        XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(frame.origin, .measuredTelemetry)
+        XCTAssertFalse(model.isAnimationActive)
+    }
+
+    @MainActor
+    func testQAProfileInterpolatesOnlyBetweenAuthoritativeMeasurements() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
         let first = try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000)
         let second = try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000)
 
@@ -157,6 +183,7 @@ final class NembraAppTests: XCTestCase {
     @MainActor
     func testSpeedInstrumentRejectsStaleAndEstimatedSamples() throws {
         let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
         model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
 
@@ -182,8 +209,9 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testSpeedInstrumentSnapsAcrossLongTelemetryGap() throws {
+    func testQAProfileSnapsAcrossLongTelemetryGap() throws {
         let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
         model.accept(try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000))
         model.accept(try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 2_000_000_000))
 
@@ -193,6 +221,7 @@ final class NembraAppTests: XCTestCase {
         ))
         XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .measuredTelemetry)
+        XCTAssertFalse(model.isAnimationActive)
     }
 
     private func speedSample(
