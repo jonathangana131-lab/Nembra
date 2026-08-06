@@ -101,4 +101,41 @@ struct RideStatisticsDeterminismTests {
         #expect(summary.longestRideDistanceMeters == 2_000)
         #expect(summary.longestRideSessionID == fartherID)
     }
+
+    @Test("floating point totals are independent of history fetch order")
+    func floatingPointTotalsAreOrderIndependent() throws {
+        let calendar = calendar()
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let first = try ride(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            date: referenceDate.addingTimeInterval(-180),
+            distanceMeters: 1
+        )
+        let second = try ride(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            date: referenceDate.addingTimeInterval(-120),
+            distanceMeters: 1
+        )
+        let huge = try ride(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            date: referenceDate.addingTimeInterval(-60),
+            distanceMeters: 9_007_199_254_740_992
+        )
+
+        let chronological = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [first, second, huge],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        let reversed = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [huge, second, first],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        #expect(chronological == reversed)
+        #expect(chronological.totalDistanceMeters == 9_007_199_254_740_994)
+    }
 }
