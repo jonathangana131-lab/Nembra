@@ -224,6 +224,41 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
     }
 
+    @Test("equal-uptime measured rebound fails atomically across stream and assembler")
+    func equalUptimeMeasuredReboundFailsAtomically() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
+
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 10), policy: p)
+        try pipeline.recordDistance(deltaMeters: 50, coverage: .partial)
+
+        let dropResult = try pipeline.acceptBatteryObservation(observation(77, uptime: 20), policy: p)
+        #expect(dropResult.learningWindow == nil)
+        pipeline.recordTransportGap()
+        let before = pipeline
+
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try pipeline.acceptBatteryObservation(observation(79, uptime: 20), policy: p)
+        }
+
+        #expect(pipeline == before)
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 20)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 50)
+        #expect(pipeline.windowAssembler.distanceCoverage == .partial)
+        #expect(pipeline.windowAssembler.transportGapOccurred)
+
+        try pipeline.recordDistance(deltaMeters: 50, coverage: .complete)
+        let laterResult = try pipeline.acceptBatteryObservation(observation(76, uptime: 21), policy: p)
+        let later = try #require(laterResult.learningWindow)
+        #expect(later.startSOC.percentage == 80)
+        #expect(later.endSOC.percentage == 76)
+        #expect(later.distanceMeters == 100)
+        #expect(later.distanceCoverage == .partial)
+        #expect(later.transportGapOccurred)
+    }
+
     @Test("in-span measured recovery rebases using latest authoritative SoC")
     func measuredRecoveryRebasesThroughPipeline() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
