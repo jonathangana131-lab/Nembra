@@ -28,6 +28,9 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
     public let startingOdometerKilometers: Double?
     public let latestOdometerKilometers: Double?
     public let accumulatedGPSDistanceMeters: Double
+    /// Durable transport-continuity provenance accumulated before this
+    /// checkpoint. A legacy checkpoint without this field decodes as unknown.
+    public let transportGapEvidence: RideTransportGapEvidence
 
     public init(
         sessionID: UUID,
@@ -39,7 +42,8 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         checkpointedAtDate: Date,
         startingOdometerKilometers: Double?,
         latestOdometerKilometers: Double?,
-        accumulatedGPSDistanceMeters: Double
+        accumulatedGPSDistanceMeters: Double,
+        transportGapEvidence: RideTransportGapEvidence = .unknown
     ) throws {
         guard beganAtDate.timeIntervalSinceReferenceDate.isFinite,
               confirmedAtDate.timeIntervalSinceReferenceDate.isFinite,
@@ -56,7 +60,15 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
             guard phaseBeganAtDate == nil else {
                 throw RideCheckpointError.invalidCheckpoint
             }
-        case .temporarilyDisconnected, .endingCandidate:
+        case .temporarilyDisconnected:
+            guard phaseBeganAtDate != nil,
+                  transportGapEvidence != .noneObserved else {
+                // A current-process temporary-disconnect phase is direct gap
+                // evidence. Recovery-created disconnected phases are persisted
+                // with `.unknown`, never with an unqualified no-gap claim.
+                throw RideCheckpointError.invalidCheckpoint
+            }
+        case .endingCandidate:
             guard phaseBeganAtDate != nil else {
                 throw RideCheckpointError.invalidCheckpoint
             }
@@ -89,6 +101,7 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         self.startingOdometerKilometers = startingOdometerKilometers
         self.latestOdometerKilometers = latestOdometerKilometers
         self.accumulatedGPSDistanceMeters = accumulatedGPSDistanceMeters
+        self.transportGapEvidence = transportGapEvidence
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -102,6 +115,7 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         case startingOdometerKilometers
         case latestOdometerKilometers
         case accumulatedGPSDistanceMeters
+        case transportGapEvidence
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,7 +131,11 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
                 checkpointedAtDate: container.decode(Date.self, forKey: .checkpointedAtDate),
                 startingOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .startingOdometerKilometers),
                 latestOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .latestOdometerKilometers),
-                accumulatedGPSDistanceMeters: container.decode(Double.self, forKey: .accumulatedGPSDistanceMeters)
+                accumulatedGPSDistanceMeters: container.decode(Double.self, forKey: .accumulatedGPSDistanceMeters),
+                transportGapEvidence: try container.decodeIfPresent(
+                    RideTransportGapEvidence.self,
+                    forKey: .transportGapEvidence
+                ) ?? .unknown
             )
         } catch RideCheckpointError.invalidCheckpoint {
             throw DecodingError.dataCorrupted(
@@ -189,7 +207,11 @@ public protocol RideCheckpointStore: Sendable {
 /// checkpoint files. It does not claim a stronger power-loss durability guarantee
 /// than the underlying filesystem/Foundation atomic-write semantics provide.
 public actor AtomicRideCheckpointStore: RideCheckpointStore {
-    static let schemaVersion = 1
+    /// v2 adds explicit ride transport-gap provenance. v1 is still readable so
+    /// an existing in-progress ride can recover, but every subsequent write is
+    /// v2. Older apps will reject v2 instead of silently erasing the new meaning.
+    static let schemaVersion = 2
+    static let legacySchemaVersion = 1
     static let slotAFileName = "ride-journal-a.json"
     static let slotBFileName = "ride-journal-b.json"
 
@@ -323,10 +345,27 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
 
         do {
             let probe = try decoder.decode(SchemaProbe.self, from: data)
-            guard probe.schemaVersion == Self.schemaVersion else {
+            switch probe.schemaVersion {
+            case Self.schemaVersion:
+                return .valid(try decoder.decode(Envelope.self, from: data))
+
+            case Self.legacySchemaVersion:
+                // Current nested decoders deliberately map the missing v1
+                // transport field to `.unknown`. Normalize the envelope itself
+                // to v2 in memory so semantically identical v1/v2 slots at the
+                // same generation do not conflict merely because of version.
+                let legacy = try decoder.decode(Envelope.self, from: data)
+                return .valid(
+                    Envelope(
+                        schemaVersion: Self.schemaVersion,
+                        generation: legacy.generation,
+                        checkpoint: legacy.checkpoint
+                    )
+                )
+
+            default:
                 return .unsupported(probe.schemaVersion)
             }
-            return .valid(try decoder.decode(Envelope.self, from: data))
         } catch {
             return .corrupt
         }
