@@ -138,8 +138,9 @@ public struct AccelerationRunEvaluator: Sendable {
     /// quality cannot erase chronology and let an older callback look fresh.
     private var lastObservedUptimeNanoseconds: UInt64?
     /// Advances only for accepted measurements. The optional maximum sample-gap
-    /// policy is intentionally measured between usable timing evidence, not
-    /// between callbacks that failed quality screening.
+    /// policy is measured between timing evidence that must be continuous. Long
+    /// idle time between stationary anchors is allowed because a newer stationary
+    /// sample simply replaces the old launch anchor.
     private var lastAcceptedUptimeNanoseconds: UInt64?
     private var lastStationarySample: SpeedTelemetrySample?
     private var previousRunningSample: SpeedTelemetrySample?
@@ -203,7 +204,8 @@ public struct AccelerationRunEvaluator: Sendable {
             }
         }
 
-        if let lastAcceptedUptimeNanoseconds,
+        if shouldEnforceAcceptedMeasurementGap(for: sample),
+           let lastAcceptedUptimeNanoseconds,
            let maximumSampleIntervalNanoseconds = policy.maximumSampleIntervalNanoseconds,
            sample.receivedAtUptimeNanoseconds - lastAcceptedUptimeNanoseconds > maximumSampleIntervalNanoseconds {
             invalidate(.measurementGapExceeded)
@@ -251,6 +253,21 @@ public struct AccelerationRunEvaluator: Sendable {
         guard let maximum = policy.maximumSpeedAccuracyMetersPerSecond else { return true }
         guard let accuracy = sample.speedAccuracyMetersPerSecond else { return false }
         return accuracy <= maximum
+    }
+
+    /// A long idle period while the scooter remains stationary does not weaken a
+    /// future run: the newest stationary sample becomes the launch anchor. The
+    /// gap ceiling becomes evidence-critical only when crossing from stationary
+    /// to moving, and for every accepted sample once the run is in progress.
+    private func shouldEnforceAcceptedMeasurementGap(for sample: SpeedTelemetrySample) -> Bool {
+        switch state {
+        case .running:
+            true
+        case .armed:
+            sample.metersPerSecond > policy.stationaryMaximumMetersPerSecond
+        case .waitingForStandstill, .completed, .invalidated:
+            false
+        }
     }
 
     private mutating func acceptInitial(_ sample: SpeedTelemetrySample) {
