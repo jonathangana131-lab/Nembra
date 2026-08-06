@@ -68,7 +68,8 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertGreaterThan(summary.qualityScreenedDistanceMeters, 18)
         XCTAssertLessThan(summary.qualityScreenedDistanceMeters, 22)
 
-        let geometry = try XCTUnwrap(try await routeStore.geometry(sessionID: sessionID))
+        let loadedGeometry = try await routeStore.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loadedGeometry)
         XCTAssertEqual(geometry.segments.count, 2)
         XCTAssertEqual(geometry.segments[0].points.count, 2)
         XCTAssertEqual(geometry.segments[1].points.count, 2)
@@ -114,7 +115,8 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertEqual(summary.acceptedPointCount, 2)
         XCTAssertGreaterThan(summary.qualityScreenedDistanceMeters, 9)
         XCTAssertLessThan(summary.qualityScreenedDistanceMeters, 11)
-        XCTAssertEqual(await distances.values().count, 1)
+        let recordedDistances = await distances.values()
+        XCTAssertEqual(recordedDistances.count, 1)
     }
 
     func testCoordinatorCanBeReusedWithoutLeakingPreviousSessionState() async throws {
@@ -170,8 +172,10 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertEqual(secondSummary.acceptedPointCount, 2)
         XCTAssertFalse(secondSummary.routePersistenceFailed)
 
-        XCTAssertNotNil(try await routeStore.geometry(sessionID: firstSession))
-        XCTAssertNotNil(try await routeStore.geometry(sessionID: secondSession))
+        let firstGeometry = try await routeStore.geometry(sessionID: firstSession)
+        let secondGeometry = try await routeStore.geometry(sessionID: secondSession)
+        XCTAssertNotNil(firstGeometry)
+        XCTAssertNotNil(secondGeometry)
     }
 
     @MainActor
