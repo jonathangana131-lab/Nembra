@@ -50,6 +50,36 @@ struct RideRouteEvidenceTests {
         }
     }
 
+    @Test("decoded points cannot bypass coordinate invariants")
+    func decodedInvalidPointsRejected() throws {
+        let invalidCoordinate = RawPoint(
+            sequence: 0,
+            latitude: 91,
+            longitude: -122,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            sourceMeasurementDate: nil,
+            horizontalAccuracyMeters: 4
+        )
+        let invalidAccuracy = RawPoint(
+            sequence: 0,
+            latitude: 45,
+            longitude: -122,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            sourceMeasurementDate: nil,
+            horizontalAccuracyMeters: -1
+        )
+
+        let invalidCoordinateData = try JSONEncoder().encode(invalidCoordinate)
+        let invalidAccuracyData = try JSONEncoder().encode(invalidAccuracy)
+
+        #expect(throws: RideRouteEvidenceError.invalidCoordinate) {
+            _ = try JSONDecoder().decode(RideRoutePoint.self, from: invalidCoordinateData)
+        }
+        #expect(throws: RideRouteEvidenceError.invalidHorizontalAccuracy) {
+            _ = try JSONDecoder().decode(RideRoutePoint.self, from: invalidAccuracyData)
+        }
+    }
+
     @Test("chunks require nonempty strictly increasing point sequence")
     func chunkSequenceIsValidated() throws {
         let id = RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0)
@@ -61,6 +91,28 @@ struct RideRouteEvidenceTests {
         }
         #expect(throws: RideRouteEvidenceError.nonMonotonicPointSequence) {
             _ = try RideRouteChunk(id: id, points: [try point(2), try point(1)])
+        }
+    }
+
+    @Test("decoded chunks cannot bypass chunk invariants")
+    func decodedInvalidChunksRejected() throws {
+        let id = RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0)
+        let emptyData = try JSONEncoder().encode(RawChunk(id: id, points: []))
+        let nonMonotonicData = try JSONEncoder().encode(
+            RawChunk(
+                id: id,
+                points: [
+                    RawPoint(validating: try point(2)),
+                    RawPoint(validating: try point(1))
+                ]
+            )
+        )
+
+        #expect(throws: RideRouteEvidenceError.emptyChunk) {
+            _ = try JSONDecoder().decode(RideRouteChunk.self, from: emptyData)
+        }
+        #expect(throws: RideRouteEvidenceError.nonMonotonicPointSequence) {
+            _ = try JSONDecoder().decode(RideRouteChunk.self, from: nonMonotonicData)
         }
     }
 
@@ -86,6 +138,34 @@ struct RideRouteEvidenceTests {
                 pointCount: 0,
                 knownGapCount: 0
             )
+        }
+    }
+
+    @Test("decoded manifests cannot bypass coverage and count invariants")
+    func decodedInvalidManifestsRejected() throws {
+        let emptyComplete = RawManifest(
+            sessionID: sessionID,
+            coverage: .complete,
+            segmentCount: 0,
+            pointCount: 0,
+            knownGapCount: 0
+        )
+        let completeWithGap = RawManifest(
+            sessionID: sessionID,
+            coverage: .complete,
+            segmentCount: 2,
+            pointCount: 4,
+            knownGapCount: 1
+        )
+
+        let emptyCompleteData = try JSONEncoder().encode(emptyComplete)
+        let completeWithGapData = try JSONEncoder().encode(completeWithGap)
+
+        #expect(throws: RideRouteEvidenceError.invalidManifest) {
+            _ = try JSONDecoder().decode(RideRouteManifest.self, from: emptyCompleteData)
+        }
+        #expect(throws: RideRouteEvidenceError.invalidManifest) {
+            _ = try JSONDecoder().decode(RideRouteManifest.self, from: completeWithGapData)
         }
     }
 
@@ -224,4 +304,51 @@ struct RideRouteEvidenceTests {
             _ = try RideRouteGeometry(manifest: manifest, chunks: chunks)
         }
     }
+}
+
+private struct RawPoint: Encodable {
+    let sequence: UInt64
+    let latitude: Double
+    let longitude: Double
+    let capturedAtDate: Date
+    let sourceMeasurementDate: Date?
+    let horizontalAccuracyMeters: Double?
+
+    init(
+        sequence: UInt64,
+        latitude: Double,
+        longitude: Double,
+        capturedAtDate: Date,
+        sourceMeasurementDate: Date?,
+        horizontalAccuracyMeters: Double?
+    ) {
+        self.sequence = sequence
+        self.latitude = latitude
+        self.longitude = longitude
+        self.capturedAtDate = capturedAtDate
+        self.sourceMeasurementDate = sourceMeasurementDate
+        self.horizontalAccuracyMeters = horizontalAccuracyMeters
+    }
+
+    init(validating point: RideRoutePoint) {
+        sequence = point.sequence
+        latitude = point.latitude
+        longitude = point.longitude
+        capturedAtDate = point.capturedAtDate
+        sourceMeasurementDate = point.sourceMeasurementDate
+        horizontalAccuracyMeters = point.horizontalAccuracyMeters
+    }
+}
+
+private struct RawChunk: Encodable {
+    let id: RideRouteChunkID
+    let points: [RawPoint]
+}
+
+private struct RawManifest: Encodable {
+    let sessionID: UUID
+    let coverage: RideDistanceCoverage
+    let segmentCount: Int
+    let pointCount: Int
+    let knownGapCount: Int
 }
