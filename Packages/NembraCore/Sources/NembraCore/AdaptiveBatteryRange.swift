@@ -98,6 +98,44 @@ public struct BatteryRangeEfficiencySample: Equatable, Codable, Sendable {
         self.consumedPercentagePoints = consumedPercentagePoints
         self.metersPerPercentagePoint = distanceMeters / consumedPercentagePoints
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case distanceMeters
+        case consumedPercentagePoints
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
+        let consumedPercentagePoints = try container.decode(Double.self, forKey: .consumedPercentagePoints)
+        let efficiency = distanceMeters / consumedPercentagePoints
+
+        guard distanceMeters.isFinite,
+              distanceMeters > 0,
+              consumedPercentagePoints.isFinite,
+              consumedPercentagePoints > 0,
+              consumedPercentagePoints <= 100,
+              efficiency.isFinite,
+              efficiency > 0,
+              (efficiency * 100).isFinite else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .distanceMeters,
+                in: container,
+                debugDescription: "Persisted battery-range efficiency sample is invalid."
+            )
+        }
+
+        self.init(
+            distanceMeters: distanceMeters,
+            consumedPercentagePoints: consumedPercentagePoints
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(distanceMeters, forKey: .distanceMeters)
+        try container.encode(consumedPercentagePoints, forKey: .consumedPercentagePoints)
+    }
 }
 
 public enum AdaptiveRangeConfidence: String, Codable, Sendable {
@@ -122,6 +160,7 @@ public enum BatteryRangeLearningRejectionReason: String, Equatable, Sendable {
     case insufficientSOCConsumption
     case insufficientDistance
     case efficiencyOutlier
+    case numericalOverflow
 }
 
 public enum BatteryRangeLearningDisposition: Equatable, Sendable {
@@ -209,7 +248,8 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
 
         if let provisionalEfficiencyMetersPerPercentagePoint {
             guard provisionalEfficiencyMetersPerPercentagePoint.isFinite,
-                  provisionalEfficiencyMetersPerPercentagePoint > 0 else {
+                  provisionalEfficiencyMetersPerPercentagePoint > 0,
+                  (provisionalEfficiencyMetersPerPercentagePoint * 100).isFinite else {
                 throw BatteryRangeValidationError.invalidPolicy
             }
         }
@@ -300,16 +340,20 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
     ) -> Double? {
         let recentEfficiency = weightedRecentEfficiency()
 
+        let result: Double?
         switch (historicalEfficiencyMetersPerPercentagePoint, recentEfficiency) {
         case let (historical?, recent?):
-            return historical * (1 - policy.recentWeight) + recent * policy.recentWeight
+            result = historical * (1 - policy.recentWeight) + recent * policy.recentWeight
         case let (historical?, nil):
-            return historical
+            result = historical
         case let (nil, recent?):
-            return recent
+            result = recent
         case (nil, nil):
-            return nil
+            result = nil
         }
+
+        guard let result, result.isFinite, result > 0 else { return nil }
+        return result
     }
 
     /// "Typical" is intentionally learned-only. A cold-start provisional seed
@@ -317,7 +361,12 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
     public func typicalFullChargeRangeMeters(
         using policy: AdaptiveBatteryRangePolicy
     ) -> Double? {
-        blendedEfficiencyMetersPerPercentagePoint(using: policy).map { $0 * 100 }
+        guard let efficiency = blendedEfficiencyMetersPerPercentagePoint(using: policy) else {
+            return nil
+        }
+        let range = efficiency * 100
+        guard range.isFinite else { return nil }
+        return range
     }
 
     @discardableResult
@@ -351,9 +400,17 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             distanceMeters: window.distanceMeters,
             consumedPercentagePoints: consumed
         )
+        guard sample.metersPerPercentagePoint.isFinite,
+              sample.metersPerPercentagePoint > 0,
+              (sample.metersPerPercentagePoint * 100).isFinite else {
+            return rejected(.numericalOverflow, policy: policy)
+        }
 
         if let baseline = blendedEfficiencyMetersPerPercentagePoint(using: policy) {
             let ratio = sample.metersPerPercentagePoint / baseline
+            guard ratio.isFinite else {
+                return rejected(.numericalOverflow, policy: policy)
+            }
             if ratio < policy.outlierLowerEfficiencyRatio || ratio > policy.outlierUpperEfficiencyRatio {
                 return rejected(.efficiencyOutlier, policy: policy)
             }
@@ -361,9 +418,23 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
 
         let oldConsumed = historicalConsumedPercentagePoints
         if let historical = historicalEfficiencyMetersPerPercentagePoint {
-            let weightedDistance = historical * oldConsumed + sample.metersPerPercentagePoint * consumed
-            historicalConsumedPercentagePoints = oldConsumed + consumed
-            historicalEfficiencyMetersPerPercentagePoint = weightedDistance / historicalConsumedPercentagePoints
+            let totalConsumed = oldConsumed + consumed
+            guard totalConsumed.isFinite, totalConsumed > 0 else {
+                return rejected(.numericalOverflow, policy: policy)
+            }
+
+            // Online weighted mean avoids overflow from multiplying large
+            // accumulated values while preserving exact weighting semantics.
+            let weight = consumed / totalConsumed
+            let candidate = historical + (sample.metersPerPercentagePoint - historical) * weight
+            guard candidate.isFinite,
+                  candidate > 0,
+                  (candidate * 100).isFinite else {
+                return rejected(.numericalOverflow, policy: policy)
+            }
+
+            historicalConsumedPercentagePoints = totalConsumed
+            historicalEfficiencyMetersPerPercentagePoint = candidate
         } else {
             historicalConsumedPercentagePoints = consumed
             historicalEfficiencyMetersPerPercentagePoint = sample.metersPerPercentagePoint
@@ -400,7 +471,9 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             return nil
         }
 
+        guard selected.efficiency.isFinite, selected.efficiency > 0 else { return nil }
         var rawRemainingMeters = selected.efficiency * soc.percentage
+        guard rawRemainingMeters.isFinite else { return nil }
         var lowSOCConservatismApplied = false
 
         if let threshold = policy.lowSOCCautionThresholdPercent,
@@ -409,6 +482,7 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             let fractionOfThreshold = soc.percentage / threshold
             let gradualMultiplier = multiplier + (1 - multiplier) * fractionOfThreshold
             rawRemainingMeters *= gradualMultiplier
+            guard rawRemainingMeters.isFinite else { return nil }
             lowSOCConservatismApplied = true
         }
 
@@ -417,6 +491,7 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             previousPresentedRemainingMeters: previousPresentedRemainingMeters,
             policy: policy
         )
+        guard presentedRemainingMeters.isFinite, presentedRemainingMeters >= 0 else { return nil }
 
         return AdaptiveBatteryRangeEstimate(
             rawRemainingMeters: rawRemainingMeters,
@@ -430,13 +505,21 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
     }
 
     private func weightedRecentEfficiency() -> Double? {
-        let totalConsumed = recentSamples.reduce(0.0) { $0 + $1.consumedPercentagePoints }
-        guard totalConsumed > 0 else { return nil }
+        var totalConsumed = 0.0
+        var weightedMean = 0.0
 
-        let weighted = recentSamples.reduce(0.0) {
-            $0 + $1.metersPerPercentagePoint * $1.consumedPercentagePoints
+        for sample in recentSamples {
+            let newTotal = totalConsumed + sample.consumedPercentagePoints
+            guard newTotal.isFinite, newTotal > 0 else { return nil }
+            let weight = sample.consumedPercentagePoints / newTotal
+            let candidate = weightedMean + (sample.metersPerPercentagePoint - weightedMean) * weight
+            guard candidate.isFinite, candidate > 0 else { return nil }
+            weightedMean = candidate
+            totalConsumed = newTotal
         }
-        return weighted / totalConsumed
+
+        guard totalConsumed > 0 else { return nil }
+        return weightedMean
     }
 
     private func rejected(
@@ -468,5 +551,82 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         }
 
         return previous + delta * policy.estimateSmoothingFactor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case historicalEfficiencyMetersPerPercentagePoint
+        case historicalConsumedPercentagePoints
+        case recentSamples
+        case acceptedWindowCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let historicalEfficiency = try container.decodeIfPresent(
+            Double.self,
+            forKey: .historicalEfficiencyMetersPerPercentagePoint
+        )
+        let historicalConsumed = try container.decode(
+            Double.self,
+            forKey: .historicalConsumedPercentagePoints
+        )
+        let recentSamples = try container.decode(
+            [BatteryRangeEfficiencySample].self,
+            forKey: .recentSamples
+        )
+        let acceptedWindowCount = try container.decode(Int.self, forKey: .acceptedWindowCount)
+
+        guard historicalConsumed.isFinite,
+              historicalConsumed >= 0,
+              acceptedWindowCount >= 0,
+              recentSamples.count <= acceptedWindowCount else {
+            throw Self.corruptedStateError(container)
+        }
+
+        if let historicalEfficiency {
+            guard historicalEfficiency.isFinite,
+                  historicalEfficiency > 0,
+                  (historicalEfficiency * 100).isFinite,
+                  historicalConsumed > 0,
+                  acceptedWindowCount > 0,
+                  recentSamples.isEmpty == false else {
+                throw Self.corruptedStateError(container)
+            }
+        } else {
+            guard historicalConsumed == 0,
+                  acceptedWindowCount == 0,
+                  recentSamples.isEmpty else {
+                throw Self.corruptedStateError(container)
+            }
+        }
+
+        self.historicalEfficiencyMetersPerPercentagePoint = historicalEfficiency
+        self.historicalConsumedPercentagePoints = historicalConsumed
+        self.recentSamples = recentSamples
+        self.acceptedWindowCount = acceptedWindowCount
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(
+            historicalEfficiencyMetersPerPercentagePoint,
+            forKey: .historicalEfficiencyMetersPerPercentagePoint
+        )
+        try container.encode(
+            historicalConsumedPercentagePoints,
+            forKey: .historicalConsumedPercentagePoints
+        )
+        try container.encode(recentSamples, forKey: .recentSamples)
+        try container.encode(acceptedWindowCount, forKey: .acceptedWindowCount)
+    }
+
+    private static func corruptedStateError(
+        _ container: KeyedDecodingContainer<CodingKeys>
+    ) -> DecodingError {
+        DecodingError.dataCorruptedError(
+            forKey: .historicalConsumedPercentagePoints,
+            in: container,
+            debugDescription: "Persisted adaptive battery-range state is internally inconsistent."
+        )
     }
 }
