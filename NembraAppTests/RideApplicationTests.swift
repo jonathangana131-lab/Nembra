@@ -295,6 +295,97 @@ final class RideApplicationTests: XCTestCase {
         }
     }
 
+    func testRouteRecorderTrailingGapDoesNotCreateEmptySegment() async throws {
+        let directory = temporaryDirectory(name: "route-trailing-gap")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let recorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        let sessionID = UUID()
+
+        try await recorder.begin(sessionID: sessionID)
+        try await recorder.append(
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        try await recorder.append(
+            latitude: 45.6391,
+            longitude: -122.6607,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+            horizontalAccuracyMeters: 4
+        )
+        try await recorder.markKnownGap()
+        try await recorder.markKnownGap()
+
+        let manifest = try await recorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 1)
+        XCTAssertEqual(manifest.knownGapCount, 0)
+        XCTAssertEqual(manifest.pointCount, 2)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+    }
+
+    func testRouteRecorderResumeStartsNewSegmentInsteadOfBridgingPersistedDraft() async throws {
+        let directory = temporaryDirectory(name: "route-resume-gap")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
+        let store = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+
+        let firstRecorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await firstRecorder.begin(sessionID: sessionID)
+        try await firstRecorder.append(
+            latitude: 45.6387,
+            longitude: -122.6615,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        try await firstRecorder.append(
+            latitude: 45.6391,
+            longitude: -122.6607,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
+            horizontalAccuracyMeters: 4
+        )
+
+        // A new recorder actor represents a process/recovery boundary. Existing
+        // chunks are durable, but the missing interval is not, so the next point
+        // must begin an explicit new segment and force partial coverage.
+        let recoveredRecorder = try RideRouteRecorder(store: store, chunkSize: 1)
+        try await recoveredRecorder.begin(sessionID: sessionID)
+        try await recoveredRecorder.append(
+            latitude: 45.6400,
+            longitude: -122.6598,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_010),
+            horizontalAccuracyMeters: 4
+        )
+        try await recoveredRecorder.append(
+            latitude: 45.6405,
+            longitude: -122.6590,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_011),
+            horizontalAccuracyMeters: 4
+        )
+
+        let manifest = try await recoveredRecorder.finish(requestedCoverage: .complete)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 2)
+        XCTAssertEqual(manifest.knownGapCount, 1)
+        XCTAssertEqual(manifest.pointCount, 4)
+
+        let loaded = try await store.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loaded)
+        XCTAssertEqual(geometry.segments.count, 2)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+        XCTAssertEqual(geometry.segments[1].points.map(\.sequence), [2, 3])
+    }
+
     @MainActor
     func testStateOnlyAcknowledgementsDoNotReplayRawSpeedEvidence() async throws {
         let directory = temporaryDirectory(name: "single-use-speed")
