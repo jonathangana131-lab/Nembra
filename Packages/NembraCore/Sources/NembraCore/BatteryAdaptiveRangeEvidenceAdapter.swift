@@ -108,7 +108,9 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
     public let action: BatteryAdaptiveRangeEvidenceAction
     public let learningWindow: BatteryRangeLearningWindow?
 
-    public init(
+    /// Constructed only by the validated pipeline. External code may inspect a
+    /// result but cannot manufacture one that appears to have passed the seam.
+    init(
         action: BatteryAdaptiveRangeEvidenceAction,
         learningWindow: BatteryRangeLearningWindow?
     ) {
