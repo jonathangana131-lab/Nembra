@@ -1,7 +1,9 @@
-# NEMBRA DESIGN SYSTEM — v0.2
+# NEMBRA DESIGN SYSTEM — v0.3
 
 ## Personality
 Quiet precision. Native iOS in portrait; instrument-grade while riding. No gamer RGB, fake carbon fiber, fake analog gauges, giant grids of glass cards, or decorative vehicle imagery that displaces useful information.
+
+The current Home/Dashboard visuals are **functional intermediate implementations**, not the final visual target. Their existing acceptance proves current system coherence and regression safety only.
 
 ## Brand mark direction
 An abstract `N` built from two route/trajectory strokes with a small forward cut. It should read as motion without looking like a racing logo.
@@ -11,6 +13,7 @@ An abstract `N` built from two route/trajectory strokes with a small forward cut
 - Portrait: semantic text styles wherever practical.
 - Dashboard: fixed/tabular digits only where stable instrumentation requires them.
 - Numeric units are subordinate and never cause width jumps.
+- Final product pass must treat typography as a primary spatial/material element, not just labels placed into containers.
 
 ## Spacing
 Base rhythm: 4 pt.
@@ -21,7 +24,7 @@ Base rhythm: 4 pt.
 - section: 24
 - major separation: 32
 
-Use optical corrections sparingly; do not accumulate arbitrary spacing values.
+Use optical corrections sparingly; do not accumulate arbitrary spacing values. Final screens should minimize dead space while preserving glanceability and touch comfort.
 
 ## Radius
 - compact control: 14
@@ -34,6 +37,7 @@ Do not stack rounded rectangles merely to manufacture “cards.”
 - Liquid Glass: interactive chrome, floating actions, compact controls where the physical response earns it.
 - Never place glass on every informational surface.
 - Never stack glass panels without a hierarchy reason.
+- In the final visual pass, native materials should feel integrated into the cockpit/product architecture rather than pasted on as generic cards.
 
 ## Portrait Home
 1. Vehicle status and useful information outrank artwork.
@@ -43,6 +47,7 @@ Do not stack rounded rectangles merely to manufacture “cards.”
 5. Safety-sensitive controls reflect obvious domain restrictions before tap, while the service remains authoritative.
 6. Low battery gets semantic priority; avoid turning the entire screen into a warning theme.
 7. Avoid a dashboard-card mosaic. Prefer one or two coherent grouped surfaces plus native rows.
+8. Current Home is a systems-era baseline and must be substantially reevaluated during the Production Visual Overhaul once battery/ride/navigation/history data are real enough to design around.
 
 ## Color behavior
 Use semantic system colors plus one restrained Nembra accent. Mode personality comes from hierarchy, motion, and subtle tint—not separate RGB themes. Red is reserved for meaningful warnings/errors, not Sport decoration.
@@ -54,6 +59,7 @@ Use semantic system colors plus one restrained Nembra accent. Mode personality c
 - Dashboard interpolation is display-only; raw telemetry is untouched.
 - Rolling digits reserve fixed geometry. Carries roll upward when value rises; borrows roll downward when it falls.
 - Units/decimal precision remain stable during motion.
+- Final product motion should coordinate cockpit rearrangement, navigation insertion, ride-state changes, and material transitions without creating fake telemetry or distracting from glanceability.
 
 ## Haptics
 - light/selection: mode selection
@@ -61,16 +67,19 @@ Use semantic system colors plus one restrained Nembra accent. Mode personality c
 - success: important command confirmation sparingly
 - error: failed command/invalid performance test
 - never haptic-spam continuously changing telemetry
+- final product pass must audit haptics screen-by-screen rather than adding them as decorative feedback.
 
 ## Landscape Dashboard principles
 1. Dashboard is a dedicated cockpit, not portrait Home rotated.
 2. Speed is dominant and glance time minimal.
 3. Battery/mode/connection/ride distance remain visible without competing with speed.
 4. Stopped controls disappear or reduce while moving.
-5. Navigation later transforms the same composition rather than opening a separate-looking page.
+5. Navigation transforms the same composition rather than opening a separate-looking page.
 6. Mode personality is subtle and must not hurt readability.
 7. Battery/connection warnings outrank decorative telemetry.
 8. Render rate may exceed sensor rate, but visual frames are never stored as measured telemetry.
+9. The final cockpit must avoid developer-dashboard rails, giant unused black regions, generic cards, and prototype-looking strips.
+10. Navigation, live ride state, battery/range, trip, and duration should participate in one adaptive composition rather than feeling like independently stacked widgets.
 
 ## Landscape speed instrument — Phase 10 accepted rules
 - The speed instrument is a dedicated center subtree; high-frequency visual refresh must not invalidate the whole Dashboard.
@@ -111,3 +120,49 @@ Accepted observations:
 - mode transitions do not disturb side-rail placement or stopped-control geometry.
 - moving state keeps state-changing controls unavailable and preserves the accepted safety hierarchy.
 - no excessive glow, safe-area clipping, or landscape crowding was observed.
+
+These captures are the accepted **intermediate baseline**, not final visual/product acceptance.
+
+## Production Visual Overhaul / Final Product Design Pass — mandatory future milestone
+This is a release-quality gate, not optional polish.
+
+### Product quality target
+The final visual system should feel like a world-class native iOS 27 mobility product with premium modern EV instrumentation. Stark and Tesla may be used as a quality reference for refinement and cockpit confidence, but Nembra must remain original and scooter-aware rather than copying either.
+
+Required qualities:
+- huge beautiful rolling MPH as the primary glance target.
+- truthful battery presentation with high-resolution percentage behavior only where telemetry supports it.
+- elegant range/trip/duration hierarchy driven by real data.
+- navigation deeply integrated into the cockpit and able to dynamically rearrange the composition.
+- polished live ride information.
+- restrained meaningful Eco/Drive/Sport personalities.
+- original premium scooter-aware graphics where they improve comprehension.
+- native materials/Liquid Glass with depth and restraint.
+- excellent typography, spacing, animation, accessibility, and haptics.
+- minimal wasted space.
+- no giant empty black regions, developer-dashboard rails, generic card mosaics, placeholder surfaces, or obviously prototype-looking layout decisions.
+
+### Required design loop
+For every major screen before final visual acceptance:
+1. capture the current real Simulator screenshot.
+2. critique it against the master vision and truthful available product data.
+3. redesign substantially where needed.
+4. implement production SwiftUI/domain state.
+5. build/run/interact on iPhone 12/iOS 27.
+6. capture real screenshots.
+7. critique again.
+8. repeat until product-level quality is achieved.
+
+Required coverage:
+- portrait Home.
+- landscape Dashboard without navigation.
+- landscape Dashboard with navigation and dynamic rearrangement.
+- live ride states.
+- battery, charging, and low-battery states where supported.
+- completed rides/maps.
+- history/stats.
+- leaderboard when implemented.
+- controls/settings.
+- major connection, permission, unsupported-hardware, persistence, and recovery error states.
+
+A technically correct screen that looks mediocre is **not accepted as final**. Functional Simulator screenshots and clean layouts are necessary gates but never sufficient to declare Nembra visually complete.
