@@ -125,6 +125,19 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .invalidated(.nonMonotonicMeasurement))
     }
 
+    @Test("configured sample interval ceiling rejects weak timing evidence")
+    func longMeasurementGapInvalidates() throws {
+        let policy = try AccelerationRunPolicy(
+            targetMetersPerSecond: 5,
+            maximumSampleIntervalNanoseconds: 1_500_000_000
+        )
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+        evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
+        evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
+        evaluator.accept(try sample(metersPerSecond: 6, seconds: 4))
+        #expect(evaluator.state == .invalidated(.measurementGapExceeded))
+    }
+
     @Test("connection interruption invalidates armed or running evidence")
     func interruptionInvalidates() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
@@ -167,6 +180,9 @@ struct AccelerationTimingTests {
         }
         #expect(throws: AccelerationRunPolicyError.invalidMaximumSpeedAccuracy) {
             try AccelerationRunPolicy(targetMetersPerSecond: 5, maximumSpeedAccuracyMetersPerSecond: .infinity)
+        }
+        #expect(throws: AccelerationRunPolicyError.invalidMaximumSampleInterval) {
+            try AccelerationRunPolicy(targetMetersPerSecond: 5, maximumSampleIntervalNanoseconds: 0)
         }
     }
 }
