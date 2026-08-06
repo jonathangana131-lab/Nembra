@@ -373,6 +373,7 @@ actor RideRouteRecorder {
     private var segmentCount = 0
     private var knownGapCount = 0
     private var forcedPartialCoverage = false
+    private var pendingGap = false
 
     init(store: any RideRouteStore, chunkSize: Int = 8) throws {
         guard chunkSize > 0 else {
@@ -400,29 +401,23 @@ actor RideRouteRecorder {
         self.sessionID = sessionID
         persistedPointCount = draft.pointCount
         nextSequence = draft.nextSequence
-        forcedPartialCoverage = coverageAlreadyPartial || startsAfterKnownGap
+        forcedPartialCoverage = coverageAlreadyPartial || startsAfterKnownGap || draft.pointCount > 0
 
         if let lastSegment = draft.lastSegmentIndex {
             segmentCount = Int(lastSegment) + 1
             knownGapCount = Int(lastSegment)
-            if startsAfterKnownGap {
-                guard lastSegment < UInt32.max else {
-                    reset()
-                    throw RideRouteRecorderError.corruptDraft(sessionID)
-                }
-                segmentIndex = lastSegment + 1
-                chunkIndex = 0
-                segmentCount += 1
-                knownGapCount += 1
-            } else {
-                segmentIndex = lastSegment
-                chunkIndex = draft.nextChunkIndex
-            }
+            segmentIndex = lastSegment
+            chunkIndex = draft.nextChunkIndex
+            // Existing unfinished chunks imply a prior recorder/process stopped.
+            // The next accepted coordinate must start a new segment so recovery
+            // never draws a plausible line across missing location coverage.
+            pendingGap = draft.pointCount > 0
         } else {
             segmentIndex = 0
             chunkIndex = 0
             segmentCount = 0
             knownGapCount = 0
+            pendingGap = false
         }
     }
 
@@ -433,9 +428,12 @@ actor RideRouteRecorder {
         sourceMeasurementDate: Date? = nil,
         horizontalAccuracyMeters: Double? = nil
     ) async throws {
-        guard sessionID != nil else {
+        guard let sessionID else {
             throw RideRouteRecorderError.noActiveSession
         }
+
+        try materializePendingGap(sessionID: sessionID)
+
         let point = try RideRoutePoint(
             sequence: nextSequence,
             latitude: latitude,
@@ -460,20 +458,18 @@ actor RideRouteRecorder {
     }
 
     func markKnownGap() async throws {
-        guard let sessionID else {
+        guard sessionID != nil else {
             throw RideRouteRecorderError.noActiveSession
         }
         try await flush()
         forcedPartialCoverage = true
 
-        guard persistedPointCount > 0 else { return }
-        guard segmentIndex < UInt32.max else {
-            throw RideRouteRecorderError.corruptDraft(sessionID)
+        // A gap boundary is materialized only when another coordinate arrives.
+        // Repeated gap events collapse together and finishing after a gap cannot
+        // create a manifest that claims an empty trailing segment.
+        if persistedPointCount > 0 {
+            pendingGap = true
         }
-        segmentIndex += 1
-        chunkIndex = 0
-        segmentCount += 1
-        knownGapCount += 1
     }
 
     @discardableResult
@@ -494,7 +490,7 @@ actor RideRouteRecorder {
             )
         } else {
             let coverage: RideDistanceCoverage
-            if forcedPartialCoverage || knownGapCount > 0 {
+            if forcedPartialCoverage || pendingGap || knownGapCount > 0 {
                 coverage = .partial
             } else {
                 coverage = requestedCoverage
@@ -511,6 +507,21 @@ actor RideRouteRecorder {
         _ = try await store.commit(manifest)
         reset()
         return manifest
+    }
+
+    private func materializePendingGap(sessionID: UUID) throws {
+        guard pendingGap, persistedPointCount > 0 else {
+            pendingGap = false
+            return
+        }
+        guard segmentIndex < UInt32.max else {
+            throw RideRouteRecorderError.corruptDraft(sessionID)
+        }
+        segmentIndex += 1
+        chunkIndex = 0
+        segmentCount += 1
+        knownGapCount += 1
+        pendingGap = false
     }
 
     private func flush() async throws {
@@ -544,6 +555,7 @@ actor RideRouteRecorder {
         segmentCount = 0
         knownGapCount = 0
         forcedPartialCoverage = false
+        pendingGap = false
     }
 
     private struct DraftState {
@@ -797,7 +809,7 @@ enum RidePersistenceScope: Equatable, Sendable {
 struct RidePersistenceStack: Sendable {
     let checkpointStore: AtomicRideCheckpointStore
     let historyStore: SwiftDataRideHistoryStore
-    let routeStore: SwiftDataRideRouteStore
+    let routeStore: SwiftDataRideRouteStore?
 }
 
 enum RidePersistenceFactory {
@@ -832,9 +844,18 @@ enum RidePersistenceFactory {
         let historyContainer = try makeHistoryContainer(storeURL: historyURL)
         let historyStore = SwiftDataRideHistoryStore(modelContainer: historyContainer)
 
-        let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
-        let routesContainer = try makeRouteContainer(storeURL: routesURL)
-        let routeStore = SwiftDataRideRouteStore(modelContainer: routesContainer)
+        // Route geometry is an additive evidence domain. A route-store startup
+        // failure must not disable the already accepted recovery/history ledger.
+        // Presentation can truthfully show route unavailable while ride history
+        // remains readable and automatic ride recovery remains intact.
+        let routeStore: SwiftDataRideRouteStore?
+        do {
+            let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
+            let routesContainer = try makeRouteContainer(storeURL: routesURL)
+            routeStore = SwiftDataRideRouteStore(modelContainer: routesContainer)
+        } catch {
+            routeStore = nil
+        }
 
         return RidePersistenceStack(
             checkpointStore: checkpointStore,
