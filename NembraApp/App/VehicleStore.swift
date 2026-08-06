@@ -1,6 +1,33 @@
 import Foundation
 import Observation
 
+/// Presentation timing is injected explicitly so Simulator QA can exercise the
+/// speed animation without silently choosing a production MAXSHOT cadence.
+struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
+    let minimumTransitionNanoseconds: UInt64
+    let maximumContinuousSampleIntervalNanoseconds: UInt64
+    let intervalFraction: Double
+
+    static let disabled = SpeedInstrumentInterpolationPolicy(
+        minimumTransitionNanoseconds: 0,
+        maximumContinuousSampleIntervalNanoseconds: 0,
+        intervalFraction: 0
+    )
+
+    /// QA-only profile. These values are not a claim about MAXSHOT hardware.
+    static let simulatorQA = SpeedInstrumentInterpolationPolicy(
+        minimumTransitionNanoseconds: 50_000_000,
+        maximumContinuousSampleIntervalNanoseconds: 300_000_000,
+        intervalFraction: 0.8
+    )
+
+    var isEnabled: Bool {
+        maximumContinuousSampleIntervalNanoseconds > 0
+            && intervalFraction > 0
+            && intervalFraction <= 1
+    }
+}
+
 @MainActor
 @Observable
 final class VehicleStore {
@@ -15,6 +42,7 @@ final class VehicleStore {
     }
 
     let profile: VehicleProfile
+    let speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy
     private let service: any ScooterService
 
     var state: VehicleState
@@ -36,11 +64,13 @@ final class VehicleStore {
     init(
         service: any ScooterService,
         initialState: VehicleState? = nil,
-        shouldAutoConnectOnStart: Bool = true
+        shouldAutoConnectOnStart: Bool = true,
+        speedInstrumentInterpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
     ) {
         self.service = service
         self.profile = service.profile
         self.shouldAutoConnectOnStart = shouldAutoConnectOnStart
+        self.speedInstrumentInterpolationPolicy = speedInstrumentInterpolationPolicy
         self.state = initialState ?? VehicleState(
             connection: .disconnected,
             batteryPercent: nil,
@@ -77,6 +107,13 @@ final class VehicleStore {
         if shouldAutoConnectOnStart {
             await connect()
         }
+    }
+
+    /// Exposes raw speed evidence independently from `VehicleState` so the
+    /// Dashboard can animate locally without publishing render frames back into
+    /// globally observed vehicle state, ride history, distance, or diagnostics.
+    func speedTelemetryUpdates() async -> AsyncStream<SpeedTelemetrySample> {
+        await service.speedTelemetryUpdates()
     }
 
     func connect() async {

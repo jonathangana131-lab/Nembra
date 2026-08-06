@@ -3,10 +3,8 @@ import SwiftUI
 
 /// The dedicated landscape riding surface.
 ///
-/// Phase 9 intentionally renders only values already confirmed in `VehicleState`.
-/// Raw-packet interpolation and rolling instrumentation are a separate Phase 10
-/// presentation layer so this cockpit cannot accidentally turn animation into
-/// telemetry evidence.
+/// Phase 10 keeps the accepted Phase 9 cockpit composition while delegating
+/// only the center speed instrument to a render-only raw-telemetry presenter.
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @State private var showLockConfirmation = false
@@ -19,7 +17,7 @@ struct DashboardView: View {
                 statusRail
                     .frame(width: 156)
 
-                speedInstrument
+                DashboardSpeedInstrumentView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 contextRail
@@ -86,50 +84,6 @@ struct DashboardView: View {
                 identifier: "dashboard.trip"
             )
         }
-    }
-
-    private var speedInstrument: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text(speedValueText)
-                    .font(.system(size: 148, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .tracking(-7)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
-                    .contentTransition(.numericText())
-                    .accessibilityHidden(true)
-
-                Text(speedUnitText)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 18)
-                    .accessibilityHidden(true)
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Speed")
-            .accessibilityValue(speedAccessibilityValue)
-            .accessibilityIdentifier("dashboard.speed")
-
-            Group {
-                if vehicle.state.dataAvailability == .retained {
-                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if vehicle.state.connection == .connected {
-                    Text(isVehicleMoving ? "RIDING" : "READY")
-                } else {
-                    Text("NO LIVE SPEED")
-                }
-            }
-            .font(.caption2.weight(.bold))
-            .tracking(2.2)
-            .foregroundStyle(.secondary)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
     }
 
     private var contextRail: some View {
@@ -297,20 +251,6 @@ struct DashboardView: View {
         case .drive: "D"
         case .sport: "S"
         }
-    }
-
-    private var speedValueText: String {
-        guard let kilometersPerHour = vehicle.state.speedKilometersPerHour else { return "—" }
-        let value = VehicleDisplayFormatting.usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
-        return String(format: "%.0f", max(0, value))
-    }
-
-    private var speedUnitText: String {
-        VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
-    }
-
-    private var speedAccessibilityValue: String {
-        VehicleDisplayFormatting.speed(kilometersPerHour: vehicle.state.speedKilometersPerHour)
     }
 
     private var tripText: String {

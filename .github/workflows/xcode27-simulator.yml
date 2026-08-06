@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nembra-xcode27-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
 

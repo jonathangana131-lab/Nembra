@@ -25,62 +25,87 @@ Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/So
 - DP101/102/103 speed-limit slots remain independent until MAXSHOT-specific capture proves user-facing semantics/mode mapping.
 - Device Trip is never labeled Today.
 
-## Current Home design rule
-The rejected giant scooter-art Home direction is dead. Portrait Home is status-first:
-vehicle identity + connection/lock → Battery/Trip/Mode → Light/Lock → Walk/Eco/Drive/Sport → vehicle details/ride context. A large scooter render is optional and must never displace useful information. Future exact graphics require verified physical references and a clear product purpose.
+## Stable UI milestones
+- Portrait Home is accepted and merged on `main`.
+- Dedicated landscape Dashboard Phase 9 is accepted and merged at `51613a990eb058ee83741645d8c551082d4ef268` after real Xcode 27 / iPhone 12 / iOS 27 build, XCUITest, and screenshot review.
+- Dashboard Phase 9 removes state-changing controls while moving and has no fake throttle/current/power gauge.
 
-Home moving-state Lock must remain disabled with `Stop to lock`; service/domain rejection remains authoritative. Low battery receives semantic priority. Retained values remain explicitly last-known/read-only.
+## Phase 10 — accepted implementation, merge checkpoint
+Active branch: `feature/speed-instrumentation-v2`.
+PR: #3 `Add measured-speed Dashboard instrumentation`.
+
+Phase 10 code/runtime/visual acceptance is complete. Do not redesign or replace it in a new chat.
+
+Accepted behavior:
+- `VehicleStore.speedTelemetryUpdates()` exposes raw speed evidence without publishing render frames to `VehicleState`.
+- `SpeedInstrumentModel` wraps `SpeedDisplayInterpolator`, accepts authoritative samples only, rejects stale/motion-assist samples, and exposes render-only frames.
+- before fresh raw telemetry arrives, confirmed `VehicleState` speed may initialize presentation without becoming a fake raw packet.
+- `RollingSpeedValueView` uses fixed slots and a brief integer roll; it is not a second smoothing engine.
+- `DashboardSpeedInstrumentView` owns raw-stream subscription and a local SwiftUI animation timeline capped at 60 Hz.
+- the high-frequency timeline pauses outside an interpolation window and does not invalidate the whole Dashboard.
+- Dashboard safety/moving-state decisions, controls, ride state, distance, history, and stats remain driven by confirmed/raw state, never interpolated frames.
+- VoiceOver announces latest authoritative/confirmed speed, not an interpolated visual midpoint.
+- long telemetry gaps snap instead of visually bridging missing evidence.
+
+### Phase 10 timing truth
+Do **not** choose MAXSHOT production interpolation timing before hardware measurement.
+- `SpeedInstrumentInterpolationPolicy.disabled` is the production/default policy.
+- ordinary/unverified production therefore snaps to authoritative measurements.
+- explicit Simulator launch injects `.simulatorQA` only to exercise the visual system.
+- Simulator QA values (50 ms minimum, 300 ms maximum-continuous interval, 0.8 interval fraction) are QA presentation settings only, not MAXSHOT claims.
+- once real hardware notification cadence/latency/resolution is measured, introduce an explicit calibrated hardware policy; never silently reuse the Simulator profile.
+
+### Simulator packet clock correction accepted during Phase 10
+- raw `receivedAtUptimeNanoseconds` is packet-arrival evidence in the same process monotonic clock domain used by Dashboard rendering.
+- `SimulatedScooterService` now timestamps raw samples using `DispatchTime.now().uptimeNanoseconds` with only a minimum monotonic increment for same-tick emissions.
+- simulation `elapsedSeconds` advances ride distance/time fixtures only and never fabricates packet cadence.
+- deterministic benchmark cadence remains tested with explicit synthetic sample timestamps.
+
+### Phase 10 proof already accepted
+Implementation head `a816ddeb0997deceefe8713c479dfa91571128e7` passed Xcode 27 run `31061900280` / job `92491409069`:
+- NembraCore 157/157.
+- NembraAppTests 13/13.
+- NembraUITests 5/5.
+- XCTest exported real iPhone 12/iOS 27 `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` captures.
+- visual inspection accepted center speed dominance, fixed width at `11` and `0`, MPH alignment, side-rail stability, stopped-control spacing, moving-control safety, and no clipping/crowding.
+- still images do not prove temporal frame pacing; production timing remains hardware/profile gated.
+
+## Exact immediate actions in a fresh chat
+1. Inspect the current head and newest `xcode-27` run for `feature/speed-instrumentation-v2`. The project-memory documentation commits after `a816ddeb...` intentionally trigger one final branch-lineage gate.
+2. If that newest docs-head run is green, mark PR #3 ready and merge it. Do not reopen Phase 10 design unless that final gate exposes a regression.
+3. Confirm `main` contains the merge and project memory.
+4. Create the next branch from updated `main` and continue **mode-responsive Dashboard / RideEngine application + persistence wiring**.
+5. Before implementing that next slice, inspect the existing ride/persistence code (`RideEngine`, checkpoint coordinator/journal, completed-history commit contract, distance reconciliation/live-distance integration, current app bootstrap/store wiring). Do not create a second ride engine or duplicate persistence architecture.
+6. Determine the smallest substantial application vertical slice that turns the already-built ride domain into real app behavior: automatic lifecycle wiring, crash-safe checkpoints/history handoff, and trustworthy UI consumption, with simulation exercising the exact production path.
+7. Build/run/interact/screenshot/test that slice on iPhone 12/iOS 27 before accepting it.
 
 ## QA rules
-- GitHub workflow `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, uses iPhone 12/iOS 27 where available, runs core/app/UI tests, and captures deterministic Simulator states.
-- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme. Extend it for critical future interactions.
-- CI preserves `NembraTests.xcresult` and exports XCTest attachments so interaction/screenshot failures can be inspected even when `xcodebuild test` fails.
-- Never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
-- Show real Simulator screenshots; do not substitute generated mockups. User explicitly requested no image generation in this work stream.
+- `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, prefers iPhone 12/iOS 27, runs core/app/UI tests, and captures deterministic Simulator states.
+- per-branch concurrency uses `cancel-in-progress: true`; obsolete runs should not consume Mac capacity once newer lineage exists.
+- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme.
+- CI preserves `NembraTests.xcresult` and exports XCTest attachments on failure or success.
+- hosted-runner UI bootstrap can be slow; total XCUITest allowance accommodates cold startup while assertion waits remain tight.
+- never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
+- show real Simulator screenshots; do not substitute generated mockups.
 
 ## Preserve these architecture boundaries
 - `ScooterService` / capability model separates SwiftUI from transport.
-- One state-changing command at a time until real protocol proves concurrency safe.
-- Connection-generation token invalidates writes spanning disconnect/reconnect.
+- one state-changing command at a time until real protocol proves concurrency safe.
+- connection-generation token invalidates writes spanning disconnect/reconnect.
 - `VehicleDataAvailability`: unavailable/live/retained; disconnect never fabricates zero telemetry.
-- Raw speed evidence is separate from render interpolation.
-- Motion assist cannot masquerade as authoritative speed.
+- raw speed evidence is separate from render interpolation.
+- motion assist cannot masquerade as authoritative speed.
 - `SpeedDisplayInterpolator` outputs visual frames only and is non-predictive.
 - `RollingNumberModel` uses fixed slots and correct carry/borrow direction; presentation only.
-- Automatic `RideEngine` preserves confirmed ride identity through disconnect.
-- Crash recovery uses two-slot generation journal; never persist monotonic uptime across process lifetime.
+- automatic `RideEngine` preserves confirmed ride identity through disconnect.
+- crash recovery uses a two-slot generation journal; never persist monotonic uptime across process lifetime.
 - `completedPendingCommit` prevents ride loss between detector completion and history storage.
-- History handoff is idempotent/readback-verified.
+- history handoff is idempotent/readback-verified.
 - ODO/GPS/live distance stay independent with explicit complete/partial/unknown coverage; never average them.
-- Live distance integrates one injected authoritative raw speed source and never integrates over oversized packet gaps.
-
-## Exact current milestone
-- `main` contains the accepted portrait Home merge `254b95a8d62d7d143df937cc0d8aa73f45548266`.
-- Active branch: `feature/landscape-dashboard`.
-- PR #2 is draft and must remain unmerged until the landscape gate is green and visually accepted.
-- Phase 9 implementation already exists: dedicated compact-height landscape `DashboardView`, portrait Home preserved, dominant confirmed speed, battery/trip/mode/connection, stopped-only compact controls, moving-state control removal, stable accessibility identifiers, and landscape XCUITests with kept screenshots.
-- Xcode run `31057841472` failed only because a `@MainActor tearDown()` override had actor isolation incompatible with XCTest. The Dashboard application target compiled. That test-target defect has already been fixed by removing the actor-isolated override pattern; the latest branch commit after that fix is `6dae8c8bbd383507d714911a4aa70ded0e512ceb` or newer.
-- Continue by watching the newest Xcode 27 run on `feature/landscape-dashboard`, not by re-investigating the old `tearDown()` failure.
-
-### Phase 9 Dashboard acceptance gate
-- enormous confirmed speed with safe iPhone 12 landscape fit
-- mode, battery, scooter Trip, connection/model identity
-- stopped-only compact Light/Lock and ride-mode controls
-- no state-changing controls while moving
-- no map/navigation yet
-- no fake throttle/current/power gauge
-- no interpolation presented as measured telemetry yet
-- real XCUITest orientation coverage passes
-- exported `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments are visually inspected
-- fix any clipping, cramped rails, weak hierarchy, inaccessible controls, or orientation defects before merge
-
-### Phase 10 immediately afterward
-Wire existing raw speed telemetry into the render-only interpolation/rolling-digit system. Benchmark real/simulated cadence separately from render rate. Keep measured speed and displayed interpolated frames explicitly distinct. Do not choose MAXSHOT production interpolation timing until hardware cadence is measured; Simulator timing can be an injected QA profile only.
-
-Then continue autonomously through mode-responsive Dashboard, ride engine app/persistence wiring, background Bluetooth, background location/route capture, MapKit rides, Dashboard navigation transformation, history/stats, acceleration tests, BLE diagnostics/protocol validation, real scooter validation, cloud/accounts, leaderboard, Live Activities/widgets/App Intents, accessibility/performance/error hardening, end-to-end/release prep. Do not stop after a single screen or ask whether to continue.
+- live distance integrates one authoritative raw speed source and never integrates over oversized packet gaps.
 
 ## Hardware validation still outstanding
-Real MAXSHOT advertisement identity, BLE services/characteristics, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, and AccessorySetupKit descriptors. Separate APP COMPLETE from HARDWARE VALIDATION REQUIRED.
+Real MAXSHOT advertisement identity, BLE services/characteristics, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, and AccessorySetupKit descriptors. Separate APP IMPLEMENTED from HARDWARE VALIDATION REQUIRED.
 
 ## Recovery requirement
 After every significant milestone update `PROJECT_STATE.md`, `DECISIONS.md`, `PROTOCOL_NOTES.md` when relevant, `DESIGN_SYSTEM.md` when visual rules change, and this file. Keep enough information here that a fresh chat can locate the existing repo, build it before edits, inspect recent commits/screenshots, and continue the exact unfinished milestone without asking the user to re-explain the project.

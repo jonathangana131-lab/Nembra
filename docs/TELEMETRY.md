@@ -1,6 +1,6 @@
 # Speed telemetry architecture
 
-Updated: 2026-08-04
+Updated: 2026-08-06
 
 ## Non-negotiable truth model
 
@@ -9,7 +9,7 @@ Nembra keeps these layers separate:
 1. **Raw evidence** — immutable speed samples emitted by BLE, Core Location, or a bounded motion-assisted estimator.
 2. **Benchmark/quality diagnostics** — cadence, jitter, empirical resolution, delivery latency when a source timestamp exists, and rejected/out-of-order counts.
 3. **Fusion/estimation** — future logic that may choose or combine evidence for a best current estimate.
-4. **Display interpolation** — future render-time animation that may visually move between trustworthy estimates at the display refresh rate.
+4. **Display interpolation** — render-time animation that may visually move between trustworthy estimates at the display refresh rate.
 
 Display interpolation must never be fed back into raw telemetry, ride evidence, benchmark statistics, odometer reconciliation, or acceleration-test timing as though it were measured data.
 
@@ -28,6 +28,8 @@ Display interpolation must never be fed back into raw telemetry, ride evidence, 
 BLE and GPS samples are required to be absolute measurements. Motion assist is structurally restricted to `shortHorizonEstimate`; it cannot claim authoritative speed.
 
 The monotonic timestamp is the source of truth for arrival ordering and interval measurements. Wall-clock time is never used to calculate packet cadence because the user/system can adjust wall time.
+
+A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence entered Nembra**, not how much simulated ride time or trip distance the packet represents. Producers and renderers that compare uptime must share the same process monotonic clock domain.
 
 ## Benchmark output
 
@@ -64,10 +66,14 @@ Important behavior:
 
 - subscribing does not replay cached vehicle speed as a new measurement
 - `simulateRide` emits one raw scooter-Bluetooth sample per simulated measurement step
-- simulated uptime advances deterministically from the supplied elapsed time
+- the raw sample receive timestamp comes from the process monotonic uptime clock used by the Dashboard renderer
+- supplied `elapsedSeconds` advances simulated ride distance/time evidence only; it never pretends that a packet arrived minutes later than it actually did
+- if two simulated samples occur within one clock tick, the service advances the second timestamp by the minimum amount required to preserve strict monotonic ordering
 - numeric overflow inputs are rejected before they can poison odometer/trip state
 
-This allows cadence and interpolation work to be developed before real MAXSHOT packet timing is captured.
+This preserves truthful raw-arrival semantics while allowing ride-distance fixtures to jump forward deterministically. A regression test checks that a simulated raw sample lands within the real process-uptime window around its emission.
+
+Simulation timing is not MAXSHOT timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
 
 ## Real-hardware benchmark procedure (pending hardware access)
 
@@ -92,7 +98,7 @@ No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet ra
 
 ## Render-only interpolation
 
-`SpeedDisplayInterpolator` is the first render model. It is intentionally conservative:
+`SpeedDisplayInterpolator` is intentionally conservative:
 
 - the first authoritative speed sample renders immediately rather than animating from a fake zero
 - a new sample arriving mid-transition starts from the exact currently rendered value
@@ -104,6 +110,22 @@ No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet ra
 - every `SpeedDisplayFrame` carries both the visual value and the latest measured value, plus an origin flag (`measured` vs `visuallyInterpolated`)
 
 The interpolator does not predict future speed. Final transition duration is supplied by its caller and must be tuned from real MAXSHOT benchmark traces plus iPhone 12 Simulator/device visual QA. No production timing constant is claimed yet.
+
+## Phase 10 Dashboard presentation policy
+
+`SpeedInstrumentModel` and `DashboardSpeedInstrumentView` are the iOS presentation boundary around the core interpolator.
+
+Rules:
+
+- ordinary/unverified production launch injects `SpeedInstrumentInterpolationPolicy.disabled`; real MAXSHOT samples therefore snap until hardware timing is measured
+- explicit Simulator QA launch injects `.simulatorQA` only to exercise visual behavior; its constants are test presentation values, not hardware claims
+- the speed subtree may render on a SwiftUI animation timeline capped at 60 Hz while a transition is active
+- that timeline is paused when no interpolation window is active, avoiding a permanent whole-app/high-frequency refresh loop
+- Dashboard side rails, controls, ride logic, distance, history, and safety continue to consume confirmed/raw domain state rather than interpolated frames
+- a telemetry gap beyond the injected continuous-sample limit snaps instead of visually bridging missing evidence
+- VoiceOver announces the newest authoritative/confirmed speed, never an interpolated midpoint that no sensor measured
+
+The Simulator and the Dashboard renderer must use the same monotonic uptime clock domain. This is required for an animation window to represent elapsed render time correctly.
 
 ## Rolling numeric presentation
 

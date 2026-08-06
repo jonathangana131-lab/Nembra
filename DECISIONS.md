@@ -34,10 +34,8 @@ The scooter-reported trip counter and Nembra's future daily ride ledger are sepa
 ## D-010 — AccessorySetupKit must be evaluated before finalizing onboarding/background BLE
 Apple's current iOS relaunch guidance makes AccessorySetupKit strategically relevant for Bluetooth accessories. Nembra should prefer it if the MAXSHOT advertisement/service identity can be described correctly and hardware testing confirms the flow. We will not invent discovery descriptors before observing the real scooter.
 
-
 ## D-011 — Unknown vehicle state stays unknown
 A state field is optional when the app can legitimately lack evidence for it. In particular, ride mode is not defaulted to Sport while disconnected/launching. UI placeholders show an unknown value until the scooter service reports one.
-
 
 ## D-012 — Do not expose unfinished navigation destinations
 The production shell shows only completed vertical slices. Placeholder Rides/Stats tabs were removed; those destinations return only when their real engines and polished UI are ready for end-to-end QA.
@@ -61,6 +59,7 @@ Simulation is an explicit QA backend selected only by a documented launch argume
 
 ## D-018 — Display speed interpolation is render-only and non-predictive
 `SpeedDisplayInterpolator` accepts only authoritative absolute measurements and emits a distinct `SpeedDisplayFrame`, never telemetry. It transitions from the exact currently rendered value toward the newest measurement, can be interrupted safely by a newer packet, never overshoots or predicts beyond the newest evidence, and rejects motion-assisted short-horizon estimates. Equal consecutive measurements complete immediately instead of creating fake motion. Transition duration remains caller-injected until real MAXSHOT cadence and iPhone 12 runtime QA justify tuning. Visual frames can never become ride, acceleration-test, odometer, benchmark, or persistence evidence.
+
 ## D-019 — Transport loss never manufactures zero telemetry
 A disconnect, Bluetooth failure, or out-of-range event is a transport-state change, not a speed/power measurement. Nembra preserves the last confirmed vehicle readings and marks them stale/read-only through connection state rather than overwriting speed, power, or current with zero. Only a real authoritative sample may establish a new measured zero. The same rule must be preserved by the future real Bluetooth implementation.
 
@@ -95,6 +94,7 @@ ODO, GPS-route, and future live-integrated distances stay as independent evidenc
 
 ## D-029 — Live trip distance integrates raw authoritative samples in process-local segments
 Display interpolation, rolling digits, and motion-assisted estimates never add mileage. `LiveDistanceSegmentAccumulator` integrates one explicitly selected absolute speed source with an injected maximum packet interval and explicit trapezoidal method. It never crosses an oversized sample gap, and invalid/out-of-order/overflow evidence is transactional. In-progress snapshots deliberately do not carry completed coverage; only a finalized monotonic segment may be `complete`, `partial`, or `unknown`. Monotonic uptime is not persisted across process/reboot recovery, so a recovered ride starts a new segment and future ride-level aggregation/reconciliation must account for the gap honestly. There is no MAXSHOT production source/gap threshold until hardware telemetry is measured.
+
 ## 2026-08-05 — Public GitHub remote + Xcode 27 hosted Simulator gate
 
 **Decision:** Publish Nembra as `jonathangana131-lab/Nembra` with public visibility per explicit user direction. Use GitHub's `xcode-27` hosted macOS runner as a real iOS 27 build/test/Simulator screenshot gate whenever direct interactive Xcode tooling is unavailable in the active chat.
@@ -103,6 +103,12 @@ Display interpolation, rolling digits, and motion-assisted estimates never add m
 
 **Safety/truth boundary:** GitHub-hosted Simulator proof is real runtime evidence, but it is not physical MAXSHOT BLE validation and it is not a substitute for interactive performance profiling on an iPhone 12. The runner is preview infrastructure, so its Xcode/runtime metadata must be archived with screenshots.
 
-
 ## D-030 — Use the official GitHub `xcode-27` preview runner as an additional iOS gate, never as fake local proof
-GitHub officially exposes `xcode-27`/`xcode-27-xlarge` hosted runner labels in public preview. Nembra therefore keeps a shared Xcode scheme plus a workflow that runs SwiftPM tests, Xcode Simulator tests, launches explicit QA simulation states, verifies the app process remains alive, captures actual Simulator PNGs, and uploads logs/environment metadata. The workflow is only an additional repeatable gate: it has not run until a remote exists, preview infrastructure may change, and passing CI does not replace interactive iPhone 12 Simulator inspection with @Build iOS Apps.
+GitHub officially exposes `xcode-27`/`xcode-27-xlarge` hosted runner labels in public preview. Nembra therefore keeps a shared Xcode scheme plus a workflow that runs SwiftPM tests, Xcode Simulator tests, launches explicit QA simulation states, verifies the app process remains alive, captures actual Simulator PNGs, and uploads logs/environment metadata. The workflow is only an additional repeatable gate: preview infrastructure may change, and passing CI does not replace physical iPhone 12 profiling or real MAXSHOT hardware validation.
+
+## D-031 — Dashboard speed animation is local, hardware-gated, and clock-domain truthful
+The Phase 10 Dashboard speed instrument owns its own render-only presentation subtree. `VehicleStore` exposes raw speed evidence separately from confirmed vehicle state; `SpeedInstrumentModel` accepts only authoritative measurements; `DashboardSpeedInstrumentView` may redraw locally at up to 60 Hz only while a bounded visual transition is active. The rest of Dashboard safety, controls, ride logic, history, distance, and persistence remain driven by confirmed/raw domain evidence. VoiceOver announces the newest authoritative/confirmed speed and never an interpolated midpoint.
+
+Production interpolation remains disabled until real MAXSHOT notification cadence, resolution, latency/jitter, and iPhone 12 behavior are measured. The explicit Simulator QA interpolation policy exists only to exercise the animation machinery and is not a hardware timing claim. Long telemetry gaps snap instead of being visually bridged.
+
+Raw sample `receivedAtUptimeNanoseconds` is packet-arrival evidence in the process monotonic clock domain used by the renderer. Simulator ride `elapsedSeconds` may advance ride-distance fixtures but must never manufacture packet arrival cadence. Back-to-back simulated samples are kept strictly monotonic without pretending that simulated ride duration elapsed in real time.
