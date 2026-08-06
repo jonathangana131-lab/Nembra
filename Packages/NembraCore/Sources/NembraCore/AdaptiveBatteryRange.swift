@@ -45,15 +45,27 @@ public struct BatterySOCReading: Equatable, Codable, Sendable {
     }
 }
 
+/// Coverage of the distance evidence attached to one battery-consumption window.
+/// Only complete coverage is allowed to teach efficiency.
+public enum BatteryRangeDistanceCoverage: String, Codable, Sendable {
+    case complete
+    case partial
+    case unknown
+}
+
 /// A ride segment that can potentially teach the range model how far this
 /// scooter travels for each authoritative battery percentage point consumed.
 public struct BatteryRangeLearningWindow: Equatable, Codable, Sendable {
     public let distanceMeters: Double
+    public let distanceCoverage: BatteryRangeDistanceCoverage
+    public let transportGapOccurred: Bool
     public let startSOC: BatterySOCReading
     public let endSOC: BatterySOCReading
 
     public init(
         distanceMeters: Double,
+        distanceCoverage: BatteryRangeDistanceCoverage,
+        transportGapOccurred: Bool,
         startSOC: BatterySOCReading,
         endSOC: BatterySOCReading
     ) throws {
@@ -65,6 +77,8 @@ public struct BatteryRangeLearningWindow: Equatable, Codable, Sendable {
         }
 
         self.distanceMeters = distanceMeters
+        self.distanceCoverage = distanceCoverage
+        self.transportGapOccurred = transportGapOccurred
         self.startSOC = startSOC
         self.endSOC = endSOC
     }
@@ -93,7 +107,16 @@ public enum AdaptiveRangeConfidence: String, Codable, Sendable {
     case high
 }
 
+public enum AdaptiveRangeEstimateBasis: String, Codable, Sendable {
+    /// A deliberately conservative seed supplied by a higher layer for a new
+    /// scooter. It is not learned history and must remain classified as such.
+    case provisionalSeed
+    case learned
+}
+
 public enum BatteryRangeLearningRejectionReason: String, Equatable, Sendable {
+    case incompleteDistanceEvidence
+    case transportGap
     case nonAuthoritativeSOC
     case nonConsumptionWindow
     case insufficientSOCConsumption
@@ -114,9 +137,9 @@ public struct BatteryRangeLearningResult: Equatable, Sendable {
 
 /// Explicit tuning knobs for the learned percentage-based estimator.
 ///
-/// The defaults are supplied by the application/vehicle profile rather than
-/// hidden inside the model so ES80 field evidence can later change thresholds
-/// without rewriting the algorithm.
+/// Values are supplied by the application/vehicle profile rather than hidden
+/// inside the model so ES80 field evidence can later change thresholds without
+/// rewriting the algorithm.
 public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
     public let minimumConsumedPercentagePoints: Double
     public let minimumDistanceMeters: Double
@@ -126,6 +149,10 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
     public let outlierUpperEfficiencyRatio: Double
     public let estimateDeadbandFraction: Double
     public let estimateSmoothingFactor: Double
+    /// Optional low-confidence cold-start seed. Supplying this never makes the
+    /// estimate learned; the output remains `.provisionalSeed` until real
+    /// authoritative windows are accepted.
+    public let provisionalEfficiencyMetersPerPercentagePoint: Double?
     public let lowSOCCautionThresholdPercent: Double?
     public let lowSOCEfficiencyMultiplier: Double?
     public let lowConfidenceConsumedPercentagePoints: Double
@@ -141,6 +168,7 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
         outlierUpperEfficiencyRatio: Double,
         estimateDeadbandFraction: Double,
         estimateSmoothingFactor: Double,
+        provisionalEfficiencyMetersPerPercentagePoint: Double? = nil,
         lowSOCCautionThresholdPercent: Double? = nil,
         lowSOCEfficiencyMultiplier: Double? = nil,
         lowConfidenceConsumedPercentagePoints: Double,
@@ -159,7 +187,7 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
             normalConfidenceConsumedPercentagePoints,
             highConfidenceConsumedPercentagePoints
         ]
-        guard finiteScalars.allSatisfy(\.isFinite),
+        guard finiteScalars.allSatisfy({ $0.isFinite }),
               minimumConsumedPercentagePoints > 0,
               minimumConsumedPercentagePoints <= 100,
               minimumDistanceMeters > 0,
@@ -177,6 +205,13 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
               normalConfidenceConsumedPercentagePoints > lowConfidenceConsumedPercentagePoints,
               highConfidenceConsumedPercentagePoints > normalConfidenceConsumedPercentagePoints else {
             throw BatteryRangeValidationError.invalidPolicy
+        }
+
+        if let provisionalEfficiencyMetersPerPercentagePoint {
+            guard provisionalEfficiencyMetersPerPercentagePoint.isFinite,
+                  provisionalEfficiencyMetersPerPercentagePoint > 0 else {
+                throw BatteryRangeValidationError.invalidPolicy
+            }
         }
 
         switch (lowSOCCautionThresholdPercent, lowSOCEfficiencyMultiplier) {
@@ -203,6 +238,7 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
         self.outlierUpperEfficiencyRatio = outlierUpperEfficiencyRatio
         self.estimateDeadbandFraction = estimateDeadbandFraction
         self.estimateSmoothingFactor = estimateSmoothingFactor
+        self.provisionalEfficiencyMetersPerPercentagePoint = provisionalEfficiencyMetersPerPercentagePoint
         self.lowSOCCautionThresholdPercent = lowSOCCautionThresholdPercent
         self.lowSOCEfficiencyMultiplier = lowSOCEfficiencyMultiplier
         self.lowConfidenceConsumedPercentagePoints = lowConfidenceConsumedPercentagePoints
@@ -212,12 +248,13 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
 }
 
 public struct AdaptiveBatteryRangeEstimate: Equatable, Codable, Sendable {
-    /// Range produced directly from learned efficiency and the current SoC
-    /// before display hysteresis/smoothing.
+    /// Range produced directly from selected efficiency and the current SoC
+    /// before presentation hysteresis/smoothing.
     public let rawRemainingMeters: Double
     /// Range suitable for presentation after deadband and smoothing.
     public let presentedRemainingMeters: Double
-    public let learnedMetersPerPercentagePoint: Double
+    public let metersPerPercentagePoint: Double
+    public let basis: AdaptiveRangeEstimateBasis
     public let confidence: AdaptiveRangeConfidence
     public let socProvenance: BatterySOCProvenance
     public let lowSOCConservatismApplied: Bool
@@ -275,6 +312,8 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         }
     }
 
+    /// "Typical" is intentionally learned-only. A cold-start provisional seed
+    /// must never be relabeled as this scooter's observed full-charge behavior.
     public func typicalFullChargeRangeMeters(
         using policy: AdaptiveBatteryRangePolicy
     ) -> Double? {
@@ -286,6 +325,12 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         _ window: BatteryRangeLearningWindow,
         policy: AdaptiveBatteryRangePolicy
     ) -> BatteryRangeLearningResult {
+        guard window.distanceCoverage == .complete else {
+            return rejected(.incompleteDistanceEvidence, policy: policy)
+        }
+        guard window.transportGapOccurred == false else {
+            return rejected(.transportGap, policy: policy)
+        }
         guard window.startSOC.isAuthoritativeMeasurement,
               window.endSOC.isAuthoritativeMeasurement else {
             return rejected(.nonAuthoritativeSOC, policy: policy)
@@ -337,19 +382,25 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         )
     }
 
-    /// Returns `nil` until at least one meaningful authoritative learning window
-    /// has been accepted. This prevents the product from silently falling back
-    /// to advertised-range multiplication.
+    /// Uses learned efficiency when available. With no accepted history, a
+    /// higher layer may provide a conservative provisional seed. If neither
+    /// exists, range remains unavailable rather than silently multiplying an
+    /// advertised range by battery percentage.
     public func estimateRemainingRange(
         at soc: BatterySOCReading,
         previousPresentedRemainingMeters: Double? = nil,
         policy: AdaptiveBatteryRangePolicy
     ) -> AdaptiveBatteryRangeEstimate? {
-        guard let efficiency = blendedEfficiencyMetersPerPercentagePoint(using: policy) else {
+        let selected: (efficiency: Double, basis: AdaptiveRangeEstimateBasis)
+        if let learned = blendedEfficiencyMetersPerPercentagePoint(using: policy) {
+            selected = (learned, .learned)
+        } else if let provisional = policy.provisionalEfficiencyMetersPerPercentagePoint {
+            selected = (provisional, .provisionalSeed)
+        } else {
             return nil
         }
 
-        var rawRemainingMeters = efficiency * soc.percentage
+        var rawRemainingMeters = selected.efficiency * soc.percentage
         var lowSOCConservatismApplied = false
 
         if let threshold = policy.lowSOCCautionThresholdPercent,
@@ -370,7 +421,8 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         return AdaptiveBatteryRangeEstimate(
             rawRemainingMeters: rawRemainingMeters,
             presentedRemainingMeters: presentedRemainingMeters,
-            learnedMetersPerPercentagePoint: efficiency,
+            metersPerPercentagePoint: selected.efficiency,
+            basis: selected.basis,
             confidence: confidence(using: policy),
             socProvenance: soc.provenance,
             lowSOCConservatismApplied: lowSOCConservatismApplied
