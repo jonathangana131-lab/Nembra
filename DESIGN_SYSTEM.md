@@ -41,7 +41,7 @@ Do not stack rounded rectangles merely to manufacture “cards.”
 3. A large scooter hero is not required. Exact vehicle art is contextual and must earn its space.
 4. Disconnected/reconnecting values must read as last-known, not live.
 5. Safety-sensitive controls reflect obvious domain restrictions before tap, while the service remains authoritative.
-6. Unknown speed is not stopped. An unlocked vehicle with no confirmed speed keeps Lock unavailable and uses compact wording such as `Speed unknown` rather than implying a measured zero.
+6. Unknown speed is not stopped. An unlocked vehicle with no confirmed speed keeps Lock unavailable and uses the compact subtitle `No speed` rather than implying a measured zero.
 7. Low battery gets semantic priority; avoid turning the entire screen into a warning theme.
 8. Avoid a dashboard-card mosaic. Prefer one or two coherent grouped surfaces plus native rows.
 
