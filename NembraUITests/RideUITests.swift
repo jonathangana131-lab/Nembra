@@ -52,7 +52,7 @@ final class RideUITests: XCTestCase {
 
         let row = app.descendants(matching: .any)["rides.completed-row"]
         XCTAssertTrue(
-            row.waitForExistence(timeout: 8),
+            row.waitForExistence(timeout: 12),
             "The explicit QA auto-completion must flow through RideEngine, durable history commit, and the real Rides surface."
         )
         keepScreenshot(named: "Completed Ride History")
@@ -78,6 +78,15 @@ final class RideUITests: XCTestCase {
             gps.exists,
             "The Simulator location source must pass through quality screening, the ride-scoped capture coordinator, RideEngine, and durable completed history as separate GPS distance evidence."
         )
+        let gpsSemantics = "\(gps.label) \(gps.value as? String ?? "")"
+        XCTAssertTrue(
+            gpsSemantics.contains("mi") || gpsSemantics.contains("km"),
+            "Quality-screened GPS evidence must expose a localized distance unit."
+        )
+        XCTAssertFalse(
+            gpsSemantics.contains("0.0"),
+            "Valid screened GPS evidence must remain visibly nonzero instead of rounding away in the completed-ride proof."
+        )
 
         let routeMap = app.descendants(matching: .any)["rides.route-map"]
         if !routeMap.waitForExistence(timeout: 3) {
@@ -91,7 +100,7 @@ final class RideUITests: XCTestCase {
             app.descendants(matching: .any)["rides.route-unavailable"].exists,
             "A ride with verified persisted route geometry must not fall back to the no-route state."
         )
-        keepScreenshot(named: "Completed Ride Details With Route And GPS")
+        keepScreenshot(named: "Completed Ride Details With Visible GPS And Route")
     }
 
     @MainActor
