@@ -198,11 +198,23 @@ final class RideApplicationStore {
     }
 
     private func receiveVehicleState(_ state: VehicleState) async {
+        let previousState = latestVehicleState
         latestVehicleState = state
 
-        // A vehicle-state publication carries connection/odometer state only.
-        // It must never replay the previous raw speed packet as if that packet
-        // arrived again with this state change.
+        let connectionChanged = state.connection != previousState.connection
+        let odometerAdvanced: Bool
+        if let previousOdometer = previousState.odometerKilometers,
+           let currentOdometer = state.odometerKilometers {
+            odometerAdvanced = currentOdometer > previousOdometer
+        } else {
+            odometerAdvanced = false
+        }
+
+        // State publications are useful ride evidence only when they carry a
+        // transport transition or a real odometer advance. Mode/light/lock UI
+        // acknowledgements must not masquerade as a fresh zero-speed sample,
+        // and the last raw speed packet is never replayed here.
+        guard connectionChanged || odometerAdvanced else { return }
         await ingestObservation(speedSample: nil)
     }
 
