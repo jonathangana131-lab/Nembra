@@ -24,15 +24,13 @@ public enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
     case resetContinuityAndIngestSOC(BatterySOCReading)
 }
 
-/// Pure semantic bridge from the strict battery-evidence truth boundary into
-/// the adaptive-range SoC domain.
+/// Pure semantic helper used by the stateful bridge.
 ///
-/// Continuity is evidence about observation coverage, not about whether the
-/// numeric value is authoritative. Therefore every explicit
-/// `.afterUnobservedInterval` boundary resets in-flight range learning, while
-/// only a verified vehicle SoC value is ever promoted to authoritative SoC.
-public enum BatteryAdaptiveRangeEvidenceAdapter {
-    public static func action(
+/// This intentionally remains internal to NembraCore so external production
+/// consumers cannot bypass process-local stream validation by converting an
+/// observation directly. The public path is `BatteryAdaptiveRangeLearningPipeline`.
+enum BatteryAdaptiveRangeEvidenceAdapter {
+    static func action(
         for observation: BatteryEvidenceObservation
     ) throws -> BatteryAdaptiveRangeEvidenceAction {
         let requiresReset = observation.requiresNewContinuityAnchor
@@ -71,28 +69,27 @@ public enum BatteryAdaptiveRangeEvidenceAdapter {
     }
 }
 
-/// Stateful entry point that enforces the battery evidence stream's ordering
+/// Internal stateful seam that enforces the battery evidence stream's ordering
 /// contract before returning an adaptive-range action.
 ///
-/// Higher layers should prefer this type over calling the pure adapter directly
-/// when consuming a live/persisted sequence. The stream validator and semantic
-/// action advance atomically: an ordering/continuity validation failure never
-/// mutates the accepted-stream baseline and never returns an ingest action.
-public struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
-    public private(set) var streamValidator: BatteryEvidenceStreamValidator
+/// Keeping this internal prevents external production code from accepting an
+/// action without also applying it atomically to the learning-window assembler.
+/// Tests use `@testable` to exercise this layer directly.
+struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
+    private(set) var streamValidator: BatteryEvidenceStreamValidator
 
-    public init(streamValidator: BatteryEvidenceStreamValidator = .init()) {
+    init(streamValidator: BatteryEvidenceStreamValidator = .init()) {
         self.streamValidator = streamValidator
     }
 
     /// Records that evidence was missed before the next observation arrives.
     /// The next observation must carry `.afterUnobservedInterval` or stream
     /// validation fails closed.
-    public mutating func markUnobservedInterval() {
+    mutating func markUnobservedInterval() {
         streamValidator.markUnobservedInterval()
     }
 
-    public mutating func accept(
+    mutating func accept(
         _ observation: BatteryEvidenceObservation
     ) throws -> BatteryAdaptiveRangeEvidenceAction {
         let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: observation)
@@ -124,11 +121,16 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
 /// adaptive-range learning windows.
 ///
 /// This type still does not select a distance source, classify route coverage,
-/// decode BLE/Tuya, or train/persist `AdaptiveBatteryRangeModel`. It only keeps
-/// the evidence-stream truth boundary and the in-flight window assembler in one
+/// decode BLE/Tuya, or train/persist `AdaptiveBatteryRangeModel`. It keeps the
+/// evidence-stream truth boundary and the in-flight window assembler in one
 /// atomic state transition so known gaps cannot leak across the seam.
 public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
-    public private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
+    /// Internal on purpose: external production consumers must not mutate or
+    /// independently advance the stream validator outside this atomic pipeline.
+    private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
+
+    /// Read-only externally for diagnostics/UI research. Mutations remain
+    /// constrained to the pipeline methods below.
     public private(set) var windowAssembler: BatteryRangeLearningWindowAssembler
 
     public init() {
