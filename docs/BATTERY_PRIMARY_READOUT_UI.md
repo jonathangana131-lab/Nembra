@@ -89,6 +89,7 @@ At minimum the bridge must preserve these invariants:
 6. `presentedRemainingMeters`, not raw internal range, is the presentation candidate once a truthful policy allows a numeric value.
 7. Low-SoC conservatism remains a model/presentation fact; the UI must not reverse-engineer or recreate it from battery percentage.
 8. No presentation range value is allowed to train the model, alter ride evidence, or become decoded scooter telemetry.
+9. The current UI disables the toggle when display SoC is unavailable because, at this checkpoint, that means neither mode has a useful value. If a future accepted bridge can legitimately supply range while direct display SoC is absent, interaction availability must be re-evaluated deliberately rather than inheriting this temporary disable rule and trapping a meaningful range presentation in one mode.
 
 This seam is intentionally documented now because the present `RANGE —` implementation is safer than prematurely flattening the adaptive model's uncertainty into a polished-looking number.
 
