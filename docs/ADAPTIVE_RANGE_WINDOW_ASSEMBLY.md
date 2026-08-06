@@ -32,6 +32,8 @@ A lower authoritative percentage becomes eligible to close a window only after *
 
 This prevents a stream such as `80 → 79 → 78 → 77` from automatically becoming three tiny 1% training samples. One longer window can form from the earlier authoritative anchor instead.
 
+The policy supplied to the current authoritative reading is the live threshold source. Tightening does not retroactively close a span under an older looser threshold, while loosening may legitimately close an already-retained span on a later authoritative reading, including a flat percentage update.
+
 A higher authoritative percentage conservatively rebases the span and discards its in-flight distance evidence. The assembler does not decide whether the rise was charging, sag recovery, firmware filtering, or another effect. It simply refuses to relabel a non-consumption change as consumed battery.
 
 ## Distance evidence
@@ -56,7 +58,14 @@ A zero distance delta is valid. It may be used to degrade coverage without inven
 
 `recordTransportGap()` marks the current span as having observed a scooter-transport continuity break. The flag is sticky until that span closes, rebases, or is explicitly reset.
 
-The assembler preserves this evidence rather than smoothing it away. `AdaptiveBatteryRangeModel` remains responsible for rejecting transport-gap windows.
+The assembler preserves this evidence rather than smoothing it away. `AdaptiveBatteryRangeModel` remains responsible for rejecting transport-gap windows. Once such a candidate closes, the assembler rebases at its end reading so a rejected tainted span does not permanently poison later clean evidence.
+
+There are two distinct higher-layer situations:
+
+1. **A gap was discovered inside an already-active span and the pre/post-gap evidence must remain auditable together.** Mark that span with `recordTransportGap()`; any emitted candidate preserves the gap and the model rejects it.
+2. **The higher layer knows the first trustworthy post-gap authoritative SoC reading and cannot prove continuity across the missing interval.** Discard the old in-flight span with `reset()`, then ingest that first post-gap authoritative reading as the new anchor before recording new distance. Do not carry pre-gap distance into the new span merely to save a sample.
+
+This distinction lets a future battery/transport integration honor an explicit "after unobserved interval" signal without fabricating continuity or needlessly contaminating later clean distance.
 
 ## Atomic failure behavior
 
@@ -70,6 +79,8 @@ Those errors occur before mutating the in-flight span.
 ## Lifecycle
 
 The assembler is ephemeral evidence state. It should be reset at an explicit ride/device/session boundary when a higher layer can no longer prove continuity of the in-flight span.
+
+A reset intentionally loses only the uncommitted learning candidate. The first subsequent authoritative SoC reading becomes a fresh anchor; distance before that anchor is not retroactively assigned a battery-consumption start value.
 
 Persisted learned efficiency remains owned by `AdaptiveBatteryRangeModel` and its persistence layer. This assembler does not introduce another learned-history store.
 
