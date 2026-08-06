@@ -154,6 +154,52 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(window.distanceMeters == 300)
     }
 
+    @Test("distance before the first verified post-gap SoC anchor is discarded")
+    func preAnchorDistanceAfterNonAuthoritativeBoundaryIsDiscarded() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 100),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 500)
+        pipeline.markUnobservedInterval()
+
+        let boundary = try observation(
+            60,
+            role: .stockAppCorrelationAnchor,
+            uptime: 1,
+            continuity: .afterUnobservedInterval
+        )
+        let boundaryResult = try pipeline.acceptBatteryObservation(boundary, policy: p)
+        #expect(boundaryResult.action == .resetContinuity)
+        #expect(pipeline.windowAssembler.anchorSOC == nil)
+
+        try pipeline.recordDistance(deltaMeters: 400)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 400)
+
+        let anchorResult = try pipeline.acceptBatteryObservation(
+            observation(59, uptime: 2),
+            policy: p
+        )
+        #expect(anchorResult.learningWindow == nil)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 59)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        try pipeline.recordDistance(deltaMeters: 300)
+        let endResult = try pipeline.acceptBatteryObservation(
+            observation(56, uptime: 3),
+            policy: p
+        )
+        let window = try #require(endResult.learningWindow)
+
+        #expect(window.startSOC.percentage == 59)
+        #expect(window.endSOC.percentage == 56)
+        #expect(window.distanceMeters == 300)
+    }
+
     @Test("in-span measured recovery rebases using latest authoritative SoC")
     func measuredRecoveryRebasesThroughPipeline() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
