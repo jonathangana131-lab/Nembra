@@ -11,6 +11,8 @@ final class AppRuntime {
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
     private let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+    private let rideCheckpointStore: (any RideCheckpointStore)?
+    private let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
     private var rideLocationLifecycleTask: Task<Void, Never>?
@@ -24,7 +26,9 @@ final class AppRuntime {
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
-        rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+        rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?,
+        rideCheckpointStore: (any RideCheckpointStore)?,
+        rideRouteDraftFinalizer: RideRouteDraftFinalizer?
     ) {
         self.vehicleStore = vehicleStore
         self.rideStore = rideStore
@@ -34,6 +38,8 @@ final class AppRuntime {
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.rideLocationCaptureCoordinator = rideLocationCaptureCoordinator
+        self.rideCheckpointStore = rideCheckpointStore
+        self.rideRouteDraftFinalizer = rideRouteDraftFinalizer
     }
 
     deinit {
@@ -46,6 +52,7 @@ final class AppRuntime {
         didStart = true
 
         installRideCompletionBarrierIfAvailable()
+        await finalizeRecoveredRouteDraftIfNeeded()
 
         // Ride evidence subscribes first so explicit QA telemetry emitted after
         // launch cannot race past the automatic ride application layer.
@@ -88,11 +95,11 @@ final class AppRuntime {
 
             // Location is no longer written directly into route persistence.
             // The root-owned ride lifecycle starts the explicit Simulator source
-            // only after RideEngine owns a confirmed UUID. Give that real source
-            // stream enough wall-clock time to deliver its small path through the
-            // quality screen, route recorder, and session-scoped GPS-distance
-            // sink before the fixture supplies authoritative ride-end evidence.
-            try? await Task.sleep(nanoseconds: 750_000_000)
+            // only after RideEngine owns a confirmed UUID. Give its two real-time
+            // intervals enough wall-clock time to reach the same quality screen,
+            // route recorder, and session-scoped GPS-distance sink before the
+            // fixture supplies authoritative ride-end evidence.
+            try? await Task.sleep(nanoseconds: 4_250_000_000)
             guard !Task.isCancelled else { return }
 
             // Explicit end-to-end history fixture used only when a UI/QA launch
@@ -110,6 +117,22 @@ final class AppRuntime {
                 elapsedSeconds: 0
             )
         }
+    }
+
+    /// If the process stopped after `completedPendingCommit` became durable but
+    /// before route-manifest commit, finalize only the already persisted chunks
+    /// as partial coverage before RideApplicationStore publishes history. Route
+    /// recovery remains additive: failure here never blocks the idempotent ride
+    /// history recovery path.
+    private func finalizeRecoveredRouteDraftIfNeeded() async {
+        guard let rideCheckpointStore,
+              let rideRouteDraftFinalizer,
+              let checkpoint = try? await rideCheckpointStore.load(),
+              case let .completedPendingCommit(evidence) = checkpoint else { return }
+
+        _ = try? await rideRouteDraftFinalizer.finalizePartialDraftIfNeeded(
+            sessionID: evidence.sessionID
+        )
     }
 
     /// Application/root lifetime owns location capture. SwiftUI navigation and
@@ -148,9 +171,18 @@ final class AppRuntime {
         sessionID: UUID,
         coordinator: RideLocationCaptureCoordinator
     ) async {
-        guard activeLocationCaptureSessionID == sessionID else { return }
-        _ = try? await coordinator.finish()
-        activeLocationCaptureSessionID = nil
+        if activeLocationCaptureSessionID == sessionID {
+            _ = try? await coordinator.finish()
+            activeLocationCaptureSessionID = nil
+            return
+        }
+
+        // A recovered `completedPendingCommit` session has no active in-process
+        // source to finish. Reconcile any durable chunk draft idempotently before
+        // history is allowed to clear the checkpoint.
+        _ = try? await rideRouteDraftFinalizer?.finalizePartialDraftIfNeeded(
+            sessionID: sessionID
+        )
     }
 
     private func handleRideSessionEvent(
@@ -312,7 +344,7 @@ enum AppBootstrap {
         if simulatorAutoCompletesRide,
            let routeStore = persistence?.routeStore {
             do {
-                let source = SimulatorRideLocationSource.completedRideQA()
+                let source = CompletedRideQALocationSource()
                 let policy = try RideLocationQualityPolicy.simulatorQA()
                 rideLocationCaptureCoordinator = try RideLocationCaptureCoordinator(
                     source: source,
@@ -334,6 +366,10 @@ enum AppBootstrap {
             rideLocationCaptureCoordinator = nil
         }
 
+        let rideRouteDraftFinalizer = persistence.map {
+            RideRouteDraftFinalizer(routeStore: $0.routeStore)
+        }
+
         return AppRuntime(
             vehicleStore: vehicleStore,
             rideStore: rideStore,
@@ -342,7 +378,9 @@ enum AppBootstrap {
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
-            rideLocationCaptureCoordinator: rideLocationCaptureCoordinator
+            rideLocationCaptureCoordinator: rideLocationCaptureCoordinator,
+            rideCheckpointStore: persistence?.checkpointStore,
+            rideRouteDraftFinalizer: rideRouteDraftFinalizer
         )
     }
 
