@@ -4,7 +4,11 @@ final class NembraUITests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
-        executionTimeAllowance = 60
+        // The xcode-27 hosted runner can spend ~40s establishing the very first
+        // UI automation session. Keep assertion-level waits tight, but give the
+        // test process enough total time so runner bootstrap is not mistaken for
+        // an app hang.
+        executionTimeAllowance = 120
     }
 
     @MainActor
