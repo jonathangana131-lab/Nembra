@@ -22,13 +22,33 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurem
 - visual/interpolated Dashboard frames never enter the evaluator;
 - `motionAssist` short-horizon estimates cannot arm or advance a run;
 - a configured source can be required explicitly;
-- if no source is required, the first eligible authoritative source becomes locked for that run and a later source change invalidates the trace;
+- if no source is required, the first usable authoritative source becomes locked for that run and a later source change invalidates the trace;
 - optional speed-accuracy gating is available for sources such as GPS;
-- an optional maximum accepted sample interval can reject a trace when measurement cadence becomes too sparse to support the requested timing quality;
+- an optional maximum accepted sample interval can reject a trace when usable measurement cadence becomes too sparse to support the requested timing quality;
 - that interval is injected policy, not a guessed ES80 constant; leaving it unset makes no cadence claim;
 - monotonic process uptime, not wall-clock time, defines ordering and timing.
 
 No claim is made here about whether ES80 Bluetooth or GPS will be the accepted production acceleration source. That requires physical measurement of cadence, latency, jitter, resolution, and accuracy.
+
+## Two monotonic anchors: observed vs accepted
+
+Once a source is locked—or when policy explicitly requires one source—the evaluator keeps two separate monotonic concepts.
+
+### Observed-source ordering
+
+Every authoritative callback from the locked/required source advances `lastObservedUptimeNanoseconds` before optional accuracy screening. A low-quality GPS sample is still a real callback with chronology.
+
+If a GPS sample at uptime 300 fails the accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the run invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
+
+When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose/poison the future run source.
+
+### Accepted timing evidence
+
+`lastAcceptedUptimeNanoseconds` advances only when a measurement passes the source/accuracy gates and is usable by the timing state machine.
+
+The optional `maximumSampleIntervalNanoseconds` is measured between these accepted timestamps. Therefore a rejected GPS callback in the middle of a two-second gap does **not** hide the fact that usable timing evidence was absent for two seconds.
+
+This separation lets chronology stay truthful without pretending rejected data improves timing quality.
 
 ## Run semantics
 
@@ -57,8 +77,8 @@ Future presentation may choose a concise estimate only if it also respects the m
 
 An active trace fails closed when evidence continuity is no longer trustworthy:
 
-- non-monotonic authoritative sample;
-- configured maximum sample interval exceeded;
+- non-monotonic locked/required-source observation;
+- configured maximum accepted-measurement interval exceeded;
 - measurement source changes mid-run;
 - vehicle/app interruption explicitly reported by the caller;
 - the scooter returns to stationary after launch;
@@ -83,7 +103,7 @@ This slice does **not**:
 
 ## Software verification
 
-A supplemental Swift 6.2.1 package harness using the exact revised core design passed **12/12 deterministic tests** covering:
+The revised focused Swift 6.2.1 package passed **14/14 deterministic tests** covering:
 
 - rolling-start rejection;
 - packet-bounded elapsed timing;
@@ -91,14 +111,16 @@ A supplemental Swift 6.2.1 package harness using the exact revised core design p
 - motion-estimate rejection;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
+- quality-rejected locked-source observations still protecting monotonic ordering;
 - non-monotonic evidence rejection;
-- configurable long-sample-gap rejection;
+- configurable long accepted-measurement gap rejection;
+- rejected-quality callbacks not hiding an overlong usable-measurement gap;
 - explicit interruption;
 - return-to-stationary invalidation;
 - reset behavior;
 - invalid policy rejection, including a zero maximum sample interval.
 
-Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The current ChatGPT GitHub connector has not emitted Actions events for its own ready/synchronize mutations even after the default-branch PR gate was added, so supplemental harness success is not promoted into repository-wide CI proof.
+Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the scheduled acceptance queue.
 
 ## Hardware validation still required
 
