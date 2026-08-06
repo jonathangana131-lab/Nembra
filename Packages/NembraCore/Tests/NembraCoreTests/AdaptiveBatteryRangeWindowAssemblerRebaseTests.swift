@@ -96,4 +96,33 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(model.ingest(clean, policy: p).disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
     }
+
+    @Test("known post-gap anchor discards pre-gap evidence before clean learning resumes")
+    func explicitContinuityResetStartsCleanSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 500, coverage: .partial)
+        assembler.recordTransportGap()
+
+        // A higher integration layer has identified the first trustworthy
+        // post-gap authoritative reading. Continuity cannot be proven, so the
+        // pre-gap candidate is intentionally abandoned rather than bridged.
+        assembler.reset()
+        _ = try assembler.ingestSOC(reading(75, uptime: 10), policy: p)
+        try assembler.recordDistance(deltaMeters: 180, coverage: .complete)
+
+        let candidate = try assembler.ingestSOC(reading(72, uptime: 11), policy: p)
+        let clean = try #require(candidate)
+
+        #expect(clean.startSOC.percentage == 75)
+        #expect(clean.endSOC.percentage == 72)
+        #expect(clean.distanceMeters == 180)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
 }
