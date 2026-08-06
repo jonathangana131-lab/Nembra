@@ -107,6 +107,8 @@ The assembler is ephemeral evidence state. It should be reset at an explicit rid
 
 A reset intentionally loses only the uncommitted learning candidate. It clears both the span anchor and latest-authoritative cursor. The first subsequent authoritative SoC reading becomes a fresh anchor; distance before that anchor is not retroactively assigned a battery-consumption start value.
 
+Reset also abandons the prior authoritative uptime-ordering baseline, so a genuinely new higher-layer epoch may begin from a lower process-local uptime value. That is only valid when the caller has explicit continuity/session evidence for a new epoch; `reset()` must not be used to hide an unexplained timestamp regression inside one observed epoch.
+
 Persisted learned efficiency remains owned by `AdaptiveBatteryRangeModel` and its persistence layer. This assembler does not introduce another learned-history store.
 
 ## Explicit non-goals
