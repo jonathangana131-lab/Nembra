@@ -1,131 +1,120 @@
 # AOVOPRO ES80 Passive Bluetooth Capture
 
-Status: software capture/evidence model plus public-first capture strategy. No real AOVOPRO ES80 BLE identity, GATT mapping, data point mapping, authentication, framing, or command semantics are verified by this document unless explicitly marked as direct physical/app observation elsewhere in the project.
+Status: software capture/evidence model plus public-first capture strategy. No raw BLE/GATT/DP mapping or motorized command semantic is verified on the physical AOVOPRO ES80 by this document.
+
+## Canonical research inputs
+
+This document owns the **capture/evidence boundary**, not the full protocol-research ledger.
+
+Use the merged research on `main` as the current candidate source:
+- `docs/ES80_PUBLIC_RESEARCH.md` — current 2025 ES80/Tuya product and stock-app evidence, evidence taxonomy, telemetry questions, and physical-validation gaps.
+- `docs/ES80_TUYA_TRANSPORT_RESEARCH.md` — current Tuya BLE transport/framing research, including separation between phone↔device GATT transport and Tuya MCU serial framing.
+- `docs/ES80_TUYA_REVERSE_ENGINEERING_CANDIDATES.md` — corroborated decoder/transport candidates that remain candidates until the target scooter matches them.
+
+Historical ZYDTECH-family evidence remains useful as a **family fingerprint**, especially because the older official AOVOPRO Android package used `com.zydtech.aovopro`, but it must not outrank the merged current-generation Tuya research for the 2025 target.
+
+GitHub/current merged research wins if one of the candidate details below becomes stale.
 
 ## Purpose
 
-Nembra needs a durable way to record raw Bluetooth evidence from the physical AOVOPRO ES80 without guessing protocol meanings or adding motorized-vehicle writes. Public and official research should first narrow what to look for; physical capture then decides which candidate family, UUID, payload, and semantic actually apply to the target scooter.
+Nembra needs a durable way to record raw Bluetooth evidence from the physical AOVOPRO ES80 without guessing meanings or accidentally turning protocol research into a scooter-control path.
 
-The core capture artifact therefore records:
-- advertisements and their raw manufacturer/service bytes
-- advertised service UUIDs, overflow service UUIDs, solicited service UUIDs, connectability, RSSI, local name, and transmit-power metadata when iOS supplies them
-- discovered services
-- discovered characteristics and advertised properties, including notification/indication encryption requirements
-- notification, indication, ambiguous subscribed-value, and explicitly requested read-response payloads
-- stock-app state markers such as visibly displayed battery/electrical values
-- explicit capture interruptions/continuity gaps
-- strict process-local ordering using monotonic receipt uptime
+Public/official research narrows what to look for. Physical capture decides what is actually present on this scooter.
 
-The capture model deliberately contains no command/write event or encoder.
+The capture artifact preserves:
+- raw advertisements and manufacturer/service bytes;
+- local name, RSSI, connectability, advertised service UUIDs, overflow UUIDs, solicited UUIDs, service data, and transmit-power metadata when iOS provides them;
+- discovered services and whether they are primary;
+- **included-service relationships**, so the GATT tree is not flattened into a misleading service list;
+- discovered characteristics and their advertised properties/security requirements;
+- **descriptor UUID discovery**, without pretending arbitrary `CBDescriptor.value` objects have a universal lossless string encoding;
+- non-mutating notification, indication, ambiguous subscribed-value, and requested read-response bytes;
+- stock-app correlation markers;
+- explicit continuity interruptions;
+- strict process-local ordering using monotonic receipt uptime;
+- a versioned JSON envelope for durable/offline analysis.
 
-## Evidence classes used by this capture lane
+The model deliberately contains **no command/write event and no command encoder**.
 
-- **VERIFIED PUBLIC FACT** — established by official AOVOPRO, Tuya, Apple, or another authoritative source, but not automatically a packet fact for the physical target.
-- **PROBABLE FAMILY LEAD** — a technically specific public implementation or historical family artifact worth testing, but not sufficient to promote UUIDs/fields into ES80 truth.
-- **DIRECT PHYSICAL / APP OBSERVATION** — behavior observed on the actual target/stock app, but still not automatically a decoded BLE field.
-- **UNKNOWN PHYSICAL TARGET** — exact advertisement/GATT/DP/framing/semantics remain unknown until captured and correlated on the real scooter.
+## Evidence classes
 
-Public research is supposed to narrow the experiment. It must never silently upgrade a family lead into physical-target truth.
+Use the repository's current evidence taxonomy. For this capture lane the important distinction is:
 
-## Verified public facts that constrain the search
+- **DIRECT PHYSICAL / APP OBSERVATION** — observed on the target scooter/stock app, but not automatically a decoded BLE field.
+- **VERIFIED PUBLIC / GENERIC TUYA FACT** — documented behavior of the product family/platform, but not automatically target-packet truth.
+- **CORROBORATED / PROBABLE FAMILY LEAD** — specific public implementation or historical family artifact worth testing.
+- **UNKNOWN / PHYSICAL VERIFICATION REQUIRED** — exact target advertisement/GATT/DP/framing/semantic remains unresolved.
 
-These facts are externally documented, but they do not by themselves prove the physical 2025 ES80's packet layout:
+A family fingerprint can tell Nembra where to look. Only target evidence can promote it to physical truth.
 
-- AOVOPRO's official ES80 page explicitly identifies a **New 2025** ES80, lists a 36 V / 10.5 Ah battery, identifies the app as `AOVOPRO/Tuya Smart`, and says latest ES80/ESMAX production may be supplied with Tuya Smart for different market needs. Source: https://www.aovopro.com/product/aovopro-es80-electric-scooter-350w-10-5-ah-long-range-high-speed-foldable-electric-scooter/
-- AOVOPRO's older official ES80 manual links the Android application package `com.zydtech.aovopro`. That is useful historical lineage evidence, not proof that the current Tuya-generation ES80 uses the same transport. Source: https://www.aovopro.com/wp-content/uploads/2020/08/AOVO-PRO-app-MANUAL-EN-FR-ES350W20200427.pdf
-- Tuya's generic BLE data-point documentation describes DP payload fields including `dp_id`, `dp_type`, `dp_data_len`, and value bytes. Source: https://developer.tuya.com/en/docs/iot-device-dev/bluetooth_software_map_bt_dp_data?id=Kcmeae40r8zdq
-- Tuya's current Ride Development Guide explicitly says feature identifiers/DP IDs depend on the product's configured DP list. Therefore Nembra must not assign an ES80 battery/speed/current/control DP merely because another Tuya product uses that number. Source: https://developer.tuya.com/en/docs/iot/mobility_development_guidelines?id=Kfme01kf7zw31
-- Tuya's current BLE porting guide documents a modern Tuya service candidate `0xFD50`, with write-without-response characteristic `00000001-0000-1001-8001-00805F9B07D0`, notify characteristic `00000002-0000-1001-8001-00805F9B07D0`, optional read characteristic `00000003-0000-1001-8001-00805F9B07D0`, and documented advertisement/company data around `0xFD50` / company ID `0x07D0`. These are Tuya-platform fingerprints, not verified target-ES80 GATT facts. Source: https://developer.tuya.com/en/docs/iot-device-dev/Porting-Guide-BLE?id=Kam0xjtz4n6e0
-- Apple's CoreBluetooth advertisement-data contract exposes standard metadata beyond the ordinary service UUID list, including overflow service UUIDs, solicited service UUIDs, transmit power, service data, manufacturer data, local name, and connectability when present. Nembra preserves these raw fields rather than silently dropping them. Source: https://developer.apple.com/documentation/corebluetooth/advertisement-data-retrieval-keys
-- CoreBluetooth characteristic properties include notification/indication encryption requirements in addition to ordinary read/write/notify/indicate properties. Nembra records those as discovered capability metadata only. Source: https://developer.apple.com/documentation/corebluetooth/cbcharacteristicproperties
-- CoreBluetooth uses `setNotifyValue(_:for:)` to subscribe to characteristic value changes; the characteristic-value callback is also used for explicitly requested reads. The acquisition layer must therefore track operation context and must not infer protocol meaning merely because bytes arrived in that callback. Sources: https://developer.apple.com/documentation/corebluetooth/cbperipheral/setnotifyvalue(_:for:) and https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral(_:didupdatevaluefor:error:)
-- Apple's current CoreBluetooth overview documents an iOS 26+ Live Activity behavior: when an app already has an instantiated `CBManager` and starts a Live Activity before entering background, certain Bluetooth activities may continue with foreground-like privileges, including scans without service UUIDs and scans with duplicate filtering disabled. This is a platform capability, not proof of guaranteed ES80 discovery/reconnect in every lifecycle condition. Source: https://developer.apple.com/documentation/corebluetooth
+## Direct target/app observations to correlate
 
-## Probable historical ZYDTECH family lead
+The current target's stock Tuya-facing experience has directly exposed user-visible electrical values including:
+- battery percentage;
+- pack voltage;
+- current/amps;
+- watts/power.
 
-A public open-source project, `Ennar1991/ZydDash`, reverse engineered an ePowerFun scooter using a ZYDTECH HW9027-or-similar controller/display family. This is not an ES80 implementation and must not be imported as one. It is nevertheless a technically important **PROBABLE FAMILY LEAD** because the historical official AOVOPRO Android package itself uses the `com.zydtech.aovopro` namespace.
+Those displays are valuable correlation anchors. They do **not** prove:
+- that each value is independently transmitted by the scooter;
+- that the displayed wattage is not derived from voltage × current;
+- the BLE characteristic or Tuya DP carrying a value;
+- the DP ID, type, scale, signedness, cadence, resolution, filtering, or charging semantics;
+- that the displayed battery percentage is a raw 1%-resolution SoC packet.
 
-ZydDash documents, for its ePowerFun/ZYDTECH target:
-- high-level service family beginning `F2F0`, with `F2F1` transmit and `F2F2` receive characteristics;
-- low-level service family beginning `F1F0`, with `F1F1` client-transmit and `F1F2` client-receive characteristics;
-- MODBUS-like payloads with a CRC;
-- 25-byte telemetry packets containing fields interpreted by that project as SoC, speed, voltage, signed current, temperature, trip distance, and total distance;
-- vendor/address lead bytes such as `AF`, `AB`, or `A5` on related implementations.
+`docs/ES80_PUBLIC_RESEARCH.md` is the canonical current-target evidence source for these observations and questions.
 
-Sources:
-- https://github.com/Ennar1991/ZydDash
-- https://github.com/Ennar1991/ZydDash/blob/main/BLE_Telemetry.md
-- https://github.com/Ennar1991/ZydDash/blob/main/code/ePF1_gatt.py
+## Candidate transport fingerprints
 
-### Critical safety distinction
+The first broad discovery session must not filter the target into one assumed family.
 
-The ZydDash sample does **not** simply receive all telemetry passively. Its example subscribes to `F1F2` and periodically writes `0xAA` to `F1F1` to trigger response bursts. That write behavior is **not authorized for Nembra's target ES80**.
+### Current Tuya candidates
 
-For the Nembra target, `F1F0/F1F1/F1F2/F2F0/F2F1/F2F2`, `AF/AB/A5`, 25-byte packet shapes, CRC behavior, field offsets, scales, and the `0xAA` trigger are all only historical-family fingerprints until the physical 2025 scooter proves otherwise.
+The merged Tuya transport research documents current candidate fingerprints such as the modern `FD50` family and corroborated legacy Tuya candidates. Treat those UUIDs/framing rules as **search/correlation candidates only** until observed on the physical ES80.
 
-The first ES80 capture may passively **look for** those services/characteristics and record their advertised properties. It must not send the ZydDash trigger merely because the UUIDs look familiar.
+If a Tuya candidate appears:
+1. preserve the entire advertisement and GATT topology;
+2. record services, included-service edges, characteristics, descriptors, and characteristic properties;
+3. subscribe/read only where doing so is non-mutating and semantically legitimate;
+4. retain raw bytes before decoding;
+5. correlate against stock-app battery/voltage/current/power/speed/trip/ODO behavior;
+6. determine actual product-specific DP IDs, types, scales, signedness, cadence, reassembly/decryption behavior, and derivation from target evidence;
+7. never transplant an example Tuya DP number into production merely because another Tuya mobility product uses it.
 
-## Modern Tuya versus historical ZYDTECH fingerprint decision
+### Historical ZYDTECH-family candidate
 
-Public research now gives the first physical discovery session a concrete decision tree without requiring any guessed write:
+Independent project `Ennar1991/ZydDash` reverse engineered a different ZYDTECH-based scooter and documents F1/F2 GATT families, MODBUS-like CRC packets, and telemetry fields interpreted as SoC/speed/voltage/signed current/temperature/trip/ODO.
 
-### Candidate A — modern Tuya generation
+This remains a **historical-family lead**, not a 2025 ES80 implementation.
 
-Evidence that would support this path includes observed `FD50`, the documented modern Tuya characteristic family, Tuya-formatted service/manufacturer data, or another clearly identified Tuya transport on the physical scooter.
+Critical safety fact: its example writes `0xAA` to a transmit characteristic to trigger telemetry bursts. Nembra must **not** copy that trigger into the passive target-ES80 phase merely because similar UUIDs appear.
 
-If observed:
-1. capture the entire advertisement and GATT tree rather than filtering only to expected UUIDs;
-2. record characteristic properties/security requirements;
-3. subscribe/read only where the API/device legitimately allows it and where doing so is non-mutating;
-4. correlate raw value changes with the stock app's visible battery/electrical/speed state;
-5. determine actual product DP IDs, scales, signedness, cadence, and derivation from physical evidence;
-6. do not transplant generic Tuya example DP numbers into production.
+If F1/F2-like services appear on the target, record their structure and any naturally available non-mutating evidence first. Any request/trigger write becomes a separate safety gate.
 
-### Candidate B — historical ZYDTECH-like generation
+### Neither family appears
 
-Evidence that would support further investigation includes observed `F1F0/F2F0` service families and matching `F1F1/F1F2/F2F1/F2F2` characteristic structure.
+Remain protocol-agnostic. Capture the observed structure and bytes. Do not force the target into either Tuya or historical ZYDTECH assumptions.
 
-If observed:
-1. record the GATT tree and any unsolicited/subscribed updates first;
-2. compare packet lengths/headers with the public family lead only as an offline hypothesis;
-3. do not send `0xAA`, AT commands, speed/config packets, lock/light packets, or MODBUS-like requests during the passive phase;
-4. promote field offsets/scales only after the target's own packets and stock-app values correlate repeatedly;
-5. treat any need for a request/trigger write as a new safety gate, not part of passive capture.
+## Unknown on the physical ES80 until captured
 
-### Candidate C — neither family appears
-
-Remain protocol-agnostic. Capture every observed advertisement/service/characteristic/property/value that can be collected non-mutatingly and classify the transport as unknown. Do not force the target into either public family.
-
-This decision tree is intentionally asymmetric: public fingerprints can tell Nembra **where to look**, but only physical evidence can tell Nembra **what is true**.
-
-## Current user-visible target behavior
-
-The physical ES80 used for Nembra development has been observed with a stock Tuya UI that displays a numeric battery percentage. Additional current-target app/public research is maintained in its own worker lane so this capture-model document does not duplicate or compete with that research surface.
-
-A numeric stock-app percentage proves only that a user-facing value exists somewhere in the stock stack. It does not prove that the scooter directly transmits a true 1%-resolution state-of-charge value. Likewise, a stock-app voltage/current/power display would not by itself prove separate raw DPs or an independently transmitted power field.
-
-## Unknown on the physical target until captured
-
-- advertisement local name, service data, manufacturer data, overflow/solicited UUIDs, and transmit-power metadata
-- whether `FD50`, `1910`, `F1F0/F2F0`, or another service family is actually present
-- all service and characteristic UUIDs
-- characteristic read/write/notify/indicate properties and security requirements
-- pairing/authentication/session behavior
-- whether payloads are encrypted or wrapped before useful DP/data fields are exposed
-- battery percentage raw source/resolution/cadence/derivation
-- voltage raw source/scale/cadence and load/rest behavior
-- current raw source/scale/signedness/cadence if exposed
-- whether wattage/power is independently reported or derived from voltage × current
-- charging-state source
-- speed source/cadence/latency/jitter/resolution
-- odometer/trip values and scaling
-- ride-mode/control identifiers and semantics
-- command acknowledgement behavior
-- packet framing/checksum used by this ES80 batch
-- stable per-physical-scooter identity suitable for learned-range persistence
-- firmware/hardware/batch differences
-
-Generic Tuya examples and historical ZYDTECH packet layouts must never be promoted to target-ES80 protocol truth without matching physical evidence.
+Still unknown/physical-verification-required includes:
+- actual advertisement identity and manufacturer/service data;
+- actual GATT services, included-service topology, characteristics, descriptors, and properties;
+- pairing/authentication/session behavior;
+- whether current Tuya candidate services/characteristics are present;
+- whether historical ZYDTECH-family services are present;
+- battery raw source/resolution/cadence/derivation;
+- voltage raw source/scale/cadence and sag/recovery behavior;
+- current raw source/scale/signedness/cadence;
+- whether wattage is independently transmitted or derived;
+- charging state;
+- speed source/cadence/latency/jitter/resolution;
+- trip/odometer source and scaling;
+- product-specific DP IDs/types/scales;
+- packet reassembly/decryption/framing behavior on this exact target;
+- command semantics and acknowledgements;
+- stable per-physical-scooter identity suitable for learned-range persistence;
+- firmware/hardware/batch differences.
 
 ## Safety boundary
 
@@ -133,70 +122,85 @@ Public-first passive research follows:
 
 `official/public research → discover → enumerate → subscribe/read → capture → correlate → decode → validate`
 
-Do not send random bytes to the scooter. Do not send a public project's request/trigger bytes merely to see what happens. A future write path is a separate gate and requires known target characteristic/framing, known semantic, known safe range, understood acknowledgement/state confirmation, parser/encoder tests, and cautious stationary/unloaded validation where appropriate.
+Do not send random bytes to the scooter.
 
-Recording that a characteristic advertises `.write` or `.writeWithoutResponse` is observational metadata only. It is not authorization to invoke it.
+Do not send a public project's trigger/request merely to see what happens.
+
+A future write path is a separate gate and requires, for the exact target:
+- known characteristic/transport;
+- known framing/reassembly/encryption expectations;
+- known semantic and valid value range;
+- understood acknowledgement/state confirmation;
+- parser/encoder tests;
+- cautious stationary/unloaded validation where appropriate.
+
+Recording that a characteristic advertises `.write` or `.writeWithoutResponse` is observational metadata only. It is never authorization to invoke it.
 
 ## CoreBluetooth acquisition constraints
 
-The platform-neutral capture model is intentionally broader than one acquisition adapter, but a future iOS adapter must preserve current CoreBluetooth semantics rather than hiding them:
+A future iOS acquisition adapter must preserve CoreBluetooth semantics rather than hiding uncertainty:
 
-- In ordinary foreground discovery, `scanForPeripherals(withServices:nil, ...)` can discover peripherals regardless of advertised services, though Apple recommends providing service UUIDs when known.
-- Initial physical ES80 research should use broad foreground discovery because assuming only `FD50` or only ZYDTECH-family UUIDs could hide the other batch/protocol family.
-- The conventional `bluetooth-central` background-scan path requires explicit service UUIDs. Current iOS 26+ CoreBluetooth also documents a separate Live Activity exception: if the app has an instantiated `CBManager` and starts a Live Activity before backgrounding, the manager can retain foreground-like privileges for certain Bluetooth activities, including unfiltered scans. Nembra must treat these as distinct lifecycle modes instead of collapsing them into one generic promise.
-- Even with the Live Activity behavior, Nembra must not promise perpetual scanning/reconnect across force-quit, reboot, permission changes, Bluetooth toggles, process eviction, or every OS scheduling condition. Those remain physical-device lifecycle tests.
-- A scene-based app that later adopts CoreBluetooth state preservation/restoration should use a stable central-manager restoration identifier and reconcile the peripherals/scanning state restored by iOS. Restoration support is complementary to, not a substitute for, verified ES80 identity and lifecycle testing.
-- `setNotifyValue` may enable notifications or indications according to discovered characteristic properties. If an acquisition callback cannot truthfully prove which GATT mechanism delivered a subscribed value, Nembra records `.subscriptionUpdate` rather than guessing.
-- `didUpdateValueFor` can correspond to a requested read or to subscribed value changes. The adapter must carry enough request/subscription context to classify `.readResponse` versus `.subscriptionUpdate` truthfully.
-- Encryption-required characteristic properties are preserved as evidence. They do not prove that Nembra has authenticated, paired, or successfully subscribed to the physical ES80.
+- Initial target research should use broad foreground discovery so a preselected Tuya or ZYDTECH UUID list cannot hide the actual batch/protocol family.
+- Preserve all standard advertisement metadata that iOS supplies.
+- Discover services, included services, characteristics, and descriptor UUIDs rather than flattening the GATT tree.
+- `setNotifyValue` may result in notifications or indications according to characteristic behavior/properties. If the acquisition callback cannot prove which GATT mechanism delivered a subscribed value, record `.subscriptionUpdate` rather than guessing.
+- `didUpdateValueFor` can represent a requested read or subscribed update. The adapter must keep enough operation context to classify `.readResponse` versus `.subscriptionUpdate` truthfully.
+- Descriptor discovery is evidence. Arbitrary descriptor values are **not** currently forced through a generic string/Data representation. Add typed descriptor-value evidence only when a trustworthy codec exists for the value actually returned.
+- Encryption-required characteristic properties are evidence only; they do not prove Nembra authenticated, paired, or subscribed successfully.
+- The conventional `bluetooth-central` background path and the newer iOS 26+ Live Activity Bluetooth behavior are distinct lifecycle modes. Neither should be turned into a promise of perpetual ES80 scanning/reconnect across force-quit, reboot, permission changes, Bluetooth toggles, process eviction, or every scheduler condition.
 
-Relevant Apple references:
-- https://developer.apple.com/documentation/corebluetooth
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/scanforperipherals(withservices:options:)
-- https://developer.apple.com/documentation/corebluetooth/core-bluetooth-background-processing-for-ios-apps
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanageroptionrestoreidentifierkey
-- https://developer.apple.com/documentation/corebluetooth/central-manager-state-restoration-options
-- https://developer.apple.com/documentation/corebluetooth/cbperipheral/setnotifyvalue(_:for:)
-- https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral(_:didupdatevaluefor:error:)
+Relevant Apple APIs include:
+- `CBCentralManager.scanForPeripherals(withServices:options:)`
+- `CBPeripheral.discoverServices(_:)`
+- `CBPeripheral.discoverIncludedServices(_:for:)`
+- `CBPeripheral.discoverCharacteristics(_:for:)`
+- `CBPeripheral.discoverDescriptors(for:)`
+- `CBPeripheral.setNotifyValue(_:for:)`
+- `CBPeripheralDelegate.peripheral(_:didUpdateValueFor:error:)`
 
 ## Capture truth rules
 
-1. Preserve raw bytes. Do not replace a payload with a decoded interpretation.
-2. Preserve standard discovery metadata when the acquisition platform exposes it; absence in one capture means only that it was not observed/provided in that capture.
-3. Unknown UUIDs/values remain unknown rather than being normalized to a guessed Tuya or ZYDTECH meaning.
-4. Public protocol implementations are hypotheses/fingerprints until the target scooter matches them.
-5. Stock-app observations are correlation markers, not decoded protocol facts.
-6. Monotonic uptime is the ordering clock. Wall-clock dates are correlation metadata and cannot repair event order.
-7. Imported capture artifacts must be revalidated for nested evidence validity plus sequence/uptime ordering; Codable decoding is not a trust boundary.
-8. Disconnects, Bluetooth transitions, process restarts, and observer restarts create explicit continuity breaks.
-9. A capture session is tied to a vehicle identity, but the current ES80 profile identity does not assert a verified protocol family implementation.
-10. Parser/decoder output should later live beside raw evidence rather than overwrite it.
-11. Software/Simulator fixtures never become real-hardware verification.
-12. A request that appears harmless in a different ZYDTECH/Tuya scooter is still a motorized-hardware write until verified for this exact target.
+1. Preserve raw evidence before interpretation.
+2. Preserve standard advertisement and complete discovered GATT topology when the platform exposes it.
+3. Absence in one capture means only that the value/structure was not observed or provided in that capture.
+4. Unknown identifiers/values remain unknown; do not normalize them into guessed Tuya or ZYDTECH meanings.
+5. Public implementations and decoder candidates are hypotheses until the physical target matches them.
+6. Stock-app values are correlation markers, not decoded BLE facts.
+7. Monotonic uptime is the ordering clock; wall-clock timestamps are correlation metadata only.
+8. Imported capture artifacts revalidate nested evidence and sequence/uptime ordering; Codable decoding is not a trust boundary.
+9. Disconnects, Bluetooth transitions, process restarts, and observer restarts create explicit continuity breaks.
+10. Descriptor UUID discovery is preserved, but arbitrary descriptor values are not fabricated/stringified.
+11. Parser/decoder output should live beside raw evidence rather than overwrite it.
+12. Software/Simulator fixtures never become real-hardware verification.
+13. A request harmless on another Tuya/ZYDTECH scooter is still a motorized-hardware write until proven for this exact ES80.
 
-## Battery/electrical investigation workflow
+## Battery/electrical correlation workflow
 
-For the battery/range requirement, collect longer sessions with deliberate stock-app correlation markers such as:
-- battery percentage before riding
-- battery percentage after meaningful riding windows
-- voltage/current/power displays when available in the target stock app
-- values while accelerating versus stopped/rested
-- reconnect observations
-- charging/unplugged transitions when available
-- low-battery behavior
+For adaptive range and battery truth, collect longer physical sessions with deliberate stock-app markers such as:
+- battery percentage before/after meaningful consumption windows;
+- voltage/current/power displays at matching moments;
+- accelerating versus stopped/rested behavior;
+- reconnect observations;
+- charging/unplugged transitions;
+- low-battery behavior;
+- speed/trip/ODO values when visible.
 
-Then correlate changes against raw notifications/read responses and discovered GATT structure. Do not select the adaptive-range model's authoritative SoC source or minimum useful percentage window until the physical ES80 evidence supports it.
+Correlate those markers against raw BLE evidence without letting UI presentation become telemetry truth.
 
-If current/power become raw verified telemetry later, that still does not authorize immediate `Wh/mi`: Nembra must first verify units, signedness, source semantics, cadence, gaps, time integration, and trustworthy distance coverage.
+Do not select the adaptive-range estimator's authoritative SoC source, useful consumption window, voltage interpretation, or energy model until the physical ES80 evidence supports it.
+
+If current/power later become verified raw telemetry, that still does not automatically authorize `Wh/mi`: Nembra must first verify units, signedness, cadence, gaps, time integration, and trustworthy distance coverage.
 
 ## Software artifact
 
-`PassiveBluetoothCaptureSession` is intentionally platform-neutral and Codable so physical-device tooling can export raw observations for offline parser/tests. JSON export is schema-versioned, preserves sub-second wall-clock correlation metadata, and keeps monotonic uptime as the ordering authority.
+`PassiveBluetoothCaptureSession` is platform-neutral and Codable so physical-device tooling can export evidence for offline parser/tests.
 
-The current model records only non-mutating value origins:
-- notification, when the acquisition source can prove it
-- indication, when the acquisition source can prove it
-- subscribed-value update when the acquisition API cannot truthfully distinguish notification from indication
-- read response
+The JSON envelope is schema-versioned, preserves sub-second wall-clock correlation metadata, and keeps monotonic uptime as the ordering authority.
 
-A future CoreBluetooth acquisition adapter may feed this model, but it must preserve the same evidence boundaries and must not quietly add vehicle writes.
+Current non-mutating characteristic value origins are:
+- notification, when proven by the acquisition source;
+- indication, when proven by the acquisition source;
+- subscribed-value update when the acquisition API cannot truthfully distinguish notification from indication;
+- requested read response.
+
+A future CoreBluetooth acquisition adapter may feed this model, but it must preserve these evidence boundaries and must not quietly add vehicle writes.
