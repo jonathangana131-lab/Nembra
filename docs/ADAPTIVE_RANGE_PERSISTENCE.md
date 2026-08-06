@@ -39,11 +39,15 @@ These checks intentionally avoid policy-specific assumptions such as minimum lea
 
 The envelope deliberately does not invent a device-specific identifier. Nembra's current generic vehicle domain has model/profile identity, but the project has not yet established which ES80 identity is stable and appropriate for durable per-scooter learning storage.
 
-That uncertainty is **not permission to wait for user-supplied hardware evidence before researching it**. Follow the repository's public-first ES80 protocol policy: exhaust reasonable official/public evidence, cross-correlate likely module/protocol identity sources, and preserve the distinction between `VERIFIED PUBLIC`, `CORROBORATED / PROBABLE`, `GENERIC TUYA / FAMILY FACT`, and `UNKNOWN / PHYSICAL VERIFICATION REQUIRED`. Public evidence may narrow or establish the storage-key architecture without being mislabeled as device validation.
+That uncertainty is **not permission to wait for user-supplied hardware evidence before researching it**. Follow the repository's public-first ES80 protocol policy: exhaust reasonable official/public evidence, cross-correlate likely module/protocol identity sources, and preserve the distinction between `DIRECT PHYSICAL / APP OBSERVATION`, `VERIFIED PUBLIC`, `CORROBORATED / PROBABLE`, `GENERIC TUYA / FAMILY FACT`, and `UNKNOWN / PHYSICAL VERIFICATION REQUIRED`. Public evidence may narrow or establish the storage-key architecture without being mislabeled as device validation, while stock-app observations remain correlation anchors until their raw source is mapped.
+
+Current direct app observation on the 2025-generation target includes live battery percentage, voltage, current, and power. Those values prove the current stock stack exposes useful electrical telemetry, but they do **not** establish raw BLE/Tuya DP identifiers, units/scaling, cadence, signedness, derivation, or a stable per-device persistence key. Local-name strings alone are not safe identity keys.
 
 When application persistence wiring is added, each envelope must be scoped to one scooter using a legitimate stable identity source whose evidence class is recorded. If public evidence is enough to define a safe candidate identity mechanism, implement/test that mechanism while retaining the appropriate confidence classification; use an ES80 capture only for the remaining device-specific or final verification step. Until identity semantics are sufficiently established, learned history must not be silently shared between different scooters merely because they use the same `VehicleProfile`.
 
 Simulation/test identities remain simulation/test evidence and must not be promoted into a claim about real ES80 identity semantics.
+
+Schema versioning also leaves room for a future verified energy-based estimator without relabeling today's percent-based learned history as current, power, energy, or `Wh/mi`. Those stronger metrics require verified raw semantics and timing first.
 
 ## Failure behavior
 
@@ -53,10 +57,11 @@ If the envelope cannot be decoded or validated, higher layers should treat learn
 
 This layer validates software persistence integrity only. It does **not** prove or infer:
 
-- AOVOPRO ES80 battery packet source;
+- AOVOPRO ES80 raw battery BLE/Tuya DP source;
 - one-percent SoC resolution;
 - battery update cadence or latency;
-- voltage or charging-state availability;
+- raw voltage/current/power source, units, scale, signedness, cadence, or whether displayed power is derived;
+- charging-state source;
 - stable per-device identity semantics;
 - battery chemistry, sag, reserve, or cutoff behavior;
 - physical-scooter range accuracy.
