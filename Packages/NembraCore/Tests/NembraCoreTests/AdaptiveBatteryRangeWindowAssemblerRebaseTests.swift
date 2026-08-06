@@ -116,9 +116,10 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(tainted.transportGapOccurred)
     }
 
-    @Test("partial coverage cannot be repaired by later complete deltas in one span")
+    @Test("partial coverage cannot be repaired and rejected evidence does not poison the next span")
     func partialCoverageIsSticky() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
@@ -130,6 +131,20 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
 
         #expect(window.distanceMeters == 150)
         #expect(window.distanceCoverage == .partial)
+        #expect(model.ingest(window, policy: p).disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
     }
 
     @Test("a rejected gap window closes its span so later clean evidence can train")
