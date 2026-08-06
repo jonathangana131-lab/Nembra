@@ -97,9 +97,8 @@ struct RideTransportGapEvidenceTests {
         fromNestedPath path: [String],
         in data: Data
     ) throws -> Data {
-        var root = try #require(
-            JSONSerialization.jsonObject(with: data) as? [String: Any]
-        )
+        let decoded = try JSONSerialization.jsonObject(with: data)
+        var root = try #require(decoded as? [String: Any])
 
         func removing(
             key: String,
@@ -124,9 +123,10 @@ struct RideTransportGapEvidenceTests {
         var engine = RideEngine(policy: try policy())
         _ = try engine.ingest(observation(1_000, speedKPH: 8, odometer: 100))
 
-        let checkpoint = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(2))
+        let optionalCheckpoint = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(2)
         )
+        let checkpoint = try #require(optionalCheckpoint)
         #expect(checkpoint.transportGapEvidence == .noneObserved)
     }
 
@@ -149,9 +149,10 @@ struct RideTransportGapEvidenceTests {
             observation(1_500, connection: .disconnected, odometer: 100.05)
         )
 
-        let disconnectedCheckpoint = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(2))
+        let optionalDisconnectedCheckpoint = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(2)
         )
+        let disconnectedCheckpoint = try #require(optionalDisconnectedCheckpoint)
         #expect(disconnectedCheckpoint.transportGapEvidence == .observed)
 
         _ = try engine.ingest(observation(2_000, speedKPH: 8, odometer: 100.1))
@@ -169,9 +170,10 @@ struct RideTransportGapEvidenceTests {
         _ = try engine.ingest(observation(2_000, speedKPH: 0))
         _ = try engine.ingest(observation(2_050, connection: .disconnected))
 
-        let checkpoint = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(3))
+        let optionalCheckpoint = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(3)
         )
+        let checkpoint = try #require(optionalCheckpoint)
         #expect(checkpoint.persistedPhase == .temporarilyDisconnected)
         #expect(checkpoint.transportGapEvidence == .observed)
     }
@@ -186,15 +188,17 @@ struct RideTransportGapEvidenceTests {
             recoveredAtDate: epoch.addingTimeInterval(10)
         )
 
-        let immediatelyRecovered = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(11))
+        let optionalImmediatelyRecovered = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(11)
         )
+        let immediatelyRecovered = try #require(optionalImmediatelyRecovered)
         #expect(immediatelyRecovered.transportGapEvidence == .unknown)
 
         _ = try engine.ingest(observation(11_000, speedKPH: 8, odometer: 100.6))
-        let resumed = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(12))
+        let optionalResumed = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(12)
         )
+        let resumed = try #require(optionalResumed)
         #expect(resumed.transportGapEvidence == .unknown)
     }
 
@@ -208,9 +212,10 @@ struct RideTransportGapEvidenceTests {
             recoveredAtDate: epoch.addingTimeInterval(10)
         )
 
-        let recovered = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(11))
+        let optionalRecovered = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(11)
         )
+        let recovered = try #require(optionalRecovered)
         #expect(recovered.transportGapEvidence == .observed)
     }
 
@@ -227,9 +232,10 @@ struct RideTransportGapEvidenceTests {
         _ = try engine.ingest(
             observation(11_000, connection: .disconnected, odometer: 100.5)
         )
-        let checkpoint = try #require(
-            engine.recoveryCheckpoint(checkpointedAtDate: epoch.addingTimeInterval(12))
+        let optionalCheckpoint = try engine.recoveryCheckpoint(
+            checkpointedAtDate: epoch.addingTimeInterval(12)
         )
+        let checkpoint = try #require(optionalCheckpoint)
         #expect(checkpoint.transportGapEvidence == .observed)
     }
 
@@ -293,12 +299,13 @@ struct RideTransportGapEvidenceTests {
 
         let current = try checkpoint(gapEvidence: .observed)
         try await store.save(.inProgress(current))
-        #expect(try await store.load() == .inProgress(current))
+        let reloaded = try await store.load()
+        #expect(reloaded == .inProgress(current))
 
         let slotB = directory.appendingPathComponent(AtomicRideCheckpointStore.slotBFileName)
-        let writtenObject = try #require(
-            JSONSerialization.jsonObject(with: Data(contentsOf: slotB)) as? [String: Any]
-        )
+        let writtenData = try Data(contentsOf: slotB)
+        let writtenJSON = try JSONSerialization.jsonObject(with: writtenData)
+        let writtenObject = try #require(writtenJSON as? [String: Any])
         #expect(writtenObject["schemaVersion"] as? Int == AtomicRideCheckpointStore.schemaVersion)
         #expect(AtomicRideCheckpointStore.schemaVersion == 2)
     }
