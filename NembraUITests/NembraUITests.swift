@@ -157,6 +157,25 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardBatteryControlDisablesWithoutDisplaySOC() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+        XCTAssertFalse(
+            battery.isEnabled,
+            "With no legitimate display SoC, the readout must not offer a meaningless percentage/range toggle."
+        )
+
+        let value = battery.value as? String
+        XCTAssertTrue(
+            value == "Unavailable" || value == "Estimated range unavailable",
+            "A no-SoC state must remain explicitly unavailable regardless of the persisted presentation preference."
+        )
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
