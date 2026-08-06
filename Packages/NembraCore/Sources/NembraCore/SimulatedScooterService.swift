@@ -4,6 +4,7 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     case coldDisconnected = "cold-disconnected"
     case reconnecting
     case connectedStopped = "connected-stopped"
+    case connectedSpeedUnknown = "connected-speed-unknown"
     case riding
     case lowBattery = "low-battery"
     case bluetoothOff = "bluetooth-off"
@@ -15,7 +16,7 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
         switch self {
         case .coldDisconnected, .reconnecting, .bluetoothOff, .permissionDenied, .scooterUnavailable, .unsupportedConfiguration:
             false
-        case .connectedStopped, .riding, .lowBattery:
+        case .connectedStopped, .connectedSpeedUnknown, .riding, .lowBattery:
             true
         }
     }
@@ -81,6 +82,22 @@ public actor SimulatedScooterService: ScooterService {
                 isCruiseEnabled: false,
                 powerWatts: 0,
                 currentAmps: 0
+            )
+        case .connectedSpeedUnknown:
+            VehicleState(
+                connection: .connected,
+                batteryPercent: 92,
+                speedKilometersPerHour: nil,
+                odometerKilometers: 231.4,
+                tripKilometers: 4.6,
+                rideMode: .sport,
+                startMode: .zeroStart,
+                speedLimitsKilometersPerHour: representativeSpeedLimits,
+                isLocked: false,
+                isHeadlightOn: false,
+                isCruiseEnabled: false,
+                powerWatts: nil,
+                currentAmps: nil
             )
         case .riding:
             VehicleState(

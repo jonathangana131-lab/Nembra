@@ -367,6 +367,12 @@ struct SimulatedScooterServiceTests {
         #expect(cold.batteryPercent == nil)
         #expect(cold.speedLimitsKilometersPerHour.isEmpty)
 
+        let connectedUnknown = SimulatedScooterService.state(for: .connectedSpeedUnknown)
+        #expect(connectedUnknown.connection == .connected)
+        #expect(connectedUnknown.speedKilometersPerHour == nil)
+        #expect(connectedUnknown.isLocked == false)
+        #expect(connectedUnknown.dataAvailability == .live)
+
         let riding = SimulatedScooterService.state(for: .riding)
         #expect(riding.connection == .connected)
         #expect((riding.speedKilometersPerHour ?? 0) > 0)

@@ -155,6 +155,7 @@ for state in \
   cold-disconnected \
   reconnecting \
   connected-stopped \
+  connected-speed-unknown \
   riding \
   low-battery \
   bluetooth-off \

@@ -71,6 +71,34 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectedUnknownSpeedDoesNotPretendScooterIsStopped() {
+        let app = launch(scenario: "connected-speed-unknown", orientation: .portrait)
+
+        let connection = app.descendants(matching: .any)["home.connection"]
+        XCTAssertTrue(connection.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForValue("Connected", element: connection))
+
+        let lock = button(containing: "Lock", in: app)
+        XCTAssertTrue(lock.waitForExistence(timeout: 2))
+        XCTAssertFalse(lock.isEnabled, "Lock must stay disabled until a confirmed stationary speed exists.")
+        XCTAssertTrue(lock.label.contains("Speed unavailable"))
+    }
+
+    @MainActor
+    func testLandscapeUnknownSpeedSuppressesStoppedControls() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-speed-unknown", orientation: .landscapeRight)
+
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["SPEED UNAVAILABLE"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+        XCTAssertFalse(app.buttons["dashboard.mode.sport"].exists)
+
+        keepScreenshot(named: "Dashboard Speed Unavailable Landscape")
+    }
+
+    @MainActor
     func testPermissionDeniedOffersSettingsInsteadOfFakeReconnect() {
         let app = launch(scenario: "permission-denied", orientation: .portrait)
         XCTAssertTrue(app.staticTexts["Bluetooth access is off"].waitForExistence(timeout: 3))
