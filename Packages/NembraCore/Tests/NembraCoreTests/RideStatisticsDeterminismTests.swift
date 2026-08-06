@@ -236,6 +236,47 @@ struct RideStatisticsDeterminismTests {
         }
     }
 
+    @Test("day periods exclude their exact next-midnight boundary")
+    func dayPeriodsExcludeExactEndBoundary() throws {
+        var calendar = calendar()
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let referenceDate = calendar.date(
+            from: DateComponents(year: 2026, month: 8, day: 6, hour: 12)
+        )!
+        let todayInterval = calendar.dateInterval(of: .day, for: referenceDate)!
+        let yesterdayReference = calendar.date(byAdding: .day, value: -1, to: referenceDate)!
+        let yesterdayInterval = calendar.dateInterval(of: .day, for: yesterdayReference)!
+
+        let todayStart = try ride(
+            id: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!,
+            date: todayInterval.start,
+            distanceMeters: 1_000
+        )
+        let tomorrowStart = try ride(
+            id: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
+            date: todayInterval.end,
+            distanceMeters: 1_000
+        )
+
+        let today = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: [todayStart, tomorrowStart],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        let yesterday = try RideStatisticsAggregator.summarize(
+            period: .yesterday,
+            rides: [todayStart],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        #expect(yesterdayInterval.end == todayInterval.start)
+        #expect(today.rideCount == 1)
+        #expect(today.longestRideSessionID == todayStart.sessionID)
+        #expect(yesterday.rideCount == 0)
+    }
+
     @Test("representable Pacific dates keep calendar-day streaks across daylight saving time")
     func daylightSavingStreakRemainsCalendarBased() throws {
         var calendar = calendar()
