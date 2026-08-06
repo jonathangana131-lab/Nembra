@@ -322,6 +322,78 @@ final class RideLocationCaptureTests: XCTestCase {
         rideStore.stop()
     }
 
+    @MainActor
+    func testRideSessionLifecycleKeepsOneIdentityThroughEndingRecoveryThenEndsOnce() async throws {
+        let directory = temporaryDirectory(name: "location-lifecycle")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "location-lifecycle"),
+            baseDirectoryURL: directory
+        )
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let rideStore = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await rideStore.start()
+
+        let events = SessionEventCollector()
+        let stream = rideStore.rideSessionEvents()
+        let consumer = Task {
+            for await event in stream {
+                await events.append(event)
+            }
+        }
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Simulator movement should begin one authoritative session.") {
+            rideStore.status == .active
+        }
+        let sessionID = try XCTUnwrap(rideStore.activeSessionID)
+        try await waitForSessionEventCount(events, count: 1)
+        XCTAssertEqual(await events.values(), [.becameActive(sessionID)])
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("Zero speed should enter the ending candidate without ending the session.") {
+            rideStore.status == .endingCandidate
+        }
+        XCTAssertEqual(rideStore.activeSessionID, sessionID)
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Fresh movement should recover the same ride session.") {
+            rideStore.status == .active
+        }
+        XCTAssertEqual(rideStore.activeSessionID, sessionID)
+        try await Task.sleep(nanoseconds: 75_000_000)
+        XCTAssertEqual(
+            await events.values(),
+            [.becameActive(sessionID)],
+            "Ending-candidate recovery must not restart root-owned location capture."
+        )
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("The completed ride should return the authoritative session to idle.") {
+            rideStore.status == .idle
+        }
+        try await waitForSessionEventCount(events, count: 2)
+        XCTAssertEqual(
+            await events.values(),
+            [.becameActive(sessionID), .ended(sessionID)]
+        )
+
+        rideStore.stop()
+        consumer.cancel()
+    }
+
     private func testPolicy() throws -> RideLocationQualityPolicy {
         try RideLocationQualityPolicy(
             maximumHorizontalAccuracyMeters: 20,
@@ -373,6 +445,19 @@ final class RideLocationCaptureTests: XCTestCase {
             try await Task.sleep(nanoseconds: 25_000_000)
         }
         XCTFail(failureMessage)
+    }
+
+    private func waitForSessionEventCount(
+        _ collector: SessionEventCollector,
+        count: Int,
+        timeoutNanoseconds: UInt64 = 2_000_000_000
+    ) async throws {
+        let start = DispatchTime.now().uptimeNanoseconds
+        while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
+            if await collector.values().count >= count { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for \(count) ride session lifecycle events.")
     }
 }
 
@@ -434,6 +519,18 @@ private actor SessionDistanceCollector {
     }
 
     func values() -> [Value] {
+        recorded
+    }
+}
+
+private actor SessionEventCollector {
+    private var recorded: [RideApplicationSessionEvent] = []
+
+    func append(_ event: RideApplicationSessionEvent) {
+        recorded.append(event)
+    }
+
+    func values() -> [RideApplicationSessionEvent] {
         recorded
     }
 }
