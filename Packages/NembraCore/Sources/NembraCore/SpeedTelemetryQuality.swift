@@ -157,29 +157,29 @@ public extension TelemetryBenchmarkSummary {
         }
 
         if let maximum = policy.maximumMeanDeliveryLatencyMilliseconds {
-            guard let actual = meanDeliveryLatencyMilliseconds,
-                  deliveryLatencySampleCount > 0 else {
+            if let actual = meanDeliveryLatencyMilliseconds,
+               deliveryLatencySampleCount > 0 {
+                if actual > maximum {
+                    failures.append(.deliveryLatencyExceeded(
+                        maximumMilliseconds: maximum,
+                        actualMilliseconds: actual
+                    ))
+                }
+            } else {
                 failures.append(.missingDeliveryLatencyEvidence)
-                return SpeedTelemetryQualityAssessment(source: source, failures: failures)
-            }
-            if actual > maximum {
-                failures.append(.deliveryLatencyExceeded(
-                    maximumMilliseconds: maximum,
-                    actualMilliseconds: actual
-                ))
             }
         }
 
         if let maximum = policy.maximumEmpiricalSpeedStepKilometersPerHour {
-            guard let actual = empiricalMinimumNonzeroSpeedStepKilometersPerHour else {
+            if let actual = empiricalMinimumNonzeroSpeedStepKilometersPerHour {
+                if actual > maximum {
+                    failures.append(.speedResolutionStepExceeded(
+                        maximumKilometersPerHour: maximum,
+                        actualKilometersPerHour: actual
+                    ))
+                }
+            } else {
                 failures.append(.missingSpeedResolutionEvidence)
-                return SpeedTelemetryQualityAssessment(source: source, failures: failures)
-            }
-            if actual > maximum {
-                failures.append(.speedResolutionStepExceeded(
-                    maximumKilometersPerHour: maximum,
-                    actualKilometersPerHour: actual
-                ))
             }
         }
 
