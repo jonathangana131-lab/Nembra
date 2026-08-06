@@ -24,10 +24,11 @@ The 60 Hz timeline now owns only the rolling visual speed readout. The surroundi
 - the measurement-system lookup is resolved outside the per-frame closure;
 - the newest accepted authoritative speed is exposed directly by `SpeedInstrumentModel` for the accessibility anchor;
 - visual interpolation frames still never enter `VehicleState`, ride history, distance, stats, persistence, or protocol evidence;
-- Reduce Motion still snaps presentation to the newest authoritative measurement;
-- `RollingSpeedValueView` iterates the fixed digit indices directly rather than allocating `Array(snapshot.digits.enumerated())` on each render frame.
+- Reduce Motion still snaps presentation to the newest authoritative measurement.
 
 The result is a smaller high-frequency render subtree with the same truth and interaction semantics.
+
+A separate active worker owns rolling-number allocation hardening in PR #31. This lane deliberately does not modify `RollingSpeedValueView` or `RollingNumberModel`; the two performance slices remain isolated and can be integrated independently.
 
 ## Truth and safety invariants
 
