@@ -5,22 +5,9 @@
 /// discard a known continuity break merely because the first resumed battery
 /// field is non-SoC or carries a non-authoritative truth role.
 public enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
-    /// This continuous observation must not affect production adaptive-range learning.
     case ignore
-
-    /// Battery evidence resumed after an interval Nembra did not observe. Any
-    /// in-flight range-learning anchor/window must be discarded before later
-    /// authoritative SoC evidence is accepted.
     case resetContinuity
-
-    /// A continuous, physically verified vehicle SoC reading that is eligible
-    /// to enter the adaptive-range domain. Model/window policy still decides
-    /// whether it can actually teach efficiency.
     case ingestSOC(BatterySOCReading)
-
-    /// The first verified vehicle SoC after an unobserved interval. The caller
-    /// must reset in-flight continuity first, then ingest this reading as the
-    /// new clean anchor/evidence point.
     case resetContinuityAndIngestSOC(BatterySOCReading)
 }
 
@@ -61,10 +48,6 @@ enum BatteryAdaptiveRangeEvidenceAdapter {
 
 /// Internal stateful seam that enforces the battery evidence stream's ordering
 /// contract before returning an adaptive-range action.
-///
-/// Keeping this internal prevents external production code from accepting an
-/// action without also applying it atomically to the learning-window assembler.
-/// Tests use `@testable` to exercise this layer directly.
 struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
     private(set) var streamValidator: BatteryEvidenceStreamValidator
 
@@ -109,16 +92,12 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
 /// End-to-end ephemeral pipeline from normalized battery evidence to candidate
 /// adaptive-range learning windows.
 ///
-/// This type does not select a distance source, classify route coverage, decode
-/// BLE/Tuya, train/persist `AdaptiveBatteryRangeModel`, or expose its ephemeral
-/// assembler state as UI truth. It keeps evidence ordering and window assembly
-/// in one atomic transition so known gaps cannot leak across the seam.
+/// This type does not select a distance source, decode BLE/Tuya, train/persist
+/// `AdaptiveBatteryRangeModel`, or expose ephemeral assembler state as UI truth.
 public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
     private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
 
-    /// Internal on purpose. Anchor/latest/distance state is learning machinery,
-    /// not a public presentation model. Tests use `@testable` for invariant
-    /// checks; production consumers receive only validated actions/windows.
+    /// Internal learning machinery, never a public presentation model.
     private(set) var windowAssembler: BatteryRangeLearningWindowAssembler
 
     public init() {
@@ -127,18 +106,20 @@ public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
     }
 
     /// A higher layer has proof that normalized battery evidence was missed.
-    /// Discard the in-flight consumption span immediately and require the next
-    /// observation to carry an explicit continuity boundary.
     public mutating func markUnobservedInterval() {
         evidenceBridge.markUnobservedInterval()
         windowAssembler.reset()
     }
 
-    /// Records caller-classified real-distance evidence. The pipeline does not
-    /// choose ODO versus GPS and does not upgrade partial/unknown coverage.
+    /// Records caller-classified real-distance evidence.
+    ///
+    /// Omitted coverage intentionally means `.unknown`, never `.complete`.
+    /// This preserves source compatibility while making an unclassified distance
+    /// fail closed at adaptive-model ingest instead of silently training range.
+    /// A caller that has proven complete coverage must say so explicitly.
     public mutating func recordDistance(
         deltaMeters: Double,
-        coverage: BatteryRangeDistanceCoverage = .complete
+        coverage: BatteryRangeDistanceCoverage = .unknown
     ) throws {
         try windowAssembler.recordDistance(
             deltaMeters: deltaMeters,
@@ -146,10 +127,7 @@ public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
         )
     }
 
-    /// Records an observed scooter transport gap inside the current learning
-    /// span. This is distinct from `markUnobservedInterval()`: an observed gap
-    /// remains attached to the candidate so the adaptive model can reject it,
-    /// while a genuinely unobserved evidence interval discards the span.
+    /// Records an observed scooter transport gap inside the current learning span.
     public mutating func recordTransportGap() {
         windowAssembler.recordTransportGap()
     }
@@ -187,14 +165,11 @@ public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
         switch action {
         case .ignore:
             return nil
-
         case .resetContinuity:
             assembler.reset()
             return nil
-
         case let .ingestSOC(reading):
             return try assembler.ingestSOC(reading, policy: policy)
-
         case let .resetContinuityAndIngestSOC(reading):
             assembler.reset()
             return try assembler.ingestSOC(reading, policy: policy)
