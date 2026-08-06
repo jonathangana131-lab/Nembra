@@ -18,7 +18,11 @@ struct RollingSpeedValueView: View {
            let numberModel = Self.numberModel,
            let snapshot = try? numberModel.snapshot(for: max(0, value)) {
             HStack(spacing: -5) {
-                ForEach(Array(snapshot.digits.enumerated()), id: \.offset) { _, digit in
+                // `digits.indices` avoids materializing a fresh
+                // `Array(snapshot.digits.enumerated())` on every high-frequency
+                // render pass. Slot identity remains the same fixed index.
+                ForEach(snapshot.digits.indices, id: \.self) { index in
+                    let digit = snapshot.digits[index]
                     Text(String(digit.digit))
                         .opacity(digit.isVisible ? 1 : 0)
                         .contentTransition(

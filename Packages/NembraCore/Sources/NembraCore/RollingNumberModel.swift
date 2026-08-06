@@ -113,6 +113,9 @@ public struct RollingNumberModel: Sendable {
         self.maximumScaledValue = try Self.powerOfTen(layout.totalDigitSlots) - 1
     }
 
+    /// Quantizes a presentation value to this layout and builds its fixed-slot
+    /// snapshot. Quantization remains display-only; callers must never treat the
+    /// rounded result as a new telemetry measurement.
     public func snapshot(for value: Double) throws -> RollingNumberSnapshot {
         guard value.isFinite else {
             throw RollingNumberError.nonFiniteValue
@@ -128,30 +131,46 @@ public struct RollingNumberModel: Sendable {
             throw RollingNumberError.exceedsLayoutCapacity
         }
 
-        let scaledValue = UInt64(scaledDouble)
-        var working = scaledValue
-        var reversedDigits: [Int] = []
-        reversedDigits.reserveCapacity(layout.totalDigitSlots)
-        for _ in 0..<layout.totalDigitSlots {
-            reversedDigits.append(Int(working % 10))
-            working /= 10
+        return try snapshot(scaledValue: UInt64(scaledDouble))
+    }
+
+    /// Builds a snapshot from an already-quantized display value.
+    ///
+    /// This exact integer path is useful for integer presentation sources such
+    /// as a displayed battery percentage and lets high-frequency render code
+    /// avoid converting a value through `Double` when it already owns the
+    /// layout-scaled integer. `scaledValue` is still presentation state, not raw
+    /// scooter evidence.
+    public func snapshot(scaledValue: UInt64) throws -> RollingNumberSnapshot {
+        guard scaledValue <= maximumScaledValue else {
+            throw RollingNumberError.exceedsLayoutCapacity
         }
-        let rawDigits = reversedDigits.reversed()
 
         let integerValue = scaledValue / scale
         let visibleIntegerCount = max(1, Self.decimalDigitCount(integerValue))
         let firstVisibleIntegerIndex = layout.integerDigits - visibleIntegerCount
 
-        let snapshots = rawDigits.enumerated().map { index, digit in
+        // Construct the final snapshot array directly. The former two-stage
+        // reversed-digit + map path allocated an additional temporary array on
+        // every snapshot, which is unnecessary work for high-frequency cockpit
+        // presentation.
+        var digits = Array(
+            repeating: RollingDigitSnapshot(digit: 0, isVisible: false),
+            count: layout.totalDigitSlots
+        )
+        var working = scaledValue
+        for index in stride(from: layout.totalDigitSlots - 1, through: 0, by: -1) {
+            let digit = Int(working % 10)
+            working /= 10
             let isInteger = index < layout.integerDigits
             let visible = isInteger ? index >= firstVisibleIntegerIndex : true
-            return RollingDigitSnapshot(digit: digit, isVisible: visible)
+            digits[index] = RollingDigitSnapshot(digit: digit, isVisible: visible)
         }
 
         return RollingNumberSnapshot(
             scaledValue: scaledValue,
             layout: layout,
-            digits: snapshots
+            digits: digits
         )
     }
 
