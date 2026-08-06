@@ -295,7 +295,7 @@ struct DashboardView: View {
     private var dashboardBatteryMetric: some View {
         Button(action: toggleBatteryReadout) {
             VStack(alignment: .leading, spacing: 5) {
-                Label("BATTERY", systemImage: batteryIcon)
+                Label(batteryReadoutTitle, systemImage: batteryIcon)
                     .font(.caption2.weight(.bold))
                     .tracking(1.2)
                     .foregroundStyle(isBatteryLow ? Color.red : Color.secondary)
@@ -379,6 +379,13 @@ struct DashboardView: View {
 
     private var batteryReadoutMode: BatteryPrimaryReadoutMode {
         BatteryPrimaryReadoutMode(rawValue: batteryReadoutModeRawValue) ?? .percentage
+    }
+
+    private var batteryReadoutTitle: String {
+        switch batteryReadoutMode {
+        case .percentage: "BATTERY"
+        case .estimatedRange: "RANGE"
+        }
     }
 
     private var batteryReadoutPresentation: BatteryPrimaryReadoutPresentation {
