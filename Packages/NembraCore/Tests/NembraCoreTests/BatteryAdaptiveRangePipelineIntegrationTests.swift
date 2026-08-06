@@ -227,7 +227,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
     @Test("equal-uptime measured rebound fails atomically across stream and assembler")
     func equalUptimeMeasuredReboundFailsAtomically() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
-        let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
+        let p = try policy(minimumConsumedPercentagePoints: 4, minimumDistanceMeters: 100)
 
         _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 10), policy: p)
         try pipeline.recordDistance(deltaMeters: 50, coverage: .partial)
