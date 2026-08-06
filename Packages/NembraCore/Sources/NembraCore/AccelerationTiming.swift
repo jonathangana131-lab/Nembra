@@ -44,7 +44,10 @@ public struct AccelerationTimingWindow: Equatable, Sendable {
     public let earliestUptimeNanoseconds: UInt64
     public let latestUptimeNanoseconds: UInt64
 
-    public init(earliestUptimeNanoseconds: UInt64, latestUptimeNanoseconds: UInt64) {
+    /// Timing windows are output evidence created only from accepted monotonic
+    /// measurements. Keep construction internal so external callers cannot
+    /// manufacture impossible windows or trigger a public precondition trap.
+    init(earliestUptimeNanoseconds: UInt64, latestUptimeNanoseconds: UInt64) {
         precondition(latestUptimeNanoseconds >= earliestUptimeNanoseconds)
         self.earliestUptimeNanoseconds = earliestUptimeNanoseconds
         self.latestUptimeNanoseconds = latestUptimeNanoseconds
