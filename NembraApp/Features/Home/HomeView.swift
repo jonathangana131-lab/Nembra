@@ -86,6 +86,10 @@ struct HomeView: View {
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Connection")
+                .accessibilityValue(vehicleStatusText)
+                .accessibilityIdentifier("home.connection")
             }
 
             Spacer(minLength: 12)
@@ -99,7 +103,6 @@ struct HomeView: View {
                     .background(Color.primary.opacity(0.055), in: Capsule())
             }
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var statusPanel: some View {
