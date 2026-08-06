@@ -138,6 +138,46 @@ struct PassiveBluetoothCaptureTests {
         #expect(decoded == session)
     }
 
+    @Test("JSON import cannot bypass record ordering validation")
+    func jsonImportRevalidatesRecordOrder() throws {
+        struct UncheckedSessionPayload: Encodable {
+            let id: UUID
+            let vehicleIdentity: VehicleIdentity
+            let startedAt: Date
+            let records: [PassiveBluetoothCaptureRecord]
+        }
+
+        let gap = try PassiveBluetoothCaptureInterruption(reason: "fixture")
+        let event = PassiveBluetoothCaptureEvent.interruption(gap)
+        let payload = UncheckedSessionPayload(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000082")!,
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 2_000),
+            records: [
+                PassiveBluetoothCaptureRecord(
+                    sequenceNumber: 2,
+                    receivedAtUptimeNanoseconds: 20,
+                    receivedAtDate: Date(timeIntervalSince1970: 2_001),
+                    event: event
+                ),
+                PassiveBluetoothCaptureRecord(
+                    sequenceNumber: 1,
+                    receivedAtUptimeNanoseconds: 21,
+                    receivedAtDate: Date(timeIntervalSince1970: 2_002),
+                    event: event
+                )
+            ]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(payload)
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.nonMonotonicSequence) {
+            _ = try PassiveBluetoothCaptureJSON.decode(data)
+        }
+    }
+
     @Test("invalid blank identifiers fail closed instead of creating plausible evidence")
     func rejectsBlankIdentifiers() {
         #expect(throws: PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier) {

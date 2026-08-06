@@ -226,6 +226,13 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
     public let startedAt: Date
     public private(set) var records: [PassiveBluetoothCaptureRecord]
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case vehicleIdentity
+        case startedAt
+        case records
+    }
+
     public init(
         id: UUID = UUID(),
         vehicleIdentity: VehicleIdentity,
@@ -240,6 +247,24 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
         for record in records {
             try append(record)
         }
+    }
+
+    /// Decoding deliberately replays records through the same validation path
+    /// as live appends. Imported/corrupt JSON therefore cannot bypass sequence
+    /// or monotonic-time truth constraints through synthesized `Codable`.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let vehicleIdentity = try container.decode(VehicleIdentity.self, forKey: .vehicleIdentity)
+        let startedAt = try container.decode(Date.self, forKey: .startedAt)
+        let decodedRecords = try container.decode([PassiveBluetoothCaptureRecord].self, forKey: .records)
+
+        try self.init(
+            id: id,
+            vehicleIdentity: vehicleIdentity,
+            startedAt: startedAt,
+            records: decodedRecords
+        )
     }
 
     public mutating func append(_ record: PassiveBluetoothCaptureRecord) throws {
