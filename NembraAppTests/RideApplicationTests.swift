@@ -1,4 +1,5 @@
 import Dispatch
+import SwiftData
 import XCTest
 @testable import Nembra
 
@@ -45,6 +46,40 @@ final class RideApplicationTests: XCTestCase {
             } catch let error as RideHistoryStoreError {
                 XCTAssertEqual(error, .sessionConflict(sessionID))
             }
+        }
+    }
+
+    func testSwiftDataHistoryRejectsPayloadWhoseSessionIdentityDoesNotMatchRow() async throws {
+        let directory = temporaryDirectory(name: "history-corruption")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideHistory.store")
+        let requestedSessionID = UUID()
+        let payloadSessionID = UUID()
+
+        let container = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
+        let corruptPayload = try JSONEncoder().encode(
+            RideHistoryRecord(
+                evidence: try completedEvidence(
+                    sessionID: payloadSessionID,
+                    endingOdometerKilometers: 101.25
+                )
+            )
+        )
+        let context = ModelContext(container)
+        context.insert(
+            StoredRideHistoryRecord(
+                sessionID: requestedSessionID,
+                payload: corruptPayload
+            )
+        )
+        try context.save()
+
+        let store = SwiftDataRideHistoryStore(modelContainer: container)
+        do {
+            _ = try await store.record(sessionID: requestedSessionID)
+            XCTFail("A SwiftData row must never return durable ride evidence for a different session UUID.")
+        } catch let error as RideHistoryPersistenceError {
+            XCTAssertEqual(error, .corruptRecord(requestedSessionID))
         }
     }
 
