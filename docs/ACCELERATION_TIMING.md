@@ -24,6 +24,8 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurem
 - a configured source can be required explicitly;
 - if no source is required, the first eligible authoritative source becomes locked for that run and a later source change invalidates the trace;
 - optional speed-accuracy gating is available for sources such as GPS;
+- an optional maximum accepted sample interval can reject a trace when measurement cadence becomes too sparse to support the requested timing quality;
+- that interval is injected policy, not a guessed ES80 constant; leaving it unset makes no cadence claim;
 - monotonic process uptime, not wall-clock time, defines ordering and timing.
 
 No claim is made here about whether ES80 Bluetooth or GPS will be the accepted production acceleration source. That requires physical measurement of cadence, latency, jitter, resolution, and accuracy.
@@ -37,6 +39,8 @@ A run begins from a verified stationary anchor.
 - The first measurement above the stationary ceiling establishes a **launch crossing window** between the last stationary packet and that moving packet.
 - The first measurement at or above the requested target establishes a **target crossing window** between the preceding below-target packet and the target-reaching packet.
 - A completed result reports the narrowest elapsed lower/upper bounds that those two windows support.
+
+Timing-window construction is evaluator-owned. Callers receive immutable window evidence but cannot publicly construct contradictory/reversed windows and trigger a precondition through the public API.
 
 Example:
 
@@ -54,6 +58,7 @@ Future presentation may choose a concise estimate only if it also respects the m
 An active trace fails closed when evidence continuity is no longer trustworthy:
 
 - non-monotonic authoritative sample;
+- configured maximum sample interval exceeded;
 - measurement source changes mid-run;
 - vehicle/app interruption explicitly reported by the caller;
 - the scooter returns to stationary after launch;
@@ -68,6 +73,7 @@ This slice does **not**:
 - select the production ES80 speed source;
 - infer threshold crossing from interpolated display values;
 - use Core Motion as absolute speed;
+- hard-code an unverified ES80 sample cadence;
 - claim Bluetooth packet latency or GPS timing quality;
 - add acceleration UI or history;
 - persist acceleration records;
@@ -77,7 +83,7 @@ This slice does **not**:
 
 ## Software verification
 
-A supplemental Swift 6.2.1 package harness using the exact core design passed 11 deterministic tests covering:
+A supplemental Swift 6.2.1 package harness using the exact revised core design passed **12/12 deterministic tests** covering:
 
 - rolling-start rejection;
 - packet-bounded elapsed timing;
@@ -86,12 +92,13 @@ A supplemental Swift 6.2.1 package harness using the exact core design passed 11
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
 - non-monotonic evidence rejection;
+- configurable long-sample-gap rejection;
 - explicit interruption;
 - return-to-stationary invalidation;
 - reset behavior;
-- invalid policy rejection.
+- invalid policy rejection, including a zero maximum sample interval.
 
-Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head through the `/xcode27` command gate.
+Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The current ChatGPT GitHub connector has not emitted Actions events for its own ready/synchronize mutations even after the default-branch PR gate was added, so supplemental harness success is not promoted into repository-wide CI proof.
 
 ## Hardware validation still required
 
@@ -100,7 +107,7 @@ Before production activation on the AOVOPRO ES80:
 1. measure real ES80 Bluetooth speed cadence, latency, jitter, and resolution;
 2. compare that evidence against quality-screened GPS timing on physical iPhone 12;
 3. determine whether either source is sufficient alone or whether a carefully bounded multi-sensor presentation is justified;
-4. choose stationary and target-crossing policy from measured traces rather than simulator convenience;
+4. choose stationary, maximum-gap, and target-crossing policy from measured traces rather than simulator convenience;
 5. validate interruption/reconnect behavior on real rides;
 6. decide user-facing precision from observed uncertainty instead of arbitrary decimal places.
 
