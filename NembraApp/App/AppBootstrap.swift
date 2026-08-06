@@ -344,7 +344,7 @@ enum AppBootstrap {
         if simulatorAutoCompletesRide,
            let routeStore = persistence?.routeStore {
             do {
-                let source = CompletedRideQALocationSource()
+                let source = SimulatorRideLocationSource.completedRideQA()
                 let policy = try RideLocationQualityPolicy.simulatorQA()
                 rideLocationCaptureCoordinator = try RideLocationCaptureCoordinator(
                     source: source,
