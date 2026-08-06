@@ -460,28 +460,6 @@ private struct RideRouteMapView: View {
                 }
             }
         }
-        .accessibilityLabel("Recorded ride route")
-        .accessibilityValue(routeAccessibilityValue)
-    }
-
-    private var routeAccessibilityValue: String {
-        var parts = [routeCoverageAccessibilityValue]
-        if geometry.knownGapCount > 0 {
-            let gapWord = geometry.knownGapCount == 1 ? "gap" : "gaps"
-            parts.append("\(geometry.knownGapCount) known route \(gapWord)")
-        }
-        return parts.joined(separator: ", ")
-    }
-
-    private var routeCoverageAccessibilityValue: String {
-        switch geometry.coverage {
-        case .complete:
-            "Complete recorded coverage"
-        case .partial:
-            "Partial recorded coverage"
-        case .unknown:
-            "Coverage unknown"
-        }
     }
 
     private func coordinates(for segment: RideRouteSegment) -> [CLLocationCoordinate2D] {
