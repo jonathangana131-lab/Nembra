@@ -22,6 +22,8 @@ Estimated/display SoC:
 - is representable elsewhere for presentation;
 - never starts a learning span;
 - never advances the latest authoritative measurement;
+- never triggers measured-recovery rebasing, even if its percentage is higher;
+- never constrains authoritative ordering, even if its presentation timestamp is later;
 - never clears accumulated measured evidence.
 
 A flat or falling authoritative percentage keeps the original span anchor. This is important for a battery source that may be coarse or slow: real distance can continue accumulating while measured percentage remains unchanged or falls in small steps.
@@ -32,7 +34,7 @@ A lower authoritative percentage becomes eligible to close a window only after *
 
 This prevents a stream such as `80 → 79 → 78 → 77` from automatically becoming three tiny 1% training samples. One longer window can form from the earlier authoritative anchor instead.
 
-The policy supplied to the current authoritative reading is the live threshold source. Tightening does not retroactively close a span under an older looser threshold, while loosening may legitimately close an already-retained span on a later authoritative reading, including a flat percentage update.
+The policy supplied to the current authoritative reading is the live threshold source. Tightening does not retroactively close a span under an older looser threshold, while loosening may legitimately close an already-retained span on a later authoritative reading, including a flat percentage update. The same rule applies independently to both the consumed-percentage and minimum-distance thresholds.
 
 ### Measured recovery / charging defense
 
@@ -46,7 +48,7 @@ The `79` reading starts a fresh span. The assembler does not keep pretending the
 
 This is intentionally stricter than comparing only with the original anchor. It prevents hidden in-span recovery from being folded into a later consumption sample.
 
-Authoritative uptime ordering is likewise checked against the **latest accepted authoritative reading**, not merely the span anchor. If a stream has accepted uptimes `10 → 20`, an authoritative reading at uptime `15` fails closed even though `15` is newer than the original anchor.
+Authoritative uptime ordering is likewise checked against the **latest accepted authoritative reading**, not merely the span anchor. If a stream has accepted uptimes `10 → 20`, an authoritative reading at uptime `15` fails closed even though `15` is newer than the original anchor. Ordering is validated before any measured-recovery rebase, so a duplicate/same-timestamp higher percentage cannot erase in-flight evidence.
 
 ## Distance evidence
 
@@ -78,6 +80,17 @@ There are two distinct higher-layer situations:
 2. **The higher layer knows the first trustworthy post-gap authoritative SoC reading and cannot prove continuity across the missing interval.** Discard the old in-flight span with `reset()`, then ingest that first post-gap authoritative reading as the new anchor before recording new distance. Do not carry pre-gap distance into the new span merely to save a sample.
 
 This distinction lets a future battery/transport integration honor an explicit "after unobserved interval" signal without fabricating continuity or needlessly contaminating later clean distance.
+
+## Candidate closure versus model acceptance
+
+Emitting a `BatteryRangeLearningWindow` **closes the assembler span immediately**. The end authoritative SoC becomes the next anchor and span-local distance/coverage/gap evidence is reset before the caller asks `AdaptiveBatteryRangeModel` whether the candidate should teach history.
+
+That separation is intentional. Model rejection does not roll the assembler back:
+- a transport-gap or incomplete-coverage candidate must not keep contaminating future clean evidence;
+- a statistically rejected efficiency outlier must not cause its distance to be replayed into the next sample;
+- a rejection never authorizes a higher layer to re-add the old span's distance merely to recover a training sample.
+
+The next clean evidence span therefore begins at the rejected candidate's end SoC. Persisted learned history remains unchanged when the model rejects the candidate, while ephemeral assembly continuity moves forward.
 
 ## Atomic failure behavior
 

@@ -71,6 +71,18 @@ struct AdaptiveBatteryRangeCounterOverflowTests {
         }
     }
 
+    @Test("raw model restore rejects recent evidence larger than historical evidence")
+    func inconsistentRecentEvidenceRestoreRejected() throws {
+        let seeded = try seededModelData(acceptedWindowCount: 1)
+        var object = try #require(JSONSerialization.jsonObject(with: seeded) as? [String: Any])
+        object["historicalConsumedPercentagePoints"] = 5.0
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
+        }
+    }
+
     @Test("live model at terminal count rejects another ingest without mutation")
     func terminalCounterIngestFailsClosed() throws {
         let data = try seededModelData(acceptedWindowCount: Int.max - 1)
