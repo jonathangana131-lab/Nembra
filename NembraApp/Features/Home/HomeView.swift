@@ -408,10 +408,14 @@ struct HomeView: View {
                 .background(connectionAttentionTint.opacity(0.12), in: Circle())
                 .accessibilityHidden(true)
 
-            Text(presentation.message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presentation.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(presentation.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer(minLength: 8)
 
