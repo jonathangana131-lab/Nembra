@@ -587,9 +587,14 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
             forKey: .recentSamples
         )
         let acceptedWindowCount = try container.decode(Int.self, forKey: .acceptedWindowCount)
+        let recentConsumed = recentSamples.reduce(into: 0.0) { total, sample in
+            total += sample.consumedPercentagePoints
+        }
 
         guard historicalConsumed.isFinite,
               historicalConsumed >= 0,
+              recentConsumed.isFinite,
+              recentConsumed <= historicalConsumed,
               acceptedWindowCount >= 0,
               acceptedWindowCount < Int.max,
               recentSamples.count <= acceptedWindowCount else {
