@@ -47,11 +47,12 @@ public struct PeakSpeedMeasurement: Equatable, Sendable {
     }
 }
 
-/// This describes continuity of the accepted observation stream, not whether the
-/// sampled value equals the scooter's unknowable continuous-time physical peak.
+/// Describes only whether this accumulator recorded a selected-source evidence
+/// loss. It deliberately does not claim continuous physical sampling between
+/// packets or that the observed maximum equals the scooter's true physical peak.
 public enum PeakSpeedObservationContinuity: String, Codable, Equatable, Sendable {
-    case uninterruptedAcceptedObservations
-    case partialAcceptedObservations
+    case noRecordedSelectedSourceEvidenceLoss
+    case partialSelectedSourceEvidence
 }
 
 public enum PeakSpeedInterruption: Equatable, Sendable {
@@ -141,9 +142,9 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
         return .acceptedWithoutPeakChange
     }
 
-    /// Call when the selected observation stream has a known continuity break.
+    /// Call when the selected observation stream has a known evidence break.
     /// The already observed peak remains valid as an observed value, but the
-    /// session can no longer claim uninterrupted observation coverage.
+    /// session must thereafter report partial selected-source evidence.
     public mutating func recordInterruption(_ interruption: PeakSpeedInterruption) {
         _ = interruption
         knownInterruptionCount += 1
@@ -153,8 +154,8 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
         guard let peak else { return nil }
         let continuity: PeakSpeedObservationContinuity =
             (qualityRejectedSampleCount == 0 && knownInterruptionCount == 0)
-                ? .uninterruptedAcceptedObservations
-                : .partialAcceptedObservations
+                ? .noRecordedSelectedSourceEvidenceLoss
+                : .partialSelectedSourceEvidence
 
         return PeakSpeedEvidence(
             peak: peak,
