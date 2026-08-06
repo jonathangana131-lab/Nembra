@@ -29,13 +29,16 @@ struct SpeedInstrumentDisplayFrame: Equatable {
 final class SpeedInstrumentModel {
     private(set) var measurementRevision: UInt64 = 0
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
+    private(set) var isAnimationActive = false
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
+    @ObservationIgnored private var animationEndTask: Task<Void, Never>?
 
     deinit {
         streamTask?.cancel()
+        animationEndTask?.cancel()
     }
 
     func start(stream: AsyncStream<SpeedTelemetrySample>) {
@@ -52,6 +55,9 @@ final class SpeedInstrumentModel {
     func stop() {
         streamTask?.cancel()
         streamTask = nil
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = false
     }
 
     /// Internal so the iOS test target can prove display semantics without a
@@ -73,6 +79,14 @@ final class SpeedInstrumentModel {
         previousMeasurementUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestMeasurementSource = sample.source
         measurementRevision &+= 1
+
+        let startsInterpolating = interpolator
+            .frame(atUptimeNanoseconds: sample.receivedAtUptimeNanoseconds)?
+            .isInterpolated == true
+        scheduleAnimationWindow(
+            active: startsInterpolating,
+            durationNanoseconds: transitionDuration
+        )
     }
 
     /// Returns a render-only frame. The fallback is the latest value already
@@ -127,6 +141,25 @@ final class SpeedInstrumentModel {
         let eightyPercent = (interval / 5) * 4
         return min(max(eightyPercent, minimum), maximum)
     }
+
+    private func scheduleAnimationWindow(active: Bool, durationNanoseconds: UInt64) {
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = active && durationNanoseconds > 0
+
+        guard isAnimationActive else { return }
+
+        animationEndTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: durationNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.isAnimationActive = false
+            self?.animationEndTask = nil
+        }
+    }
 }
 
 /// A deliberately narrow high-frequency subtree for the landscape cockpit.
@@ -134,12 +167,18 @@ final class SpeedInstrumentModel {
 /// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
 /// ride detection, persistence, distance, and safety continue to consume the
 /// confirmed/raw domain state rather than the rendered interpolation frame.
+@MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @State private var model = SpeedInstrumentModel()
 
     var body: some View {
-        TimelineView(.animation) { _ in
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 60.0,
+                paused: !model.isAnimationActive
+            )
+        ) { _ in
             let frame = model.frame(
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
                 fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour
