@@ -19,17 +19,37 @@ The Dashboard deliberately does **not** calculate range from battery percentage,
 
 The visible eyebrow is mode-aware: percentage mode says `BATTERY`, while estimated-range mode says `RANGE`. This keeps a fail-closed `RANGE —` state visually distinct from an unknown battery reading. The battery icon and low-battery warning remain charge-oriented in either readout mode. Toggling changes presentation preference only; it does not mutate scooter telemetry, battery evidence, adaptive-range learning, ride evidence, persistence of measured data, or any motorized-hardware state.
 
-## Accessibility and interaction
+## Accessibility and retained data
 
 The existing `dashboard.battery` accessibility identifier remains stable.
 
-VoiceOver exposes the current authoritative presentation meaning instead of reading a visual transition frame. It identifies percentage values as percentages, range values as estimated range, and unavailable range as unavailable. The accessibility hint describes the alternate value reached by a normal activation.
+VoiceOver exposes the current authoritative presentation meaning instead of reading a visual transition frame. It identifies percentage values as percentages, range values as estimated range, and unavailable range as unavailable. When `VehicleState.dataAvailability` is `.retained`, a retained percentage is explicitly announced as last-known vehicle data. In range mode, the accessibility value explicitly says that the battery charge is last-known vehicle data while preserving the range result's own unavailable/learning/value classification.
+
+This matters for disconnect/recovery states: a retained `71%` remains useful read-only context, but it must never sound like a fresh live packet merely because it is still displayed.
 
 The control uses a selection haptic when the stored presentation preference changes. It is disabled when no legitimate display SoC exists, avoiding a no-op interaction between two unavailable states.
+
+## Motion boundary
+
+This slice deliberately does not claim the final `% ↔ range` or integer battery-roll animation. The earlier orphaned numeric content-transition modifier was removed rather than implying a complete motion implementation without an explicit animation transaction or the dedicated battery-transition planner.
+
+The battery-presentation-transition lane owns truthful integer presentation frames, and the Production Visual + Performance Overhaul owns final motion choreography and Reduce Motion acceptance. When that work is integrated, VoiceOver must remain anchored to the authoritative/current readout target, presentation intermediates must never enter telemetry/range evidence, and Reduce Motion must avoid spatial integer traversal.
 
 ## Xcode target wiring
 
 The app target manually includes selected NembraCore sources. `BatteryPrimaryReadoutState.swift` is therefore added explicitly to the app target and Core project group. The package source itself is unchanged.
+
+## Deterministic UI coverage
+
+The Dashboard UI suite includes focused coverage for:
+
+- normal connected `92%` percentage presentation;
+- a tap to estimated-range mode producing unavailable rather than synthetic mileage;
+- restoration to percentage mode despite persistent `AppStorage` preference;
+- a minimum 44 pt battery control target;
+- the `scooter-unavailable` retained `71%` fixture announcing last-known provenance in both percentage and range modes.
+
+The unavailable-range screenshot remains required in the exact-head Simulator gate so the sighted `RANGE —` state can be judged directly rather than inferred from accessibility assertions alone.
 
 ## Deferred integration
 
