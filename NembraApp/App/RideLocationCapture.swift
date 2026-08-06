@@ -149,3 +149,206 @@ actor CoreLocationRideLocationSource: RideLocationSource {
         return nil
     }
 }
+
+enum RideLocationCaptureError: Error, Equatable, Sendable {
+    case alreadyCapturing(UUID)
+    case noActiveCapture
+}
+
+struct RideLocationCaptureSummary: Equatable, Sendable {
+    let sessionID: UUID
+    let routeManifest: RideRouteManifest?
+    let acceptedPointCount: Int
+    let qualityScreenedDistanceMeters: Double
+    let routePersistenceFailed: Bool
+}
+
+/// One ride-scoped bridge from phone-location transport into two intentionally
+/// separate evidence domains:
+///
+/// 1. accepted coordinates -> immutable route chunks for later MapKit display
+/// 2. adjacent accepted coordinate distance -> RideEngine GPS-distance evidence
+///
+/// Route persistence failure is additive and does not discard a valid screened
+/// GPS-distance delta. Conversely, a rendered/persisted route is never measured
+/// later and promoted into ride distance. Both domains originate from the same
+/// screened samples but remain independently truthful after that boundary.
+actor RideLocationCaptureCoordinator {
+    typealias DistanceSink = @Sendable (_ meters: Double, _ receivedAtUptimeNanoseconds: UInt64) async -> Void
+
+    private let source: any RideLocationSource
+    private var qualityScreen: RideLocationQualityScreen
+    private var routeRecorder: RideRouteRecorder?
+    private let distanceSink: DistanceSink
+
+    private var sessionID: UUID?
+    private var requestedCoverage: RideDistanceCoverage = .unknown
+    private var eventsTask: Task<Void, Never>?
+    private var acceptedPointCount = 0
+    private var qualityScreenedDistanceMeters = 0.0
+    private var routePersistenceFailed = false
+
+    init(
+        source: any RideLocationSource,
+        qualityPolicy: RideLocationQualityPolicy,
+        routeStore: (any RideRouteStore)?,
+        routeChunkSize: Int = 8,
+        distanceSink: @escaping DistanceSink
+    ) throws {
+        self.source = source
+        self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
+        self.distanceSink = distanceSink
+        if let routeStore {
+            self.routeRecorder = try RideRouteRecorder(
+                store: routeStore,
+                chunkSize: routeChunkSize
+            )
+        } else {
+            self.routeRecorder = nil
+            self.routePersistenceFailed = true
+        }
+    }
+
+    func begin(
+        sessionID: UUID,
+        requestedCoverage: RideDistanceCoverage
+    ) async throws {
+        if let active = self.sessionID {
+            throw RideLocationCaptureError.alreadyCapturing(active)
+        }
+
+        self.sessionID = sessionID
+        self.requestedCoverage = requestedCoverage
+        acceptedPointCount = 0
+        qualityScreenedDistanceMeters = 0
+        qualityScreen.reset()
+
+        if let routeRecorder {
+            do {
+                try await routeRecorder.begin(
+                    sessionID: sessionID,
+                    coverageAlreadyPartial: requestedCoverage != .complete
+                )
+            } catch {
+                // Location/distance evidence remains useful even if the additive
+                // route store cannot begin. Do not turn a map-storage failure
+                // into loss of the ride engine's independent GPS evidence.
+                self.routeRecorder = nil
+                routePersistenceFailed = true
+            }
+        }
+
+        let stream = await source.events()
+        eventsTask = Task { [weak self] in
+            for await event in stream {
+                guard !Task.isCancelled else { break }
+                await self?.consume(event)
+            }
+        }
+        await source.start()
+    }
+
+    @discardableResult
+    func finish() async throws -> RideLocationCaptureSummary {
+        guard let sessionID else {
+            throw RideLocationCaptureError.noActiveCapture
+        }
+
+        // Finishing the source closes its AsyncStream. Await the consumer so all
+        // already-yielded evidence is screened before finalizing the route.
+        await source.stop()
+        if let eventsTask {
+            await eventsTask.value
+        }
+        self.eventsTask = nil
+
+        var manifest: RideRouteManifest?
+        if let routeRecorder {
+            do {
+                manifest = try await routeRecorder.finish(
+                    requestedCoverage: requestedCoverage
+                )
+            } catch {
+                routePersistenceFailed = true
+                manifest = nil
+            }
+        }
+
+        let summary = RideLocationCaptureSummary(
+            sessionID: sessionID,
+            routeManifest: manifest,
+            acceptedPointCount: acceptedPointCount,
+            qualityScreenedDistanceMeters: qualityScreenedDistanceMeters,
+            routePersistenceFailed: routePersistenceFailed
+        )
+        resetAfterFinish()
+        return summary
+    }
+
+    private func consume(_ event: RideLocationSourceEvent) async {
+        if event.issue != nil {
+            // A diagnostic interruption after an accepted point creates unknown
+            // coverage. The quality screen delays materializing the boundary
+            // until another valid point arrives, so a trailing error cannot
+            // invent an empty route segment.
+            qualityScreen.markKnownCoverageGap()
+        }
+
+        guard let sample = event.sample else { return }
+
+        switch qualityScreen.screen(sample) {
+        case .rejected:
+            return
+        case let .accepted(accepted):
+            if accepted.startsNewRouteSegment {
+                await markRouteGapIfAvailable()
+            }
+
+            await appendRoutePointIfAvailable(accepted.sample)
+            acceptedPointCount += 1
+
+            if let distanceDeltaMeters = accepted.distanceDeltaMeters {
+                qualityScreenedDistanceMeters += distanceDeltaMeters
+                await distanceSink(
+                    distanceDeltaMeters,
+                    accepted.sample.receivedAtUptimeNanoseconds
+                )
+            }
+        }
+    }
+
+    private func markRouteGapIfAvailable() async {
+        guard let routeRecorder else { return }
+        do {
+            try await routeRecorder.markKnownGap()
+        } catch {
+            self.routeRecorder = nil
+            routePersistenceFailed = true
+        }
+    }
+
+    private func appendRoutePointIfAvailable(_ sample: RideLocationSample) async {
+        guard let routeRecorder else { return }
+        do {
+            try await routeRecorder.append(
+                latitude: sample.latitude,
+                longitude: sample.longitude,
+                capturedAtDate: sample.receivedAtDate,
+                sourceMeasurementDate: sample.sourceMeasurementDate,
+                horizontalAccuracyMeters: sample.horizontalAccuracyMeters
+            )
+        } catch {
+            self.routeRecorder = nil
+            routePersistenceFailed = true
+        }
+    }
+
+    private func resetAfterFinish() {
+        sessionID = nil
+        requestedCoverage = .unknown
+        qualityScreen.reset()
+        acceptedPointCount = 0
+        qualityScreenedDistanceMeters = 0
+        routePersistenceFailed = false
+    }
+}
