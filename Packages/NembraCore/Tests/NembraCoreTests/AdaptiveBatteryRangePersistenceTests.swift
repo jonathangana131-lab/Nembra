@@ -79,6 +79,40 @@ struct AdaptiveBatteryRangePersistenceTests {
         #expect(decodedLearned.model.hasLearnedEfficiency)
     }
 
+    @Test("maximum legitimate normalized consumption remains valid")
+    func maximumLegitimateConsumptionAccepted() throws {
+        let start = try BatterySOCReading(
+            percentage: 100,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: 10
+        )
+        let end = try BatterySOCReading(
+            percentage: 0,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: 20
+        )
+        let window = try BatteryRangeLearningWindow(
+            distanceMeters: 10_000,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: start,
+            endSOC: end
+        )
+
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(window, policy: try policy())
+        #expect(result.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(model.historicalConsumedPercentagePoints == 100)
+
+        let state = try AdaptiveBatteryRangePersistedState(validating: model)
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(AdaptiveBatteryRangePersistedState.self, from: data)
+
+        #expect(decoded == state)
+        #expect(decoded.model.historicalConsumedPercentagePoints == 100)
+    }
+
     @Test("unknown persistence schema fails closed")
     func unsupportedSchemaRejected() throws {
         let state = try AdaptiveBatteryRangePersistedState(validating: learnedModel())
