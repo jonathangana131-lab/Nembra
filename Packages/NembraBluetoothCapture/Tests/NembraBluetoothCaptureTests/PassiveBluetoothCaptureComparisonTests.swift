@@ -32,6 +32,9 @@ struct PassiveBluetoothCaptureComparisonTests {
             comparison: comparison
         )
 
+        #expect(report.baselinePeripheralIdentifier == "physical-es80-placeholder")
+        #expect(report.comparisonPeripheralIdentifier == "physical-es80-placeholder")
+        #expect(report.peripheralRelationship == .sameObservedIdentifier)
         #expect(report.addedServices == ["180F"])
         #expect(report.removedServices.isEmpty)
         #expect(report.sharedServices == ["A201"])
@@ -50,6 +53,73 @@ struct PassiveBluetoothCaptureComparisonTests {
         #expect(same.comparisonOnlyPayloadCount == 0)
         #expect(same.lastPayloadChanged == false)
         #expect(same.rawDifferenceScore == 0)
+    }
+
+    @Test("different resolved peripheral identifiers are called out and streams are not conflated")
+    func differentPeripheralIdentifiers() throws {
+        var baseline = try makeSession()
+        try appendValue(
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0x10],
+            sequence: 1,
+            peripheral: "baseline-peripheral",
+            to: &baseline
+        )
+
+        var comparison = try makeSession()
+        try appendValue(
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0x20],
+            sequence: 1,
+            peripheral: "comparison-peripheral",
+            to: &comparison
+        )
+
+        let report = PassiveBluetoothCaptureComparison.compare(
+            baseline: baseline,
+            comparison: comparison
+        )
+
+        #expect(report.baselinePeripheralIdentifier == "baseline-peripheral")
+        #expect(report.comparisonPeripheralIdentifier == "comparison-peripheral")
+        #expect(report.peripheralRelationship == .differentObservedIdentifiers)
+        #expect(report.streamComparisons.count == 2)
+        #expect(Set(report.streamComparisons.map(\.presence)) == [.baselineOnly, .comparisonOnly])
+    }
+
+    @Test("ambiguous/no GATT identity makes peripheral relationship unresolved")
+    func unresolvedPeripheralRelationship() throws {
+        var baseline = try makeSession()
+        try baseline.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "nearby-only",
+                serviceUUIDs: ["FD50"]
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+
+        var comparison = try makeSession()
+        try appendValue(
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0x20],
+            sequence: 1,
+            peripheral: "selected-es80",
+            to: &comparison
+        )
+
+        let report = PassiveBluetoothCaptureComparison.compare(
+            baseline: baseline,
+            comparison: comparison
+        )
+        #expect(report.baselinePeripheralIdentifier == nil)
+        #expect(report.comparisonPeripheralIdentifier == "selected-es80")
+        #expect(report.peripheralRelationship == .unresolved)
+        #expect(report.baselineServices.isEmpty)
     }
 
     @Test("streams present in only one capture remain explicit rather than fabricated")
@@ -107,6 +177,7 @@ struct PassiveBluetoothCaptureComparisonTests {
             comparison: comparison
         )
         #expect(report.streamComparisons.isEmpty)
+        #expect(report.peripheralRelationship == .unresolved)
     }
 
     @Test("raw difference sorting is deterministic when scores tie")
@@ -132,11 +203,12 @@ struct PassiveBluetoothCaptureComparisonTests {
     private func appendService(
         _ uuid: String,
         sequence: UInt64,
+        peripheral: String = "physical-es80-placeholder",
         to session: inout PassiveBluetoothCaptureSession
     ) throws {
         try session.append(
             .service(try PassiveBluetoothServiceObservation(
-                peripheralIdentifier: "physical-es80-placeholder",
+                peripheralIdentifier: peripheral,
                 serviceUUID: uuid,
                 isPrimary: true
             )),
@@ -151,11 +223,12 @@ struct PassiveBluetoothCaptureComparisonTests {
         characteristic: String,
         payload: [UInt8],
         sequence: UInt64,
+        peripheral: String = "physical-es80-placeholder",
         to session: inout PassiveBluetoothCaptureSession
     ) throws {
         try session.append(
             .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: "physical-es80-placeholder",
+                peripheralIdentifier: peripheral,
                 serviceUUID: service,
                 characteristicUUID: characteristic,
                 origin: .subscriptionUpdate,
