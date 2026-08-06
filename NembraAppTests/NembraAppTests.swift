@@ -207,6 +207,34 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testReduceMotionSnapsToLatestAuthoritativeSpeedWithoutMutatingInterpolation() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        model.accept(try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000))
+        model.accept(try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000))
+        let revision = model.measurementRevision
+
+        let reducedMotionFrame = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 1_280_000_000,
+            fallbackConfirmedKilometersPerHour: nil,
+            prefersReducedMotion: true
+        ))
+        XCTAssertEqual(reducedMotionFrame.kilometersPerHour, 20, accuracy: 0.000_1)
+        XCTAssertEqual(reducedMotionFrame.latestMeasuredKilometersPerHour, 20)
+        XCTAssertEqual(reducedMotionFrame.origin, .measuredTelemetry)
+        XCTAssertEqual(model.measurementRevision, revision)
+
+        let ordinaryFrame = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 1_280_000_000,
+            fallbackConfirmedKilometersPerHour: nil
+        ))
+        XCTAssertEqual(ordinaryFrame.kilometersPerHour, 15, accuracy: 0.000_1)
+        XCTAssertEqual(ordinaryFrame.latestMeasuredKilometersPerHour, 20)
+        XCTAssertEqual(ordinaryFrame.origin, .visuallyInterpolated)
+        XCTAssertEqual(model.measurementRevision, revision)
+    }
+
+    @MainActor
     func testSpeedInstrumentRejectsStaleAndEstimatedSamples() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
