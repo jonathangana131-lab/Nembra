@@ -178,8 +178,6 @@ public struct ES80PassiveCaptureResearchView: View {
             }
 
             TextField(markerField.placeholder, text: $markerValue)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
 
             TextField("Optional note", text: $markerNote, axis: .vertical)
                 .lineLimit(2...4)
@@ -393,7 +391,7 @@ private struct AnalysisSummary {
 
         let fingerprint = PassiveBluetoothTransportFingerprint.analyze(session)
         transportCandidates = fingerprint.candidateMatches.map { match in
-            "\(candidateName(match.family)) · \(strengthName(match.strength))"
+            "\(Self.candidateName(match.family)) · \(Self.strengthName(match.strength))"
         }
 
         let streams = PassiveBluetoothValueStreamAnalysis.summarize(session)
