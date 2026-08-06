@@ -44,8 +44,11 @@ enum RideApplicationStatus: Equatable, Sendable {
 /// ride engine, crash-recovery journal, and completed-history handoff.
 ///
 /// This object intentionally outlives SwiftUI screens. It never promotes the
-/// cached `VehicleState.speedKilometersPerHour` into fresh ride evidence; only
-/// raw authoritative speed samples can fill `RideObservation.speedSample`.
+/// cached `VehicleState.speedKilometersPerHour` into fresh ride evidence. A raw
+/// authoritative speed packet is consumed at most once. If the independent
+/// state stream is still catching up through connecting/reconnecting, only the
+/// newest unconsumed packet is held briefly and freshness remains enforced by
+/// `RideEngine` when the connected state arrives.
 @MainActor
 @Observable
 final class RideApplicationStore {
@@ -66,6 +69,7 @@ final class RideApplicationStore {
     @ObservationIgnored private var speedTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var latestVehicleState: VehicleState
+    @ObservationIgnored private var pendingAuthoritativeSpeedSample: SpeedTelemetrySample?
     @ObservationIgnored private var lastObservationUptimeNanoseconds: UInt64?
 
     init(
@@ -131,20 +135,20 @@ final class RideApplicationStore {
         didStart = true
 
         guard let configuration else {
-            status = .disabled
+            setStatus(.disabled)
             return
         }
         guard startupPersistenceError == nil,
               let checkpointStore,
               let historyStore else {
-            status = .persistenceUnavailable
+            setStatus(.persistenceUnavailable)
             if lastErrorMessage == nil {
                 lastErrorMessage = "Local ride recovery storage could not be opened."
             }
             return
         }
 
-        status = .restoring
+        setStatus(.restoring)
         let recoveredAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         let recoveredAtDate = Date.now
 
@@ -175,6 +179,7 @@ final class RideApplicationStore {
         speedTask?.cancel()
         stateTask = nil
         speedTask = nil
+        pendingAuthoritativeSpeedSample = nil
     }
 
     private func subscribeToEvidenceStreams() async {
@@ -205,6 +210,12 @@ final class RideApplicationStore {
         let previousState = latestVehicleState
         latestVehicleState = state
 
+        if state.connection == .disconnected {
+            // A packet that never reached a confirmed connected state is not
+            // allowed to survive into some later connection generation.
+            pendingAuthoritativeSpeedSample = nil
+        }
+
         let connectionChanged = state.connection != previousState.connection
         let odometerAdvanced: Bool
         if let previousOdometer = previousState.odometerKilometers,
@@ -214,17 +225,38 @@ final class RideApplicationStore {
             odometerAdvanced = false
         }
 
+        // State and raw-speed streams are independent actor streams. A fresh
+        // packet can legitimately be consumed by this MainActor before the
+        // connected state publication. Use the newest packet exactly once when
+        // that connected state catches up; RideEngine still rejects it if stale.
+        if state.connection == .connected,
+           let pendingAuthoritativeSpeedSample {
+            self.pendingAuthoritativeSpeedSample = nil
+            await ingestObservation(speedSample: pendingAuthoritativeSpeedSample)
+            return
+        }
+
         // State publications are useful ride evidence only when they carry a
         // transport transition or a real odometer advance. Mode/light/lock UI
-        // acknowledgements must not masquerade as a fresh zero-speed sample,
-        // and the last raw speed packet is never replayed here.
+        // acknowledgements must not masquerade as a fresh zero-speed sample.
         guard connectionChanged || odometerAdvanced else { return }
         await ingestObservation(speedSample: nil)
     }
 
     private func receiveSpeedSample(_ sample: SpeedTelemetrySample) async {
         guard sample.isAuthoritativeMeasurement else { return }
-        await ingestObservation(speedSample: sample)
+
+        switch latestVehicleState.connection {
+        case .connected:
+            await ingestObservation(speedSample: sample)
+        case .connecting, .reconnecting:
+            // Keep only the newest unconsumed packet. Dropping an older packet
+            // is safer than replaying or assigning it to an unconfirmed link;
+            // this application bridge is not the raw telemetry benchmark log.
+            pendingAuthoritativeSpeedSample = sample
+        case .disconnected:
+            pendingAuthoritativeSpeedSample = nil
+        }
     }
 
     private func ingestObservation(speedSample: SpeedTelemetrySample?) async {
@@ -255,17 +287,20 @@ final class RideApplicationStore {
                 if case .rideEnded = event { return true }
                 return false
             }) {
-                status = .saving
+                setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
-                lastCompletedSessionID = update.events.compactMap { event -> UUID? in
+                let completedSessionID = update.events.compactMap { event -> UUID? in
                     guard case let .rideEnded(evidence) = event else { return nil }
                     return evidence.sessionID
                 }.first
+                if lastCompletedSessionID != completedSessionID {
+                    lastCompletedSessionID = completedSessionID
+                }
                 updatePublishedState(from: await coordinator.currentPhase())
             }
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
             do {
-                status = .saving
+                setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
                 updatePublishedState(from: await coordinator.currentPhase())
             } catch {
@@ -280,42 +315,66 @@ final class RideApplicationStore {
         using coordinator: RideCheckpointCoordinator,
         historyStore: any RideHistoryStore
     ) async throws {
-        status = .saving
+        setStatus(.saving)
         let pendingID = await coordinator.pendingCompletedRideEvidence()?.sessionID
         let commitCoordinator = RideHistoryCommitCoordinator(
             recoveryCoordinator: coordinator,
             historyStore: historyStore
         )
         _ = try await commitCoordinator.commitPendingRide()
-        if let pendingID {
+        if let pendingID, lastCompletedSessionID != pendingID {
             lastCompletedSessionID = pendingID
         }
     }
 
     private func updatePublishedState(from phase: RideEnginePhase) {
-        lastErrorMessage = nil
+        if lastErrorMessage != nil {
+            lastErrorMessage = nil
+        }
 
         switch phase {
         case .idle:
-            status = .idle
-            activeSessionID = nil
-            continuity = nil
+            applyPublishedState(status: .idle, sessionID: nil, continuity: nil)
         case .candidate:
-            status = .candidate
-            activeSessionID = nil
-            continuity = nil
+            applyPublishedState(status: .candidate, sessionID: nil, continuity: nil)
         case let .active(session):
-            status = .active
-            activeSessionID = session.id
-            continuity = session.continuity
+            applyPublishedState(
+                status: .active,
+                sessionID: session.id,
+                continuity: session.continuity
+            )
         case let .temporarilyDisconnected(disconnected):
-            status = .temporarilyDisconnected
-            activeSessionID = disconnected.session.id
-            continuity = disconnected.session.continuity
+            applyPublishedState(
+                status: .temporarilyDisconnected,
+                sessionID: disconnected.session.id,
+                continuity: disconnected.session.continuity
+            )
         case let .endingCandidate(ending):
-            status = .endingCandidate
-            activeSessionID = ending.session.id
-            continuity = ending.session.continuity
+            applyPublishedState(
+                status: .endingCandidate,
+                sessionID: ending.session.id,
+                continuity: ending.session.continuity
+            )
+        }
+    }
+
+    private func applyPublishedState(
+        status newStatus: RideApplicationStatus,
+        sessionID newSessionID: UUID?,
+        continuity newContinuity: RideSessionContinuity?
+    ) {
+        if activeSessionID != newSessionID {
+            activeSessionID = newSessionID
+        }
+        if continuity != newContinuity {
+            continuity = newContinuity
+        }
+        setStatus(newStatus)
+    }
+
+    private func setStatus(_ newStatus: RideApplicationStatus) {
+        if status != newStatus {
+            status = newStatus
         }
     }
 
@@ -331,7 +390,11 @@ final class RideApplicationStore {
     }
 
     private func fail(_ error: Error, persistence: Bool) {
-        status = persistence ? .persistenceUnavailable : .failed
-        lastErrorMessage = "\(error)"
+        let newStatus: RideApplicationStatus = persistence ? .persistenceUnavailable : .failed
+        let message = "\(error)"
+        if lastErrorMessage != message {
+            lastErrorMessage = message
+        }
+        setStatus(newStatus)
     }
 }
