@@ -124,6 +124,39 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardRetainedBatteryIsAnnouncedAsLastKnown() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+
+        // The unavailable-scooter fixture intentionally retains the last
+        // confirmed 71% vehicle state. Presentation preference is persistent,
+        // so normalize to percentage before validating stale-data wording.
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
+            battery.tap()
+        }
+        XCTAssertTrue(
+            waitForValue("71 percent, last known vehicle data", element: battery),
+            "Retained battery charge must never be announced as live telemetry."
+        )
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data",
+                element: battery
+            ),
+            "Range mode must preserve retained-battery provenance while remaining unavailable."
+        )
+
+        // Restore percentage for deterministic following tests.
+        battery.tap()
+        XCTAssertTrue(waitForValue("71 percent, last known vehicle data", element: battery))
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
