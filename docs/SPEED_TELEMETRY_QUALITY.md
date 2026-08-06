@@ -36,10 +36,11 @@ The policy can optionally require:
 - maximum mean sample interval;
 - maximum observed sample interval;
 - maximum interval-jitter standard deviation;
+- a minimum fraction of accepted samples that actually carry delivery-latency evidence;
 - maximum mean delivery latency;
 - maximum empirical nonzero speed step.
 
-There are no production defaults for cadence, jitter, latency, rejection rate, or resolution. An unconstrained policy requires only one accepted sample and does not silently demand metrics the caller never requested.
+There are no production defaults for cadence, jitter, latency, latency coverage, rejection rate, or resolution. An unconstrained policy requires only one accepted sample and does not silently demand metrics the caller never requested.
 
 A future physical ES80 validation pass can populate feature-specific requirements from measured evidence. Simulator-friendly numbers must not become those requirements automatically.
 
@@ -55,6 +56,14 @@ Examples:
 
 The quality gate never substitutes zero, advertised specifications, a different source, or a display estimate for missing evidence.
 
+## Representative latency evidence
+
+A good mean latency from a tiny timestamped subset must not automatically qualify an otherwise unmeasured stream. `minimumDeliveryLatencySampleFraction` lets a feature require representative timestamp coverage independently of the maximum allowed mean latency.
+
+For example, if four GPS samples are accepted but only one has a usable source measurement timestamp, the measured latency fraction is `0.25`. A caller requiring `0.75` latency coverage fails with `deliveryLatencySampleFractionBelowMinimum` even if that single observed latency happens to be excellent.
+
+If zero accepted samples carry latency evidence and latency evidence was requested, the assessment reports `missingDeliveryLatencyEvidence`; if a minimum coverage fraction was also requested, it additionally reports the unmet `0.0` coverage fraction. This preserves both facts instead of collapsing them into one vague failure.
+
 ## Complete failure reporting
 
 `SpeedTelemetryQualityAssessment` accumulates independent failures in deterministic policy order rather than stopping at the first problem. A single benchmark can therefore report, for example:
@@ -64,13 +73,14 @@ The quality gate never substitutes zero, advertised specifications, a different 
 - excessive rejection fraction;
 - missing interval evidence;
 - missing latency evidence;
+- insufficient latency-evidence coverage;
 - missing resolution evidence.
 
 That matters for field-validation tooling because fixing one evidence gap should not hide the others.
 
 ## Relationship to acceleration timing
 
-The separate acceleration-timing worker can use this quality boundary later, after its required physical evidence exists. The two responsibilities remain separate:
+The separate acceleration-timing worker can use this quality boundary later, after its required physical evidence exists. The responsibilities remain separate:
 
 - `TelemetryBenchmarkCollector` measures source behavior;
 - `SpeedTelemetryQualityPolicy` evaluates measured behavior against explicit requirements;
@@ -88,10 +98,12 @@ Deterministic repository tests cover:
 - source mismatch and rejected-sample fraction as separate failures;
 - simultaneous mean/worst-interval/jitter failures;
 - simultaneous missing latency and speed-resolution evidence;
+- sparse latency timestamps failing requested representative coverage even when observed mean latency looks good;
+- zero latency samples reporting both missing evidence and unmet requested coverage;
 - measured latency and empirical resolution independently exceeding policy;
 - unconstrained policy remaining qualified without unrequested metrics.
 
-A supplemental Swift 6.2.1 package harness using the same policy/assessment logic passed **5/5 focused tests**. Repository-wide NembraCore/Xcode 27 QA is still required before merge.
+The revised focused Swift 6.2.1 package, using the same collector/summary behavior and quality API, passed **10/10 tests**. Repository-wide NembraCore/Xcode 27 QA is still required before merge.
 
 ## Hardware validation still required
 
@@ -99,8 +111,8 @@ For the AOVOPRO ES80 and iPhone 12, capture real traces for the relevant operati
 
 1. scooter BLE speed arrival cadence and worst gaps;
 2. duplicate/value-resolution behavior;
-3. delivery latency where a source timestamp actually exists;
-4. GPS cadence, reported speed accuracy, and delivery latency;
+3. delivery latency **and timestamp coverage** where a source timestamp actually exists;
+4. GPS cadence, reported speed accuracy, delivery latency, and source timestamp availability;
 5. screen-on/background/reconnect behavior where the feature expects continuity;
 6. sustained ride conditions rather than one short stationary sample.
 
