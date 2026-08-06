@@ -4,18 +4,17 @@ This document describes the software-only persistence envelope for Nembra's lear
 
 ## Dependency
 
-This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, estimator policy, and range-estimate outputs. The parent also fails closed during live ingest if its accepted-window counter is exhausted. This slice does not duplicate or replace that logic.
+This slice depends on the adaptive range core in PR #10. The parent model validates its decoded scalar/sample invariants, rejects an exhausted accepted-window counter at restore and live-ingest boundaries, and validates Codable restoration of normalized SoC readings, learning windows, estimator policy, and range-estimate outputs. This slice does not duplicate or replace that logic.
 
 ## Why the envelope exists
 
-Learned range state needs to survive app launches without allowing old, shape-compatible, or corrupted persistence to silently become battery/range truth.
+Learned range state needs to survive app launches without allowing old, shape-compatible, or cross-field-corrupted persistence to silently become battery/range truth.
 
 `AdaptiveBatteryRangePersistedState` adds persistence-level guarantees above the model decoder:
 
 1. explicit schema versioning for future migrations;
 2. cumulative cross-field bounds that must be true for any state produced by the public ingest path;
-3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set;
-4. rejection of a restored exhausted accepted-window counter so persisted learning never resumes in a terminal state that cannot accept additional valid history.
+3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set.
 
 Higher layers should persist and restore the envelope instead of relying on unversioned raw model JSON as a durable storage contract.
 
@@ -25,7 +24,6 @@ The envelope rejects state when:
 
 - cumulative historical battery consumption is non-finite or negative;
 - learned state lacks accepted windows/history;
-- the accepted-window counter is already `Int.max`; the parent live model safely rejects another accepted ingest at that point, while the persistence envelope is stricter and refuses to restore a permanently non-extendable learning state;
 - retained recent samples outnumber accepted windows;
 - historical consumption exceeds `acceptedWindowCount × 100`, which is impossible when every normalized SoC anchor is constrained to `0...100`;
 - retained recent sample consumption exceeds cumulative accepted historical consumption;
