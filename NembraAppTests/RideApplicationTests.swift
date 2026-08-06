@@ -19,15 +19,19 @@ final class RideApplicationTests: XCTestCase {
         do {
             let container = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
             let store = SwiftDataRideHistoryStore(modelContainer: container)
-            XCTAssertEqual(try await store.commit(record), .inserted)
-            XCTAssertEqual(try await store.commit(record), .alreadyPresent)
-            XCTAssertEqual(try await store.record(sessionID: sessionID), record)
+            let inserted = try await store.commit(record)
+            let duplicate = try await store.commit(record)
+            let storedRecord = try await store.record(sessionID: sessionID)
+            XCTAssertEqual(inserted, .inserted)
+            XCTAssertEqual(duplicate, .alreadyPresent)
+            XCTAssertEqual(storedRecord, record)
         }
 
         do {
             let reopenedContainer = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
             let reopenedStore = SwiftDataRideHistoryStore(modelContainer: reopenedContainer)
-            XCTAssertEqual(try await reopenedStore.record(sessionID: sessionID), record)
+            let reopenedRecord = try await reopenedStore.record(sessionID: sessionID)
+            XCTAssertEqual(reopenedRecord, record)
 
             let conflicting = RideHistoryRecord(
                 evidence: try completedEvidence(
@@ -113,11 +117,10 @@ final class RideApplicationTests: XCTestCase {
             recoveredStore.lastCompletedSessionID == sessionID && recoveredStore.status == .idle
         }
 
-        XCTAssertNil(try await persistence.checkpointStore.load())
-        XCTAssertEqual(
-            try await persistence.historyStore.record(sessionID: sessionID)?.sessionID,
-            sessionID
-        )
+        let clearedCheckpoint = try await persistence.checkpointStore.load()
+        let committedRecord = try await persistence.historyStore.record(sessionID: sessionID)
+        XCTAssertNil(clearedCheckpoint)
+        XCTAssertEqual(committedRecord?.sessionID, sessionID)
         recoveredStore.stop()
     }
 
