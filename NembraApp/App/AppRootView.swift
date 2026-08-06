@@ -1,9 +1,17 @@
 import SwiftUI
 
 struct AppRootView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     var body: some View {
-        NavigationStack {
-            HomeView()
+        Group {
+            if verticalSizeClass == .compact {
+                DashboardView()
+            } else {
+                NavigationStack {
+                    HomeView()
+                }
+            }
         }
     }
 }

@@ -9,6 +9,13 @@ Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/So
 4. Build/test the existing project first on the `xcode-27` GitHub Mac gate (or direct Xcode 27 tooling if available).
 5. Preserve completed architecture; do not regenerate telemetry/ride/persistence work.
 
+## Communication / recovery contract
+- During long development, provide concise visible engineering updates every few meaningful tool operations or whenever a build, Simulator, screenshot, PR, checkpoint, or gate changes state.
+- Do not expose hidden chain-of-thought; communicate only useful status: what is being worked on, what passed/failed, what is being fixed, and what gate comes next.
+- Do not stop simply because a workflow started, a test finished, a screenshot was created, or one defect was fixed. Continue the active vertical slice until its full quality gate is accepted or a genuine external dependency blocks work.
+- Before long/failure-prone chains, keep valid progress committed/pushed and make `PROJECT_STATE.md` + this continuation file current.
+- If execution is physically blocked, leave an exact unfinished action and resume instruction; otherwise do not make the user type “continue” as routine workflow.
+
 ## Product truth
 - Product: Nembra.
 - First vehicle: MAXSHOT V1S Pro.
@@ -27,6 +34,7 @@ Home moving-state Lock must remain disabled with `Stop to lock`; service/domain 
 ## QA rules
 - GitHub workflow `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, uses iPhone 12/iOS 27 where available, runs core/app/UI tests, and captures deterministic Simulator states.
 - `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme. Extend it for critical future interactions.
+- CI preserves `NembraTests.xcresult` and exports XCTest attachments so interaction/screenshot failures can be inspected even when `xcodebuild test` fails.
 - Never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
 - Show real Simulator screenshots; do not substitute generated mockups. User explicitly requested no image generation in this work stream.
 
@@ -46,24 +54,25 @@ Home moving-state Lock must remain disabled with `Stop to lock`; service/domain 
 - ODO/GPS/live distance stay independent with explicit complete/partial/unknown coverage; never average them.
 - Live distance integrates one injected authoritative raw speed source and never integrates over oversized packet gaps.
 
-## Current/next milestone
-Check `PROJECT_STATE.md` for the exact active branch. If Home PR is already merged, proceed immediately to **Phase 9 dedicated landscape Dashboard Mode**. If its final UI-test gate is still pending/failing, finish that first and merge Home only when green.
+## Exact current milestone
+- `main` contains the accepted portrait Home merge `254b95a8d62d7d143df937cc0d8aa73f45548266`.
+- Active branch: `feature/landscape-dashboard`.
+- PR #2 is draft and must remain unmerged until the landscape gate is green and visually accepted.
+- Phase 9 implementation already exists: dedicated compact-height landscape `DashboardView`, portrait Home preserved, dominant confirmed speed, battery/trip/mode/connection, stopped-only compact controls, moving-state control removal, stable accessibility identifiers, and landscape XCUITests with kept screenshots.
+- Xcode run `31057841472` failed only because a `@MainActor tearDown()` override had actor isolation incompatible with XCTest. The Dashboard application target compiled. That test-target defect has already been fixed by removing the actor-isolated override pattern; the latest branch commit after that fix is `6dae8c8bbd383507d714911a4aa70ded0e512ceb` or newer.
+- Continue by watching the newest Xcode 27 run on `feature/landscape-dashboard`, not by re-investigating the old `tearDown()` failure.
 
-### Phase 9 Dashboard v1
-Build a dedicated landscape cockpit selected on iPhone landscape; portrait remains the Home NavigationStack. It is not rotated portrait UI.
-First vertical slice only:
-- enormous confirmed speed
-- mode
-- battery
-- trip
-- connection/model identity
-- stopped-only compact Light/Lock where valid
-- excellent safe-area readability on iPhone 12 landscape
+### Phase 9 Dashboard acceptance gate
+- enormous confirmed speed with safe iPhone 12 landscape fit
+- mode, battery, scooter Trip, connection/model identity
+- stopped-only compact Light/Lock and ride-mode controls
+- no state-changing controls while moving
 - no map/navigation yet
 - no fake throttle/current/power gauge
-- no interpolation presented as measurement yet
-
-Use XCUITest to rotate `XCUIDevice.shared.orientation` and validate the landscape composition. Capture an actual landscape Simulator screenshot/attachment and critique/fix before graduating the slice.
+- no interpolation presented as measured telemetry yet
+- real XCUITest orientation coverage passes
+- exported `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments are visually inspected
+- fix any clipping, cramped rails, weak hierarchy, inaccessible controls, or orientation defects before merge
 
 ### Phase 10 immediately afterward
 Wire existing raw speed telemetry into the render-only interpolation/rolling-digit system. Benchmark real/simulated cadence separately from render rate. Keep measured speed and displayed interpolated frames explicitly distinct. Do not choose MAXSHOT production interpolation timing until hardware cadence is measured; Simulator timing can be an injected QA profile only.

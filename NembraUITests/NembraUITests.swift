@@ -4,12 +4,16 @@ final class NembraUITests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
-        executionTimeAllowance = 60
+        // The xcode-27 hosted runner can spend ~40s establishing the very first
+        // UI automation session. Keep assertion-level waits tight, but give the
+        // test process enough total time so runner bootstrap is not mistaken for
+        // an app hang.
+        executionTimeAllowance = 120
     }
 
     @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
-        let app = launch(scenario: "connected-stopped")
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
         XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
 
@@ -37,9 +41,6 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(confirmLock.waitForExistence(timeout: 2))
         confirmLock.tap()
 
-        // Re-query after the confirmation dialog dismisses. XCTest can retain a stale
-        // accessibility snapshot for the pre-command button even though SwiftUI has
-        // already re-rendered the confirmed state from the scooter service.
         let securedLock = button(containing: "Secured", in: app)
         XCTAssertTrue(
             securedLock.waitForExistence(timeout: 3),
@@ -54,7 +55,7 @@ final class NembraUITests: XCTestCase {
 
     @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
-        let app = launch(scenario: "scooter-unavailable")
+        let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
         XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 3))
         let reconnect = app.buttons["Reconnect scooter"]
@@ -65,19 +66,73 @@ final class NembraUITests: XCTestCase {
 
     @MainActor
     func testPermissionDeniedOffersSettingsInsteadOfFakeReconnect() {
-        let app = launch(scenario: "permission-denied")
+        let app = launch(scenario: "permission-denied", orientation: .portrait)
         XCTAssertTrue(app.staticTexts["Bluetooth access is off"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Open Nembra settings"].exists)
         XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
     }
 
     @MainActor
-    private func launch(scenario: String) -> XCUIApplication {
-        XCUIDevice.shared.orientation = .portrait
+    func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "riding", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 3))
+        XCTAssertFalse((speed.value as? String ?? "").isEmpty)
+
+        XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
+        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
+
+        keepScreenshot(named: "Dashboard Riding Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardStoppedControlsConfirmMode() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let sport = app.buttons["dashboard.mode.sport"]
+        XCTAssertTrue(sport.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["dashboard.control.light"].exists)
+        XCTAssertTrue(app.buttons["dashboard.control.lock"].exists)
+
+        sport.tap()
+        let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
+        XCTAssertTrue(confirmedMode.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            waitForValue("Sport", element: confirmedMode),
+            "Dashboard mode must change only after the simulated scooter confirms Sport."
+        )
+
+        keepScreenshot(named: "Dashboard Stopped Landscape")
+    }
+
+    @MainActor
+    private func launch(
+        scenario: String,
+        orientation: UIDeviceOrientation
+    ) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func keepScreenshot(named name: String) {
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     @MainActor
