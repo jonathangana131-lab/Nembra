@@ -7,9 +7,9 @@ This layer sits after crash-safe ride detection. It has two separate responsibil
 
 ## Idempotent history handoff
 
-`RideHistoryRecord` initially owns the validated `CompletedRideEvidence` exactly as produced by the ride engine. It does **not** bake in a final reconciled distance, so the raw ride identity/evidence remains stable if reconciliation improves later.
+`RideHistoryRecord` owns the validated `CompletedRideEvidence` exactly as produced by the ride engine. It does **not** bake in a final reconciled distance, so the raw ride identity/evidence remains stable if reconciliation improves later.
 
-`RideHistoryStore` is the storage contract for the future iOS history database. Its required semantics are:
+`RideHistoryStore` defines these required semantics:
 
 - first commit of a session UUID -> `inserted`;
 - retry of the exact same record -> `alreadyPresent`;
@@ -24,7 +24,24 @@ This layer sits after crash-safe ride detection. It has two separate responsibil
 
 If history commit/readback/journal clear fails, the pending recovery record remains. A retry may see `alreadyPresent` in history and safely finish the acknowledgement without creating a duplicate ride.
 
-The platform-independent contract and transaction tests are implemented. The concrete production SwiftData history-store adapter is still pending iOS/Xcode work.
+## Concrete SwiftData history adapter
+
+Phase 12 implements the local iOS history adapter with SwiftData while preserving the existing core contract rather than moving storage semantics into SwiftUI.
+
+`SwiftDataRideHistoryStore`:
+
+- runs behind a model actor;
+- stores the exact encoded `RideHistoryRecord` with a unique session UUID;
+- reads back the exact record after insertion before reporting durable success;
+- treats an equivalent duplicate as idempotent success;
+- treats the same UUID with different evidence as a conflict;
+- rejects a stored payload whose embedded session UUID does not match the indexed row;
+- uses local-only storage (`cloudKitDatabase: .none`) in this phase;
+- keeps explicit Simulator persistence in a separate namespace from future production records.
+
+The application path now drives this handoff through root-owned `RideApplicationStore`. Xcode 27/iOS 27 tests prove reopen/idempotency/conflict behavior, corruption rejection, same-session process recovery, completion commit, and recovery-journal acknowledgement.
+
+This proves the local transaction architecture. It does not yet provide finished ride-history browsing, CloudKit sync, route storage, or physical MAXSHOT validation.
 
 ## Distance evidence stays independent
 
@@ -91,11 +108,11 @@ If the ODO baseline itself was late/partial, Nembra must not make that recovery 
 
 ## Still pending
 
-- concrete production SwiftData `RideHistoryStore` adapter;
 - persistent route points/chunks and route-gap metadata;
 - connection timeline persistence;
-- process-local raw-speed segment integration is implemented; crash-safe ride-level aggregation across recovery segments remains pending;
+- process-local raw-speed segment integration is implemented, but crash-safe ride-level aggregation across recovery segments remains pending;
+- app wiring of live-distance aggregation/reconciliation into the active ride and completed ride presentation;
 - precise ODO coverage classification from real MAXSHOT reads/reconnects;
-- production reconciliation policy calibration;
-- statistics/day/week/month queries over the real history store;
+- GPS quality-screening/location policy and production reconciliation calibration;
+- statistics/day/week/month queries and finished history UI over the real SwiftData ledger;
 - iOS background integration and real hardware validation.
