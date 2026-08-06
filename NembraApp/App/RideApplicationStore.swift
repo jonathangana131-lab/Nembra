@@ -79,6 +79,7 @@ final class RideApplicationStore {
     @ObservationIgnored private var speedTask: Task<Void, Never>?
     @ObservationIgnored private var sessionEventContinuation: AsyncStream<RideApplicationSessionEvent>.Continuation?
     @ObservationIgnored private var rideCompletionBarrier: RideCompletionBarrier?
+    @ObservationIgnored private var isFinalizingCompletedRide = false
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var latestVehicleState: VehicleState
     @ObservationIgnored private var pendingAuthoritativeSpeedSample: SpeedTelemetrySample?
@@ -219,6 +220,7 @@ final class RideApplicationStore {
         sessionEventContinuation?.finish()
         sessionEventContinuation = nil
         rideCompletionBarrier = nil
+        isFinalizingCompletedRide = false
     }
 
     /// Candidate-level/internal entry for already screened GPS evidence. This is
@@ -244,7 +246,12 @@ final class RideApplicationStore {
         receivedAtUptimeNanoseconds: UInt64,
         for sessionID: UUID
     ) async {
-        guard activeSessionID == sessionID else { return }
+        // `activeSessionID` remains intentionally published until the root
+        // completion barrier has flushed route persistence. Once RideEngine has
+        // already emitted `rideEnded`, however, a buffered GPS callback must not
+        // re-enter the pending-completed coordinator and commit history early.
+        guard !isFinalizingCompletedRide,
+              activeSessionID == sessionID else { return }
         await ingestQualityScreenedGPSDistanceDelta(
             meters,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
@@ -364,13 +371,16 @@ final class RideApplicationStore {
 
             // Keep the durable session identity valid until additive ride-scoped
             // capture has flushed/finalized. This prevents a completed-history UI
-            // refresh from racing ahead of its route manifest, and it lets any
-            // already-buffered screened GPS evidence retain the correct UUID.
+            // refresh from racing ahead of its route manifest. While the barrier
+            // drains, new session-scoped GPS engine input is closed fail-safe:
+            // RideEngine has already declared this ride ended at this point.
             if let completedSessionID {
+                isFinalizingCompletedRide = true
                 await rideCompletionBarrier?(completedSessionID)
             }
 
             updatePublishedState(from: update.phase)
+            isFinalizingCompletedRide = false
 
             if let completedSessionID {
                 setStatus(.saving)
@@ -381,6 +391,7 @@ final class RideApplicationStore {
                 updatePublishedState(from: await coordinator.currentPhase())
             }
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
+            isFinalizingCompletedRide = false
             do {
                 setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
@@ -389,6 +400,7 @@ final class RideApplicationStore {
                 fail(error, persistence: true)
             }
         } catch {
+            isFinalizingCompletedRide = false
             fail(error, persistence: false)
         }
     }
