@@ -1,0 +1,158 @@
+import Dispatch
+import XCTest
+@testable import Nembra
+
+final class RideApplicationTests: XCTestCase {
+    func testSwiftDataHistoryStorePersistsExactIdempotentRecord() async throws {
+        let directory = temporaryDirectory(name: "history")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideHistory.store")
+
+        let sessionID = UUID()
+        let record = RideHistoryRecord(
+            evidence: try completedEvidence(
+                sessionID: sessionID,
+                endingOdometerKilometers: 101.25
+            )
+        )
+
+        do {
+            let container = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
+            let store = SwiftDataRideHistoryStore(modelContainer: container)
+            XCTAssertEqual(try await store.commit(record), .inserted)
+            XCTAssertEqual(try await store.commit(record), .alreadyPresent)
+            XCTAssertEqual(try await store.record(sessionID: sessionID), record)
+        }
+
+        do {
+            let reopenedContainer = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
+            let reopenedStore = SwiftDataRideHistoryStore(modelContainer: reopenedContainer)
+            XCTAssertEqual(try await reopenedStore.record(sessionID: sessionID), record)
+
+            let conflicting = RideHistoryRecord(
+                evidence: try completedEvidence(
+                    sessionID: sessionID,
+                    endingOdometerKilometers: 101.5
+                )
+            )
+            do {
+                _ = try await reopenedStore.commit(conflicting)
+                XCTFail("The same ride UUID with different evidence must never overwrite history.")
+            } catch let error as RideHistoryStoreError {
+                XCTAssertEqual(error, .sessionConflict(sessionID))
+            }
+        }
+    }
+
+    @MainActor
+    func testRideApplicationRestoresSameSessionAndCommitsHistory() async throws {
+        let directory = temporaryDirectory(name: "recovery")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .riding, namespace: "recovery-test"),
+            baseDirectoryURL: directory
+        )
+        let configuration = try RideApplicationConfiguration.simulatorQA()
+
+        let firstState = SimulatedScooterService.state(for: .connectedStopped)
+        let firstService = SimulatedScooterService(initialState: firstState)
+        var firstStore: RideApplicationStore? = RideApplicationStore(
+            service: firstService,
+            initialState: firstState,
+            configuration: configuration,
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await firstStore?.start()
+
+        await firstService.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 1)
+        try await waitUntil("The explicit QA ride should become active.") {
+            firstStore?.status == .active
+        }
+        let sessionID = try XCTUnwrap(firstStore?.activeSessionID)
+
+        firstStore?.stop()
+        firstStore = nil
+
+        let durableCheckpoint = try await persistence.checkpointStore.load()
+        guard case let .inProgress(checkpoint)? = durableCheckpoint else {
+            return XCTFail("An active automatic ride must have durable recovery evidence.")
+        }
+        XCTAssertEqual(checkpoint.sessionID, sessionID)
+
+        let recoveredState = SimulatedScooterService.state(for: .reconnecting)
+        let recoveredService = SimulatedScooterService(initialState: recoveredState)
+        let recoveredStore = RideApplicationStore(
+            service: recoveredService,
+            initialState: recoveredState,
+            configuration: configuration,
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await recoveredStore.start()
+
+        XCTAssertEqual(recoveredStore.activeSessionID, sessionID)
+        XCTAssertEqual(recoveredStore.continuity, .recoveredCheckpoint)
+        XCTAssertEqual(recoveredStore.status, .temporarilyDisconnected)
+
+        await recoveredService.simulateReconnected()
+        await recoveredService.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Fresh authoritative speed should resume the recovered ride.") {
+            recoveredStore.status == .active
+        }
+        XCTAssertEqual(recoveredStore.activeSessionID, sessionID)
+        XCTAssertEqual(recoveredStore.continuity, .recoveredCheckpoint)
+        XCTAssertEqual(recoveredStore.statusText, "Ride resumed")
+
+        await recoveredService.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        await recoveredService.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+
+        try await waitUntil("Completed ride evidence should be committed and acknowledged.") {
+            recoveredStore.lastCompletedSessionID == sessionID && recoveredStore.status == .idle
+        }
+
+        XCTAssertNil(try await persistence.checkpointStore.load())
+        XCTAssertEqual(
+            try await persistence.historyStore.record(sessionID: sessionID)?.sessionID,
+            sessionID
+        )
+        recoveredStore.stop()
+    }
+
+    private func completedEvidence(
+        sessionID: UUID,
+        endingOdometerKilometers: Double
+    ) throws -> CompletedRideEvidence {
+        try CompletedRideEvidence(
+            sessionID: sessionID,
+            beganAtDate: Date(timeIntervalSince1970: 1_000),
+            confirmedAtDate: Date(timeIntervalSince1970: 1_002),
+            endedAtDate: Date(timeIntervalSince1970: 1_060),
+            startingOdometerKilometers: 100,
+            endingOdometerKilometers: endingOdometerKilometers,
+            qualityScreenedGPSDistanceMeters: 1_900,
+            continuity: .uninterruptedProcess
+        )
+    }
+
+    private func temporaryDirectory(name: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("Nembra-\(name)-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ failureMessage: String,
+        timeoutNanoseconds: UInt64 = 3_000_000_000,
+        condition: @MainActor () -> Bool
+    ) async throws {
+        let start = DispatchTime.now().uptimeNanoseconds
+        while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
+            if condition() { return }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTFail(failureMessage)
+    }
+}
