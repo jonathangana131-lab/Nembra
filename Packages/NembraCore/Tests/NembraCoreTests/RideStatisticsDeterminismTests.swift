@@ -27,19 +27,19 @@ struct RideStatisticsDeterminismTests {
         )
     }
 
-    @Test("equal longest distances are independent of history fetch order")
+    @Test("equal longest distances are independent of history order and date preference")
     func equalLongestDistancesAreOrderIndependent() throws {
         let calendar = calendar()
         let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let earlierDate = referenceDate.addingTimeInterval(-120)
         let laterDate = referenceDate.addingTimeInterval(-60)
 
-        let expectedID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let earlierID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let sameTimeHigherID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let laterLowerID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
-        let expected = try ride(
-            id: expectedID,
+        let earlier = try ride(
+            id: earlierID,
             date: earlierDate,
             distanceMeters: 2_000
         )
@@ -55,9 +55,9 @@ struct RideStatisticsDeterminismTests {
         )
 
         let inputOrders = [
-            [later, sameTime, expected],
-            [expected, later, sameTime],
-            [sameTime, expected, later]
+            [later, sameTime, earlier],
+            [earlier, later, sameTime],
+            [sameTime, earlier, later]
         ]
 
         for rides in inputOrders {
@@ -69,12 +69,12 @@ struct RideStatisticsDeterminismTests {
             )
 
             #expect(summary.longestRideDistanceMeters == 2_000)
-            #expect(summary.longestRideSessionID == expectedID)
+            #expect(summary.longestRideSessionID == laterLowerID)
             #expect(summary.totalDistanceMeters == 6_000)
         }
     }
 
-    @Test("greater distance still outranks deterministic tie fields")
+    @Test("greater distance still outranks deterministic identity tie break")
     func greaterDistanceStillWins() throws {
         let calendar = calendar()
         let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
