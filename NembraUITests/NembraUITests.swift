@@ -61,7 +61,13 @@ final class NembraUITests: XCTestCase {
         let reconnect = app.buttons["Reconnect scooter"]
         XCTAssertTrue(reconnect.exists)
         reconnect.tap()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))
+
+        let connection = app.descendants(matching: .any)["home.connection"]
+        XCTAssertTrue(connection.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            waitForValue("Connected", element: connection, timeout: 4),
+            "Reconnect must finish only when Home exposes the confirmed Connected vehicle state."
+        )
     }
 
     @MainActor
