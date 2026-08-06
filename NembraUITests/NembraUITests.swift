@@ -176,6 +176,33 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardLowBatteryWarningRemainsAccessibleInBothModes() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "low-battery", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
+            battery.tap()
+        }
+        XCTAssertTrue(
+            waitForValue("14 percent, low battery", element: battery),
+            "The red low-battery treatment must have an equivalent accessible warning."
+        )
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable, low battery", element: battery),
+            "Range mode must retain the low-battery warning even when range itself is unavailable."
+        )
+        keepScreenshot(named: "Dashboard Low Battery Range Unavailable Landscape")
+
+        battery.tap()
+        XCTAssertTrue(waitForValue("14 percent, low battery", element: battery))
+    }
+
+    @MainActor
     func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
