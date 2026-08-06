@@ -11,7 +11,8 @@ enum AppBootstrap {
             return VehicleStore(
                 service: UnverifiedScooterService(),
                 initialState: state,
-                shouldAutoConnectOnStart: false
+                shouldAutoConnectOnStart: false,
+                speedInstrumentInterpolationPolicy: .disabled
             )
         }
 
@@ -20,7 +21,8 @@ enum AppBootstrap {
         return VehicleStore(
             service: service,
             initialState: state,
-            shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch
+            shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch,
+            speedInstrumentInterpolationPolicy: .simulatorQA
         )
     }
 
