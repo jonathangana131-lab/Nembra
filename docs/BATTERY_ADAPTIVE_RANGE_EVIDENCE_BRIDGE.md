@@ -10,7 +10,7 @@ Nembra deliberately separates three responsibilities:
 2. **adaptive range core** — learns percentage-based efficiency only from authoritative measured SoC plus trustworthy distance windows;
 3. **learning-window assembly** — accumulates caller-classified real-distance evidence between authoritative SoC anchors without choosing telemetry sources or inventing energy data.
 
-This worker owns only the seams between those domains: classify which battery observations are allowed into range learning, preserve every known observation gap, validate stream ordering, and apply accepted truth actions to the in-flight range-window assembler atomically.
+This worker owns only the seams between those domains. It does not take ownership of adaptive-model persistence, physical-scooter identity, telemetry decoding, distance-source selection, or UI presentation.
 
 ## Live dependency lineage
 
@@ -22,11 +22,12 @@ The synthetic review base is rebuilt from active/frozen dependency artifacts rat
 
 PR #54 supersedes closed/unmerged draft #29 and carries the corrected latest-authoritative cursor semantics. Its assembler tracks both the span anchor and the latest authoritative SoC so recovery such as `80 → 77 → 79` rebases at `79` instead of hiding recovery inside a later consumption window.
 
-The worker-owned delta is:
+The worker-owned delta is five files:
 
 - `Packages/NembraCore/Sources/NembraCore/BatteryAdaptiveRangeEvidenceAdapter.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeEvidenceAdapterTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePipelineIntegrationTests.swift`;
+- `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeModelBoundaryTests.swift`;
 - this document.
 
 If a dependency moves or lands, this lane must reconcile to its accepted exact head before final QA and production retargeting.
@@ -35,22 +36,9 @@ If a dependency moves or lands, this lane must reconcile to its accepted exact h
 
 Only `verifiedVehicleMeasurement + stateOfChargePercent` may become a `BatterySOCReading` for adaptive range.
 
-The conversion preserves:
+The conversion preserves normalized percentage exactly, `.authoritativeMeasurement` provenance, and process-local receipt uptime. Wall-clock `Date` remains correlation metadata and never substitutes for monotonic ordering.
 
-- normalized percentage exactly, including legitimate fractional values;
-- `.authoritativeMeasurement` provenance;
-- process-local receipt uptime as the ordering timestamp.
-
-Wall-clock `Date` remains correlation metadata and never substitutes for monotonic ordering.
-
-Continuous SoC with these roles remains outside production learning:
-
-- `stockAppCorrelationAnchor`;
-- `simulationFixture`;
-- `derivedEstimate`;
-- `presentationOnly`.
-
-A stock Tuya screen showing `73%` can be useful physical/app correlation evidence without becoming decoded scooter SoC. Simulator success likewise never becomes physical ES80 efficiency history.
+Continuous SoC from stock-app correlation, Simulator fixtures, derived estimates, or presentation-only state remains outside production learning. A stock Tuya screen showing `73%` can be useful physical/app correlation evidence without becoming decoded scooter SoC. Simulator success likewise never becomes physical ES80 efficiency history.
 
 ## Continuity truth is independent of value authority
 
@@ -97,20 +85,14 @@ The bridge validates on a candidate validator and commits only after acceptance 
 
 `BatteryAdaptiveRangeLearningPipeline` combines the evidence bridge with PR #54's `BatteryRangeLearningWindowAssembler` without modifying either dependency's files.
 
-For each battery observation the pipeline:
-
-1. copies both state components;
-2. validates/order-checks the observation through the evidence bridge;
-3. obtains the truth action;
-4. applies that action to the candidate assembler;
-5. commits **both** candidate states only after the entire transition succeeds.
+For each battery observation the pipeline copies both state components, validates/order-checks the observation, obtains the truth action, applies that action to the candidate assembler, and commits **both** candidate states only after the entire transition succeeds.
 
 This protects both directions of the seam:
 
 - a stream-order failure cannot mutate the assembler;
 - an assembler failure after candidate stream acceptance cannot leave the stream baseline partially advanced.
 
-Action mapping is deliberately direct:
+Action mapping is direct:
 
 - `ignore` → no assembler mutation;
 - `resetContinuity` → `windowAssembler.reset()`;
@@ -121,7 +103,7 @@ The returned result contains the truth action plus any assembled `BatteryRangeLe
 
 ## Latest-authoritative recovery semantics
 
-PR #54 introduced a distinct `latestAuthoritativeSOC` cursor in addition to the span anchor. This pipeline deliberately exposes and preserves that behavior.
+PR #54 introduced a distinct `latestAuthoritativeSOC` cursor in addition to the span anchor. This pipeline preserves that behavior.
 
 Example:
 
@@ -148,27 +130,55 @@ The pipeline does not infer which case occurred; a higher layer must classify it
 
 Distance coverage remains monotonic within a span: complete can degrade to partial or unknown and is preserved on the emitted candidate. Invalid/nonfinite/negative distance fails before state mutation.
 
+## Model boundary stays separate
+
+`BatteryAdaptiveRangeLearningPipeline` deliberately stops at a `BatteryRangeLearningWindow` candidate. It does **not** own or persist `AdaptiveBatteryRangeModel`.
+
+That boundary matters because learned history eventually needs a stable per-physical-scooter persistence identity, which remains physical-verification work. Folding the long-lived model into this ephemeral stream/window object would make it easier to accidentally share or persist learned history under an unverified identity.
+
+The parent model already has the correct fail-closed ingest boundary:
+
+- clean complete/no-gap authoritative windows can be accepted;
+- partial or unknown distance is rejected as `incompleteDistanceEvidence` without model mutation;
+- observed transport gaps are rejected as `transportGap` without model mutation.
+
+Worker tests prove pipeline-generated candidates preserve exactly those outcomes rather than sanitizing or dropping the rejection evidence before it reaches the model.
+
 ## Software validation
 
-The main worker test file covers truth conversion, role exclusion, continuity resets, stream ordering, atomic validator/assembler failure, complete-window assembly, transport-gap preservation, and non-authoritative exclusion.
+### Core bridge/pipeline suite
 
-A second integration suite now specifically exercises the live PR #54 seam:
+Covers truth-role gating, every explicit gap reset, non-SoC exclusion, stream boundary/ordering rules, equal-uptime multi-field behavior, complete-window emission, stock-app exclusion, observed transport gaps, and atomic stream/assembler failures.
+
+### PR #54 seam suite
+
+`BatteryAdaptiveRangePipelineIntegrationTests.swift` adds:
 
 - partial→unknown distance coverage propagation;
 - invalid distance atomicity;
-- `markUnobservedInterval()` clearing anchor, latest-authoritative cursor, distance, coverage, and observed-gap state;
+- `markUnobservedInterval()` clearing anchor, latest-authoritative cursor, distance, coverage, and gap state;
 - direct verified first-post-gap SoC reset + re-anchor;
 - `80 → 77 → 79` measured recovery rebasing at the latest authoritative reading;
 - later clean `79 → 76` candidate formation;
 - continuous stock-app SoC unable to advance the latest-authoritative cursor.
 
-Supplemental Swift 6.2.1 contract checks performed in this runtime:
+### Adaptive-model boundary suite
+
+`BatteryAdaptiveRangeModelBoundaryTests.swift` proves:
+
+- a clean pipeline candidate is accepted and teaches the expected 100 m/% sample;
+- a partial candidate remains partial and is rejected without learned-state mutation;
+- an unknown-coverage candidate remains unknown and is rejected without learned-state mutation;
+- a transport-gap candidate preserves the gap and is rejected without learned-state mutation.
+
+### Supplemental Swift 6.2.1 contract checks
 
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window pipeline harness: **6/6 passed**;
-- latest PR #54 seam harness: **6/6 debug passed** and **6/6 release passed**.
+- latest PR #54 seam harness: **6/6 debug passed** and **6/6 release passed**;
+- combined latest-assembler + model-boundary harness: **10/10 debug passed** and **10/10 release passed**.
 
-The first two attempts to run the latest seam harness hit syntax mistakes only in the intentionally compressed disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used valid normal Swift syntax. After correcting the disposable copy, the suite compiled and passed in debug and release. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
+The first two attempts to run the latest seam harness hit syntax mistakes only in the intentionally compressed disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used normal valid Swift syntax. After correcting the disposable copy, debug and release both passed. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
 
 ## Remaining merge boundary
 
@@ -177,13 +187,15 @@ This PR is a dependent integration lane, not an independently mergeable producti
 Before production merge:
 
 1. coordinator PR #40 reaches its accepted/final adaptive-range-core head;
-2. PR #34 battery evidence and PR #54 window assembly reach accepted/final heads;
-3. this lane reconciles those exact parents without rewriting their branches;
-4. the worker four-file delta is revalidated;
-5. an exact-head repository Xcode 27/iPhone 12 Simulator gate passes on the unchanged final head;
-6. only then is the PR retargeted to the correct production base and considered for merge.
+2. PR #54 reaches its accepted/final assembler head on the accepted #40 parent;
+3. PR #34 reaches an accepted/final battery-evidence head;
+4. this lane reconciles those exact parents without rewriting their branches;
+5. the worker five-file delta is revalidated;
+6. the PR is retargeted to the correct production base;
+7. an exact-head repository Xcode 27/iPhone 12 Simulator gate passes on the unchanged final head;
+8. merge uses expected-head protection.
 
-Main now contains the schedule-based exact-head QA fallback from PR #49. Missing scheduler runs are not considered green; acceptance remains tied to the immutable final SHA and durable `Nembra/Xcode27 Exact Head` status.
+Main now contains PR #49's schedule-based exact-head QA fallback. The workflow is registered and active, but no scheduled run had been emitted at the latest check. Missing scheduler execution is never considered green; acceptance remains tied to the immutable final SHA and durable `Nembra/Xcode27 Exact Head` status.
 
 ## Hardware status
 
