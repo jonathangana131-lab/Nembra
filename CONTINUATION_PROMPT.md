@@ -28,53 +28,77 @@ Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/So
 ## Stable UI milestones
 - Portrait Home is accepted and merged on `main`.
 - Dedicated landscape Dashboard Phase 9 is accepted and merged at `51613a990eb058ee83741645d8c551082d4ef268` after real Xcode 27 / iPhone 12 / iOS 27 build, XCUITest, and screenshot review.
-- Dashboard Phase 9 shows only confirmed speed; moving state removes state-changing controls; no fake throttle/current/power gauge exists.
+- Dashboard Phase 9 removes state-changing controls while moving and has no fake throttle/current/power gauge.
 
 ## QA rules
-- GitHub workflow `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, uses iPhone 12/iOS 27 where available, runs core/app/UI tests, and captures deterministic Simulator states.
-- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme. Extend it for critical future interactions.
-- CI preserves `NembraTests.xcresult` and exports XCTest attachments so interaction/screenshot failures can be inspected even when `xcodebuild test` fails.
-- The hosted runner may spend ~40 seconds establishing the first UI automation session. Total XCUITest allowance is 120 seconds while assertion-level waits remain tight.
+- `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, prefers iPhone 12/iOS 27, runs core/app/UI tests, and captures deterministic Simulator states.
+- The workflow now uses per-branch concurrency with `cancel-in-progress: true`; obsolete new-style runs should not consume Mac capacity.
+- Some older runs created before the concurrency change can still finish; use them as evidence if useful but accept only the newest code lineage.
+- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme.
+- CI preserves `NembraTests.xcresult` and exports XCTest attachments on failure or success.
+- Hosted-runner UI bootstrap can take ~40 seconds; total XCUITest allowance is 120 seconds while assertion waits remain tight.
 - Never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
 - Show real Simulator screenshots; do not substitute generated mockups. User explicitly requested no image generation in this work stream.
 
 ## Preserve these architecture boundaries
 - `ScooterService` / capability model separates SwiftUI from transport.
-- One state-changing command at a time until real protocol proves concurrency safe.
-- Connection-generation token invalidates writes spanning disconnect/reconnect.
+- one state-changing command at a time until real protocol proves concurrency safe.
+- connection-generation token invalidates writes spanning disconnect/reconnect.
 - `VehicleDataAvailability`: unavailable/live/retained; disconnect never fabricates zero telemetry.
-- Raw speed evidence is separate from render interpolation.
-- Motion assist cannot masquerade as authoritative speed.
+- raw speed evidence is separate from render interpolation.
+- motion assist cannot masquerade as authoritative speed.
 - `SpeedDisplayInterpolator` outputs visual frames only and is non-predictive.
 - `RollingNumberModel` uses fixed slots and correct carry/borrow direction; presentation only.
-- Automatic `RideEngine` preserves confirmed ride identity through disconnect.
-- Crash recovery uses two-slot generation journal; never persist monotonic uptime across process lifetime.
+- automatic `RideEngine` preserves confirmed ride identity through disconnect.
+- crash recovery uses a two-slot generation journal; never persist monotonic uptime across process lifetime.
 - `completedPendingCommit` prevents ride loss between detector completion and history storage.
-- History handoff is idempotent/readback-verified.
+- history handoff is idempotent/readback-verified.
 - ODO/GPS/live distance stay independent with explicit complete/partial/unknown coverage; never average them.
-- Live distance integrates one injected authoritative raw speed source and never integrates over oversized packet gaps.
+- live distance integrates one authoritative raw speed source and never integrates over oversized packet gaps.
 
 ## Exact current milestone — Phase 10
 - Active branch: `feature/speed-instrumentation-v2`.
-- Start point: accepted Dashboard merge `51613a990eb058ee83741645d8c551082d4ef268`.
-- Already pushed:
-  - `VehicleStore.speedTelemetryUpdates()` raw evidence boundary.
-  - `SpeedInstrumentModel.swift` around the existing core `SpeedDisplayInterpolator`.
-  - `RollingSpeedValueView.swift` using existing `RollingNumberModel`.
-  - App tests for confirmed-state fallback, authoritative-only interpolation, stale/motion-assist rejection, and long-gap duration bounding.
-  - Updated `PROJECT_STATE.md` checkpoint.
-- The visible Dashboard has **not** yet been changed in Phase 10.
+- Draft PR: #3 `Add measured-speed Dashboard instrumentation`.
+- Base: accepted Dashboard merge `51613a990eb058ee83741645d8c551082d4ef268`.
+- Visible Dashboard **has now been changed** only at the center speed subtree; accepted side rails/controls remain intact.
 
-### Phase 10 exact next actions
-1. Wire `SpeedInstrumentModel.swift` and `RollingSpeedValueView.swift` into `Nembra.xcodeproj`.
-2. Run the real Xcode 27 test gate before changing Dashboard UI. Fix compile/test failures without weakening truth boundaries.
-3. Add a narrow Dashboard speed subtree that subscribes once to `VehicleStore.speedTelemetryUpdates()` and renders using `SpeedInstrumentModel`.
-4. Use a local animation-cadence render mechanism only for the speed subtree; do not make global `VehicleState` update at display frequency.
-5. Moving-state safety, ride engine, distance integration, history, stats and commands must remain based on confirmed/raw evidence, never visual interpolation.
-6. Preserve exact accessibility value semantics: VoiceOver should announce a truthful speed value without describing interpolated frames as sensor measurements.
-7. Run landscape XCUITest + screenshots, inspect iPhone 12 frames for digit jitter, clipping, width shifts, unit alignment and animation-induced layout changes.
-8. Keep transition timing based on observed cadence and bounded presentation heuristics. Do not claim a production MAXSHOT BLE notification rate until real hardware captures exist.
-9. Merge only after Mac build/test + Simulator visual review are green, then continue immediately into mode-responsive Dashboard / ride-engine app wiring.
+### Phase 10 code already pushed
+- `VehicleStore.speedTelemetryUpdates()` exposes raw speed evidence without publishing render frames to `VehicleState`.
+- `SpeedInstrumentModel` wraps the core `SpeedDisplayInterpolator`, accepts authoritative samples only, rejects stale/motion-assist samples, and exposes render-only frames.
+- `RollingSpeedValueView` uses fixed slots and a brief integer roll; it is not a second smoothing engine.
+- `DashboardSpeedInstrumentView` owns the raw stream subscription and uses a local SwiftUI animation timeline capped at 60 Hz.
+- the animation timeline pauses outside a real interpolation window.
+- Dashboard safety/moving-state decisions, commands, ride state, distance, history and stats remain driven by confirmed/raw state, never interpolated frames.
+- VoiceOver announces the latest authoritative/confirmed speed, not an interpolated visual midpoint.
+- long telemetry gaps snap to the new measurement rather than visually bridging missing data.
+- both Phase 10 source files are wired into the real Nembra Xcode target.
+
+### CRITICAL timing rule
+Do **not** choose MAXSHOT production interpolation timing before hardware measurement.
+- `SpeedInstrumentInterpolationPolicy.disabled` is the production/default policy.
+- ordinary/unverified production launch therefore snaps to authoritative measurements.
+- explicit Simulator launch injects `.simulatorQA` to exercise the visual system.
+- `.simulatorQA` values (50 ms minimum, 300 ms maximum-continuous interval, 0.8 interval fraction) are QA presentation settings only, not MAXSHOT claims.
+- once real hardware notification cadence/latency/resolution is measured, introduce an explicit calibrated hardware policy; never silently reuse the Simulator profile.
+
+### Phase 10 tests already pushed
+- confirmed VehicleState fallback before fresh raw evidence.
+- production/default model snaps even across close measurements.
+- ordinary launch policy is disabled.
+- explicit Simulator launch policy is `.simulatorQA`.
+- QA profile interpolates only close authoritative measurements.
+- stale + motion-assist samples do not move presentation state.
+- QA profile snaps across long telemetry gaps.
+
+### Exact next actions
+1. Watch the newest `feature/speed-instrumentation-v2` Xcode 27 run. Older pre-concurrency jobs may still be occupying the runner; do not mistake queueing for a code failure.
+2. If the latest lineage fails, fetch its Mac logs/artifact and fix the exact Swift 6/Xcode/UI-test issue without weakening the timing/truth boundaries above.
+3. If green, download the latest artifact and inspect the real iPhone 12 `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments/screenshots.
+4. Check digit geometry, leading-slot width, unit baseline, clipping, center dominance, rail movement, moving-control safety, and dark appearance.
+5. Static screenshots cannot prove temporal smoothness; combine them with model tests and later device profiling. Do not pretend a still image measured frame rate.
+6. Update `DECISIONS.md` and `DESIGN_SYSTEM.md` with the accepted local/pause/hardware-gated instrumentation rules.
+7. Mark PR #3 ready and merge only after latest-lineage Mac + visual gate pass.
+8. Immediately continue to the next master-directive slice: mode-responsive Dashboard / ride-engine application and persistence wiring. Do not stop after the merge.
 
 ## Hardware validation still outstanding
 Real MAXSHOT advertisement identity, BLE services/characteristics, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, and AccessorySetupKit descriptors. Separate APP COMPLETE from HARDWARE VALIDATION REQUIRED.
