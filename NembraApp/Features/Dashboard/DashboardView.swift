@@ -220,7 +220,9 @@ struct DashboardView: View {
     private var stoppedControls: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if !supportedModes.isEmpty {
-                // Four 44 pt targets exactly fill the 176 pt context rail without overlap.
+                // Four 44 pt hit targets exactly fill the 176 pt context rail.
+                // Their accepted 34 pt glass visuals remain inset, preserving a
+                // clear 10 pt visual gap between adjacent mode controls.
                 HStack(spacing: 0) {
                     ForEach(supportedModes, id: \.self) { mode in
                         Button {
@@ -241,9 +243,11 @@ struct DashboardView: View {
                                         .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
                                 }
                             }
-                            .frame(width: 44, height: 44)
+                            .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.glass)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                         .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
                         .accessibilityLabel(mode.displayName)
                         .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
@@ -266,9 +270,11 @@ struct DashboardView: View {
                                 Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
                             }
                         }
-                        .frame(width: 44, height: 44)
+                        .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.glass)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
                     .accessibilityValue(isOn ? "On" : "Off")
@@ -281,9 +287,11 @@ struct DashboardView: View {
                         showLockConfirmation = true
                     } label: {
                         Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            .frame(width: 44, height: 44)
+                            .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.glass)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                     .disabled(vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
                     .accessibilityValue(isLocked ? "Secured" : "Ready")
