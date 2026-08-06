@@ -76,6 +76,58 @@ struct PassiveBluetoothCaptureTests {
         #expect(Set(PassiveBluetoothValueOrigin.allCases).contains(.subscriptionUpdate))
     }
 
+    @Test("included-service relationships survive versioned capture round trip")
+    func preservesIncludedServiceRelationships() throws {
+        let included = try PassiveBluetoothIncludedServiceObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            parentServiceUUID: "FD50",
+            includedServiceUUID: "180A",
+            includedServiceIsPrimary: false
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_600))
+        try session.append(
+            .includedService(included),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 16,
+            receivedAtDate: Date(timeIntervalSince1970: 1_601)
+        )
+
+        let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
+        guard case let .includedService(captured) = decoded.records[0].event else {
+            Issue.record("Expected included-service event")
+            return
+        }
+        #expect(captured.parentServiceUUID == "FD50")
+        #expect(captured.includedServiceUUID == "180A")
+        #expect(captured.includedServiceIsPrimary == false)
+    }
+
+    @Test("descriptor UUID discovery survives versioned capture round trip")
+    func preservesDescriptorDiscovery() throws {
+        let descriptor = try PassiveBluetoothDescriptorObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "00000002-0000-1001-8001-00805F9B07D0",
+            descriptorUUID: "2902"
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_700))
+        try session.append(
+            .descriptor(descriptor),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 17,
+            receivedAtDate: Date(timeIntervalSince1970: 1_701)
+        )
+
+        let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
+        guard case let .descriptor(captured) = decoded.records[0].event else {
+            Issue.record("Expected descriptor event")
+            return
+        }
+        #expect(captured.serviceUUID == "FD50")
+        #expect(captured.characteristicUUID == "00000002-0000-1001-8001-00805F9B07D0")
+        #expect(captured.descriptorUUID == "2902")
+    }
+
     @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
     func valueOriginsAreNonMutating() {
         #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
@@ -274,6 +326,14 @@ struct PassiveBluetoothCaptureTests {
                 peripheralIdentifier: "physical-es80-placeholder",
                 serviceUUID: "   ",
                 isPrimary: true
+            )
+        }
+        #expect(throws: PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier) {
+            _ = try PassiveBluetoothDescriptorObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                serviceUUID: "FD50",
+                characteristicUUID: "FFE1",
+                descriptorUUID: " "
             )
         }
     }
