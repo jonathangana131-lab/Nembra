@@ -34,9 +34,19 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
     private var streamValidator: BatteryEvidenceStreamValidator
     private var latestByField: [BatteryEvidenceField: BatteryEvidenceObservation]
 
+    /// Receipt uptime of the currently open post-gap boundary batch. Multiple normalized
+    /// fields from one first post-gap callback may all legitimately inherit the explicit
+    /// continuity boundary. They are one segment reset, not repeated resets.
+    ///
+    /// The batch closes as soon as accepted evidence advances to a greater uptime. A
+    /// later explicit boundary then starts a new segment. `markUnobservedInterval()` also
+    /// closes any open batch explicitly.
+    private var boundaryBatchUptimeNanoseconds: UInt64?
+
     public init() {
         streamValidator = BatteryEvidenceStreamValidator()
         latestByField = [:]
+        boundaryBatchUptimeNanoseconds = nil
     }
 
     public var currentSnapshot: BatteryEvidenceCurrentSegmentSnapshot {
@@ -56,6 +66,7 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
     public mutating func markUnobservedInterval() {
         streamValidator.markUnobservedInterval()
         latestByField.removeAll(keepingCapacity: true)
+        boundaryBatchUptimeNanoseconds = nil
     }
 
     /// Validates and atomically incorporates one observation into the current segment.
@@ -81,13 +92,25 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
         }
 
         var candidateLatest = latestByField
+        var candidateBoundaryBatchUptime = boundaryBatchUptimeNanoseconds
+
+        // Once evidence advances beyond the boundary receipt uptime, later explicit
+        // boundaries are new segment boundaries even if their new uptime epoch is lower.
+        if let boundaryUptime = candidateBoundaryBatchUptime,
+           observation.receivedAtUptimeNanoseconds > boundaryUptime {
+            candidateBoundaryBatchUptime = nil
+        }
 
         if observation.continuity == .afterUnobservedInterval {
-            candidateLatest.removeAll(keepingCapacity: true)
+            if candidateBoundaryBatchUptime != observation.receivedAtUptimeNanoseconds {
+                candidateLatest.removeAll(keepingCapacity: true)
+                candidateBoundaryBatchUptime = observation.receivedAtUptimeNanoseconds
+            }
         }
 
         candidateLatest[observation.value.field] = observation
         streamValidator = candidateValidator
         latestByField = candidateLatest
+        boundaryBatchUptimeNanoseconds = candidateBoundaryBatchUptime
     }
 }
