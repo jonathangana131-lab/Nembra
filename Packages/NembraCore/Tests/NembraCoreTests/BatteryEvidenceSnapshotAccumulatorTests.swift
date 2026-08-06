@@ -102,6 +102,77 @@ struct BatteryEvidenceSnapshotAccumulatorTests {
         #expect(accumulator.currentSnapshot[.voltageVolts] == voltage)
     }
 
+    @Test("multiple same-uptime post-gap boundary fields form one fresh segment")
+    func sameUptimeBoundaryFieldsCoexist() throws {
+        var accumulator = BatteryEvidenceSnapshotAccumulator()
+        try accumulator.ingest(try observation(field: .powerWatts, uptime: 900, numericValue: 120))
+        accumulator.markUnobservedInterval()
+
+        let socBoundary = try observation(
+            field: .stateOfChargePercent,
+            uptime: 4,
+            numericValue: 54,
+            continuity: .afterUnobservedInterval
+        )
+        let voltageBoundary = try observation(
+            field: .voltageVolts,
+            uptime: 4,
+            numericValue: 39.5,
+            continuity: .afterUnobservedInterval
+        )
+        let currentBoundary = try observation(
+            field: .currentAmps,
+            uptime: 4,
+            numericValue: 3.1,
+            continuity: .afterUnobservedInterval
+        )
+
+        try accumulator.ingest(socBoundary)
+        try accumulator.ingest(voltageBoundary)
+        try accumulator.ingest(currentBoundary)
+
+        #expect(accumulator.currentSnapshot.observationsByField.count == 3)
+        #expect(accumulator.currentSnapshot[.stateOfChargePercent] == socBoundary)
+        #expect(accumulator.currentSnapshot[.voltageVolts] == voltageBoundary)
+        #expect(accumulator.currentSnapshot[.currentAmps] == currentBoundary)
+        #expect(accumulator.currentSnapshot[.powerWatts] == nil)
+    }
+
+    @Test("advancing beyond a boundary batch lets a later explicit boundary start a new segment")
+    func laterBoundaryAfterAdvanceClearsPriorBatch() throws {
+        var accumulator = BatteryEvidenceSnapshotAccumulator()
+        let firstBoundary = try observation(
+            field: .stateOfChargePercent,
+            uptime: 4,
+            numericValue: 54,
+            continuity: .afterUnobservedInterval
+        )
+        let sameBatchVoltage = try observation(
+            field: .voltageVolts,
+            uptime: 4,
+            numericValue: 39.5,
+            continuity: .afterUnobservedInterval
+        )
+
+        try accumulator.ingest(firstBoundary)
+        try accumulator.ingest(sameBatchVoltage)
+        try accumulator.ingest(try observation(field: .currentAmps, uptime: 5, numericValue: 3.0))
+
+        let newBoundary = try observation(
+            field: .stateOfChargePercent,
+            uptime: 1,
+            numericValue: 53,
+            continuity: .afterUnobservedInterval
+        )
+        try accumulator.ingest(newBoundary)
+
+        #expect(accumulator.currentSnapshot.observationsByField.count == 1)
+        #expect(accumulator.currentSnapshot[.stateOfChargePercent] == newBoundary)
+        #expect(accumulator.currentSnapshot[.voltageVolts] == nil)
+        #expect(accumulator.currentSnapshot[.currentAmps] == nil)
+        #expect(accumulator.lastAcceptedUptimeNanoseconds == 1)
+    }
+
     @Test("conflicting same-field same-uptime evidence fails atomically")
     func conflictingSameUptimeFieldFailsClosed() throws {
         var accumulator = BatteryEvidenceSnapshotAccumulator()
