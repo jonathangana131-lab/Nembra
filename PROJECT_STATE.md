@@ -12,7 +12,8 @@ Updated: 2026-08-06
 - Active branch: `feature/landscape-dashboard`
 - Stable branch: `main`
 - Stable portrait Home merge: `254b95a8d62d7d143df937cc0d8aa73f45548266`
-- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode, final Xcode/visual gate**
+- Phase 9 implementation/tested code head: `28e92c7cda34d4a70e079aafa8b70d8e4183465c`
+- Active milestone: **Phase 9 — ACCEPTED, PR #2 ready to merge**
 - Next milestone: **Phase 10 — measured-speed instrumentation / render-only interpolation**
 
 ## Portrait Home — accepted and merged
@@ -22,16 +23,16 @@ Updated: 2026-08-06
 - Speed-limit editing remains absent until DP101/102/103 user-facing semantics are verified.
 - Real Home interaction gate passed on Xcode 27 before merge; PR #1 is merged.
 
-## Phase 9 Dashboard implementation
+## Phase 9 Dashboard — accepted
 - Compact-height iPhone landscape routes to a dedicated `DashboardView`; portrait remains Home.
-- Current refined composition avoids the rejected sparse three-rail/debug-HUD look:
+- Accepted composition deliberately rejects the earlier sparse three-rail/debug-HUD direction:
   - top-left model + truthful connection
   - top-right confirmed mode
   - dominant centered confirmed speed
   - one bottom instrument shelf containing Battery + scooter Trip and either stopped controls or moving read-only state
 - Stopped controls use one integrated W/E/D/S selector plus compact native Liquid Glass Light/Lock controls.
 - While moving, state-changing controls are absent and confirmed Headlight/Lock state remains read-only.
-- Phase 9 still does **not** inject render interpolation into the speed display.
+- Phase 9 does **not** inject render interpolation into the speed display.
 - No maps/navigation, fake throttle gauge, current/watts gauge, acceleration display, or fabricated telemetry.
 - Landscape XCUITests rotate the iPhone, exercise moving/stopped/unknown-speed states, confirm mode changes, and keep screenshots as XCTest attachments.
 
@@ -40,38 +41,40 @@ Commit `c70caceae48950d796c81c4cc23027b8fc8b5e3b` hardens the Lock boundary:
 - Unknown speed is never treated as stationary.
 - Lock requires a finite confirmed speed below 0.5 km/h before **and after** command acknowledgement.
 - Unlock remains available even if speed is unknown.
-- Home shows `Speed unavailable` and disables Lock when unlocked speed is unknown.
+- Home uses the compact disabled Lock subtitle `No speed` when unlocked speed is unknown.
 - Dashboard shows `SPEED UNAVAILABLE` and does not expose stopped controls when speed is unknown.
-- Two new core regression tests prove unknown-speed Lock rejection/unlock availability and movement-during-ack rejection.
-- Core package is now **158/158 tests passing**.
+- Two core regression tests prove unknown-speed Lock rejection/unlock availability and movement-during-ack rejection.
+- Core package is **158/158 tests passing**.
 
 ## Connected unknown-speed QA
-Commit `99695916b43700c02a91e044df62b19c68e9d3be` adds explicit QA for the real startup state where the vehicle connection and other DPs are known but speed has not arrived yet.
-- New simulation scenario: `connected-speed-unknown`.
-- Portrait XCUITest requires `home.connection == Connected`, finds Lock, and proves it is disabled with `Speed unavailable`.
+Commit `99695916b43700c02a91e044df62b19c68e9d3be` added explicit QA for the startup state where the vehicle connection and other DPs are known but speed has not arrived yet.
+- Simulation scenario: `connected-speed-unknown`.
+- Portrait XCUITest requires `home.connection == Connected`, finds Lock, and proves it is disabled with `No speed`.
 - Landscape XCUITest requires `SPEED UNAVAILABLE` and proves Lock/Light/mode controls are absent.
 - Landscape test retains `Dashboard Speed Unavailable Landscape`.
-- Simulator capture harness also records the portrait `connected-speed-unknown` state.
-- Phase 9 UI suite is now **7 XCUITests**.
+- Simulator capture harness records portrait `connected-speed-unknown` too.
+- Phase 9 UI suite is **7 XCUITests**.
 
-## Real Xcode / Simulator proof
+## Final real Xcode / Simulator proof
 GitHub-hosted `xcode-27` is the authoritative remote Mac gate.
 - Proven environment: macOS 26.5.2 / Xcode 27.0 beta build 27A5228h / iOS 27 Simulator / iPhone 12 baseline.
-- Earlier Phase 9 run `31058989306` at `f3394cac` was fully green, but its sparse composition was visually rejected and rebuilt.
-- Refined stopped cockpit screenshot from later Xcode output was visually accepted: speed hierarchy, top model/mode balance, and unified bottom shelf are materially better.
-- Later failed runs exposed QA defects rather than Dashboard compiler defects: reconnect used a brittle text query and riding expected Headlight Off although the deterministic riding fixture is Headlight On. Both are corrected.
-- `.github/workflows/xcode27-simulator.yml` has branch-scoped `cancel-in-progress` concurrency so future superseded Mac runs are discarded.
-- **Do not merge PR #2 until the exact post-safety + unknown-speed lineage is green on Xcode 27 and the three named landscape states are inspected.**
+- Earlier green Phase 9 run `31058989306` at `f3394cac` was visually rejected because the layout was too sparse; Phase 9 remained open and was rebuilt.
+- Final accepted run: **`31064505473`**, job `92499843475`, tested code head **`28e92c7cda34d4a70e079aafa8b70d8e4183465c`**.
+- Final gate result: project validation PASS; **158/158 core tests PASS**; app tests PASS; **7/7 XCUITests PASS**; Simulator capture PASS; artifact upload PASS.
+- Final artifact: `nembra-xcode27-simulator-139-1`, artifact ID `8953548324`.
+- Visual acceptance reviewed real iPhone 12/iOS 27 frames for riding, stopped, and connected-speed-unknown. No clipping or orphaned control layout remains; the portrait safety subtitle now fits fully as `No speed`.
+- `.github/workflows/xcode27-simulator.yml` has branch-scoped `cancel-in-progress` concurrency so superseded Mac runs are discarded.
+- `DESIGN_SYSTEM.md` v0.3 records the accepted unified cockpit shelf rule and unknown-speed behavior.
 
 ## Phase 10 selective reuse plan
 The old `feature/speed-instrumentation` branch diverged before accepted Home/Phase 9 and must **not** be merged wholesale.
-After Phase 9 merges, create a fresh branch from `main` and selectively reuse only:
+After PR #2 merges, create a fresh branch from `main` and selectively reuse/reimplement only:
 - narrow `VehicleStore.speedTelemetryUpdates()` service stream
 - `SpeedInstrumentModel` concept/tests
-- a rolling-digit SwiftUI presentation rewritten/verified to honor the accepted `RollingNumberModel` carry/borrow direction
+- a rolling-digit SwiftUI presentation verified against the accepted `RollingNumberModel` carry/borrow direction
 
 Core `SpeedTelemetry`, `TelemetryBenchmarkCollector`, `SpeedDisplayInterpolator`, and `RollingNumberModel` already live on the accepted lineage.
-Important QA constraint: static `.riding` simulation is confirmed state only; raw speed samples are emitted only by `simulateRide(...)`. Phase 10 therefore needs an explicit deterministic QA telemetry-driving path rather than pretending a static riding state proves interpolation/cadence.
+Important QA constraint: static `.riding` simulation is confirmed state only; raw speed samples are emitted only by simulation methods that explicitly generate packets. Phase 10 needs an explicit deterministic raw-telemetry-driving QA path rather than pretending a static riding state proves interpolation/cadence.
 
 ## Core architecture already implemented
 - Capability-based `VehicleProfile` / `ScooterService` boundary.
@@ -95,12 +98,12 @@ Important QA constraint: static `.riding` simulation is confirmed state only; ra
 Real MAXSHOT advertisement identity, services/characteristics, notification cadence/latency/resolution, reads/writes/acks, packet framing/checksum, DP101–103 semantics, and AccessorySetupKit descriptors.
 
 ## Next exact actions
-1. Follow the Xcode 27 run triggered by this connector-authored checkpoint; this is the authoritative Phase 9 candidate.
-2. Require project validation + **158/158 core tests** + app tests + **7/7 XCUITests**.
-3. Download/export and inspect `Dashboard Riding Landscape`, `Dashboard Stopped Landscape`, and `Dashboard Speed Unavailable Landscape` at the iPhone 12/iOS 27 baseline.
-4. If visually accepted, update `DESIGN_SYSTEM.md` with the unified cockpit shelf rule, update this file + `CONTINUATION_PROMPT.md` with the exact green run, update/ready PR #2, and merge.
-5. Immediately create a fresh Phase 10 branch from merged `main` and implement deterministic raw-speed QA + render-only interpolation/rolling digits.
-6. Continue autonomously through the remaining master-directive vertical slices after each quality gate.
+1. Update PR #2 with final run/artifact proof, mark it ready, and merge the accepted Phase 9 branch to `main`.
+2. Create fresh `feature/measured-speed-instrumentation` from merged `main`; do not merge the old divergent speed branch.
+3. Add deterministic raw-speed simulation QA and a narrow `VehicleStore` raw stream accessor.
+4. Implement a presentation-only speed instrument that keeps confirmed-state fallback separate from fresh measured telemetry and visual interpolation.
+5. Rebuild the rolling SwiftUI view so full-value transition direction drives carry/borrow behavior; keep high-frequency redraw local to the speed subtree.
+6. Build/test on Xcode 27, benchmark the simulation stream explicitly as simulation-only, inspect real landscape Simulator behavior, fix, commit, merge, then continue the next master-directive slice.
 
 ## Visual QA acceptance criteria
 A vertical slice is accepted only after latest-lineage Mac build/test success, real interaction coverage, representative Simulator screenshots, visual critique/fix, and truth/safety edge cases. A green compile or a clean screenshot alone is not completion.
