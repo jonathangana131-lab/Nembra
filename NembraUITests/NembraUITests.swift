@@ -84,7 +84,13 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
-        XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
+        let lightState = app.descendants(matching: .any)["dashboard.state.light"]
+        let lockState = app.descendants(matching: .any)["dashboard.state.lock"]
+        XCTAssertTrue(lightState.waitForExistence(timeout: 2))
+        XCTAssertTrue(lockState.waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForValue("Off", element: lightState))
+        XCTAssertTrue(waitForValue("Unlocked", element: lockState))
+
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
