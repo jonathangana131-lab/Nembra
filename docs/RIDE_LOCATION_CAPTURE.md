@@ -56,6 +56,33 @@ Route storage is additive. If route persistence is unavailable, already quality-
 
 Explicit source interruptions force partial route coverage. Repeated gap notifications remain safe because route gap materialization is lazy until another accepted point exists.
 
+## Root-owned ride lifecycle
+
+The application/root layer now owns the location-capture lifetime for the explicit Simulator QA path.
+
+`RideApplicationStore` emits ride-session lifecycle events only when the authoritative durable ride UUID changes. A temporary disconnect, an ending candidate, or recovery back to active riding keeps the same UUID and therefore does not stop/restart location capture merely because a SwiftUI screen changed state.
+
+`AppRuntime` consumes that root lifecycle and starts `RideLocationCaptureCoordinator` only after a ride is confirmed. Because the candidate interval occurred before capture began, the Simulator route is intentionally classified as partial coverage rather than pretending the entire ride was recorded.
+
+When `RideEngine` declares a ride complete, AppRuntime's completion barrier stops and drains the ride-scoped location source and finalizes its route manifest before completed history is committed/published. During that narrow finalization window, new session-scoped GPS engine input is rejected fail-safe so a buffered callback cannot re-enter the pending-completed ride and commit history early. Durable route coordinates already accepted by the coordinator remain an additive domain; they are not converted into missing ride distance after the engine has ended the session.
+
+No SwiftUI view appearance/disappearance controls this lifetime.
+
+## Explicit Simulator QA source
+
+`SimulatorRideLocationSource` is an injected `RideLocationSource` used only by the opt-in completed-ride Simulator fixture.
+
+It emits ordinary raw `RideLocationSample` values through the exact same source boundary as Core Location. Those samples then pass through:
+
+`RideLocationSource` → `RideLocationQualityScreen` → `RideLocationCaptureCoordinator` → independent GPS-distance + route-persistence paths.
+
+The fixture does **not** write `RideRouteRecorder` directly, does not inject a completed-history row, and does not fabricate GPS distance separately from screened adjacent coordinates. Its coordinates, cadence, accuracy, and policy are deterministic QA data only; they are not AOVOPRO ES80 motion evidence or outdoor iPhone GPS measurements.
+
+The completed-ride UI test requires all of the following to remain independently observable:
+- durable odometer distance evidence from the simulated scooter service,
+- quality-screened GPS distance evidence from the injected location source,
+- durable route geometry rendered by the real route/history presentation path.
+
 ## Current truth boundaries
 
 - Production automatic ride detection remains disabled until real **AOVOPRO ES80** speed cadence/reconnect behavior is measured.
@@ -68,10 +95,15 @@ Explicit source interruptions force partial route coverage. Repeated gap notific
 - No physical iPhone 12 energy/performance claim is made by hosted Simulator CI.
 - This location slice does not verify ES80 BLE/protocol behavior, battery semantics, or motorized commands.
 
-## Validation required before production activation
+## Validation status and remaining gates
 
-1. Exercise the capture coordinator through the explicit Simulator ride fixture and verify both route and GPS-distance evidence through the real ride/history UI path.
-2. Add ride-lifecycle ownership so capture begins/ends with the authoritative ride application state rather than a view lifetime.
+Implemented on the current worker branch, with exact-head Xcode 27/iPhone 12 Simulator acceptance still required before merge:
+
+1. Exercise the capture coordinator through an explicit injected Simulator location source and verify route plus separate GPS-distance evidence through the real ride/history UI path.
+2. Drive capture begin/end from authoritative root-owned ride session identity rather than a SwiftUI view lifetime, including a deterministic regression for ending-candidate recovery preserving one session.
+
+Still required before production activation:
+
 3. Implement and test foreground/background transitions using current iOS 27 location lifecycle APIs.
 4. Measure real outdoor traces on the target iPhone class and select production accuracy/staleness/gap/jump thresholds from evidence.
 5. Validate energy impact and stationary behavior.
