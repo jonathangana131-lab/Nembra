@@ -47,7 +47,10 @@ public struct RideStatisticsRide: Equatable, Sendable {
     public let distanceMeters: Double?
     public let distanceDisposition: RideStatisticsDistanceDisposition
 
-    public init(
+    /// Module-internal construction is reserved for core tests and trusted
+    /// adapters. App code must not bypass reconciliation by self-declaring an
+    /// arbitrary distance as included evidence.
+    init(
         sessionID: UUID,
         attributedDate: Date,
         distanceMeters: Double?,
