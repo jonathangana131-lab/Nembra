@@ -8,15 +8,17 @@ Lane: `navigation-reroute-policy`
 
 Provide a small platform-neutral evidence gate that prevents one noisy accepted location from causing a MapKit reroute request.
 
-This slice is intentionally dependent on the navigation route foundation in PR #41, but it owns separate files and does not change that worker's route-domain types. It implements only route-adherence/reroute policy over an already-derived distance-from-route observation.
+This slice is intentionally dependent on the navigation route foundation in PR #41, but it owns separate files and does not change that worker's route-domain or route-planning types. It implements only route-adherence/reroute policy over an already-derived distance-from-route observation.
 
 ## Input truth boundary
 
-`NavigationRerouteTracker.ingest(distanceFromRouteMeters:receiptUptime:)` does **not** accept raw Core Location callbacks.
+`NavigationRerouteTracker.ingest(distanceFromRouteMeters:receiptUptimeNanoseconds:)` does **not** accept raw Core Location callbacks.
 
-The distance value must already have been derived by a future navigation geometry layer from location evidence that passed the existing location-quality boundary. It is navigation-derived state only.
+The distance value must already have been derived by a future navigation geometry layer from location evidence that passed the existing `RideLocationQualityScreen` boundary. The receipt uptime intentionally uses the same `UInt64` process-local nanosecond clock already carried by `RideLocationSample.receivedAtUptimeNanoseconds`.
 
-It must never be used to:
+That clock is ordering evidence only. It must not be persisted or compared across an app relaunch/reboot as if its clock domain remained continuous.
+
+Distance-from-route is navigation-derived state only. It must never be used to:
 - replace the original accepted phone coordinate;
 - add or subtract ride GPS distance;
 - reconstruct a missing route segment;
@@ -31,10 +33,10 @@ Map matching/snap-to-route can help guidance presentation, but it remains one-wa
 - `offRouteEnterDistanceMeters`: a sample at or beyond this distance may count toward off-route evidence;
 - `onRouteExitDistanceMeters`: a sample at or inside this lower threshold clears the current off-route episode;
 - `minimumOffRouteSamples`: at least two accepted deviation observations are required;
-- `minimumOffRouteDurationSeconds`: sample count alone is insufficient; the deviation must also persist for meaningful monotonic time;
+- `minimumOffRouteDurationSeconds`: sample count alone is insufficient; the deviation must also persist for meaningful process-local monotonic time;
 - `rerouteCooldownSeconds`: a second episode cannot immediately create another route request.
 
-The exit threshold must be lower than the enter threshold. The band between them provides hysteresis so normal location jitter does not rapidly flip the state.
+The exit threshold must be lower than the enter threshold. The band between them provides hysteresis so ordinary location jitter does not rapidly flip the state.
 
 No numerical values in the focused tests are production GPS/reroute thresholds. Production values remain unknown until real iPhone outdoor traces justify them.
 
@@ -42,9 +44,11 @@ No numerical values in the focused tests are production GPS/reroute thresholds. 
 
 `NavigationRouteAdherence` is explicit:
 - `unknown`: no current continuity-backed adherence conclusion;
-- `onRoute`: the latest accepted deviation is inside the exit threshold;
+- `onRoute`: an accepted deviation reached the lower on-route threshold;
 - `suspectedOffRoute(sampleCount:)`: some evidence is outside the enter threshold, but the multi-sample/time gate is not yet satisfied;
 - `offRoute`: sustained accepted deviation satisfied the active policy.
+
+A sample that lands only inside the hysteresis band does not manufacture stronger truth. In particular, an `unknown` tracker remains `unknown` until evidence reaches a real threshold.
 
 A reroute recommendation is emitted only when:
 1. sustained off-route evidence satisfies both sample-count and duration requirements;
@@ -55,20 +59,21 @@ Repeated far samples after one recommendation do not create request storms. Retu
 
 ## Monotonic ordering
 
-Receipt uptime is process-local ordering evidence.
+`receiptUptimeNanoseconds` uses the existing ride-location process-local ordering authority.
 
-Each ingested deviation sample must have a strictly greater uptime than the prior observation. Equal uptime is rejected deliberately so the same accepted location fix cannot be replayed and counted multiple times toward the minimum sample requirement.
+Each ingested deviation sample must have a strictly greater uptime than the prior accepted navigation observation. Equal uptime is rejected deliberately so the same accepted location fix cannot be replayed and counted multiple times toward the minimum sample requirement.
 
-Invalid/nonfinite/negative deviation values, invalid uptime, and backwards/equal uptime fail before state mutation.
+Invalid/nonfinite/negative deviation values and backwards/equal uptime fail before state mutation.
 
 ## Continuity gaps
 
-`markContinuityInterrupted(receiptUptime:)` handles a known interval where navigation location evidence was not observed.
+`markContinuityInterrupted()` mirrors `RideLocationQualityScreen.markKnownCoverageGap()` semantics: the gap marker itself does not invent another location sample or a synthetic timestamp.
 
 A gap:
 - moves adherence to `unknown`;
 - discards in-flight suspected/off-route evidence for the old observed segment;
 - emits no reroute recommendation;
+- preserves the last accepted sample's ordering baseline;
 - preserves prior reroute-request cooldown history.
 
 The first far observation after a gap starts a fresh suspected-off-route evidence span. Nembra does not pretend the missing interval proved continuous deviation.
@@ -82,21 +87,25 @@ Cooldown history is deliberately preserved across replacement routes so a sequen
 ## Deterministic verification
 
 The focused Swift 6.2.1 harness passed:
-- **13/13 debug tests**;
-- **13/13 release tests**.
+- **14/14 debug tests**;
+- **14/14 release tests**.
 
 Coverage includes:
 - one noisy point cannot reroute;
 - sample count without minimum duration cannot reroute;
 - sustained accepted deviation emits exactly one recommendation;
 - hysteresis-band samples do not manufacture another far-deviation sample;
+- the hysteresis band cannot turn unknown continuity into on-route truth;
 - return inside the exit threshold clears the episode;
 - cooldown suppresses a second episode and allows the exact boundary;
-- a continuity gap invalidates in-flight confidence;
+- a continuity gap invalidates in-flight confidence without inventing a sample;
+- continuity gaps preserve reroute cooldown;
 - replacement-route acceptance resets adherence while preserving cooldown;
 - equal/backwards uptime fails atomically;
-- invalid deviation and uptime fail atomically;
+- invalid deviation fails atomically;
 - invalid policy combinations fail closed.
+
+A static review also removed a mutating tracker call nested directly inside `#expect(...)`, matching the Swift Testing/Xcode compatibility lesson already documented by the parent navigation lane.
 
 These are software-domain checks only. The repository's exact-head Xcode 27 gate is still required on the final reconciled head before acceptance.
 
