@@ -203,6 +203,50 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         self.continuity = continuity
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case value
+        case role
+        case receivedAtUptimeNanoseconds
+        case receivedAtDate
+        case continuity
+    }
+
+    /// Persisted/imported observations re-enter through the same validation boundary as
+    /// live construction. Codable conformance is not allowed to bypass timestamp truth.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let value = try container.decode(BatterySemanticValue.self, forKey: .value)
+        let role = try container.decode(BatteryEvidenceRole.self, forKey: .role)
+        let receivedAtUptimeNanoseconds = try container.decode(UInt64.self, forKey: .receivedAtUptimeNanoseconds)
+        let receivedAtDate = try container.decode(Date.self, forKey: .receivedAtDate)
+        let continuity = try container.decode(BatteryEvidenceContinuity.self, forKey: .continuity)
+
+        do {
+            try self.init(
+                value: value,
+                role: role,
+                receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+                receivedAtDate: receivedAtDate,
+                continuity: continuity
+            )
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                forKey: .receivedAtDate,
+                in: container,
+                debugDescription: "Persisted battery evidence observation violates timestamp invariants."
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(value, forKey: .value)
+        try container.encode(role, forKey: .role)
+        try container.encode(receivedAtUptimeNanoseconds, forKey: .receivedAtUptimeNanoseconds)
+        try container.encode(receivedAtDate, forKey: .receivedAtDate)
+        try container.encode(continuity, forKey: .continuity)
+    }
+
     /// Only physically verified target-vehicle measurements cross this boundary.
     /// Stock-app observations, Simulator fixtures, estimates, and display frames do not.
     public var isAuthoritativeVehicleMeasurement: Bool {
