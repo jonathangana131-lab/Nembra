@@ -88,6 +88,7 @@ Emitting a `BatteryRangeLearningWindow` **closes the assembler span immediately*
 That separation is intentional. Model rejection does not roll the assembler back:
 - a transport-gap or incomplete-coverage candidate must not keep contaminating future clean evidence;
 - a statistically rejected efficiency outlier must not cause its distance to be replayed into the next sample;
+- a numerically unrepresentable efficiency candidate (for example one whose implied full-charge range overflows) must also close without replaying its distance;
 - a rejection never authorizes a higher layer to re-add the old span's distance merely to recover a training sample.
 
 The next clean evidence span therefore begins at the rejected candidate's end SoC. Persisted learned history remains unchanged when the model rejects the candidate, while ephemeral assembly continuity moves forward.
