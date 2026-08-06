@@ -80,6 +80,20 @@ struct RideRouteEvidenceSummaryTests {
         #expect(!summary.hasKnownGaps)
     }
 
+    @Test("complete coverage stays points-only when only one point exists")
+    func completeSinglePoint() throws {
+        let summary = RideRouteEvidenceSummary(
+            geometry: try geometry(coverage: .complete, segmentPointCounts: [1])
+        )
+        #expect(summary.coverage == .complete)
+        #expect(summary.shape == .recordedPointsOnly)
+        #expect(summary.segmentCount == 1)
+        #expect(summary.pointCount == 1)
+        #expect(summary.hasRecordedGeometry)
+        #expect(!summary.hasDrawablePath)
+        #expect(!summary.hasKnownGaps)
+    }
+
     @Test("a continuous validated segment with two or more points is drawable")
     func drawablePath() throws {
         let summary = RideRouteEvidenceSummary(
