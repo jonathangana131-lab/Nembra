@@ -200,6 +200,37 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(window.distanceMeters == 300)
     }
 
+    @Test("spontaneous explicit boundary resets assembly even without a prior gap marker")
+    func spontaneousBoundaryResetsAssembly() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 1),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 200, coverage: .partial)
+        pipeline.recordTransportGap()
+
+        let spontaneousBoundary = try observation(
+            60,
+            role: .stockAppCorrelationAnchor,
+            uptime: 2,
+            continuity: .afterUnobservedInterval
+        )
+        let result = try pipeline.acceptBatteryObservation(spontaneousBoundary, policy: p)
+
+        #expect(result.action == .resetContinuity)
+        #expect(result.learningWindow == nil)
+        #expect(pipeline.evidenceBridge.streamValidator.requiresContinuityBoundary == false)
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 2)
+        #expect(pipeline.windowAssembler.anchorSOC == nil)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC == nil)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+        #expect(pipeline.windowAssembler.distanceCoverage == .complete)
+        #expect(pipeline.windowAssembler.transportGapOccurred == false)
+    }
+
     @Test("in-span measured recovery rebases using latest authoritative SoC")
     func measuredRecoveryRebasesThroughPipeline() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
