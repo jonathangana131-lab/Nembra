@@ -4,16 +4,17 @@ This document describes the software-only persistence envelope for Nembra's lear
 
 ## Dependency
 
-This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants. This slice does not duplicate or replace that logic.
+This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, and estimator policy. This slice does not duplicate or replace that logic.
 
 ## Why the envelope exists
 
 Learned range state needs to survive app launches without allowing old, shape-compatible, or corrupted persistence to silently become battery/range truth.
 
-`AdaptiveBatteryRangePersistedState` adds two persistence-level guarantees above the model decoder:
+`AdaptiveBatteryRangePersistedState` adds persistence-level guarantees above the model decoder:
 
 1. explicit schema versioning for future migrations;
-2. cumulative cross-field bounds that must be true for any state produced by the public ingest path.
+2. cumulative cross-field bounds that must be true for any state produced by the public ingest path;
+3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set.
 
 Higher layers should persist and restore the envelope instead of relying on unversioned raw model JSON as a durable storage contract.
 
@@ -26,7 +27,11 @@ The envelope rejects state when:
 - retained recent samples outnumber accepted windows;
 - historical consumption exceeds `acceptedWindowCount × 100`, which is impossible when every normalized SoC anchor is constrained to `0...100`;
 - retained recent sample consumption exceeds cumulative accepted historical consumption;
+- every accepted sample is still retained but those samples do not reconstruct the stored cumulative consumption;
+- every accepted sample is still retained but their weighted efficiency does not reconstruct the stored historical efficiency;
 - the schema version is unsupported.
+
+If older accepted samples have legitimately been truncated by `recentWindowCapacity`, the envelope does not pretend it can reconstruct unavailable history. In that case it enforces only the invariants that remain provable from the retained subset.
 
 These checks intentionally avoid policy-specific assumptions such as minimum learning-window size or ES80 field thresholds because those values are not part of the persisted model state.
 
