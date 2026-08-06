@@ -257,8 +257,12 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
     func invalidDistanceFailsAtomically() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
 
-        #expect(throws: BatteryRangeWindowAssemblyError.invalidDistanceDelta) {
-            try assembler.recordDistance(deltaMeters: -1)
+        for invalid in [-1.0, Double.nan, Double.infinity, -Double.infinity] {
+            let before = assembler
+            #expect(throws: BatteryRangeWindowAssemblyError.invalidDistanceDelta) {
+                try assembler.recordDistance(deltaMeters: invalid, coverage: .unknown)
+            }
+            #expect(assembler == before)
         }
         #expect(assembler.accumulatedDistanceMeters == 0)
         #expect(assembler.distanceCoverage == .complete)

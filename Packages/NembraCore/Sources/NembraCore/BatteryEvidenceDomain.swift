@@ -3,6 +3,7 @@ import Foundation
 public enum BatteryEvidenceValidationError: Error, Equatable, Sendable {
     case invalidSemanticValue
     case invalidTimestamp
+    case invalidEvidenceRole
 }
 
 /// Semantic battery fields that Nembra may eventually learn from real ES80 evidence.
@@ -20,10 +21,8 @@ public enum BatteryEvidenceField: String, Codable, CaseIterable, Sendable {
 
 /// A validated, normalized battery value with no embedded claim about where it came from.
 ///
-/// Raw BLE/Tuya bytes remain in the passive capture/research layer. A protocol adapter
-/// may construct one of these only after it has decoded a candidate semantic value.
-/// Whether that candidate is verified, a stock-app correlation anchor, an estimate, or
-/// presentation-only state is expressed separately by `BatteryEvidenceObservation.role`.
+/// Raw BLE/Tuya bytes remain outside this type. Decoding/normalizing a plausible number
+/// does not establish that the target scooter physically exposes that semantic field.
 public struct BatterySemanticValue: Equatable, Codable, Sendable {
     public let field: BatteryEvidenceField
     public let numericValue: Double?
@@ -73,43 +72,23 @@ public struct BatterySemanticValue: Equatable, Codable, Sendable {
     }
 
     public static func stateOfChargePercent(_ percentage: Double) throws -> Self {
-        try Self(
-            field: .stateOfChargePercent,
-            numericValue: percentage,
-            booleanValue: nil
-        )
+        try Self(field: .stateOfChargePercent, numericValue: percentage, booleanValue: nil)
     }
 
     public static func voltageVolts(_ volts: Double) throws -> Self {
-        try Self(
-            field: .voltageVolts,
-            numericValue: volts,
-            booleanValue: nil
-        )
+        try Self(field: .voltageVolts, numericValue: volts, booleanValue: nil)
     }
 
     public static func currentAmps(_ amps: Double) throws -> Self {
-        try Self(
-            field: .currentAmps,
-            numericValue: amps,
-            booleanValue: nil
-        )
+        try Self(field: .currentAmps, numericValue: amps, booleanValue: nil)
     }
 
     public static func powerWatts(_ watts: Double) throws -> Self {
-        try Self(
-            field: .powerWatts,
-            numericValue: watts,
-            booleanValue: nil
-        )
+        try Self(field: .powerWatts, numericValue: watts, booleanValue: nil)
     }
 
     public static func chargingState(_ isCharging: Bool) throws -> Self {
-        try Self(
-            field: .chargingState,
-            numericValue: nil,
-            booleanValue: isCharging
-        )
+        try Self(field: .chargingState, numericValue: nil, booleanValue: isCharging)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -125,11 +104,7 @@ public struct BatterySemanticValue: Equatable, Codable, Sendable {
         let booleanValue = try container.decodeIfPresent(Bool.self, forKey: .booleanValue)
 
         do {
-            try self.init(
-                field: field,
-                numericValue: numericValue,
-                booleanValue: booleanValue
-            )
+            try self.init(field: field, numericValue: numericValue, booleanValue: booleanValue)
         } catch {
             throw DecodingError.dataCorruptedError(
                 forKey: .field,
@@ -148,36 +123,28 @@ public struct BatterySemanticValue: Equatable, Codable, Sendable {
 }
 
 /// Truth role of one normalized battery value.
-///
-/// The role is intentionally stricter than a generic "source" string so a stock-app
-/// number, Simulator fixture, estimate, or animated/display value cannot silently become
-/// a verified scooter measurement merely because the numeric value looks plausible.
 public enum BatteryEvidenceRole: String, Codable, CaseIterable, Sendable {
-    /// Semantics and scaling have been physically verified for the target vehicle/protocol.
+    /// Reserved for a target-vehicle field whose raw source, semantics, and scaling have
+    /// been physically verified. Generic external construction/Codable import cannot set
+    /// this role on a trusted `BatteryEvidenceObservation`.
     case verifiedVehicleMeasurement
 
-    /// A value directly observed in the stock app and useful only as a correlation anchor
-    /// until its raw transport/DP source and semantics are physically verified.
     case stockAppCorrelationAnchor
-
-    /// Deterministic software/Simulator evidence. Useful for QA, never physical ES80 proof.
     case simulationFixture
-
-    /// A derived/estimated semantic value. It must never be stored as measured telemetry.
     case derivedEstimate
-
-    /// A presentation-only value such as an animated/intermediate display frame.
     case presentationOnly
 }
 
-/// Whether the observation follows continuously from prior evidence in the same process
-/// or is the first value after an interval Nembra did not observe.
 public enum BatteryEvidenceContinuity: String, Codable, Sendable {
     case continuous
     case afterUnobservedInterval
 }
 
 /// One normalized battery observation with explicit truth/provenance boundaries.
+///
+/// Authoritative construction is intentionally sealed inside NembraCore until a physical
+/// target-specific verifier exists. External callers can create only non-authoritative
+/// observations through `nonAuthoritative(...)`.
 public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
     public let value: BatterySemanticValue
     public let role: BatteryEvidenceRole
@@ -185,7 +152,9 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
     public let receivedAtDate: Date
     public let continuity: BatteryEvidenceContinuity
 
-    public init(
+    /// Trusted/raw construction is module-internal. Tests using `@testable` and a future
+    /// physically verified adapter hosted at the NembraCore trust boundary may use it.
+    init(
         value: BatterySemanticValue,
         role: BatteryEvidenceRole,
         receivedAtUptimeNanoseconds: UInt64,
@@ -203,6 +172,29 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         self.continuity = continuity
     }
 
+    /// Public construction path for evidence that must not claim physical target
+    /// verification. The caller chooses the descriptive non-authoritative role, but the
+    /// reserved verified role is rejected.
+    public static func nonAuthoritative(
+        value: BatterySemanticValue,
+        role: BatteryEvidenceRole,
+        receivedAtUptimeNanoseconds: UInt64,
+        receivedAtDate: Date,
+        continuity: BatteryEvidenceContinuity = .continuous
+    ) throws -> Self {
+        guard role != .verifiedVehicleMeasurement else {
+            throw BatteryEvidenceValidationError.invalidEvidenceRole
+        }
+
+        return try Self(
+            value: value,
+            role: role,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            receivedAtDate: receivedAtDate,
+            continuity: continuity
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case value
         case role
@@ -211,8 +203,8 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         case continuity
     }
 
-    /// Persisted/imported observations re-enter through the same validation boundary as
-    /// live construction. Codable conformance is not allowed to bypass timestamp truth.
+    /// Generic Codable import is deliberately non-authoritative. A serialized payload
+    /// cannot self-assert physical verification merely by writing the verified role string.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let value = try container.decode(BatterySemanticValue.self, forKey: .value)
@@ -220,6 +212,14 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         let receivedAtUptimeNanoseconds = try container.decode(UInt64.self, forKey: .receivedAtUptimeNanoseconds)
         let receivedAtDate = try container.decode(Date.self, forKey: .receivedAtDate)
         let continuity = try container.decode(BatteryEvidenceContinuity.self, forKey: .continuity)
+
+        guard role != .verifiedVehicleMeasurement else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .role,
+                in: container,
+                debugDescription: "Generic battery observation import cannot establish verified vehicle authority."
+            )
+        }
 
         do {
             try self.init(
@@ -233,12 +233,25 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .receivedAtDate,
                 in: container,
-                debugDescription: "Persisted battery evidence observation violates timestamp invariants."
+                debugDescription: "Persisted battery evidence observation violates domain invariants."
             )
         }
     }
 
+    /// The generic Codable channel is for non-authoritative research/simulation/derived
+    /// evidence. Verified observations are process/trust-boundary evidence and require a
+    /// future explicit verified persistence design rather than silently serializing trust.
     public func encode(to encoder: Encoder) throws {
+        guard role != .verifiedVehicleMeasurement else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "Generic battery observation encoding cannot serialize verified vehicle authority."
+                )
+            )
+        }
+
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(value, forKey: .value)
         try container.encode(role, forKey: .role)
@@ -247,21 +260,14 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         try container.encode(continuity, forKey: .continuity)
     }
 
-    /// Only physically verified target-vehicle measurements cross this boundary.
-    /// Stock-app observations, Simulator fixtures, estimates, and display frames do not.
     public var isAuthoritativeVehicleMeasurement: Bool {
         role == .verifiedVehicleMeasurement
     }
 
-    /// Eligibility of a single SoC anchor for the adaptive-range domain.
-    /// A higher layer must still reject windows with incomplete distance coverage,
-    /// unobserved transport intervals, insufficient consumption, or other policy failures.
     public var isAdaptiveRangeSOCEvidence: Bool {
         isAuthoritativeVehicleMeasurement && value.field == .stateOfChargePercent
     }
 
-    /// Electrical values may enter a production telemetry/electrical domain only after
-    /// their target-vehicle semantics are physically verified.
     public var isVerifiedElectricalTelemetry: Bool {
         guard isAuthoritativeVehicleMeasurement else { return false }
         switch value.field {

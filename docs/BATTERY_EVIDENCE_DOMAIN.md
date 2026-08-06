@@ -21,7 +21,29 @@ A plausible normalized value is not enough to promote its role.
 - `derivedEstimate` — a calculated/estimated value. It remains an estimate and must not be persisted as measured telemetry.
 - `presentationOnly` — display-only/intermediate state such as animated progression. It never becomes telemetry evidence.
 
-This preserves the product requirement to distinguish measured, estimated, displayed, derived, and unverified evidence rather than collapsing them into one battery field.
+## Authority construction is sealed
+
+The raw `BatteryEvidenceObservation` initializer is module-internal.
+
+External modules may construct an observation only through `BatteryEvidenceObservation.nonAuthoritative(...)`, which rejects `verifiedVehicleMeasurement`. This keeps a normal app/view/service caller from promoting a plausible number into verified scooter telemetry merely by choosing an enum case.
+
+The future physically verified vehicle adapter may use the internal trusted construction boundary only when the real target field has actually been proven. At the current project state, no external production API exists for manufacturing verified ES80 battery observations because the physical ES80 semantics are still unverified.
+
+NembraCore's `@testable` tests can use the internal initializer to exercise future verified-path behavior; test access is not a production authority path.
+
+## Generic Codable does not serialize authority
+
+Generic `BatteryEvidenceObservation` Codable is deliberately limited to non-authoritative evidence:
+
+- encoding a `verifiedVehicleMeasurement` observation fails;
+- decoding a payload that claims `verifiedVehicleMeasurement` fails;
+- non-authoritative stock-app/simulation/derived/presentation observations remain round-trippable and revalidated.
+
+A serialized string saying `verifiedVehicleMeasurement` therefore cannot become physical proof on import.
+
+If Nembra later needs durable measured battery telemetry, that requires a separate explicit verified persistence design with its own vehicle identity, schema, provenance, and process/uptime semantics. It must not silently reuse the generic observation codec as a trust channel.
+
+This is also consistent with receipt uptime being process-local ordering evidence rather than a durable cross-process clock.
 
 ## Semantic values
 
@@ -42,7 +64,7 @@ Fractional normalized SoC remains representable. This avoids assuming that the p
 
 That property means only that the individual anchor is eligible to enter the adaptive-range layer. It does **not** declare a learning window valid. The adaptive-range model must still reject incomplete distance coverage, transport/reconnect gaps, insufficient consumption, tiny/noisy windows, outliers, and other policy failures.
 
-Stock-app percentages, simulation values, estimates, and presentation frames cannot train the real-scooter range model through this boundary.
+Stock-app percentages, simulation values, estimates, presentation frames, and generic imported observations cannot train the real-scooter range model through this boundary.
 
 ## Electrical telemetry boundary
 
@@ -61,7 +83,7 @@ A visible stock-app watt number does not justify Wh/mi.
 
 Every observation records whether it follows continuous evidence or arrives after an unobserved interval.
 
-`afterUnobservedInterval` is an explicit boundary. The observation itself may still be a valid new authoritative anchor if its role is verified, but a higher layer must not silently bridge the unknown interval into one continuous battery-consumption window.
+`afterUnobservedInterval` is an explicit boundary. The observation itself may still be a valid new authoritative anchor only when it came through the trusted verified construction boundary; a higher layer must never silently bridge the unknown interval into one continuous battery-consumption window.
 
 This is intentionally compatible with the adaptive-range rule that reconnect/coverage gaps must not teach efficiency.
 
@@ -69,7 +91,7 @@ This is intentionally compatible with the adaptive-range rule that reconnect/cov
 
 This type is above raw passive capture. Raw BLE/GATT/Tuya bytes, advertisement evidence, characteristics, descriptors, and callback cadence remain immutable research evidence in the passive capture tooling.
 
-The future verified vehicle adapter may map a proven raw field into `BatterySemanticValue` and mark it `verifiedVehicleMeasurement` only after physical verification. Candidate DP IDs, public Tuya family behavior, or timing similarity alone do not authorize that promotion.
+The future verified vehicle adapter may map a proven raw field into `BatterySemanticValue` and use the trusted internal verified construction path only after physical verification. Candidate DP IDs, public Tuya family behavior, timing similarity, stock-app correlation, or imported JSON alone do not authorize that promotion.
 
 ## Scope deliberately not included
 
@@ -81,6 +103,7 @@ This slice does not:
 - convert voltage to SoC;
 - infer watts from volts × amps;
 - integrate Wh/mi;
+- persist verified measured battery observations;
 - persist learned range state;
 - decide display smoothing/interpolation;
 - wire Home/Dashboard/live ride;
