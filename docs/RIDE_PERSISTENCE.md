@@ -1,6 +1,6 @@
 # Ride checkpoint persistence
 
-Nembra uses a small crash-recovery journal for **confirmed rides in progress** and for the narrow handoff between ride completion and the future completed-ride history database. This journal is deliberately separate from the eventual SwiftData ride ledger and route store.
+Nembra uses a small crash-recovery journal for **confirmed rides in progress** and for the narrow handoff between ride completion and the completed-ride history database. This journal is deliberately separate from the SwiftData completed-ride ledger and future route store.
 
 ## Durable states
 
@@ -47,20 +47,45 @@ This protects against ordinary process interruption and partial/corrupt checkpoi
 - If a required save fails, the old engine state remains intact so the exact observation can be retried.
 - When a ride ends, `completedPendingCommit` is written before the coordinator accepts the completed state.
 - While a completed ride is pending, new ride ingestion is blocked so the recovery journal cannot be overwritten.
-- The journal is cleared only after the future completed-ride ledger durably commits the same session UUID and acknowledges it.
-- If journal clearing fails, the pending completion remains blocked and retryable.
+- The journal is cleared only after the completed-ride ledger durably commits and reads back the same session evidence.
+- If history commit/readback or journal clearing fails, the pending completion remains blocked and retryable.
 
 That final pending state closes the crash window between “ride detector emitted completion” and “history database actually owns this ride.”
 
-## Not complete yet
+## Phase 12 application ownership
 
-This checkpoint is **crash-safe session/evidence persistence**, not the whole ride-storage product. Still pending:
+Phase 12 connects this existing journal to real app lifetime through root-owned `RideApplicationStore` rather than a SwiftUI view.
 
-- completed-ride SwiftData schema and ledger transaction,
-- route-point/chunk persistence and route-gap metadata,
+- `AppRuntime` owns one shared scooter service, `VehicleStore`, and `RideApplicationStore`.
+- process relaunch restores the same durable ride UUID conservatively, then requires fresh evidence before resuming active state.
+- the state and raw-speed service streams are registered before ride-store startup returns, so the first new packet cannot race past the subscriber.
+- only fresh authoritative raw-speed packets can populate `RideObservation.speedSample`; cached vehicle-state speed and control acknowledgements are never replayed as measurements.
+- independent reconnect state/speed stream ordering is handled by retaining at most the newest unconsumed authoritative packet while state is connecting/reconnecting, consuming it once when confirmed connected state catches up, clearing it on disconnect, and still enforcing ride-engine freshness.
+- explicit Simulator QA has proven the active → process terminate → relaunch → recovered same-session path. This is application-path evidence, not physical MAXSHOT background validation.
+
+## Completed history ledger
+
+A concrete local SwiftData `RideHistoryStore` now implements the already-defined history contract.
+
+- it stores the exact validated `RideHistoryRecord` payload with a unique session UUID;
+- equivalent duplicate commits are idempotent success;
+- the same UUID with different evidence is a conflict and never overwrites history;
+- the record is read back and verified before `completedPendingCommit` may be acknowledged;
+- a stored payload whose session UUID disagrees with its indexed row is treated as corruption;
+- Simulator recovery/history storage is namespaced away from future production data.
+
+Phase 12 Xcode 27/iOS 27 Simulator tests prove durable reopen, idempotency/conflict behavior, same-session recovery, completion handoff, journal clear only after history ownership, and process relaunch continuity.
+
+## Still pending
+
+This is not the whole ride-storage product. Still pending:
+
+- persistent route-point/chunk storage and route-gap metadata,
 - connection timeline persistence,
-- live integrated distance evidence,
-- multi-source ODO/GPS/live-distance reconciliation,
+- crash-safe **ride-level** aggregation of multiple process-local live-distance segments,
+- precise ODO coverage classification from real MAXSHOT reads/reconnects,
+- production distance-reconciliation policy calibration,
+- statistics/day/week/month queries and finished ride-history UI over the real ledger,
 - background Core Bluetooth and Core Location lifecycle wiring,
-- production checkpoint cadence calibration on iPhone,
+- production checkpoint cadence calibration on physical iPhone hardware,
 - real MAXSHOT hardware validation.

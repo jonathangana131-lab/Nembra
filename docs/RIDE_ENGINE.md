@@ -10,7 +10,7 @@ Nembra's ride session is domain state, not SwiftUI screen lifetime. `RideEngine`
 - `temporarilyDisconnected` — the same confirmed ride remains alive while vehicle transport is unavailable
 - `endingCandidate` — authoritative movement has stopped, but the stop-duration policy has not yet elapsed
 
-The engine emits `CompletedRideEvidence` when end confirmation succeeds. In production composition, the checkpoint coordinator first writes that evidence as `completedPendingCommit`; a future completed-ride ledger must durably accept the same session before the recovery journal may be cleared.
+The engine emits `CompletedRideEvidence` when end confirmation succeeds. In application composition, the checkpoint coordinator first writes that evidence as `completedPendingCommit`; the completed-history handoff must durably commit and read back the same session evidence before the recovery journal may be cleared.
 
 ## Evidence rules
 
@@ -44,6 +44,20 @@ A confirmed ride can be established by policy-qualified **fresh** authoritative 
 - recovered sessions preserve their UUID and wall-clock evidence but do not fabricate historical uptime
 - recovery itself is not a vehicle observation; fresh post-recovery evidence is required before the ride can resume or begin a new end-confirmation timer
 
+## Application evidence boundary
+
+Phase 12 adds a root-owned `RideApplicationStore` around this engine without changing its domain semantics.
+
+- SwiftUI view lifetime never owns the ride.
+- the application registers both vehicle-state and raw-speed streams before startup returns.
+- only fresh raw authoritative speed packets may populate `RideObservation.speedSample`.
+- cached `VehicleState.speedKilometersPerHour` is not converted into a new packet.
+- mode/light/lock acknowledgements cannot replay an old speed measurement or fabricate a zero.
+- state-only observations enter the ride engine for meaningful connection transitions or real ODO advancement.
+- if state and raw-speed stream scheduling invert during reconnect, only the newest unconsumed packet may be held while state says connecting/reconnecting; it is consumed once when confirmed connected state catches up, cleared on disconnect, and remains freshness-limited by the engine.
+
+The explicit Simulator QA application path proves process terminate/relaunch recovery of the same durable ride identity. Ordinary unverified production launch still has automatic ride detection disabled because real MAXSHOT speed cadence/reconnect timing has not yet calibrated the injected policy.
+
 ## Completed evidence integrity
 
 `CompletedRideEvidence` validates its durable numeric shape both when constructed and when decoded. GPS distance must be finite and nonnegative. Scooter ODO evidence is either absent at both endpoints or finite/nonnegative at both endpoints with end ODO not below start ODO.
@@ -54,7 +68,7 @@ Wall-clock ordering is not used as the in-process truth source because the syste
 
 `CompletedRideEvidence` currently exposes start/end scooter ODO evidence, a nonnegative ODO delta when both endpoints are valid, and accumulated quality-screened GPS route-distance evidence observed during the session. It does **not** yet choose a final reconciled ride distance.
 
-The next reconciliation/ledger layer must preserve separately:
+Ride-level reconciliation/presentation must preserve separately:
 
 - start ODO
 - latest/end ODO
@@ -67,22 +81,25 @@ The next reconciliation/ledger layer must preserve separately:
 
 ## Implemented persistence boundary
 
-Confirmed rides can now produce compact crash-recovery checkpoints. The two-slot journal restores the same session UUID after process loss, treats old uptime as unusable, falls back from a corrupt newest slot, and preserves a completed ride in `completedPendingCommit` until the future history ledger acknowledges a durable commit.
+Confirmed rides produce compact crash-recovery checkpoints. The two-slot journal restores the same session UUID after process loss, treats old uptime as unusable, falls back from a corrupt newest slot, and preserves a completed ride in `completedPendingCommit` until completed history acknowledges a durable exact commit.
 
-This does **not** mean the entire ride-storage feature is complete.
+Phase 12 also provides the concrete local SwiftData completed-history adapter through the pre-existing `RideHistoryStore` contract. Equivalent duplicate records are idempotent, conflicting same-ID evidence is rejected, and durable readback is verified before the journal can clear.
+
+This does **not** mean the entire ride-storage/history product is complete.
 
 ## Not complete yet
 
 Still pending:
 
-- completed-ride SwiftData ledger
 - route-point/chunk persistence (the core currently retains screened GPS distance evidence, not path geometry)
 - connection timeline persistence
-- live integrated-distance evidence
-- ODO reconciliation after a missed interval
+- crash-safe ride-level aggregation of multiple process-local live integrated-distance segments
+- ODO coverage classification/reconciliation after missed intervals
+- history/stats queries and finished ride-history UI over the real ledger
 - background Core Bluetooth integration
 - background location capture
-- final production detection/checkpoint thresholds
+- final production detection/checkpoint/distance thresholds
+- physical iPhone performance/profile validation
 - real MAXSHOT hardware validation
 
 Those layers must consume the same ride identity/evidence rather than tying ride lifetime to a view.
