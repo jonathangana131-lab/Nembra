@@ -191,7 +191,8 @@ public enum RideStatisticsAggregator {
 
         var trustworthyDistanceRideCount = 0
         var excludedDistanceRideCount = 0
-        var totalDistanceMeters: Double?
+        var distanceSum = 0.0
+        var distanceCompensation = 0.0
         var longestRideDistanceMeters: Double?
         var longestRideAttributedDate: Date?
         var longestRideSessionID: UUID?
@@ -203,13 +204,29 @@ public enum RideStatisticsAggregator {
                 continue
             }
 
-            let nextTotal = (totalDistanceMeters ?? 0) + distance
-            guard nextTotal.isFinite else {
+            // Neumaier compensated summation keeps small legitimate ride
+            // distances from disappearing merely because a much larger total
+            // was accumulated first. Stable ride ordering still guarantees the
+            // same immutable ride set follows the same arithmetic path.
+            let nextSum = distanceSum + distance
+            guard nextSum.isFinite else {
+                throw RideStatisticsError.aggregateOverflow
+            }
+
+            let correction: Double
+            if distanceSum.magnitude >= distance.magnitude {
+                correction = (distanceSum - nextSum) + distance
+            } else {
+                correction = (distance - nextSum) + distanceSum
+            }
+            let nextCompensation = distanceCompensation + correction
+            guard nextCompensation.isFinite else {
                 throw RideStatisticsError.aggregateOverflow
             }
 
             trustworthyDistanceRideCount += 1
-            totalDistanceMeters = nextTotal
+            distanceSum = nextSum
+            distanceCompensation = nextCompensation
 
             if shouldReplaceLongestRide(
                 candidateDistance: distance,
@@ -223,6 +240,17 @@ public enum RideStatisticsAggregator {
                 longestRideAttributedDate = ride.attributedDate
                 longestRideSessionID = ride.sessionID
             }
+        }
+
+        let totalDistanceMeters: Double?
+        if trustworthyDistanceRideCount == 0 {
+            totalDistanceMeters = nil
+        } else {
+            let compensatedTotal = distanceSum + distanceCompensation
+            guard compensatedTotal.isFinite, compensatedTotal >= 0 else {
+                throw RideStatisticsError.aggregateOverflow
+            }
+            totalDistanceMeters = compensatedTotal
         }
 
         let distanceAvailability: RideStatisticsDistanceAvailability
