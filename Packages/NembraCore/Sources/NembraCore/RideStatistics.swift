@@ -157,8 +157,9 @@ public struct RideStatisticsSummary: Equatable, Sendable {
     /// included ride legitimately has a zero reconciled distance.
     public let totalDistanceMeters: Double?
     public let longestRideDistanceMeters: Double?
-    /// Equal-distance ties are resolved deterministically by attributed date,
-    /// then by UUID, so history fetch order cannot change the selected session.
+    /// Equal-distance ties use only the durable session UUID as a deterministic
+    /// identity tie-break. Calendar date does not become an extra product
+    /// preference merely because two rides have the same longest distance.
     public let longestRideSessionID: UUID?
     public let longestRidingDayStreakDays: Int
 }
@@ -206,7 +207,7 @@ public enum RideStatisticsAggregator {
         // arithmetic order. Do not sort years of unrelated history merely to
         // summarize Today/Week/Month. The date+UUID order is semantic-neutral:
         // it exists only so persistence fetch order cannot perturb floating-
-        // point aggregation or equal-distance tie selection.
+        // point aggregation.
         trustworthyRides.sort { lhs, rhs in
             if lhs.ride.attributedDate != rhs.ride.attributedDate {
                 return lhs.ride.attributedDate < rhs.ride.attributedDate
@@ -218,7 +219,6 @@ public enum RideStatisticsAggregator {
         var distanceSum = 0.0
         var distanceCompensation = 0.0
         var longestRideDistanceMeters: Double?
-        var longestRideAttributedDate: Date?
         var longestRideSessionID: UUID?
 
         for trustworthyRide in trustworthyRides {
@@ -250,14 +250,11 @@ public enum RideStatisticsAggregator {
 
             if shouldReplaceLongestRide(
                 candidateDistance: distance,
-                candidateDate: ride.attributedDate,
                 candidateSessionID: ride.sessionID,
                 currentDistance: longestRideDistanceMeters,
-                currentDate: longestRideAttributedDate,
                 currentSessionID: longestRideSessionID
             ) {
                 longestRideDistanceMeters = distance
-                longestRideAttributedDate = ride.attributedDate
                 longestRideSessionID = ride.sessionID
             }
         }
@@ -306,10 +303,8 @@ public enum RideStatisticsAggregator {
 
     private static func shouldReplaceLongestRide(
         candidateDistance: Double,
-        candidateDate: Date,
         candidateSessionID: UUID,
         currentDistance: Double?,
-        currentDate: Date?,
         currentSessionID: UUID?
     ) -> Bool {
         guard let currentDistance else {
@@ -318,13 +313,6 @@ public enum RideStatisticsAggregator {
 
         if candidateDistance != currentDistance {
             return candidateDistance > currentDistance
-        }
-
-        guard let currentDate else {
-            return true
-        }
-        if candidateDate != currentDate {
-            return candidateDate < currentDate
         }
 
         guard let currentSessionID else {
