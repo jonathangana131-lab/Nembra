@@ -52,6 +52,29 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(clean.transportGapOccurred == false)
     }
 
+    @Test("same-timestamp measured rebound fails before it can rebase")
+    func sameTimestampReboundFailsAtomically() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 10), policy: p)
+        try assembler.recordDistance(deltaMeters: 50, coverage: .partial)
+        #expect(try assembler.ingestSOC(reading(77, uptime: 20), policy: p) == nil)
+        assembler.recordTransportGap()
+        let before = assembler
+
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try assembler.ingestSOC(reading(79, uptime: 20), policy: p)
+        }
+
+        #expect(assembler == before)
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 50)
+        #expect(assembler.distanceCoverage == .partial)
+        #expect(assembler.transportGapOccurred)
+    }
+
     @Test("partial coverage cannot be repaired by later complete deltas in one span")
     func partialCoverageIsSticky() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
