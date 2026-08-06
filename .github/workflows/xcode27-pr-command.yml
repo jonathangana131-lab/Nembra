@@ -8,10 +8,6 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: nembra-xcode27-pr-command-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
 
@@ -51,6 +47,9 @@ jobs:
     name: Build, test, and capture exact PR head
     needs: resolve
     if: needs.resolve.outputs.same_repo == 'true'
+    concurrency:
+      group: nembra-xcode27-pr-command-${{ github.event.issue.number }}
+      cancel-in-progress: true
     runs-on: xcode-27
     timeout-minutes: 30
 
@@ -63,7 +62,10 @@ jobs:
       - name: Verify immutable PR head
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+        run: |
+          actual_head="$(git rev-parse HEAD)"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
       - name: Validate project structure
         run: |
