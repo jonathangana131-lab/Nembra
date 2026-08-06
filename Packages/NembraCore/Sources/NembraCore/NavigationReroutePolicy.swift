@@ -4,7 +4,6 @@ public enum NavigationReroutePolicyError: Error, Equatable, Sendable {
     case invalidMinimumOffRouteSamples
     case invalidMinimumOffRouteDuration
     case invalidRerouteCooldown
-    case invalidReceiptUptime
     case invalidDistanceFromRoute
     case nonMonotonicReceiptUptime
     case sampleCountExhausted
@@ -88,15 +87,17 @@ public struct NavigationRerouteUpdate: Equatable, Sendable {
 /// `distanceFromRouteMeters` must already have been derived by a navigation geometry layer
 /// from accepted location evidence. This type never accepts raw Core Location callbacks and
 /// its derived route-distance values must never be fed back into ride/GPS distance truth.
+/// `receiptUptimeNanoseconds` intentionally shares the existing ride-location process-local
+/// ordering clock; it is not persisted or compared across a relaunch/reboot.
 public struct NavigationRerouteTracker: Equatable, Sendable {
     public let policy: NavigationReroutePolicy
     public private(set) var adherence: NavigationRouteAdherence = .unknown
 
-    private var lastReceiptUptime: Double?
-    private var suspectedOffRouteStartUptime: Double?
+    private var lastReceiptUptimeNanoseconds: UInt64?
+    private var suspectedOffRouteStartUptimeNanoseconds: UInt64?
     private var suspectedOffRouteSamples = 0
     private var rerouteIssuedForCurrentEpisode = false
-    private var lastRerouteRequestUptime: Double?
+    private var lastRerouteRequestUptimeNanoseconds: UInt64?
 
     public init(policy: NavigationReroutePolicy) {
         self.policy = policy
@@ -109,9 +110,9 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
     @discardableResult
     public mutating func ingest(
         distanceFromRouteMeters: Double,
-        receiptUptime: Double
+        receiptUptimeNanoseconds: UInt64
     ) throws -> NavigationRerouteUpdate {
-        try validateReceiptUptime(receiptUptime)
+        try validateReceiptUptime(receiptUptimeNanoseconds)
         guard distanceFromRouteMeters.isFinite, distanceFromRouteMeters >= 0 else {
             throw NavigationReroutePolicyError.invalidDistanceFromRoute
         }
@@ -122,7 +123,7 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
             throw NavigationReroutePolicyError.sampleCountExhausted
         }
 
-        lastReceiptUptime = receiptUptime
+        lastReceiptUptimeNanoseconds = receiptUptimeNanoseconds
 
         if distanceFromRouteMeters <= policy.onRouteExitDistanceMeters {
             adherence = .onRoute
@@ -136,7 +137,7 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
 
         switch adherence {
         case .unknown, .onRoute:
-            suspectedOffRouteStartUptime = receiptUptime
+            suspectedOffRouteStartUptimeNanoseconds = receiptUptimeNanoseconds
             suspectedOffRouteSamples = 1
             rerouteIssuedForCurrentEpisode = false
             adherence = .suspectedOffRoute(sampleCount: 1)
@@ -146,29 +147,27 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
             suspectedOffRouteSamples += 1
             adherence = .suspectedOffRoute(sampleCount: suspectedOffRouteSamples)
 
-            let startUptime = suspectedOffRouteStartUptime ?? receiptUptime
-            let duration = receiptUptime - startUptime
+            let startUptime = suspectedOffRouteStartUptimeNanoseconds ?? receiptUptimeNanoseconds
+            let durationSeconds = secondsBetween(startUptime, receiptUptimeNanoseconds)
             guard suspectedOffRouteSamples >= policy.minimumOffRouteSamples,
-                  duration >= policy.minimumOffRouteDurationSeconds else {
+                  durationSeconds >= policy.minimumOffRouteDurationSeconds else {
                 return currentUpdate(recommendation: .none)
             }
 
             adherence = .offRoute
-            return issueRerouteIfEligible(at: receiptUptime)
+            return issueRerouteIfEligible(at: receiptUptimeNanoseconds)
 
         case .offRoute:
-            return issueRerouteIfEligible(at: receiptUptime)
+            return issueRerouteIfEligible(at: receiptUptimeNanoseconds)
         }
     }
 
-    /// Marks a known period where navigation location evidence was not observed.
-    /// In-flight route-adherence confidence is discarded; cooldown history is preserved.
+    /// Marks a known interval where accepted navigation location evidence was not observed.
+    /// This mirrors the ride-location layer's explicit gap marker: the gap itself does not
+    /// invent a timestamp or location sample. In-flight adherence confidence is discarded;
+    /// the last accepted sample ordering baseline and reroute cooldown history are preserved.
     @discardableResult
-    public mutating func markContinuityInterrupted(
-        receiptUptime: Double
-    ) throws -> NavigationRerouteUpdate {
-        try validateReceiptUptime(receiptUptime)
-        lastReceiptUptime = receiptUptime
+    public mutating func markContinuityInterrupted() -> NavigationRerouteUpdate {
         adherence = .unknown
         clearOffRouteEpisode()
         return currentUpdate(recommendation: .none)
@@ -182,24 +181,25 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
     }
 
     private mutating func issueRerouteIfEligible(
-        at receiptUptime: Double
+        at receiptUptimeNanoseconds: UInt64
     ) -> NavigationRerouteUpdate {
         guard !rerouteIssuedForCurrentEpisode else {
             return currentUpdate(recommendation: .none)
         }
 
-        if let lastRerouteRequestUptime,
-           receiptUptime - lastRerouteRequestUptime < policy.rerouteCooldownSeconds {
+        if let lastRerouteRequestUptimeNanoseconds,
+           secondsBetween(lastRerouteRequestUptimeNanoseconds, receiptUptimeNanoseconds)
+               < policy.rerouteCooldownSeconds {
             return currentUpdate(recommendation: .none)
         }
 
         rerouteIssuedForCurrentEpisode = true
-        lastRerouteRequestUptime = receiptUptime
+        lastRerouteRequestUptimeNanoseconds = receiptUptimeNanoseconds
         return currentUpdate(recommendation: .requestNewRoute)
     }
 
     private mutating func clearOffRouteEpisode() {
-        suspectedOffRouteStartUptime = nil
+        suspectedOffRouteStartUptimeNanoseconds = nil
         suspectedOffRouteSamples = 0
         rerouteIssuedForCurrentEpisode = false
     }
@@ -213,12 +213,14 @@ public struct NavigationRerouteTracker: Equatable, Sendable {
         )
     }
 
-    private func validateReceiptUptime(_ receiptUptime: Double) throws {
-        guard receiptUptime.isFinite, receiptUptime >= 0 else {
-            throw NavigationReroutePolicyError.invalidReceiptUptime
-        }
-        if let lastReceiptUptime, receiptUptime <= lastReceiptUptime {
+    private func validateReceiptUptime(_ receiptUptimeNanoseconds: UInt64) throws {
+        if let lastReceiptUptimeNanoseconds,
+           receiptUptimeNanoseconds <= lastReceiptUptimeNanoseconds {
             throw NavigationReroutePolicyError.nonMonotonicReceiptUptime
         }
+    }
+
+    private func secondsBetween(_ earlier: UInt64, _ later: UInt64) -> Double {
+        Double(later - earlier) / 1_000_000_000
     }
 }
