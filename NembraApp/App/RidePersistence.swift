@@ -226,8 +226,14 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     }
 
     func geometry(sessionID: UUID) async throws -> RideRouteGeometry? {
-        guard let manifest = try await manifest(sessionID: sessionID) else { return nil }
-        return try RideRouteGeometry(manifest: manifest, chunks: try await chunks(sessionID: sessionID))
+        let persistedChunks = try await chunks(sessionID: sessionID)
+        guard let manifest = try await manifest(sessionID: sessionID) else {
+            guard persistedChunks.isEmpty else {
+                throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
+            }
+            return nil
+        }
+        return try RideRouteGeometry(manifest: manifest, chunks: persistedChunks)
     }
 
     private static func storageID(for id: RideRouteChunkID) -> String {
@@ -682,6 +688,10 @@ enum RidePersistenceFactory {
         let historyContainer = try makeHistoryContainer(storeURL: historyURL)
         let historyStore = SwiftDataRideHistoryStore(modelContainer: historyContainer)
 
+        // Route geometry is an additive evidence domain. A route-store startup
+        // failure must not disable the already accepted recovery/history ledger.
+        // Presentation can truthfully show route unavailable while ride history
+        // remains readable and automatic ride recovery remains intact.
         let routeStore: SwiftDataRideRouteStore?
         do {
             let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
