@@ -138,4 +138,74 @@ struct RideStatisticsDeterminismTests {
         #expect(chronological == reversed)
         #expect(chronological.totalDistanceMeters == 9_007_199_254_740_994)
     }
+
+    @Test("finite reference dates outside the calendar range fail closed")
+    func calendarClampedReferenceDateFailsClosed() throws {
+        let calendar = calendar()
+        let unrepresentable = Date(timeIntervalSinceReferenceDate: 1e20)
+
+        #expect(throws: RideStatisticsError.invalidReferenceDate) {
+            _ = try RideStatisticsAggregator.summarize(
+                period: .today,
+                rides: [],
+                referenceDate: unrepresentable,
+                calendar: calendar
+            )
+        }
+    }
+
+    @Test("finite ride dates outside the calendar range cannot fabricate an all-time riding day")
+    func calendarClampedRideDateFailsClosed() throws {
+        let calendar = calendar()
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let unrepresentableRide = try ride(
+            id: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+            date: Date(timeIntervalSinceReferenceDate: 1e20),
+            distanceMeters: 1_000
+        )
+
+        #expect(throws: RideStatisticsError.invalidRide) {
+            _ = try RideStatisticsAggregator.summarize(
+                period: .allTime,
+                rides: [unrepresentableRide],
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+        }
+    }
+
+    @Test("representable Pacific dates keep calendar-day streaks across daylight saving time")
+    func daylightSavingStreakRemainsCalendarBased() throws {
+        var calendar = calendar()
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+
+        func date(_ day: Int) -> Date {
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 3,
+                    day: day,
+                    hour: 12
+                )
+            )!
+        }
+
+        let rides = try [7, 8, 9].enumerated().map { index, day in
+            try ride(
+                id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!,
+                date: date(day),
+                distanceMeters: 1_000
+            )
+        }
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: rides,
+            referenceDate: date(9),
+            calendar: calendar
+        )
+
+        #expect(summary.ridingDayCount == 3)
+        #expect(summary.longestRidingDayStreakDays == 3)
+    }
 }
