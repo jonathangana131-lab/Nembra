@@ -189,7 +189,10 @@ struct DashboardView: View {
                     .accessibilityIdentifier("dashboard.controls-moving-message")
             }
         }
-        .animation(.snappy(duration: 0.20), value: shouldShowStoppedControls)
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.20),
+            value: shouldShowStoppedControls
+        )
     }
 
     private func modeReadout(personality: DashboardModePersonality) -> some View {
