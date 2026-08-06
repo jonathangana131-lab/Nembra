@@ -1,11 +1,5 @@
 import Foundation
 
-public extension RideHistoryStoreError {
-    static func corruptedRecord(_ sessionID: UUID) -> RideHistoryStoreError {
-        .sessionConflict(sessionID)
-    }
-}
-
 /// File-backed permanent completed-ride history.
 ///
 /// Each ride is stored in its own UUID-named JSON file. Writes use Foundation's
@@ -51,7 +45,7 @@ public actor AtomicRideHistoryStore: RideHistoryStore {
         try data.write(to: url, options: .atomic)
 
         guard try decodeRecord(at: url, sessionID: record.sessionID) == record else {
-            throw RideHistoryStoreError.sessionConflict(record.sessionID)
+            throw RideHistoryStoreError.corruptedRecord(record.sessionID)
         }
         return .inserted
     }
@@ -72,20 +66,23 @@ public actor AtomicRideHistoryStore: RideHistoryStore {
     }
 
     private func decodeRecord(at url: URL, sessionID: UUID) throws -> RideHistoryRecord {
+        let data: Data
         do {
-            let data = try Data(contentsOf: url)
-            let record = try decoder.decode(RideHistoryRecord.self, from: data)
-            guard record.sessionID == sessionID else {
-                throw RideHistoryStoreError.sessionConflict(sessionID)
-            }
-            return record
-        } catch let error as RideHistoryStoreError {
-            throw error
+            data = try Data(contentsOf: url)
         } catch {
-            // A corrupt permanent ride record is never silently replaced. Treat it
-            // as a conflict so the recovery journal remains intact for diagnostics
-            // and a later explicit repair/migration path.
-            throw RideHistoryStoreError.sessionConflict(sessionID)
+            throw RideHistoryStoreError.corruptedRecord(sessionID)
         }
+
+        let record: RideHistoryRecord
+        do {
+            record = try decoder.decode(RideHistoryRecord.self, from: data)
+        } catch {
+            throw RideHistoryStoreError.corruptedRecord(sessionID)
+        }
+
+        guard record.sessionID == sessionID else {
+            throw RideHistoryStoreError.corruptedRecord(sessionID)
+        }
+        return record
     }
 }
