@@ -16,7 +16,7 @@ env:
   ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
 
 jobs:
-  resolve-pr:
+  resolve:
     name: Resolve trusted same-repo PR head
     if: >-
       github.event.issue.pull_request &&
@@ -49,8 +49,8 @@ jobs:
 
   simulator-qa:
     name: Build, test, and capture exact PR head
-    needs: resolve-pr
-    if: needs.resolve-pr.outputs.same_repo == 'true'
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
 
@@ -58,11 +58,11 @@ jobs:
       - name: Checkout immutable PR head
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.resolve-pr.outputs.head_sha }}
+          ref: ${{ needs.resolve.outputs.head_sha }}
 
       - name: Verify immutable PR head
         env:
-          EXPECTED_HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
       - name: Validate project structure
@@ -82,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nembra-xcode27-pr-${{ needs.resolve-pr.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: nembra-xcode27-pr-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: Artifacts/Xcode27Simulator
           if-no-files-found: warn
           retention-days: 30
