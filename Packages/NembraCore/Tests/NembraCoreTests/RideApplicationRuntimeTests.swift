@@ -184,6 +184,28 @@ struct RideApplicationRuntimeTests {
         return nil
     }
 
+    private func sendRideConfirmationPackets(
+        service: RideRuntimeTestScooterService,
+        clock: RideRuntimeTestClock,
+        startingOdometer: Double = 10
+    ) async throws {
+        clock.set(uptime: 1_000, date: epoch.addingTimeInterval(1))
+        try await service.emitSpeed(
+            kilometersPerHour: 8,
+            uptime: 1_000,
+            date: epoch.addingTimeInterval(1),
+            odometerKilometers: startingOdometer
+        )
+
+        clock.set(uptime: 1_100, date: epoch.addingTimeInterval(1.1))
+        try await service.emitSpeed(
+            kilometersPerHour: 8,
+            uptime: 1_100,
+            date: epoch.addingTimeInterval(1.1),
+            odometerKilometers: startingOdometer
+        )
+    }
+
     @Test("cached VehicleState speed never starts a ride without a raw packet")
     func cachedStateSpeedIsNotRawEvidence() async throws {
         let dirs = try directories()
@@ -212,20 +234,14 @@ struct RideApplicationRuntimeTests {
         let runtime = try await runtime(service: service, checkpoint: checkpoint, history: history, clock: clock)
         try await runtime.start()
 
-        clock.set(uptime: 1_000, date: epoch.addingTimeInterval(1))
-        try await service.emitSpeed(
-            kilometersPerHour: 8,
-            uptime: 1_000,
-            date: epoch.addingTimeInterval(1),
-            odometerKilometers: 10.01
-        )
+        try await sendRideConfirmationPackets(service: service, clock: clock)
 
         let active = await waitForSnapshot(runtime) {
             if case .active = $0.phase { return true }
             return false
         }
         guard let active, case let .active(session) = active.phase else {
-            Issue.record("expected active ride from authoritative speed")
+            Issue.record("expected active ride after sequential authoritative packets")
             return
         }
         #expect(session.id == sessionID)
@@ -248,8 +264,7 @@ struct RideApplicationRuntimeTests {
         let runtime = try await runtime(service: service, checkpoint: checkpoint, history: history, clock: clock)
         try await runtime.start()
 
-        clock.set(uptime: 1_000, date: epoch.addingTimeInterval(1))
-        try await service.emitSpeed(kilometersPerHour: 8, uptime: 1_000, date: epoch.addingTimeInterval(1))
+        try await sendRideConfirmationPackets(service: service, clock: clock)
         guard let started = await waitForSnapshot(runtime, predicate: {
             if case .active = $0.phase { return true }; return false
         }), case let .active(startedSession) = started.phase else {
@@ -291,16 +306,20 @@ struct RideApplicationRuntimeTests {
         let runtime = try await runtime(service: service, checkpoint: checkpoint, history: history, clock: clock)
         try await runtime.start()
 
-        clock.set(uptime: 1_000, date: epoch.addingTimeInterval(1))
-        try await service.emitSpeed(kilometersPerHour: 8, uptime: 1_000, date: epoch.addingTimeInterval(1), odometerKilometers: 10.0)
-        _ = await waitForSnapshot(runtime) { if case .active = $0.phase { true } else { false } }
+        try await sendRideConfirmationPackets(service: service, clock: clock, startingOdometer: 10.0)
+        guard await waitForSnapshot(runtime, predicate: {
+            if case .active = $0.phase { return true }; return false
+        }) != nil else {
+            Issue.record("expected active ride before stop sequence")
+            return
+        }
 
         clock.set(uptime: 2_000, date: epoch.addingTimeInterval(2))
-        try await service.emitSpeed(kilometersPerHour: 0, uptime: 2_000, date: epoch.addingTimeInterval(2), odometerKilometers: 10.1)
+        try await service.emitSpeed(kilometersPerHour: 0, uptime: 2_000, date: epoch.addingTimeInterval(2), odometerKilometers: 10.0)
         _ = await waitForSnapshot(runtime) { if case .endingCandidate = $0.phase { true } else { false } }
 
         clock.set(uptime: 2_200, date: epoch.addingTimeInterval(2.2))
-        try await service.emitSpeed(kilometersPerHour: 0, uptime: 2_200, date: epoch.addingTimeInterval(2.2), odometerKilometers: 10.1)
+        try await service.emitSpeed(kilometersPerHour: 0, uptime: 2_200, date: epoch.addingTimeInterval(2.2), odometerKilometers: 10.0)
         let ended = await waitForSnapshot(runtime) { $0.phase == .idle && $0.pendingCompletedRideID == nil }
         #expect(ended != nil)
         #expect(try await checkpoint.load() == nil)
