@@ -115,6 +115,39 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .armed(source: .gps))
     }
 
+    @Test("quality-rejected locked-source observation still protects monotonic ordering")
+    func rejectedQualityObservationPreventsOlderMeasurementFromBecomingFresh() throws {
+        let policy = try AccelerationRunPolicy(
+            targetMetersPerSecond: 5,
+            requiredSource: .gps,
+            maximumSpeedAccuracyMetersPerSecond: 1
+        )
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 0,
+            seconds: 1,
+            accuracy: 0.4
+        ))
+        #expect(evaluator.state == .armed(source: .gps))
+
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 3,
+            seconds: 3,
+            accuracy: 2
+        ))
+        #expect(evaluator.state == .armed(source: .gps))
+
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 2,
+            seconds: 2,
+            accuracy: 0.4
+        ))
+        #expect(evaluator.state == .invalidated(.nonMonotonicMeasurement))
+    }
+
     @Test("nonmonotonic authoritative measurement invalidates timing evidence")
     func nonMonotonicInvalidates() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
@@ -135,6 +168,36 @@ struct AccelerationTimingTests {
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 6, seconds: 4))
+        #expect(evaluator.state == .invalidated(.measurementGapExceeded))
+    }
+
+    @Test("sample-gap ceiling measures usable timing evidence rather than rejected callbacks")
+    func rejectedQualityCallbackDoesNotHideAcceptedMeasurementGap() throws {
+        let policy = try AccelerationRunPolicy(
+            targetMetersPerSecond: 5,
+            requiredSource: .gps,
+            maximumSpeedAccuracyMetersPerSecond: 1,
+            maximumSampleIntervalNanoseconds: 1_500_000_000
+        )
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 0,
+            seconds: 1,
+            accuracy: 0.4
+        ))
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 2,
+            seconds: 2,
+            accuracy: 2
+        ))
+        evaluator.accept(try sample(
+            source: .gps,
+            metersPerSecond: 3,
+            seconds: 3,
+            accuracy: 0.4
+        ))
         #expect(evaluator.state == .invalidated(.measurementGapExceeded))
     }
 
