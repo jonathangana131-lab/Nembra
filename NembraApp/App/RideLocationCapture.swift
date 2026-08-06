@@ -69,7 +69,7 @@ actor CoreLocationRideLocationSource: RideLocationSource {
         // for the lifetime of this ride-location source. The project already has
         // NSLocationWhenInUseUsageDescription; this call is made only from a
         // user-visible ride/location flow, never as a surprise at cold launch.
-        serviceSession = CLServiceSession.session(authorization: .whenInUse)
+        serviceSession = CLServiceSession(authorization: .whenInUse)
         updatesTask = Task { [weak self] in
             await self?.consumeLiveUpdates()
         }
