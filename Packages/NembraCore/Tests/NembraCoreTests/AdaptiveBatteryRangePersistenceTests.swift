@@ -4,11 +4,11 @@ import Testing
 
 @Suite("Adaptive battery range persistence envelope")
 struct AdaptiveBatteryRangePersistenceTests {
-    private func policy() throws -> AdaptiveBatteryRangePolicy {
+    private func policy(recentWindowCapacity: Int = 2) throws -> AdaptiveBatteryRangePolicy {
         try AdaptiveBatteryRangePolicy(
             minimumConsumedPercentagePoints: 3,
             minimumDistanceMeters: 100,
-            recentWindowCapacity: 2,
+            recentWindowCapacity: recentWindowCapacity,
             recentWeight: 0.5,
             outlierLowerEfficiencyRatio: 0.4,
             outlierUpperEfficiencyRatio: 2.5,
@@ -20,27 +20,42 @@ struct AdaptiveBatteryRangePersistenceTests {
         )
     }
 
-    private func learnedModel() throws -> AdaptiveBatteryRangeModel {
-        let start = try BatterySOCReading(
-            percentage: 80,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: 1
-        )
-        let end = try BatterySOCReading(
-            percentage: 60,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: 2
-        )
-        let window = try BatteryRangeLearningWindow(
-            distanceMeters: 2_400,
+    private func learningWindow(
+        distanceMeters: Double,
+        startPercentage: Double,
+        endPercentage: Double,
+        startUptime: UInt64,
+        endUptime: UInt64
+    ) throws -> BatteryRangeLearningWindow {
+        try BatteryRangeLearningWindow(
+            distanceMeters: distanceMeters,
             distanceCoverage: .complete,
             transportGapOccurred: false,
-            startSOC: start,
-            endSOC: end
+            startSOC: BatterySOCReading(
+                percentage: startPercentage,
+                provenance: .authoritativeMeasurement,
+                receivedAtUptimeNanoseconds: startUptime
+            ),
+            endSOC: BatterySOCReading(
+                percentage: endPercentage,
+                provenance: .authoritativeMeasurement,
+                receivedAtUptimeNanoseconds: endUptime
+            )
         )
+    }
 
+    private func learnedModel() throws -> AdaptiveBatteryRangeModel {
         var model = AdaptiveBatteryRangeModel()
-        let result = model.ingest(window, policy: try policy())
+        let result = model.ingest(
+            try learningWindow(
+                distanceMeters: 2_400,
+                startPercentage: 80,
+                endPercentage: 60,
+                startUptime: 1,
+                endUptime: 2
+            ),
+            policy: try policy()
+        )
         #expect(result.disposition == .accepted)
         return model
     }
@@ -81,26 +96,17 @@ struct AdaptiveBatteryRangePersistenceTests {
 
     @Test("maximum legitimate normalized consumption remains valid")
     func maximumLegitimateConsumptionAccepted() throws {
-        let start = try BatterySOCReading(
-            percentage: 100,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: 10
-        )
-        let end = try BatterySOCReading(
-            percentage: 0,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: 20
-        )
-        let window = try BatteryRangeLearningWindow(
-            distanceMeters: 10_000,
-            distanceCoverage: .complete,
-            transportGapOccurred: false,
-            startSOC: start,
-            endSOC: end
-        )
-
         var model = AdaptiveBatteryRangeModel()
-        let result = model.ingest(window, policy: try policy())
+        let result = model.ingest(
+            try learningWindow(
+                distanceMeters: 10_000,
+                startPercentage: 100,
+                endPercentage: 0,
+                startUptime: 10,
+                endUptime: 20
+            ),
+            policy: try policy()
+        )
         #expect(result.disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
         #expect(model.historicalConsumedPercentagePoints == 100)
@@ -111,6 +117,44 @@ struct AdaptiveBatteryRangePersistenceTests {
 
         #expect(decoded == state)
         #expect(decoded.model.historicalConsumedPercentagePoints == 100)
+    }
+
+    @Test("truncated recent samples do not require reconstructing all history")
+    func truncatedRecentHistoryAccepted() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy(recentWindowCapacity: 1)
+
+        let first = model.ingest(
+            try learningWindow(
+                distanceMeters: 2_000,
+                startPercentage: 100,
+                endPercentage: 80,
+                startUptime: 1,
+                endUptime: 2
+            ),
+            policy: p
+        )
+        let second = model.ingest(
+            try learningWindow(
+                distanceMeters: 2_400,
+                startPercentage: 80,
+                endPercentage: 60,
+                startUptime: 3,
+                endUptime: 4
+            ),
+            policy: p
+        )
+
+        #expect(first.disposition == .accepted)
+        #expect(second.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 2)
+        #expect(model.recentSamples.count == 1)
+        #expect(model.historicalConsumedPercentagePoints == 40)
+        #expect(model.recentSamples[0].consumedPercentagePoints == 20)
+
+        let state = try AdaptiveBatteryRangePersistedState(validating: model)
+        let data = try JSONEncoder().encode(state)
+        #expect(try JSONDecoder().decode(AdaptiveBatteryRangePersistedState.self, from: data) == state)
     }
 
     @Test("unknown persistence schema fails closed")
@@ -165,6 +209,46 @@ struct AdaptiveBatteryRangePersistenceTests {
             Issue.record("recent evidence larger than history unexpectedly passed validation")
         } catch let error as AdaptiveBatteryRangePersistedStateError {
             #expect(error == .recentEvidenceExceedsHistory)
+        }
+    }
+
+    @Test("fully retained sample consumption must reconstruct cumulative history")
+    func completeRecentConsumptionMismatchRejected() throws {
+        let learned = try learnedModel()
+        let rawData = try mutatedJSON(for: learned) { object in
+            object["historicalConsumedPercentagePoints"] = 50
+        }
+
+        let shapeValidModel = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: rawData)
+        #expect(shapeValidModel.acceptedWindowCount == 1)
+        #expect(shapeValidModel.recentSamples.count == 1)
+        #expect(shapeValidModel.recentSamples[0].consumedPercentagePoints == 20)
+
+        do {
+            _ = try AdaptiveBatteryRangePersistedState(validating: shapeValidModel)
+            Issue.record("fully retained consumption mismatch unexpectedly passed validation")
+        } catch let error as AdaptiveBatteryRangePersistedStateError {
+            #expect(error == .completeRecentEvidenceDisagreesWithHistory)
+        }
+    }
+
+    @Test("fully retained sample efficiency must reconstruct learned history")
+    func completeRecentEfficiencyMismatchRejected() throws {
+        let learned = try learnedModel()
+        let rawData = try mutatedJSON(for: learned) { object in
+            object["historicalEfficiencyMetersPerPercentagePoint"] = 999
+        }
+
+        let shapeValidModel = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: rawData)
+        #expect(shapeValidModel.acceptedWindowCount == 1)
+        #expect(shapeValidModel.recentSamples.count == 1)
+        #expect(shapeValidModel.historicalEfficiencyMetersPerPercentagePoint == 999)
+
+        do {
+            _ = try AdaptiveBatteryRangePersistedState(validating: shapeValidModel)
+            Issue.record("fully retained efficiency mismatch unexpectedly passed validation")
+        } catch let error as AdaptiveBatteryRangePersistedStateError {
+            #expect(error == .completeRecentEvidenceDisagreesWithHistory)
         }
     }
 
