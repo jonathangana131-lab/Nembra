@@ -2,7 +2,7 @@ name: Xcode 27 Scheduled PR Exact-Head QA
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '4-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,12 @@ jobs:
             const statusContext = process.env.STATUS_CONTEXT
             const stalePendingMs = 2 * 60 * 60 * 1000
 
+            const { data: repositoryInfo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })
+            const defaultBranch = repositoryInfo.default_branch
+
             const pulls = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -53,7 +59,7 @@ jobs:
 
             for (const pr of pulls) {
               if (pr.draft) continue
-              if (pr.base.ref !== context.payload.repository.default_branch) continue
+              if (pr.base.ref !== defaultBranch) continue
               if (pr.head.repo?.full_name !== repository) continue
               if (!pr.head.ref.startsWith('parallel/')) continue
 
