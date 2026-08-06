@@ -8,6 +8,7 @@ public enum PassiveBluetoothCaptureValidationError: Error, Equatable, Sendable {
     case emptyInterruptionReason
     case nonMonotonicSequence
     case nonMonotonicReceiptTime
+    case unsupportedSchemaVersion(Int)
 }
 
 /// Characteristic properties observed during GATT discovery.
@@ -365,20 +366,38 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
     }
 }
 
-/// Stable JSON codec for sharing a capture artifact between physical-device
-/// sessions and offline parser/tests. Sorted keys keep diffs reviewable while
-/// millisecond epoch dates preserve sub-second correlation metadata.
+/// Stable, versioned JSON codec for sharing capture artifacts between
+/// physical-device sessions and offline parser/tests. Sorted keys keep diffs
+/// reviewable while millisecond epoch dates preserve sub-second correlation
+/// metadata. A versioned envelope makes future migrations explicit instead of
+/// silently reinterpreting irreplaceable physical capture evidence.
 public enum PassiveBluetoothCaptureJSON {
+    public static let currentSchemaVersion = 1
+
+    private struct Envelope: Codable {
+        let schemaVersion: Int
+        let session: PassiveBluetoothCaptureSession
+    }
+
     public static func encode(_ session: PassiveBluetoothCaptureSession, prettyPrinted: Bool = true) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
-        return try encoder.encode(session)
+        return try encoder.encode(
+            Envelope(
+                schemaVersion: currentSchemaVersion,
+                session: session
+            )
+        )
     }
 
     public static func decode(_ data: Data) throws -> PassiveBluetoothCaptureSession {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
-        return try decoder.decode(PassiveBluetoothCaptureSession.self, from: data)
+        let envelope = try decoder.decode(Envelope.self, from: data)
+        guard envelope.schemaVersion == currentSchemaVersion else {
+            throw PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(envelope.schemaVersion)
+        }
+        return envelope.session
     }
 }

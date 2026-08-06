@@ -11,7 +11,7 @@ struct PassiveBluetoothCaptureTests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
-    @Test("raw advertisement bytes and CoreBluetooth discovery fields survive capture unchanged")
+    @Test("raw advertisement bytes and unknown identifiers survive capture unchanged")
     func preservesRawAdvertisementEvidence() throws {
         let advertisement = try PassiveBluetoothAdvertisementObservation(
             peripheralIdentifier: "physical-es80-placeholder",
@@ -51,25 +51,20 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.txPowerLevel == -8)
     }
 
-    @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
-    func valueOriginsAreNonMutating() {
-        #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
-    }
-
     @Test("characteristic security properties survive capture without authorizing writes")
     func preservesCharacteristicSecurityProperties() throws {
         let characteristic = try PassiveBluetoothCharacteristicObservation(
             peripheralIdentifier: "physical-es80-placeholder",
             serviceUUID: "FD50",
-            characteristicUUID: "00000001-0000-0000-0000-000000000000",
+            characteristicUUID: "FFE1",
             properties: [.read, .notify, .notifyEncryptionRequired, .write, .indicateEncryptionRequired]
         )
-        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: .now)
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_500))
         try session.append(
             .characteristic(characteristic),
             sequenceNumber: 1,
-            receivedAtUptimeNanoseconds: 1,
-            receivedAtDate: .now
+            receivedAtUptimeNanoseconds: 15,
+            receivedAtDate: Date(timeIntervalSince1970: 1_501)
         )
 
         let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
@@ -78,6 +73,12 @@ struct PassiveBluetoothCaptureTests {
             return
         }
         #expect(captured.properties == [.read, .notify, .notifyEncryptionRequired, .write, .indicateEncryptionRequired])
+        #expect(Set(PassiveBluetoothValueOrigin.allCases).contains(.subscriptionUpdate))
+    }
+
+    @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
+    func valueOriginsAreNonMutating() {
+        #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
     }
 
     @Test("session rejects sequence regression")
@@ -145,13 +146,13 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.displayedValue == "73%")
     }
 
-    @Test("JSON export round trips raw bytes, identity, continuity markers, and sub-second dates")
+    @Test("JSON export round trips raw bytes, identity, and continuity markers")
     func jsonRoundTrip() throws {
         let value = try PassiveBluetoothValueObservation(
             peripheralIdentifier: "physical-es80-placeholder",
             serviceUUID: "FD50",
             characteristicUUID: "00000001-0000-0000-0000-000000000000",
-            origin: .subscriptionUpdate,
+            origin: .notification,
             payload: Data([0x55, 0xAA, 0x01, 0x7F])
         )
         let gap = try PassiveBluetoothCaptureInterruption(reason: "disconnect")
@@ -164,6 +165,9 @@ struct PassiveBluetoothCaptureTests {
         try session.append(.interruption(gap), sequenceNumber: 2, receivedAtUptimeNanoseconds: 11, receivedAtDate: Date(timeIntervalSince1970: 1_002.789))
 
         let data = try PassiveBluetoothCaptureJSON.encode(session)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["schemaVersion"] as? Int == PassiveBluetoothCaptureJSON.currentSchemaVersion)
+
         let decoded = try PassiveBluetoothCaptureJSON.decode(data)
         #expect(decoded == session)
     }
@@ -175,6 +179,11 @@ struct PassiveBluetoothCaptureTests {
             let vehicleIdentity: VehicleIdentity
             let startedAt: Date
             let records: [PassiveBluetoothCaptureRecord]
+        }
+
+        struct UncheckedEnvelope: Encodable {
+            let schemaVersion: Int
+            let session: UncheckedSessionPayload
         }
 
         let gap = try PassiveBluetoothCaptureInterruption(reason: "fixture")
@@ -201,10 +210,35 @@ struct PassiveBluetoothCaptureTests {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
-        let data = try encoder.encode(payload)
+        let data = try encoder.encode(
+            UncheckedEnvelope(
+                schemaVersion: PassiveBluetoothCaptureJSON.currentSchemaVersion,
+                session: payload
+            )
+        )
 
         #expect(throws: PassiveBluetoothCaptureValidationError.nonMonotonicSequence) {
             _ = try PassiveBluetoothCaptureJSON.decode(data)
+        }
+    }
+
+    @Test("JSON import rejects unsupported schema versions")
+    func rejectsUnsupportedSchemaVersion() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 2_500))
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "schema fixture")),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: Date(timeIntervalSince1970: 2_501)
+        )
+
+        let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        var json = String(decoding: encoded, as: UTF8.self)
+        #expect(json.contains("\"schemaVersion\":1"))
+        json = json.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":999")
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(999)) {
+            _ = try PassiveBluetoothCaptureJSON.decode(Data(json.utf8))
         }
     }
 
