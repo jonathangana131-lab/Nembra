@@ -182,6 +182,21 @@ final class RideApplicationStore {
         pendingAuthoritativeSpeedSample = nil
     }
 
+    /// Accepts only distance that has already passed the phone-location quality
+    /// screen. Route geometry remains a separate durable evidence stream; this
+    /// delta is fed into the existing RideEngine GPS-distance input and never
+    /// recomputed later from a rendered MapKit polyline.
+    func ingestQualityScreenedGPSDistanceDelta(
+        _ meters: Double,
+        receivedAtUptimeNanoseconds: UInt64
+    ) async {
+        await ingestObservation(
+            speedSample: nil,
+            qualityScreenedGPSDistanceDeltaMeters: meters,
+            minimumUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
     private func subscribeToEvidenceStreams() async {
         guard stateTask == nil, speedTask == nil else { return }
 
@@ -259,12 +274,19 @@ final class RideApplicationStore {
         }
     }
 
-    private func ingestObservation(speedSample: SpeedTelemetrySample?) async {
+    private func ingestObservation(
+        speedSample: SpeedTelemetrySample?,
+        qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
+        minimumUptimeNanoseconds: UInt64 = 0
+    ) async {
         guard let coordinator,
               let historyStore,
               configuration != nil else { return }
 
-        let minimumUptime = speedSample?.receivedAtUptimeNanoseconds ?? 0
+        let minimumUptime = max(
+            speedSample?.receivedAtUptimeNanoseconds ?? 0,
+            minimumUptimeNanoseconds
+        )
         guard let observationUptime = nextObservationUptime(minimum: minimumUptime) else {
             fail(RideEngineError.nonMonotonicObservation, persistence: false)
             return
@@ -277,7 +299,7 @@ final class RideApplicationStore {
                 connection: latestVehicleState.connection,
                 speedSample: speedSample,
                 odometerKilometers: latestVehicleState.odometerKilometers,
-                qualityScreenedGPSDistanceDeltaMeters: nil,
+                qualityScreenedGPSDistanceDeltaMeters: qualityScreenedGPSDistanceDeltaMeters,
                 motionIndicatesMovement: false
             )
             let update = try await coordinator.ingest(observation)
