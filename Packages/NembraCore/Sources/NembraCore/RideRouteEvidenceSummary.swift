@@ -4,16 +4,12 @@ public enum RideRouteEvidenceShape: String, Equatable, Sendable {
     case drawablePath
 }
 
-public enum RideRouteEvidenceSummaryError: Error, Equatable, Sendable {
-    case invalidCounts
-    case inconsistentEvidence
-    case countOverflow
-}
-
-/// Truth-preserving summary of persisted route topology for product/UI consumers.
+/// Truth-preserving presentation summary of already-validated route geometry.
 ///
-/// This type does not infer distance, route legality, place names, or continuity
-/// beyond the explicit coverage/topology evidence supplied by the caller.
+/// `RideRouteGeometry` remains the authority for persisted topology and coverage
+/// invariants. This type only projects those accepted facts into a compact shape
+/// for UI/accessibility consumers; it does not revalidate, reinterpret, or
+/// strengthen the underlying route evidence.
 public struct RideRouteEvidenceSummary: Equatable, Sendable {
     public let coverage: RideDistanceCoverage
     public let segmentCount: Int
@@ -21,55 +17,19 @@ public struct RideRouteEvidenceSummary: Equatable, Sendable {
     public let knownGapCount: Int
     public let shape: RideRouteEvidenceShape
 
-    public init(
-        coverage: RideDistanceCoverage,
-        segmentPointCounts: [Int],
-        knownGapCount: Int
-    ) throws {
-        guard knownGapCount >= 0,
-              segmentPointCounts.allSatisfy({ $0 > 0 }) else {
-            throw RideRouteEvidenceSummaryError.invalidCounts
-        }
+    public init(geometry: RideRouteGeometry) {
+        coverage = geometry.coverage
+        segmentCount = geometry.segments.count
+        pointCount = geometry.pointCount
+        knownGapCount = geometry.knownGapCount
 
-        var pointCount = 0
-        for count in segmentPointCounts {
-            let (sum, overflow) = pointCount.addingReportingOverflow(count)
-            guard !overflow else {
-                throw RideRouteEvidenceSummaryError.countOverflow
-            }
-            pointCount = sum
+        if !geometry.hasRecordedGeometry {
+            shape = .noRecordedGeometry
+        } else if geometry.hasDrawablePath {
+            shape = .drawablePath
+        } else {
+            shape = .recordedPointsOnly
         }
-
-        let segmentCount = segmentPointCounts.count
-        if segmentCount == 0 {
-            guard coverage == .unknown, knownGapCount == 0 else {
-                throw RideRouteEvidenceSummaryError.inconsistentEvidence
-            }
-            self.coverage = coverage
-            self.segmentCount = 0
-            self.pointCount = 0
-            self.knownGapCount = 0
-            self.shape = .noRecordedGeometry
-            return
-        }
-
-        guard knownGapCount <= segmentCount - 1 else {
-            throw RideRouteEvidenceSummaryError.inconsistentEvidence
-        }
-        if coverage == .complete, knownGapCount > 0 {
-            throw RideRouteEvidenceSummaryError.inconsistentEvidence
-        }
-        if knownGapCount > 0, coverage != .partial {
-            throw RideRouteEvidenceSummaryError.inconsistentEvidence
-        }
-
-        self.coverage = coverage
-        self.segmentCount = segmentCount
-        self.pointCount = pointCount
-        self.knownGapCount = knownGapCount
-        self.shape = segmentPointCounts.contains(where: { $0 >= 2 })
-            ? .drawablePath
-            : .recordedPointsOnly
     }
 
     public var hasRecordedGeometry: Bool {
