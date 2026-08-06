@@ -60,7 +60,19 @@ final class RideUITests: XCTestCase {
         row.tap()
         let detail = app.descendants(matching: .any)["rides.detail"]
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["rides.evidence.odometer"].exists)
+
+        let odometer = app.descendants(matching: .any)["rides.evidence.odometer"]
+        XCTAssertTrue(odometer.exists)
+        let odometerSemantics = "\(odometer.label) \(odometer.value as? String ?? "")"
+        XCTAssertTrue(
+            odometerSemantics.contains("mi") || odometerSemantics.contains("km"),
+            "The completed ride must expose measured odometer distance evidence in the active locale."
+        )
+        XCTAssertFalse(
+            odometerSemantics.contains("0.0"),
+            "The end-to-end QA fixture must establish the ride baseline before advancing odometer evidence."
+        )
+
         XCTAssertTrue(app.descendants(matching: .any)["rides.route-unavailable"].exists)
         keepScreenshot(named: "Completed Ride Details")
     }
