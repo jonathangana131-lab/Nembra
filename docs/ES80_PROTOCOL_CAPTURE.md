@@ -31,6 +31,7 @@ These facts are externally documented, but they do not by themselves prove the p
 - Apple's CoreBluetooth advertisement-data contract exposes standard metadata beyond the ordinary service UUID list, including overflow service UUIDs, solicited service UUIDs, transmit power, service data, manufacturer data, local name, and connectability when present. Nembra preserves these raw fields rather than silently dropping them. Source: https://developer.apple.com/documentation/corebluetooth/advertisement-data-retrieval-keys
 - CoreBluetooth characteristic properties include notification/indication encryption requirements in addition to ordinary read/write/notify/indicate properties. Nembra records those as discovered capability metadata only. Source: https://developer.apple.com/documentation/corebluetooth/cbcharacteristicproperties
 - CoreBluetooth uses `setNotifyValue(_:for:)` to subscribe to characteristic value changes; the resulting characteristic-value callback is also used for explicitly requested reads. The acquisition layer must therefore track the operation context and must not infer a protocol meaning merely because bytes arrived in that callback. Sources: https://developer.apple.com/documentation/corebluetooth/cbperipheral/setnotifyvalue(_:for:) and https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral(_:didupdatevaluefor:error:)
+- Apple's current CoreBluetooth overview documents an iOS 26+ Live Activity behavior: when an app already has an instantiated `CBManager` and starts a Live Activity before entering the background, certain Bluetooth activities may continue with the same privileges used in the foreground, including scans without service UUIDs and scans with duplicate filtering disabled. This is a platform capability, not proof that Nembra should always run such a scan or that the ES80 can be reliably found/reconnected in every lifecycle condition. Source: https://developer.apple.com/documentation/corebluetooth
 
 ### VERIFIED user-visible ES80 behavior
 
@@ -73,17 +74,20 @@ Recording that a characteristic advertises `.write` or `.writeWithoutResponse` i
 
 The platform-neutral capture model is intentionally broader than one acquisition adapter, but a future iOS adapter must preserve current CoreBluetooth semantics rather than hiding them:
 
-- Initial research for an ES80 whose service UUIDs are still unknown is a foreground discovery task. CoreBluetooth can scan without a service filter in the foreground, but background discovery is constrained and should not be represented as an unlimited generic scanner. After the physical ES80 service identity is verified, reconnect/discovery design can become appropriately service-specific.
-- A scene-based app that later adopts CoreBluetooth state preservation/restoration should use a stable central-manager restoration identifier and reconcile the peripherals/scanning state restored by iOS. Restoration support does not mean Nembra can promise relaunch or reconnect behavior in every force-quit, reboot, Bluetooth-toggle, or OS condition; those remain physical-device lifecycle tests.
+- In ordinary foreground discovery, `scanForPeripherals(withServices:nil, ...)` can discover peripherals regardless of advertised services, though Apple recommends providing service UUIDs when known.
+- The conventional `bluetooth-central` background-scan path requires explicit service UUIDs. However, current iOS 26+ CoreBluetooth also documents a separate Live Activity exception: if the app has an instantiated `CBManager` and starts a Live Activity before backgrounding, the manager can retain foreground-like privileges for certain Bluetooth activities, including unfiltered scans. Nembra must treat these as distinct lifecycle modes instead of collapsing them into one generic promise.
+- Even with the iOS 26+ Live Activity behavior, Nembra must not promise perpetual scanning/reconnect across force-quit, reboot, permission changes, Bluetooth toggles, process eviction, or every OS scheduling condition. Those remain physical-device lifecycle tests.
+- A scene-based app that later adopts CoreBluetooth state preservation/restoration should use a stable central-manager restoration identifier and reconcile the peripherals/scanning state restored by iOS. Restoration support is complementary to, not a substitute for, verified ES80 identity and lifecycle testing.
 - `setNotifyValue` may enable notifications or indications according to the discovered characteristic properties. If an acquisition callback cannot truthfully prove which GATT mechanism delivered a subscribed value, Nembra records `.subscriptionUpdate` rather than guessing.
 - `didUpdateValueFor` can correspond to a requested read or to subscribed value changes. The adapter must carry enough request/subscription context to classify `.readResponse` versus `.subscriptionUpdate` truthfully.
 - Encryption-required characteristic properties are preserved as evidence. They do not prove that Nembra has authenticated, paired, or successfully subscribed to the physical ES80.
 
 Relevant Apple references:
+- https://developer.apple.com/documentation/corebluetooth
 - https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/scanforperipherals(withservices:options:)
 - https://developer.apple.com/documentation/corebluetooth/core-bluetooth-background-processing-for-ios-apps
 - https://developer.apple.com/documentation/corebluetooth/cbcentralmanageroptionrestoreidentifierkey
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerdelegate/centralmanager(_:willrestorestate:)
+- https://developer.apple.com/documentation/corebluetooth/central-manager-state-restoration-options
 - https://developer.apple.com/documentation/corebluetooth/cbperipheral/setnotifyvalue(_:for:)
 - https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral(_:didupdatevaluefor:error:)
 
