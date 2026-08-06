@@ -72,4 +72,33 @@ struct RideStatisticsDeterminismTests {
             #expect(summary.totalDistanceMeters == 6_000)
         }
     }
+
+    @Test("greater distance still outranks deterministic tie fields")
+    func greaterDistanceStillWins() throws {
+        let calendar = calendar()
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let earlierID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        let fartherID = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!
+
+        let earlierShorter = try ride(
+            id: earlierID,
+            date: referenceDate.addingTimeInterval(-600),
+            distanceMeters: 1_999
+        )
+        let laterFarther = try ride(
+            id: fartherID,
+            date: referenceDate.addingTimeInterval(-60),
+            distanceMeters: 2_000
+        )
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [earlierShorter, laterFarther],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        #expect(summary.longestRideDistanceMeters == 2_000)
+        #expect(summary.longestRideSessionID == fartherID)
+    }
 }
