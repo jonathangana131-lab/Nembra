@@ -66,7 +66,6 @@ final class RideApplicationStore {
     @ObservationIgnored private var speedTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var latestVehicleState: VehicleState
-    @ObservationIgnored private var latestAuthoritativeSpeedSample: SpeedTelemetrySample?
     @ObservationIgnored private var lastObservationUptimeNanoseconds: UInt64?
 
     init(
@@ -199,18 +198,16 @@ final class RideApplicationStore {
     }
 
     private func receiveVehicleState(_ state: VehicleState) async {
-        if state.connection != latestVehicleState.connection {
-            // A packet observed on the old transport generation must never be
-            // reused as fresh speed evidence after disconnect/reconnect.
-            latestAuthoritativeSpeedSample = nil
-        }
         latestVehicleState = state
-        await ingestObservation(speedSample: latestAuthoritativeSpeedSample)
+
+        // A vehicle-state publication carries connection/odometer state only.
+        // It must never replay the previous raw speed packet as if that packet
+        // arrived again with this state change.
+        await ingestObservation(speedSample: nil)
     }
 
     private func receiveSpeedSample(_ sample: SpeedTelemetrySample) async {
         guard sample.isAuthoritativeMeasurement else { return }
-        latestAuthoritativeSpeedSample = sample
         await ingestObservation(speedSample: sample)
     }
 
