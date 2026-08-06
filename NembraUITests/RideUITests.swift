@@ -73,19 +73,25 @@ final class RideUITests: XCTestCase {
             "The end-to-end QA fixture must establish the ride baseline before advancing odometer evidence."
         )
 
+        let gps = app.descendants(matching: .any)["rides.evidence.gps"]
+        XCTAssertTrue(
+            gps.exists,
+            "The Simulator location source must pass through quality screening, the ride-scoped capture coordinator, RideEngine, and durable completed history as separate GPS distance evidence."
+        )
+
         let routeMap = app.descendants(matching: .any)["rides.route-map"]
         if !routeMap.waitForExistence(timeout: 3) {
             app.swipeUp()
         }
         XCTAssertTrue(
             routeMap.waitForExistence(timeout: 3),
-            "The explicit QA route fixture must pass through RideRouteRecorder, exact durable route storage, and MapKit presentation."
+            "The explicit QA location fixture must pass through RideLocationCaptureCoordinator, durable route storage, and MapKit presentation."
         )
         XCTAssertFalse(
             app.descendants(matching: .any)["rides.route-unavailable"].exists,
             "A ride with verified persisted route geometry must not fall back to the no-route state."
         )
-        keepScreenshot(named: "Completed Ride Details With Route")
+        keepScreenshot(named: "Completed Ride Details With Route And GPS")
     }
 
     @MainActor
