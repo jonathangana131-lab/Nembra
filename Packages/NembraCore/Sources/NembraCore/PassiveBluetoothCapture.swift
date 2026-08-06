@@ -23,6 +23,8 @@ public enum PassiveBluetoothCharacteristicProperty: String, CaseIterable, Codabl
     case indicate
     case authenticatedSignedWrites
     case extendedProperties
+    case notifyEncryptionRequired
+    case indicateEncryptionRequired
 }
 
 /// Origins that can produce captured characteristic payloads without changing
@@ -48,7 +50,10 @@ public struct PassiveBluetoothAdvertisementObservation: Equatable, Codable, Send
     public let isConnectable: Bool?
     public let manufacturerData: Data?
     public let serviceUUIDs: [String]
+    public let overflowServiceUUIDs: [String]
+    public let solicitedServiceUUIDs: [String]
     public let serviceData: [String: Data]
+    public let txPowerLevel: Int?
 
     public init(
         peripheralIdentifier: String,
@@ -57,12 +62,17 @@ public struct PassiveBluetoothAdvertisementObservation: Equatable, Codable, Send
         isConnectable: Bool? = nil,
         manufacturerData: Data? = nil,
         serviceUUIDs: [String] = [],
-        serviceData: [String: Data] = [:]
+        overflowServiceUUIDs: [String] = [],
+        solicitedServiceUUIDs: [String] = [],
+        serviceData: [String: Data] = [:],
+        txPowerLevel: Int? = nil
     ) throws {
         guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw PassiveBluetoothCaptureValidationError.emptyPeripheralIdentifier
         }
         try Self.validateBluetoothIdentifiers(serviceUUIDs)
+        try Self.validateBluetoothIdentifiers(overflowServiceUUIDs)
+        try Self.validateBluetoothIdentifiers(solicitedServiceUUIDs)
         try Self.validateBluetoothIdentifiers(Array(serviceData.keys))
 
         self.peripheralIdentifier = peripheralIdentifier
@@ -71,7 +81,10 @@ public struct PassiveBluetoothAdvertisementObservation: Equatable, Codable, Send
         self.isConnectable = isConnectable
         self.manufacturerData = manufacturerData
         self.serviceUUIDs = serviceUUIDs
+        self.overflowServiceUUIDs = overflowServiceUUIDs
+        self.solicitedServiceUUIDs = solicitedServiceUUIDs
         self.serviceData = serviceData
+        self.txPowerLevel = txPowerLevel
     }
 
     private static func validateBluetoothIdentifiers(_ identifiers: [String]) throws {
@@ -210,7 +223,10 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
                 isConnectable: observation.isConnectable,
                 manufacturerData: observation.manufacturerData,
                 serviceUUIDs: observation.serviceUUIDs,
-                serviceData: observation.serviceData
+                overflowServiceUUIDs: observation.overflowServiceUUIDs,
+                solicitedServiceUUIDs: observation.solicitedServiceUUIDs,
+                serviceData: observation.serviceData,
+                txPowerLevel: observation.txPowerLevel
             )
         case let .service(observation):
             _ = try PassiveBluetoothServiceObservation(

@@ -11,7 +11,7 @@ struct PassiveBluetoothCaptureTests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
-    @Test("raw advertisement bytes and unknown identifiers survive capture unchanged")
+    @Test("raw advertisement bytes and CoreBluetooth discovery fields survive capture unchanged")
     func preservesRawAdvertisementEvidence() throws {
         let advertisement = try PassiveBluetoothAdvertisementObservation(
             peripheralIdentifier: "physical-es80-placeholder",
@@ -20,7 +20,10 @@ struct PassiveBluetoothCaptureTests {
             isConnectable: true,
             manufacturerData: Data([0x12, 0x34, 0xAB, 0xCD]),
             serviceUUIDs: ["FD50", "12345678-1234-5678-1234-567812345678"],
-            serviceData: ["FD50": Data([0xAA, 0x55])]
+            overflowServiceUUIDs: ["ABCD"],
+            solicitedServiceUUIDs: ["DCBA"],
+            serviceData: ["FD50": Data([0xAA, 0x55])],
+            txPowerLevel: -8
         )
 
         var session = try PassiveBluetoothCaptureSession(
@@ -42,12 +45,39 @@ struct PassiveBluetoothCaptureTests {
         }
         #expect(captured.manufacturerData == Data([0x12, 0x34, 0xAB, 0xCD]))
         #expect(captured.serviceUUIDs == ["FD50", "12345678-1234-5678-1234-567812345678"])
+        #expect(captured.overflowServiceUUIDs == ["ABCD"])
+        #expect(captured.solicitedServiceUUIDs == ["DCBA"])
         #expect(captured.serviceData["FD50"] == Data([0xAA, 0x55]))
+        #expect(captured.txPowerLevel == -8)
     }
 
     @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
     func valueOriginsAreNonMutating() {
         #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
+    }
+
+    @Test("characteristic security properties survive capture without authorizing writes")
+    func preservesCharacteristicSecurityProperties() throws {
+        let characteristic = try PassiveBluetoothCharacteristicObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "00000001-0000-0000-0000-000000000000",
+            properties: [.read, .notify, .notifyEncryptionRequired, .write, .indicateEncryptionRequired]
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: .now)
+        try session.append(
+            .characteristic(characteristic),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+
+        let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
+        guard case let .characteristic(captured) = decoded.records[0].event else {
+            Issue.record("Expected characteristic event")
+            return
+        }
+        #expect(captured.properties == [.read, .notify, .notifyEncryptionRequired, .write, .indicateEncryptionRequired])
     }
 
     @Test("session rejects sequence regression")
