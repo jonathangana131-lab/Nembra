@@ -465,7 +465,7 @@ struct DashboardView: View {
     }
 
     private var batteryIcon: String {
-        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return "battery.0percent" }
+        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return "questionmark.circle" }
         return switch battery {
         case ...15: "battery.0percent"
         case ...35: "battery.25percent"
