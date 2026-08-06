@@ -81,7 +81,7 @@ final class NembraUITests: XCTestCase {
         let lock = button(containing: "Lock", in: app)
         XCTAssertTrue(lock.waitForExistence(timeout: 2))
         XCTAssertFalse(lock.isEnabled, "Lock must stay disabled until a confirmed stationary speed exists.")
-        XCTAssertTrue(lock.label.contains("Speed unknown"))
+        XCTAssertTrue(lock.label.contains("No speed"))
     }
 
     @MainActor
