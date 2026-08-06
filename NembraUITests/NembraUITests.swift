@@ -173,6 +173,7 @@ final class NembraUITests: XCTestCase {
             value == "Unavailable" || value == "Estimated range unavailable",
             "A no-SoC state must remain explicitly unavailable regardless of the persisted presentation preference."
         )
+        keepScreenshot(named: "Dashboard Battery Unavailable Landscape")
     }
 
     @MainActor
