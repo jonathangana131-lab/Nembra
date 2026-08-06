@@ -6,7 +6,7 @@ import Testing
 struct BatteryPrimaryReadoutStateTests {
     private let availableInputs = BatteryPrimaryReadoutInputs(
         displaySOCPercent: 73,
-        estimatedRange: .valueMiles(8.4)
+        estimatedRange: .valueMeters(13_518.5)
     )
 
     @Test("percentage is the default primary representation")
@@ -25,7 +25,7 @@ struct BatteryPrimaryReadoutStateTests {
 
         state.toggle()
         #expect(state.mode == .estimatedRange)
-        #expect(state.presentation(for: availableInputs).primaryValue == .estimatedRangeMiles(8.4))
+        #expect(state.presentation(for: availableInputs).primaryValue == .estimatedRangeMeters(13_518.5))
 
         state.toggle()
         #expect(state.mode == .percentage)
@@ -37,8 +37,16 @@ struct BatteryPrimaryReadoutStateTests {
         let state = BatteryPrimaryReadoutState(mode: .estimatedRange)
         let presentation = state.presentation(for: availableInputs)
 
-        #expect(presentation.primaryValue == .estimatedRangeMiles(8.4))
+        #expect(presentation.primaryValue == .estimatedRangeMeters(13_518.5))
         #expect(presentation.batteryFillPercent == 73)
+    }
+
+    @Test("range remains unit-neutral for formatting above the core domain")
+    func rangeRemainsUnitNeutral() {
+        let state = BatteryPrimaryReadoutState(mode: .estimatedRange)
+        let presentation = state.presentation(for: availableInputs)
+
+        #expect(presentation.primaryValue == .estimatedRangeMeters(13_518.5))
     }
 
     @Test("range mode never invents advertised-range math when estimate is unavailable")
@@ -95,25 +103,55 @@ struct BatteryPrimaryReadoutStateTests {
         let negative = state.presentation(
             for: BatteryPrimaryReadoutInputs(
                 displaySOCPercent: 50,
-                estimatedRange: .valueMiles(-1)
+                estimatedRange: .valueMeters(-1)
             )
         )
         let infinite = state.presentation(
             for: BatteryPrimaryReadoutInputs(
                 displaySOCPercent: 50,
-                estimatedRange: .valueMiles(.infinity)
+                estimatedRange: .valueMeters(.infinity)
             )
         )
         let nan = state.presentation(
             for: BatteryPrimaryReadoutInputs(
                 displaySOCPercent: 50,
-                estimatedRange: .valueMiles(.nan)
+                estimatedRange: .valueMeters(.nan)
             )
         )
 
         #expect(negative.primaryValue == .unavailable)
         #expect(infinite.primaryValue == .unavailable)
         #expect(nan.primaryValue == .unavailable)
+    }
+
+    @Test("zero and full boundary values remain legitimate")
+    func validBoundaryValuesArePreserved() {
+        let percentageState = BatteryPrimaryReadoutState()
+        let empty = percentageState.presentation(
+            for: BatteryPrimaryReadoutInputs(
+                displaySOCPercent: 0,
+                estimatedRange: .unavailable
+            )
+        )
+        let full = percentageState.presentation(
+            for: BatteryPrimaryReadoutInputs(
+                displaySOCPercent: 100,
+                estimatedRange: .unavailable
+            )
+        )
+        let rangeState = BatteryPrimaryReadoutState(mode: .estimatedRange)
+        let noRemainingDistance = rangeState.presentation(
+            for: BatteryPrimaryReadoutInputs(
+                displaySOCPercent: 0,
+                estimatedRange: .valueMeters(0)
+            )
+        )
+
+        #expect(empty.primaryValue == .percentage(0))
+        #expect(empty.batteryFillPercent == 0)
+        #expect(full.primaryValue == .percentage(100))
+        #expect(full.batteryFillPercent == 100)
+        #expect(noRemainingDistance.primaryValue == .estimatedRangeMeters(0))
     }
 
     @Test("range preference can be selected before range evidence exists")
@@ -130,13 +168,13 @@ struct BatteryPrimaryReadoutStateTests {
         let laterAvailable = state.presentation(
             for: BatteryPrimaryReadoutInputs(
                 displaySOCPercent: 80,
-                estimatedRange: .valueMiles(9.1)
+                estimatedRange: .valueMeters(14_645.0)
             )
         )
 
         #expect(state.mode == .estimatedRange)
         #expect(unavailable.primaryValue == .unavailable)
-        #expect(laterAvailable.primaryValue == .estimatedRangeMiles(9.1))
+        #expect(laterAvailable.primaryValue == .estimatedRangeMeters(14_645.0))
     }
 
     @Test("readout preference is codable for shared persisted presentation state")
