@@ -217,6 +217,10 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
     public let endingOdometerKilometers: Double?
     public let qualityScreenedGPSDistanceMeters: Double
     public let continuity: RideSessionContinuity
+    /// Durable transport-continuity provenance for the confirmed ride interval.
+    /// This is deliberately not collapsed to a Bool because old/recovered
+    /// evidence may be unable to prove whether a disconnect occurred.
+    public let transportGapEvidence: RideTransportGapEvidence
 
     /// Completed evidence validates durable numeric invariants at construction and
     /// decoding boundaries. Wall-clock ordering is intentionally not enforced:
@@ -230,7 +234,8 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
         startingOdometerKilometers: Double?,
         endingOdometerKilometers: Double?,
         qualityScreenedGPSDistanceMeters: Double,
-        continuity: RideSessionContinuity
+        continuity: RideSessionContinuity,
+        transportGapEvidence: RideTransportGapEvidence = .unknown
     ) throws {
         guard beganAtDate.timeIntervalSinceReferenceDate.isFinite,
               confirmedAtDate.timeIntervalSinceReferenceDate.isFinite,
@@ -259,6 +264,7 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
         self.endingOdometerKilometers = endingOdometerKilometers
         self.qualityScreenedGPSDistanceMeters = qualityScreenedGPSDistanceMeters
         self.continuity = continuity
+        self.transportGapEvidence = transportGapEvidence
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -270,6 +276,7 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
         case endingOdometerKilometers
         case qualityScreenedGPSDistanceMeters
         case continuity
+        case transportGapEvidence
     }
 
     public init(from decoder: Decoder) throws {
@@ -283,7 +290,11 @@ public struct CompletedRideEvidence: Codable, Equatable, Sendable {
                 startingOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .startingOdometerKilometers),
                 endingOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .endingOdometerKilometers),
                 qualityScreenedGPSDistanceMeters: container.decode(Double.self, forKey: .qualityScreenedGPSDistanceMeters),
-                continuity: container.decode(RideSessionContinuity.self, forKey: .continuity)
+                continuity: container.decode(RideSessionContinuity.self, forKey: .continuity),
+                transportGapEvidence: try container.decodeIfPresent(
+                    RideTransportGapEvidence.self,
+                    forKey: .transportGapEvidence
+                ) ?? .unknown
             )
         } catch CompletedRideEvidenceError.invalidEvidence {
             throw DecodingError.dataCorrupted(
@@ -333,6 +344,10 @@ public struct RideEngine: Sendable {
     private let makeSessionID: @Sendable () -> UUID
     private var lastObservationUptimeNanoseconds: UInt64?
     private var lastObservationDate: Date?
+    /// Session-scoped transport provenance is kept beside the phase rather than
+    /// inside UI-facing session identity. It is committed transactionally with
+    /// each successful ingest and cleared when the ride completes.
+    private var transportGapEvidence: RideTransportGapEvidence?
 
     public init(
         policy: RideDetectionPolicy,
@@ -350,6 +365,7 @@ public struct RideEngine: Sendable {
 
         var nextPhase = phase
         var events: [RideEngineEvent] = []
+        var nextTransportGapEvidence = transportGapEvidence
 
         switch phase {
         case .idle:
@@ -360,6 +376,7 @@ public struct RideEngine: Sendable {
                    strongMovement(in: observation, candidate: candidate) {
                     let session = makeSession(from: candidate, confirmation: observation)
                     nextPhase = .active(session)
+                    nextTransportGapEvidence = .noneObserved
                     events = [.candidateStarted, .rideStarted(session)]
                 } else {
                     nextPhase = .candidate(candidate)
@@ -394,6 +411,7 @@ public struct RideEngine: Sendable {
             if elapsed >= policy.confirmationDurationNanoseconds, hasStrongMovement {
                 let session = makeSession(from: candidate, confirmation: observation)
                 nextPhase = .active(session)
+                nextTransportGapEvidence = .noneObserved
                 events = [.rideStarted(session)]
             } else {
                 nextPhase = .candidate(candidate)
@@ -404,6 +422,7 @@ public struct RideEngine: Sendable {
             try updateSessionEvidence(&session, from: observation)
 
             if !observation.isVehicleConnected {
+                nextTransportGapEvidence = .observed
                 nextPhase = .temporarilyDisconnected(
                     TemporarilyDisconnectedRide(
                         session: session,
@@ -434,6 +453,7 @@ public struct RideEngine: Sendable {
             try updateSessionEvidence(&disconnected.session, from: observation)
 
             guard observation.isVehicleConnected else {
+                nextTransportGapEvidence = .observed
                 nextPhase = .temporarilyDisconnected(disconnected)
                 break
             }
@@ -461,6 +481,7 @@ public struct RideEngine: Sendable {
             try updateSessionEvidence(&ending.session, from: observation)
 
             if !observation.isVehicleConnected {
+                nextTransportGapEvidence = .observed
                 nextPhase = .temporarilyDisconnected(
                     TemporarilyDisconnectedRide(
                         session: ending.session,
@@ -487,9 +508,11 @@ public struct RideEngine: Sendable {
                         startingOdometerKilometers: ending.session.startingOdometerKilometers,
                         endingOdometerKilometers: ending.session.latestOdometerKilometers,
                         qualityScreenedGPSDistanceMeters: ending.session.accumulatedGPSDistanceMeters,
-                        continuity: ending.session.continuity
+                        continuity: ending.session.continuity,
+                        transportGapEvidence: nextTransportGapEvidence ?? .unknown
                     )
                     nextPhase = .idle
+                    nextTransportGapEvidence = nil
                     events = [.rideEnded(completed)]
                 } else {
                     nextPhase = .endingCandidate(ending)
@@ -498,6 +521,7 @@ public struct RideEngine: Sendable {
         }
 
         phase = nextPhase
+        transportGapEvidence = nextTransportGapEvidence
         lastObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
         lastObservationDate = observation.receivedAtDate
         return RideEngineUpdate(phase: nextPhase, events: events)
@@ -537,7 +561,8 @@ public struct RideEngine: Sendable {
             checkpointedAtDate: checkpointedAtDate,
             startingOdometerKilometers: session.startingOdometerKilometers,
             latestOdometerKilometers: session.latestOdometerKilometers,
-            accumulatedGPSDistanceMeters: session.accumulatedGPSDistanceMeters
+            accumulatedGPSDistanceMeters: session.accumulatedGPSDistanceMeters,
+            transportGapEvidence: transportGapEvidence ?? .unknown
         )
     }
 
@@ -578,6 +603,7 @@ public struct RideEngine: Sendable {
 
         var engine = RideEngine(policy: policy, makeSessionID: makeSessionID)
         engine.phase = .temporarilyDisconnected(disconnected)
+        engine.transportGapEvidence = checkpoint.transportGapEvidence.afterProcessRecovery
         engine.lastObservationUptimeNanoseconds = recoveredAtUptimeNanoseconds
         // Recovery itself is not a vehicle observation. Preserve the durable
         // last-evidence time until a genuinely new observation arrives.
