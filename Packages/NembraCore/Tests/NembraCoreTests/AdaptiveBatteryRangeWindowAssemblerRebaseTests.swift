@@ -75,6 +75,38 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.transportGapOccurred)
     }
 
+    @Test("estimated rebound never rebases or advances measured learning state")
+    func estimatedReboundIsIgnored() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 10), policy: p)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .partial)
+        assembler.recordTransportGap()
+
+        let estimate = try BatterySOCReading(
+            percentage: 99,
+            provenance: .estimate,
+            receivedAtUptimeNanoseconds: 999
+        )
+        #expect(try assembler.ingestSOC(estimate, policy: p) == nil)
+
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.receivedAtUptimeNanoseconds == 10)
+        #expect(assembler.accumulatedDistanceMeters == 150)
+        #expect(assembler.distanceCoverage == .partial)
+        #expect(assembler.transportGapOccurred)
+
+        let candidate = try assembler.ingestSOC(reading(77, uptime: 20), policy: p)
+        let tainted = try #require(candidate)
+        #expect(tainted.startSOC.percentage == 80)
+        #expect(tainted.endSOC.percentage == 77)
+        #expect(tainted.distanceMeters == 150)
+        #expect(tainted.distanceCoverage == .partial)
+        #expect(tainted.transportGapOccurred)
+    }
+
     @Test("partial coverage cannot be repaired by later complete deltas in one span")
     func partialCoverageIsSticky() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
