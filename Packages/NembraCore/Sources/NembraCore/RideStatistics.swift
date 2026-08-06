@@ -3,6 +3,7 @@ import Foundation
 public enum RideStatisticsError: Error, Equatable, Sendable {
     case invalidRide
     case invalidReferenceDate
+    case aggregateOverflow
 }
 
 public enum RideStatisticsDistanceDisposition: String, Codable, Equatable, Sendable {
@@ -164,18 +165,15 @@ public enum RideStatisticsAggregator {
                 continue
             }
 
+            let nextTotal = totalDistanceMeters + distance
+            guard nextTotal.isFinite else {
+                throw RideStatisticsError.aggregateOverflow
+            }
+
             trustworthyDistanceRideCount += 1
-            totalDistanceMeters += distance
-            if let longestRideDistanceMeters {
-                if distance > longestRideDistanceMeters {
-                    selfAssignLongest(
-                        distance: distance,
-                        sessionID: ride.sessionID,
-                        longestDistance: &longestRideDistanceMeters,
-                        longestSessionID: &longestRideSessionID
-                    )
-                }
-            } else {
+            totalDistanceMeters = nextTotal
+
+            if longestRideDistanceMeters.map({ distance > $0 }) ?? true {
                 longestRideDistanceMeters = distance
                 longestRideSessionID = ride.sessionID
             }
@@ -198,16 +196,6 @@ public enum RideStatisticsAggregator {
             longestRideSessionID: longestRideSessionID,
             longestRidingDayStreakDays: longestStreak
         )
-    }
-
-    private static func selfAssignLongest(
-        distance: Double,
-        sessionID: UUID,
-        longestDistance: inout Double,
-        longestSessionID: inout UUID?
-    ) {
-        longestDistance = distance
-        longestSessionID = sessionID
     }
 
     private static func contains(
