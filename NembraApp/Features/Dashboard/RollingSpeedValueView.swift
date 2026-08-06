@@ -22,7 +22,10 @@ struct RollingSpeedValueView: View {
                         .contentTransition(.numericText(value: value))
                 }
             }
-            .animation(.smooth(duration: 0.14), value: snapshot.scaledValue)
+            // Interpolation timing lives in SpeedInstrumentModel. This brief
+            // transition only rolls a visible integer when the rendered value
+            // crosses that integer; it is not a second speed-smoothing layer.
+            .animation(.linear(duration: 0.08), value: snapshot.scaledValue)
         } else if let value {
             Text(String(format: "%.0f", max(0, value)))
                 .contentTransition(.numericText(value: value))
