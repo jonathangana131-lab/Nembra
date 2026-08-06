@@ -338,7 +338,13 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
     public func blendedEfficiencyMetersPerPercentagePoint(
         using policy: AdaptiveBatteryRangePolicy
     ) -> Double? {
-        let recentEfficiency = weightedRecentEfficiency()
+        // The active policy is authoritative immediately. Persisted learning may
+        // have retained more recent samples under an older/larger capacity; a
+        // policy reduction must not wait for another ride sample before taking
+        // effect in the estimate.
+        let recentEfficiency = weightedRecentEfficiency(
+            maximumSampleCount: policy.recentWindowCapacity
+        )
 
         let result: Double?
         switch (historicalEfficiencyMetersPerPercentagePoint, recentEfficiency) {
@@ -504,11 +510,13 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         )
     }
 
-    private func weightedRecentEfficiency() -> Double? {
+    private func weightedRecentEfficiency(maximumSampleCount: Int) -> Double? {
+        guard maximumSampleCount > 0 else { return nil }
+
         var totalConsumed = 0.0
         var weightedMean = 0.0
 
-        for sample in recentSamples {
+        for sample in recentSamples.suffix(maximumSampleCount) {
             let newTotal = totalConsumed + sample.consumedPercentagePoints
             guard newTotal.isFinite, newTotal > 0 else { return nil }
             let weight = sample.consumedPercentagePoints / newTotal
