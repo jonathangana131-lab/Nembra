@@ -40,7 +40,8 @@ final class RideRouteDraftFinalizerTests: XCTestCase {
         )
         _ = try await routeStore.commit(chunk)
 
-        XCTAssertNil(try await routeStore.manifest(sessionID: sessionID))
+        let manifestBeforeRecovery = try await routeStore.manifest(sessionID: sessionID)
+        XCTAssertNil(manifestBeforeRecovery)
 
         let finalizer = RideRouteDraftFinalizer(routeStore: routeStore)
         let manifest = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
@@ -51,7 +52,8 @@ final class RideRouteDraftFinalizerTests: XCTestCase {
         XCTAssertEqual(manifest?.pointCount, 2)
         XCTAssertEqual(manifest?.knownGapCount, 0)
 
-        let geometry = try XCTUnwrap(try await routeStore.geometry(sessionID: sessionID))
+        let loadedGeometry = try await routeStore.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loadedGeometry)
         XCTAssertEqual(geometry.coverage, .partial)
         XCTAssertEqual(geometry.pointCount, 2)
         XCTAssertTrue(geometry.hasDrawablePath)
@@ -71,9 +73,12 @@ final class RideRouteDraftFinalizerTests: XCTestCase {
         let sessionID = UUID()
         let finalizer = RideRouteDraftFinalizer(routeStore: routeStore)
 
-        XCTAssertNil(try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID))
-        XCTAssertNil(try await routeStore.manifest(sessionID: sessionID))
-        XCTAssertNil(try await routeStore.geometry(sessionID: sessionID))
+        let recovered = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
+        let manifest = try await routeStore.manifest(sessionID: sessionID)
+        let geometry = try await routeStore.geometry(sessionID: sessionID)
+        XCTAssertNil(recovered)
+        XCTAssertNil(manifest)
+        XCTAssertNil(geometry)
     }
 
     func testMalformedNonContiguousDraftFailsClosedWithoutManifest() async throws {
@@ -107,7 +112,8 @@ final class RideRouteDraftFinalizerTests: XCTestCase {
             _ = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
             XCTFail("Non-contiguous recovered route evidence must fail closed.")
         } catch {
-            XCTAssertNil(try await routeStore.manifest(sessionID: sessionID))
+            let manifest = try await routeStore.manifest(sessionID: sessionID)
+            XCTAssertNil(manifest)
         }
     }
 
