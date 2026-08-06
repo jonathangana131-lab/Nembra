@@ -157,20 +157,26 @@ public actor RideApplicationRuntime {
             throw RideApplicationRuntimeStartError.initialObservationFailed
         }
 
+        // Register both broadcast streams before start returns. Creating the
+        // streams synchronously installs their continuations inside the scooter
+        // service; spawning tasks first would allow the first post-launch speed
+        // packets to arrive before the raw subscriber existed and silently drop
+        // ride-start evidence.
+        let stateStream = await service.stateUpdates()
+        let speedStream = await service.speedTelemetryUpdates()
+
         started = true
         publish()
 
-        stateTask = Task { [weak self, service] in
-            let stream = await service.stateUpdates()
-            for await state in stream {
+        stateTask = Task { [weak self] in
+            for await state in stateStream {
                 guard !Task.isCancelled else { break }
                 await self?.acceptVehicleState(state)
             }
         }
 
-        speedTask = Task { [weak self, service] in
-            let stream = await service.speedTelemetryUpdates()
-            for await sample in stream {
+        speedTask = Task { [weak self] in
+            for await sample in speedStream {
                 guard !Task.isCancelled else { break }
                 await self?.acceptSpeedSample(sample)
             }
