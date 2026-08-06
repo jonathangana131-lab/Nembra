@@ -12,12 +12,13 @@ Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.
 - Battery/range must use one domain separating raw evidence, measured SoC, estimated SoC, display SoC, efficiency model, estimated range, range confidence, and unknown.
 - Battery indicator must eventually tap-toggle `% ↔ estimated remaining range` across relevant Home/Dashboard/live-ride surfaces.
 - Remaining range learns this particular ES80 from real battery consumption and distance; never use advertised range × percentage as the final model. Preserve recent-vs-history weighting, smoothing/hysteresis, confidence, outlier rejection, meaningful battery windows, low-battery conservatism, persisted learning, and deterministic tests.
+- Focused permanent subsystem contract: `docs/ES80_BATTERY_RANGE.md`.
 
 ## Fresh resume sequence
 1. Inspect `main`, open PRs, active branches, newest commits, and newest Xcode/Actions runs.
 2. Identify the real active branch/PR/head before trusting milestone text.
 3. Read `PROJECT_STATE.md` and this file from that active head.
-4. Read `docs/RIDE_LOCATION_CAPTURE.md`, `docs/RIDE_LOCATION_EVIDENCE.md`, `PROTOCOL_NOTES.md`, and only the relevant durable decisions/design notes.
+4. Read `docs/RIDE_LOCATION_CAPTURE.md`, `docs/RIDE_LOCATION_EVIDENCE.md`, `docs/ES80_BATTERY_RANGE.md`, `PROTOCOL_NOTES.md`, and only the relevant durable decisions/design notes.
 5. Resume the exact unfinished action; do not stop at a status report while another safe tool action can advance Nembra.
 
 ## Expected live handoff
@@ -25,6 +26,7 @@ Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.
 - Active branch: `feature/ride-location-capture`.
 - Active PR: **#8 — Add truthful ride-scoped phone location evidence**.
 - The ES80 product-target/battery requirement change was checkpointed on this branch without abandoning the active software slice.
+- The Core Location Xcode compile failure from `CLServiceSession.session(...)` was corrected to the current initializer form `CLServiceSession(authorization: .whenInUse)`; the corrected lineage still requires its own exact-head Xcode gate.
 - Resolve the exact branch SHA from GitHub; recent implementation/test/doc/product-memory commits intentionally require a fresh exact-head gate.
 
 ## Active slice
@@ -63,7 +65,7 @@ Exercise the new location capture through the real application ride lifecycle ra
 - then implement foreground/background lifecycle ownership using current iOS 27 location APIs before any real production activation.
 
 ## Future AOVOPRO ES80 battery/range vertical
-Treat adaptive battery/range as a dedicated serious vertical slice, not a view-only formula. It must eventually include:
+Treat adaptive battery/range as a dedicated serious vertical slice, not a view-only formula. The durable contract is `docs/ES80_BATTERY_RANGE.md` and must eventually include:
 - protocol capture of Tuya battery percentage source/resolution/cadence/load-rest behavior and voltage/charging evidence if exposed,
 - one authoritative battery domain,
 - measured vs estimated vs displayed SoC separation,
