@@ -153,7 +153,8 @@ final class RideApplicationTests: XCTestCase {
             XCTAssertEqual(try await store.commit(manifest), .inserted)
             XCTAssertEqual(try await store.commit(manifest), .alreadyPresent)
 
-            let geometry = try XCTUnwrap(try await store.geometry(sessionID: sessionID))
+            let loadedGeometry = try await store.geometry(sessionID: sessionID)
+            let geometry = try XCTUnwrap(loadedGeometry)
             XCTAssertEqual(geometry.coverage, .complete)
             XCTAssertEqual(geometry.pointCount, 4)
             XCTAssertEqual(geometry.segments.count, 1)
@@ -163,7 +164,8 @@ final class RideApplicationTests: XCTestCase {
         do {
             let reopenedContainer = try RidePersistenceFactory.makeRouteContainer(storeURL: storeURL)
             let reopenedStore = SwiftDataRideRouteStore(modelContainer: reopenedContainer)
-            let geometry = try XCTUnwrap(try await reopenedStore.geometry(sessionID: sessionID))
+            let loadedGeometry = try await reopenedStore.geometry(sessionID: sessionID)
+            let geometry = try XCTUnwrap(loadedGeometry)
             XCTAssertEqual(geometry.pointCount, 4)
             XCTAssertEqual(geometry.segments[0].points, firstChunk.points + secondChunk.points)
         }
