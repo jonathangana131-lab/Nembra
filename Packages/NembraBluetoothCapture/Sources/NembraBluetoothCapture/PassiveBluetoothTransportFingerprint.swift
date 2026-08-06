@@ -49,16 +49,21 @@ public struct PassiveBluetoothTransportCandidateMatch: Equatable, Sendable {
     }
 }
 
-public struct PassiveBluetoothTransportFingerprintReport: Equatable, Sendable {
+public struct PassiveBluetoothTransportFingerprintReport: Equatable, Sendable, Identifiable {
+    public let peripheralIdentifier: String
     public let observedServiceUUIDs: Set<String>
     public let characteristicUUIDsByService: [String: Set<String>]
     public let candidateMatches: [PassiveBluetoothTransportCandidateMatch]
 
+    public var id: String { peripheralIdentifier }
+
     public init(
+        peripheralIdentifier: String,
         observedServiceUUIDs: Set<String>,
         characteristicUUIDsByService: [String: Set<String>],
         candidateMatches: [PassiveBluetoothTransportCandidateMatch]
     ) {
+        self.peripheralIdentifier = peripheralIdentifier
         self.observedServiceUUIDs = observedServiceUUIDs
         self.characteristicUUIDsByService = characteristicUUIDsByService
         self.candidateMatches = candidateMatches
@@ -99,37 +104,54 @@ public enum PassiveBluetoothTransportFingerprint {
         )
     ]
 
-    /// Summarizes raw advertisement/GATT identifiers without decoding payloads
-    /// or choosing a single "winner." Multiple candidate families can match the
-    /// same capture, and an empty match list is a valid/important result.
-    public static func analyze(
+    /// Produces one report per physically observed CoreBluetooth peripheral so
+    /// advertisements from unrelated nearby devices can never contaminate a
+    /// selected scooter's candidate transport fingerprint.
+    public static func analyzeAll(
         _ session: PassiveBluetoothCaptureSession
+    ) -> [PassiveBluetoothTransportFingerprintReport] {
+        observedPeripheralIdentifiers(in: session)
+            .sorted()
+            .map { analyze(session, peripheralIdentifier: $0) }
+    }
+
+    /// Summarizes raw advertisement/GATT identifiers for exactly one peripheral
+    /// without decoding payloads or choosing a single candidate-family winner.
+    /// Multiple candidate families can match and an empty match list is valid.
+    public static func analyze(
+        _ session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String
     ) -> PassiveBluetoothTransportFingerprintReport {
         var services: Set<String> = []
         var characteristicsByService: [String: Set<String>] = [:]
 
         for record in session.records {
             switch record.event {
-            case let .advertisement(observation):
+            case let .advertisement(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 services.formUnion(observation.serviceUUIDs.map(normalize))
                 services.formUnion(observation.overflowServiceUUIDs.map(normalize))
                 services.formUnion(observation.solicitedServiceUUIDs.map(normalize))
                 services.formUnion(observation.serviceData.keys.map(normalize))
 
-            case let .service(observation):
+            case let .service(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 services.insert(normalize(observation.serviceUUID))
 
-            case let .includedService(observation):
+            case let .includedService(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 services.insert(normalize(observation.parentServiceUUID))
                 services.insert(normalize(observation.includedServiceUUID))
 
-            case let .characteristic(observation):
+            case let .characteristic(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 let service = normalize(observation.serviceUUID)
                 services.insert(service)
                 characteristicsByService[service, default: []]
                     .insert(normalize(observation.characteristicUUID))
 
-            case let .descriptor(observation):
+            case let .descriptor(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 // Descriptor evidence confirms the parent GATT path existed even
                 // if a partial/imported capture lacks a separate service record.
                 let service = normalize(observation.serviceUUID)
@@ -137,14 +159,15 @@ public enum PassiveBluetoothTransportFingerprint {
                 characteristicsByService[service, default: []]
                     .insert(normalize(observation.characteristicUUID))
 
-            case let .value(observation):
+            case let .value(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
                 // Same rule for partial captures containing value evidence.
                 let service = normalize(observation.serviceUUID)
                 services.insert(service)
                 characteristicsByService[service, default: []]
                     .insert(normalize(observation.characteristicUUID))
 
-            case .stockAppState, .interruption:
+            default:
                 break
             }
         }
@@ -178,10 +201,36 @@ public enum PassiveBluetoothTransportFingerprint {
         }
 
         return PassiveBluetoothTransportFingerprintReport(
+            peripheralIdentifier: peripheralIdentifier,
             observedServiceUUIDs: services,
             characteristicUUIDsByService: characteristicsByService,
             candidateMatches: matches
         )
+    }
+
+    private static func observedPeripheralIdentifiers(
+        in session: PassiveBluetoothCaptureSession
+    ) -> Set<String> {
+        var identifiers: Set<String> = []
+        for record in session.records {
+            switch record.event {
+            case let .advertisement(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .service(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .includedService(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .characteristic(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .descriptor(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .value(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case .stockAppState, .interruption:
+                break
+            }
+        }
+        return identifiers
     }
 
     private static func normalize(_ identifier: String) -> String {
