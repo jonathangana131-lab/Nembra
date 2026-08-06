@@ -104,9 +104,10 @@ final class SpeedInstrumentModel {
     }
 
     /// Animation duration follows observed cadence, not an invented MAXSHOT
-    /// packet rate. It aims to settle before a similarly spaced next sample and
-    /// is bounded so a long packet gap cannot create a slow predictive-looking
-    /// ramp.
+    /// packet rate. Interpolation is used only when measurements are close
+    /// enough to represent one continuous visual sequence. A gap larger than
+    /// the maximum presentation transition snaps to the new measurement instead
+    /// of visually bridging missing telemetry.
     private func transitionDurationNanoseconds(for sample: SpeedTelemetrySample) -> UInt64 {
         guard let previousMeasurementUptimeNanoseconds,
               sample.receivedAtUptimeNanoseconds > previousMeasurementUptimeNanoseconds else {
@@ -114,9 +115,14 @@ final class SpeedInstrumentModel {
         }
 
         let interval = sample.receivedAtUptimeNanoseconds - previousMeasurementUptimeNanoseconds
-        let eightyPercent = (interval / 5) * 4
         let minimum: UInt64 = 50_000_000
         let maximum: UInt64 = 300_000_000
+
+        guard interval <= maximum else {
+            return 0
+        }
+
+        let eightyPercent = (interval / 5) * 4
         return min(max(eightyPercent, minimum), maximum)
     }
 }
