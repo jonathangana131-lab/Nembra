@@ -1,26 +1,112 @@
 import Foundation
 import SwiftUI
 
+/// Pure presentation state for the landscape cockpit.
+///
+/// Mode personality is deliberately visual-only. It never changes speed,
+/// telemetry, command behavior, speed limits, or ride evidence, and it does not
+/// imply any unverified mapping between MAXSHOT ride modes and DP101/102/103.
+struct DashboardModePersonality: Equatable {
+    let mode: RideMode?
+    let ambientOpacity: Double
+    let speedScale: CGFloat
+    let modeScale: CGFloat
+    let modeMarkerWidth: CGFloat
+    let modeMarkerOpacity: Double
+    let statusOpacity: Double
+
+    static func resolved(for mode: RideMode?) -> DashboardModePersonality {
+        switch mode {
+        case .walk:
+            DashboardModePersonality(
+                mode: .walk,
+                ambientOpacity: 0.018,
+                speedScale: 0.96,
+                modeScale: 0.97,
+                modeMarkerWidth: 24,
+                modeMarkerOpacity: 0.22,
+                statusOpacity: 0.58
+            )
+        case .eco:
+            DashboardModePersonality(
+                mode: .eco,
+                ambientOpacity: 0.030,
+                speedScale: 0.98,
+                modeScale: 0.99,
+                modeMarkerWidth: 30,
+                modeMarkerOpacity: 0.32,
+                statusOpacity: 0.62
+            )
+        case .drive:
+            DashboardModePersonality(
+                mode: .drive,
+                ambientOpacity: 0.044,
+                speedScale: 1.0,
+                modeScale: 1.0,
+                modeMarkerWidth: 38,
+                modeMarkerOpacity: 0.46,
+                statusOpacity: 0.68
+            )
+        case .sport:
+            DashboardModePersonality(
+                mode: .sport,
+                ambientOpacity: 0.062,
+                speedScale: 1.025,
+                modeScale: 1.03,
+                modeMarkerWidth: 48,
+                modeMarkerOpacity: 0.62,
+                statusOpacity: 0.74
+            )
+        case nil:
+            DashboardModePersonality(
+                mode: nil,
+                ambientOpacity: 0.012,
+                speedScale: 1.0,
+                modeScale: 1.0,
+                modeMarkerWidth: 22,
+                modeMarkerOpacity: 0.14,
+                statusOpacity: 0.58
+            )
+        }
+    }
+}
+
 /// The dedicated landscape riding surface.
 ///
-/// Phase 10 keeps the accepted Phase 9 cockpit composition while delegating
-/// only the center speed instrument to a render-only raw-telemetry presenter.
+/// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
+/// ride mode affect cockpit visual energy without changing any vehicle truth.
 struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLockConfirmation = false
 
     var body: some View {
+        let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
+
         ZStack {
             Color.black.ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(personality.ambientOpacity),
+                    Color.clear
+                ],
+                center: .center,
+                startRadius: 18,
+                endRadius: 390
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .animation(modeAnimation, value: personality)
 
             HStack(spacing: 0) {
                 statusRail
                     .frame(width: 156)
 
-                DashboardSpeedInstrumentView()
+                DashboardSpeedInstrumentView(modePersonality: personality)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                contextRail
+                contextRail(personality: personality)
                     .frame(width: 176)
             }
             .safeAreaPadding(.horizontal, 20)
@@ -86,9 +172,9 @@ struct DashboardView: View {
         }
     }
 
-    private var contextRail: some View {
+    private func contextRail(personality: DashboardModePersonality) -> some View {
         VStack(alignment: .trailing, spacing: 14) {
-            modeReadout
+            modeReadout(personality: personality)
 
             Spacer(minLength: 0)
 
@@ -106,8 +192,8 @@ struct DashboardView: View {
         .animation(.snappy(duration: 0.20), value: shouldShowStoppedControls)
     }
 
-    private var modeReadout: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+    private func modeReadout(personality: DashboardModePersonality) -> some View {
+        VStack(alignment: .trailing, spacing: 5) {
             Text("MODE")
                 .font(.caption2.weight(.bold))
                 .tracking(1.6)
@@ -117,7 +203,14 @@ struct DashboardView: View {
                 .font(.title2.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(personality.modeMarkerOpacity))
+                .frame(width: personality.modeMarkerWidth, height: 2)
+                .accessibilityHidden(true)
         }
+        .scaleEffect(personality.modeScale, anchor: .trailing)
+        .animation(modeAnimation, value: personality)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ride mode")
         .accessibilityValue(vehicle.state.rideMode?.displayName ?? "Unknown")
@@ -310,5 +403,9 @@ struct DashboardView: View {
         case .connecting, .reconnecting: .orange
         case .disconnected: .secondary
         }
+    }
+
+    private var modeAnimation: Animation? {
+        reduceMotion ? nil : .snappy(duration: 0.26)
     }
 }

@@ -82,3 +82,32 @@ Use semantic system colors plus one restrained Nembra accent. Mode personality c
 - MPH stays visually subordinate to the numeral while maintaining a stable baseline and enough separation to avoid looking attached to one digit.
 - VoiceOver announces the latest authoritative/confirmed speed, never an unmeasured interpolated midpoint.
 - Real iPhone 12/iOS 27 Simulator screenshot acceptance checks center dominance, digit width, unit alignment, clipping, side-rail stability, safe areas, and moving/stopped-control behavior. Still screenshots prove composition only; temporal smoothness requires runtime tests/profiling.
+
+## Landscape confirmed-mode personality — Phase 11 accepted rules
+- Mode personality is a **presentation system**, not a vehicle-performance model.
+- Its input is only the scooter-confirmed `RideMode?`; tapping a mode control does not authorize visual state by itself.
+- Unknown mode remains visually neutral/quiet rather than defaulting to Sport or another invented state.
+- Walk → Eco → Drive → Sport may increase visual energy gradually, but the progression must remain restrained enough that speed, battery, connection, and safety warnings keep their established hierarchy.
+- Accepted personality levers are limited to subtle center ambient intensity, speed-instrument scale, mode-readout scale/marker, and secondary status emphasis.
+- Do not introduce per-mode RGB themes, neon glows, fake carbon, warning red for Sport, fake tachometers, fake throttle/power meters, or invented range/efficiency implications.
+- The side rails and center digit geometry remain fixed. Mode changes must not cause cockpit reflow or make one mode occupy materially different layout space.
+- Sport may feel more energetic but must not look dangerous, alarmed, or game-like.
+- Walk may feel calmer but must not look disabled or low-contrast.
+- Drive is the visual baseline; Eco is a restrained intermediate state.
+- Reduce Motion removes the snappy/spatial personality transition while preserving the confirmed state change and final visual hierarchy.
+- Mode personality never changes telemetry, speed-limit semantics, ride evidence, command confirmation, history, distance, or persistence.
+- It never implies a MAXSHOT mapping from Walk/Eco/Drive/Sport to DP101/DP102/DP103 until real hardware evidence proves that relationship.
+- Acceptance requires real iPhone 12/iOS 27 captures for the personality extremes and intermediate states plus a moving-state capture. Source inspection or static mockups alone are insufficient.
+
+### Phase 11 visual baseline accepted 2026-08-06
+Real XCTest attachments from Xcode 27 run `31063560164` were reviewed for Walk, Eco, Drive, Sport, confirmed Sport, and moving Drive.
+
+Accepted observations:
+- Walk is calmer without looking unavailable.
+- Eco increases emphasis slightly without becoming a theme change.
+- Drive remains the balanced baseline.
+- Sport is noticeably stronger but still monochrome, instrument-grade, and subordinate to actual safety/status information.
+- center speed remains dominant and unclipped.
+- mode transitions do not disturb side-rail placement or stopped-control geometry.
+- moving state keeps state-changing controls unavailable and preserves the accepted safety hierarchy.
+- no excessive glow, safe-area clipping, or landscape crowding was observed.

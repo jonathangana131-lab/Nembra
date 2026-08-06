@@ -92,27 +92,66 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testLandscapeDashboardStoppedControlsConfirmMode() {
+    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
-
-        let sport = app.buttons["dashboard.mode.sport"]
-        XCTAssertTrue(sport.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["dashboard.control.light"].exists)
         XCTAssertTrue(app.buttons["dashboard.control.lock"].exists)
 
-        sport.tap()
         let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
         XCTAssertTrue(confirmedMode.waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            waitForValue("Sport", element: confirmedMode),
-            "Dashboard mode must change only after the simulated scooter confirms Sport."
-        )
+        XCTAssertTrue(waitForValue("Sport", element: confirmedMode))
+        keepScreenshot(named: "Dashboard Sport Landscape")
 
-        keepScreenshot(named: "Dashboard Stopped Landscape")
+        selectDashboardMode(
+            identifier: "dashboard.mode.walk",
+            expectedValue: "Walk",
+            screenshotName: "Dashboard Walk Landscape",
+            in: app,
+            confirmedMode: confirmedMode
+        )
+        selectDashboardMode(
+            identifier: "dashboard.mode.eco",
+            expectedValue: "Eco",
+            screenshotName: "Dashboard Eco Landscape",
+            in: app,
+            confirmedMode: confirmedMode
+        )
+        selectDashboardMode(
+            identifier: "dashboard.mode.drive",
+            expectedValue: "Drive",
+            screenshotName: "Dashboard Drive Landscape",
+            in: app,
+            confirmedMode: confirmedMode
+        )
+        selectDashboardMode(
+            identifier: "dashboard.mode.sport",
+            expectedValue: "Sport",
+            screenshotName: "Dashboard Sport Confirmed Landscape",
+            in: app,
+            confirmedMode: confirmedMode
+        )
+    }
+
+    @MainActor
+    private func selectDashboardMode(
+        identifier: String,
+        expectedValue: String,
+        screenshotName: String,
+        in app: XCUIApplication,
+        confirmedMode: XCUIElement
+    ) {
+        let button = app.buttons[identifier]
+        XCTAssertTrue(button.waitForExistence(timeout: 2))
+        button.tap()
+        XCTAssertTrue(
+            waitForValue(expectedValue, element: confirmedMode),
+            "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
+        )
+        keepScreenshot(named: screenshotName)
     }
 
     @MainActor
