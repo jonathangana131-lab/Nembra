@@ -134,8 +134,8 @@ struct RideTransportGapEvidenceTests {
     func uninterruptedCompletionPreservesNoneObserved() throws {
         var engine = RideEngine(policy: try policy())
         _ = try engine.ingest(observation(1_000, speedKPH: 8, odometer: 100))
-        _ = try engine.ingest(observation(2_000, speedKPH: 0, odometer: 100.1))
-        let ended = try engine.ingest(observation(2_100, speedKPH: 0, odometer: 100.1))
+        _ = try engine.ingest(observation(2_000, speedKPH: 0, odometer: 100))
+        let ended = try engine.ingest(observation(2_100, speedKPH: 0, odometer: 100))
 
         let evidence = try completedRide(from: ended)
         #expect(evidence.transportGapEvidence == .noneObserved)
