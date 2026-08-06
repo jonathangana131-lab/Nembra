@@ -13,6 +13,20 @@ Nembra must require both before a field is allowed to appear as **verified live 
 
 A stock-app number can be very recent and still be only a correlation anchor. A verified value can be real but stale. Collapsing those axes into one `isLive` Boolean would create false confidence.
 
+## Construction boundary
+
+`BatteryEvidenceLiveTruthSnapshot` is public as a read-only output type, but its raw state dictionary initializer is module-internal.
+
+The single-field `resolve(_ availability:)` projection is also module-internal. `BatteryEvidenceFieldAvailability` is intentionally descriptive/public, so exposing the field resolver would allow external code to manually construct `.fresh(...)` and skip the injected aggregate freshness path.
+
+The production live-truth path is therefore:
+
+`BatteryEvidenceSnapshotAccumulator.currentSnapshot`
+→ `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`
+→ `BatteryEvidenceLiveTruthResolver.resolve(...)`
+
+External consumers may inspect the resulting states, but they cannot directly manufacture the trusted aggregates used by downstream verified-live consumers.
+
 ## Live-truth states
 
 `BatteryEvidenceLiveTruthResolver` projects field availability into:
@@ -27,7 +41,7 @@ The original observation is preserved in every non-unavailable state so diagnost
 
 ## What can become verified live
 
-The resolver does not special-case field names. A SoC, voltage, current, power, or charging-state observation may become `verifiedLive` only if:
+A SoC, voltage, current, power, or charging-state observation may become `verifiedLive` only if:
 
 1. upstream semantic validation accepted the value;
 2. upstream stream/snapshot logic kept it inside the current uninterrupted evidence segment;
@@ -46,8 +60,6 @@ The following roles never become `verifiedLive` merely because their timestamps 
 - `presentationOnly`.
 
 They become `freshNonAuthoritative` instead.
-
-That distinction is useful for research/QA surfaces while keeping production vehicle telemetry honest.
 
 ## Stale verified evidence
 
