@@ -45,13 +45,24 @@ public enum CoreBluetoothCaptureMapping {
         )
     }
 
+    public static func includedService(
+        peripheralIdentifier: UUID,
+        parentService: CBService,
+        includedService: CBService
+    ) throws -> PassiveBluetoothIncludedServiceObservation {
+        try PassiveBluetoothIncludedServiceObservation(
+            peripheralIdentifier: peripheralIdentifier.uuidString,
+            parentServiceUUID: normalizedUUID(parentService.uuid),
+            includedServiceUUID: normalizedUUID(includedService.uuid),
+            includedServiceIsPrimary: includedService.isPrimary
+        )
+    }
+
     public static func characteristic(
         peripheralIdentifier: UUID,
         characteristic: CBCharacteristic
     ) throws -> PassiveBluetoothCharacteristicObservation {
-        guard let service = characteristic.service else {
-            throw CoreBluetoothCaptureMappingError.characteristicMissingService
-        }
+        let service = try requiredService(for: characteristic)
 
         return try PassiveBluetoothCharacteristicObservation(
             peripheralIdentifier: peripheralIdentifier.uuidString,
@@ -61,15 +72,30 @@ public enum CoreBluetoothCaptureMapping {
         )
     }
 
+    public static func descriptor(
+        peripheralIdentifier: UUID,
+        descriptor: CBDescriptor
+    ) throws -> PassiveBluetoothDescriptorObservation {
+        guard let characteristic = descriptor.characteristic else {
+            throw CoreBluetoothCaptureMappingError.descriptorMissingCharacteristic
+        }
+        let service = try requiredService(for: characteristic)
+
+        return try PassiveBluetoothDescriptorObservation(
+            peripheralIdentifier: peripheralIdentifier.uuidString,
+            serviceUUID: normalizedUUID(service.uuid),
+            characteristicUUID: normalizedUUID(characteristic.uuid),
+            descriptorUUID: normalizedUUID(descriptor.uuid)
+        )
+    }
+
     public static func value(
         peripheralIdentifier: UUID,
         characteristic: CBCharacteristic,
         origin: PassiveBluetoothValueOrigin,
         payload: Data
     ) throws -> PassiveBluetoothValueObservation {
-        guard let service = characteristic.service else {
-            throw CoreBluetoothCaptureMappingError.characteristicMissingService
-        }
+        let service = try requiredService(for: characteristic)
 
         return try PassiveBluetoothValueObservation(
             peripheralIdentifier: peripheralIdentifier.uuidString,
@@ -109,8 +135,16 @@ public enum CoreBluetoothCaptureMapping {
     private static func uuidStrings(_ uuids: [CBUUID]?) -> [String] {
         (uuids ?? []).map(normalizedUUID)
     }
+
+    private static func requiredService(for characteristic: CBCharacteristic) throws -> CBService {
+        guard let service = characteristic.service else {
+            throw CoreBluetoothCaptureMappingError.characteristicMissingService
+        }
+        return service
+    }
 }
 
 public enum CoreBluetoothCaptureMappingError: Error, Equatable, Sendable {
     case characteristicMissingService
+    case descriptorMissingCharacteristic
 }
