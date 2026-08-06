@@ -1,0 +1,246 @@
+import Foundation
+import Testing
+@testable import NembraCore
+
+@Suite("Adaptive battery range window assembly")
+struct AdaptiveBatteryRangeWindowAssemblerTests {
+    private func reading(
+        _ percentage: Double,
+        provenance: BatterySOCProvenance = .authoritativeMeasurement,
+        uptime: UInt64
+    ) throws -> BatterySOCReading {
+        try BatterySOCReading(
+            percentage: percentage,
+            provenance: provenance,
+            receivedAtUptimeNanoseconds: uptime
+        )
+    }
+
+    private func policy(
+        minimumConsumedPercentagePoints: Double = 3,
+        minimumDistanceMeters: Double = 100
+    ) throws -> AdaptiveBatteryRangePolicy {
+        try AdaptiveBatteryRangePolicy(
+            minimumConsumedPercentagePoints: minimumConsumedPercentagePoints,
+            minimumDistanceMeters: minimumDistanceMeters,
+            recentWindowCapacity: 3,
+            recentWeight: 0.5,
+            outlierLowerEfficiencyRatio: 0.4,
+            outlierUpperEfficiencyRatio: 2.5,
+            estimateDeadbandFraction: 0.05,
+            estimateSmoothingFactor: 0.25,
+            provisionalEfficiencyMetersPerPercentagePoint: nil,
+            lowSOCCautionThresholdPercent: nil,
+            lowSOCEfficiencyMultiplier: nil,
+            lowConfidenceConsumedPercentagePoints: 10,
+            normalConfidenceConsumedPercentagePoints: 30,
+            highConfidenceConsumedPercentagePoints: 60
+        )
+    }
+
+    @Test("estimated SoC never becomes a learning anchor")
+    func estimatedSOCNeverAnchors() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        try assembler.recordDistance(deltaMeters: 250, coverage: .partial)
+        assembler.recordTransportGap()
+
+        let result = try assembler.ingestSOC(
+            reading(80, provenance: .estimate, uptime: 1),
+            policy: policy()
+        )
+
+        #expect(result == nil)
+        #expect(assembler.hasAuthoritativeAnchor == false)
+        #expect(assembler.accumulatedDistanceMeters == 250)
+        #expect(assembler.distanceCoverage == .partial)
+        #expect(assembler.transportGapOccurred)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 2), policy: policy())
+        #expect(assembler.hasAuthoritativeAnchor)
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+    }
+
+    @Test("small percentage drops accumulate into one meaningful window")
+    func smallDropsAccumulate() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
+
+        #expect(try assembler.ingestSOC(reading(80, uptime: 1), policy: p) == nil)
+        try assembler.recordDistance(deltaMeters: 100)
+        #expect(try assembler.ingestSOC(reading(79, uptime: 2), policy: p) == nil)
+        try assembler.recordDistance(deltaMeters: 120)
+        #expect(try assembler.ingestSOC(reading(78, uptime: 3), policy: p) == nil)
+        try assembler.recordDistance(deltaMeters: 140)
+
+        let window = try #require(
+            assembler.ingestSOC(reading(77, uptime: 4), policy: p)
+        )
+
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+        #expect(window.distanceMeters == 360)
+        #expect(window.distanceCoverage == .complete)
+        #expect(window.transportGapOccurred == false)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+    }
+
+    @Test("distance threshold can mature while SoC remains flat")
+    func flatSOCKeepsAnchor() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 200)
+        #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: p) == nil)
+        try assembler.recordDistance(deltaMeters: 100)
+
+        let window = try #require(
+            assembler.ingestSOC(reading(77, uptime: 3), policy: p)
+        )
+
+        #expect(window.startSOC.receivedAtUptimeNanoseconds == 1)
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+        #expect(window.distanceMeters == 300)
+    }
+
+    @Test("higher authoritative SoC conservatively rebases the evidence span")
+    func higherSOCRebases() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 500, coverage: .partial)
+        assembler.recordTransportGap()
+
+        let result = try assembler.ingestSOC(reading(81, uptime: 2), policy: p)
+
+        #expect(result == nil)
+        #expect(assembler.anchorSOC?.percentage == 81)
+        #expect(assembler.anchorSOC?.receivedAtUptimeNanoseconds == 2)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+    }
+
+    @Test("estimated readings inside a span do not advance or erase measured evidence")
+    func estimatedReadingInsideSpanIsIgnored() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150)
+        #expect(
+            try assembler.ingestSOC(
+                reading(79, provenance: .estimate, uptime: 2),
+                policy: p
+            ) == nil
+        )
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.accumulatedDistanceMeters == 150)
+
+        let window = try #require(
+            assembler.ingestSOC(reading(77, uptime: 3), policy: p)
+        )
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+    }
+
+    @Test("coverage degradation is sticky and reaches the model unchanged")
+    func coverageDegradationIsSticky() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 100, coverage: .complete)
+        try assembler.recordDistance(deltaMeters: 50, coverage: .partial)
+        try assembler.recordDistance(deltaMeters: 0, coverage: .unknown)
+
+        let window = try #require(
+            assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        )
+        #expect(window.distanceMeters == 150)
+        #expect(window.distanceCoverage == .unknown)
+
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(window, policy: p)
+        #expect(result.disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+    }
+
+    @Test("transport gaps remain explicit and cannot train the model")
+    func transportGapRemainsExplicit() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150)
+        assembler.recordTransportGap()
+
+        let window = try #require(
+            assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        )
+        #expect(window.transportGapOccurred)
+
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(window, policy: p)
+        #expect(result.disposition == .rejected(.transportGap))
+        #expect(model.acceptedWindowCount == 0)
+    }
+
+    @Test("invalid distance input and overflow fail without partial mutation")
+    func invalidDistanceFailsAtomically() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+
+        #expect(throws: BatteryRangeWindowAssemblyError.invalidDistanceDelta) {
+            try assembler.recordDistance(deltaMeters: -1)
+        }
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+
+        try assembler.recordDistance(deltaMeters: .greatestFiniteMagnitude, coverage: .partial)
+        let beforeOverflow = assembler
+
+        #expect(throws: BatteryRangeWindowAssemblyError.distanceOverflow) {
+            try assembler.recordDistance(deltaMeters: .greatestFiniteMagnitude, coverage: .unknown)
+        }
+        #expect(assembler == beforeOverflow)
+    }
+
+    @Test("nonmonotonic authoritative anchors fail without changing evidence")
+    func nonMonotonicSOCFailsAtomically() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 10), policy: p)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .partial)
+        assembler.recordTransportGap()
+        let before = assembler
+
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try assembler.ingestSOC(reading(77, uptime: 10), policy: p)
+        }
+        #expect(assembler == before)
+    }
+
+    @Test("explicit reset clears only in-flight assembly evidence")
+    func resetClearsInFlightEvidence() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .unknown)
+        assembler.recordTransportGap()
+
+        assembler.reset()
+
+        #expect(assembler.anchorSOC == nil)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+    }
+}
