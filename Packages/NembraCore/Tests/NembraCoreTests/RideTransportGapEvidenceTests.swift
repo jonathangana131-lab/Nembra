@@ -275,7 +275,7 @@ struct RideTransportGapEvidenceTests {
             checkpoint: .inProgress(legacyCheckpoint)
         )
         let encoder = JSONEncoder()
-        var legacyData = encoder.encode(envelope)
+        var legacyData = try encoder.encode(envelope)
         legacyData = try removeKey(
             "transportGapEvidence",
             fromNestedPath: ["checkpoint", "inProgress"],
