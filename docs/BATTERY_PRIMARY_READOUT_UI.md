@@ -23,9 +23,9 @@ The visible eyebrow is mode-aware: percentage mode says `BATTERY`, while estimat
 
 The existing `dashboard.battery` accessibility identifier remains stable.
 
-VoiceOver exposes the current authoritative presentation meaning instead of reading a visual transition frame. It identifies percentage values as percentages, range values as estimated range, and unavailable range as unavailable. When `VehicleState.dataAvailability` is `.retained`, a retained percentage is explicitly announced as last-known vehicle data. In range mode, the accessibility value explicitly says that the battery charge is last-known vehicle data while preserving the range result's own unavailable/learning/value classification.
+VoiceOver exposes the current authoritative presentation meaning instead of reading a visual transition frame. It identifies percentage values as percentages, range values as estimated range, and unavailable range as unavailable. The same validated charge threshold that turns the sighted battery treatment red also appends `low battery` to the accessibility value, so range mode never hides that warning from VoiceOver merely because the primary number is no longer a percentage.
 
-This matters for disconnect/recovery states: a retained `71%` remains useful read-only context, but it must never sound like a fresh live packet merely because it is still displayed.
+When `VehicleState.dataAvailability` is `.retained`, a retained percentage is explicitly announced as last-known vehicle data. In range mode, the accessibility value explicitly says that the battery charge is last-known vehicle data while preserving the range result's own unavailable/learning/value classification. A retained `71%` therefore remains useful read-only context without sounding like a fresh live packet.
 
 The control uses a selection haptic when the stored presentation preference changes. It is disabled when no legitimate display SoC exists, avoiding a no-op interaction between two unavailable states. In that disabled state its accessibility hint says battery data is unavailable rather than incorrectly instructing the user to double-tap a control that cannot activate.
 
@@ -48,9 +48,10 @@ The Dashboard UI suite includes focused coverage for:
 - restoration to percentage mode despite persistent `AppStorage` preference;
 - a minimum 44 pt battery control target;
 - the `scooter-unavailable` retained `71%` fixture announcing last-known provenance in both percentage and range modes;
-- the `cold-disconnected` no-SoC fixture leaving the battery readout disabled and explicitly unavailable regardless of the persisted presentation preference.
+- the `cold-disconnected` no-SoC fixture leaving the battery readout disabled and explicitly unavailable regardless of the persisted presentation preference;
+- the `low-battery` 14% fixture exposing `low battery` to accessibility in both percentage and unavailable-range modes and preserving a low-battery range screenshot.
 
-The unavailable-range screenshot remains required in the exact-head Simulator gate so the sighted `RANGE —` state can be judged directly rather than inferred from accessibility assertions alone.
+The unavailable-range screenshots remain required in the exact-head Simulator gate so sighted `RANGE —` and low-battery presentation can be judged directly rather than inferred from accessibility assertions alone.
 
 ## Deferred integration
 
