@@ -141,12 +141,9 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else if isVehicleMoving {
-                Text("Controls available when stopped")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("dashboard.controls-moving-message")
+            } else if shouldShowMovingReadout {
+                movingStateReadout
+                    .transition(.opacity)
             }
         }
         .animation(.snappy(duration: 0.20), value: shouldShowStoppedControls)
@@ -168,6 +165,33 @@ struct DashboardView: View {
         .accessibilityLabel("Ride mode")
         .accessibilityValue(vehicle.state.rideMode?.displayName ?? "Unknown")
         .accessibilityIdentifier("dashboard.mode")
+    }
+
+    private var movingStateReadout: some View {
+        VStack(alignment: .trailing, spacing: 9) {
+            if vehicle.profile.capabilities.supportsHeadlight,
+               let isOn = vehicle.state.isHeadlightOn {
+                Label(isOn ? "LIGHT ON" : "LIGHT OFF", systemImage: isOn ? "lightbulb.fill" : "lightbulb")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(isOn ? Color.white : Color.secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Headlight")
+                    .accessibilityValue(isOn ? "On" : "Off")
+                    .accessibilityIdentifier("dashboard.state.light")
+            }
+
+            if vehicle.profile.capabilities.supportsLock,
+               let isLocked = vehicle.state.isLocked {
+                Label(isLocked ? "LOCKED" : "UNLOCKED", systemImage: isLocked ? "lock.fill" : "lock.open")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Lock status")
+                    .accessibilityValue(isLocked ? "Locked" : "Unlocked")
+                    .accessibilityIdentifier("dashboard.state.lock")
+            }
+        }
+        .labelStyle(.titleAndIcon)
     }
 
     private var stoppedControls: some View {
@@ -280,6 +304,10 @@ struct DashboardView: View {
 
     private var shouldShowStoppedControls: Bool {
         vehicle.state.connection == .connected && !isVehicleMoving
+    }
+
+    private var shouldShowMovingReadout: Bool {
+        vehicle.state.connection == .connected && isVehicleMoving
     }
 
     private var isVehicleMoving: Bool {
