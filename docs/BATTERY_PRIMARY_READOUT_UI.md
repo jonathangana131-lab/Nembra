@@ -27,7 +27,7 @@ VoiceOver exposes the current authoritative presentation meaning instead of read
 
 This matters for disconnect/recovery states: a retained `71%` remains useful read-only context, but it must never sound like a fresh live packet merely because it is still displayed.
 
-The control uses a selection haptic when the stored presentation preference changes. It is disabled when no legitimate display SoC exists, avoiding a no-op interaction between two unavailable states.
+The control uses a selection haptic when the stored presentation preference changes. It is disabled when no legitimate display SoC exists, avoiding a no-op interaction between two unavailable states. In that disabled state its accessibility hint says battery data is unavailable rather than incorrectly instructing the user to double-tap a control that cannot activate.
 
 ## Motion boundary
 
@@ -47,7 +47,8 @@ The Dashboard UI suite includes focused coverage for:
 - a tap to estimated-range mode producing unavailable rather than synthetic mileage;
 - restoration to percentage mode despite persistent `AppStorage` preference;
 - a minimum 44 pt battery control target;
-- the `scooter-unavailable` retained `71%` fixture announcing last-known provenance in both percentage and range modes.
+- the `scooter-unavailable` retained `71%` fixture announcing last-known provenance in both percentage and range modes;
+- the `cold-disconnected` no-SoC fixture leaving the battery readout disabled and explicitly unavailable regardless of the persisted presentation preference.
 
 The unavailable-range screenshot remains required in the exact-head Simulator gate so the sighted `RANGE —` state can be judged directly rather than inferred from accessibility assertions alone.
 
