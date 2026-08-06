@@ -63,6 +63,13 @@ jobs:
               if (pr.head.repo?.full_name !== repository) continue
               if (!pr.head.ref.startsWith('parallel/')) continue
 
+              const compareResponse = await github.request('GET /repos/{owner}/{repo}/compare/{basehead}', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                basehead: `${defaultBranch}...${pr.head.sha}`,
+              })
+              if (compareResponse.data.behind_by !== 0) continue
+
               const statusResponse = await github.rest.repos.getCombinedStatusForRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
