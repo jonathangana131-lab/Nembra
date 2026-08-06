@@ -292,11 +292,13 @@ actor RideLocationCaptureCoordinator {
 
     private func consume(_ event: RideLocationSourceEvent) async {
         if event.issue != nil {
-            // A diagnostic interruption after an accepted point creates unknown
-            // coverage. The quality screen delays materializing the boundary
-            // until another valid point arrives, so a trailing error cannot
-            // invent an empty route segment.
+            // An explicit Core Location diagnostic means continuity is no longer
+            // justified. Mark both evidence domains immediately. The recorder's
+            // gap marker is lazy: before the first point it only forces partial
+            // coverage, and after points exist it materializes a new segment only
+            // when another valid coordinate is later accepted.
             qualityScreen.markKnownCoverageGap()
+            await markRouteGapIfAvailable()
         }
 
         guard let sample = event.sample else { return }
@@ -306,6 +308,9 @@ actor RideLocationCaptureCoordinator {
             return
         case let .accepted(accepted):
             if accepted.startsNewRouteSegment {
+                // Repeating the marker is intentionally harmless; the route
+                // recorder collapses repeated gap notifications until a new
+                // accepted point actually exists.
                 await markRouteGapIfAvailable()
             }
 
