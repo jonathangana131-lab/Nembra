@@ -85,14 +85,16 @@ struct RideLocationEvidenceTests {
 
         let firstResult = screen.screen(first)
         guard case let .accepted(firstAccepted) = firstResult else {
-            return Issue.record("The first valid point should be accepted.")
+            Issue.record("The first valid point should be accepted.")
+            return
         }
         #expect(firstAccepted.distanceDeltaMeters == nil)
         #expect(!firstAccepted.startsNewRouteSegment)
 
         let secondResult = screen.screen(second)
         guard case let .accepted(secondAccepted) = secondResult else {
-            return Issue.record("The second valid point should be accepted.")
+            Issue.record("The second valid point should be accepted.")
+            return
         }
         let delta = try #require(secondAccepted.distanceDeltaMeters)
         #expect(delta > 9)
@@ -154,7 +156,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 4
         )
         guard case let .accepted(accepted) = screen.screen(nearby) else {
-            return Issue.record("Rejected samples must not replace the last accepted baseline.")
+            Issue.record("Rejected samples must not replace the last accepted baseline.")
+            return
         }
         let delta = try #require(accepted.distanceDeltaMeters)
         #expect(delta > 9)
@@ -195,7 +198,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 2
         )
         guard case let .accepted(accepted) = screen.screen(nearby) else {
-            return Issue.record("An implausible jump must not poison subsequent good evidence.")
+            Issue.record("An implausible jump must not poison subsequent good evidence.")
+            return
         }
         let delta = try #require(accepted.distanceDeltaMeters)
         #expect(delta > 9)
@@ -222,7 +226,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 1
         )
         guard case let .accepted(accepted) = screen.screen(afterGap) else {
-            return Issue.record("A valid point after a known gap should begin a new segment.")
+            Issue.record("A valid point after a known gap should begin a new segment.")
+            return
         }
         #expect(accepted.startsNewRouteSegment)
         #expect(accepted.distanceDeltaMeters == nil)
@@ -234,7 +239,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 2
         )
         guard case let .accepted(nextAccepted) = screen.screen(next) else {
-            return Issue.record("Continuous evidence after the new segment should resume distance accumulation.")
+            Issue.record("Continuous evidence after the new segment should resume distance accumulation.")
+            return
         }
         #expect(!nextAccepted.startsNewRouteSegment)
         #expect(nextAccepted.distanceDeltaMeters != nil)
@@ -259,7 +265,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 6
         )
         guard case let .accepted(accepted) = screen.screen(afterTimeout) else {
-            return Issue.record("A valid point after a continuity timeout should be retained as a new segment.")
+            Issue.record("A valid point after a continuity timeout should be retained as a new segment.")
+            return
         }
         #expect(accepted.startsNewRouteSegment)
         #expect(accepted.distanceDeltaMeters == nil)
@@ -285,7 +292,8 @@ struct RideLocationEvidenceTests {
             dateOffset: 1
         )
         guard case let .accepted(accepted) = screen.screen(fresh) else {
-            return Issue.record("A reset screen should accept a new process-local baseline.")
+            Issue.record("A reset screen should accept a new process-local baseline.")
+            return
         }
         #expect(accepted.distanceDeltaMeters == nil)
         #expect(!accepted.startsNewRouteSegment)
