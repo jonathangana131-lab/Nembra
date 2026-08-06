@@ -164,7 +164,7 @@ final class RideApplicationStore {
             }
 
             updatePublishedState(from: await restored.currentPhase())
-            subscribeToEvidenceStreams()
+            await subscribeToEvidenceStreams()
         } catch {
             fail(error, persistence: true)
         }
@@ -177,20 +177,24 @@ final class RideApplicationStore {
         speedTask = nil
     }
 
-    private func subscribeToEvidenceStreams() {
+    private func subscribeToEvidenceStreams() async {
         guard stateTask == nil, speedTask == nil else { return }
 
-        stateTask = Task { [weak self, service] in
-            let stream = await service.stateUpdates()
-            for await state in stream {
+        // Resolve both actor-backed streams before start() returns. AsyncStream
+        // then buffers any evidence emitted before the consumer Tasks receive
+        // their first scheduling slice, eliminating launch-order packet loss.
+        let stateStream = await service.stateUpdates()
+        let speedStream = await service.speedTelemetryUpdates()
+
+        stateTask = Task { [weak self] in
+            for await state in stateStream {
                 guard !Task.isCancelled else { break }
                 await self?.receiveVehicleState(state)
             }
         }
 
-        speedTask = Task { [weak self, service] in
-            let stream = await service.speedTelemetryUpdates()
-            for await sample in stream {
+        speedTask = Task { [weak self] in
+            for await sample in speedStream {
                 guard !Task.isCancelled else { break }
                 await self?.receiveSpeedSample(sample)
             }
