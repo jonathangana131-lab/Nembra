@@ -384,14 +384,16 @@ private struct RideHistoryDetailView: View {
                     ProgressView("Loading route…")
                         .accessibilityIdentifier("rides.route-loading")
                 case .unavailable:
-                    routeUnavailableContent
+                    if let message = routes.errorMessage(sessionID: record.sessionID) {
+                        routeErrorContent(message)
+                    } else {
+                        routeUnavailableContent
+                    }
                 case .failed:
-                    Label("Route unavailable", systemImage: "exclamationmark.triangle")
-                        .font(.subheadline.weight(.semibold))
-                    Text(routes.errorMessage(sessionID: record.sessionID) ?? "Stored route geometry could not be verified safely.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("rides.route-error")
+                    routeErrorContent(
+                        routes.errorMessage(sessionID: record.sessionID)
+                            ?? "Stored route geometry could not be verified safely."
+                    )
                 case .ready:
                     routeUnavailableContent
                 }
@@ -407,6 +409,17 @@ private struct RideHistoryDetailView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("rides.route-unavailable")
+        }
+    }
+
+    private func routeErrorContent(_ message: String) -> some View {
+        Group {
+            Label("Route storage unavailable", systemImage: "exclamationmark.triangle")
+                .font(.subheadline.weight(.semibold))
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("rides.route-error")
         }
     }
 
