@@ -147,6 +147,39 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
+    @Test("unknown coverage rejection closes its span so later complete evidence can train")
+    func unknownCoverageRejectionDoesNotPoisonNextSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        try assembler.recordDistance(deltaMeters: 0, coverage: .unknown)
+
+        let unknownCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let unknown = try #require(unknownCandidate)
+        #expect(unknown.distanceMeters == 150)
+        #expect(unknown.distanceCoverage == .unknown)
+        #expect(model.ingest(unknown, policy: p).disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceMeters == 150)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("a rejected gap window closes its span so later clean evidence can train")
     func rejectedGapWindowDoesNotPoisonNextSpan() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
