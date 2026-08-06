@@ -1,0 +1,179 @@
+name: Xcode 27 PR Scheduled Sweep
+
+on:
+  schedule:
+    - cron: '3/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  resolve:
+    name: Resolve ungated ready PR heads
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: read
+    outputs:
+      count: ${{ steps.prs.outputs.count }}
+      matrix: ${{ steps.prs.outputs.matrix }}
+
+    steps:
+      - name: Find immutable same-repository PR heads needing QA
+        id: prs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const repository = `${owner}/${repo}`
+            const directWorkflow = 'xcode27-pr-command.yml'
+            const markerPattern = /<!-- nembra-xcode27-sweep:([0-9a-f]{40}):(\d+) -->/
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])
+
+            const pullRequests = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            })
+
+            const candidates = []
+
+            for (const pr of pullRequests) {
+              if (pr.draft || pr.head.repo?.full_name !== repository) {
+                continue
+              }
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              })
+
+              let lastProcessedCommandID = -1
+              let latestExplicitCommandID = 0
+
+              for (const comment of comments) {
+                const body = comment.body ?? ''
+                const marker = body.match(markerPattern)
+                if (marker?.[1] === pr.head.sha) {
+                  lastProcessedCommandID = Math.max(lastProcessedCommandID, Number(marker[2]))
+                }
+
+                if (body === '/xcode27' && trustedAssociations.has(comment.author_association)) {
+                  latestExplicitCommandID = Math.max(latestExplicitCommandID, Number(comment.id))
+                }
+              }
+
+              const explicitRetry = latestExplicitCommandID > Math.max(lastProcessedCommandID, 0)
+
+              let hasDirectRunForHead = false
+              if (!explicitRetry && lastProcessedCommandID < 0) {
+                const directRuns = await github.rest.actions.listWorkflowRuns({
+                  owner,
+                  repo,
+                  workflow_id: directWorkflow,
+                  head_sha: pr.head.sha,
+                  per_page: 20,
+                })
+                hasDirectRunForHead = directRuns.data.workflow_runs.length > 0
+              }
+
+              const baselineNeeded = lastProcessedCommandID < 0 && !hasDirectRunForHead
+              if (!baselineNeeded && !explicitRetry) {
+                continue
+              }
+
+              candidates.push({
+                pr_number: pr.number,
+                head_sha: pr.head.sha,
+                command_id: explicitRetry ? latestExplicitCommandID : 0,
+                explicit_retry: explicitRetry,
+                updated_at: pr.updated_at,
+              })
+            }
+
+            candidates.sort((left, right) => {
+              if (left.explicit_retry !== right.explicit_retry) {
+                return left.explicit_retry ? -1 : 1
+              }
+              return Date.parse(left.updated_at) - Date.parse(right.updated_at)
+            })
+
+            // Keep the self-hosted Xcode runner from receiving an unbounded burst.
+            const selected = candidates.slice(0, 3)
+
+            for (const candidate of selected) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: candidate.pr_number,
+                body: `<!-- nembra-xcode27-sweep:${candidate.head_sha}:${candidate.command_id} -->\nQueued scheduled exact-head Xcode 27 QA for \`${candidate.head_sha}\`.`,
+              })
+            }
+
+            core.setOutput('count', String(selected.length))
+            core.setOutput('matrix', JSON.stringify({
+              include: selected.map(({ pr_number, head_sha }) => ({ pr_number, head_sha })),
+            }))
+
+  simulator-qa:
+    name: PR #${{ matrix.pr_number }} exact-head Xcode 27 QA
+    needs: resolve
+    if: needs.resolve.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    concurrency:
+      group: nembra-xcode27-sweep-${{ matrix.pr_number }}
+      cancel-in-progress: true
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.head_sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ matrix.head_sha }}
+        run: |
+          actual_head="$(git rev-parse HEAD)"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Build, test, and capture Simulator states
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-xcode27-sweep-pr-${{ matrix.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
