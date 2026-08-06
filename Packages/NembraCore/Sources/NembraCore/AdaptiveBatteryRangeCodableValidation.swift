@@ -204,3 +204,68 @@ extension AdaptiveBatteryRangePolicy {
         )
     }
 }
+
+/// Range estimates are derived presentation/domain output rather than telemetry,
+/// but they are Codable. Decoding must therefore reject impossible values instead
+/// of allowing malformed storage/imports to create believable-looking range.
+extension AdaptiveBatteryRangeEstimate {
+    private enum CodableValidationKeys: String, CodingKey {
+        case rawRemainingMeters
+        case presentedRemainingMeters
+        case metersPerPercentagePoint
+        case basis
+        case confidence
+        case socProvenance
+        case lowSOCConservatismApplied
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodableValidationKeys.self)
+        let rawRemainingMeters = try container.decode(Double.self, forKey: .rawRemainingMeters)
+        let presentedRemainingMeters = try container.decode(Double.self, forKey: .presentedRemainingMeters)
+        let metersPerPercentagePoint = try container.decode(Double.self, forKey: .metersPerPercentagePoint)
+        let basis = try container.decode(AdaptiveRangeEstimateBasis.self, forKey: .basis)
+        let confidence = try container.decode(AdaptiveRangeConfidence.self, forKey: .confidence)
+        let socProvenance = try container.decode(BatterySOCProvenance.self, forKey: .socProvenance)
+        let lowSOCConservatismApplied = try container.decode(Bool.self, forKey: .lowSOCConservatismApplied)
+
+        let fullChargeRange = metersPerPercentagePoint * 100
+        let tolerance = max(1, abs(fullChargeRange)) * 1e-12
+        guard rawRemainingMeters.isFinite,
+              rawRemainingMeters >= 0,
+              presentedRemainingMeters.isFinite,
+              presentedRemainingMeters >= 0,
+              metersPerPercentagePoint.isFinite,
+              metersPerPercentagePoint > 0,
+              fullChargeRange.isFinite,
+              rawRemainingMeters <= fullChargeRange + tolerance,
+              basis != .provisionalSeed || confidence == .learning else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .rawRemainingMeters,
+                in: container,
+                debugDescription: "Decoded adaptive battery-range estimate violates derived-range invariants."
+            )
+        }
+
+        self.init(
+            rawRemainingMeters: rawRemainingMeters,
+            presentedRemainingMeters: presentedRemainingMeters,
+            metersPerPercentagePoint: metersPerPercentagePoint,
+            basis: basis,
+            confidence: confidence,
+            socProvenance: socProvenance,
+            lowSOCConservatismApplied: lowSOCConservatismApplied
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodableValidationKeys.self)
+        try container.encode(rawRemainingMeters, forKey: .rawRemainingMeters)
+        try container.encode(presentedRemainingMeters, forKey: .presentedRemainingMeters)
+        try container.encode(metersPerPercentagePoint, forKey: .metersPerPercentagePoint)
+        try container.encode(basis, forKey: .basis)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(socProvenance, forKey: .socProvenance)
+        try container.encode(lowSOCConservatismApplied, forKey: .lowSOCConservatismApplied)
+    }
+}
