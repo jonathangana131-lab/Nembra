@@ -78,6 +78,31 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(model.historicalEfficiencyMetersPerPercentagePoint == 100)
     }
 
+    @Test("omitted distance coverage defaults unknown and cannot train learned history")
+    func omittedCoverageFailsClosed() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 1),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 300)
+        let result = try pipeline.acceptBatteryObservation(
+            observation(77, uptime: 2),
+            policy: p
+        )
+        let window = try #require(result.learningWindow)
+        let before = model
+        let ingest = model.ingest(window, policy: p)
+
+        #expect(window.distanceCoverage == .unknown)
+        #expect(ingest.disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(ingest.sample == nil)
+        #expect(model == before)
+    }
+
     @Test("partial pipeline candidate remains explicit and cannot mutate learned history")
     func partialCandidateIsRejectedWithoutMutation() throws {
         let (window, p) = try candidate(coverage: .partial)
@@ -128,7 +153,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(80, uptime: 1),
             policy: p
         )
-        try pipeline.recordDistance(deltaMeters: 300)
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
         let baselineResult = try pipeline.acceptBatteryObservation(
             observation(77, uptime: 2),
             policy: p
@@ -144,7 +169,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
 
         // 900 m / 3 percentage points = 300 m/%: 3x the learned 100 m/%
         // baseline, above the policy's 2.5x outlier ceiling.
-        try pipeline.recordDistance(deltaMeters: 900)
+        try pipeline.recordDistance(deltaMeters: 900, coverage: .complete)
         let outlierResult = try pipeline.acceptBatteryObservation(
             observation(74, uptime: 3),
             policy: p
@@ -156,6 +181,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(outlierWindow.startSOC.percentage == 77)
         #expect(outlierWindow.endSOC.percentage == 74)
         #expect(outlierWindow.distanceMeters == 900)
+        #expect(outlierWindow.distanceCoverage == .complete)
         #expect(rejected.disposition == .rejected(.efficiencyOutlier))
         #expect(rejected.sample == nil)
         #expect(model == beforeOutlier)
@@ -166,7 +192,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 74)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
-        try pipeline.recordDistance(deltaMeters: 300)
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
         let cleanResult = try pipeline.acceptBatteryObservation(
             observation(71, uptime: 4),
             policy: p
@@ -177,6 +203,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(cleanWindow.startSOC.percentage == 74)
         #expect(cleanWindow.endSOC.percentage == 71)
         #expect(cleanWindow.distanceMeters == 300)
+        #expect(cleanWindow.distanceCoverage == .complete)
         #expect(accepted.disposition == .accepted)
         #expect(accepted.sample?.metersPerPercentagePoint == 100)
         #expect(model.acceptedWindowCount == 2)
