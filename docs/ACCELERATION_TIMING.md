@@ -47,17 +47,23 @@ When no source is explicitly required and no usable source has been selected yet
 
 `lastAcceptedUptimeNanoseconds` advances only when a measurement passes the source/accuracy gates and is usable by the timing state machine.
 
-The optional `maximumSampleIntervalNanoseconds` is measured between these accepted timestamps. Therefore a rejected GPS callback in the middle of a two-second gap does **not** hide the fact that usable timing evidence was absent for two seconds.
+The optional `maximumSampleIntervalNanoseconds` is evidence-critical only when the latest stationary anchor transitions to movement and while a run is already moving. Long idle time while the scooter remains stationary does not weaken a future run: a newer accepted stationary sample simply replaces the older launch anchor.
 
-This separation lets chronology stay truthful without pretending rejected data improves timing quality.
+Therefore:
+
+- stationary sample at 1 s, another stationary sample at 10 s, then movement at 11 s can be a valid launch with a `[10 s, 11 s]` launch window even under a 1.5 s gap ceiling;
+- stationary sample at 10 s followed by first movement at 12 s fails that same 1.5 s ceiling;
+- a rejected GPS callback between accepted measurements does **not** reset the usable-measurement gap timer.
+
+This separation lets chronology stay truthful without pretending rejected data improves timing quality or that a parked scooter needs continuous high-rate measurements before a run begins.
 
 ## Run semantics
 
 A run begins from a verified stationary anchor.
 
 - If the first eligible measurement is already moving above the stationary ceiling, the evaluator reports an invalid rolling start.
-- Repeated stationary measurements refresh the most recent launch anchor.
-- The first measurement above the stationary ceiling establishes a **launch crossing window** between the last stationary packet and that moving packet.
+- Repeated stationary measurements refresh the most recent launch anchor, even after a long idle interval.
+- The first measurement above the stationary ceiling establishes a **launch crossing window** between the last stationary packet and that moving packet; the configured sample-gap ceiling applies to this transition when enabled.
 - The first measurement at or above the requested target establishes a **target crossing window** between the preceding below-target packet and the target-reaching packet.
 - A completed result reports the narrowest elapsed lower/upper bounds that those two windows support.
 
@@ -91,7 +97,7 @@ Future presentation may choose a concise estimate only if it also respects the m
 An active trace fails closed when evidence continuity is no longer trustworthy:
 
 - non-monotonic locked/required-source observation;
-- configured maximum accepted-measurement interval exceeded;
+- configured maximum accepted-measurement interval exceeded on the launch transition or during a moving run;
 - measurement source changes mid-run;
 - vehicle/app interruption explicitly reported by the caller;
 - the scooter returns to stationary after launch;
@@ -107,6 +113,7 @@ This slice does **not**:
 - infer threshold crossing from interpolated display values;
 - use Core Motion as absolute speed;
 - hard-code an unverified ES80 sample cadence;
+- require continuous high-rate sampling while the scooter simply remains parked;
 - claim Bluetooth packet latency or GPS timing quality;
 - add acceleration UI or history;
 - persist acceleration records;
@@ -116,7 +123,7 @@ This slice does **not**:
 
 ## Software verification
 
-The revised focused Swift 6.2.1 package passed **15/15 deterministic tests** covering:
+The revised focused Swift 6.2.1 package passed **17/17 deterministic tests across 2 suites** covering:
 
 - rolling-start rejection;
 - packet-bounded elapsed timing;
@@ -130,12 +137,13 @@ The revised focused Swift 6.2.1 package passed **15/15 deterministic tests** cov
 - non-monotonic evidence rejection;
 - configurable long accepted-measurement gap rejection;
 - rejected-quality callbacks not hiding an overlong usable-measurement gap;
+- long stationary idle refreshing the launch anchor without false gap invalidation;
+- movement still failing when it arrives too long after that newest stationary anchor;
 - explicit interruption;
 - return-to-stationary invalidation;
-- reset behavior;
-- invalid policy rejection, including a zero maximum sample interval.
+- reset and malformed-policy behavior.
 
-Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the acceptance queue.
+The local harness emitted only benign warnings where its simplified local `SpeedTelemetrySample` initializer is nonthrowing while the repository-shaped tests use `try`; all 17 tests passed. Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the acceptance queue.
 
 ## Hardware validation still required
 
