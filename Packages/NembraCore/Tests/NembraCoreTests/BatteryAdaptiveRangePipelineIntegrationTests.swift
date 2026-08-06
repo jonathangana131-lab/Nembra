@@ -200,13 +200,13 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(window.distanceMeters == 300)
     }
 
-    @Test("spontaneous explicit boundary resets assembly even without a prior gap marker")
-    func spontaneousBoundaryResetsAssembly() throws {
+    @Test("spontaneous explicit boundary can start a lower-uptime epoch and resets assembly")
+    func spontaneousBoundaryStartsFreshLowerUptimeEpoch() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
 
         _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 1),
+            observation(80, uptime: 100),
             policy: p
         )
         try pipeline.recordDistance(deltaMeters: 200, coverage: .partial)
@@ -215,7 +215,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         let spontaneousBoundary = try observation(
             60,
             role: .stockAppCorrelationAnchor,
-            uptime: 2,
+            uptime: 1,
             continuity: .afterUnobservedInterval
         )
         let result = try pipeline.acceptBatteryObservation(spontaneousBoundary, policy: p)
@@ -223,7 +223,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(result.action == .resetContinuity)
         #expect(result.learningWindow == nil)
         #expect(pipeline.evidenceBridge.streamValidator.requiresContinuityBoundary == false)
-        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 2)
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 1)
         #expect(pipeline.windowAssembler.anchorSOC == nil)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC == nil)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
