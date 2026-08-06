@@ -13,9 +13,9 @@ Updated: 2026-08-06
 - Phase 11 is merged on `main` at `e102595e2a85c4857c093ccfacea39ba9ff06307`.
 - Active branch: `feature/ride-application-persistence`.
 - Active milestone: **Phase 12 — ride application + persistence**.
-- PR: **#5 — Phase 12 ride application + persistence** (draft while acceptance gates run).
-- Current implementation head before this memory update: `048db577515b79b8db647621af1fca50d9e13f00`.
-- Phase 12 must continue from the existing `RideEngine`, `RideCheckpointCoordinator`, two-slot recovery journal, `completedPendingCommit`, `RideHistoryCommitCoordinator`, distance reconciliation, and live-distance systems rather than replacing them.
+- PR: **#5 — Wire automatic ride recovery and local history**.
+- Phase 12 functional implementation/runtime/visual acceptance is complete on implementation head `2da5843312b27732888984f64e64ec58c52a32d7`.
+- Remaining Phase 12 work: commit this acceptance memory, require one exact docs-head `xcode-27` gate, mark PR #5 ready, squash merge with the exact expected head SHA, verify `main`, then choose the next slice from fresh repository state.
 
 ## Stable accepted UI/system milestones
 ### Portrait Home
@@ -52,29 +52,69 @@ Updated: 2026-08-06
 - iPhone 12/iOS 27 captures were reviewed for Walk, Eco, Drive, Sport, confirmed Sport, and riding.
 - **Important:** Phase 11 visual acceptance is an intermediate systems-era baseline, not final product-level visual completion.
 
-## Phase 12 — active ride application + persistence slice
-Target end-to-end behavior:
-- root-owned automatic ride application state outside SwiftUI screen lifetime.
-- vehicle UI and ride tracking subscribe to the same scooter service instance.
-- only fresh raw authoritative speed packets can populate `RideObservation.speedSample`.
-- vehicle-state updates may carry connection/odometer evidence but must never replay cached speed as a fresh sample.
-- crash-safe checkpoints are driven by real application behavior.
-- completed rides hand off through `completedPendingCommit` into idempotent, readback-verified local history.
-- relaunch/recovery restores the same durable session identity where legitimate.
-- explicit Simulator QA uses the same application path while keeping simulated storage isolated from future production history.
-- production ride detection remains disabled until real MAXSHOT cadence/reconnect timing is measured; QA thresholds are explicitly simulation-only.
-- UI consumes truthful ride application state and never invents measurements.
+## Phase 12 — accepted functional implementation
+Phase 12 turns the already-tested ride domain into real root-owned application behavior without creating a second ride engine or alternate recovery/history pipeline.
 
-Current Phase 12 implementation includes:
-- root `AppRuntime` ownership of `VehicleStore` + `RideApplicationStore`.
-- `RideApplicationStore` bridge into the existing ride/recovery/history pipeline.
-- SwiftData-backed completed ride history adapter preserving exact core records.
-- simulation/production persistence namespace separation.
-- transient Home ride-status strip for real application state.
-- app tests for SwiftData idempotency, same-session recovery, completion handoff, and fresh-speed evidence semantics.
-- UI relaunch test that exercises an automatic ride across process termination/relaunch with a unique simulation storage namespace.
+Implemented:
+- root `AppRuntime` owns one shared scooter service, `VehicleStore`, and `RideApplicationStore` outside SwiftUI screen lifetime.
+- `RideApplicationStore` drives the existing `RideCheckpointCoordinator`, two-slot journal, `completedPendingCommit`, and `RideHistoryCommitCoordinator`.
+- stream registration completes before `RideApplicationStore.start()` returns, preventing the first fresh packet from racing past startup.
+- only fresh raw authoritative speed packets may populate `RideObservation.speedSample`; cached `VehicleState.speedKilometersPerHour` is never promoted to a new measurement.
+- state-only light/mode/lock acknowledgements do not replay a prior speed packet or fabricate zero-speed evidence.
+- state publications enter ride detection only for meaningful connection transitions or real odometer advancement.
+- because scooter state and raw speed are independent streams, a packet that arrives while state still says connecting/reconnecting may be held as the newest **unconsumed** packet and consumed exactly once when confirmed connected state catches up; disconnect clears it and `RideEngine` still enforces freshness.
+- unchanged active/session/continuity/error values are not repeatedly republished through Observation on every high-rate packet.
+- a concrete local SwiftData `RideHistoryStore` preserves the exact core ride record, provides session-ID uniqueness, exact readback verification, idempotent duplicate success, conflict rejection, and payload/session corruption checks.
+- simulation history/recovery is physically namespaced away from future production data.
+- production/default `UnverifiedScooterService` keeps automatic ride detection disabled until real MAXSHOT cadence, latency, and reconnect behavior are measured.
+- Simulator-only detection thresholds exercise the production application path but are not hardware defaults.
+- a restrained portrait Home ride-status strip appears only for meaningful transient/active/recovery/error ride application state.
+- explicit Simulator QA uses the same real application coordinator, checkpoint, history, and UI path.
 
-The first Xcode gate exposed a test-autoclosure async issue; it was fixed without production changes. A later audit fixed a truth-boundary bug so cached raw speed is never replayed on ordinary state publications, and tightened state-only ingestion to real connection transitions / odometer advances. Stream subscriptions are now registered before `RideApplicationStore.start()` returns to avoid missing the first fresh QA packet.
+## Phase 12 Xcode / Simulator acceptance
+Implementation head: `2da5843312b27732888984f64e64ec58c52a32d7`.
+
+GitHub Actions:
+- workflow: **Xcode 27 Simulator QA**
+- run: `31067831584`
+- job: `92509801452`
+- conclusion: **success**
+- runner label: `xcode-27`
+- project structure validation: passed
+- core package validation: passed
+- full Xcode/iOS 27 Simulator app/UI stage: passed
+- QA artifact upload: passed
+
+Exported `.xcresult` evidence:
+- `NembraAppTests`: **20/20**, 0 failures.
+- `NembraUITests`: **6/6**, 0 failures.
+- Phase 12 app coverage includes SwiftData idempotent reopen/conflict behavior, stored-payload identity corruption rejection, single-use raw-speed semantics, deliberate raw-speed-before-connected-state stream inversion, same-session recovery/completion/history handoff, and production-disabled automatic detection.
+- the UI suite includes a real app terminate/relaunch test using an isolated simulation persistence namespace.
+
+Kept iPhone 12/iOS 27 attachments inspected:
+- `Automatic Ride Active Home`
+- `Automatic Ride Recovered Home`
+
+Visual/runtime acceptance for this systems slice:
+- the ride-status strip remains subordinate to vehicle status and does not crowd Home.
+- no safe-area clipping or hierarchy regression was observed.
+- process relaunch returns as `Ride resumed` rather than presenting a fake new ride.
+- screenshots are accepted as Phase 12 functional UI evidence only; they do **not** satisfy the future Production Visual Overhaul release gate.
+
+Performance review:
+- high-frequency Dashboard speed rendering remains isolated by the accepted Phase 10 subtree.
+- Phase 12 packet processing may schedule the root application bridge, but unchanged published ride status/session/continuity/error state is no longer reassigned on every active packet.
+- no code-first evidence justifies replacing the current architecture before real device profiling.
+- hosted Simulator QA is not physical iPhone 12 performance profiling.
+
+Only observed build warnings on the accepted run were Xcode AppIntents metadata skips because the app does not currently depend on `AppIntents.framework`; they are not Phase 12 compile/test failures.
+
+## Phase 12 final quality gate
+1. Commit this acceptance into project memory as one documentation checkpoint.
+2. Freeze the branch and require the newest docs-head `xcode-27` run to pass on that exact SHA.
+3. Do not reopen accepted Phase 12 architecture unless that final lineage gate exposes a real regression.
+4. When green, mark PR #5 ready and **squash merge** it with `expected_head_sha` set to the exact docs head.
+5. Verify updated `main` and recover the next vertical slice from fresh GitHub state before creating the next feature branch.
 
 ## Future mandatory milestone — Production Visual Overhaul / Final Product Design Pass
 This milestone is **required before Nembra can be called visually complete or product-complete**. It must not be silently dropped, indefinitely postponed, or treated as optional polish.
@@ -139,6 +179,9 @@ A technically correct screen that looks mediocre is **not accepted as final**. P
 - Device Trip is not labeled Today.
 - Dashboard mode personality is presentation only and follows confirmed ride mode.
 - DP101/DP102/DP103 remain unmapped to Walk/Eco/Drive/Sport until hardware evidence proves semantics.
+- Only a fresh raw authoritative speed packet may populate ride speed evidence; state acknowledgements cannot replay cached speed.
+- A reconnect-order speed packet may be buffered only as newest unconsumed evidence, consumed once after connected state catches up, and remains freshness-limited.
+- Simulator ride detection policy is never a MAXSHOT hardware default.
 - No VESC-style tuning, phase current, field weakening, regen current, or invented telemetry.
 - Real BLE writes remain blocked until command meaning/transport/acknowledgement is verified sufficiently.
 - Visual ambition never authorizes invented telemetry, range, battery precision, route safety claims, or vehicle capabilities.
@@ -153,7 +196,9 @@ A technically correct screen that looks mediocre is **not accepted as final**. P
 - confirmed-mode visual Dashboard personality.
 - automatic `RideEngine` with disconnect continuity.
 - crash-safe two-slot ride journal + `completedPendingCommit` handoff.
-- idempotent completed-history commit contract.
+- root-owned ride application coordinator.
+- local SwiftData exact completed-history adapter.
+- idempotent completed-history commit/readback contract.
 - independent ODO/GPS/live-distance reconciliation.
 - process-local authoritative live-distance segment integration.
 
