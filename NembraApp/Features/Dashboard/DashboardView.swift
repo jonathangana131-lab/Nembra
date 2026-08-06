@@ -303,7 +303,6 @@ struct DashboardView: View {
                 Text(batteryReadoutText)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(isBatteryLow ? Color.red : Color.white)
-                    .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
@@ -411,15 +410,28 @@ struct DashboardView: View {
     }
 
     private var batteryReadoutAccessibilityValue: String {
+        let baseValue: String
         switch batteryReadoutPresentation.primaryValue {
         case let .percentage(percent):
-            return "\(percent) percent"
+            baseValue = "\(percent) percent"
         case let .estimatedRangeMeters(meters):
-            return "\(VehicleDisplayFormatting.distance(kilometers: meters / 1_000)), estimated range"
+            baseValue = "\(VehicleDisplayFormatting.distance(kilometers: meters / 1_000)), estimated range"
         case .learningRange:
-            return "Estimated range learning"
+            baseValue = "Estimated range learning"
         case .unavailable:
-            return batteryReadoutMode == .estimatedRange ? "Estimated range unavailable" : "Unavailable"
+            baseValue = batteryReadoutMode == .estimatedRange ? "Estimated range unavailable" : "Unavailable"
+        }
+
+        guard vehicle.state.dataAvailability == .retained,
+              batteryReadoutPresentation.batteryFillPercent != nil else {
+            return baseValue
+        }
+
+        switch batteryReadoutMode {
+        case .percentage:
+            return "\(baseValue), last known vehicle data"
+        case .estimatedRange:
+            return "\(baseValue), battery charge is last known vehicle data"
         }
     }
 
