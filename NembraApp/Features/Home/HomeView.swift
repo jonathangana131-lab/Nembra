@@ -599,7 +599,7 @@ struct HomeView: View {
     private var lockSubtitle: String {
         guard let locked = vehicle.state.isLocked else { return "Unknown" }
         if locked { return "Secured" }
-        guard let speed = confirmedVehicleSpeedKilometersPerHour else { return "Speed unavailable" }
+        guard let speed = confirmedVehicleSpeedKilometersPerHour else { return "Speed unknown" }
         return speed >= 0.5 ? "Stop to lock" : "Ready"
     }
 
