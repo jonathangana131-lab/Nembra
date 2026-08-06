@@ -33,12 +33,20 @@ final class SpeedInstrumentModel {
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
+    @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
 
     deinit {
         streamTask?.cancel()
         animationEndTask?.cancel()
+    }
+
+    /// Policy must be chosen by app bootstrap, not inferred from the vehicle
+    /// model. Production remains disabled until real MAXSHOT cadence is measured.
+    func configureInterpolationPolicy(_ policy: SpeedInstrumentInterpolationPolicy) {
+        guard measurementRevision == 0 else { return }
+        interpolationPolicy = policy
     }
 
     func start(stream: AsyncStream<SpeedTelemetrySample>) {
@@ -119,27 +127,26 @@ final class SpeedInstrumentModel {
         )
     }
 
-    /// Animation duration follows observed cadence, not an invented MAXSHOT
-    /// packet rate. Interpolation is used only when measurements are close
-    /// enough to represent one continuous visual sequence. A gap larger than
-    /// the maximum presentation transition snaps to the new measurement instead
-    /// of visually bridging missing telemetry.
+    /// Duration is derived only when an injected policy enables interpolation.
+    /// The production policy is disabled until real hardware cadence is measured.
     private func transitionDurationNanoseconds(for sample: SpeedTelemetrySample) -> UInt64 {
-        guard let previousMeasurementUptimeNanoseconds,
+        let policy = interpolationPolicy
+        guard policy.isEnabled,
+              let previousMeasurementUptimeNanoseconds,
               sample.receivedAtUptimeNanoseconds > previousMeasurementUptimeNanoseconds else {
             return 0
         }
 
         let interval = sample.receivedAtUptimeNanoseconds - previousMeasurementUptimeNanoseconds
-        let minimum: UInt64 = 50_000_000
-        let maximum: UInt64 = 300_000_000
-
-        guard interval <= maximum else {
+        guard interval <= policy.maximumContinuousSampleIntervalNanoseconds else {
             return 0
         }
 
-        let eightyPercent = (interval / 5) * 4
-        return min(max(eightyPercent, minimum), maximum)
+        let requested = UInt64(Double(interval) * policy.intervalFraction)
+        return min(
+            max(requested, policy.minimumTransitionNanoseconds),
+            policy.maximumContinuousSampleIntervalNanoseconds
+        )
     }
 
     private func scheduleAnimationWindow(active: Bool, durationNanoseconds: UInt64) {
@@ -187,6 +194,7 @@ struct DashboardSpeedInstrumentView: View {
             instrumentContent(frame: frame)
         }
         .task {
+            model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
             let stream = await vehicle.speedTelemetryUpdates()
             model.start(stream: stream)
         }
