@@ -75,9 +75,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(try assembler.ingestSOC(reading(78, uptime: 3), policy: p) == nil)
         try assembler.recordDistance(deltaMeters: 140)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 4), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 4), policy: p)
+        let window = try #require(assembled)
 
         #expect(window.startSOC.percentage == 80)
         #expect(window.endSOC.percentage == 77)
@@ -101,9 +100,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler.anchorSOC?.percentage == 80)
         #expect(assembler.accumulatedDistanceMeters == 200)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(76, uptime: 3), policy: strict)
-        )
+        let assembled = try assembler.ingestSOC(reading(76, uptime: 3), policy: strict)
+        let window = try #require(assembled)
         #expect(window.consumedPercentagePoints == 4)
 
         var model = AdaptiveBatteryRangeModel()
@@ -122,9 +120,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: p) == nil)
         try assembler.recordDistance(deltaMeters: 100)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 3), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: p)
+        let window = try #require(assembled)
 
         #expect(window.startSOC.receivedAtUptimeNanoseconds == 1)
         #expect(window.startSOC.percentage == 80)
@@ -167,9 +164,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler.anchorSOC?.percentage == 80)
         #expect(assembler.accumulatedDistanceMeters == 150)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 3), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: p)
+        let window = try #require(assembled)
         #expect(window.startSOC.percentage == 80)
         #expect(window.endSOC.percentage == 77)
     }
@@ -184,9 +180,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         try assembler.recordDistance(deltaMeters: 50, coverage: .partial)
         try assembler.recordDistance(deltaMeters: 0, coverage: .unknown)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 2), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let window = try #require(assembled)
         #expect(window.distanceMeters == 150)
         #expect(window.distanceCoverage == .unknown)
 
@@ -205,9 +200,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         try assembler.recordDistance(deltaMeters: 150)
         assembler.recordTransportGap()
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 2), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let window = try #require(assembled)
         #expect(window.transportGapOccurred)
 
         var model = AdaptiveBatteryRangeModel()
