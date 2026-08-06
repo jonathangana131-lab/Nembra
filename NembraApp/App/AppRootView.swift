@@ -234,8 +234,8 @@ private struct RideHistoryRowView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Completed ride")
-        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue), \(continuityLabel)")
+        .accessibilityLabel(continuityLabel)
+        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue)")
     }
 
     private func evidenceLine(label: String, value: String) -> some View {
@@ -459,6 +459,29 @@ private struct RideRouteMapView: View {
                         .stroke(.primary, lineWidth: 4)
                 }
             }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recorded ride route")
+        .accessibilityValue(routeAccessibilityValue)
+    }
+
+    private var routeAccessibilityValue: String {
+        var parts = [routeCoverageAccessibilityValue]
+        if geometry.knownGapCount > 0 {
+            let gapWord = geometry.knownGapCount == 1 ? "gap" : "gaps"
+            parts.append("\(geometry.knownGapCount) known route \(gapWord)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var routeCoverageAccessibilityValue: String {
+        switch geometry.coverage {
+        case .complete:
+            "Complete recorded coverage"
+        case .partial:
+            "Partial recorded coverage"
+        case .unknown:
+            "Coverage unknown"
         }
     }
 
