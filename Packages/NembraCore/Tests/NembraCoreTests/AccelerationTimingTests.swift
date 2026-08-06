@@ -55,7 +55,27 @@ struct AccelerationTimingTests {
         #expect(result.elapsedLowerBoundSeconds == 1)
         #expect(result.elapsedUpperBoundSeconds == 3)
         #expect(result.timingUncertaintySeconds == 2)
-        #expect(result.authoritativeSampleCount == 4)
+        #expect(result.timingEvidenceSampleCount == 4)
+    }
+
+    @Test("timing evidence count excludes superseded stationary anchors")
+    func timingEvidenceCountReflectsRetainedTrace() throws {
+        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+        evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
+        evaluator.accept(try sample(metersPerSecond: 0.1, seconds: 2))
+        evaluator.accept(try sample(metersPerSecond: 2, seconds: 3))
+        evaluator.accept(try sample(metersPerSecond: 6, seconds: 4))
+
+        guard case let .completed(result) = evaluator.state else {
+            Issue.record("Expected completed run")
+            return
+        }
+        #expect(result.launchWindow == AccelerationTimingWindow(
+            earliestUptimeNanoseconds: 2_000_000_000,
+            latestUptimeNanoseconds: 3_000_000_000
+        ))
+        #expect(result.timingEvidenceSampleCount == 3)
     }
 
     @Test("a sparse sample that already crosses target remains a bounded result")
@@ -72,6 +92,7 @@ struct AccelerationTimingTests {
         #expect(abs(result.elapsedLowerBoundSeconds - 0) < 0.000_001)
         #expect(abs(result.elapsedUpperBoundSeconds - 0.4) < 0.000_001)
         #expect(abs(result.timingUncertaintySeconds - 0.4) < 0.000_001)
+        #expect(result.timingEvidenceSampleCount == 2)
     }
 
     @Test("motion-assisted display estimate cannot arm or advance a run")
