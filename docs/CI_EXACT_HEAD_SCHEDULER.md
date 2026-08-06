@@ -23,7 +23,7 @@ Those failures are preserved in `docs/CI_EXACT_HEAD_GATE_EVIDENCE.md` on PR #42.
 
 GitHub documents five minutes as the shortest scheduled-workflow interval and warns that scheduled runs may be delayed during periods of high load, especially near the start of an hour. Therefore the scheduler is a best-effort acceptance queue, not a real-time timer or reconnect mechanism.
 
-A delayed scheduled run does not change the selected PR's software truth. The scheduler always resolves the PR again from current GitHub state when the run actually starts.
+A delayed scheduled run does not change software truth. The resolver always reads current repository/PR state when the scheduled run actually starts.
 
 ## Eligible PRs
 
@@ -36,12 +36,15 @@ A PR is eligible only when all of these are true:
 - its base is the repository's current default branch;
 - its head repository is exactly `jonathangana131-lab/Nembra`;
 - its head ref begins with `parallel/`;
+- comparing current default branch to the exact head reports `behind_by == 0`;
 - its exact head SHA does not already have a completed `Nembra/Xcode27 Exact Head` status;
 - its exact head SHA does not have a non-stale pending status in that context.
 
-A draft PR is therefore a cheap work/checkpoint state. A worker makes a coherent lane schedulable by marking its PR ready for review after focused validation and overlap checks.
+The `behind_by == 0` gate is important: v5 requires a lane to refresh/reconcile current main before final acceptance. Running the expensive Xcode gate on a head that is already behind main would at best be diagnostic, because reconciliation would create a new SHA and require another exact-head run. The scheduler therefore refuses that known-stale acceptance work instead of spending the self-hosted runner on it.
 
-This scheduler does not touch or mutate another worker's branch. It only reads the immutable head SHA and publishes a commit status for that SHA.
+A draft PR is a cheap work/checkpoint state. A worker makes a coherent lane schedulable only after focused validation, overlap checks, and required fresh-main reconciliation.
+
+This scheduler does not touch or mutate another worker's branch. It reads repository/PR state, selects a candidate, and publishes commit status for that immutable SHA.
 
 ## Exact-head status context
 
@@ -53,14 +56,14 @@ The exact commit SHA is the identity of a gate result.
 
 Status meanings:
 
-- no status: eligible when the PR is otherwise ready;
+- no status: eligible when the PR is otherwise ready/current;
 - `pending`: currently queued/running; skipped for two hours to prevent duplicate expensive gates;
 - stale `pending` older than two hours: eligible for recovery;
 - `success`: this exact SHA completed the scheduled Simulator gate successfully;
 - `failure`: this exact SHA ran and failed the gate; the unchanged SHA is not automatically retried every five minutes;
 - `error`: the exact SHA's gate was cancelled/errored; the unchanged SHA is not automatically retried every five minutes.
 
-If a worker fixes a failure, the new commit SHA has no completed status and becomes eligible again. This preserves exact-head semantics without retry storms.
+If a worker fixes a failure or reconciles newer main, the new commit SHA has no completed status and becomes eligible again after it is ready/current. This preserves exact-head semantics without retry storms.
 
 A worker or coordinator may intentionally create a new commit/reconciliation head after diagnosing a failed gate. Blind reruns of the same broken software are not the scheduler's default behavior.
 
@@ -76,7 +79,7 @@ A PR may add this exact body marker when there is a real dependency/unblocking r
 
 Priority PRs are considered before normal PRs, then oldest update wins within the same priority class.
 
-The marker does not bypass any security, readiness, exact-head, or status rule.
+The marker does not bypass fresh-main ancestry, security, readiness, exact-head, or status rules.
 
 ## Concurrency
 
@@ -100,6 +103,7 @@ The scheduler fails closed by requiring before the Xcode job:
 - `parallel/**` worker/recovery/integration branch shape;
 - non-draft state;
 - default-branch target;
+- current-main ancestry (`behind_by == 0`);
 - immutable resolved commit SHA.
 
 The resolver runs on GitHub-hosted `ubuntu-latest` and checks out no PR code.
@@ -108,7 +112,7 @@ The pending/final status publisher jobs also run on GitHub-hosted runners. Only 
 
 The Xcode job inherits read-only repository permissions. It checks out the frozen SHA directly, prints the expected PR/head/SHA and actual `git rev-parse HEAD`, and fails if they differ.
 
-A fork, feature branch outside `parallel/**`, or draft lane cannot reach the self-hosted runner through this scheduler.
+A fork, feature branch outside `parallel/**`, draft lane, or branch already behind current main cannot reach the self-hosted runner through this scheduler.
 
 ## Gate contents
 
@@ -133,31 +137,34 @@ For a substantial lane that requires the full gate:
 1. keep the PR draft during implementation/checkpoints;
 2. run focused package/unit/static checks first;
 3. refresh main and active overlap;
-4. reconcile if required;
+4. reconcile if required so current main is an ancestor (`behind_by == 0`);
 5. update the V5 recovery capsule with the exact candidate head;
 6. mark the PR ready;
 7. let the scheduler attach `Nembra/Xcode27 Exact Head` to that exact SHA;
 8. inspect the run, logs, and artifacts rather than treating status alone as sufficient diagnosis;
 9. if the gate fails, fix the diagnosed issue on a new head;
 10. if main/parent changes and the lane reconciles, the new SHA requires a new exact-head gate;
-11. merge only when the final unchanged head satisfies the lane's required acceptance evidence.
+11. refresh main once more immediately before merge; if it advanced, reconcile and gate the new SHA again;
+12. merge only when the final unchanged/current head satisfies the lane's required acceptance evidence.
 
 Workers should not add meaningless commits merely to manufacture another gate. A new SHA should represent a real fix, reconciliation, or evidence update.
 
-## First live acceptance target
+## Live validation target
 
-PR #42 (`ci-exact-head-gate-evidence`, worker `chat-f2k7q`) is reserved as the first controlled live target after this scheduler reaches the default branch.
+PR #42 (`ci-exact-head-gate-evidence`, worker `chat-f2k7q`) is the controlled evidence lane for proving scheduler behavior end to end.
 
-Its body may use `XCODE27_SCHEDULE_PRIORITY: true`, then it will be marked ready. The expected scheduler proof is:
+Other higher-value coordinator PRs may also carry `XCODE27_SCHEDULE_PRIORITY: true`. The scheduler should choose whichever priority candidate is **both current with main and oldest updated**; the evidence lane does not override dependency-unblocking work merely to make the test easier.
 
-- resolver selects PR #42's exact current SHA;
+After this fresh-main eligibility hardening reaches default, PR #42 will be reconciled onto the exact new main and kept ready with its priority marker. The expected proof is:
+
+- resolver selects an exact eligible current SHA;
 - pending status appears in `Nembra/Xcode27 Exact Head`;
 - immutable checkout log shows expected == actual SHA;
 - project/package/Simulator steps complete or produce a diagnosable real failure;
 - artifact upload is inspectable;
 - final status targets the same SHA and scheduler run.
 
-If that run succeeds, PR #42's evidence document will be updated with the real run ID and results. That update changes its SHA, so a second scheduled exact-head gate is required before PR #42 itself can merge.
+If PR #42's run succeeds, its evidence document will be updated with the real run ID/results. That update changes its SHA, so it must be reconciled/current and receive another exact-head scheduled gate before PR #42 itself can merge.
 
 ## Relationship to other CI
 
