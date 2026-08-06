@@ -16,6 +16,7 @@ final class NembraUITests: XCTestCase {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
         XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["home.currentRide"].exists)
 
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
@@ -51,6 +52,28 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(controls.exists)
         controls.tap()
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testHomeShowsCurrentRideOnlyAfterRideEngineConfirmsRawMovement() {
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            extraEnvironment: [
+                "NEMBRA_RIDE_QA_SCRIPT": "active",
+                "NEMBRA_RIDE_QA_NAMESPACE": "ui-active-\(UUID().uuidString)"
+            ]
+        )
+
+        let currentRide = app.descendants(matching: .any)["home.currentRide"]
+        XCTAssertTrue(
+            currentRide.waitForExistence(timeout: 6),
+            "Home should expose a current ride only after the real RideEngine confirms the QA raw packets."
+        )
+        XCTAssertTrue(waitForLabelFragment("Ride active", element: currentRide, timeout: 3))
+        XCTAssertTrue(currentRide.label.contains("Tracking automatically"))
+
+        keepScreenshot(named: "Home Active Ride")
     }
 
     @MainActor
@@ -118,11 +141,15 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        extraEnvironment: [String: String] = [:]
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        for (key, value) in extraEnvironment {
+            app.launchEnvironment[key] = value
+        }
         app.launch()
         return app
     }
