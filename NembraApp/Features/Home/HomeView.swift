@@ -4,6 +4,7 @@ import UIKit
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
@@ -25,7 +26,7 @@ struct HomeView: View {
                 vehicleSection
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .padding(.top, 12)
             .padding(.bottom, 32)
         }
         .background(Color(uiColor: .systemBackground))
@@ -71,24 +72,25 @@ struct HomeView: View {
     }
 
     private var vehicleHeader: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .center, spacing: NembraMetrics.group) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(vehicle.profile.identity.displayName)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.primary)
 
-                Label {
-                    Text(vehicleStatusText)
-                } icon: {
+                HStack(spacing: 8) {
                     Circle()
                         .fill(connectionIndicatorColor)
                         .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+
+                    Text(vehicleStatusText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: NembraMetrics.control)
 
             if let isLocked = vehicle.state.isLocked {
                 Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
@@ -99,36 +101,96 @@ struct HomeView: View {
                     .background(Color.primary.opacity(0.055), in: Capsule())
             }
         }
+        .padding(.horizontal, 2)
         .accessibilityElement(children: .combine)
     }
 
     private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+        VStack(alignment: .leading, spacing: NembraMetrics.group) {
+            HStack(alignment: .center, spacing: NembraMetrics.control) {
+                Label("Battery", systemImage: batteryIcon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isBatteryLow ? batteryValueStyle : .secondary)
+
+                Spacer(minLength: 8)
+
+                if vehicle.state.connection != .connected && hasRetainedSummaryData {
+                    Label("Last known", systemImage: "clock.arrow.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHint("This battery value may be stale until the scooter reconnects.")
+                } else if isBatteryLow {
+                    Label("Low battery", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(batteryValueStyle)
+                }
             }
 
-            HStack(spacing: 0) {
-                statusMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    icon: batteryIcon,
-                    accessibilityIdentifier: "home.metric.battery",
-                    valueStyle: batteryValueStyle
-                )
-                metricDivider
-                statusMetric(
+            Text(batteryText)
+                .font(.largeTitle.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(batteryValueStyle)
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Battery")
+                .accessibilityValue(batteryText)
+                .accessibilityIdentifier("home.metric.battery")
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.075))
+                .frame(height: 1)
+                .accessibilityHidden(true)
+
+            supportingStatusMetrics
+        }
+        .padding(20)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+                .strokeBorder(.primary.opacity(0.045))
+        }
+        .accessibilityIdentifier("home.vehicle-status-field")
+    }
+
+    @ViewBuilder
+    private var supportingStatusMetrics: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: NembraMetrics.group) {
+                supportingMetric(
                     title: "Trip",
                     value: tripDistanceText,
                     icon: "point.bottomleft.forward.to.point.topright.scurvepath",
                     accessibilityTitle: "Scooter Trip",
                     accessibilityIdentifier: "home.metric.trip"
                 )
-                metricDivider
-                statusMetric(
+
+                supportingMetric(
+                    title: "Mode",
+                    value: vehicle.state.rideMode?.displayName ?? "—",
+                    icon: "gauge.with.dots.needle.67percent",
+                    accessibilityIdentifier: "home.metric.mode"
+                )
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                supportingMetric(
+                    title: "Trip",
+                    value: tripDistanceText,
+                    icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                    accessibilityTitle: "Scooter Trip",
+                    accessibilityIdentifier: "home.metric.trip"
+                )
+
+                Divider()
+                    .frame(height: 42)
+                    .padding(.horizontal, NembraMetrics.group)
+
+                supportingMetric(
                     title: "Mode",
                     value: vehicle.state.rideMode?.displayName ?? "—",
                     icon: "gauge.with.dots.needle.67percent",
@@ -136,40 +198,24 @@ struct HomeView: View {
                 )
             }
         }
-        .padding(16)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.primary.opacity(0.045))
-        }
     }
 
-    private var metricDivider: some View {
-        Divider()
-            .frame(height: 44)
-            .padding(.horizontal, 12)
-    }
-
-    private func statusMetric(
+    private func supportingMetric(
         title: String,
         value: String,
         icon: String,
         accessibilityTitle: String? = nil,
-        accessibilityIdentifier: String,
-        valueStyle: Color = .primary
+        accessibilityIdentifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
 
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(valueStyle)
+                .foregroundStyle(.primary)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -182,10 +228,10 @@ struct HomeView: View {
     }
 
     private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Controls")
+        VStack(alignment: .leading, spacing: NembraMetrics.control) {
+            sectionHeader(title: "Quick Controls")
 
-            HStack(spacing: 12) {
+            HStack(spacing: NembraMetrics.control) {
                 if vehicle.profile.capabilities.supportsHeadlight {
                     actionControl(
                         title: "Light",
@@ -272,7 +318,7 @@ struct HomeView: View {
     }
 
     private var modeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NembraMetrics.control) {
             sectionHeader(title: "Ride Mode")
 
             HStack(spacing: 4) {
@@ -299,7 +345,7 @@ struct HomeView: View {
                             .foregroundStyle(vehicle.state.rideMode == mode ? .primary : .secondary)
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 42)
+                        .frame(height: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -318,7 +364,7 @@ struct HomeView: View {
     }
 
     private var vehicleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NembraMetrics.control) {
             sectionHeader(title: "Vehicle")
 
             VStack(spacing: 0) {
@@ -338,7 +384,7 @@ struct HomeView: View {
                 NavigationLink {
                     VehicleControlsView()
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: NembraMetrics.control) {
                         Image(systemName: "slider.horizontal.3")
                             .frame(width: 26)
                             .foregroundStyle(.secondary)
@@ -355,19 +401,19 @@ struct HomeView: View {
             .padding(.horizontal, 14)
             .background(
                 Color(uiColor: .secondarySystemBackground),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
             )
         }
     }
 
     private func sectionHeader(title: String) -> some View {
         Text(title)
-            .font(.headline)
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(.primary)
     }
 
     private func detailRow(title: String, value: String, icon: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NembraMetrics.control) {
             Image(systemName: icon)
                 .frame(width: 26)
                 .foregroundStyle(.secondary)
@@ -385,7 +431,7 @@ struct HomeView: View {
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
 
-        return HStack(spacing: 12) {
+        return HStack(spacing: NembraMetrics.control) {
             Image(systemName: presentation.icon)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
