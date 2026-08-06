@@ -89,6 +89,24 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testOrdinaryRuntimeKeepsAutomaticRideTrackingHardwareGated() {
+        let runtime = AppBootstrap.makeRuntime(arguments: ["Nembra"], environment: [:])
+        XCTAssertFalse(runtime.rideStore.isEnabled)
+    }
+
+    @MainActor
+    func testExplicitSimulationEnablesAutomaticRideRuntime() {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: [
+                "NEMBRA_SIMULATION_SCENARIO": "connected-stopped",
+                "NEMBRA_RIDE_QA_NAMESPACE": "app-test-enabled"
+            ]
+        )
+        XCTAssertTrue(runtime.rideStore.isEnabled)
+    }
+
+    @MainActor
     func testVehicleStoreSerializesStateChangingCommands() async {
         let initialState = SimulatedScooterService.state(for: .connectedStopped)
         let gate = AppCommandAcknowledgementGate()
