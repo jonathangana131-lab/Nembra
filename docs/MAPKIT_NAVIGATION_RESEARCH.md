@@ -29,7 +29,9 @@ Apple explicitly documents `MKDirectionsTransportType.cycling` as requesting dir
 - toll preference;
 - departure/arrival dates where applicable.
 
-`MKDirections` requests route information from Apple servers. Apple warns that clients can receive a throttling error when making too many requests in a short period, so Nembra must not continuously recompute routes at display-frame or raw-GPS cadence.
+`MKDirections` requests route information from Apple servers. Apple documents an async throwing `calculate()` API, an `isCalculating` state, and `cancel()` for a pending request. A directions object handles one calculation at a time; multiple independent directions objects can be used when parallel calculations are genuinely required.
+
+Apple warns that clients can receive `MKError.Code.loadingThrottled` when making too many requests in a short period. The documented directions error surface also includes `directionsNotFound`, `serverFailure`, and `unknown`. Nembra must therefore treat route requests as explicit asynchronous work, not continuously recompute them at display-frame or raw-GPS cadence.
 
 A returned `MKRoute` provides:
 - detailed route geometry via `polyline`;
@@ -85,9 +87,12 @@ Suggested responsibilities:
 - preserve MapKit route identity/geometry/steps without relabeling them as scooter-safe;
 - expose loading, result, cancellation, throttling/network failure, and no-route states explicitly;
 - cancel superseded requests;
+- reject late callbacks/results from superseded or cancelled request generations;
 - serialize/reduce repeated reroute requests so GPS jitter cannot trigger request storms.
 
 The route planner should not own ride distance, battery evidence, or route-recording truth.
+
+The first platform-neutral part of this boundary is now implemented in `NavigationRoutePlanning.swift`: request intent, product-facing failure states, monotonic request tokens, explicit supersession, cancellation invalidation, stale-result rejection, empty-response rejection, and atomic token exhaustion. It deliberately performs no network work and imports no MapKit.
 
 ### 2. Selected-route snapshot
 
@@ -106,7 +111,26 @@ Project `MKRoute` into a Nembra-owned immutable snapshot suitable for UI/domain 
 
 Do not synthesize a maneuver icon/type from instruction text unless a deterministic parser is separately specified and tested. Text scraping is weaker evidence than the original localized instruction.
 
-### 3. Guidance progress model
+This platform-neutral projection is now implemented in `NavigationRouteDomain.swift`. It validates coordinates and numeric route facts, preserves provider strings/metadata, supports an explicit `.unknown` transport fallback, and does not adopt Codable/persistence yet.
+
+### 3. MapKit adapter boundary
+
+A future Apple-platform adapter should:
+- build a fresh `MKDirections.Request` from `NavigationRoutePlanRequest`;
+- map Nembra's `.cycling` intent to `MKDirectionsTransportType.cycling`;
+- map alternate/highway/toll preferences without changing their meaning;
+- own the active `MKDirections` instance for each request generation;
+- call `cancel()` for a superseded/cancelled generation while still relying on Nembra's generation token to reject a racing late completion;
+- map `directionsNotFound` to a stable unavailable-directions state;
+- map `loadingThrottled` to an explicit throttled state;
+- map `serverFailure` to a server-failure state;
+- fail unknown platform errors to a generic unknown state instead of inventing semantics;
+- project successful `MKRoute` values into immutable `NavigationRouteSnapshot` values;
+- fail closed if the provider returns no usable routes.
+
+Do not infer a specific MapKit error code for Nembra-initiated cancellation unless Apple documents one. Nembra already knows when it initiated cancellation and can classify its own request generation as cancelled before transport cancellation races.
+
+### 4. Guidance progress model
 
 Live navigation should consume the already-screened Core Location evidence path, not raw view-local callbacks.
 
@@ -123,7 +147,7 @@ The guidance model should keep separate concepts for:
 
 Location smoothing or route snapping used for presentation must never become ride/GPS telemetry evidence. The existing ride-location evidence remains authoritative for ride truth.
 
-### 4. Rerouting policy
+### 5. Rerouting policy
 
 Do not reroute from one noisy coordinate.
 
@@ -136,7 +160,7 @@ A production reroute policy should require evidence such as:
 
 Exact thresholds should remain injected/testable until real iPhone/ride traces justify them.
 
-### 5. Dashboard integration
+### 6. Dashboard integration
 
 When navigation is active, the landscape Dashboard can truthfully show:
 - current speed from the existing authoritative speed/display pipeline;
@@ -147,6 +171,21 @@ When navigation is active, the landscape Dashboard can truthfully show:
 - ride duration/trip context from the ride domain.
 
 The navigation UI must not make display animation or map snapping a source for ride distance, speed, battery, or completed-history evidence.
+
+## Request lifecycle and concurrency
+
+Nembra's provider adapter and platform-neutral coordinator must agree on one rule: request identity is owned by Nembra, not inferred from callback timing.
+
+Recommended lifecycle:
+1. `begin` creates a new monotonic request token.
+2. If another request was active, the coordinator returns its token as superseded.
+3. The adapter cancels the superseded `MKDirections` instance if it still exists.
+4. The new `MKDirections` calculation begins.
+5. A completion may publish only if its Nembra token is still current.
+6. User cancellation invalidates the token before calling provider cancellation.
+7. A racing provider callback after supersession/cancellation is ignored.
+
+This makes transport cancellation a resource optimization and user-intent signal, not the sole correctness mechanism.
 
 ## Offline and network behavior
 
@@ -161,7 +200,8 @@ Apple documents that excessive `MKDirections` request frequency can be throttled
 - debounce destination/search changes;
 - cancel superseded calculations;
 - keep render cadence completely separate from route-request cadence;
-- avoid rerouting from normal GPS noise.
+- avoid rerouting from normal GPS noise;
+- use explicit cooldown/deviation policy rather than treating `loadingThrottled` as normal flow control.
 
 ## Accessibility and motion
 
@@ -173,40 +213,58 @@ Navigation presentation should support:
 
 ## Minimum deterministic test matrix before app wiring
 
+Implemented in the current isolated NembraCore slice:
 1. cycling request configuration is selected for the ES80 route-planning profile;
-2. alternate-route preference maps correctly without inventing availability;
+2. alternate/highway/toll request preferences remain explicit;
 3. route snapshots preserve route/step distance, instructions, notices, and provenance;
 4. a missing/empty route response fails closed;
 5. cancelled/superseded requests cannot publish stale routes;
-6. route-request throttling/network errors become explicit unavailable/retryable states;
-7. one noisy off-route point cannot reroute;
-8. sustained accepted deviation can request one reroute after policy thresholds;
-9. reroute cooldown prevents request storms;
-10. a location continuity gap invalidates progress confidence until new accepted evidence arrives;
-11. presentation-only map snapping never alters ride GPS distance evidence;
-12. route steps remain localized strings from MapKit rather than reclassified telemetry;
-13. advisory/step notices survive the projection layer;
-14. `.cycling` provenance is never surfaced as "scooter legal".
+6. provider throttling and other product-facing failures remain explicit;
+7. invalid coordinates/distances/expected times fail closed;
+8. provider step totals are not forced to equal provider route totals;
+9. future/combined transport semantics can remain unknown instead of being guessed.
+
+Still required before production app wiring/acceptance:
+10. one noisy off-route point cannot reroute;
+11. sustained accepted deviation can request one reroute after injected policy thresholds;
+12. reroute cooldown prevents request storms;
+13. a location continuity gap invalidates progress confidence until new accepted evidence arrives;
+14. presentation-only map snapping never alters ride GPS distance evidence;
+15. a real MapKit adapter maps current Apple request/result/error semantics correctly on Xcode/iOS;
+16. route steps remain localized strings from MapKit rather than reclassified telemetry;
+17. advisory/step notices survive the real MapKit projection layer;
+18. `.cycling` provenance is never surfaced as "scooter legal".
 
 ## Suggested implementation order
 
-1. isolated MapKit route-planner protocol + request/result types;
-2. immutable Nembra route/step projection and deterministic tests;
-3. Simulator route-request fixture so tests do not depend on live Apple servers;
-4. guidance-progress geometry/state engine fed by accepted location evidence;
-5. reroute policy and deterministic off-route scenarios;
-6. lightweight route preview UI;
-7. landscape Dashboard navigation composition;
-8. real Simulator interaction and screenshot critique;
-9. physical iPhone outdoor validation before production claims.
+Completed software foundation in this lane:
+1. provider-neutral request/result/failure state and request-generation race safety;
+2. immutable Nembra route/step projection and deterministic tests.
 
-## Explicit non-goals for this research lane
+Next safe implementation sequence:
+3. Apple-platform MapKit adapter with focused Xcode tests/fixtures;
+4. Simulator route-request fixture so deterministic app tests do not depend on live Apple servers;
+5. guidance-progress geometry/state engine fed by accepted location evidence;
+6. injected reroute policy and deterministic off-route scenarios;
+7. lightweight route preview UI;
+8. landscape Dashboard navigation composition;
+9. real Simulator interaction and screenshot critique;
+10. physical iPhone outdoor validation before production claims.
 
-- no production route planner implemented here;
+## Current verification
+
+The exact platform-neutral source/test content for the two NembraCore foundations passed 26/26 focused tests with Swift 6.2.1 in a supplemental package matching NembraCore's Swift package shape.
+
+A stronger attempt to clone this exact GitHub branch and execute the complete real NembraCore package from the sandbox could not start because the sandbox could not resolve `github.com`. That is a tooling/network limitation, not a repository-wide green result. Full exact-head Xcode 27/NembraCore acceptance remains required before merge.
+
+## Explicit non-goals for this lane
+
+- no live Apple-server route request is made by Nembra yet;
+- no production MapKit adapter is claimed compiled or accepted yet;
 - no legal-routing database;
 - no claim that cycling directions are scooter-safe;
 - no physical ES80 validation;
-- no location quality thresholds selected;
+- no location quality or reroute thresholds selected;
 - no ride-distance behavior changed;
 - no battery/range behavior changed;
 - no app bootstrap/project wiring changed;
@@ -218,6 +276,12 @@ Navigation presentation should support:
 - `MKDirectionsTransportType`: https://developer.apple.com/documentation/mapkit/mkdirectionstransporttype
 - `MKDirections.Request.transportType`: https://developer.apple.com/documentation/mapkit/mkdirections/request/transporttype
 - `MKDirections`: https://developer.apple.com/documentation/mapkit/mkdirections
+- `MKDirections.calculate()`: https://developer.apple.com/documentation/mapkit/mkdirections/calculate()
+- `MKDirections.cancel()`: https://developer.apple.com/documentation/mapkit/mkdirections/cancel()
+- `MKDirections.isCalculating`: https://developer.apple.com/documentation/mapkit/mkdirections/iscalculating
+- `MKError.Code.loadingThrottled`: https://developer.apple.com/documentation/mapkit/mkerror/code/loadingthrottled
+- `MKError.Code.directionsNotFound`: https://developer.apple.com/documentation/mapkit/mkerror/code/directionsnotfound
+- `MKError.Code.serverFailure`: https://developer.apple.com/documentation/mapkit/mkerror/code/serverfailure
 - `MKRoute`: https://developer.apple.com/documentation/mapkit/mkroute
 - `MKRoute.steps`: https://developer.apple.com/documentation/mapkit/mkroute/steps
 - `MKRoute.Step`: https://developer.apple.com/documentation/mapkit/mkroute/step
