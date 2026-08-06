@@ -49,7 +49,7 @@ Official sources, accessed 2026-08-06:
 - AOVOPRO ES80 product page: https://www.aovopro.com/product/aovopro-es80-electric-scooter-350w-10-5-ah-long-range-high-speed-foldable-electric-scooter/
 - AOVOPRO brand statement: https://www.aovopro.com/aovo-pro-solemnly-declare/
 
-The current product page also lists:
+The current product page lists:
 
 - model: `ES80`;
 - battery: 36 V, 10.5 Ah;
@@ -60,11 +60,36 @@ The current product page also lists:
 
 ## Current official Tuya interface evidence
 
-AOVOPRO's current ES80 product material publishes a Tuya Smart interface for latest ES80/ESMAX variants. Publicly visible state includes battery percentage and ride/device information such as range/mileage and controls.
+AOVOPRO's current ES80 product page directly embeds the Tuya Smart panel image used for latest ES80/ESMAX variants:
 
-Combined with the direct physical observation above, the current 2025 target clearly has a useful battery/electrical telemetry surface in its stock app. The remaining job is to determine the raw transport and truth semantics rather than asking whether such telemetry exists at all.
+- official image: https://www.aovopro.com/wp-content/uploads/2024/06/image.png
 
-Public UI still does **not** establish exact DP IDs or raw packet structure.
+The official image visibly shows:
+
+- connected state;
+- battery percentage (`100%` in the example);
+- estimated range;
+- single/trip mileage;
+- total mileage;
+- headlight control;
+- start-mode control;
+- mode control.
+
+This establishes the current stock panel family independently of the legacy AovoPro app.
+
+Combined with the direct physical observation that the actual 2025 target also exposes live voltage/amps/watts in its details view, the current target clearly has a useful electrical telemetry surface. The remaining job is to determine raw source and truth semantics rather than asking whether electrical telemetry exists at all.
+
+Public UI does **not** establish exact DP IDs or raw packet structure.
+
+## Nearby official Tuya-branded product is not identity proof
+
+AOVOPRO separately sells a `Tuya 80` / Tuya Smart scooter with materially different published hardware (for example a 7.8 Ah battery and drum brake on the currently indexed page).
+
+Official source, accessed 2026-08-06:
+
+- https://www.aovopro.com/product/tuya-smart-electric-scooter-350w-powerful-motor-high-speed-long-range-foldable-electric-scooter/
+
+**Nembra implication:** `Tuya`, `Tuya 80`, panel appearance, or a generic scooter silhouette is not enough to identify the physical Nembra target as ES80. The real profile must eventually use exact transport/device evidence rather than branding alone.
 
 ## Legacy AOVOPRO family evidence — historical only
 
@@ -78,24 +103,47 @@ Secondary manual reference, accessed 2026-08-06:
 
 ## Generic Tuya mobility facts that narrow the search
 
-Tuya's current **Ride Development Guide** is directly relevant to scooters and other mobility products. It says that actual DP IDs/identifiers depend on the product's configured DP list; generic DP numbers must therefore not be copied into Nembra as ES80 facts.
+Tuya's current **Ride Development Guide** explicitly covers scooters and other mobility products. It says that actual DP IDs/identifiers depend on the product's configured DP list; generic DP numbers must therefore not be copied into Nembra as ES80 facts.
 
-The same Tuya guide recommends/reporting fields for mobility battery packs including:
+Official source, accessed 2026-08-06:
+
+- https://developer.tuya.com/en/docs/iot/mobility_development_guidelines?id=Kfme01kf7zw31
+
+### Battery DP model candidates
+
+The Tuya mobility guide recommends pack-summary fields including:
 
 - state of charge;
 - total voltage;
 - total current;
 - battery temperature;
 - charging status;
+- cycle count;
 - estimated range.
 
-It also notes that mobility implementations may pack high-frequency fields such as battery level and voltage while riding, and it explicitly warns about SoC jitter and device-side smoothing/hysteresis.
+It also documents important implementation behavior:
 
-Official source, accessed 2026-08-06:
+- report pack summary values on changes;
+- filter raw SoC jitter, noting that BMS SoC may jump by 1–2%;
+- report charging-state transitions explicitly;
+- common voltage encodings include `0.01 V` and mV;
+- common current encodings include `0.01 A` and mA;
+- units, byte order, and signedness are product/protocol details that must be documented;
+- private BMS protocols may be wrapped in a Raw DP;
+- high-frequency riding data can be packed together on applicable Tuya vehicle architectures.
 
-- Tuya Ride Development Guide: https://developer.tuya.com/en/docs/iot/mobility_development_guidelines?id=Kfme01kf7zw31
+These facts make separate SOC/voltage/current DPs or a Raw battery payload plausible candidates. They do **not** prove which form the 2025 ES80 uses.
 
-**Classification:** this is **GENERIC TUYA / FAMILY FACT**, not proof of the 2025 ES80's exact DP schema. It does, however, make separate voltage/current/SOC mobility DPs or a raw battery payload plausible candidates worth testing passively.
+### Reporting cadence implications
+
+The Tuya mobility guide also says:
+
+- sync all DPs during pairing/reconnection queries;
+- otherwise report changing DPs on change rather than repeatedly sending identical values;
+- Bluetooth vehicle ride fields such as speed, single mileage, and battery level are expected to report on changes;
+- speed may be used for local display without needing cloud history.
+
+**Capture implication:** a quiet notification stream while stationary does not prove a field is unavailable. Nembra should intentionally cause safe observable value changes or trigger legitimate read/query flows before concluding a DP is missing.
 
 ## Generic Tuya BLE discovery candidates
 
@@ -128,9 +176,29 @@ Official source, accessed 2026-08-06:
 
 ## Public batch / identity clues
 
-Community reports around ES80/ESMAX hardware show mixed app behavior and non-obvious Bluetooth local names, including examples such as `demo`. These reports are low-authority and must never establish canonical ES80 identity by themselves.
+Community reports around ES80/ESMAX hardware show mixed app behavior and non-obvious Bluetooth local names, including examples such as `demo` and `djlurring`. These reports are low-authority and must never establish canonical ES80 identity by themselves.
+
+Examples, accessed 2026-08-06:
+
+- https://www.reddit.com/r/ElectricScooters/comments/1f5obc8/disappointing_es80/
+- https://www.reddit.com/r/Escooters/comments/19052tr/pure_air_3_pro_vs_aovopro_esmax/
 
 Their useful implication is narrow: **do not identify the 2025 ES80 by local-name string alone**. Identity should eventually combine advertisement evidence, service fingerprints, authenticated/bound device identity where legitimate, and a verified physical-scooter persistence key.
+
+## Public research result: no exact 2025 ES80 DP dump found yet
+
+Reasonable public searches performed for this checkpoint included:
+
+- AOVOPRO official current product/statement/manual material;
+- Tuya current mobility/ride development documentation;
+- Tuya BLE service/pairing documentation;
+- indexed GitHub/web searches for ES80 Tuya DP/schema/GATT/UUID/localTuya/TinyTuya references;
+- community ES80/ESMAX Bluetooth/app reports;
+- regulatory/FCC/ISED-style searches.
+
+No trustworthy public source located in this pass exposes the **exact 2025 ES80 Tuya product DP list, PID, GATT dump, packet capture, or raw voltage/current/power mapping**.
+
+That means the next unresolved facts are genuinely device-specific enough to justify passive physical capture; the public research step has still narrowed the capture substantially.
 
 ## High-priority capture questions after this research
 
@@ -138,25 +206,26 @@ The next physical passive capture should answer the following in order:
 
 1. What advertisement/local-name/manufacturer/service data does the 2025 ES80 emit before and after stock-app binding?
 2. Does service discovery expose `FD50`, `1910`, or another transport?
-3. Which characteristics notify while the details page is open?
-4. Which raw field correlates with battery percentage?
-5. Which raw field correlates with live pack voltage?
-6. Which raw field correlates with live amps?
-7. Is displayed wattage independently transmitted, or does it equal voltage × current closely enough to indicate app/firmware derivation?
-8. What are each field's units, scale, signedness, native cadence, and duplicate behavior?
-9. Does current become negative during regenerative/electronic braking, clamp to zero, or use another convention?
-10. What changes while charging, and is charging state separately exposed?
-11. Are speed, trip, and odometer values on the same DP/report stream?
-12. What exact product/firmware identifiers can safely scope learned range history to this physical scooter?
+3. What full DP/state snapshot appears on pairing/reconnection/query?
+4. Which characteristics notify while the details page is open?
+5. Which raw field correlates with battery percentage?
+6. Which raw field correlates with live pack voltage?
+7. Which raw field correlates with live amps?
+8. Is displayed wattage independently transmitted, or does it equal voltage × current closely enough to indicate app/firmware derivation?
+9. What are each field's units, scale, signedness, native cadence, and duplicate behavior?
+10. Does current become negative during regenerative/electronic braking, clamp to zero, or use another convention?
+11. What changes while charging, and is charging state separately exposed?
+12. Are speed, trip, and odometer values on the same DP/report stream?
+13. What exact product/firmware identifiers can safely scope learned range history to this physical scooter?
 
 ## Safe correlation experiment
 
-A useful first stationary/passive session can collect notifications while recording visible stock-app values through controlled states:
+A useful first stationary/passive session can collect advertisements/services/notifications while recording visible stock-app values through controlled states:
 
 - powered on and stationary;
-- headlight off/on without riding;
-- several minutes stationary for baseline cadence;
-- wheel unloaded/spun only if mechanically safe and no write is required;
+- open the stock app details screen and record the exact battery/voltage/amps/watts values with timestamps;
+- several minutes stationary for baseline/report-on-change behavior;
+- headlight off/on only if using the already understood stock app, not a Nembra write;
 - charger disconnected vs connected;
 - after a short ride, observe load-recovery changes in voltage/current/percentage;
 - later, during a controlled real ride, correlate speed and electrical telemetry with monotonic receipt timestamps.
@@ -186,18 +255,20 @@ A stock-app watt number alone is not sufficient proof for energy integration.
 ### VERIFIED PUBLIC
 - AOVOPRO markets a New 2025 ES80;
 - latest ES80/ESMAX can legitimately use Tuya Smart;
-- official ES80 specification is 36 V / 10.5 Ah battery and 36 V / 350 W motor.
+- official ES80 specification is 36 V / 10.5 Ah battery and 36 V / 350 W motor;
+- current official Tuya ES80 panel imagery exposes battery percentage, estimated range, trip/total mileage and core controls.
 
 ### GENERIC TUYA / FAMILY FACT
 - Tuya mobility products commonly model SOC, voltage, current, charging and related battery information as configured DPs/raw payloads;
 - actual DP IDs are product-specific;
+- report-on-change behavior means passive capture must intentionally observe legitimate state changes and reconnect snapshots;
 - `FD50` is a modern Tuya BLE service candidate;
 - `1910` is a legacy Tuya BLE service candidate.
 
 ### UNKNOWN / PHYSICAL VERIFICATION REQUIRED
 - exact 2025 ES80 advertisement identity;
 - exact GATT service/characteristic UUIDs;
-- exact Tuya DP IDs/raw schema;
+- exact Tuya PID/product DP list/raw schema;
 - battery percentage raw source/resolution/cadence;
 - voltage raw source/scale/cadence;
 - current raw source/scale/signedness/cadence;
