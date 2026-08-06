@@ -16,12 +16,14 @@ public enum BatteryRangeWindowAssemblyError: Error, Equatable, Sendable {
 /// Estimated/display SoC is ignored as learning evidence.
 public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
     public private(set) var anchorSOC: BatterySOCReading?
+    public private(set) var latestAuthoritativeSOC: BatterySOCReading?
     public private(set) var accumulatedDistanceMeters: Double
     public private(set) var distanceCoverage: BatteryRangeDistanceCoverage
     public private(set) var transportGapOccurred: Bool
 
     public init() {
         anchorSOC = nil
+        latestAuthoritativeSOC = nil
         accumulatedDistanceMeters = 0
         distanceCoverage = .complete
         transportGapOccurred = false
@@ -61,12 +63,15 @@ public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
     /// only after the active adaptive-range policy's minimum consumption and
     /// distance thresholds are both satisfied.
     ///
-    /// - Estimated SoC never establishes or advances a learning anchor.
-    /// - Flat authoritative SoC keeps the existing anchor so distance can
-    ///   accumulate across coarse/slow percentage updates.
-    /// - A higher authoritative SoC conservatively rebases the span. That can
-    ///   represent charging, sag recovery, or another non-consumption change;
-    ///   none of the preceding distance is relabeled as battery consumption.
+    /// - Estimated SoC never establishes or advances learning evidence.
+    /// - Flat/falling authoritative SoC keeps the existing span anchor so
+    ///   distance can accumulate across coarse/slow percentage updates.
+    /// - Any increase versus the latest authoritative SoC conservatively
+    ///   rebases the span. That can represent charging, sag recovery, or
+    ///   another non-consumption change; none of the preceding distance is
+    ///   relabeled as battery consumption.
+    /// - Authoritative ordering is checked against the latest accepted
+    ///   authoritative reading, not merely the original span anchor.
     /// - A completed candidate preserves partial/unknown distance coverage and
     ///   transport-gap evidence for `AdaptiveBatteryRangeModel` to reject.
     public mutating func ingestSOC(
@@ -82,11 +87,12 @@ public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
             return nil
         }
 
-        guard reading.receivedAtUptimeNanoseconds > anchorSOC.receivedAtUptimeNanoseconds else {
+        let latestSOC = latestAuthoritativeSOC ?? anchorSOC
+        guard reading.receivedAtUptimeNanoseconds > latestSOC.receivedAtUptimeNanoseconds else {
             throw BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC
         }
 
-        if reading.percentage > anchorSOC.percentage {
+        if reading.percentage > latestSOC.percentage {
             rebase(to: reading)
             return nil
         }
@@ -94,6 +100,7 @@ public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
         let consumedPercentagePoints = anchorSOC.percentage - reading.percentage
         guard consumedPercentagePoints >= policy.minimumConsumedPercentagePoints,
               accumulatedDistanceMeters >= policy.minimumDistanceMeters else {
+            latestAuthoritativeSOC = reading
             return nil
         }
 
@@ -114,11 +121,13 @@ public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
     /// and is intentionally not owned by this ephemeral assembler.
     public mutating func reset() {
         anchorSOC = nil
+        latestAuthoritativeSOC = nil
         resetSpanEvidence()
     }
 
     private mutating func rebase(to reading: BatterySOCReading) {
         anchorSOC = reading
+        latestAuthoritativeSOC = reading
         resetSpanEvidence()
     }
 

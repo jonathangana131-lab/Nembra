@@ -51,6 +51,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
 
         #expect(result == nil)
         #expect(assembler.hasAuthoritativeAnchor == false)
+        #expect(assembler.latestAuthoritativeSOC == nil)
         #expect(assembler.accumulatedDistanceMeters == 250)
         #expect(assembler.distanceCoverage == .partial)
         #expect(assembler.transportGapOccurred)
@@ -58,6 +59,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         _ = try assembler.ingestSOC(reading(80, uptime: 2), policy: policy())
         #expect(assembler.hasAuthoritativeAnchor)
         #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 80)
         #expect(assembler.accumulatedDistanceMeters == 0)
         #expect(assembler.distanceCoverage == .complete)
         #expect(assembler.transportGapOccurred == false)
@@ -71,8 +73,10 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(try assembler.ingestSOC(reading(80, uptime: 1), policy: p) == nil)
         try assembler.recordDistance(deltaMeters: 100)
         #expect(try assembler.ingestSOC(reading(79, uptime: 2), policy: p) == nil)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 79)
         try assembler.recordDistance(deltaMeters: 120)
         #expect(try assembler.ingestSOC(reading(78, uptime: 3), policy: p) == nil)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 78)
         try assembler.recordDistance(deltaMeters: 140)
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 4), policy: p)
@@ -84,6 +88,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(window.distanceCoverage == .complete)
         #expect(window.transportGapOccurred == false)
         #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(assembler.accumulatedDistanceMeters == 0)
     }
 
@@ -98,6 +103,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
 
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
         #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(assembler.accumulatedDistanceMeters == 200)
 
         let assembled = try assembler.ingestSOC(reading(76, uptime: 3), policy: strict)
@@ -118,6 +124,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
         try assembler.recordDistance(deltaMeters: 200)
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: p) == nil)
+        #expect(assembler.latestAuthoritativeSOC?.receivedAtUptimeNanoseconds == 2)
         try assembler.recordDistance(deltaMeters: 100)
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: p)
@@ -142,10 +149,44 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
 
         #expect(result == nil)
         #expect(assembler.anchorSOC?.percentage == 81)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 81)
         #expect(assembler.anchorSOC?.receivedAtUptimeNanoseconds == 2)
         #expect(assembler.accumulatedDistanceMeters == 0)
         #expect(assembler.distanceCoverage == .complete)
         #expect(assembler.transportGapOccurred == false)
+    }
+
+    @Test("in-span measured recovery rebases and becomes the next clean anchor")
+    func inSpanRecoveryRebases() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 1_000)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .partial)
+        #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: p) == nil)
+        #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
+
+        let recovery = try assembler.ingestSOC(reading(79, uptime: 3), policy: p)
+
+        #expect(recovery == nil)
+        #expect(assembler.anchorSOC?.percentage == 79)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 79)
+        #expect(assembler.anchorSOC?.receivedAtUptimeNanoseconds == 3)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 1_000, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(76, uptime: 4), policy: p)
+        let clean = try #require(cleanCandidate)
+
+        #expect(clean.startSOC.percentage == 79)
+        #expect(clean.startSOC.receivedAtUptimeNanoseconds == 3)
+        #expect(clean.endSOC.percentage == 76)
+        #expect(clean.distanceMeters == 1_000)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
     }
 
     @Test("estimated readings inside a span do not advance or erase measured evidence")
@@ -162,6 +203,8 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
             ) == nil
         )
         #expect(assembler.anchorSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 80)
+        #expect(assembler.latestAuthoritativeSOC?.receivedAtUptimeNanoseconds == 1)
         #expect(assembler.accumulatedDistanceMeters == 150)
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: p)
@@ -229,20 +272,23 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler == beforeOverflow)
     }
 
-    @Test("nonmonotonic authoritative anchors fail without changing evidence")
-    func nonMonotonicSOCFailsAtomically() throws {
+    @Test("authoritative ordering is enforced against the latest accepted measured sample")
+    func nonMonotonicLatestSOCFailsAtomically() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
-        let p = try policy()
+        let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 10), policy: p)
         try assembler.recordDistance(deltaMeters: 150, coverage: .partial)
+        #expect(try assembler.ingestSOC(reading(77, uptime: 20), policy: p) == nil)
         assembler.recordTransportGap()
         let before = assembler
 
         #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
-            _ = try assembler.ingestSOC(reading(77, uptime: 10), policy: p)
+            _ = try assembler.ingestSOC(reading(76, uptime: 15), policy: p)
         }
         #expect(assembler == before)
+        #expect(assembler.anchorSOC?.receivedAtUptimeNanoseconds == 10)
+        #expect(assembler.latestAuthoritativeSOC?.receivedAtUptimeNanoseconds == 20)
     }
 
     @Test("explicit reset clears only in-flight assembly evidence")
@@ -257,6 +303,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         assembler.reset()
 
         #expect(assembler.anchorSOC == nil)
+        #expect(assembler.latestAuthoritativeSOC == nil)
         #expect(assembler.accumulatedDistanceMeters == 0)
         #expect(assembler.distanceCoverage == .complete)
         #expect(assembler.transportGapOccurred == false)
