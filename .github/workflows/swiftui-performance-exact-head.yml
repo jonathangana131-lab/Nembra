@@ -1,0 +1,56 @@
+name: SwiftUI Performance Exact-Head QA
+
+on:
+  pull_request:
+    branches:
+      - 'ci/swiftui-performance-audit-chat-p7w3k'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-swiftui-performance-exact-head-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  simulator-qa:
+    name: Build, test, and capture exact PR head
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Prove checked-out head
+        run: |
+          echo "Expected head: ${{ github.event.pull_request.head.sha }}"
+          echo "Checked out:   $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - name: Validate project structure
+        run: |
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Build, test, and capture Simulator states
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-swiftui-performance-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
