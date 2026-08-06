@@ -24,6 +24,7 @@ struct VehicleControlsView: View {
         }
         .navigationTitle("Vehicle Controls")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .alert("Command not confirmed", isPresented: errorPresented) {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
         } message: {
