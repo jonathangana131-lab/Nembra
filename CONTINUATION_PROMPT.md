@@ -57,16 +57,18 @@ Home moving-state Lock must remain disabled with `Stop to lock`; service/domain 
 ## Exact current milestone
 - `main` contains the accepted portrait Home merge `254b95a8d62d7d143df937cc0d8aa73f45548266`.
 - Active branch: `feature/landscape-dashboard`.
-- PR #2 is draft and must remain unmerged until the landscape gate is green and visually accepted.
-- Phase 9 implementation already exists: dedicated compact-height landscape `DashboardView`, portrait Home preserved, dominant confirmed speed, battery/trip/mode/connection, stopped-only compact controls, moving-state control removal, stable accessibility identifiers, and landscape XCUITests with kept screenshots.
-- Xcode run `31057841472` failed only because a `@MainActor tearDown()` override had actor isolation incompatible with XCTest. The Dashboard application target compiled. That test-target defect has already been fixed by removing the actor-isolated override pattern; the latest branch commit after that fix is `6dae8c8bbd383507d714911a4aa70ded0e512ceb` or newer.
-- Continue by watching the newest Xcode 27 run on `feature/landscape-dashboard`, not by re-investigating the old `tearDown()` failure.
+- PR #2 remains draft until the final Phase 9 lineage is green and visually accepted.
+- Phase 9 implementation exists: dedicated compact-height landscape `DashboardView`, portrait Home preserved, dominant confirmed speed, battery/trip/mode/connection, stopped-only compact controls, hidden state-changing controls while moving, stable accessibility identifiers, and landscape XCUITests with kept screenshots.
+- Xcode 27 run `31058989306` at `f3394cac` was fully **green** and exported real `Dashboard Riding Landscape` + `Dashboard Stopped Landscape` attachments.
+- Visual review accepted the stopped composition but found wasted dead space in the riding right rail.
+- Final polish commits `cfb0f9fc` and `75fd6622` replace the old `Controls available when stopped` sentence with truthful read-only Headlight + Lock status while moving, and the XCUITest now asserts those values while still proving Light/Lock buttons are absent.
+- Latest final-polish Xcode run at this checkpoint: `31059807152`, head `75fd662222f344e4323554c6763a034cd0e775ae`; it was queued when the memory checkpoint was written. Check this/newer head first.
 
 ### Phase 9 Dashboard acceptance gate
 - enormous confirmed speed with safe iPhone 12 landscape fit
 - mode, battery, scooter Trip, connection/model identity
 - stopped-only compact Light/Lock and ride-mode controls
-- no state-changing controls while moving
+- no state-changing controls while moving; read-only confirmed Headlight/Lock state may remain visible
 - no map/navigation yet
 - no fake throttle/current/power gauge
 - no interpolation presented as measured telemetry yet
@@ -74,8 +76,17 @@ Home moving-state Lock must remain disabled with `Stop to lock`; service/domain 
 - exported `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` attachments are visually inspected
 - fix any clipping, cramped rails, weak hierarchy, inaccessible controls, or orientation defects before merge
 
-### Phase 10 immediately afterward
-Wire existing raw speed telemetry into the render-only interpolation/rolling-digit system. Benchmark real/simulated cadence separately from render rate. Keep measured speed and displayed interpolated frames explicitly distinct. Do not choose MAXSHOT production interpolation timing until hardware cadence is measured; Simulator timing can be an injected QA profile only.
+## Phase 10 reuse rule
+The old `feature/speed-instrumentation` branch diverged before the accepted Home/Phase 9 work. **Do not merge or rebase that branch wholesale.** After Phase 9 merges, create a fresh Phase 10 branch from merged `main` and selectively transplant only valid narrow pieces:
+- `VehicleStore.speedTelemetryUpdates()`
+- `SpeedInstrumentModel`
+- `RollingSpeedValueView`
+- targeted app tests for confirmed fallback / measured / visually interpolated / stale / motion-estimated behavior
+
+Core `SpeedDisplayInterpolator` and `RollingNumberModel` are already on the accepted lineage. Their tests cover first-sample snap, accel/decel no-overshoot, mid-transition interruption continuity, truth-boundary separation, stale/out-of-order rejection, motion-estimate rejection, fixed slots, 9→10, 19→20, 20→19, 99→100, and invalid values.
+
+### Phase 10 execution
+Wire the dedicated raw speed stream into the render-only interpolation/rolling-digit system. Keep high-frequency rendering local to the speed instrument rather than globally mutating `VehicleState`. Benchmark simulated cadence separately from render rate. Do not choose MAXSHOT production interpolation timing until real hardware notification cadence/latency/resolution is measured; Simulator timing can be an injected QA profile only. Re-run Xcode 27 and inspect real landscape screenshots/interaction after the speed layer is wired.
 
 Then continue autonomously through mode-responsive Dashboard, ride engine app/persistence wiring, background Bluetooth, background location/route capture, MapKit rides, Dashboard navigation transformation, history/stats, acceleration tests, BLE diagnostics/protocol validation, real scooter validation, cloud/accounts, leaderboard, Live Activities/widgets/App Intents, accessibility/performance/error hardening, end-to-end/release prep. Do not stop after a single screen or ask whether to continue.
 
