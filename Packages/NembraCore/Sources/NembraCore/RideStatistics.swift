@@ -14,6 +14,23 @@ public enum RideStatisticsDistanceDisposition: String, Codable, Equatable, Senda
     case excludedConflict
 }
 
+/// Which recorded ride wall-clock date owns a completed ride for calendar
+/// buckets such as Today or Month. Nembra does not silently choose this product
+/// policy for callers because a ride may cross midnight.
+public enum RideStatisticsCalendarAttribution: String, Codable, Equatable, Sendable {
+    case rideBegan
+    case rideEnded
+
+    fileprivate func date(for ride: CompletedRideEvidence) -> Date {
+        switch self {
+        case .rideBegan:
+            ride.beganAtDate
+        case .rideEnded:
+            ride.endedAtDate
+        }
+    }
+}
+
 /// One completed ride prepared for calendar statistics.
 ///
 /// `attributedDate` is presentation/calendar evidence only. It must never be
@@ -57,12 +74,13 @@ public struct RideStatisticsRide: Equatable, Sendable {
     }
 
     /// Bridges the existing completed-ride and reconciliation domains without
-    /// treating incomplete/conflicting evidence as trustworthy mileage.
-    /// Calendar attribution uses the recorded ride-begin date; no duration is
-    /// derived from wall-clock begin/end ordering.
+    /// treating incomplete/conflicting evidence as trustworthy mileage. The
+    /// calendar attribution rule is explicit so this domain does not invent a
+    /// start-vs-end-date product decision for rides that cross midnight.
     public init(
         completedRide: CompletedRideEvidence,
-        reconciledDistance: ReconciledRideDistance
+        reconciledDistance: ReconciledRideDistance,
+        calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
         let disposition: RideStatisticsDistanceDisposition
         switch reconciledDistance.status {
@@ -87,7 +105,7 @@ public struct RideStatisticsRide: Equatable, Sendable {
 
         try self.init(
             sessionID: completedRide.sessionID,
-            attributedDate: completedRide.beganAtDate,
+            attributedDate: calendarAttribution.date(for: completedRide),
             distanceMeters: reconciledDistance.finalDistanceMeters,
             distanceDisposition: disposition
         )
