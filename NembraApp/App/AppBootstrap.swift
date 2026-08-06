@@ -45,6 +45,8 @@ final class AppRuntime {
         guard !didStart else { return }
         didStart = true
 
+        installRideCompletionBarrierIfAvailable()
+
         // Ride evidence subscribes first so explicit QA telemetry emitted after
         // launch cannot race past the automatic ride application layer.
         await rideStore.start()
@@ -129,6 +131,28 @@ final class AppRuntime {
         }
     }
 
+    /// Completed history is not allowed to publish before the additive route
+    /// recorder has finalized its manifest. Keeping this barrier on AppRuntime
+    /// preserves root ownership while avoiding any SwiftUI lifecycle dependency.
+    private func installRideCompletionBarrierIfAvailable() {
+        guard let rideLocationCaptureCoordinator else { return }
+        rideStore.setRideCompletionBarrier { [weak self] sessionID in
+            await self?.finishLocationCaptureBeforeRideCommit(
+                sessionID: sessionID,
+                coordinator: rideLocationCaptureCoordinator
+            )
+        }
+    }
+
+    private func finishLocationCaptureBeforeRideCommit(
+        sessionID: UUID,
+        coordinator: RideLocationCaptureCoordinator
+    ) async {
+        guard activeLocationCaptureSessionID == sessionID else { return }
+        _ = try? await coordinator.finish()
+        activeLocationCaptureSessionID = nil
+    }
+
     private func handleRideSessionEvent(
         _ event: RideApplicationSessionEvent,
         coordinator: RideLocationCaptureCoordinator
@@ -155,6 +179,10 @@ final class AppRuntime {
             }
 
         case let .ended(sessionID):
+            // Normal completion already flushed through the awaited completion
+            // barrier before RideApplicationStore released this UUID. Keep this
+            // as a fail-safe for any non-completion transition that still ends a
+            // previously active session.
             guard activeLocationCaptureSessionID == sessionID else { return }
             _ = try? await coordinator.finish()
             activeLocationCaptureSessionID = nil
@@ -291,8 +319,8 @@ enum AppBootstrap {
                     qualityPolicy: policy,
                     routeStore: routeStore,
                     routeChunkSize: 2,
-                    sessionScopedDistanceSink: { sessionID, meters, uptime in
-                        await rideStore.ingestQualityScreenedGPSDistanceDelta(
+                    sessionScopedDistanceSink: { [weak rideStore] sessionID, meters, uptime in
+                        await rideStore?.ingestQualityScreenedGPSDistanceDelta(
                             meters,
                             receivedAtUptimeNanoseconds: uptime,
                             for: sessionID
