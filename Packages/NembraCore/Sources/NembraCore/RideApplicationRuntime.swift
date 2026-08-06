@@ -45,6 +45,8 @@ public actor RideApplicationRuntime {
     private var latestVehicleState: VehicleState?
     private var latestSpeedSample: SpeedTelemetrySample?
     private var lastObservationUptimeNanoseconds: UInt64?
+    private var publishedPhase: RideEnginePhase
+    private var pendingCompletedRideID: UUID?
     private var failure: RideApplicationRuntimeFailure?
     private var started = false
     private var stateTask: Task<Void, Never>?
@@ -55,6 +57,8 @@ public actor RideApplicationRuntime {
         service: any ScooterService,
         recoveryCoordinator: RideCheckpointCoordinator,
         historyStore: any RideHistoryStore,
+        initialPhase: RideEnginePhase,
+        pendingCompletedRideID: UUID?,
         uptimeClock: @escaping UptimeClock,
         dateClock: @escaping DateClock
     ) {
@@ -64,6 +68,8 @@ public actor RideApplicationRuntime {
             recoveryCoordinator: recoveryCoordinator,
             historyStore: historyStore
         )
+        self.publishedPhase = initialPhase
+        self.pendingCompletedRideID = pendingCompletedRideID
         self.uptimeClock = uptimeClock
         self.dateClock = dateClock
     }
@@ -93,11 +99,15 @@ public actor RideApplicationRuntime {
             recoveredAtDate: recoveredDate,
             makeSessionID: makeSessionID
         )
+        let initialPhase = await recovery.currentPhase()
+        let pendingID = await recovery.pendingCompletedRideEvidence()?.sessionID
 
         return RideApplicationRuntime(
             service: service,
             recoveryCoordinator: recovery,
             historyStore: historyStore,
+            initialPhase: initialPhase,
+            pendingCompletedRideID: pendingID,
             uptimeClock: uptimeClock,
             dateClock: dateClock
         )
@@ -121,9 +131,11 @@ public actor RideApplicationRuntime {
     public func start() async throws {
         guard !started else { return }
 
-        if await recoveryCoordinator.pendingCompletedRideEvidence() != nil {
+        if pendingCompletedRideID != nil {
             do {
                 _ = try await historyCommitCoordinator.commitPendingRide()
+                pendingCompletedRideID = nil
+                publishedPhase = await recoveryCoordinator.currentPhase()
             } catch {
                 failure = .historyCommit
                 publish()
@@ -160,7 +172,7 @@ public actor RideApplicationRuntime {
         started = false
     }
 
-    public func snapshot() async -> RideApplicationRuntimeSnapshot {
+    public func snapshot() -> RideApplicationRuntimeSnapshot {
         makeSnapshot()
     }
 
@@ -170,10 +182,9 @@ public actor RideApplicationRuntime {
         let previous = latestVehicleState
         latestVehicleState = state
 
-        let isInitialBroadcast = previous == nil
         let connectionChanged = previous?.connection != state.connection
         let odometerChanged = previous?.odometerKilometers != state.odometerKilometers
-        guard isInitialBroadcast || connectionChanged || odometerChanged else { return }
+        guard connectionChanged || odometerChanged else { return }
 
         do {
             try await ingest(
@@ -192,6 +203,9 @@ public actor RideApplicationRuntime {
 
         latestSpeedSample = sample
         let state = await service.snapshot()
+        // The service publishes raw speed immediately before the matching state
+        // broadcast. Cache that snapshot now so the following state event does not
+        // feed the same ODO movement into the engine as a second observation.
         latestVehicleState = state
 
         do {
@@ -232,19 +246,21 @@ public actor RideApplicationRuntime {
 
         let update = try await recoveryCoordinator.ingest(observation)
         lastObservationUptimeNanoseconds = observationUptime
-        publish()
+        publishedPhase = update.phase
 
-        if update.events.contains(where: { event in
-            if case .rideEnded = event { return true }
-            return false
-        }) {
+        if let completed = completedEvidence(in: update.events) {
+            pendingCompletedRideID = completed.sessionID
+            publish()
             do {
                 _ = try await historyCommitCoordinator.commitPendingRide()
+                pendingCompletedRideID = nil
+                publishedPhase = await recoveryCoordinator.currentPhase()
                 publish()
             } catch {
                 block(.historyCommit)
-                throw error
             }
+        } else {
+            publish()
         }
     }
 
@@ -258,6 +274,15 @@ public actor RideApplicationRuntime {
         return candidate
     }
 
+    private func completedEvidence(in events: [RideEngineEvent]) -> CompletedRideEvidence? {
+        for event in events {
+            if case let .rideEnded(evidence) = event {
+                return evidence
+            }
+        }
+        return nil
+    }
+
     private func block(_ reason: RideApplicationRuntimeFailure) {
         failure = reason
         stateTask?.cancel()
@@ -266,34 +291,15 @@ public actor RideApplicationRuntime {
     }
 
     private func makeSnapshot() -> RideApplicationRuntimeSnapshot {
-        let phase = recoveryCoordinatorPhaseFallback
-        let pendingID = nil as UUID?
-        return RideApplicationRuntimeSnapshot(
-            phase: phase,
-            pendingCompletedRideID: pendingID,
+        RideApplicationRuntimeSnapshot(
+            phase: publishedPhase,
+            pendingCompletedRideID: pendingCompletedRideID,
             failure: failure
         )
-    }
-
-    /// Snapshot publication itself cannot `await`. `publishedPhase` is refreshed
-    /// immediately after each coordinator operation and starts idle until restore
-    /// initialization records the recovered phase.
-    private var recoveryCoordinatorPhaseFallback: RideEnginePhase {
-        publishedPhase
-    }
-
-    private var publishedPhase: RideEnginePhase = .idle
-
-    private func refreshPublishedPhase() async {
-        publishedPhase = await recoveryCoordinator.currentPhase()
     }
 
     private func publish() {
-        let value = RideApplicationRuntimeSnapshot(
-            phase: publishedPhase,
-            pendingCompletedRideID: nil,
-            failure: failure
-        )
+        let value = makeSnapshot()
         for continuation in continuations.values {
             continuation.yield(value)
         }
