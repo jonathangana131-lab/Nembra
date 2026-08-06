@@ -12,13 +12,13 @@ Updated: 2026-08-06
 - Active branch: `feature/landscape-dashboard`
 - Stable branch: `main`
 - Stable portrait Home merge: `254b95a8d62d7d143df937cc0d8aa73f45548266`
-- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode, final safety + Simulator gate**
+- Active milestone: **Phase 9 — dedicated landscape Dashboard Mode, final Xcode/visual gate**
 - Next milestone: **Phase 10 — measured-speed instrumentation / render-only interpolation**
 
 ## Portrait Home — accepted and merged
 - The rejected giant scooter-art direction is dead. Home is status-first: vehicle identity + connection/lock → Battery/Trip/Mode → Light/Lock → Walk/Eco/Drive/Sport → vehicle details.
 - Moving state disables Lock; locked state offers Unlock; low battery has semantic priority; retained values are explicitly last-known/read-only.
-- `home.connection` now exposes a stable confirmed accessibility value for reconnect QA.
+- `home.connection` exposes a stable confirmed accessibility value for reconnect QA.
 - Speed-limit editing remains absent until DP101/102/103 user-facing semantics are verified.
 - Real Home interaction gate passed on Xcode 27 before merge; PR #1 is merged.
 
@@ -33,7 +33,7 @@ Updated: 2026-08-06
 - While moving, state-changing controls are absent and confirmed Headlight/Lock state remains read-only.
 - Phase 9 still does **not** inject render interpolation into the speed display.
 - No maps/navigation, fake throttle gauge, current/watts gauge, acceleration display, or fabricated telemetry.
-- Landscape XCUITests rotate the iPhone, exercise moving/stopped state, confirm mode changes, and keep screenshots as XCTest attachments.
+- Landscape XCUITests rotate the iPhone, exercise moving/stopped/unknown-speed states, confirm mode changes, and keep screenshots as XCTest attachments.
 
 ## Lock safety checkpoint
 Commit `c70caceae48950d796c81c4cc23027b8fc8b5e3b` hardens the Lock boundary:
@@ -43,16 +43,25 @@ Commit `c70caceae48950d796c81c4cc23027b8fc8b5e3b` hardens the Lock boundary:
 - Home shows `Speed unavailable` and disables Lock when unlocked speed is unknown.
 - Dashboard shows `SPEED UNAVAILABLE` and does not expose stopped controls when speed is unknown.
 - Two new core regression tests prove unknown-speed Lock rejection/unlock availability and movement-during-ack rejection.
-- Core package is now **158/158 tests passing** on Ubuntu validation before the final Mac gate.
+- Core package is now **158/158 tests passing**.
+
+## Connected unknown-speed QA
+Commit `99695916b43700c02a91e044df62b19c68e9d3be` adds explicit QA for the real startup state where the vehicle connection and other DPs are known but speed has not arrived yet.
+- New simulation scenario: `connected-speed-unknown`.
+- Portrait XCUITest requires `home.connection == Connected`, finds Lock, and proves it is disabled with `Speed unavailable`.
+- Landscape XCUITest requires `SPEED UNAVAILABLE` and proves Lock/Light/mode controls are absent.
+- Landscape test retains `Dashboard Speed Unavailable Landscape`.
+- Simulator capture harness also records the portrait `connected-speed-unknown` state.
+- Phase 9 UI suite is now **7 XCUITests**.
 
 ## Real Xcode / Simulator proof
 GitHub-hosted `xcode-27` is the authoritative remote Mac gate.
 - Proven environment: macOS 26.5.2 / Xcode 27.0 beta build 27A5228h / iOS 27 Simulator / iPhone 12 baseline.
 - Earlier Phase 9 run `31058989306` at `f3394cac` was fully green, but its sparse composition was visually rejected and rebuilt.
-- Refined stopped cockpit screenshot from later Xcode output was visually accepted: speed hierarchy, top model/mode balance, and the unified bottom shelf are materially better.
-- A later failed run exposed unrelated QA defects rather than Dashboard compile failures: reconnect used a brittle text query and riding expected Headlight Off although the deterministic riding fixture is Headlight On. Both tests are corrected.
-- `.github/workflows/xcode27-simulator.yml` now has branch-scoped `cancel-in-progress` concurrency so future superseded Mac runs are discarded.
-- **Do not merge PR #2 until the exact post-safety lineage is green on Xcode 27 and both named landscape screenshots are inspected.**
+- Refined stopped cockpit screenshot from later Xcode output was visually accepted: speed hierarchy, top model/mode balance, and unified bottom shelf are materially better.
+- Later failed runs exposed QA defects rather than Dashboard compiler defects: reconnect used a brittle text query and riding expected Headlight Off although the deterministic riding fixture is Headlight On. Both are corrected.
+- `.github/workflows/xcode27-simulator.yml` has branch-scoped `cancel-in-progress` concurrency so future superseded Mac runs are discarded.
+- **Do not merge PR #2 until the exact post-safety + unknown-speed lineage is green on Xcode 27 and the three named landscape states are inspected.**
 
 ## Phase 10 selective reuse plan
 The old `feature/speed-instrumentation` branch diverged before accepted Home/Phase 9 and must **not** be merged wholesale.
@@ -86,10 +95,10 @@ Important QA constraint: static `.riding` simulation is confirmed state only; ra
 Real MAXSHOT advertisement identity, services/characteristics, notification cadence/latency/resolution, reads/writes/acks, packet framing/checksum, DP101–103 semantics, and AccessorySetupKit descriptors.
 
 ## Next exact actions
-1. Trigger/follow the Xcode 27 run on the post-safety branch head (the bot safety commit itself does not trigger downstream workflows).
-2. Require project validation + **158/158 core tests** + app tests + all five XCUITests to pass.
-3. Download/export and inspect `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` at the iPhone 12/iOS 27 baseline.
-4. If visually accepted, update `DESIGN_SYSTEM.md` with the unified cockpit shelf rule, update this file + `CONTINUATION_PROMPT.md` with the green run, mark PR #2 ready, and merge.
+1. Follow the Xcode 27 run triggered by this connector-authored checkpoint; this is the authoritative Phase 9 candidate.
+2. Require project validation + **158/158 core tests** + app tests + **7/7 XCUITests**.
+3. Download/export and inspect `Dashboard Riding Landscape`, `Dashboard Stopped Landscape`, and `Dashboard Speed Unavailable Landscape` at the iPhone 12/iOS 27 baseline.
+4. If visually accepted, update `DESIGN_SYSTEM.md` with the unified cockpit shelf rule, update this file + `CONTINUATION_PROMPT.md` with the exact green run, update/ready PR #2, and merge.
 5. Immediately create a fresh Phase 10 branch from merged `main` and implement deterministic raw-speed QA + render-only interpolation/rolling digits.
 6. Continue autonomously through the remaining master-directive vertical slices after each quality gate.
 
