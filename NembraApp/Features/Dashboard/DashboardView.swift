@@ -15,18 +15,19 @@ struct DashboardView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            HStack(spacing: 0) {
-                statusRail
-                    .frame(width: 156)
+            VStack(spacing: 0) {
+                topStatusRow
+
+                Spacer(minLength: 8)
 
                 speedInstrument
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                contextRail
-                    .frame(width: 176)
+                Spacer(minLength: 8)
+
+                bottomInstrumentRow
             }
-            .safeAreaPadding(.horizontal, 20)
-            .safeAreaPadding(.vertical, 12)
+            .safeAreaPadding(.horizontal, 28)
+            .safeAreaPadding(.vertical, 18)
         }
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
@@ -53,8 +54,8 @@ struct DashboardView: View {
         }
     }
 
-    private var statusRail: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var topStatusRow: some View {
+        HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(vehicle.profile.identity.displayName)
                     .font(.headline.weight(.semibold))
@@ -71,6 +72,61 @@ struct DashboardView: View {
 
             Spacer(minLength: 0)
 
+            modeReadout
+        }
+    }
+
+    private var speedInstrument: some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .lastTextBaseline, spacing: 12) {
+                Text(speedValueText)
+                    .font(.system(size: 166, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .tracking(-8)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.56)
+                    .contentTransition(.numericText())
+                    .accessibilityHidden(true)
+
+                Text(speedUnitText)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 20)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Speed")
+            .accessibilityValue(speedAccessibilityValue)
+            .accessibilityIdentifier("dashboard.speed")
+
+            liveStateCaption
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var liveStateCaption: some View {
+        if vehicle.state.dataAvailability == .retained {
+            Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                .font(.caption2.weight(.bold))
+                .tracking(2.2)
+                .foregroundStyle(.secondary)
+        } else if vehicle.state.connection == .connected {
+            Text(isVehicleMoving ? "RIDING" : "READY")
+                .font(.caption2.weight(.bold))
+                .tracking(2.4)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("NO LIVE SPEED")
+                .font(.caption2.weight(.bold))
+                .tracking(2.2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var bottomInstrumentRow: some View {
+        HStack(alignment: .bottom, spacing: 34) {
             dashboardMetric(
                 title: "BATTERY",
                 value: batteryText,
@@ -85,67 +141,18 @@ struct DashboardView: View {
                 symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
                 identifier: "dashboard.trip"
             )
-        }
-    }
 
-    private var speedInstrument: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text(speedValueText)
-                    .font(.system(size: 148, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .tracking(-7)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
-                    .contentTransition(.numericText())
-                    .accessibilityHidden(true)
-
-                Text(speedUnitText)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 18)
-                    .accessibilityHidden(true)
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Speed")
-            .accessibilityValue(speedAccessibilityValue)
-            .accessibilityIdentifier("dashboard.speed")
-
-            Group {
-                if vehicle.state.dataAvailability == .retained {
-                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                } else if vehicle.state.connection == .connected {
-                    Text(isVehicleMoving ? "RIDING" : "READY")
-                } else {
-                    Text("NO LIVE SPEED")
-                }
-            }
-            .font(.caption2.weight(.bold))
-            .tracking(2.2)
-            .foregroundStyle(.secondary)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-    }
-
-    private var contextRail: some View {
-        VStack(alignment: .trailing, spacing: 14) {
-            modeReadout
-
-            Spacer(minLength: 0)
+            Spacer(minLength: 24)
 
             if shouldShowStoppedControls {
                 stoppedControls
-                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if shouldShowMovingReadout {
                 movingStateReadout
                     .transition(.opacity)
             }
         }
+        .frame(maxWidth: .infinity)
         .animation(.snappy(duration: 0.20), value: shouldShowStoppedControls)
     }
 
@@ -153,7 +160,7 @@ struct DashboardView: View {
         VStack(alignment: .trailing, spacing: 4) {
             Text("MODE")
                 .font(.caption2.weight(.bold))
-                .tracking(1.6)
+                .tracking(1.8)
                 .foregroundStyle(.secondary)
 
             Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
@@ -168,12 +175,10 @@ struct DashboardView: View {
     }
 
     private var movingStateReadout: some View {
-        VStack(alignment: .trailing, spacing: 9) {
+        HStack(spacing: 18) {
             if vehicle.profile.capabilities.supportsHeadlight,
                let isOn = vehicle.state.isHeadlightOn {
                 Label(isOn ? "LIGHT ON" : "LIGHT OFF", systemImage: isOn ? "lightbulb.fill" : "lightbulb")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(isOn ? Color.white : Color.secondary)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Headlight")
                     .accessibilityValue(isOn ? "On" : "Off")
@@ -183,91 +188,103 @@ struct DashboardView: View {
             if vehicle.profile.capabilities.supportsLock,
                let isLocked = vehicle.state.isLocked {
                 Label(isLocked ? "LOCKED" : "UNLOCKED", systemImage: isLocked ? "lock.fill" : "lock.open")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Lock status")
                     .accessibilityValue(isLocked ? "Locked" : "Unlocked")
                     .accessibilityIdentifier("dashboard.state.lock")
             }
         }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
         .labelStyle(.titleAndIcon)
     }
 
     private var stoppedControls: some View {
-        VStack(alignment: .trailing, spacing: 10) {
+        HStack(spacing: 10) {
             if !supportedModes.isEmpty {
-                HStack(spacing: 5) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        Button {
-                            Task { await vehicle.setMode(mode) }
-                        } label: {
-                            ZStack {
-                                if vehicle.state.rideMode == mode {
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .fill(.white.opacity(0.12))
-                                }
-
-                                if vehicle.pendingRideMode == mode {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                } else {
-                                    Text(modeAbbreviation(mode))
-                                        .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
-                                        .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
-                                }
-                            }
-                            .frame(width: 34, height: 34)
-                        }
-                        .buttonStyle(.glass)
-                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
-                        .accessibilityLabel(mode.displayName)
-                        .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
-                    }
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Ride mode controls")
+                modeSelector
             }
 
-            HStack(spacing: 7) {
-                if vehicle.profile.capabilities.supportsHeadlight,
-                   let isOn = vehicle.state.isHeadlightOn {
-                    Button {
-                        Task { await vehicle.setHeadlight(!isOn) }
-                    } label: {
-                        ZStack {
-                            if vehicle.pendingCommands.contains(.headlight) {
-                                ProgressView().controlSize(.mini)
-                            } else {
-                                Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
-                            }
+            if vehicle.profile.capabilities.supportsHeadlight,
+               let isOn = vehicle.state.isHeadlightOn {
+                Button {
+                    Task { await vehicle.setHeadlight(!isOn) }
+                } label: {
+                    ZStack {
+                        if vehicle.pendingCommands.contains(.headlight) {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
                         }
-                        .frame(width: 36, height: 36)
                     }
-                    .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
-                    .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
-                    .accessibilityValue(isOn ? "On" : "Off")
-                    .accessibilityIdentifier("dashboard.control.light")
+                    .frame(width: 42, height: 42)
                 }
-
-                if vehicle.profile.capabilities.supportsLock,
-                   let isLocked = vehicle.state.isLocked {
-                    Button {
-                        showLockConfirmation = true
-                    } label: {
-                        Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            .frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
-                    .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
-                    .accessibilityValue(isLocked ? "Secured" : "Ready")
-                    .accessibilityIdentifier("dashboard.control.lock")
-                }
+                .buttonStyle(.glass)
+                .disabled(vehicle.isVehicleCommandPending)
+                .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
+                .accessibilityValue(isOn ? "On" : "Off")
+                .accessibilityIdentifier("dashboard.control.light")
             }
-            .accessibilityElement(children: .contain)
+
+            if vehicle.profile.capabilities.supportsLock,
+               let isLocked = vehicle.state.isLocked {
+                Button {
+                    showLockConfirmation = true
+                } label: {
+                    Image(systemName: isLocked ? "lock.fill" : "lock.open")
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.glass)
+                .disabled(vehicle.isVehicleCommandPending)
+                .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
+                .accessibilityValue(isLocked ? "Secured" : "Ready")
+                .accessibilityIdentifier("dashboard.control.lock")
+            }
         }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var modeSelector: some View {
+        HStack(spacing: 0) {
+            ForEach(supportedModes, id: \.self) { mode in
+                Button {
+                    Task { await vehicle.setMode(mode) }
+                } label: {
+                    ZStack {
+                        if vehicle.state.rideMode == mode {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(.white.opacity(0.14))
+                                .padding(3)
+                        }
+
+                        if vehicle.pendingRideMode == mode {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Text(modeAbbreviation(mode))
+                                .font(.caption.weight(vehicle.state.rideMode == mode ? .bold : .semibold))
+                                .foregroundStyle(vehicle.state.rideMode == mode ? .white : .secondary)
+                        }
+                    }
+                    .frame(width: 44, height: 42)
+                }
+                .buttonStyle(.plain)
+                .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
+                .accessibilityLabel(mode.displayName)
+                .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
+            }
+        }
+        .padding(2)
+        .background {
+            Capsule(style: .continuous)
+                .fill(.white.opacity(0.065))
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Ride mode controls")
     }
 
     private func dashboardMetric(
