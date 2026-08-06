@@ -22,6 +22,18 @@ struct PassiveCoreBluetoothAcquisitionPolicyTests {
         #expect((cadence[CBCentralManagerScanOptionAllowDuplicatesKey] as? Bool) == true)
     }
 
+    @Test("connection timeout conversion rejects non-finite zero negative sub-nanosecond and overflow values")
+    func connectionTimeoutValidation() {
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(12) == 12_000_000_000)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(0.000000001) == 1)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(0) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(-1) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(0.0000000001) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(.infinity) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(.nan) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(Double.greatestFiniteMagnitude) == nil)
+    }
+
     @Test("readable notifying characteristic permits read subscription and descriptor discovery only")
     func readableNotifyingPlan() {
         let characteristic = CBMutableCharacteristic(
