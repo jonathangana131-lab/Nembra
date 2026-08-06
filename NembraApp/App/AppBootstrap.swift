@@ -4,22 +4,28 @@ import Foundation
 final class AppRuntime {
     let vehicleStore: VehicleStore
     let rideStore: RideApplicationStore
+    let rideHistoryStore: RideHistoryPresentationStore
 
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
+    private let simulatorAutoCompletesRide: Bool
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
 
     init(
         vehicleStore: VehicleStore,
         rideStore: RideApplicationStore,
+        rideHistoryStore: RideHistoryPresentationStore,
         simulatorService: SimulatedScooterService?,
-        simulationScenario: ScooterSimulationScenario?
+        simulationScenario: ScooterSimulationScenario?,
+        simulatorAutoCompletesRide: Bool
     ) {
         self.vehicleStore = vehicleStore
         self.rideStore = rideStore
+        self.rideHistoryStore = rideHistoryStore
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
+        self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
     }
 
     deinit {
@@ -47,10 +53,41 @@ final class AppRuntime {
                   let speed = snapshot.speedKilometersPerHour,
                   speed > 0 else { return }
 
-            // Emits one fresh authoritative QA packet without adding distance.
-            // This is explicit Simulator plumbing, never production telemetry.
+            // First establish fresh authoritative motion without advancing the
+            // simulated odometer. This lets RideEngine establish the ride's ODO
+            // baseline before the completed-history fixture adds movement.
             await simulatorService.simulateRide(
                 speedKilometersPerHour: speed,
+                elapsedSeconds: 0
+            )
+
+            guard simulatorAutoCompletesRide else { return }
+
+            // The opt-in history fixture then advances a real Simulator ODO/trip
+            // delta through the production service/ride path. `elapsedSeconds`
+            // affects simulated distance only; packet timestamps still use the
+            // real monotonic arrival clock and never fabricate cadence.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await simulatorService.simulateRide(
+                speedKilometersPerHour: speed,
+                elapsedSeconds: 60
+            )
+
+            // Explicit end-to-end history fixture used only when a UI/QA launch
+            // opts in through the Simulator environment. It drives the real ride
+            // engine and persistence path instead of inserting a fake row.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await simulatorService.simulateRide(
+                speedKilometersPerHour: 0,
+                elapsedSeconds: 0
+            )
+
+            try? await Task.sleep(nanoseconds: 550_000_000)
+            guard !Task.isCancelled else { return }
+            await simulatorService.simulateRide(
+                speedKilometersPerHour: 0,
                 elapsedSeconds: 0
             )
         }
@@ -59,6 +96,7 @@ final class AppRuntime {
 
 enum AppBootstrap {
     static let simulationStorageNamespaceEnvironmentKey = "NEMBRA_SIMULATION_STORAGE_NAMESPACE"
+    static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -96,36 +134,67 @@ enum AppBootstrap {
             speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy
         )
 
-        let rideStore: RideApplicationStore
+        let persistenceScope: RidePersistenceScope
         if let scenario = bootstrap.scenario {
-            do {
-                let configuration = try RideApplicationConfiguration.simulatorQA()
-                let persistence = try RidePersistenceFactory.make(
-                    scope: .simulation(
-                        scenario: scenario,
-                        namespace: environment[simulationStorageNamespaceEnvironmentKey]
+            persistenceScope = .simulation(
+                scenario: scenario,
+                namespace: environment[simulationStorageNamespaceEnvironmentKey]
+            )
+        } else {
+            persistenceScope = .production
+        }
+
+        let persistence: RidePersistenceStack?
+        let persistenceError: String?
+        do {
+            persistence = try RidePersistenceFactory.make(scope: persistenceScope)
+            persistenceError = nil
+        } catch {
+            persistence = nil
+            persistenceError = "Local ride storage could not be opened."
+        }
+
+        let rideHistoryStore = RideHistoryPresentationStore(
+            historyStore: persistence?.historyStore,
+            startupPersistenceError: persistenceError
+        )
+
+        let rideStore: RideApplicationStore
+        if bootstrap.scenario != nil {
+            if let persistence {
+                do {
+                    let configuration = try RideApplicationConfiguration.simulatorQA()
+                    rideStore = RideApplicationStore(
+                        service: bootstrap.service,
+                        initialState: bootstrap.initialState,
+                        configuration: configuration,
+                        checkpointStore: persistence.checkpointStore,
+                        historyStore: persistence.historyStore
                     )
-                )
-                rideStore = RideApplicationStore(
-                    service: bootstrap.service,
-                    initialState: bootstrap.initialState,
-                    configuration: configuration,
-                    checkpointStore: persistence.checkpointStore,
-                    historyStore: persistence.historyStore
-                )
-            } catch {
+                } catch {
+                    rideStore = RideApplicationStore(
+                        service: bootstrap.service,
+                        initialState: bootstrap.initialState,
+                        configuration: nil,
+                        checkpointStore: nil,
+                        historyStore: nil,
+                        startupPersistenceError: "Simulator ride tracking could not be configured."
+                    )
+                }
+            } else {
                 rideStore = RideApplicationStore(
                     service: bootstrap.service,
                     initialState: bootstrap.initialState,
                     configuration: try? RideApplicationConfiguration.simulatorQA(),
                     checkpointStore: nil,
                     historyStore: nil,
-                    startupPersistenceError: "Local ride recovery storage could not be opened."
+                    startupPersistenceError: persistenceError ?? "Local ride recovery storage could not be opened."
                 )
             }
         } else {
-            // No production ride detector policy is selected until real MAXSHOT
-            // speed cadence/latency and reconnect behavior are measured.
+            // Production history storage may be opened for truthful read-only
+            // presentation, but no production ride detector policy is selected
+            // until real MAXSHOT speed cadence/latency/reconnect is measured.
             rideStore = RideApplicationStore(
                 service: bootstrap.service,
                 initialState: bootstrap.initialState,
@@ -135,11 +204,16 @@ enum AppBootstrap {
             )
         }
 
+        let simulatorAutoCompletesRide = bootstrap.scenario == .riding
+            && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
+
         return AppRuntime(
             vehicleStore: vehicleStore,
             rideStore: rideStore,
+            rideHistoryStore: rideHistoryStore,
             simulatorService: bootstrap.simulatorService,
-            simulationScenario: bootstrap.scenario
+            simulationScenario: bootstrap.scenario,
+            simulatorAutoCompletesRide: simulatorAutoCompletesRide
         )
     }
 

@@ -37,6 +37,47 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
+    func testCompletedRideAppearsInHistoryThroughRealRidePipeline() {
+        XCUIDevice.shared.orientation = .portrait
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let row = app.descendants(matching: .any)["rides.completed-row"]
+        XCTAssertTrue(
+            row.waitForExistence(timeout: 8),
+            "The explicit QA auto-completion must flow through RideEngine, durable history commit, and the real Rides surface."
+        )
+        keepScreenshot(named: "Completed Ride History")
+
+        row.tap()
+        let detail = app.descendants(matching: .any)["rides.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+
+        let odometer = app.descendants(matching: .any)["rides.evidence.odometer"]
+        XCTAssertTrue(odometer.exists)
+        let odometerSemantics = "\(odometer.label) \(odometer.value as? String ?? "")"
+        XCTAssertTrue(
+            odometerSemantics.contains("mi") || odometerSemantics.contains("km"),
+            "The completed ride must expose measured odometer distance evidence in the active locale."
+        )
+        XCTAssertFalse(
+            odometerSemantics.contains("0.0"),
+            "The end-to-end QA fixture must establish the ride baseline before advancing odometer evidence."
+        )
+
+        XCTAssertTrue(app.descendants(matching: .any)["rides.route-unavailable"].exists)
+        keepScreenshot(named: "Completed Ride Details")
+    }
+
+    @MainActor
     private func waitForValue(
         _ value: String,
         element: XCUIElement,
