@@ -4,6 +4,7 @@ public enum AccelerationRunPolicyError: Error, Equatable, Sendable {
     case invalidTargetSpeed
     case invalidStationaryThreshold
     case invalidMaximumSpeedAccuracy
+    case invalidMaximumSampleInterval
 }
 
 public struct AccelerationRunPolicy: Equatable, Sendable {
@@ -11,12 +12,14 @@ public struct AccelerationRunPolicy: Equatable, Sendable {
     public let stationaryMaximumMetersPerSecond: Double
     public let requiredSource: SpeedTelemetrySource?
     public let maximumSpeedAccuracyMetersPerSecond: Double?
+    public let maximumSampleIntervalNanoseconds: UInt64?
 
     public init(
         targetMetersPerSecond: Double,
         stationaryMaximumMetersPerSecond: Double = 0.5,
         requiredSource: SpeedTelemetrySource? = nil,
-        maximumSpeedAccuracyMetersPerSecond: Double? = nil
+        maximumSpeedAccuracyMetersPerSecond: Double? = nil,
+        maximumSampleIntervalNanoseconds: UInt64? = nil
     ) throws {
         guard targetMetersPerSecond.isFinite, targetMetersPerSecond > 0 else {
             throw AccelerationRunPolicyError.invalidTargetSpeed
@@ -32,11 +35,17 @@ public struct AccelerationRunPolicy: Equatable, Sendable {
                 throw AccelerationRunPolicyError.invalidMaximumSpeedAccuracy
             }
         }
+        if let maximumSampleIntervalNanoseconds {
+            guard maximumSampleIntervalNanoseconds > 0 else {
+                throw AccelerationRunPolicyError.invalidMaximumSampleInterval
+            }
+        }
 
         self.targetMetersPerSecond = targetMetersPerSecond
         self.stationaryMaximumMetersPerSecond = stationaryMaximumMetersPerSecond
         self.requiredSource = requiredSource
         self.maximumSpeedAccuracyMetersPerSecond = maximumSpeedAccuracyMetersPerSecond
+        self.maximumSampleIntervalNanoseconds = maximumSampleIntervalNanoseconds
     }
 }
 
@@ -81,6 +90,7 @@ public enum AccelerationRunInterruption: Equatable, Sendable {
 public enum AccelerationRunInvalidationReason: Equatable, Sendable {
     case rollingStart
     case nonMonotonicMeasurement
+    case measurementGapExceeded
     case measurementSourceChanged
     case returnedToStationary
     case interruption(AccelerationRunInterruption)
@@ -157,10 +167,16 @@ public struct AccelerationRunEvaluator: Sendable {
             lockedSource = sample.source
         }
 
-        if let lastAcceptedUptimeNanoseconds,
-           sample.receivedAtUptimeNanoseconds <= lastAcceptedUptimeNanoseconds {
-            invalidate(.nonMonotonicMeasurement)
-            return
+        if let lastAcceptedUptimeNanoseconds {
+            guard sample.receivedAtUptimeNanoseconds > lastAcceptedUptimeNanoseconds else {
+                invalidate(.nonMonotonicMeasurement)
+                return
+            }
+            if let maximumSampleIntervalNanoseconds = policy.maximumSampleIntervalNanoseconds,
+               sample.receivedAtUptimeNanoseconds - lastAcceptedUptimeNanoseconds > maximumSampleIntervalNanoseconds {
+                invalidate(.measurementGapExceeded)
+                return
+            }
         }
         self.lastAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
