@@ -5,6 +5,7 @@ public enum AccelerationRunPolicyError: Error, Equatable, Sendable {
     case invalidStationaryThreshold
     case invalidMaximumSpeedAccuracy
     case invalidMaximumSampleInterval
+    case invalidRequiredSource
 }
 
 public struct AccelerationRunPolicy: Equatable, Sendable {
@@ -28,6 +29,9 @@ public struct AccelerationRunPolicy: Equatable, Sendable {
               stationaryMaximumMetersPerSecond >= 0,
               stationaryMaximumMetersPerSecond < targetMetersPerSecond else {
             throw AccelerationRunPolicyError.invalidStationaryThreshold
+        }
+        if requiredSource == .motionAssist {
+            throw AccelerationRunPolicyError.invalidRequiredSource
         }
         if let maximumSpeedAccuracyMetersPerSecond {
             guard maximumSpeedAccuracyMetersPerSecond.isFinite,
