@@ -14,7 +14,8 @@ Learned range state needs to survive app launches without allowing old, shape-co
 
 1. explicit schema versioning for future migrations;
 2. cumulative cross-field bounds that must be true for any state produced by the public ingest path;
-3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set.
+3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set;
+4. rejection of a restored exhausted accepted-window counter before a future accepted ingest can overflow it.
 
 Higher layers should persist and restore the envelope instead of relying on unversioned raw model JSON as a durable storage contract.
 
@@ -24,6 +25,7 @@ The envelope rejects state when:
 
 - cumulative historical battery consumption is non-finite or negative;
 - learned state lacks accepted windows/history;
+- the accepted-window counter is already `Int.max`, because the next accepted learning window would overflow the live model counter;
 - retained recent samples outnumber accepted windows;
 - historical consumption exceeds `acceptedWindowCount × 100`, which is impossible when every normalized SoC anchor is constrained to `0...100`;
 - retained recent sample consumption exceeds cumulative accepted historical consumption;
