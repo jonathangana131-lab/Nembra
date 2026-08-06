@@ -156,7 +156,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler.transportGapOccurred == false)
     }
 
-    @Test("in-span measured recovery rebases even when it remains below the original anchor")
+    @Test("in-span measured recovery rebases and becomes the next clean anchor")
     func inSpanRecoveryRebases() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 1_000)
@@ -176,6 +176,17 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(assembler.accumulatedDistanceMeters == 0)
         #expect(assembler.distanceCoverage == .complete)
         #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 1_000, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(76, uptime: 4), policy: p)
+        let clean = try #require(cleanCandidate)
+
+        #expect(clean.startSOC.percentage == 79)
+        #expect(clean.startSOC.receivedAtUptimeNanoseconds == 3)
+        #expect(clean.endSOC.percentage == 76)
+        #expect(clean.distanceMeters == 1_000)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
     }
 
     @Test("estimated readings inside a span do not advance or erase measured evidence")
