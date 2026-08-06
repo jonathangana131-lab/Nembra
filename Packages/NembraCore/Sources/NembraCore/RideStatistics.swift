@@ -170,11 +170,16 @@ public enum RideStatisticsAggregator {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> RideStatisticsSummary {
-        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite,
+              isRepresentable(referenceDate, in: calendar) else {
             throw RideStatisticsError.invalidReferenceDate
         }
 
         let uniqueRides = try deduplicated(rides)
+        guard uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+            throw RideStatisticsError.invalidRide
+        }
+
         let periodRides = try uniqueRides.filter { ride in
             try contains(
                 ride.attributedDate,
@@ -308,6 +313,16 @@ public enum RideStatisticsAggregator {
             }
             return lhs.sessionID.uuidString < rhs.sessionID.uuidString
         }
+    }
+
+    private static func isRepresentable(
+        _ date: Date,
+        in calendar: Calendar
+    ) -> Bool {
+        guard let dayInterval = calendar.dateInterval(of: .day, for: date) else {
+            return false
+        }
+        return dayInterval.contains(date)
     }
 
     private static func contains(
