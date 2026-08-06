@@ -199,6 +199,87 @@ struct RideStatisticsTests {
         #expect(summary.longestRideSessionID == longestID)
     }
 
+    @Test("no trustworthy mileage remains unavailable instead of becoming fake zero")
+    func unavailableDistanceStaysNil() throws {
+        let calendar = calendar()
+        let reference = date(2026, 8, 6, calendar: calendar)
+        let rides = [
+            try ride(
+                reference,
+                distance: 2_000,
+                disposition: .excludedIncompleteCoverage
+            ),
+            try ride(
+                reference,
+                distance: nil,
+                disposition: .excludedInsufficientEvidence
+            )
+        ]
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: rides,
+            referenceDate: reference,
+            calendar: calendar
+        )
+        #expect(summary.rideCount == 2)
+        #expect(summary.trustworthyDistanceRideCount == 0)
+        #expect(summary.excludedDistanceRideCount == 2)
+        #expect(summary.totalDistanceMeters == nil)
+        #expect(summary.longestRideDistanceMeters == nil)
+    }
+
+    @Test("a trustworthy zero-distance ride remains a real zero rather than unavailable")
+    func trustworthyZeroRemainsZero() throws {
+        let calendar = calendar()
+        let reference = date(2026, 8, 6, calendar: calendar)
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: [try ride(reference, distance: 0)],
+            referenceDate: reference,
+            calendar: calendar
+        )
+        #expect(summary.trustworthyDistanceRideCount == 1)
+        #expect(summary.totalDistanceMeters == 0)
+        #expect(summary.longestRideDistanceMeters == 0)
+    }
+
+    @Test("equivalent duplicate sessions are idempotent")
+    func equivalentDuplicateSessionsAreIdempotent() throws {
+        let calendar = calendar()
+        let reference = date(2026, 8, 6, calendar: calendar)
+        let id = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let record = try ride(reference, id: id, distance: 1_500)
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .today,
+            rides: [record, record],
+            referenceDate: reference,
+            calendar: calendar
+        )
+        #expect(summary.rideCount == 1)
+        #expect(summary.trustworthyDistanceRideCount == 1)
+        #expect(summary.totalDistanceMeters == 1_500)
+    }
+
+    @Test("conflicting duplicate session evidence fails closed")
+    func conflictingDuplicateSessionFails() throws {
+        let calendar = calendar()
+        let reference = date(2026, 8, 6, calendar: calendar)
+        let id = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let first = try ride(reference, id: id, distance: 1_500)
+        let conflicting = try ride(reference, id: id, distance: 2_000)
+
+        #expect(throws: RideStatisticsError.sessionConflict(id)) {
+            _ = try RideStatisticsAggregator.summarize(
+                period: .today,
+                rides: [first, conflicting],
+                referenceDate: reference,
+                calendar: calendar
+            )
+        }
+    }
+
     @Test("calendar periods use caller-defined week and timezone semantics")
     func periodWindows() throws {
         let calendar = calendar()
@@ -310,7 +391,21 @@ struct RideStatisticsTests {
         }
     }
 
-    @Test("empty periods stay empty instead of manufacturing zero-distance rides")
+    @Test("invalid reference date fails before aggregation")
+    func invalidReferenceDate() throws {
+        let calendar = calendar()
+        let invalidDate = Date(timeIntervalSinceReferenceDate: .infinity)
+        #expect(throws: RideStatisticsError.invalidReferenceDate) {
+            _ = try RideStatisticsAggregator.summarize(
+                period: .today,
+                rides: [],
+                referenceDate: invalidDate,
+                calendar: calendar
+            )
+        }
+    }
+
+    @Test("empty periods stay unavailable instead of manufacturing zero-distance evidence")
     func emptyPeriod() throws {
         let calendar = calendar()
         let summary = try RideStatisticsAggregator.summarize(
@@ -323,7 +418,7 @@ struct RideStatisticsTests {
         #expect(summary.ridingDayCount == 0)
         #expect(summary.trustworthyDistanceRideCount == 0)
         #expect(summary.excludedDistanceRideCount == 0)
-        #expect(summary.totalDistanceMeters == 0)
+        #expect(summary.totalDistanceMeters == nil)
         #expect(summary.longestRideDistanceMeters == nil)
         #expect(summary.longestRideSessionID == nil)
         #expect(summary.longestRidingDayStreakDays == 0)
