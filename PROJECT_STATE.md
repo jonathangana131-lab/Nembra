@@ -43,16 +43,16 @@ Already pushed on `feature/speed-instrumentation-v2`:
 - Animation duration derives from observed packet cadence and is bounded 50–300 ms; this is a presentation heuristic, not a claim about MAXSHOT notification rate.
 - `RollingSpeedValueView` uses the existing fixed-slot `RollingNumberModel`; it is presentation-only.
 - App tests now cover fallback confirmed state, authoritative interpolation, stale/estimated rejection, and long-gap duration bounding.
+- Xcode project wiring for both Phase 10 Dashboard source files is committed at `64b9dc8e351f804c4d613d41f1e6b6e2142d810f` and passed repository PBX reference validation.
 
 ## Phase 10 next quality gates
-1. Wire `SpeedInstrumentModel.swift` and `RollingSpeedValueView.swift` into the real Nembra app target.
-2. Run Xcode 27 app/unit/UI tests before changing the visible cockpit.
-3. Replace only the Dashboard center speed digits with a narrow local render loop; do not make the whole Dashboard redraw at display cadence.
-4. Subscribe once to raw speed evidence and keep the render model local to the speed instrument.
-5. Keep moving-state safety, ride detection, trip persistence, and stats driven by confirmed/raw evidence—not interpolated frames.
-6. Run landscape Simulator QA and inspect riding/stopped frames for visual jitter, clipping, digit width changes, and unit alignment.
-7. Add/adjust interaction or instrumentation tests if screenshot/runtime evidence exposes defects.
-8. Merge Phase 10 only after Mac gate + visual review are green, then continue immediately into mode-responsive Dashboard / ride-engine app wiring.
+1. Run Xcode 27 app/unit/UI tests against the wired presentation model before changing the visible cockpit.
+2. Replace only the Dashboard center speed digits with a narrow local render loop; do not make the whole Dashboard redraw at display cadence.
+3. Subscribe once to raw speed evidence and keep the render model local to the speed instrument.
+4. Keep moving-state safety, ride detection, trip persistence, and stats driven by confirmed/raw evidence—not interpolated frames.
+5. Run landscape Simulator QA and inspect riding/stopped frames for visual jitter, clipping, digit width changes, and unit alignment.
+6. Add/adjust interaction or instrumentation tests if screenshot/runtime evidence exposes defects.
+7. Merge Phase 10 only after Mac gate + visual review are green, then continue immediately into mode-responsive Dashboard / ride-engine app wiring.
 
 ## Real Xcode / Simulator proof
 GitHub-hosted `xcode-27` is the remote Mac gate.
