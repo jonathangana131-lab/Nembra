@@ -1,0 +1,151 @@
+import Foundation
+import Testing
+@testable import NembraCore
+
+@Suite("Passive Bluetooth protocol capture")
+struct PassiveBluetoothCaptureTests {
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
+    @Test("raw advertisement bytes and unknown identifiers survive capture unchanged")
+    func preservesRawAdvertisementEvidence() throws {
+        let advertisement = try PassiveBluetoothAdvertisementObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            localName: "Observed Name",
+            rssi: -58,
+            isConnectable: true,
+            manufacturerData: Data([0x12, 0x34, 0xAB, 0xCD]),
+            serviceUUIDs: ["FD50", "12345678-1234-5678-1234-567812345678"],
+            serviceData: ["FD50": Data([0xAA, 0x55])]
+        )
+
+        var session = try PassiveBluetoothCaptureSession(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000080")!,
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        try session.append(
+            .advertisement(advertisement),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 10,
+            receivedAtDate: Date(timeIntervalSince1970: 1_001)
+        )
+
+        #expect(session.records.count == 1)
+        guard case let .advertisement(captured) = session.records[0].event else {
+            Issue.record("Expected advertisement event")
+            return
+        }
+        #expect(captured.manufacturerData == Data([0x12, 0x34, 0xAB, 0xCD]))
+        #expect(captured.serviceUUIDs == ["FD50", "12345678-1234-5678-1234-567812345678"])
+        #expect(captured.serviceData["FD50"] == Data([0xAA, 0x55]))
+    }
+
+    @Test("captured value origins contain no motorized write action")
+    func valueOriginsAreNonMutating() {
+        #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .readResponse])
+    }
+
+    @Test("session rejects sequence regression")
+    func rejectsSequenceRegression() throws {
+        let interruption = try PassiveBluetoothCaptureInterruption(reason: "observer restart")
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: .now)
+        try session.append(
+            .interruption(interruption),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 20,
+            receivedAtDate: .now
+        )
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.nonMonotonicSequence) {
+            try session.append(
+                .interruption(interruption),
+                sequenceNumber: 2,
+                receivedAtUptimeNanoseconds: 21,
+                receivedAtDate: .now
+            )
+        }
+    }
+
+    @Test("session rejects uptime regression even when wall clock moves forward")
+    func rejectsUptimeRegression() throws {
+        let interruption = try PassiveBluetoothCaptureInterruption(reason: "Bluetooth transition")
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 100))
+        try session.append(
+            .interruption(interruption),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 100,
+            receivedAtDate: Date(timeIntervalSince1970: 101)
+        )
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.nonMonotonicReceiptTime) {
+            try session.append(
+                .interruption(interruption),
+                sequenceNumber: 2,
+                receivedAtUptimeNanoseconds: 99,
+                receivedAtDate: Date(timeIntervalSince1970: 999)
+            )
+        }
+    }
+
+    @Test("stock app markers remain correlation evidence rather than decoded protocol claims")
+    func recordsStockAppCorrelationMarker() throws {
+        let marker = try PassiveBluetoothStockAppObservation(
+            field: "Battery",
+            displayedValue: "73%",
+            note: "Observed in stock Tuya UI during capture"
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: .now)
+        try session.append(
+            .stockAppState(marker),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+
+        guard case let .stockAppState(captured) = session.records[0].event else {
+            Issue.record("Expected stock-app marker")
+            return
+        }
+        #expect(captured.field == "Battery")
+        #expect(captured.displayedValue == "73%")
+    }
+
+    @Test("JSON export round trips raw bytes, identity, and continuity markers")
+    func jsonRoundTrip() throws {
+        let value = try PassiveBluetoothValueObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "00000001-0000-0000-0000-000000000000",
+            origin: .notification,
+            payload: Data([0x55, 0xAA, 0x01, 0x7F])
+        )
+        let gap = try PassiveBluetoothCaptureInterruption(reason: "disconnect")
+        var session = try PassiveBluetoothCaptureSession(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000081")!,
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        try session.append(.value(value), sequenceNumber: 1, receivedAtUptimeNanoseconds: 10, receivedAtDate: Date(timeIntervalSince1970: 1_001))
+        try session.append(.interruption(gap), sequenceNumber: 2, receivedAtUptimeNanoseconds: 11, receivedAtDate: Date(timeIntervalSince1970: 1_002))
+
+        let data = try PassiveBluetoothCaptureJSON.encode(session)
+        let decoded = try PassiveBluetoothCaptureJSON.decode(data)
+        #expect(decoded == session)
+    }
+
+    @Test("invalid blank identifiers fail closed instead of creating plausible evidence")
+    func rejectsBlankIdentifiers() {
+        #expect(throws: PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier) {
+            _ = try PassiveBluetoothServiceObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                serviceUUID: "   ",
+                isPrimary: true
+            )
+        }
+    }
+}
