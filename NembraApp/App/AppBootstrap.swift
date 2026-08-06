@@ -53,11 +53,14 @@ final class AppRuntime {
                   let speed = snapshot.speedKilometersPerHour,
                   speed > 0 else { return }
 
-            // Emits one fresh authoritative QA packet without adding distance.
-            // This is explicit Simulator plumbing, never production telemetry.
+            // Normal riding QA emits one fresh authoritative packet without
+            // adding distance. The opt-in completed-history fixture also adds a
+            // small explicit ODO/trip delta so the real persisted UI can prove
+            // distance evidence without inventing a database row. Simulated
+            // elapsed distance never becomes packet-arrival cadence.
             await simulatorService.simulateRide(
                 speedKilometersPerHour: speed,
-                elapsedSeconds: 0
+                elapsedSeconds: simulatorAutoCompletesRide ? 60 : 0
             )
 
             guard simulatorAutoCompletesRide else { return }

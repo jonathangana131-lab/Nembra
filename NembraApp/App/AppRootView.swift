@@ -173,7 +173,7 @@ private struct RideHistoryView: View {
                     .accessibilityIdentifier("rides.completed-row")
                 }
             } footer: {
-                Text("Distance sources remain evidence until their coverage can be reconciled. A row never turns one partial source into a final ride total.")
+                Text("Distance sources stay separate until their coverage can be reconciled. A row never turns unreconciled evidence into a final ride total.")
             }
         }
         .accessibilityIdentifier("rides.history")
@@ -203,17 +203,43 @@ private struct RideHistoryRowView: View {
             Spacer(minLength: 12)
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(primaryEvidenceValue)
-                    .font(.headline.monospacedDigit())
-                Text(primaryEvidenceLabel)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+                if let odometerDeltaKilometers {
+                    evidenceLine(
+                        label: "ODO",
+                        value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
+                    )
+                }
+
+                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                    evidenceLine(
+                        label: "GPS",
+                        value: VehicleDisplayFormatting.distance(
+                            kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+                        )
+                    )
+                }
+
+                if !hasDistanceEvidence {
+                    Text("Distance —")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Completed ride")
-        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(primaryEvidenceLabel), \(primaryEvidenceValue), \(continuityLabel)")
+        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue), \(continuityLabel)")
+    }
+
+    private func evidenceLine(label: String, value: String) -> some View {
+        HStack(spacing: 5) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+        }
     }
 
     private var continuityLabel: String {
@@ -222,26 +248,23 @@ private struct RideHistoryRowView: View {
             : "Completed ride"
     }
 
-    private var primaryEvidenceValue: String {
-        if let odometerDeltaKilometers {
-            return VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
-        }
-        if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-            return VehicleDisplayFormatting.distance(
-                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-            )
-        }
-        return "—"
+    private var hasDistanceEvidence: Bool {
+        odometerDeltaKilometers != nil || record.evidence.qualityScreenedGPSDistanceMeters > 0
     }
 
-    private var primaryEvidenceLabel: String {
-        if odometerDeltaKilometers != nil {
-            return "ODO delta"
+    private var distanceEvidenceAccessibilityValue: String {
+        var parts: [String] = []
+        if let odometerDeltaKilometers {
+            parts.append(
+                "ODO evidence \(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))"
+            )
         }
         if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-            return "GPS evidence"
+            parts.append(
+                "GPS distance evidence \(VehicleDisplayFormatting.distance(kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000))"
+            )
         }
-        return "Distance unavailable"
+        return parts.isEmpty ? "distance evidence unavailable" : parts.joined(separator: ", ")
     }
 
     private var odometerDeltaKilometers: Double? {
@@ -285,7 +308,7 @@ private struct RideHistoryDetailView: View {
                 }
 
                 if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-                    LabeledContent("GPS route evidence") {
+                    LabeledContent("GPS distance evidence") {
                         Text(
                             VehicleDisplayFormatting.distance(
                                 kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
