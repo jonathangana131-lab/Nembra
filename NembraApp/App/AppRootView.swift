@@ -460,7 +460,6 @@ private struct RideRouteMapView: View {
                 }
             }
         }
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Recorded ride route")
         .accessibilityValue(routeAccessibilityValue)
     }
