@@ -366,8 +366,11 @@ enum AppBootstrap {
             rideLocationCaptureCoordinator = nil
         }
 
-        let rideRouteDraftFinalizer = persistence.map {
-            RideRouteDraftFinalizer(routeStore: $0.routeStore)
+        let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
+        if let routeStore = persistence?.routeStore {
+            rideRouteDraftFinalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+        } else {
+            rideRouteDraftFinalizer = nil
         }
 
         return AppRuntime(
