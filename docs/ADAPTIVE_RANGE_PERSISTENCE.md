@@ -4,7 +4,7 @@ This document describes the software-only persistence envelope for Nembra's lear
 
 ## Dependency
 
-This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, estimator policy, and range-estimate outputs. This slice does not duplicate or replace that logic.
+This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, estimator policy, and range-estimate outputs. The parent also fails closed during live ingest if its accepted-window counter is exhausted. This slice does not duplicate or replace that logic.
 
 ## Why the envelope exists
 
@@ -15,7 +15,7 @@ Learned range state needs to survive app launches without allowing old, shape-co
 1. explicit schema versioning for future migrations;
 2. cumulative cross-field bounds that must be true for any state produced by the public ingest path;
 3. complete-history reconstruction checks when every accepted sample is still present in the retained recent window set;
-4. rejection of a restored exhausted accepted-window counter before a future accepted ingest can overflow it.
+4. rejection of a restored exhausted accepted-window counter so persisted learning never resumes in a terminal state that cannot accept additional valid history.
 
 Higher layers should persist and restore the envelope instead of relying on unversioned raw model JSON as a durable storage contract.
 
@@ -25,7 +25,7 @@ The envelope rejects state when:
 
 - cumulative historical battery consumption is non-finite or negative;
 - learned state lacks accepted windows/history;
-- the accepted-window counter is already `Int.max`, because the next accepted learning window would overflow the live model counter;
+- the accepted-window counter is already `Int.max`; the parent live model safely rejects another accepted ingest at that point, while the persistence envelope is stricter and refuses to restore a permanently non-extendable learning state;
 - retained recent samples outnumber accepted windows;
 - historical consumption exceeds `acceptedWindowCount × 100`, which is impossible when every normalized SoC anchor is constrained to `0...100`;
 - retained recent sample consumption exceeds cumulative accepted historical consumption;
@@ -39,11 +39,11 @@ These checks intentionally avoid policy-specific assumptions such as minimum lea
 
 ## Physical scooter scoping
 
-The envelope deliberately does not invent a physical-scooter identifier. Nembra's current generic vehicle domain has model/profile identity, but the project has not yet established which ES80 identity is stable and appropriate for durable per-scooter learning storage.
+The envelope deliberately does not invent a device-specific identifier. Nembra's current generic vehicle domain has model/profile identity, but the project has not yet established which ES80 identity is stable and appropriate for durable per-scooter learning storage.
 
-That uncertainty is **not permission to wait for user-supplied hardware evidence before researching it**. Follow the repository's public-first ES80 protocol policy: exhaust reasonable official/public evidence, cross-correlate likely module/protocol identity sources, and preserve the distinction between `VERIFIED PUBLIC`, `CORROBORATED / PROBABLE`, `GENERIC TUYA / FAMILY FACT`, and `UNKNOWN / PHYSICAL VERIFICATION REQUIRED`. Public evidence may narrow or establish the storage-key architecture without being mislabeled as physical-scooter validation.
+That uncertainty is **not permission to wait for user-supplied hardware evidence before researching it**. Follow the repository's public-first ES80 protocol policy: exhaust reasonable official/public evidence, cross-correlate likely module/protocol identity sources, and preserve the distinction between `VERIFIED PUBLIC`, `CORROBORATED / PROBABLE`, `GENERIC TUYA / FAMILY FACT`, and `UNKNOWN / PHYSICAL VERIFICATION REQUIRED`. Public evidence may narrow or establish the storage-key architecture without being mislabeled as device validation.
 
-When application persistence wiring is added, each envelope must be scoped to the actual physical scooter using a legitimate stable identity source whose evidence class is recorded. If public evidence is enough to define a safe candidate identity mechanism, implement/test that mechanism while retaining the appropriate confidence classification; use a real ES80 capture only for the remaining device-specific or final verification step. Until identity semantics are sufficiently established, learned history must not be silently shared between different scooters merely because they use the same `VehicleProfile`.
+When application persistence wiring is added, each envelope must be scoped to one scooter using a legitimate stable identity source whose evidence class is recorded. If public evidence is enough to define a safe candidate identity mechanism, implement/test that mechanism while retaining the appropriate confidence classification; use an ES80 capture only for the remaining device-specific or final verification step. Until identity semantics are sufficiently established, learned history must not be silently shared between different scooters merely because they use the same `VehicleProfile`.
 
 Simulation/test identities remain simulation/test evidence and must not be promoted into a claim about real ES80 identity semantics.
 
@@ -59,7 +59,7 @@ This layer validates software persistence integrity only. It does **not** prove 
 - one-percent SoC resolution;
 - battery update cadence or latency;
 - voltage or charging-state availability;
-- stable physical-scooter identity semantics;
+- stable per-device identity semantics;
 - battery chemistry, sag, reserve, or cutoff behavior;
 - physical-scooter range accuracy.
 
