@@ -107,6 +107,13 @@ struct HomeView: View {
 
     private var statusPanel: some View {
         VStack(alignment: .leading, spacing: NembraMetrics.group) {
+            if vehicle.state.connection != .connected && hasRetainedSummaryData {
+                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+            }
+
             HStack(alignment: .center, spacing: NembraMetrics.control) {
                 Label("Battery", systemImage: batteryIcon)
                     .font(.subheadline.weight(.semibold))
@@ -114,12 +121,7 @@ struct HomeView: View {
 
                 Spacer(minLength: 8)
 
-                if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                    Label("Last known", systemImage: "clock.arrow.circlepath")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHint("This battery value may be stale until the scooter reconnects.")
-                } else if isBatteryLow {
+                if vehicle.state.connection == .connected && isBatteryLow {
                     Label("Low battery", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(batteryValueStyle)
