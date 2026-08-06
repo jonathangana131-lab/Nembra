@@ -436,6 +436,10 @@ struct DashboardView: View {
     }
 
     private var batteryReadoutAccessibilityHint: String {
+        guard batteryReadoutPresentation.batteryFillPercent != nil else {
+            return "Battery data unavailable."
+        }
+
         switch batteryReadoutMode {
         case .percentage:
             return "Double tap to show estimated remaining range."
