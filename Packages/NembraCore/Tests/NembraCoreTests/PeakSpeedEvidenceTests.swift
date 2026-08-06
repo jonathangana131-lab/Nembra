@@ -146,6 +146,44 @@ struct PeakSpeedEvidenceTests {
         #expect(evidence.continuity == .partialAcceptedObservations)
     }
 
+    @Test("quality-rejected selected-source observations still advance ordering evidence")
+    func rejectedQualityObservationStillPreventsOlderSampleFromBecomingFresh() throws {
+        var accumulator = PeakSpeedEvidenceAccumulator(
+            policy: try PeakSpeedPolicy(
+                source: .gps,
+                maximumSpeedAccuracyMetersPerSecond: 1
+            )
+        )
+        accumulator.record(try sample(
+            source: .gps,
+            metersPerSecond: 4,
+            uptime: 100,
+            accuracy: 0.4
+        ))
+        #expect(
+            accumulator.record(try sample(
+                source: .gps,
+                metersPerSecond: 20,
+                uptime: 300,
+                accuracy: 2
+            )) == .rejected(.speedAccuracyExceeded(maximum: 1, actual: 2))
+        )
+        #expect(
+            accumulator.record(try sample(
+                source: .gps,
+                metersPerSecond: 10,
+                uptime: 200,
+                accuracy: 0.4
+            )) == .rejected(.nonIncreasingTimestamp)
+        )
+
+        let evidence = try #require(accumulator.evidence)
+        #expect(evidence.peak.metersPerSecond == 4)
+        #expect(evidence.acceptedSampleCount == 1)
+        #expect(evidence.qualityRejectedSampleCount == 2)
+        #expect(evidence.continuity == .partialAcceptedObservations)
+    }
+
     @Test("non-increasing selected-source timestamps are rejected transactionally")
     func staleTimestampRejectedWithoutAdvancingAnchor() throws {
         var accumulator = PeakSpeedEvidenceAccumulator(
