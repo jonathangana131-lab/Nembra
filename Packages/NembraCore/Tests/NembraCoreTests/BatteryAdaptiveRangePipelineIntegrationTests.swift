@@ -46,17 +46,11 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy()
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 1),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 1), policy: p)
         try pipeline.recordDistance(deltaMeters: 100, coverage: .partial)
         try pipeline.recordDistance(deltaMeters: 200, coverage: .unknown)
 
-        let result = try pipeline.acceptBatteryObservation(
-            observation(77, uptime: 2),
-            policy: p
-        )
+        let result = try pipeline.acceptBatteryObservation(observation(77, uptime: 2), policy: p)
         let window = try #require(result.learningWindow)
 
         #expect(window.distanceMeters == 300)
@@ -70,10 +64,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy()
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 10),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 10), policy: p)
         try pipeline.recordDistance(deltaMeters: 125, coverage: .partial)
 
         #expect(throws: BatteryRangeWindowAssemblyError.invalidDistanceDelta) {
@@ -91,16 +82,10 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 10),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 10), policy: p)
         try pipeline.recordDistance(deltaMeters: 250, coverage: .partial)
         pipeline.recordTransportGap()
-        _ = try pipeline.acceptBatteryObservation(
-            observation(79, uptime: 11),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(79, uptime: 11), policy: p)
 
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 79)
@@ -121,10 +106,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy()
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 100),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 100), policy: p)
         try pipeline.recordDistance(deltaMeters: 500)
         pipeline.markUnobservedInterval()
 
@@ -144,10 +126,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
         try pipeline.recordDistance(deltaMeters: 300)
-        let endResult = try pipeline.acceptBatteryObservation(
-            observation(56, uptime: 2),
-            policy: p
-        )
+        let endResult = try pipeline.acceptBatteryObservation(observation(56, uptime: 2), policy: p)
         let window = try #require(endResult.learningWindow)
         #expect(window.startSOC.percentage == 59)
         #expect(window.endSOC.percentage == 56)
@@ -159,10 +138,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy()
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 100),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 100), policy: p)
         try pipeline.recordDistance(deltaMeters: 500)
         pipeline.markUnobservedInterval()
 
@@ -179,20 +155,14 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         try pipeline.recordDistance(deltaMeters: 400)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 400)
 
-        let anchorResult = try pipeline.acceptBatteryObservation(
-            observation(59, uptime: 2),
-            policy: p
-        )
+        let anchorResult = try pipeline.acceptBatteryObservation(observation(59, uptime: 2), policy: p)
         #expect(anchorResult.learningWindow == nil)
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 59)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
         try pipeline.recordDistance(deltaMeters: 300)
-        let endResult = try pipeline.acceptBatteryObservation(
-            observation(56, uptime: 3),
-            policy: p
-        )
+        let endResult = try pipeline.acceptBatteryObservation(observation(56, uptime: 3), policy: p)
         let window = try #require(endResult.learningWindow)
 
         #expect(window.startSOC.percentage == 59)
@@ -205,10 +175,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 100),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 100), policy: p)
         try pipeline.recordDistance(deltaMeters: 200, coverage: .partial)
         pipeline.recordTransportGap()
 
@@ -231,31 +198,48 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(pipeline.windowAssembler.transportGapOccurred == false)
     }
 
+    @Test("current policy is evaluated live instead of being frozen at the span anchor")
+    func currentPolicyAppliesAtEachSOCEvaluation() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let strict = try policy(minimumConsumedPercentagePoints: 5, minimumDistanceMeters: 1_000)
+        let loosened = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 500)
+
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 1), policy: strict)
+        try pipeline.recordDistance(deltaMeters: 500)
+
+        let strictResult = try pipeline.acceptBatteryObservation(observation(77, uptime: 2), policy: strict)
+        #expect(strictResult.learningWindow == nil)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 500)
+
+        let loosenedResult = try pipeline.acceptBatteryObservation(observation(77, uptime: 3), policy: loosened)
+        let window = try #require(loosenedResult.learningWindow)
+
+        #expect(window.startSOC.percentage == 80)
+        #expect(window.endSOC.percentage == 77)
+        #expect(window.distanceMeters == 500)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+    }
+
     @Test("in-span measured recovery rebases using latest authoritative SoC")
     func measuredRecoveryRebasesThroughPipeline() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 1_000)
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 1),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 1), policy: p)
         try pipeline.recordDistance(deltaMeters: 500)
 
-        let dropResult = try pipeline.acceptBatteryObservation(
-            observation(77, uptime: 2),
-            policy: p
-        )
+        let dropResult = try pipeline.acceptBatteryObservation(observation(77, uptime: 2), policy: p)
         #expect(dropResult.learningWindow == nil)
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 80)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 500)
 
         try pipeline.recordDistance(deltaMeters: 500)
-        let recoveryResult = try pipeline.acceptBatteryObservation(
-            observation(79, uptime: 3),
-            policy: p
-        )
+        let recoveryResult = try pipeline.acceptBatteryObservation(observation(79, uptime: 3), policy: p)
 
         #expect(recoveryResult.learningWindow == nil)
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 79)
@@ -263,10 +247,7 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
         try pipeline.recordDistance(deltaMeters: 1_000)
-        let cleanResult = try pipeline.acceptBatteryObservation(
-            observation(76, uptime: 4),
-            policy: p
-        )
+        let cleanResult = try pipeline.acceptBatteryObservation(observation(76, uptime: 4), policy: p)
         let cleanWindow = try #require(cleanResult.learningWindow)
 
         #expect(cleanWindow.startSOC.percentage == 79)
@@ -279,17 +260,10 @@ struct BatteryAdaptiveRangePipelineIntegrationTests {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy(minimumConsumedPercentagePoints: 10, minimumDistanceMeters: 1_000)
 
-        _ = try pipeline.acceptBatteryObservation(
-            observation(80, uptime: 1),
-            policy: p
-        )
+        _ = try pipeline.acceptBatteryObservation(observation(80, uptime: 1), policy: p)
         try pipeline.recordDistance(deltaMeters: 200)
 
-        let stock = try observation(
-            50,
-            role: .stockAppCorrelationAnchor,
-            uptime: 2
-        )
+        let stock = try observation(50, role: .stockAppCorrelationAnchor, uptime: 2)
         let result = try pipeline.acceptBatteryObservation(stock, policy: p)
 
         #expect(result.action == .ignore)
