@@ -8,14 +8,14 @@ public enum BatteryPrimaryReadoutMode: String, Codable, CaseIterable, Sendable {
 }
 
 public enum BatteryEstimatedRangeDisplay: Equatable, Sendable {
-    case valueMiles(Double)
+    case valueMeters(Double)
     case learning
     case unavailable
 }
 
 public enum BatteryPrimaryReadoutValue: Equatable, Sendable {
     case percentage(Int)
-    case estimatedRangeMiles(Double)
+    case estimatedRangeMeters(Double)
     case learningRange
     case unavailable
 }
@@ -24,8 +24,8 @@ public struct BatteryPrimaryReadoutInputs: Equatable, Sendable {
     /// Display-layer SoC only. This value is never promoted to measured/raw telemetry by this type.
     public var displaySOCPercent: Int?
 
-    /// A range result produced elsewhere by the authoritative range domain.
-    /// This type never computes range from battery percentage.
+    /// A unit-neutral range result produced elsewhere by the authoritative range domain.
+    /// This type never computes range from battery percentage or chooses user-facing units.
     public var estimatedRange: BatteryEstimatedRangeDisplay
 
     public init(
@@ -85,11 +85,11 @@ public struct BatteryPrimaryReadoutState: Equatable, Codable, Sendable {
 
         case .estimatedRange:
             switch inputs.estimatedRange {
-            case let .valueMiles(miles) where miles.isFinite && miles >= 0:
-                primaryValue = .estimatedRangeMiles(miles)
+            case let .valueMeters(meters) where meters.isFinite && meters >= 0:
+                primaryValue = .estimatedRangeMeters(meters)
             case .learning:
                 primaryValue = .learningRange
-            case .valueMiles, .unavailable:
+            case .valueMeters, .unavailable:
                 primaryValue = .unavailable
             }
         }
