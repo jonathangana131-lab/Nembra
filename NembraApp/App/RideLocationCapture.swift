@@ -49,8 +49,8 @@ protocol RideLocationSource: Sendable {
 /// directly to route persistence and no GPS distance is injected by the fixture.
 ///
 /// Receipt uptime and wall-clock dates are sampled at actual delivery time. The
-/// small scripted path exists only to exercise software semantics and is not a
-/// claim about AOVOPRO ES80 motion, outdoor GPS quality, or production cadence.
+/// scripted path exists only to exercise software semantics and is not a claim
+/// about AOVOPRO ES80 motion, outdoor GPS quality, or production cadence.
 actor SimulatorRideLocationSource: RideLocationSource {
     private struct Coordinate: Sendable {
         let latitude: Double
@@ -63,15 +63,18 @@ actor SimulatorRideLocationSource: RideLocationSource {
     private var deliveryTask: Task<Void, Never>?
     private var activeGeneration: UUID?
 
+    /// The two approximately 45 m legs arrive two real seconds apart, keeping
+    /// implied speed below the injected Simulator QA ceiling while producing
+    /// enough screened distance to render visibly as roughly 0.1 mi in a US
+    /// locale. These values remain deterministic QA fixtures only.
     static func completedRideQA() -> SimulatorRideLocationSource {
         SimulatorRideLocationSource(
             coordinates: [
                 Coordinate(latitude: 37.334900, longitude: -122.009020),
-                Coordinate(latitude: 37.334927, longitude: -122.009020),
-                Coordinate(latitude: 37.334954, longitude: -122.009020),
-                Coordinate(latitude: 37.334981, longitude: -122.009020)
+                Coordinate(latitude: 37.335305, longitude: -122.009020),
+                Coordinate(latitude: 37.335710, longitude: -122.009020)
             ],
-            intervalNanoseconds: 180_000_000
+            intervalNanoseconds: 2_000_000_000
         )
     }
 
@@ -523,5 +526,57 @@ actor RideLocationCaptureCoordinator {
         acceptedPointCount = 0
         qualityScreenedDistanceMeters = 0
         routePersistenceFailed = false
+    }
+}
+
+/// Finalizes durable route chunks that survived a process stop after RideEngine
+/// wrote `completedPendingCommit` but before the ride-scoped recorder could
+/// commit its manifest.
+///
+/// Recovery is deliberately conservative: surviving chunks prove that Nembra
+/// recorded geometry, but a process boundary means full coverage can no longer
+/// be claimed. A recovered draft therefore receives `.partial` coverage. No
+/// coordinate is invented, reordered, joined across an unknown gap, or measured
+/// later to manufacture GPS ride distance.
+struct RideRouteDraftFinalizer: Sendable {
+    enum FinalizationError: Error, Equatable, Sendable {
+        case durableVerificationFailed(UUID)
+    }
+
+    private let routeStore: any RideRouteStore
+
+    init(routeStore: any RideRouteStore) {
+        self.routeStore = routeStore
+    }
+
+    @discardableResult
+    func finalizePartialDraftIfNeeded(sessionID: UUID) async throws -> RideRouteManifest? {
+        if let existing = try await routeStore.manifest(sessionID: sessionID) {
+            return existing
+        }
+
+        let chunks = try await routeStore.chunks(sessionID: sessionID)
+        guard !chunks.isEmpty else { return nil }
+
+        let segmentIndices = Set(chunks.map(\.id.segmentIndex)).sorted()
+        let pointCount = chunks.reduce(0) { $0 + $1.points.count }
+        let manifest = try RideRouteManifest(
+            sessionID: sessionID,
+            coverage: .partial,
+            segmentCount: segmentIndices.count,
+            pointCount: pointCount,
+            knownGapCount: max(0, segmentIndices.count - 1)
+        )
+
+        // Reuse the accepted geometry validator before making a recovered
+        // manifest durable. It rejects mismatched sessions, non-contiguous
+        // segments/chunks, bad sequence ordering, and count mismatches.
+        _ = try RideRouteGeometry(manifest: manifest, chunks: chunks)
+        _ = try await routeStore.commit(manifest)
+
+        guard try await routeStore.manifest(sessionID: sessionID) == manifest else {
+            throw FinalizationError.durableVerificationFailed(sessionID)
+        }
+        return manifest
     }
 }
