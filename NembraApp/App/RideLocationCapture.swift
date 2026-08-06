@@ -108,7 +108,7 @@ actor CoreLocationRideLocationSource: RideLocationSource {
             return RideLocationSourceEvent(
                 sample: nil,
                 issue: issue ?? .locationUnavailable,
-                isStationary: update.isStationary
+                isStationary: update.stationary
             )
         }
 
@@ -126,13 +126,13 @@ actor CoreLocationRideLocationSource: RideLocationSource {
             return RideLocationSourceEvent(
                 sample: sample,
                 issue: issue,
-                isStationary: update.isStationary
+                isStationary: update.stationary
             )
         } catch {
             return RideLocationSourceEvent(
                 sample: nil,
                 issue: .invalidLocation,
-                isStationary: update.isStationary
+                isStationary: update.stationary
             )
         }
     }
