@@ -4,33 +4,36 @@ Status: dependent software truth/integration layer. No physical AOVOPRO ES80 bat
 
 ## Purpose
 
-Nembra is deliberately separating three software responsibilities:
+Nembra deliberately separates three responsibilities:
 
 1. **battery evidence truth** — normalized SoC/voltage/current/power/charging values retain explicit role, continuity, and process-local ordering evidence;
 2. **adaptive range core** — learns percentage-based efficiency only from authoritative measured SoC plus trustworthy distance windows;
 3. **learning-window assembly** — accumulates caller-classified real-distance evidence between authoritative SoC anchors without choosing telemetry sources or inventing energy data.
 
-This worker owns the narrow seams between those responsibilities. Its code prevents a plausible battery number from becoming measured range evidence, preserves every known observation gap, validates battery-stream ordering, and applies accepted truth actions to the in-flight range-window assembler atomically.
+This worker owns only the seams between those domains: classify which battery observations are allowed into range learning, preserve every known observation gap, validate stream ordering, and apply accepted truth actions to the in-flight range-window assembler atomically.
 
-## Dependency lineage
+## Live dependency lineage
 
-The current synthetic review base composes exact dependent heads rather than copying or rewriting other workers' branches:
+The synthetic review base is rebuilt from active/frozen dependency artifacts rather than rewriting another worker's branch:
 
 - coordinator recovery PR #40 for the adaptive-range core;
 - battery-evidence-domain PR #34, including `BatteryEvidenceStreamValidator`;
-- adaptive-range-window-assembly PR #29.
+- active adaptive-range-window integration PR #54.
 
-The worker-owned delta remains only:
+PR #54 supersedes closed/unmerged draft #29 and carries the corrected latest-authoritative cursor semantics. Its assembler tracks both the span anchor and the latest authoritative SoC so recovery such as `80 → 77 → 79` rebases at `79` instead of hiding recovery inside a later consumption window.
 
-- `BatteryAdaptiveRangeEvidenceAdapter.swift`;
-- `BatteryAdaptiveRangeEvidenceAdapterTests.swift`;
+The worker-owned delta is:
+
+- `Packages/NembraCore/Sources/NembraCore/BatteryAdaptiveRangeEvidenceAdapter.swift`;
+- `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeEvidenceAdapterTests.swift`;
+- `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePipelineIntegrationTests.swift`;
 - this document.
 
-If any dependency moves or lands, this lane must reconcile to the accepted parent head before final QA and production retargeting.
+If a dependency moves or lands, this lane must reconcile to its accepted exact head before final QA and production retargeting.
 
 ## Value-authority rule
 
-Only an observation whose role is `verifiedVehicleMeasurement` and whose semantic field is `stateOfChargePercent` may become a `BatterySOCReading` for the adaptive-range domain.
+Only `verifiedVehicleMeasurement + stateOfChargePercent` may become a `BatterySOCReading` for adaptive range.
 
 The conversion preserves:
 
@@ -38,83 +41,61 @@ The conversion preserves:
 - `.authoritativeMeasurement` provenance;
 - process-local receipt uptime as the ordering timestamp.
 
-Wall-clock `Date` remains correlation metadata and is never substituted for monotonic ordering.
+Wall-clock `Date` remains correlation metadata and never substitutes for monotonic ordering.
 
-Continuous SoC values with these roles remain outside production learning:
+Continuous SoC with these roles remains outside production learning:
 
 - `stockAppCorrelationAnchor`;
 - `simulationFixture`;
 - `derivedEstimate`;
 - `presentationOnly`.
 
-A stock Tuya screen showing `73%` can be valuable physical/app correlation evidence without becoming decoded scooter SoC. Simulator success likewise never becomes physical ES80 efficiency history.
+A stock Tuya screen showing `73%` can be useful physical/app correlation evidence without becoming decoded scooter SoC. Simulator success likewise never becomes physical ES80 efficiency history.
 
 ## Continuity truth is independent of value authority
 
 An explicit `afterUnobservedInterval` marker means Nembra knows part of the battery-evidence stream was missed. That fact is independent of the attached value's role.
 
-Therefore **every explicit unobserved-interval boundary resets in-flight range learning**, including when the first post-gap observation is:
+Therefore **every explicit unobserved-interval boundary resets in-flight range learning**, including when the first post-gap observation is stock-app, simulated, derived, presentation-only, or verified voltage/current/power/charging evidence.
 
-- stock-app correlation evidence;
-- a Simulator fixture;
-- a derived estimate;
-- presentation-only state;
-- verified voltage/current/power/charging evidence.
+The reset does not promote the attached value. A later verified SoC enters only as fresh post-gap evidence.
 
-The reset does not promote the attached value. A later verified SoC may enter only as fresh post-gap evidence.
-
-This rule intentionally corrects the first bridge draft, which was too restrictive by resetting only for verified measurements. That could have allowed a later verified SoC to close a learning span across an interval already known to be unobserved when the first post-gap normalized field was non-authoritative.
+This intentionally corrects the first bridge draft, which reset only for verified measurements and could therefore have allowed a later verified SoC to close a span across an interval already known to be unobserved.
 
 ## Non-SoC electrical fields
 
 Verified voltage, current, power, or charging-state observations do not become percentage-based range samples.
 
-This layer performs no:
-
-- voltage→SoC conversion;
-- current integration;
-- power integration;
-- watt-hour calculation;
-- Wh/mi calculation;
-- battery-health inference.
-
-A future energy model may use physically verified electrical telemetry through a separate evidence-backed design.
+This layer performs no voltage→SoC conversion, current/power integration, watt-hour calculation, Wh/mi calculation, or battery-health inference. Any future energy model needs its own physically verified evidence contract.
 
 ## Truth actions
 
-`BatteryAdaptiveRangeEvidenceAdapter` emits an explicit `BatteryAdaptiveRangeEvidenceAction`:
+`BatteryAdaptiveRangeEvidenceAdapter` emits:
 
 - `ignore` — continuous observation has no production range-learning effect;
 - `resetContinuity` — discard the in-flight consumption span without promoting this value;
 - `ingestSOC` — continuous verified SoC may enter adaptive-range assembly;
 - `resetContinuityAndIngestSOC` — discard the old span first, then establish verified SoC as fresh evidence.
 
-The explicit action avoids a lossy `BatterySOCReading?` API where continuity could be accidentally dropped when the attached value itself was not learning-eligible.
+The explicit action avoids a lossy optional-reading API where continuity could disappear merely because the attached value itself was not learning-eligible.
 
 ## Stateful battery stream validation
 
-`BatteryAdaptiveRangeEvidenceBridge` wraps PR #34's `BatteryEvidenceStreamValidator` and should be used for ordered sequences.
+`BatteryAdaptiveRangeEvidenceBridge` wraps PR #34's `BatteryEvidenceStreamValidator`.
 
 It preserves the parent contract:
 
 - uptime is the process-local ordering authority;
-- equal uptimes are valid because one callback may produce several normalized battery fields;
+- equal uptimes are valid because one callback may produce multiple normalized battery fields;
 - backwards uptime inside one observed epoch fails closed;
 - `markUnobservedInterval()` requires the next observation to carry an explicit boundary;
-- an explicit post-gap boundary starts a fresh uptime epoch, including when its numeric uptime is lower after process/boot change.
+- an explicit post-gap boundary starts a fresh uptime epoch, including after process/boot changes.
 
-The bridge evaluates on a candidate validator and commits only after validation succeeds.
+The bridge validates on a candidate validator and commits only after acceptance succeeds.
 
 ## Atomic evidence → window pipeline
 
-`BatteryAdaptiveRangeLearningPipeline` combines the stateful evidence bridge with PR #29's `BatteryRangeLearningWindowAssembler` without modifying either dependency's files.
-
-The pipeline owns only ephemeral in-flight state:
-
-- `evidenceBridge`;
-- `windowAssembler`.
-
-### Observation application
+`BatteryAdaptiveRangeLearningPipeline` combines the evidence bridge with PR #54's `BatteryRangeLearningWindowAssembler` without modifying either dependency's files.
 
 For each battery observation the pipeline:
 
@@ -124,28 +105,38 @@ For each battery observation the pipeline:
 4. applies that action to the candidate assembler;
 5. commits **both** candidate states only after the entire transition succeeds.
 
-This protects the seam in both directions:
+This protects both directions of the seam:
 
 - a stream-order failure cannot mutate the assembler;
-- an assembler failure after stream acceptance cannot leave the evidence-stream baseline partially advanced.
+- an assembler failure after candidate stream acceptance cannot leave the stream baseline partially advanced.
 
-### Action mapping
+Action mapping is deliberately direct:
 
 - `ignore` → no assembler mutation;
 - `resetContinuity` → `windowAssembler.reset()`;
 - `ingestSOC(reading)` → assembler `ingestSOC` under the caller's active `AdaptiveBatteryRangePolicy`;
 - `resetContinuityAndIngestSOC(reading)` → reset first, then ingest the reading as the new clean anchor.
 
-The returned `BatteryAdaptiveRangePipelineResult` includes both the truth action and any assembled `BatteryRangeLearningWindow` candidate.
+The returned result contains the truth action plus any assembled `BatteryRangeLearningWindow` candidate.
+
+## Latest-authoritative recovery semantics
+
+PR #54 introduced a distinct `latestAuthoritativeSOC` cursor in addition to the span anchor. This pipeline deliberately exposes and preserves that behavior.
+
+Example:
+
+1. verified `80%` establishes the span anchor;
+2. verified `77%` advances the latest-authoritative cursor while the span remains below closure thresholds;
+3. verified `79%` is an increase relative to the latest `77%`, so the assembler rebases at `79%` and discards preceding distance;
+4. a later clean `79 → 76` span can form its own candidate.
+
+A continuous stock-app/Simulator/derived/presentation SoC never advances that authoritative cursor.
 
 ## Known missing evidence versus observed transport gap
 
-These remain distinct on purpose.
+These remain distinct.
 
-`markUnobservedInterval()` means battery evidence continuity itself is unknown. The pipeline immediately:
-
-- marks the evidence stream as requiring an explicit boundary;
-- resets the in-flight range-window assembler.
+`markUnobservedInterval()` means battery evidence continuity itself is unknown. The pipeline immediately marks the stream as requiring an explicit boundary and resets all in-flight assembler state, including anchor, latest-authoritative cursor, distance, coverage degradation, and observed-gap flag.
 
 `recordTransportGap()` means a scooter transport gap was observed inside an otherwise represented span. That flag remains attached to the eventual candidate so the adaptive model can reject it explicitly rather than silently deleting evidence.
 
@@ -153,34 +144,31 @@ The pipeline does not infer which case occurred; a higher layer must classify it
 
 ## Distance boundary
 
-`recordDistance(deltaMeters:coverage:)` delegates to PR #29's assembler. This layer does not:
+`recordDistance(deltaMeters:coverage:)` delegates to PR #54's assembler. This layer does not select odometer versus GPS, upgrade partial/unknown coverage to complete, reconstruct distance across missing intervals, or infer ride/session identity.
 
-- select odometer versus GPS;
-- upgrade partial/unknown coverage to complete;
-- reconstruct distance across missing intervals;
-- infer ride/session identity.
-
-Those classifications must already be truthful when distance reaches this pipeline.
+Distance coverage remains monotonic within a span: complete can degrade to partial or unknown and is preserved on the emitted candidate. Invalid/nonfinite/negative distance fails before state mutation.
 
 ## Software validation
 
-Focused worker coverage exercises:
+The main worker test file covers truth conversion, role exclusion, continuity resets, stream ordering, atomic validator/assembler failure, complete-window assembly, transport-gap preservation, and non-authoritative exclusion.
 
-- verified fractional SoC mapping/provenance;
-- non-verified continuous SoC exclusion;
-- explicit gap resets for every truth role;
-- non-SoC electrical exclusion;
-- stream boundary/uptime rules;
-- equal-uptime multi-field evidence;
-- atomic stream rejection;
-- complete verified SoC + distance window emission;
-- immediate discard of pre-gap anchor/distance;
-- continuous stock-app SoC leaving an authoritative span unchanged;
-- observed transport-gap preservation on emitted candidates;
-- atomic stream failure across the combined pipeline;
-- atomic assembler failure after candidate stream acceptance.
+A second integration suite now specifically exercises the live PR #54 seam:
 
-A disposable Swift 6.2.1 contract harness matching the dependent public APIs compiled the bridge and passed the focused bridge tests, then compiled the expanded pipeline and passed its focused end-to-end regressions. These supplemental checks are useful software evidence but do not replace final repository Xcode 27 QA on the reconciled exact head.
+- partial→unknown distance coverage propagation;
+- invalid distance atomicity;
+- `markUnobservedInterval()` clearing anchor, latest-authoritative cursor, distance, coverage, and observed-gap state;
+- direct verified first-post-gap SoC reset + re-anchor;
+- `80 → 77 → 79` measured recovery rebasing at the latest authoritative reading;
+- later clean `79 → 76` candidate formation;
+- continuous stock-app SoC unable to advance the latest-authoritative cursor.
+
+Supplemental Swift 6.2.1 contract checks performed in this runtime:
+
+- earlier bridge-focused harness: **10/10 passed**;
+- earlier evidence→window pipeline harness: **6/6 passed**;
+- latest PR #54 seam harness: **6/6 debug passed** and **6/6 release passed**.
+
+The first two attempts to run the latest seam harness hit syntax mistakes only in the intentionally compressed disposable harness (`=.complete`, `.5`, etc.); the committed GitHub files already used valid normal Swift syntax. After correcting the disposable copy, the suite compiled and passed in debug and release. These checks are supplemental software evidence, not repository-wide Xcode acceptance.
 
 ## Remaining merge boundary
 
@@ -188,12 +176,14 @@ This PR is a dependent integration lane, not an independently mergeable producti
 
 Before production merge:
 
-1. coordinator PR #40 must reach its accepted/final adaptive-range-core head;
-2. PR #34 battery evidence and PR #29 window assembly must reach accepted/final heads;
-3. this lane must reconcile those exact parents without rewriting their branches;
-4. the worker three-file delta must be revalidated;
-5. an exact-head repository Xcode 27/iPhone 12 Simulator gate must pass on the unchanged final head;
-6. only then should the PR be retargeted to the correct production base and considered for merge.
+1. coordinator PR #40 reaches its accepted/final adaptive-range-core head;
+2. PR #34 battery evidence and PR #54 window assembly reach accepted/final heads;
+3. this lane reconciles those exact parents without rewriting their branches;
+4. the worker four-file delta is revalidated;
+5. an exact-head repository Xcode 27/iPhone 12 Simulator gate passes on the unchanged final head;
+6. only then is the PR retargeted to the correct production base and considered for merge.
+
+Main now contains the schedule-based exact-head QA fallback from PR #49. Missing scheduler runs are not considered green; acceptance remains tied to the immutable final SHA and durable `Nembra/Xcode27 Exact Head` status.
 
 ## Hardware status
 
