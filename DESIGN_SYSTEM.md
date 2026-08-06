@@ -71,3 +71,14 @@ Use semantic system colors plus one restrained Nembra accent. Mode personality c
 6. Mode personality is subtle and must not hurt readability.
 7. Battery/connection warnings outrank decorative telemetry.
 8. Render rate may exceed sensor rate, but visual frames are never stored as measured telemetry.
+
+## Landscape speed instrument — Phase 10 accepted rules
+- The speed instrument is a dedicated center subtree; high-frequency visual refresh must not invalidate the whole Dashboard.
+- Its SwiftUI animation timeline may run at up to 60 Hz only while a real render-only interpolation window is active and pauses when the transition is complete.
+- Ordinary production launch does not animate between uncalibrated samples. It snaps to authoritative measurements until real MAXSHOT cadence/latency/resolution is measured and a hardware policy is explicitly selected.
+- Explicit Simulator QA may inject a bounded presentation policy to exercise transitions. Those values are never presented as MAXSHOT behavior.
+- Fixed digit slots preserve center geometry through transitions such as 9↔10; the current MAXSHOT display reserves two integer slots because its verified supported speed range fits them. Future vehicle capability changes must revisit geometry rather than silently clip.
+- Integer rolling is subordinate to measured-sample interpolation, not a second smoothing or prediction layer.
+- MPH stays visually subordinate to the numeral while maintaining a stable baseline and enough separation to avoid looking attached to one digit.
+- VoiceOver announces the latest authoritative/confirmed speed, never an unmeasured interpolated midpoint.
+- Real iPhone 12/iOS 27 Simulator screenshot acceptance checks center dominance, digit width, unit alignment, clipping, side-rail stability, safe areas, and moving/stopped-control behavior. Still screenshots prove composition only; temporal smoothness requires runtime tests/profiling.
