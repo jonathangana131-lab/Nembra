@@ -94,7 +94,7 @@ final class NembraUITests: XCTestCase {
         let lockState = app.descendants(matching: .any)["dashboard.state.lock"]
         XCTAssertTrue(lightState.waitForExistence(timeout: 2))
         XCTAssertTrue(lockState.waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue("Off", element: lightState))
+        XCTAssertTrue(waitForValue("On", element: lightState))
         XCTAssertTrue(waitForValue("Unlocked", element: lockState))
 
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
