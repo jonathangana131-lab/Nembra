@@ -19,6 +19,7 @@ public struct RideLocationSample: Equatable, Sendable {
     public let receivedAtDate: Date
     public let receivedAtUptimeNanoseconds: UInt64
     public let horizontalAccuracyMeters: Double
+    public let isAccuracyLimited: Bool
     public let isSimulatedBySoftware: Bool
 
     public init(
@@ -28,6 +29,7 @@ public struct RideLocationSample: Equatable, Sendable {
         receivedAtDate: Date,
         receivedAtUptimeNanoseconds: UInt64,
         horizontalAccuracyMeters: Double,
+        isAccuracyLimited: Bool = false,
         isSimulatedBySoftware: Bool
     ) throws {
         guard latitude.isFinite,
@@ -47,6 +49,7 @@ public struct RideLocationSample: Equatable, Sendable {
         self.receivedAtDate = receivedAtDate
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
         self.horizontalAccuracyMeters = horizontalAccuracyMeters
+        self.isAccuracyLimited = isAccuracyLimited
         self.isSimulatedBySoftware = isSimulatedBySoftware
     }
 }
@@ -105,6 +108,7 @@ public struct RideLocationQualityPolicy: Equatable, Sendable {
 }
 
 public enum RideLocationRejectionReason: Equatable, Sendable {
+    case reducedAccuracyAuthorization
     case softwareSimulationNotAllowed
     case accuracyTooLow
     case staleMeasurement
@@ -168,6 +172,14 @@ public struct RideLocationQualityScreen: Sendable {
     }
 
     public mutating func screen(_ sample: RideLocationSample) -> RideLocationScreeningResult {
+        // Reduced/approximate authorization is intentionally never promoted to
+        // ride-path evidence. Apple's reduced service can be kilometer-scale and
+        // low-frequency; the user can still use Nembra, but route recording must
+        // remain unavailable rather than drawing a false precise path.
+        if sample.isAccuracyLimited {
+            return .rejected(.reducedAccuracyAuthorization)
+        }
+
         if sample.isSimulatedBySoftware,
            !policy.allowsSoftwareSimulatedLocations {
             return .rejected(.softwareSimulationNotAllowed)
