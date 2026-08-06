@@ -114,6 +114,36 @@ public struct PassiveBluetoothServiceObservation: Equatable, Codable, Sendable {
     }
 }
 
+/// Records the GATT edge between a discovered parent service and one service it
+/// includes. This preserves topology that would otherwise be lost if capture
+/// stored only a flat list of service UUIDs.
+public struct PassiveBluetoothIncludedServiceObservation: Equatable, Codable, Sendable {
+    public let peripheralIdentifier: String
+    public let parentServiceUUID: String
+    public let includedServiceUUID: String
+    public let includedServiceIsPrimary: Bool
+
+    public init(
+        peripheralIdentifier: String,
+        parentServiceUUID: String,
+        includedServiceUUID: String,
+        includedServiceIsPrimary: Bool
+    ) throws {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyPeripheralIdentifier
+        }
+        guard !parentServiceUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !includedServiceUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier
+        }
+
+        self.peripheralIdentifier = peripheralIdentifier
+        self.parentServiceUUID = parentServiceUUID
+        self.includedServiceUUID = includedServiceUUID
+        self.includedServiceIsPrimary = includedServiceIsPrimary
+    }
+}
+
 public struct PassiveBluetoothCharacteristicObservation: Equatable, Codable, Sendable {
     public let peripheralIdentifier: String
     public let serviceUUID: String
@@ -138,6 +168,37 @@ public struct PassiveBluetoothCharacteristicObservation: Equatable, Codable, Sen
         self.serviceUUID = serviceUUID
         self.characteristicUUID = characteristicUUID
         self.properties = properties
+    }
+}
+
+/// Records descriptor discovery without pretending an arbitrary CoreBluetooth
+/// descriptor value can be losslessly stringified. Typed descriptor-value
+/// evidence can be added later when an acquisition path has a truthful codec.
+public struct PassiveBluetoothDescriptorObservation: Equatable, Codable, Sendable {
+    public let peripheralIdentifier: String
+    public let serviceUUID: String
+    public let characteristicUUID: String
+    public let descriptorUUID: String
+
+    public init(
+        peripheralIdentifier: String,
+        serviceUUID: String,
+        characteristicUUID: String,
+        descriptorUUID: String
+    ) throws {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyPeripheralIdentifier
+        }
+        guard !serviceUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !characteristicUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !descriptorUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier
+        }
+
+        self.peripheralIdentifier = peripheralIdentifier
+        self.serviceUUID = serviceUUID
+        self.characteristicUUID = characteristicUUID
+        self.descriptorUUID = descriptorUUID
     }
 }
 
@@ -206,7 +267,9 @@ public struct PassiveBluetoothCaptureInterruption: Equatable, Codable, Sendable 
 public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case advertisement(PassiveBluetoothAdvertisementObservation)
     case service(PassiveBluetoothServiceObservation)
+    case includedService(PassiveBluetoothIncludedServiceObservation)
     case characteristic(PassiveBluetoothCharacteristicObservation)
+    case descriptor(PassiveBluetoothDescriptorObservation)
     case value(PassiveBluetoothValueObservation)
     case stockAppState(PassiveBluetoothStockAppObservation)
     case interruption(PassiveBluetoothCaptureInterruption)
@@ -235,12 +298,26 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
                 serviceUUID: observation.serviceUUID,
                 isPrimary: observation.isPrimary
             )
+        case let .includedService(observation):
+            _ = try PassiveBluetoothIncludedServiceObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                parentServiceUUID: observation.parentServiceUUID,
+                includedServiceUUID: observation.includedServiceUUID,
+                includedServiceIsPrimary: observation.includedServiceIsPrimary
+            )
         case let .characteristic(observation):
             _ = try PassiveBluetoothCharacteristicObservation(
                 peripheralIdentifier: observation.peripheralIdentifier,
                 serviceUUID: observation.serviceUUID,
                 characteristicUUID: observation.characteristicUUID,
                 properties: observation.properties
+            )
+        case let .descriptor(observation):
+            _ = try PassiveBluetoothDescriptorObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                serviceUUID: observation.serviceUUID,
+                characteristicUUID: observation.characteristicUUID,
+                descriptorUUID: observation.descriptorUUID
             )
         case let .value(observation):
             _ = try PassiveBluetoothValueObservation(
