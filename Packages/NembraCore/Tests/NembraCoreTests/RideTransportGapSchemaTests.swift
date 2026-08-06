@@ -25,7 +25,8 @@ struct RideTransportGapSchemaTests {
     }
 
     private func completed(
-        gapEvidence: RideTransportGapEvidence
+        gapEvidence: RideTransportGapEvidence,
+        continuity: RideSessionContinuity = .uninterruptedProcess
     ) throws -> CompletedRideEvidence {
         try CompletedRideEvidence(
             sessionID: UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!,
@@ -35,7 +36,7 @@ struct RideTransportGapSchemaTests {
             startingOdometerKilometers: 10,
             endingOdometerKilometers: 10.5,
             qualityScreenedGPSDistanceMeters: 500,
-            continuity: .uninterruptedProcess,
+            continuity: continuity,
             transportGapEvidence: gapEvidence
         )
     }
@@ -68,6 +69,28 @@ struct RideTransportGapSchemaTests {
             .appendingPathComponent("nembra-gap-schema-hardening-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    @Test("recovered completed evidence cannot claim none-observed transport")
+    func recoveredCompletionRejectsNoneObserved() throws {
+        #expect(throws: CompletedRideEvidenceError.invalidEvidence) {
+            _ = try completed(
+                gapEvidence: .noneObserved,
+                continuity: .recoveredCheckpoint
+            )
+        }
+
+        let unknown = try completed(
+            gapEvidence: .unknown,
+            continuity: .recoveredCheckpoint
+        )
+        #expect(unknown.transportGapEvidence == .unknown)
+
+        let observed = try completed(
+            gapEvidence: .observed,
+            continuity: .recoveredCheckpoint
+        )
+        #expect(observed.transportGapEvidence == .observed)
     }
 
     @Test("current v2 in-progress journal missing provenance is corrupt")
