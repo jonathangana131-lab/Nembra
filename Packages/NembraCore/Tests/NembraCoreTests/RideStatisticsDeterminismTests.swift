@@ -16,13 +16,14 @@ struct RideStatisticsDeterminismTests {
     private func ride(
         id: UUID,
         date: Date,
-        distanceMeters: Double
+        distanceMeters: Double,
+        disposition: RideStatisticsDistanceDisposition = .included
     ) throws -> RideStatisticsRide {
         try RideStatisticsRide(
             sessionID: id,
             attributedDate: date,
             distanceMeters: distanceMeters,
-            distanceDisposition: .included
+            distanceDisposition: disposition
         )
     }
 
@@ -167,6 +168,37 @@ struct RideStatisticsDeterminismTests {
         )
 
         #expect(summary.totalDistanceMeters == 9_007_199_254_740_994)
+    }
+
+    @Test("excluded extreme distance never contaminates the compensated subtotal")
+    func excludedExtremeDistanceDoesNotContaminateSubtotal() throws {
+        let calendar = calendar()
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let trustworthy = try ride(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            date: referenceDate.addingTimeInterval(-120),
+            distanceMeters: 1_000
+        )
+        let excluded = try ride(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            date: referenceDate.addingTimeInterval(-60),
+            distanceMeters: Double.greatestFiniteMagnitude,
+            disposition: .excludedConflict
+        )
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [excluded, trustworthy],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        #expect(summary.trustworthyDistanceRideCount == 1)
+        #expect(summary.excludedDistanceRideCount == 1)
+        #expect(summary.distanceAvailability == .partial)
+        #expect(summary.totalDistanceMeters == 1_000)
+        #expect(summary.longestRideDistanceMeters == 1_000)
+        #expect(summary.longestRideSessionID == trustworthy.sessionID)
     }
 
     @Test("finite reference dates outside the calendar range fail closed")
