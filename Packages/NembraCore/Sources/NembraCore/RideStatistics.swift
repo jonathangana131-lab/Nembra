@@ -181,13 +181,16 @@ public enum RideStatisticsAggregator {
             throw RideStatisticsError.invalidRide
         }
 
-        let periodRides = try uniqueRides.filter { ride in
-            try contains(
-                ride.attributedDate,
-                period: period,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+        // Period boundaries depend only on the caller-supplied reference date
+        // and Calendar. Resolve them once rather than asking Foundation to
+        // rebuild the same day/week/month/year interval for every stored ride.
+        let selectedInterval = try periodInterval(
+            for: period,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        let periodRides = uniqueRides.filter { ride in
+            selectedInterval?.contains(ride.attributedDate) ?? true
         }
 
         var excludedDistanceRideCount = 0
@@ -352,56 +355,41 @@ public enum RideStatisticsAggregator {
         return dayInterval.contains(date)
     }
 
-    private static func contains(
-        _ date: Date,
-        period: RideStatisticsPeriod,
+    private static func periodInterval(
+        for period: RideStatisticsPeriod,
         referenceDate: Date,
         calendar: Calendar
-    ) throws -> Bool {
+    ) throws -> DateInterval? {
         switch period {
         case .allTime:
-            return true
+            return nil
         case .today:
-            return calendar.isDate(date, inSameDayAs: referenceDate)
-        case .yesterday:
-            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate) else {
+            guard let interval = calendar.dateInterval(of: .day, for: referenceDate) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return calendar.isDate(date, inSameDayAs: yesterday)
+            return interval
+        case .yesterday:
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
+                  let interval = calendar.dateInterval(of: .day, for: yesterday) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return interval
         case .week:
-            return try contains(
-                date,
-                component: .weekOfYear,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+            guard let interval = calendar.dateInterval(of: .weekOfYear, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return interval
         case .month:
-            return try contains(
-                date,
-                component: .month,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+            guard let interval = calendar.dateInterval(of: .month, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return interval
         case .year:
-            return try contains(
-                date,
-                component: .year,
-                referenceDate: referenceDate,
-                calendar: calendar
-            )
+            guard let interval = calendar.dateInterval(of: .year, for: referenceDate) else {
+                throw RideStatisticsError.invalidReferenceDate
+            }
+            return interval
         }
-    }
-
-    private static func contains(
-        _ date: Date,
-        component: Calendar.Component,
-        referenceDate: Date,
-        calendar: Calendar
-    ) throws -> Bool {
-        guard let interval = calendar.dateInterval(of: component, for: referenceDate) else {
-            throw RideStatisticsError.invalidReferenceDate
-        }
-        return interval.contains(date)
     }
 
     private static func longestConsecutiveDayStreak(
