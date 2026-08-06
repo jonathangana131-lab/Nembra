@@ -55,8 +55,8 @@ public struct RideLocationSample: Equatable, Sendable {
 }
 
 /// Location-quality thresholds are injected. Nembra deliberately has no
-/// MAXSHOT/production default until outdoor traces on the target iPhone justify
-/// accuracy, staleness, continuity-gap, and implausible-jump limits.
+/// AOVOPRO ES80/production default until outdoor traces on the target iPhone
+/// justify accuracy, staleness, continuity-gap, and implausible-jump limits.
 public struct RideLocationQualityPolicy: Equatable, Sendable {
     public let maximumHorizontalAccuracyMeters: Double
     public let maximumMeasurementAgeSeconds: TimeInterval
