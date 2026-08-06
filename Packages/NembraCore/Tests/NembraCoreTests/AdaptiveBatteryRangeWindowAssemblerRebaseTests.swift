@@ -42,9 +42,8 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         _ = try assembler.ingestSOC(reading(82, uptime: 2), policy: p)
         try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
 
-        let clean = try #require(
-            assembler.ingestSOC(reading(79, uptime: 3), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(79, uptime: 3), policy: p)
+        let clean = try #require(assembled)
 
         #expect(clean.startSOC.percentage == 82)
         #expect(clean.endSOC.percentage == 79)
@@ -62,9 +61,8 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         try assembler.recordDistance(deltaMeters: 50, coverage: .partial)
         try assembler.recordDistance(deltaMeters: 100, coverage: .complete)
 
-        let window = try #require(
-            assembler.ingestSOC(reading(77, uptime: 2), policy: p)
-        )
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let window = try #require(assembled)
 
         #expect(window.distanceMeters == 150)
         #expect(window.distanceCoverage == .partial)
