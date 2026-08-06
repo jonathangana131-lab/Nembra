@@ -90,7 +90,11 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
     public let policy: PeakSpeedPolicy
 
     private var peak: PeakSpeedMeasurement?
-    private var lastAcceptedUptimeNanoseconds: UInt64?
+    /// Advances for every monotonic authoritative observation from the selected
+    /// source, including observations later rejected by accuracy policy. A low-
+    /// quality sample is still real ordering evidence and cannot be erased so an
+    /// older callback can later masquerade as fresh.
+    private var lastObservedUptimeNanoseconds: UInt64?
     private var acceptedSampleCount = 0
     private var qualityRejectedSampleCount = 0
     private var knownInterruptionCount = 0
@@ -108,6 +112,13 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
             return .rejected(.sourceMismatch)
         }
 
+        if let lastObservedUptimeNanoseconds,
+           sample.receivedAtUptimeNanoseconds <= lastObservedUptimeNanoseconds {
+            qualityRejectedSampleCount += 1
+            return .rejected(.nonIncreasingTimestamp)
+        }
+        lastObservedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+
         if let maximum = policy.maximumSpeedAccuracyMetersPerSecond {
             guard let actual = sample.speedAccuracyMetersPerSecond else {
                 qualityRejectedSampleCount += 1
@@ -119,14 +130,7 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
             }
         }
 
-        if let lastAcceptedUptimeNanoseconds,
-           sample.receivedAtUptimeNanoseconds <= lastAcceptedUptimeNanoseconds {
-            qualityRejectedSampleCount += 1
-            return .rejected(.nonIncreasingTimestamp)
-        }
-
         acceptedSampleCount += 1
-        lastAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         let measurement = PeakSpeedMeasurement(sample: sample)
 
         if peak.map({ measurement.metersPerSecond > $0.metersPerSecond }) ?? true {
@@ -163,7 +167,7 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
 
     public mutating func reset() {
         peak = nil
-        lastAcceptedUptimeNanoseconds = nil
+        lastObservedUptimeNanoseconds = nil
         acceptedSampleCount = 0
         qualityRejectedSampleCount = 0
         knownInterruptionCount = 0
