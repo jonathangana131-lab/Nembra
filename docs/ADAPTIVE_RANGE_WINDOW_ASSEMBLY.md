@@ -1,6 +1,6 @@
 # Adaptive Range Learning Window Assembly
 
-Status: software evidence-assembly contract. Depends on the adaptive range core in PR #10. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
+Status: software evidence-assembly contract. Depends on the adaptive range core in PR #10 / its coordinator-owned recovery. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
 
 ## Purpose
 
@@ -16,25 +16,37 @@ The higher layer remains responsible for proving whether a value is:
 
 ## Window behavior
 
-The assembler starts a span only from an authoritative measured SoC anchor.
+The assembler starts a span only from an authoritative measured SoC anchor. It separately remembers the **latest accepted authoritative reading** inside that span.
 
 Estimated/display SoC:
 - is representable elsewhere for presentation;
 - never starts a learning span;
-- never advances a learning anchor;
+- never advances the latest authoritative measurement;
 - never clears accumulated measured evidence.
 
-A flat authoritative percentage keeps the original anchor. This is important for a battery source that may be coarse or slow: real distance can continue accumulating while the displayed measured percentage remains unchanged.
+A flat or falling authoritative percentage keeps the original span anchor. This is important for a battery source that may be coarse or slow: real distance can continue accumulating while measured percentage remains unchanged or falls in small steps.
 
 A lower authoritative percentage becomes eligible to close a window only after **both** minimum thresholds from the active `AdaptiveBatteryRangePolicy` are met:
-- minimum percentage points consumed;
+- minimum percentage points consumed from the span anchor;
 - minimum real distance.
 
 This prevents a stream such as `80 → 79 → 78 → 77` from automatically becoming three tiny 1% training samples. One longer window can form from the earlier authoritative anchor instead.
 
 The policy supplied to the current authoritative reading is the live threshold source. Tightening does not retroactively close a span under an older looser threshold, while loosening may legitimately close an already-retained span on a later authoritative reading, including a flat percentage update.
 
-A higher authoritative percentage conservatively rebases the span and discards its in-flight distance evidence. The assembler does not decide whether the rise was charging, sag recovery, firmware filtering, or another effect. It simply refuses to relabel a non-consumption change as consumed battery.
+### Measured recovery / charging defense
+
+**Any authoritative increase versus the immediately preceding authoritative reading rebases the span**, even when the new value remains below the original anchor.
+
+Example:
+
+`80 → 77 → 79`
+
+The `79` reading starts a fresh span. The assembler does not keep pretending the original `80` anchor describes one uninterrupted consumption interval, because `77 → 79` may represent charging, voltage-sag recovery, firmware filtering, or another non-consumption effect.
+
+This is intentionally stricter than comparing only with the original anchor. It prevents hidden in-span recovery from being folded into a later consumption sample.
+
+Authoritative uptime ordering is likewise checked against the **latest accepted authoritative reading**, not merely the span anchor. If a stream has accepted uptimes `10 → 20`, an authoritative reading at uptime `15` fails closed even though `15` is newer than the original anchor.
 
 ## Distance evidence
 
@@ -72,7 +84,7 @@ This distinction lets a future battery/transport integration honor an explicit "
 The assembler rejects:
 - negative/nonfinite distance deltas;
 - accumulated distance overflow;
-- nonmonotonic authoritative SoC anchors.
+- authoritative SoC timestamps that do not advance beyond the latest accepted authoritative measurement.
 
 Those errors occur before mutating the in-flight span.
 
@@ -80,7 +92,7 @@ Those errors occur before mutating the in-flight span.
 
 The assembler is ephemeral evidence state. It should be reset at an explicit ride/device/session boundary when a higher layer can no longer prove continuity of the in-flight span.
 
-A reset intentionally loses only the uncommitted learning candidate. The first subsequent authoritative SoC reading becomes a fresh anchor; distance before that anchor is not retroactively assigned a battery-consumption start value.
+A reset intentionally loses only the uncommitted learning candidate. It clears both the span anchor and latest-authoritative cursor. The first subsequent authoritative SoC reading becomes a fresh anchor; distance before that anchor is not retroactively assigned a battery-consumption start value.
 
 Persisted learned efficiency remains owned by `AdaptiveBatteryRangeModel` and its persistence layer. This assembler does not introduce another learned-history store.
 
