@@ -44,6 +44,23 @@ public enum PassiveCoreBluetoothAcquisitionPolicy {
             : [:]
     }
 
+    /// Converts a user/research deadline to the nanosecond domain accepted by
+    /// Task.sleep without overflowing or trapping on Double→UInt64 conversion.
+    /// No arbitrary product timeout is imposed here; representability is the
+    /// boundary. Sub-nanosecond, non-finite, zero, and negative values fail.
+    public static func connectionTimeoutNanoseconds(
+        _ timeout: TimeInterval
+    ) -> UInt64? {
+        guard timeout.isFinite, timeout > 0 else { return nil }
+        let nanoseconds = timeout * 1_000_000_000
+        guard nanoseconds.isFinite,
+              nanoseconds >= 1,
+              nanoseconds < Double(UInt64.max) else {
+            return nil
+        }
+        return UInt64(nanoseconds)
+    }
+
     public static func plan(for characteristic: CBCharacteristic) -> PassiveCoreBluetoothCharacteristicPlan {
         let properties = characteristic.properties
         return PassiveCoreBluetoothCharacteristicPlan(
