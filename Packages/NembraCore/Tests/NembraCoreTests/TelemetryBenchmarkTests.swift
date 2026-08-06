@@ -212,8 +212,8 @@ struct SimulatedRawSpeedStreamTests {
         #expect(abs((sample?.kilometersPerHour ?? 0) - 19.2) < 0.000_001)
     }
 
-    @Test("simulated BLE samples preserve deterministic monotonic intervals")
-    func deterministicIntervals() async throws {
+    @Test("back-to-back simulated BLE samples remain strictly monotonic")
+    func backToBackSamplesStayMonotonic() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .connectedStopped),
             commandLatencyNanoseconds: 0
@@ -221,19 +221,23 @@ struct SimulatedRawSpeedStreamTests {
         let stream = await service.speedTelemetryUpdates()
         var iterator = stream.makeAsyncIterator()
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+        var priorUptime: UInt64?
 
         for speed in [1.0, 2.0, 3.0, 4.0] {
+            // This elapsed value advances simulated ride evidence only. It must
+            // not manufacture an equally spaced raw packet-arrival cadence.
             await service.simulateRide(speedKilometersPerHour: speed, elapsedSeconds: 0.1)
-            if let sample = await iterator.next() {
-                collector.record(sample)
+            let sample = try #require(await iterator.next())
+            if let priorUptime {
+                #expect(sample.receivedAtUptimeNanoseconds > priorUptime)
             }
+            priorUptime = sample.receivedAtUptimeNanoseconds
+            #expect(collector.record(sample) == .accepted)
         }
 
         let summary = collector.summary
         #expect(summary.acceptedSampleCount == 4)
         #expect(summary.intervalCount == 3)
-        #expect(abs((summary.meanIntervalMilliseconds ?? 0) - 100) < 0.000_001)
-        #expect(abs((summary.effectiveSampleRateHertz ?? 0) - 10) < 0.000_001)
     }
 }
 
