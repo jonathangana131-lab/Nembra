@@ -7,176 +7,121 @@ Updated: 2026-08-06
 - First supported vehicle: **MAXSHOT V1S Pro**.
 - Repository: `jonathangana131-lab/Nembra`.
 - Permanent charter: `MASTER_CONTINUATION_DIRECTIVE.md`.
-- Product stance: premium native iOS 27 scooter platform, MAXSHOT first, capability-based architecture, truthful telemetry/evidence, pessimistic confirmed commands, simulation and hardware sharing the same production domain/service boundaries.
+- Product stance: premium native iOS 27 scooter platform, capability-based architecture, truthful telemetry/evidence, pessimistic confirmed commands, simulation and hardware sharing the same production domain/service boundaries.
 
 ## Live repository state
-- Stable branch before the current slice: `main` at `ea0dfd64f7cb0a6af64d14612c594f141ae1d2d0` (Phase 12 merged).
-- Active branch: `feature/completed-ride-history`.
-- Active PR: **#6 — Expose truthful completed ride history**.
-- Active milestone: **Phase 13 — truthful completed ride history presentation**.
-- Accepted implementation head: `5e2e4b93cdc41af148dc7e029f6da88465dea7ff`.
-- That implementation head is 5 commits ahead of the Phase 12 `main` base and 0 behind.
-- The project-memory documentation checkpoint is the next descendant of that accepted implementation head. Always resolve the exact current branch head from GitHub before gating or merging.
+- Stable base before the current slice: `main` at `c79dec497bee7bc7047601963204b568acec8d5e` (Phase 13 merged).
+- Active branch: `feature/durable-ride-routes`.
+- Active PR: **#7 — Persist and present truthful completed-ride route geometry**.
+- Active milestone: **Phase 14 — durable completed-ride route geometry**.
+- Accepted implementation head before this memory checkpoint: `088c849757a1a688255acc1538c96aa725b24a12`.
+- Always resolve the exact current branch head from GitHub before gating or merging; this documentation checkpoint is a descendant of the accepted implementation head.
 
-## Phase 13 implementation
-
-Phase 13 exposes the already accepted durable completed-ride ledger through the production portrait application without inventing a parallel history model.
+## Phase 14 implementation
+Phase 14 adds durable completed-ride route geometry without pretending that production GPS capture is already validated.
 
 Implemented:
-- root-owned `RideHistoryPresentationStore` reads the existing SwiftData history adapter rather than querying persistence directly from SwiftUI.
-- portrait app shell now provides native Home/Rides tabs while landscape continues to route to the dedicated Dashboard cockpit.
-- Home content gets bottom safe-area allowance so iOS 27's floating tab bar does not cover the final vehicle content.
-- completed rides are loaded newest-first as immutable `RideHistoryRecord` evidence.
-- history rows label scooter **ODO** and **GPS** evidence independently rather than silently promoting one to a reconciled final distance.
-- detail view exposes start/confirmed/end evidence and ride continuity without fabricating a duration from wall-clock labels.
-- detail view labels **Scooter odometer delta** explicitly.
-- route UI states **No route geometry recorded** when no real stored quality-screened coordinates exist; no map/line is fabricated.
-- history/persistence errors remain visible and truthful rather than silently presenting an empty successful state.
-- `NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE=1` is an explicit Simulator-only fixture for the riding scenario. It drives the real `SimulatedScooterService` → `RideEngine` → checkpoint/history commit → presentation path instead of inserting fake history rows.
-- the Simulator fixture first establishes the ride ODO baseline, then advances real simulated trip/ODO distance, then supplies authoritative stopped packets so completion traverses the real production application pipeline.
-- production automatic ride detection remains disabled until real MAXSHOT speed cadence/latency/reconnect behavior is measured.
+- validated `RideRoutePoint`, immutable `RideRouteChunk`, `RideRouteManifest`, `RideRouteGeometry`, and explicit segment/gap semantics in core.
+- route point ordering is ride-local monotonic sequence evidence; wall-clock dates never repair or reorder geometry.
+- chunk/session/index identities are verified against encoded payloads on read.
+- equivalent route writes are idempotent; same identity with different evidence is a conflict and cannot overwrite prior geometry.
+- persisted geometry fails closed on missing/reordered chunks, bad counts, non-monotonic points, session mismatch, corrupt payloads, or invalid manifest topology.
+- `RideRouteRecorder` incrementally assigns sequence numbers, chunks accepted points, commits partial buffers, and makes process recovery an explicit discontinuity.
+- recorder topology is transactional around rejected input/overflow; invalid coordinates or sequence/index exhaustion cannot silently advance route segment state.
+- a route that observed a gap/recovery cannot be finalized as complete coverage.
+- route storage is physically isolated in `RideRoutes.store` from the accepted `RideHistory.store` ledger/recovery journal.
+- route-store startup/read failure does not erase completed ride history; presentation distinguishes storage failure from a ride that truthfully has no route.
+- root-owned `RideRoutePresentationStore` keeps SwiftUI away from direct SwiftData access.
+- Ride Details uses MapKit only for validated stored geometry and draws each recorded segment independently with `MapPolyline`.
+- one-point/non-drawable geometry is reported as recorded points without inventing a line.
+- missing geometry is reported as **No route geometry recorded**; corrupt/unavailable route storage is reported as an error, not as successful emptiness.
+- explicit Simulator QA writes deterministic synthetic coordinates through the real recorder/store/presentation path. It is physically namespaced from production and classified **partial** because the fixture begins route capture after the simulated ride is already underway.
+- Simulator route coordinates never become `qualityScreenedGPSDistanceMeters`; route display and GPS distance evidence remain separate truth domains.
 
-## Phase 13 truth boundaries
-- no route coordinates means no drawn route.
-- no reconciled final-distance coverage means no generic final ride distance claim.
-- ODO and GPS stay independent evidence.
-- no fake ride duration is inferred from formatted start/end wall-clock labels.
-- Simulator auto-completion is QA-only and opt-in.
-- Simulator records remain physically isolated from production persistence.
-- completing this software slice does not validate real MAXSHOT BLE behavior.
+## Phase 14 truth boundaries
+- production Core Location route capture remains **disabled**.
+- no route geometry is reconstructed from ODO, displayed map interpolation, or any other lower-fidelity source.
+- no visual line is drawn across a known route gap.
+- map geometry is not a final-distance claim.
+- ODO and GPS distance evidence remain independently labeled/reconciled.
+- Simulator coordinates are synthetic QA evidence only and never validate real outdoor GPS behavior.
+- this slice does not validate MAXSHOT BLE, physical iPhone 12 performance, background location, or force-quit recovery.
 
-## Phase 13 exact Xcode / Simulator evidence
-
-Accepted implementation head: `5e2e4b93cdc41af148dc7e029f6da88465dea7ff`.
+## Phase 14 accepted implementation-head evidence
+Accepted implementation head: `088c849757a1a688255acc1538c96aa725b24a12`.
 
 GitHub Actions:
 - workflow: **Xcode 27 Simulator QA**
-- run: `31073268597`
-- job: `92525538715`
-- artifact: `8956630995` / `nembra-xcode27-simulator-197-1`
-- runner/toolchain evidence: macOS 26.5.2, Xcode 27.0 build `27A5228h`, iOS 27.0 runtime `24A5390f`
+- run: `31082309937`
+- job: `92553689585`
+- artifact: `8960225545` / `nembra-xcode27-simulator-222-1`
 - conclusion: **success**
 - project structure validation: passed
 - core package validation: passed
-- full Xcode/iOS 27 Simulator app/UI stage: passed
+- full Xcode/iOS 27 Simulator build/test/capture stage: passed
 - artifact upload: passed
 
-XCTest evidence from the preserved `.xcresult`/log:
-- app/core test session: **21/21**, 0 failures
-  - `NembraAppTests`: 14 tests
-  - additional core package suite in Xcode session: 7 tests
-- UI test session: **7/7**, 0 failures
-  - `NembraUITests`: 5 tests
-  - `RideUITests`: 2 tests
+XCTest evidence from the preserved log:
+- app/core Xcode session: **27/27**, 0 failures
+- UI session: **7/7**, 0 failures
+- existing Dashboard mode/recovery regression tests remain green.
+- completed-ride route end-to-end UI test: `RideUITests/testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline()`.
 
-Phase 13 end-to-end UI test:
-`RideUITests/testCompletedRideAppearsInHistoryThroughRealRidePipeline()`
-- launches the production app with explicit isolated Simulator persistence
-- waits for the real ride pipeline to complete a QA ride
-- opens the Rides tab
-- verifies `rides.completed-row`
-- opens the record
-- verifies `rides.detail`
-- verifies `rides.evidence.odometer`
-- verifies `rides.route-unavailable`
-
-Kept iPhone 12 / iOS 27 attachments inspected:
-- **Completed Ride History**
-- **Completed Ride Details**
-- existing recovery regression evidence also remained green: **Automatic Ride Active Home** and **Automatic Ride Recovered Home**
+Inspected iPhone 12 / iOS 27 test attachments:
+- **Completed Ride History**: one truthful completed ride row, explicit `ODO 0.2 mi`, no generic final-distance claim.
+- **Completed Ride Details With Route**: real MapKit surface from stored synthetic route points, explicit **Partial recorded coverage**, ODO evidence remains separate, no fake GPS-distance value.
 
 Visual/runtime self-critique for this systems slice:
-- history row is readable, native, and clearly labels `ODO 0.2 mi`; it does not masquerade as a final reconciled distance.
-- detail screen clearly separates ride timeline, odometer evidence, and route availability.
-- missing route geometry is communicated directly rather than filling space with a fake map.
-- the iOS 27 floating tab bar remains clear of important content.
-- no clipping, overlap, unsafe-area regression, or misleading evidence presentation was observed in the accepted captures.
-- the Rides UI is intentionally a functional systems-era baseline; its large empty areas/generic list treatment are not final product-design acceptance and remain covered by the mandatory Production Visual Overhaul release gate.
+- route map is clearly visible and the stored line renders correctly through MapKit.
+- the iOS 27 floating tab bar overlays part of the lower map area while the List remains scrollable; this is acceptable for the functional systems slice but is not final visual acceptance.
+- history remains intentionally sparse/generic with a large empty region after one ride.
+- no clipping, unsafe-area crash, fabricated route, fabricated distance, or evidence-boundary regression was observed.
+- Rides/Route presentation remains subject to the mandatory **Production Visual Overhaul / Final Product Design Pass**.
 
-## Phase 13 final merge gate
-1. Commit this project-memory acceptance plus the missing permanent master charter on the active branch.
-2. Freeze the resulting documentation head.
-3. Require **Xcode 27 Simulator QA** to pass on that exact new head; do not merge based only on the earlier implementation-head run.
-4. If green, mark PR #6 ready for review.
-5. Squash merge PR #6 with `expected_head_sha` equal to the exact green branch head.
-6. Verify the resulting `main` head and PR state.
-7. Re-inspect fresh `main`, open PRs, branches, commits, Actions, and current project-memory files.
-8. Determine the next substantial vertical slice from fresh GitHub state rather than stale phase prose; create the next branch and immediately begin it.
+## Phase 14 final merge gate
+1. Freeze the exact documentation-checkpoint branch head.
+2. Require **Xcode 27 Simulator QA** to pass on that exact head; do not merge based only on run `31082309937` from the implementation head.
+3. Confirm PR #7 remains mergeable with no unresolved review threads/comments.
+4. Mark PR #7 ready for review.
+5. Squash merge PR #7 with `expected_head_sha` equal to the exact green branch head.
+6. Verify merged PR state and fresh `main` SHA.
+7. Re-inspect fresh `main`, open PRs, branches, newest commits, Actions, `PROJECT_STATE.md`, and `CONTINUATION_PROMPT.md`.
+8. Choose the next substantial vertical slice from fresh repository state and immediately create/start its branch; do not stop merely because Phase 14 merged.
 
 ## Accepted systems to preserve
+- capability-based `VehicleProfile` / `ScooterService` boundary.
+- hardware-gated `UnverifiedScooterService`; ordinary production launch never silently falls into simulation.
+- typed connection failures and live/retained/unavailable vehicle-state semantics.
+- serialized pessimistic confirmed commands with connection-generation invalidation.
+- raw authoritative speed evidence separate from `VehicleState` and display interpolation.
+- fixed-slot rolling speed instrumentation and confirmed-mode-only Dashboard personality.
+- automatic `RideEngine` with disconnect continuity and injected hardware-unverified thresholds.
+- two-slot crash-recovery journal plus `completedPendingCommit` handoff.
+- exact idempotent SwiftData completed-history ledger.
+- independent ODO/GPS/live-distance coverage and reconciliation architecture.
+- root-owned completed-history and route presentation stores.
+- durable route chunks/manifests with explicit gap topology and fail-closed assembly.
 
-### Portrait Home
-- status-first vehicle console with honest unknown/live/retained state.
-- typed connection failures and correct recovery actions.
-- confirmed/pessimistic controls and moving-state Lock safety.
-- low-battery priority.
-- intermediate visual baseline only.
-
-### Phase 9 — dedicated landscape Dashboard
-- dedicated cockpit, not portrait Home rotated.
-- dominant speed, battery, Scooter Trip, ride mode, connection/model identity.
-- stopped-only state-changing controls; moving-state controls disappear.
-- no fake throttle/current/power gauge.
-- intermediate visual baseline only.
-
-### Phase 10 — measured-speed instrumentation
-- raw authoritative speed remains separate from `VehicleState` and display frames.
-- `SpeedInstrumentModel` rejects stale/motion-assist samples.
-- `SpeedDisplayInterpolator` is render-only and non-predictive.
-- fixed rolling speed geometry.
-- only the speed subtree can redraw at display cadence during active interpolation.
-- production interpolation remains hardware-gated until real MAXSHOT timing is measured.
-
-### Phase 11 — confirmed-mode Dashboard personality
-- personality is pure presentation state derived from confirmed mode.
-- restrained Walk/Eco/Drive/Sport differences only.
-- no RGB/gamer theme or invented performance implications.
-- Reduce Motion supported.
-
-### Phase 12 — ride application + persistence
-- one root-owned `RideApplicationStore` reuses the accepted `RideEngine` and checkpoint/history coordinators.
-- only fresh raw authoritative speed can become ride speed evidence.
-- state acknowledgements cannot replay cached speed or manufacture zero.
-- reconnect ordering may hold only the newest unconsumed fresh raw packet and consume it once when state catches up.
-- crash-safe two-slot checkpoint journal plus `completedPendingCommit` handoff.
-- SwiftData exact completed-history adapter with idempotent equivalent duplicate, conflict rejection, and exact readback verification.
-- recovery/history storage isolated by simulation namespace.
-- automatic production detection remains disabled until real MAXSHOT timing/reconnect evidence exists.
-
-### Phase 13 — completed ride presentation
-- production portrait Rides surface reads the exact durable ledger through a root-owned presentation store.
-- evidence sources remain explicitly separate.
-- route geometry is unavailable unless real coordinates were actually persisted.
-- Simulator-only auto-completion fixture exercises the real application/history path.
-
-## Core truth boundaries
-- interpolated display speed is never telemetry or ride evidence.
-- motion-assisted estimates never masquerade as authoritative scooter/GPS speed.
-- disconnect never fabricates measured zero.
-- Device Trip is not Today mileage.
-- Dashboard personality follows confirmed mode and is presentation only.
-- DP101/DP102/DP103 remain unmapped to user ride modes until hardware evidence proves semantics.
-- real BLE writes remain blocked until command transport/meaning/acknowledgement are verified sufficiently.
-- no VESC-style tuning, phase current, field weakening, regen-current, or invented telemetry.
-- visual ambition never authorizes invented battery precision, range, route safety, vehicle features, or protocol semantics.
-
-## Hardware validation still required
+## Hardware / field validation still required
 - real MAXSHOT advertisement identity.
 - BLE services/characteristics/properties.
 - notification cadence and speed latency/jitter/resolution.
 - packet framing/checksum.
 - read/write/ack behavior and firmware differences.
 - MAXSHOT-specific DP101/DP102/DP103 semantics.
-- AccessorySetupKit descriptors based on observed hardware identity.
+- AccessorySetupKit descriptors from observed hardware identity.
+- real Core Location authorization/background behavior for iOS 27.
+- outdoor location accuracy/staleness/jump policy and energy impact.
+- physical iPhone 12 profiling and real ride route continuity.
 
 ## Real Xcode / Simulator proof policy
 GitHub-hosted `xcode-27` is the authoritative remote Mac gate when direct interactive Xcode tooling is unavailable.
 - iPhone 12 / iOS 27 is the explicit visual baseline.
 - CI preserves `.xcresult`, logs, Simulator screenshots, and XCTest attachments.
 - hosted Simulator proof is real iOS runtime evidence.
-- it is not physical MAXSHOT BLE validation and not physical iPhone 12 performance profiling.
+- it is not physical MAXSHOT BLE validation, real outdoor GPS validation, or physical iPhone 12 performance profiling.
 
 ## Mandatory future release gate — Production Visual Overhaul
-Current Home/Dashboard/Rides screens are intermediate functional implementations. Once enough truthful dependencies exist—especially battery/SoC, live ride/trip state, maps/navigation, completed rides, and confirmed vehicle/error state—perform the dedicated **Production Visual Overhaul / Final Product Design Pass** defined by `MASTER_CONTINUATION_DIRECTIVE.md` and `DECISIONS.md`.
+Current Home/Dashboard/Rides/Route screens are intermediate functional implementations. Once enough truthful dependencies exist—especially battery/SoC, live ride/trip state, maps/navigation, completed rides, and confirmed vehicle/error state—perform the dedicated **Production Visual Overhaul / Final Product Design Pass** defined by `MASTER_CONTINUATION_DIRECTIVE.md` and `DECISIONS.md`.
 
-Every major screen must go through current real Simulator screenshot → critique → redesign → implement → run → screenshot → critique → repeat. A technically correct but mediocre screen is not final product acceptance.
+Every major screen must go through real Simulator screenshot → critique → redesign → implement → run → screenshot → critique → repeat. A technically correct but mediocre screen is not final product acceptance.
