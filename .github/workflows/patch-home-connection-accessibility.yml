@@ -1,0 +1,84 @@
+name: Patch Home connection accessibility
+
+on:
+  push:
+    branches:
+      - feature/landscape-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/landscape-dashboard
+          fetch-depth: 0
+
+      - name: Expose stable connection state and update XCUITest
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          home = Path('NembraApp/Features/Home/HomeView.swift')
+          text = home.read_text()
+          old = '''                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+'''
+          new = '''                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Connection")
+                .accessibilityValue(vehicleStatusText)
+                .accessibilityIdentifier("home.connection")
+'''
+          if 'accessibilityIdentifier("home.connection")' not in text:
+              if old not in text:
+                  raise SystemExit('Home connection label anchor not found')
+              text = text.replace(old, new, 1)
+
+          old_outer = '''        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusPanel: some View {
+'''
+          new_outer = '''        }
+    }
+
+    private var statusPanel: some View {
+'''
+          if old_outer in text:
+              text = text.replace(old_outer, new_outer, 1)
+          home.write_text(text)
+
+          tests = Path('NembraUITests/NembraUITests.swift')
+          text = tests.read_text()
+          old_test = '        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))\n'
+          new_test = '''        let connection = app.descendants(matching: .any)["home.connection"]
+        XCTAssertTrue(connection.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            waitForValue("Connected", element: connection, timeout: 4),
+            "Reconnect must finish only when Home exposes the confirmed Connected vehicle state."
+        )
+'''
+          if old_test not in text:
+              raise SystemExit('Reconnect assertion anchor not found')
+          text = text.replace(old_test, new_test, 1)
+          tests.write_text(text)
+          PY
+
+          grep -q 'accessibilityIdentifier("home.connection")' NembraApp/Features/Home/HomeView.swift
+          grep -q 'Reconnect must finish only when Home exposes the confirmed Connected vehicle state' NembraUITests/NembraUITests.swift
+
+      - name: Commit source fix and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/patch-home-connection-accessibility.yml
+          git add NembraApp/Features/Home/HomeView.swift NembraUITests/NembraUITests.swift
+          git commit -m 'test: expose confirmed Home connection state'
+          git push origin HEAD:feature/landscape-dashboard
