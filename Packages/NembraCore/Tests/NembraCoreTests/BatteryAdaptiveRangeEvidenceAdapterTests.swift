@@ -38,7 +38,7 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
         #expect(reading.receivedAtUptimeNanoseconds == 42)
     }
 
-    @Test("all non-verified SoC roles remain outside production range learning")
+    @Test("all non-verified continuous SoC roles remain outside production range learning")
     func nonVerifiedSOCRolesAreIgnored() throws {
         let roles: [BatteryEvidenceRole] = [
             .stockAppCorrelationAnchor,
@@ -57,8 +57,8 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
         }
     }
 
-    @Test("non-verified continuity markers cannot reset production range learning")
-    func nonVerifiedGapMarkersAreIgnored() throws {
+    @Test("an explicit continuity gap resets range even when the value is not authoritative")
+    func nonVerifiedGapMarkersStillResetContinuity() throws {
         let roles: [BatteryEvidenceRole] = [
             .stockAppCorrelationAnchor,
             .simulationFixture,
@@ -73,7 +73,7 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
                 continuity: .afterUnobservedInterval
             )
             let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: source)
-            #expect(action == .ignore)
+            #expect(action == .resetContinuity)
         }
     }
 
@@ -196,5 +196,101 @@ struct BatteryAdaptiveRangeEvidenceAdapterTests {
             return
         }
         #expect(reading.receivedAtUptimeNanoseconds == 9_999)
+    }
+
+    @Test("stateful bridge requires an explicit first-post-gap boundary")
+    func statefulBridgeFailsClosedWhenBoundaryIsMissing() throws {
+        var bridge = BatteryAdaptiveRangeEvidenceBridge()
+        bridge.markUnobservedInterval()
+
+        let source = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(51),
+            role: .verifiedVehicleMeasurement,
+            uptime: 5,
+            continuity: .continuous
+        )
+
+        #expect(throws: BatteryEvidenceStreamValidationError.missingContinuityBoundary) {
+            _ = try bridge.accept(source)
+        }
+        #expect(bridge.streamValidator.requiresContinuityBoundary)
+        #expect(bridge.streamValidator.lastAcceptedUptimeNanoseconds == nil)
+    }
+
+    @Test("non-authoritative first-post-gap evidence resets learning and starts a fresh stream epoch")
+    func nonAuthoritativeBoundaryCannotBeDroppedByStatefulBridge() throws {
+        var bridge = BatteryAdaptiveRangeEvidenceBridge()
+        bridge.markUnobservedInterval()
+
+        let boundary = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(60),
+            role: .stockAppCorrelationAnchor,
+            uptime: 4,
+            continuity: .afterUnobservedInterval
+        )
+        let laterVerifiedSOC = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(59),
+            role: .verifiedVehicleMeasurement,
+            uptime: 5,
+            continuity: .continuous
+        )
+
+        let boundaryAction = try bridge.accept(boundary)
+        let socAction = try bridge.accept(laterVerifiedSOC)
+
+        #expect(boundaryAction == .resetContinuity)
+        #expect(bridge.streamValidator.requiresContinuityBoundary == false)
+        guard case let .ingestSOC(reading) = socAction else {
+            Issue.record("Expected later verified SoC to enter the fresh epoch")
+            return
+        }
+        #expect(reading.percentage == 59)
+    }
+
+    @Test("stateful bridge rejects uptime regression atomically before range ingest")
+    func statefulBridgeRejectsUptimeRegressionAtomically() throws {
+        var bridge = BatteryAdaptiveRangeEvidenceBridge()
+        let first = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(70),
+            role: .verifiedVehicleMeasurement,
+            uptime: 100
+        )
+        let regressed = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(69),
+            role: .verifiedVehicleMeasurement,
+            uptime: 99
+        )
+
+        _ = try bridge.accept(first)
+        #expect(throws: BatteryEvidenceStreamValidationError.nonMonotonicUptime) {
+            _ = try bridge.accept(regressed)
+        }
+        #expect(bridge.streamValidator.lastAcceptedUptimeNanoseconds == 100)
+    }
+
+    @Test("equal uptime battery fields from one callback remain valid and only SoC is ingested")
+    func statefulBridgeAllowsEqualUptimeFields() throws {
+        var bridge = BatteryAdaptiveRangeEvidenceBridge()
+        let voltage = try observation(
+            value: BatterySemanticValue.voltageVolts(40.0),
+            role: .verifiedVehicleMeasurement,
+            uptime: 200
+        )
+        let soc = try observation(
+            value: BatterySemanticValue.stateOfChargePercent(68),
+            role: .verifiedVehicleMeasurement,
+            uptime: 200
+        )
+
+        let voltageAction = try bridge.accept(voltage)
+        let socAction = try bridge.accept(soc)
+
+        #expect(voltageAction == .ignore)
+        guard case let .ingestSOC(reading) = socAction else {
+            Issue.record("Expected same-callback SoC to remain eligible")
+            return
+        }
+        #expect(reading.percentage == 68)
+        #expect(bridge.streamValidator.lastAcceptedUptimeNanoseconds == 200)
     }
 }
