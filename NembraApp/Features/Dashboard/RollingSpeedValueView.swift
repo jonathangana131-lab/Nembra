@@ -4,6 +4,8 @@ import SwiftUI
 /// Presentation-only rolling speed digits. The value passed here may be a
 /// render interpolation frame; it is never written back into vehicle state.
 struct RollingSpeedValueView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let value: Double?
 
     private static let numberModel: RollingNumberModel? = {
@@ -19,16 +21,24 @@ struct RollingSpeedValueView: View {
                 ForEach(Array(snapshot.digits.enumerated()), id: \.offset) { _, digit in
                     Text(String(digit.digit))
                         .opacity(digit.isVisible ? 1 : 0)
-                        .contentTransition(.numericText(value: value))
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: value)
+                        )
                 }
             }
             // Interpolation timing lives in SpeedInstrumentModel. This brief
             // transition only rolls a visible integer when the rendered value
             // crosses that integer; it is not a second speed-smoothing layer.
-            .animation(.linear(duration: 0.08), value: snapshot.scaledValue)
+            // Reduce Motion keeps the same display value but removes the roll.
+            .animation(
+                reduceMotion ? nil : .linear(duration: 0.08),
+                value: snapshot.scaledValue
+            )
         } else if let value {
             Text(String(format: "%.0f", max(0, value)))
-                .contentTransition(.numericText(value: value))
+                .contentTransition(
+                    reduceMotion ? .identity : .numericText(value: value)
+                )
         } else {
             Text("—")
         }
