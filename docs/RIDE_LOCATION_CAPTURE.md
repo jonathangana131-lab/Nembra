@@ -18,7 +18,7 @@ Map rendering is never measured later and promoted into ride distance. GPS dista
 
 `RideLocationQualityScreen` owns deterministic, platform-independent screening.
 
-Its policy is injected and currently has no production MAXSHOT/iPhone default. The policy can constrain:
+Its policy is injected and currently has no production AOVOPRO ES80/iPhone default. The policy can constrain:
 - maximum horizontal accuracy,
 - measurement age,
 - future timestamp skew,
@@ -58,14 +58,15 @@ Explicit source interruptions force partial route coverage. Repeated gap notific
 
 ## Current truth boundaries
 
-- Production automatic ride detection remains disabled until real MAXSHOT speed cadence/reconnect behavior is measured.
+- Production automatic ride detection remains disabled until real **AOVOPRO ES80** speed cadence/reconnect behavior is measured.
 - Production location quality thresholds are not selected yet.
 - The Core Location adapter is implemented in software but is not yet enabled as always-on production ride recording.
-- Background ride continuation is not claimed yet. Apple documents separate background location mechanisms and those still require lifecycle integration plus physical-device QA.
+- Background ride continuation is not claimed yet. Apple's background location mechanisms still require lifecycle integration plus physical-device QA.
 - Reduced/approximate location is not treated as precise route evidence.
 - Simulator/software-generated coordinates may be enabled only by explicit QA policy.
 - Simulator success is not outdoor GPS validation.
 - No physical iPhone 12 energy/performance claim is made by hosted Simulator CI.
+- This location slice does not verify ES80 BLE/protocol behavior, battery semantics, or motorized commands.
 
 ## Validation required before production activation
 
@@ -75,4 +76,4 @@ Explicit source interruptions force partial route coverage. Repeated gap notific
 4. Measure real outdoor traces on the target iPhone class and select production accuracy/staleness/gap/jump thresholds from evidence.
 5. Validate energy impact and stationary behavior.
 6. Verify permission denial, reduced accuracy, global location disablement, interruption, process recovery, and route-store failure states.
-7. Keep production activation separate from MAXSHOT BLE validation; neither validates the other.
+7. Keep production activation separate from AOVOPRO ES80 BLE validation; neither validates the other.
