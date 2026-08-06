@@ -2,13 +2,14 @@ import SwiftUI
 
 @main
 struct NembraApp: App {
-    @State private var vehicleStore = AppBootstrap.makeVehicleStore()
+    @State private var runtime = AppBootstrap.makeRuntime()
 
     var body: some Scene {
         WindowGroup {
             AppRootView()
-                .environment(vehicleStore)
-                .task { await vehicleStore.start() }
+                .environment(runtime.vehicleStore)
+                .environment(runtime.rideStore)
+                .task { await runtime.start() }
         }
     }
 }
