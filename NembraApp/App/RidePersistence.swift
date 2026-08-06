@@ -13,9 +13,46 @@ final class StoredRideHistoryRecord {
     }
 }
 
+@Model
+final class StoredRideRouteChunk {
+    @Attribute(.unique) var storageID: String
+    var sessionID: UUID
+    var segmentIndex: Int
+    var chunkIndex: Int
+    var payload: Data
+
+    init(
+        storageID: String,
+        sessionID: UUID,
+        segmentIndex: Int,
+        chunkIndex: Int,
+        payload: Data
+    ) {
+        self.storageID = storageID
+        self.sessionID = sessionID
+        self.segmentIndex = segmentIndex
+        self.chunkIndex = chunkIndex
+        self.payload = payload
+    }
+}
+
+@Model
+final class StoredRideRouteManifest {
+    @Attribute(.unique) var sessionID: UUID
+    var payload: Data
+
+    init(sessionID: UUID, payload: Data) {
+        self.sessionID = sessionID
+        self.payload = payload
+    }
+}
+
 enum RideHistoryPersistenceError: Error, Equatable, Sendable {
     case corruptRecord(UUID)
+    case corruptRouteChunk(String)
+    case corruptRouteManifest(UUID)
     case durableVerificationFailed(UUID)
+    case durableRouteVerificationFailed(String)
     case applicationSupportUnavailable
 }
 
@@ -109,6 +146,203 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
         } catch {
             throw RideHistoryPersistenceError.corruptRecord(sessionID)
         }
+    }
+}
+
+/// Separate route-geometry durability domain. Immutable chunks and the final
+/// manifest are exact JSON payloads with indexed identity duplicated only so
+/// corruption can be detected before geometry reaches presentation.
+@ModelActor
+actor SwiftDataRideRouteStore: RideRouteStore {
+    func commit(_ chunk: RideRouteChunk) async throws -> RideRouteStoreCommitResult {
+        let storageID = Self.storageID(for: chunk.id)
+        if let existing = try storedChunk(storageID: storageID) {
+            let decoded = try decode(existing, expectedID: chunk.id)
+            guard decoded == chunk else {
+                throw RideRouteStoreError.chunkConflict(chunk.id)
+            }
+            return .alreadyPresent
+        }
+
+        let payload = try JSONEncoder().encode(chunk)
+        modelContext.insert(
+            StoredRideRouteChunk(
+                storageID: storageID,
+                sessionID: chunk.id.sessionID,
+                segmentIndex: Int(chunk.id.segmentIndex),
+                chunkIndex: Int(chunk.id.chunkIndex),
+                payload: payload
+            )
+        )
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+
+        guard let verified = try storedChunk(storageID: storageID),
+              try decode(verified, expectedID: chunk.id) == chunk else {
+            throw RideHistoryPersistenceError.durableRouteVerificationFailed(storageID)
+        }
+        return .inserted
+    }
+
+    func chunk(id: RideRouteChunkID) async throws -> RideRouteChunk? {
+        let storageID = Self.storageID(for: id)
+        guard let stored = try storedChunk(storageID: storageID) else { return nil }
+        return try decode(stored, expectedID: id)
+    }
+
+    func chunks(sessionID: UUID) async throws -> [RideRouteChunk] {
+        let key = sessionID
+        let descriptor = FetchDescriptor<StoredRideRouteChunk>(
+            predicate: #Predicate { stored in
+                stored.sessionID == key
+            }
+        )
+        let stored = try modelContext.fetch(descriptor)
+        let decoded = try stored.map { row in
+            let id = RideRouteChunkID(
+                sessionID: row.sessionID,
+                segmentIndex: try checkedUInt32(row.segmentIndex, storageID: row.storageID),
+                chunkIndex: try checkedUInt32(row.chunkIndex, storageID: row.storageID)
+            )
+            return try decode(row, expectedID: id)
+        }
+        return decoded.sorted { lhs, rhs in
+            if lhs.id.segmentIndex != rhs.id.segmentIndex {
+                return lhs.id.segmentIndex < rhs.id.segmentIndex
+            }
+            return lhs.id.chunkIndex < rhs.id.chunkIndex
+        }
+    }
+
+    func commit(_ manifest: RideRouteManifest) async throws -> RideRouteStoreCommitResult {
+        if let existing = try storedManifest(sessionID: manifest.sessionID) {
+            let decoded = try decode(existing, sessionID: manifest.sessionID)
+            guard decoded == manifest else {
+                throw RideRouteStoreError.manifestConflict(manifest.sessionID)
+            }
+            return .alreadyPresent
+        }
+
+        let payload = try JSONEncoder().encode(manifest)
+        modelContext.insert(
+            StoredRideRouteManifest(
+                sessionID: manifest.sessionID,
+                payload: payload
+            )
+        )
+
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+
+        guard let verified = try storedManifest(sessionID: manifest.sessionID),
+              try decode(verified, sessionID: manifest.sessionID) == manifest else {
+            throw RideHistoryPersistenceError.durableRouteVerificationFailed(manifest.sessionID.uuidString)
+        }
+        return .inserted
+    }
+
+    func manifest(sessionID: UUID) async throws -> RideRouteManifest? {
+        guard let stored = try storedManifest(sessionID: sessionID) else { return nil }
+        return try decode(stored, sessionID: sessionID)
+    }
+
+    func geometry(sessionID: UUID) async throws -> RideRouteGeometry? {
+        guard let manifest = try await manifest(sessionID: sessionID) else { return nil }
+        return try RideRouteGeometry(
+            manifest: manifest,
+            chunks: try await chunks(sessionID: sessionID)
+        )
+    }
+
+    private static func storageID(for id: RideRouteChunkID) -> String {
+        "\(id.sessionID.uuidString)|\(id.segmentIndex)|\(id.chunkIndex)"
+    }
+
+    private func storedChunk(storageID: String) throws -> StoredRideRouteChunk? {
+        let key = storageID
+        var descriptor = FetchDescriptor<StoredRideRouteChunk>(
+            predicate: #Predicate { stored in
+                stored.storageID == key
+            }
+        )
+        descriptor.fetchLimit = 2
+        let matches = try modelContext.fetch(descriptor)
+        guard matches.count <= 1 else {
+            throw RideHistoryPersistenceError.corruptRouteChunk(storageID)
+        }
+        return matches.first
+    }
+
+    private func storedManifest(sessionID: UUID) throws -> StoredRideRouteManifest? {
+        let key = sessionID
+        var descriptor = FetchDescriptor<StoredRideRouteManifest>(
+            predicate: #Predicate { stored in
+                stored.sessionID == key
+            }
+        )
+        descriptor.fetchLimit = 2
+        let matches = try modelContext.fetch(descriptor)
+        guard matches.count <= 1 else {
+            throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
+        }
+        return matches.first
+    }
+
+    private func decode(
+        _ stored: StoredRideRouteChunk,
+        expectedID: RideRouteChunkID
+    ) throws -> RideRouteChunk {
+        do {
+            let decoded = try JSONDecoder().decode(RideRouteChunk.self, from: stored.payload)
+            let storageID = Self.storageID(for: expectedID)
+            guard stored.storageID == storageID,
+                  stored.sessionID == expectedID.sessionID,
+                  stored.segmentIndex == Int(expectedID.segmentIndex),
+                  stored.chunkIndex == Int(expectedID.chunkIndex),
+                  decoded.id == expectedID else {
+                throw RideHistoryPersistenceError.corruptRouteChunk(stored.storageID)
+            }
+            return decoded
+        } catch let error as RideHistoryPersistenceError {
+            throw error
+        } catch {
+            throw RideHistoryPersistenceError.corruptRouteChunk(stored.storageID)
+        }
+    }
+
+    private func decode(
+        _ stored: StoredRideRouteManifest,
+        sessionID: UUID
+    ) throws -> RideRouteManifest {
+        do {
+            let decoded = try JSONDecoder().decode(RideRouteManifest.self, from: stored.payload)
+            guard stored.sessionID == sessionID,
+                  decoded.sessionID == sessionID else {
+                throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
+            }
+            return decoded
+        } catch let error as RideHistoryPersistenceError {
+            throw error
+        } catch {
+            throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
+        }
+    }
+
+    private func checkedUInt32(_ value: Int, storageID: String) throws -> UInt32 {
+        guard value >= 0,
+              value <= Int(UInt32.max) else {
+            throw RideHistoryPersistenceError.corruptRouteChunk(storageID)
+        }
+        return UInt32(value)
     }
 }
 
@@ -211,6 +445,7 @@ enum RidePersistenceScope: Equatable, Sendable {
 struct RidePersistenceStack: Sendable {
     let checkpointStore: AtomicRideCheckpointStore
     let historyStore: SwiftDataRideHistoryStore
+    let routeStore: SwiftDataRideRouteStore
 }
 
 enum RidePersistenceFactory {
@@ -242,12 +477,17 @@ enum RidePersistenceFactory {
         let checkpointStore = AtomicRideCheckpointStore(directoryURL: recoveryDirectory)
 
         let historyURL = scopeDirectory.appendingPathComponent("RideHistory.store")
-        let container = try makeHistoryContainer(storeURL: historyURL)
-        let historyStore = SwiftDataRideHistoryStore(modelContainer: container)
+        let historyContainer = try makeHistoryContainer(storeURL: historyURL)
+        let historyStore = SwiftDataRideHistoryStore(modelContainer: historyContainer)
+
+        let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
+        let routesContainer = try makeRouteContainer(storeURL: routesURL)
+        let routeStore = SwiftDataRideRouteStore(modelContainer: routesContainer)
 
         return RidePersistenceStack(
             checkpointStore: checkpointStore,
-            historyStore: historyStore
+            historyStore: historyStore,
+            routeStore: routeStore
         )
     }
 
@@ -261,6 +501,31 @@ enum RidePersistenceFactory {
         let schema = Schema([StoredRideHistoryRecord.self])
         let configuration = ModelConfiguration(
             "NembraRideHistory",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(
+            for: schema,
+            migrationPlan: nil,
+            configurations: [configuration]
+        )
+    }
+
+    static func makeRouteContainer(storeURL: URL) throws -> ModelContainer {
+        let parent = storeURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: parent,
+            withIntermediateDirectories: true
+        )
+
+        let schema = Schema([
+            StoredRideRouteChunk.self,
+            StoredRideRouteManifest.self
+        ])
+        let configuration = ModelConfiguration(
+            "NembraRideRoutes",
             schema: schema,
             url: storeURL,
             allowsSave: true,
