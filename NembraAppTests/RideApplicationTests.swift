@@ -293,6 +293,23 @@ final class RideApplicationTests: XCTestCase {
         } catch let error as RideRouteEvidenceError {
             XCTAssertEqual(error, .nonContiguousSegments)
         }
+
+        let orphanSessionID = UUID()
+        let orphanChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: orphanSessionID, segmentIndex: 0, chunkIndex: 0),
+            points: [
+                try routePoint(sequence: 0, latitude: 45.6387, longitude: -122.6615),
+                try routePoint(sequence: 1, latitude: 45.6391, longitude: -122.6607)
+            ]
+        )
+        _ = try await store.commit(orphanChunk)
+
+        do {
+            _ = try await store.geometry(sessionID: orphanSessionID)
+            XCTFail("Persisted coordinates without a final manifest must not be mislabeled as no route data.")
+        } catch let error as RideHistoryPersistenceError {
+            XCTAssertEqual(error, .corruptRouteManifest(orphanSessionID))
+        }
     }
 
     func testRouteRecorderTrailingGapDoesNotCreateEmptySegment() async throws {
@@ -355,9 +372,6 @@ final class RideApplicationTests: XCTestCase {
             horizontalAccuracyMeters: 4
         )
 
-        // A new recorder actor represents a process/recovery boundary. Existing
-        // chunks are durable, but the missing interval is not, so the next point
-        // must begin an explicit new segment and force partial coverage.
         let recoveredRecorder = try RideRouteRecorder(store: store, chunkSize: 1)
         try await recoveredRecorder.begin(sessionID: sessionID)
         try await recoveredRecorder.append(
@@ -470,8 +484,6 @@ final class RideApplicationTests: XCTestCase {
         await store.start()
         XCTAssertEqual(store.status, .idle)
 
-        // Deliberately invert the two independent service streams: the raw
-        // packet reaches RideApplicationStore before its connected state does.
         try await service.emitSpeed(kilometersPerHour: 12)
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(
