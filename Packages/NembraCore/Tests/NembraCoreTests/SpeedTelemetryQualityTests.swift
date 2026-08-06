@@ -32,12 +32,19 @@ struct SpeedTelemetryQualityTests {
         let unconstrained = try SpeedTelemetryQualityPolicy()
         #expect(unconstrained.minimumAcceptedSampleCount == 1)
         #expect(unconstrained.maximumMeanIntervalMilliseconds == nil)
+        #expect(unconstrained.minimumDeliveryLatencySampleFraction == nil)
 
         #expect(throws: SpeedTelemetryQualityPolicyError.invalidMinimumAcceptedSampleCount) {
             try SpeedTelemetryQualityPolicy(minimumAcceptedSampleCount: 0)
         }
         #expect(throws: SpeedTelemetryQualityPolicyError.invalidMaximumRejectedSampleFraction) {
             try SpeedTelemetryQualityPolicy(maximumRejectedSampleFraction: 1.01)
+        }
+        #expect(throws: SpeedTelemetryQualityPolicyError.invalidMinimumDeliveryLatencySampleFraction) {
+            try SpeedTelemetryQualityPolicy(minimumDeliveryLatencySampleFraction: -0.01)
+        }
+        #expect(throws: SpeedTelemetryQualityPolicyError.invalidMinimumDeliveryLatencySampleFraction) {
+            try SpeedTelemetryQualityPolicy(minimumDeliveryLatencySampleFraction: .infinity)
         }
         #expect(throws: SpeedTelemetryQualityPolicyError.invalidThreshold) {
             try SpeedTelemetryQualityPolicy(maximumMeanIntervalMilliseconds: -.infinity)
@@ -154,6 +161,50 @@ struct SpeedTelemetryQualityTests {
         ])
     }
 
+    @Test("latency requirement can demand representative timestamp coverage")
+    func sparseLatencyCoverageFailsEvenWhenObservedMeanLooksGood() throws {
+        var collector = TelemetryBenchmarkCollector(source: .gps)
+        collector.record(try sample(
+            source: .gps,
+            metersPerSecond: 0,
+            milliseconds: 0,
+            deliveryLatencyMilliseconds: 50
+        ))
+        collector.record(try sample(source: .gps, metersPerSecond: 1, milliseconds: 100))
+        collector.record(try sample(source: .gps, metersPerSecond: 2, milliseconds: 200))
+        collector.record(try sample(source: .gps, metersPerSecond: 3, milliseconds: 300))
+
+        let policy = try SpeedTelemetryQualityPolicy(
+            requiredSource: .gps,
+            minimumDeliveryLatencySampleFraction: 0.75,
+            maximumMeanDeliveryLatencyMilliseconds: 100
+        )
+        let assessment = collector.summary.qualityAssessment(using: policy)
+
+        #expect(collector.summary.deliveryLatencySampleCount == 1)
+        #expect(collector.summary.meanDeliveryLatencyMilliseconds == 50)
+        #expect(assessment.failures == [
+            .deliveryLatencySampleFractionBelowMinimum(minimum: 0.75, actual: 0.25)
+        ])
+    }
+
+    @Test("zero latency samples report missing evidence and insufficient requested coverage")
+    func missingLatencyCoverageAccumulates() throws {
+        var collector = TelemetryBenchmarkCollector(source: .gps)
+        collector.record(try sample(source: .gps, metersPerSecond: 0, milliseconds: 0))
+        collector.record(try sample(source: .gps, metersPerSecond: 1, milliseconds: 100))
+
+        let policy = try SpeedTelemetryQualityPolicy(
+            minimumDeliveryLatencySampleFraction: 0.5,
+            maximumMeanDeliveryLatencyMilliseconds: 100
+        )
+        let assessment = collector.summary.qualityAssessment(using: policy)
+        #expect(assessment.failures == [
+            .missingDeliveryLatencyEvidence,
+            .deliveryLatencySampleFractionBelowMinimum(minimum: 0.5, actual: 0)
+        ])
+    }
+
     @Test("measured latency and empirical speed step can independently exceed requirements")
     func latencyAndResolutionFailures() throws {
         var collector = TelemetryBenchmarkCollector(source: .gps)
@@ -172,6 +223,7 @@ struct SpeedTelemetryQualityTests {
 
         let policy = try SpeedTelemetryQualityPolicy(
             requiredSource: .gps,
+            minimumDeliveryLatencySampleFraction: 1,
             maximumMeanDeliveryLatencyMilliseconds: 100,
             maximumEmpiricalSpeedStepKilometersPerHour: 1
         )
