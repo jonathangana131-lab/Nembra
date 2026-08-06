@@ -598,16 +598,28 @@ struct HomeView: View {
 
     private var lockSubtitle: String {
         guard let locked = vehicle.state.isLocked else { return "Unknown" }
-        if !locked && isVehicleMoving { return "Stop to lock" }
-        return locked ? "Secured" : "Ready"
+        if locked { return "Secured" }
+        guard let speed = confirmedVehicleSpeedKilometersPerHour else { return "Speed unavailable" }
+        return speed >= 0.5 ? "Stop to lock" : "Ready"
+    }
+
+    private var confirmedVehicleSpeedKilometersPerHour: Double? {
+        guard let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return nil
+        }
+        return speed
     }
 
     private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        confirmedVehicleSpeedKilometersPerHour.map { $0 >= 0.5 } ?? false
     }
 
     private var canChangeLockState: Bool {
-        vehicle.state.isLocked == true || !isVehicleMoving
+        if vehicle.state.isLocked == true { return true }
+        guard let speed = confirmedVehicleSpeedKilometersPerHour else { return false }
+        return speed < 0.5
     }
 
     private var isBatteryLow: Bool {

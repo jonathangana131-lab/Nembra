@@ -79,6 +79,56 @@ struct SimulatedScooterServiceTests {
         #expect(snapshot.isLocked == false)
     }
 
+    @Test("locking requires confirmed stationary speed while unlocking remains available")
+    func unknownSpeedRejectsLockButAllowsUnlock() async throws {
+        var unlockedUnknown = SimulatedScooterService.state(for: .connectedStopped)
+        unlockedUnknown.speedKilometersPerHour = nil
+        unlockedUnknown.isLocked = false
+        let unlockedService = SimulatedScooterService(
+            initialState: unlockedUnknown,
+            commandLatencyNanoseconds: 0
+        )
+
+        await #expect(throws: ScooterCommandError.commandRejected) {
+            try await unlockedService.setLocked(true)
+        }
+        #expect((await unlockedService.snapshot()).isLocked == false)
+
+        var lockedUnknown = unlockedUnknown
+        lockedUnknown.isLocked = true
+        let lockedService = SimulatedScooterService(
+            initialState: lockedUnknown,
+            commandLatencyNanoseconds: 0
+        )
+        try await lockedService.setLocked(false)
+        #expect((await lockedService.snapshot()).isLocked == false)
+    }
+
+    @Test("locking rechecks speed after acknowledgement before committing")
+    func movementDuringLockAcknowledgementRejectsCommit() async {
+        let gate = CommandAcknowledgementGate()
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .connectedStopped),
+            commandAcknowledgementGate: {
+                await gate.waitForRelease()
+            }
+        )
+
+        let command = Task {
+            try await service.setLocked(true)
+        }
+        await gate.waitUntilEntered()
+        await service.simulateRide(speedKilometersPerHour: 6, elapsedSeconds: 0.1)
+        await gate.release()
+
+        await #expect(throws: ScooterCommandError.commandRejected) {
+            try await command.value
+        }
+        let snapshot = await service.snapshot()
+        #expect(snapshot.isLocked == false)
+        #expect((snapshot.speedKilometersPerHour ?? 0) >= 0.5)
+    }
+
     @Test("speed-limit slots remain independent of ride mode")
     func speedLimitSlotsAreIndependent() async throws {
         let service = SimulatedScooterService(commandLatencyNanoseconds: 0)

@@ -307,8 +307,32 @@ public actor SimulatedScooterService: ScooterService {
         guard profile.capabilities.supportsLock else { throw ScooterCommandError.unsupportedCapability }
         let generation = try beginCommand()
         defer { finishCommand() }
-        guard (state.speedKilometersPerHour ?? 0) < 0.5 else { throw ScooterCommandError.commandRejected }
+
+        // Locking is safety-sensitive: unknown speed is not the same thing as
+        // stopped. Require a fresh, finite stationary value both before and
+        // after acknowledgement because the actor can re-enter while waiting
+        // for the simulated transport confirmation. Unlocking stays available
+        // even when speed is unknown.
+        if locked {
+            guard let speed = state.speedKilometersPerHour,
+                  speed.isFinite,
+                  speed >= 0,
+                  speed < 0.5 else {
+                throw ScooterCommandError.commandRejected
+            }
+        }
+
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
+
+        if locked {
+            guard let speed = state.speedKilometersPerHour,
+                  speed.isFinite,
+                  speed >= 0,
+                  speed < 0.5 else {
+                throw ScooterCommandError.commandRejected
+            }
+        }
+
         state.isLocked = locked
         publish()
     }

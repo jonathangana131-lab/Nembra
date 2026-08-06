@@ -113,10 +113,17 @@ struct DashboardView: View {
                 .tracking(2.2)
                 .foregroundStyle(.secondary)
         } else if vehicle.state.connection == .connected {
-            Text(isVehicleMoving ? "RIDING" : "READY")
-                .font(.caption2.weight(.bold))
-                .tracking(2.4)
-                .foregroundStyle(.secondary)
+            if let speed = confirmedVehicleSpeedKilometersPerHour {
+                Text(speed >= 0.5 ? "RIDING" : "READY")
+                    .font(.caption2.weight(.bold))
+                    .tracking(2.4)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("SPEED UNAVAILABLE")
+                    .font(.caption2.weight(.bold))
+                    .tracking(2.2)
+                    .foregroundStyle(.secondary)
+            }
         } else {
             Text("NO LIVE SPEED")
                 .font(.caption2.weight(.bold))
@@ -320,15 +327,28 @@ struct DashboardView: View {
     }
 
     private var shouldShowStoppedControls: Bool {
-        vehicle.state.connection == .connected && !isVehicleMoving
+        vehicle.state.connection == .connected && isVehicleConfirmedStopped
     }
 
     private var shouldShowMovingReadout: Bool {
         vehicle.state.connection == .connected && isVehicleMoving
     }
 
+    private var confirmedVehicleSpeedKilometersPerHour: Double? {
+        guard let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return nil
+        }
+        return speed
+    }
+
     private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        confirmedVehicleSpeedKilometersPerHour.map { $0 >= 0.5 } ?? false
+    }
+
+    private var isVehicleConfirmedStopped: Bool {
+        confirmedVehicleSpeedKilometersPerHour.map { $0 < 0.5 } ?? false
     }
 
     private var supportedModes: [RideMode] {
