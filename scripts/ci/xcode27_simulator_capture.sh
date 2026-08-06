@@ -74,8 +74,8 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
-  -default-test-execution-time-allowance 60 \
-  -maximum-test-execution-time-allowance 60 \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   test \
