@@ -7,6 +7,30 @@ This document deliberately separates facts from hypotheses. Never promote a hypo
 - MAXSHOT V1S Pro hardware validation is deferred. Preserve its prior protocol findings, capability abstractions, tests, and profile work for future support.
 - Generic vehicle/service/command/telemetry architecture remains capability-driven; do not hard-code the entire app around one scooter.
 
+## AOVOPRO ES80 — public research comes before user blocking
+Do **not** stop progress or wait for the user to manually provide scooter information when the unanswered question can reasonably be investigated from public sources.
+
+Before declaring any ES80 protocol/battery question "blocked on hardware" or asking the user for a capture, exhaust reasonable public research first. Search and cross-correlate, where legally/publicly accessible:
+- official AOVO/AOVOPRO manuals, support pages, firmware/app documentation, parts information, and product materials
+- official Tuya developer documentation, Bluetooth/Tuya protocol specifications, MCU/BLE module documentation, and known data-point conventions
+- FCC/ISED/CE regulatory filings, Bluetooth SIG information, module/device identifiers, internal photos, and test exhibits when available
+- App Store / Google Play metadata and public application documentation; public APK/package strings or schemas when lawfully accessible
+- GitHub repositories, reverse-engineering projects, issue threads, public BLE/GATT dumps, packet captures, and tooling related to the ES80 or demonstrably shared AOVO/Tuya hardware
+- teardowns, repair documentation, controller/dashboard/BLE-module photos, component datasheets, forums, Reddit/community reports, manuals/listings, and closely related OEM/clone/sibling scooters
+- archived/cached public material when current vendor pages omit older ES80 details
+
+Research must distinguish evidence classes instead of treating every web result as equal:
+- **VERIFIED PUBLIC** — authoritative documentation or reproducible public evidence that directly establishes the exact fact
+- **CORROBORATED / PROBABLE** — multiple independent sources or a demonstrably shared hardware/protocol family strongly support the fact
+- **GENERIC TUYA / FAMILY FACT** — useful implementation/research clue but not yet proven ES80-specific
+- **UNKNOWN / PHYSICAL VERIFICATION REQUIRED** — cannot be resolved confidently without the actual scooter or a capture from equivalent verified hardware
+
+For every important public protocol claim, preserve enough provenance to audit it later: source URL/title, access date when practical, exact model/module/firmware applicability, and why the evidence is direct vs inferred. Prefer primary/official sources over reposts; use community material to find leads and corroboration, not as automatic truth.
+
+Public research is allowed to unblock architecture, passive capture tooling, parsers, decoders, fixture generation, tests, likely UUID/DP candidate investigation, and safe read/subscribe paths. It must **not** erase the final distinction between public evidence and validation on the physical AOVOPRO ES80. Real motorized-hardware writes still require the normal safety gate.
+
+The user should be asked for physical help only when a genuinely device-specific measurement/capture remains necessary after public research, when public sources conflict materially, or when final real-hardware verification is required. A worker must not merely say "waiting for the user"; if blocked, record what was searched, what was learned, the exact unresolved fact, and the smallest concrete physical action that would resolve it.
+
 ## AOVOPRO ES80 — directly observed product behavior
 - The stock Tuya application visibly reports a battery percentage for the physical ES80 used for Nembra development.
 - That visible percentage is **not yet proven** to be a raw 1%-resolution value transmitted directly by the scooter. Packet/GATT evidence must establish its source, resolution, update cadence, and whether Tuya derives it.
@@ -47,16 +71,19 @@ Battery evidence must eventually map into the single Nembra battery domain as **
 - whether ODO is stored in dashboard MCU, motor controller, BLE module, or another component
 - AccessorySetupKit identity/descriptors where applicable
 
+These items are **not permission to stop researching**. They mean exact physical-ES80 validation is still outstanding. Public evidence should still be used to narrow candidates, build passive tooling/tests, and reduce the eventual physical capture to the smallest necessary verification step.
+
 ## AOVOPRO ES80 — hardware research order
 Use the safety sequence:
-1. discover advertisement identity
-2. enumerate services/characteristics/properties
-3. subscribe/read passively
-4. capture stock Tuya behavior while changing one known UI state at a time
-5. correlate packets/data points with visible stock-app state
-6. decode and document with representative captures
-7. write parser/encoder tests
-8. only then perform cautious real writes for semantics whose framing/range/acknowledgement are understood
+1. research public evidence and candidate protocol/module lineage first
+2. discover advertisement identity
+3. enumerate services/characteristics/properties
+4. subscribe/read passively
+5. capture stock Tuya behavior while changing one known UI state at a time
+6. correlate packets/data points with visible stock-app state
+7. decode and document with representative captures
+8. write parser/encoder tests
+9. only then perform cautious real writes for semantics whose framing/range/acknowledgement are understood
 
 Do not send random bytes to a motorized vehicle.
 
