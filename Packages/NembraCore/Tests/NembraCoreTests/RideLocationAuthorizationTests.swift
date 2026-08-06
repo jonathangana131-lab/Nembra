@@ -53,7 +53,8 @@ struct RideLocationAuthorizationTests {
         )
 
         guard case let .accepted(accepted) = screen.screen(nearby) else {
-            return Issue.record("Reduced-accuracy evidence must not replace the last precise accepted baseline.")
+            Issue.record("Reduced-accuracy evidence must not replace the last precise accepted baseline.")
+            return
         }
         let delta = try #require(accepted.distanceDeltaMeters)
         #expect(delta > 9)
