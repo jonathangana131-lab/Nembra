@@ -27,19 +27,34 @@ It composes the process-local `BatteryEvidenceStreamValidator`, so:
 - wall-clock movement is irrelevant to ordering;
 - explicit continuity boundaries create a fresh segment.
 
-The accumulator does not decide that several same-uptime fields really came from one physical ES80 packet. Equal uptime is merely allowed because the software must not invent a finer ordering distinction than the source evidence provides.
+The accumulator does not claim that several same-uptime fields physically came from one ES80 packet. Equal uptime only means the source boundary did not provide a finer process-local ordering distinction.
 
 ## Gap behavior
 
 When a higher layer calls `markUnobservedInterval()`:
 
 - the current live snapshot is cleared immediately;
-- the stream requires an explicit `.afterUnobservedInterval` observation before accepting ordinary continuous evidence again;
+- the stream requires explicit post-gap continuity evidence before accepting ordinary continuous evidence again;
 - prior segment fields cannot leak into the fresh segment.
 
-A spontaneous explicit `.afterUnobservedInterval` observation also clears all prior current-segment fields conservatively. This supports process relaunch or another explicit evidence boundary where the new uptime epoch may restart at a lower number.
+A spontaneous explicit `.afterUnobservedInterval` observation also starts a fresh segment conservatively. This supports process relaunch or another explicit evidence boundary where the new uptime epoch may restart at a lower number.
 
 Historical/retained presentation is a separate concern. Clearing this current-segment accumulator does not require deleting durable history; it only prevents stale values from masquerading as current live evidence.
+
+## Multi-field post-gap boundary batches
+
+One source callback may eventually decode into several normalized fields. If that first callback follows an unobserved interval, each normalized field may legitimately inherit `.afterUnobservedInterval` with the **same receipt uptime**.
+
+The accumulator therefore treats same-uptime explicit boundary observations as one post-gap boundary batch:
+
+- the first genuinely new boundary observation clears the old segment;
+- additional different fields carrying the same boundary uptime join that fresh segment instead of clearing one another;
+- replaying an already accepted boundary observation is idempotent and does not erase other same-uptime fields;
+- once accepted evidence advances to a greater uptime, that boundary batch closes;
+- a later explicit boundary can then start another fresh segment, including one whose new uptime epoch is numerically lower;
+- `markUnobservedInterval()` always closes any open boundary batch and clears the current segment immediately.
+
+Without a separate sequence identifier, two spontaneous distinct gaps that somehow present the exact same receipt uptime cannot be distinguished from one multi-field boundary batch. The model does not invent a sequence fact that the evidence lacks. A higher layer that actually knows another gap occurred must call `markUnobservedInterval()`.
 
 ## Same-field ambiguity
 
@@ -65,13 +80,14 @@ Snapshot retention never promotes evidence.
 - derived/presentation values remain non-measured;
 - only already-verified vehicle measurements can satisfy the authoritative measurement gates defined by the parent battery evidence domain.
 
-This accumulator therefore supports a future Battery detail UI without creating a shortcut around physical ES80 verification.
+This accumulator therefore supports future battery consumers without creating a shortcut around physical ES80 verification.
 
 ## Not included
 
 This slice does not:
 
 - decode ES80 BLE/Tuya packets;
+- establish physical packet grouping;
 - establish field cadence or staleness thresholds;
 - infer a gap from elapsed time;
 - choose which fields are user-facing;
