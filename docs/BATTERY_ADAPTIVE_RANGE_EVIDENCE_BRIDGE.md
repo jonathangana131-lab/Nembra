@@ -142,6 +142,20 @@ Preserved parent behavior includes:
 - distance accumulated after a non-authoritative post-gap boundary but before the first verified SoC anchor is discarded when that verified anchor arrives;
 - policy thresholds are evaluated live at each SoC evaluation rather than frozen when the anchor was created.
 
+### Omitted distance coverage fails closed
+
+The public pipeline intentionally defaults an omitted `coverage:` argument to `.unknown`, **not `.complete`**.
+
+This keeps older call sites source-compatible without allowing omission to silently assert trustworthy distance. A caller that has actually proven complete coverage must pass `.complete` explicitly.
+
+A dedicated model-boundary regression omits coverage on a 300 m / 3% candidate and verifies:
+
+- the emitted candidate is `.unknown` coverage;
+- the adaptive model rejects it as `incompleteDistanceEvidence`;
+- learned history remains unchanged.
+
+Intentional complete-distance regressions, including outlier lifecycle tests, now pass `.complete` explicitly.
+
 ## Missing evidence versus observed transport gap
 
 These are deliberately different:
@@ -160,8 +174,9 @@ That separation matters because durable learned history eventually requires a ve
 End-to-end model-boundary tests prove:
 
 - clean complete/no-gap pipeline candidate → accepted;
-- partial candidate → rejected as incomplete distance, model unchanged;
-- unknown candidate → rejected as incomplete distance, model unchanged;
+- omitted coverage → unknown coverage, rejected as incomplete distance, model unchanged;
+- explicit partial candidate → rejected as incomplete distance, model unchanged;
+- explicit unknown candidate → rejected as incomplete distance, model unchanged;
 - observed transport-gap candidate → rejected as transport gap, model unchanged.
 
 ### Rejected outlier lifecycle
@@ -176,13 +191,15 @@ Supplemental Swift 6.2.1 contract validation currently includes:
 
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window harness: **6/6 passed**;
-- authority-sealed latest assembler/seam/model harness: **14/14 debug passed** and **14/14 release passed**;
+- authority-sealed latest assembler/seam/model harness: **15/15 debug passed** and **15/15 release passed**;
 - external legitimate non-authoritative client: passed;
 - external verified-authority negative compile probe: failed as required;
 - external forged-result negative compile probe: failed as required;
 - public symbol graph audit: passed.
 
-The reduced local model stub initially lacked the real parent's outlier check, causing the new lifecycle test to fail for the wrong reason. After matching the real `AdaptiveBatteryRangeModel.ingest` outlier/weighted-history boundary, the full 14-case harness passed in debug and release. This is supplemental software evidence, not repository-wide Xcode acceptance.
+The reduced local model stub initially lacked the real parent's outlier check, causing the new lifecycle test to fail for the wrong reason. After matching the real `AdaptiveBatteryRangeModel.ingest` outlier/weighted-history boundary, the outlier lifecycle passed. The subsequent omitted-coverage regression raised the current combined contract suite to 15/15 in both debug and release.
+
+This is supplemental software evidence, not repository-wide Xcode acceptance.
 
 ## Merge boundary
 
@@ -199,7 +216,7 @@ Before production merge:
 7. the unchanged final SHA passes exact-head Xcode 27 / iPhone 12 Simulator QA with durable `Nembra/Xcode27 Exact Head` success;
 8. merge uses expected-head protection.
 
-GitHub Actions is currently degraded; missing workflow/scheduler runs are never considered green.
+GitHub Actions is currently degraded/backlogged; missing workflow/scheduler runs are never considered green.
 
 ## Hardware status
 
