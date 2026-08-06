@@ -21,7 +21,8 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurem
 
 - visual/interpolated Dashboard frames never enter the evaluator;
 - `motionAssist` short-horizon estimates cannot arm or advance a run;
-- a configured source can be required explicitly;
+- `requiredSource: .motionAssist` is rejected at policy construction because that source can never provide `absoluteMeasurement` provenance under Nembra's telemetry contract;
+- a configured authoritative source can be required explicitly;
 - if no source is required, the first usable authoritative source becomes locked for that run and a later source change invalidates the trace;
 - optional speed-accuracy gating is available for sources such as GPS;
 - an optional maximum accepted sample interval can reject a trace when usable measurement cadence becomes too sparse to support the requested timing quality;
@@ -124,6 +125,7 @@ The revised focused Swift 6.2.1 package passed **15/15 deterministic tests** cov
 - motion-estimate rejection;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
+- impossible `.motionAssist` authoritative required-source policy rejection;
 - quality-rejected locked-source observations still protecting monotonic ordering;
 - non-monotonic evidence rejection;
 - configurable long accepted-measurement gap rejection;
@@ -133,7 +135,7 @@ The revised focused Swift 6.2.1 package passed **15/15 deterministic tests** cov
 - reset behavior;
 - invalid policy rejection, including a zero maximum sample interval.
 
-Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the scheduled acceptance queue.
+Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the acceptance queue.
 
 ## Hardware validation still required
 
