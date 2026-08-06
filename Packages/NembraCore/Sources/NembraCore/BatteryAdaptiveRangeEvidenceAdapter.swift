@@ -104,3 +104,110 @@ public struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
         return action
     }
 }
+
+/// Result of applying one validated battery observation to the in-flight
+/// adaptive-range learning window state.
+public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
+    public let action: BatteryAdaptiveRangeEvidenceAction
+    public let learningWindow: BatteryRangeLearningWindow?
+
+    public init(
+        action: BatteryAdaptiveRangeEvidenceAction,
+        learningWindow: BatteryRangeLearningWindow?
+    ) {
+        self.action = action
+        self.learningWindow = learningWindow
+    }
+}
+
+/// End-to-end ephemeral pipeline from normalized battery evidence to candidate
+/// adaptive-range learning windows.
+///
+/// This type still does not select a distance source, classify route coverage,
+/// decode BLE/Tuya, or train/persist `AdaptiveBatteryRangeModel`. It only keeps
+/// the evidence-stream truth boundary and the in-flight window assembler in one
+/// atomic state transition so known gaps cannot leak across the seam.
+public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
+    public private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
+    public private(set) var windowAssembler: BatteryRangeLearningWindowAssembler
+
+    public init() {
+        evidenceBridge = BatteryAdaptiveRangeEvidenceBridge()
+        windowAssembler = BatteryRangeLearningWindowAssembler()
+    }
+
+    /// A higher layer has proof that normalized battery evidence was missed.
+    /// Discard the in-flight consumption span immediately and require the next
+    /// observation to carry an explicit continuity boundary.
+    public mutating func markUnobservedInterval() {
+        evidenceBridge.markUnobservedInterval()
+        windowAssembler.reset()
+    }
+
+    /// Records caller-classified real-distance evidence. The pipeline does not
+    /// choose ODO versus GPS and does not upgrade partial/unknown coverage.
+    public mutating func recordDistance(
+        deltaMeters: Double,
+        coverage: BatteryRangeDistanceCoverage = .complete
+    ) throws {
+        try windowAssembler.recordDistance(
+            deltaMeters: deltaMeters,
+            coverage: coverage
+        )
+    }
+
+    /// Records an observed scooter transport gap inside the current learning
+    /// span. This is distinct from `markUnobservedInterval()`: an observed gap
+    /// remains attached to the candidate so the adaptive model can reject it,
+    /// while a genuinely unobserved evidence interval discards the span.
+    public mutating func recordTransportGap() {
+        windowAssembler.recordTransportGap()
+    }
+
+    /// Validates and applies one battery observation atomically across both the
+    /// evidence-stream baseline and the learning-window assembler.
+    public mutating func acceptBatteryObservation(
+        _ observation: BatteryEvidenceObservation,
+        policy: AdaptiveBatteryRangePolicy
+    ) throws -> BatteryAdaptiveRangePipelineResult {
+        var candidateBridge = evidenceBridge
+        var candidateAssembler = windowAssembler
+
+        let action = try candidateBridge.accept(observation)
+        let window = try Self.apply(
+            action,
+            policy: policy,
+            to: &candidateAssembler
+        )
+
+        evidenceBridge = candidateBridge
+        windowAssembler = candidateAssembler
+
+        return BatteryAdaptiveRangePipelineResult(
+            action: action,
+            learningWindow: window
+        )
+    }
+
+    private static func apply(
+        _ action: BatteryAdaptiveRangeEvidenceAction,
+        policy: AdaptiveBatteryRangePolicy,
+        to assembler: inout BatteryRangeLearningWindowAssembler
+    ) throws -> BatteryRangeLearningWindow? {
+        switch action {
+        case .ignore:
+            return nil
+
+        case .resetContinuity:
+            assembler.reset()
+            return nil
+
+        case let .ingestSOC(reading):
+            return try assembler.ingestSOC(reading, policy: policy)
+
+        case let .resetContinuityAndIngestSOC(reading):
+            assembler.reset()
+            return try assembler.ingestSOC(reading, policy: policy)
+        }
+    }
+}
