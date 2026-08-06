@@ -139,6 +139,36 @@ struct RideStatisticsDeterminismTests {
         #expect(chronological.totalDistanceMeters == 9_007_199_254_740_994)
     }
 
+    @Test("compensated totals preserve small trustworthy rides after a huge earlier ride")
+    func compensatedTotalPreservesSmallDistances() throws {
+        let calendar = calendar()
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let huge = try ride(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            date: referenceDate.addingTimeInterval(-180),
+            distanceMeters: 9_007_199_254_740_992
+        )
+        let firstSmall = try ride(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            date: referenceDate.addingTimeInterval(-120),
+            distanceMeters: 1
+        )
+        let secondSmall = try ride(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            date: referenceDate.addingTimeInterval(-60),
+            distanceMeters: 1
+        )
+
+        let summary = try RideStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [huge, firstSmall, secondSmall],
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+
+        #expect(summary.totalDistanceMeters == 9_007_199_254_740_994)
+    }
+
     @Test("finite reference dates outside the calendar range fail closed")
     func calendarClampedReferenceDateFailsClosed() throws {
         let calendar = calendar()
