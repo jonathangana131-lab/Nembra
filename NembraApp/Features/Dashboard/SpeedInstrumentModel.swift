@@ -43,7 +43,7 @@ final class SpeedInstrumentModel {
     }
 
     /// Policy must be chosen by app bootstrap, not inferred from the vehicle
-    /// model. Production remains disabled until real MAXSHOT cadence is measured.
+    /// model. Production remains disabled until real AOVOPRO ES80 cadence is measured.
     func configureInterpolationPolicy(_ policy: SpeedInstrumentInterpolationPolicy) {
         guard measurementRevision == 0 else { return }
         interpolationPolicy = policy
@@ -100,13 +100,27 @@ final class SpeedInstrumentModel {
     /// Returns a render-only frame. The fallback is the latest value already
     /// confirmed in `VehicleState`; it is used only until fresh raw telemetry
     /// arrives and is never converted into a telemetry sample internally.
+    ///
+    /// Reduce Motion changes presentation only: when an interpolation frame is
+    /// active, the display snaps to the latest authoritative measurement that
+    /// the interpolator already carries. No measurement, telemetry, or
+    /// interpolation state is mutated by this preference.
     func frame(
         atUptimeNanoseconds uptimeNanoseconds: UInt64,
-        fallbackConfirmedKilometersPerHour: Double?
+        fallbackConfirmedKilometersPerHour: Double?,
+        prefersReducedMotion: Bool = false
     ) -> SpeedInstrumentDisplayFrame? {
         _ = measurementRevision
 
         if let frame = interpolator.frame(atUptimeNanoseconds: uptimeNanoseconds) {
+            if prefersReducedMotion {
+                return SpeedInstrumentDisplayFrame(
+                    kilometersPerHour: frame.latestMeasuredKilometersPerHour,
+                    latestMeasuredKilometersPerHour: frame.latestMeasuredKilometersPerHour,
+                    origin: .measuredTelemetry
+                )
+            }
+
             return SpeedInstrumentDisplayFrame(
                 kilometersPerHour: frame.kilometersPerHour,
                 latestMeasuredKilometersPerHour: frame.latestMeasuredKilometersPerHour,
@@ -186,12 +200,13 @@ struct DashboardSpeedInstrumentView: View {
         TimelineView(
             .animation(
                 minimumInterval: 1.0 / 60.0,
-                paused: !model.isAnimationActive
+                paused: reduceMotion || !model.isAnimationActive
             )
         ) { _ in
             let frame = model.frame(
                 atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour
+                fallbackConfirmedKilometersPerHour: vehicle.state.speedKilometersPerHour,
+                prefersReducedMotion: reduceMotion
             )
 
             instrumentContent(frame: frame)
