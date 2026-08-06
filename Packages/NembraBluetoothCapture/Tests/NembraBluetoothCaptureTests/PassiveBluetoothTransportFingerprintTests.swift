@@ -12,7 +12,7 @@ struct PassiveBluetoothTransportFingerprintTests {
         protocolFamily: "unknown-2025-es80"
     )
 
-    @Test("FD50 advertisement alone is only a service-level candidate")
+    @Test("FD50 advertisement alone is only a service-level candidate when explicitly scoped")
     func fd50ServiceOnly() throws {
         var session = try makeSession()
         try session.append(
@@ -32,6 +32,54 @@ struct PassiveBluetoothTransportFingerprintTests {
         #expect(report.candidateMatches[0].family == .tuyaModernFD50)
         #expect(report.candidateMatches[0].strength == .serviceObserved)
         #expect(report.candidateMatches[0].observedCharacteristicUUIDs.isEmpty)
+    }
+
+    @Test("unscoped advertisement-only capture refuses to guess a target peripheral")
+    func advertisementOnlyUnscopedFailsClosed() throws {
+        var session = try makeSession()
+        try session.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "nearby-tuya-device",
+                serviceUUIDs: ["FD50"]
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session)
+        #expect(report.peripheralIdentifier.isEmpty)
+        #expect(report.observedServiceUUIDs.isEmpty)
+        #expect(report.candidateMatches.isEmpty)
+    }
+
+    @Test("unscoped analysis uses the sole peripheral with GATT evidence and ignores nearby advertisements")
+    func soleGattPeripheralWinsConservatively() throws {
+        var session = try makeSession()
+        try session.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "nearby-tuya-device",
+                serviceUUIDs: ["FD50"]
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+        try session.append(
+            .service(try PassiveBluetoothServiceObservation(
+                peripheralIdentifier: "selected-es80",
+                serviceUUID: "A201",
+                isPrimary: true
+            )),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: .now
+        )
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session)
+        #expect(report.peripheralIdentifier == "selected-es80")
+        #expect(report.observedServiceUUIDs == ["A201"])
+        #expect(report.candidateMatches.map(\.family) == [.tuyaLegacyA201])
     }
 
     @Test("A201 plus 2B10 and 2B11 is a strong candidate but not a protocol verdict")
