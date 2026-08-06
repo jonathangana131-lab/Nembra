@@ -31,10 +31,10 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         #expect(stats.firstReceiptUptimeNanoseconds == 1_000_000_000)
         #expect(stats.lastReceiptUptimeNanoseconds == 1_600_000_000)
         #expect(stats.callbackIntervalCount == 3)
-        #expect(stats.minimumCallbackIntervalSeconds == 0.1)
-        #expect(stats.medianCallbackIntervalSeconds == 0.2)
-        #expect(stats.meanCallbackIntervalSeconds == 0.2)
-        #expect(stats.maximumCallbackIntervalSeconds == 0.3)
+        try expectApproximately(stats.minimumCallbackIntervalSeconds, 0.1)
+        try expectApproximately(stats.medianCallbackIntervalSeconds, 0.2)
+        try expectApproximately(stats.meanCallbackIntervalSeconds, 0.2)
+        try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.3)
     }
 
     @Test("interruptions split cadence so a disconnect gap is never averaged into callback timing")
@@ -55,9 +55,9 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         #expect(stats.sampleCount == 4)
         #expect(stats.continuitySegmentCount == 2)
         #expect(stats.callbackIntervalCount == 2)
-        #expect(stats.minimumCallbackIntervalSeconds == 0.0000001)
-        #expect(stats.maximumCallbackIntervalSeconds == 0.0000004)
-        #expect(stats.meanCallbackIntervalSeconds == 0.00000025)
+        try expectApproximately(stats.minimumCallbackIntervalSeconds, 0.0000001, tolerance: 1e-15)
+        try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000004, tolerance: 1e-15)
+        try expectApproximately(stats.meanCallbackIntervalSeconds, 0.00000025, tolerance: 1e-15)
     }
 
     @Test("different characteristics remain independent streams and sort deterministically")
@@ -121,5 +121,14 @@ struct PassiveBluetoothValueStreamStatisticsTests {
             receivedAtUptimeNanoseconds: uptime,
             receivedAtDate: .now
         )
+    }
+
+    private func expectApproximately(
+        _ actual: Double?,
+        _ expected: Double,
+        tolerance: Double = 1e-12
+    ) throws {
+        let actual = try #require(actual)
+        #expect(abs(actual - expected) <= tolerance)
     }
 }
