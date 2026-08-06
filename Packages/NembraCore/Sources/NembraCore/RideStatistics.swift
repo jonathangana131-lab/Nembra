@@ -184,13 +184,15 @@ public enum RideStatisticsAggregator {
         // Period boundaries depend only on the caller-supplied reference date
         // and Calendar. Resolve them once rather than asking Foundation to
         // rebuild the same day/week/month/year interval for every stored ride.
-        let selectedInterval = try periodInterval(
+        // Day windows remain half-open to preserve Calendar.isDate semantics;
+        // week/month/year preserve the existing DateInterval.contains contract.
+        let selectedWindow = try periodWindow(
             for: period,
             referenceDate: referenceDate,
             calendar: calendar
         )
         let periodRides = uniqueRides.filter { ride in
-            selectedInterval?.contains(ride.attributedDate) ?? true
+            selectedWindow.contains(ride.attributedDate)
         }
 
         var excludedDistanceRideCount = 0
@@ -314,6 +316,21 @@ public enum RideStatisticsAggregator {
         )
     }
 
+    private struct PeriodWindow {
+        let interval: DateInterval?
+        let excludesEnd: Bool
+
+        func contains(_ date: Date) -> Bool {
+            guard let interval else {
+                return true
+            }
+            if excludesEnd, date == interval.end {
+                return false
+            }
+            return interval.contains(date)
+        }
+    }
+
     private static func shouldReplaceLongestRide(
         candidateDistance: Double,
         candidateSessionKey: String,
@@ -365,40 +382,40 @@ public enum RideStatisticsAggregator {
         return dayInterval.contains(date)
     }
 
-    private static func periodInterval(
+    private static func periodWindow(
         for period: RideStatisticsPeriod,
         referenceDate: Date,
         calendar: Calendar
-    ) throws -> DateInterval? {
+    ) throws -> PeriodWindow {
         switch period {
         case .allTime:
-            return nil
+            return PeriodWindow(interval: nil, excludesEnd: false)
         case .today:
             guard let interval = calendar.dateInterval(of: .day, for: referenceDate) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return interval
+            return PeriodWindow(interval: interval, excludesEnd: true)
         case .yesterday:
             guard let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
                   let interval = calendar.dateInterval(of: .day, for: yesterday) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return interval
+            return PeriodWindow(interval: interval, excludesEnd: true)
         case .week:
             guard let interval = calendar.dateInterval(of: .weekOfYear, for: referenceDate) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return interval
+            return PeriodWindow(interval: interval, excludesEnd: false)
         case .month:
             guard let interval = calendar.dateInterval(of: .month, for: referenceDate) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return interval
+            return PeriodWindow(interval: interval, excludesEnd: false)
         case .year:
             guard let interval = calendar.dateInterval(of: .year, for: referenceDate) else {
                 throw RideStatisticsError.invalidReferenceDate
             }
-            return interval
+            return PeriodWindow(interval: interval, excludesEnd: false)
         }
     }
 
