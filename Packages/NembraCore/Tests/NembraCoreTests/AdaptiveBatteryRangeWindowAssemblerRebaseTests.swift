@@ -199,13 +199,16 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         var model = AdaptiveBatteryRangeModel()
         let p = try policy()
 
-        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        _ = try assembler.ingestSOC(reading(80, uptime: 100), policy: p)
         try assembler.recordDistance(deltaMeters: 500, coverage: .partial)
         assembler.recordTransportGap()
 
-        // A higher integration layer has identified the first trustworthy
-        // post-gap authoritative reading. Continuity cannot be proven, so the
-        // pre-gap candidate is intentionally abandoned rather than bridged.
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try assembler.ingestSOC(reading(75, uptime: 99), policy: p)
+        }
+
+        // A higher integration layer has identified a fresh post-gap epoch.
+        // Reset deliberately abandons the old ordering baseline and evidence.
         assembler.reset()
         _ = try assembler.ingestSOC(reading(75, uptime: 10), policy: p)
         try assembler.recordDistance(deltaMeters: 180, coverage: .complete)
@@ -214,6 +217,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let clean = try #require(candidate)
 
         #expect(clean.startSOC.percentage == 75)
+        #expect(clean.startSOC.receivedAtUptimeNanoseconds == 10)
         #expect(clean.endSOC.percentage == 72)
         #expect(clean.distanceMeters == 180)
         #expect(clean.distanceCoverage == .complete)
