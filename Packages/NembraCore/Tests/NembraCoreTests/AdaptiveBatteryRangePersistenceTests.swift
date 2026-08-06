@@ -94,6 +94,48 @@ struct AdaptiveBatteryRangePersistenceTests {
         #expect(decodedLearned.model.hasLearnedEfficiency)
     }
 
+    @Test("multiple fully retained samples reconstruct weighted history")
+    func multipleFullyRetainedSamplesRoundTrip() throws {
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy(recentWindowCapacity: 2)
+
+        let first = model.ingest(
+            try learningWindow(
+                distanceMeters: 2_000,
+                startPercentage: 100,
+                endPercentage: 80,
+                startUptime: 1,
+                endUptime: 2
+            ),
+            policy: p
+        )
+        let second = model.ingest(
+            try learningWindow(
+                distanceMeters: 2_400,
+                startPercentage: 80,
+                endPercentage: 60,
+                startUptime: 3,
+                endUptime: 4
+            ),
+            policy: p
+        )
+
+        #expect(first.disposition == .accepted)
+        #expect(second.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 2)
+        #expect(model.recentSamples.count == 2)
+        #expect(model.historicalConsumedPercentagePoints == 40)
+        #expect(model.historicalEfficiencyMetersPerPercentagePoint == 110)
+
+        let state = try AdaptiveBatteryRangePersistedState(validating: model)
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(AdaptiveBatteryRangePersistedState.self, from: data)
+
+        #expect(decoded == state)
+        #expect(decoded.model.recentSamples.count == decoded.model.acceptedWindowCount)
+        #expect(decoded.model.historicalEfficiencyMetersPerPercentagePoint == 110)
+    }
+
     @Test("maximum legitimate normalized consumption remains valid")
     func maximumLegitimateConsumptionAccepted() throws {
         var model = AdaptiveBatteryRangeModel()
