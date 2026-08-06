@@ -1,111 +1,89 @@
 # CONTINUATION PROMPT
 
-Continue the **existing Nembra production iOS project**. Use GPT-5.6 Thinking/Sol High, @GitHub, @Build iOS Apps, current Apple documentation, Xcode 27, and iOS 27 Simulator. Do not create a new repository or new app and do not resurrect rejected prototype/UI work.
+Continue the **existing Nembra production iOS project**. Do not create a new repo/app and do not resurrect rejected prototype/UI work.
 
-## Start here
-1. Repository: public `jonathangana131-lab/Nembra`.
-2. Read `PROJECT_STATE.md` first, then `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN_SYSTEM.md`, and relevant docs under `docs/`.
-3. Inspect recent commits/current branch and GitHub Actions before changing code.
-4. Build/test the existing project first on the `xcode-27` GitHub Mac gate (or direct Xcode 27 tooling if available).
-5. Preserve completed architecture; do not regenerate telemetry/ride/persistence work.
+## Repository / current milestone
+- Repository: public `jonathangana131-lab/Nembra`.
+- Stable `main`: `9da973a4929e5408a14d38c919c6dbd2fd1004a3` or newer.
+- Active branch: `feature/ride-application`.
+- Portrait Home, Phase 9 landscape Dashboard, and Phase 10 measured-speed instrumentation are accepted and merged.
+- Current subsystem: **RideEngine application + durable local history wiring**.
+
+Read `PROJECT_STATE.md` first, then `DECISIONS.md`, `PROTOCOL_NOTES.md`, `DESIGN_SYSTEM.md`, and relevant source/tests. Inspect current branch/actions before edits.
 
 ## Communication / recovery contract
-- During long development, provide concise visible engineering updates every few meaningful tool operations or whenever a build, Simulator, screenshot, PR, checkpoint, or gate changes state.
-- Do not expose hidden chain-of-thought; communicate only useful status: what is being worked on, what passed/failed, what is being fixed, and what gate comes next.
-- Do not stop simply because a workflow started, a test finished, a screenshot was created, or one defect was fixed. Continue the active vertical slice until its full quality gate is accepted or a genuine external dependency blocks work.
-- Before long/failure-prone chains, keep valid progress committed/pushed and make `PROJECT_STATE.md` + this continuation file current.
-- If execution is physically blocked, leave an exact unfinished action and resume instruction; otherwise do not make the user type “continue” as routine workflow.
+- Show concise engineering progress every few meaningful operations or whenever a build, failure, screenshot, PR, checkpoint, or quality gate changes state.
+- Never dump hidden chain-of-thought.
+- Do not stop because one tool run, commit, screenshot, or fix completed. Continue the active vertical slice until accepted or genuinely blocked.
+- Before risky/long chains keep valid work committed/pushed and keep this file + `PROJECT_STATE.md` current.
+- If platform execution becomes impossible, commit/push valid work and state the exact unfinished action. Otherwise do not require the user to type `continue` as normal workflow.
 
 ## Product truth
-- Product: Nembra.
-- First vehicle: MAXSHOT V1S Pro.
-- Multi-scooter architecture is capability-based, but no random additional vehicles until MAXSHOT is excellent.
+- Product: Nembra; first vehicle: MAXSHOT V1S Pro.
 - Ordinary production launch is hardware-gated through `UnverifiedScooterService`; simulation is explicit QA only.
-- Never invent Bluetooth writes, UUIDs, acknowledgements, VESC tuning, phase/battery current, field weakening, regen current, or telemetry.
-- DP101/102/103 speed-limit slots remain independent until MAXSHOT-specific capture proves user-facing semantics/mode mapping.
+- Never invent BLE UUIDs/writes/acks, VESC tuning, phase/battery current, field weakening, regen current, wheel-diameter settings, telemetry, or scooter-safe routing.
+- DP101/102/103 remain independent speed-limit slots until hardware capture proves user-facing mapping.
 - Device Trip is never labeled Today.
+- Exact GPS routes are private by default when route persistence arrives.
 
-## Stable UI milestones
-- Portrait Home is accepted and merged on `main`.
-- Dedicated landscape Dashboard Phase 9 is accepted and merged at `51613a990eb058ee83741645d8c551082d4ef268` after real Xcode 27 / iPhone 12 / iOS 27 build, XCUITest, and screenshot review.
-- Dashboard Phase 9 removes state-changing controls while moving and has no fake throttle/current/power gauge.
+## Stable architecture — preserve it
+- `ScooterService` / capability model separates transport from SwiftUI.
+- one state-changing command at a time until real protocol proves concurrency safe.
+- connection-generation invalidates writes spanning disconnect/reconnect.
+- unavailable/live/retained vehicle data is explicit; disconnect never manufactures zero telemetry.
+- raw speed evidence is independent from render-only interpolation.
+- motion assist never masquerades as authoritative speed.
+- `SpeedDisplayInterpolator` + `RollingNumberModel` are presentation only.
+- `RideEngine` owns automatic ride state and preserves confirmed ride identity through disconnect.
+- `RideCheckpointCoordinator` serializes engine mutation with a crash-safe two-slot journal.
+- monotonic uptime is never persisted across process lifetime.
+- `completedPendingCommit` prevents ride loss between detector completion and permanent history.
+- `RideHistoryCommitCoordinator` commits history, exact-readback verifies, then clears recovery state.
+- ODO/GPS/live-speed distance remain independent and reconciliation never averages sources merely to make a clean result.
+- live distance integrates one authoritative raw speed source and never crosses oversized packet gaps.
 
-## Phase 10 — accepted implementation, merge checkpoint
-Active branch: `feature/speed-instrumentation-v2`.
-PR: #3 `Add measured-speed Dashboard instrumentation`.
+## Current ride-application decision
+Use **one shared `ScooterService` instance** for VehicleStore and ride processing. The simulated service supports multiple broadcast subscribers.
 
-Phase 10 code/runtime/visual acceptance is complete. Do not redesign or replace it in a new chat.
+A dedicated serial ride runtime will merge:
+- raw authoritative speed packets,
+- connection changes,
+- scooter ODO evidence,
+- later quality-screened GPS/motion evidence.
 
-Accepted behavior:
-- `VehicleStore.speedTelemetryUpdates()` exposes raw speed evidence without publishing render frames to `VehicleState`.
-- `SpeedInstrumentModel` wraps `SpeedDisplayInterpolator`, accepts authoritative samples only, rejects stale/motion-assist samples, and exposes render-only frames.
-- before fresh raw telemetry arrives, confirmed `VehicleState` speed may initialize presentation without becoming a fake raw packet.
-- `RollingSpeedValueView` uses fixed slots and a brief integer roll; it is not a second smoothing engine.
-- `DashboardSpeedInstrumentView` owns raw-stream subscription and a local SwiftUI animation timeline capped at 60 Hz.
-- the high-frequency timeline pauses outside an interpolation window and does not invalidate the whole Dashboard.
-- Dashboard safety/moving-state decisions, controls, ride state, distance, history, and stats remain driven by confirmed/raw state, never interpolated frames.
-- VoiceOver announces latest authoritative/confirmed speed, not an interpolated visual midpoint.
-- long telemetry gaps snap instead of visually bridging missing evidence.
+State-only updates are not zero-speed measurements. For state/ODO events, include only a still-valid latest authoritative raw speed sample; otherwise speed is unknown. A disconnect is only a connection transition.
 
-### Phase 10 timing truth
-Do **not** choose MAXSHOT production interpolation timing before hardware measurement.
-- `SpeedInstrumentInterpolationPolicy.disabled` is the production/default policy.
-- ordinary/unverified production therefore snaps to authoritative measurements.
-- explicit Simulator launch injects `.simulatorQA` only to exercise the visual system.
-- Simulator QA values (50 ms minimum, 300 ms maximum-continuous interval, 0.8 interval fraction) are QA presentation settings only, not MAXSHOT claims.
-- once real hardware notification cadence/latency/resolution is measured, introduce an explicit calibrated hardware policy; never silently reuse the Simulator profile.
+Core ride thresholds and checkpoint cadence intentionally have no MAXSHOT production defaults. Preserve that:
+- unverified production automatic ride policy stays disabled/hardware-gated;
+- explicit Simulator QA may inject documented QA-only values to exercise the full architecture;
+- do not convert Simulator timing into MAXSHOT claims.
 
-### Simulator packet clock correction accepted during Phase 10
-- raw `receivedAtUptimeNanoseconds` is packet-arrival evidence in the same process monotonic clock domain used by Dashboard rendering.
-- `SimulatedScooterService` now timestamps raw samples using `DispatchTime.now().uptimeNanoseconds` with only a minimum monotonic increment for same-tick emissions.
-- simulation `elapsedSeconds` advances ride distance/time fixtures only and never fabricates packet cadence.
-- deterministic benchmark cadence remains tested with explicit synthetic sample timestamps.
+## Exact active work
+1. Add a real durable local `RideHistoryStore` implementation, idempotent by session UUID and conflict/corruption safe, with core tests.
+2. Add the serial ride application runtime around the **existing** `RideCheckpointCoordinator`; do not build a second detector/recovery architecture.
+3. Refactor app bootstrap into shared dependencies so VehicleStore and ride runtime share one scooter service.
+4. Recover journal state before accepting new observations. If startup has `completedPendingCommit`, commit/read-back/acknowledge it first.
+5. Add explicit Simulator QA policy/script that drives the same runtime; never fake a SwiftUI ride state.
+6. Expose a minimal trustworthy current-ride read model to Home/Dashboard only after runtime wiring works. Do not add placeholder Rides/Stats tabs.
+7. Add core/app/UI tests for start, active ride, disconnect continuity, recovery/handoff, and false-start prevention.
+8. Run the real GitHub `xcode-27` Mac gate on iPhone 12/iOS 27, inspect screenshots/interactions, fix, update memory, merge.
+9. Immediately continue into the next master-directive subsystem after acceptance.
 
-### Phase 10 proof already accepted
-Implementation head `a816ddeb0997deceefe8713c479dfa91571128e7` passed Xcode 27 run `31061900280` / job `92491409069`:
-- NembraCore 157/157.
-- NembraAppTests 13/13.
-- NembraUITests 5/5.
-- XCTest exported real iPhone 12/iOS 27 `Dashboard Riding Landscape` and `Dashboard Stopped Landscape` captures.
-- visual inspection accepted center speed dominance, fixed width at `11` and `0`, MPH alignment, side-rail stability, stopped-control spacing, moving-control safety, and no clipping/crowding.
-- still images do not prove temporal frame pacing; production timing remains hardware/profile gated.
+## Stable Phase 10 proof
+Accepted Phase 10 implementation passed Xcode 27 run `31061900280` / job `92491409069`:
+- NembraCore 157/157
+- NembraAppTests 13/13
+- NembraUITests 5/5
+- real iPhone 12/iOS 27 Dashboard screenshots accepted.
 
-## Exact immediate actions in a fresh chat
-1. Inspect the current head and newest `xcode-27` run for `feature/speed-instrumentation-v2`. The project-memory documentation commits after `a816ddeb...` intentionally trigger one final branch-lineage gate.
-2. If that newest docs-head run is green, mark PR #3 ready and merge it. Do not reopen Phase 10 design unless that final gate exposes a regression.
-3. Confirm `main` contains the merge and project memory.
-4. Create the next branch from updated `main` and continue **mode-responsive Dashboard / RideEngine application + persistence wiring**.
-5. Before implementing that next slice, inspect the existing ride/persistence code (`RideEngine`, checkpoint coordinator/journal, completed-history commit contract, distance reconciliation/live-distance integration, current app bootstrap/store wiring). Do not create a second ride engine or duplicate persistence architecture.
-6. Determine the smallest substantial application vertical slice that turns the already-built ride domain into real app behavior: automatic lifecycle wiring, crash-safe checkpoints/history handoff, and trustworthy UI consumption, with simulation exercising the exact production path.
-7. Build/run/interact/screenshot/test that slice on iPhone 12/iOS 27 before accepting it.
+Production MAXSHOT interpolation remains disabled until real hardware cadence/latency/resolution is measured. Simulator interpolation policy is QA-only.
 
 ## QA rules
-- `.github/workflows/xcode27-simulator.yml` runs on the real `xcode-27` Mac image, prefers iPhone 12/iOS 27, runs core/app/UI tests, and captures deterministic Simulator states.
-- per-branch concurrency uses `cancel-in-progress: true`; obsolete runs should not consume Mac capacity once newer lineage exists.
-- `NembraUITests` is a real UI-testing target in `Nembra.xcodeproj`/shared scheme.
-- CI preserves `NembraTests.xcresult` and exports XCTest attachments on failure or success.
-- hosted-runner UI bootstrap can be slow; total XCUITest allowance accommodates cold startup while assertion waits remain tight.
-- never call a slice complete from source or compile alone: build → run → interact → screenshot → critique → fix → edge test → profile when relevant → tests → commit/push → memory docs.
-- show real Simulator screenshots; do not substitute generated mockups.
-
-## Preserve these architecture boundaries
-- `ScooterService` / capability model separates SwiftUI from transport.
-- one state-changing command at a time until real protocol proves concurrency safe.
-- connection-generation token invalidates writes spanning disconnect/reconnect.
-- `VehicleDataAvailability`: unavailable/live/retained; disconnect never fabricates zero telemetry.
-- raw speed evidence is separate from render interpolation.
-- motion assist cannot masquerade as authoritative speed.
-- `SpeedDisplayInterpolator` outputs visual frames only and is non-predictive.
-- `RollingNumberModel` uses fixed slots and correct carry/borrow direction; presentation only.
-- automatic `RideEngine` preserves confirmed ride identity through disconnect.
-- crash recovery uses a two-slot generation journal; never persist monotonic uptime across process lifetime.
-- `completedPendingCommit` prevents ride loss between detector completion and history storage.
-- history handoff is idempotent/readback-verified.
-- ODO/GPS/live distance stay independent with explicit complete/partial/unknown coverage; never average them.
-- live distance integrates one authoritative raw speed source and never integrates over oversized packet gaps.
+- `.github/workflows/xcode27-simulator.yml` is the authoritative remote Mac gate when direct Mac tooling is unavailable.
+- baseline: iPhone 12 / iOS 27.
+- CI runs core/app/UI tests and preserves `.xcresult` + exported attachments.
+- never accept a slice from compile or a good screenshot alone: build → run → interact → screenshot → critique → fix → edge-test/profile → commit/push → memory docs → merge.
+- show real Simulator screenshots; do not use generated mockups in this work stream.
 
 ## Hardware validation still outstanding
-Real MAXSHOT advertisement identity, BLE services/characteristics, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, and AccessorySetupKit descriptors. Separate APP IMPLEMENTED from HARDWARE VALIDATION REQUIRED.
-
-## Recovery requirement
-After every significant milestone update `PROJECT_STATE.md`, `DECISIONS.md`, `PROTOCOL_NOTES.md` when relevant, `DESIGN_SYSTEM.md` when visual rules change, and this file. Keep enough information here that a fresh chat can locate the existing repo, build it before edits, inspect recent commits/screenshots, and continue the exact unfinished milestone without asking the user to re-explain the project.
+MAXSHOT advertisement identity, BLE services/characteristics/properties, notification cadence/latency/resolution, packet framing/checksum, reads/writes/acks, DP101-103 semantics, AccessorySetupKit descriptors, and calibrated production ride/interpolation/checkpoint policies.
