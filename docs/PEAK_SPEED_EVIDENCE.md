@@ -36,9 +36,23 @@ No production ES80 source or GPS-accuracy ceiling is chosen in this slice.
 - a strictly higher later measurement replaces it;
 - lower measurements do not replace it;
 - an equal-speed measurement does not replace it, so the earliest observation of that maximum remains stable;
-- stale/non-increasing selected-source timestamps are rejected transactionally and never advance the ordering anchor.
+- stale/non-increasing selected-source timestamps are rejected transactionally.
 
 The stored `PeakSpeedMeasurement` keeps source, measured meters/second, monotonic receipt uptime, and source accuracy metadata when present. It intentionally does not rely on wall-clock time to order observations.
+
+### Rejected quality is still ordering evidence
+
+A selected-source sample may be rejected because GPS speed accuracy is missing or exceeds the injected ceiling. That sample is still a real callback with a monotonic receipt timestamp.
+
+The accumulator therefore advances its selected-source **observation-order anchor before accuracy gating**. Example:
+
+1. good GPS sample arrives at uptime 100;
+2. inaccurate GPS sample arrives at uptime 300 and is rejected for quality;
+3. a later call supplies a supposedly good GPS sample stamped uptime 200.
+
+Step 3 is rejected as non-increasing. Nembra must not erase the real callback at 300 merely because it was low quality and then allow older evidence at 200 to masquerade as fresh.
+
+Wrong-source and non-authoritative estimate traffic remains outside this selected-source ordering stream.
 
 ## Continuity is separate from the numeric peak
 
@@ -62,13 +76,14 @@ When the policy requests speed accuracy:
 
 - missing accuracy is rejected and marks accepted-observation continuity partial once evidence exists;
 - accuracy worse than the injected ceiling is rejected and marks continuity partial;
-- a later good sample can still establish/update observed peak evidence.
+- the rejected observation still advances selected-source ordering evidence;
+- a later monotonic good sample can still establish/update observed peak evidence.
 
-A wrong-source sample is different: it was never part of the selected source's evidence stream, so it is rejected without incrementing the selected-source quality-rejection count.
+A wrong-source sample is different: it was never part of the selected source's evidence stream, so it is rejected without incrementing the selected-source quality-rejection count or advancing the selected-source ordering anchor.
 
 ## Relationship to telemetry quality
 
-The separate telemetry-quality-gate worker evaluates measured source cadence, jitter, latency, rejected fraction, and empirical speed resolution against caller-supplied requirements.
+The separate telemetry-quality-gate worker evaluates measured source cadence, jitter, latency, timestamp coverage, rejected fraction, and empirical speed resolution against caller-supplied requirements.
 
 That is intentionally separate from this accumulator:
 
@@ -94,11 +109,12 @@ Repository tests cover:
 - foreign source isolation;
 - motion-estimate rejection;
 - GPS accuracy missing/exceeded handling;
+- rejected-quality observations still preventing older timestamps from becoming fresh;
 - transactional stale-timestamp rejection;
 - interruption preserving the measured peak while marking continuity partial;
 - reset clearing prior peak/continuity state.
 
-A focused Swift 6.2.1 package using the same core semantics passed **6/6 grouped tests**. Repository-wide exact-head NembraCore/Xcode 27 QA is still required before merge.
+The revised focused Swift 6.2.1 package using the same core semantics passed **7/7 grouped tests** after the rejected-quality ordering hardening. Repository-wide exact-head NembraCore/Xcode 27 QA is still required before merge.
 
 ## Hardware validation still required
 
