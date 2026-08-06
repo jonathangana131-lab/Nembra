@@ -103,6 +103,15 @@ public struct RideRoutePoint: Codable, Equatable, Sendable {
     public let sourceMeasurementDate: Date?
     public let horizontalAccuracyMeters: Double?
 
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case latitude
+        case longitude
+        case capturedAtDate
+        case sourceMeasurementDate
+        case horizontalAccuracyMeters
+    }
+
     public init(
         sequence: UInt64,
         latitude: Double,
@@ -132,6 +141,28 @@ public struct RideRoutePoint: Codable, Equatable, Sendable {
         self.sourceMeasurementDate = sourceMeasurementDate
         self.horizontalAccuracyMeters = horizontalAccuracyMeters
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            sequence: container.decode(UInt64.self, forKey: .sequence),
+            latitude: container.decode(Double.self, forKey: .latitude),
+            longitude: container.decode(Double.self, forKey: .longitude),
+            capturedAtDate: container.decode(Date.self, forKey: .capturedAtDate),
+            sourceMeasurementDate: container.decodeIfPresent(Date.self, forKey: .sourceMeasurementDate),
+            horizontalAccuracyMeters: container.decodeIfPresent(Double.self, forKey: .horizontalAccuracyMeters)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encode(latitude, forKey: .latitude)
+        try container.encode(longitude, forKey: .longitude)
+        try container.encode(capturedAtDate, forKey: .capturedAtDate)
+        try container.encodeIfPresent(sourceMeasurementDate, forKey: .sourceMeasurementDate)
+        try container.encodeIfPresent(horizontalAccuracyMeters, forKey: .horizontalAccuracyMeters)
+    }
 }
 
 public struct RideRouteChunkID: Codable, Equatable, Hashable, Sendable {
@@ -156,6 +187,11 @@ public struct RideRouteChunk: Codable, Equatable, Sendable {
     public let id: RideRouteChunkID
     public let points: [RideRoutePoint]
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case points
+    }
+
     public init(id: RideRouteChunkID, points: [RideRoutePoint]) throws {
         guard !points.isEmpty else {
             throw RideRouteEvidenceError.emptyChunk
@@ -165,6 +201,20 @@ public struct RideRouteChunk: Codable, Equatable, Sendable {
         }
         self.id = id
         self.points = points
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            id: container.decode(RideRouteChunkID.self, forKey: .id),
+            points: container.decode([RideRoutePoint].self, forKey: .points)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(points, forKey: .points)
     }
 
     private static func hasStrictlyIncreasingSequence(_ points: [RideRoutePoint]) -> Bool {
@@ -186,6 +236,14 @@ public struct RideRouteManifest: Codable, Equatable, Sendable {
     public let segmentCount: Int
     public let pointCount: Int
     public let knownGapCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case coverage
+        case segmentCount
+        case pointCount
+        case knownGapCount
+    }
 
     public init(
         sessionID: UUID,
@@ -234,6 +292,26 @@ public struct RideRouteManifest: Codable, Equatable, Sendable {
         self.pointCount = pointCount
         self.knownGapCount = knownGapCount
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            sessionID: container.decode(UUID.self, forKey: .sessionID),
+            coverage: container.decode(RideDistanceCoverage.self, forKey: .coverage),
+            segmentCount: container.decode(Int.self, forKey: .segmentCount),
+            pointCount: container.decode(Int.self, forKey: .pointCount),
+            knownGapCount: container.decode(Int.self, forKey: .knownGapCount)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(coverage, forKey: .coverage)
+        try container.encode(segmentCount, forKey: .segmentCount)
+        try container.encode(pointCount, forKey: .pointCount)
+        try container.encode(knownGapCount, forKey: .knownGapCount)
+    }
 }
 
 public struct RideRouteSegment: Equatable, Sendable {
@@ -280,8 +358,10 @@ public struct RideRouteGeometry: Equatable, Sendable {
 
         let grouped = Dictionary(grouping: ordered, by: { $0.id.segmentIndex })
         let segmentIndices = grouped.keys.sorted()
-        let expectedSegmentIndices = Array(UInt32(0)..<UInt32(manifest.segmentCount))
-        guard segmentIndices == expectedSegmentIndices else {
+        guard segmentIndices.count == manifest.segmentCount,
+              segmentIndices.enumerated().allSatisfy({ pair in
+                  pair.element == UInt32(pair.offset)
+              }) else {
             throw RideRouteEvidenceError.nonContiguousSegments
         }
 
@@ -292,8 +372,9 @@ public struct RideRouteGeometry: Equatable, Sendable {
         for segmentIndex in segmentIndices {
             guard let segmentChunks = grouped[segmentIndex] else { continue }
             let sortedChunks = segmentChunks.sorted { $0.id.chunkIndex < $1.id.chunkIndex }
-            let expectedChunkIndices = Array(UInt32(0)..<UInt32(sortedChunks.count))
-            guard sortedChunks.map(\.id.chunkIndex) == expectedChunkIndices else {
+            guard sortedChunks.enumerated().allSatisfy({ pair in
+                pair.element.id.chunkIndex == UInt32(pair.offset)
+            }) else {
                 throw RideRouteEvidenceError.nonContiguousChunks
             }
 
@@ -309,8 +390,7 @@ public struct RideRouteGeometry: Equatable, Sendable {
             segments.append(RideRouteSegment(index: segmentIndex, points: points))
         }
 
-        guard segments.count == manifest.segmentCount,
-              totalPointCount == manifest.pointCount else {
+        guard totalPointCount == manifest.pointCount else {
             throw RideRouteEvidenceError.manifestCountMismatch
         }
 
