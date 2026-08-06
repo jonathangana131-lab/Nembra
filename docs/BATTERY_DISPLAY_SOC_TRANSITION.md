@@ -32,6 +32,18 @@ The planner is intentionally stateless. If a new battery target arrives while an
 
 The planner produces at most 100 frames because normalized display SoC is restricted to `0...100`.
 
+## Accessibility and motion execution
+
+The planner describes a truth-preserving path, not an obligation to spatially animate every frame. The SwiftUI presentation layer owns pacing and accessibility policy.
+
+- With normal motion enabled, percentage text and battery fill should advance from the same selected frame so they cannot visually disagree about the displayed SoC.
+- With Reduce Motion enabled, the UI may snap or use a restrained non-spatial transition directly to the target display value instead of traversing every intermediate integer on screen.
+- VoiceOver should announce the current authoritative/selected battery readout target, not transient `presentationIntermediate` frames.
+- If a newer target arrives mid-transition, cancel/replan from the currently rendered integer; do not force a stale queue to finish first.
+- Presentation pacing, haptics, timers/tasks, and view animation state intentionally stay outside NembraCore so render policy cannot be mistaken for battery evidence.
+
+These rules preserve the visual one-percent experience where appropriate while keeping accessibility behavior and telemetry truth independent.
+
 ## App-target visibility
 
 The Xcode app target currently compiles selected NembraCore source files through explicit `project.pbxproj` entries rather than automatically compiling every package source. The transition planner therefore lives in `BatteryPrimaryReadoutState.swift`, the same battery presentation source that the active Dashboard readout integration already wires into the app target. This avoids creating a second manual project-file entry and prevents a package-green/app-target-missing-source failure mode.
