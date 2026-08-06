@@ -124,6 +124,13 @@ public struct AccelerationRunEvaluator: Sendable {
     public private(set) var state: AccelerationRunState = .waitingForStandstill
 
     private var lockedSource: SpeedTelemetrySource?
+    /// Advances for every monotonic observation from the locked/required source,
+    /// even when that observation is later rejected by accuracy policy. Rejected
+    /// quality cannot erase chronology and let an older callback look fresh.
+    private var lastObservedUptimeNanoseconds: UInt64?
+    /// Advances only for accepted measurements. The optional maximum sample-gap
+    /// policy is intentionally measured between usable timing evidence, not
+    /// between callbacks that failed quality screening.
     private var lastAcceptedUptimeNanoseconds: UInt64?
     private var lastStationarySample: SpeedTelemetrySample?
     private var previousRunningSample: SpeedTelemetrySample?
@@ -137,6 +144,7 @@ public struct AccelerationRunEvaluator: Sendable {
     public mutating func reset() {
         state = .waitingForStandstill
         lockedSource = nil
+        lastObservedUptimeNanoseconds = nil
         lastAcceptedUptimeNanoseconds = nil
         lastStationarySample = nil
         previousRunningSample = nil
@@ -157,26 +165,40 @@ public struct AccelerationRunEvaluator: Sendable {
         guard canAcceptMoreEvidence else { return }
         guard sample.isAuthoritativeMeasurement else { return }
         guard sourceMatchesPolicy(sample.source) else { return }
-        guard accuracyIsAcceptable(sample) else { return }
 
-        if let lockedSource, sample.source != lockedSource {
-            invalidate(.measurementSourceChanged)
-            return
-        }
-        if lockedSource == nil {
+        if let lockedSource {
+            guard sample.source == lockedSource else {
+                invalidate(.measurementSourceChanged)
+                return
+            }
+            guard acceptObservedTimestamp(sample.receivedAtUptimeNanoseconds) else {
+                return
+            }
+            guard accuracyIsAcceptable(sample) else { return }
+        } else if policy.requiredSource != nil {
+            // The policy has already selected this source. Even a quality-
+            // rejected first callback is part of its real observation ordering.
             lockedSource = sample.source
+            guard acceptObservedTimestamp(sample.receivedAtUptimeNanoseconds) else {
+                return
+            }
+            guard accuracyIsAcceptable(sample) else { return }
+        } else {
+            // Without an explicit source requirement, only the first usable
+            // measurement selects the source; unrelated low-quality providers
+            // should not poison a run before it has chosen evidence.
+            guard accuracyIsAcceptable(sample) else { return }
+            lockedSource = sample.source
+            guard acceptObservedTimestamp(sample.receivedAtUptimeNanoseconds) else {
+                return
+            }
         }
 
-        if let lastAcceptedUptimeNanoseconds {
-            guard sample.receivedAtUptimeNanoseconds > lastAcceptedUptimeNanoseconds else {
-                invalidate(.nonMonotonicMeasurement)
-                return
-            }
-            if let maximumSampleIntervalNanoseconds = policy.maximumSampleIntervalNanoseconds,
-               sample.receivedAtUptimeNanoseconds - lastAcceptedUptimeNanoseconds > maximumSampleIntervalNanoseconds {
-                invalidate(.measurementGapExceeded)
-                return
-            }
+        if let lastAcceptedUptimeNanoseconds,
+           let maximumSampleIntervalNanoseconds = policy.maximumSampleIntervalNanoseconds,
+           sample.receivedAtUptimeNanoseconds - lastAcceptedUptimeNanoseconds > maximumSampleIntervalNanoseconds {
+            invalidate(.measurementGapExceeded)
+            return
         }
         self.lastAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
@@ -204,6 +226,16 @@ public struct AccelerationRunEvaluator: Sendable {
     private func sourceMatchesPolicy(_ source: SpeedTelemetrySource) -> Bool {
         guard let requiredSource = policy.requiredSource else { return true }
         return source == requiredSource
+    }
+
+    private mutating func acceptObservedTimestamp(_ uptimeNanoseconds: UInt64) -> Bool {
+        if let lastObservedUptimeNanoseconds,
+           uptimeNanoseconds <= lastObservedUptimeNanoseconds {
+            invalidate(.nonMonotonicMeasurement)
+            return false
+        }
+        lastObservedUptimeNanoseconds = uptimeNanoseconds
+        return true
     }
 
     private func accuracyIsAcceptable(_ sample: SpeedTelemetrySample) -> Bool {
