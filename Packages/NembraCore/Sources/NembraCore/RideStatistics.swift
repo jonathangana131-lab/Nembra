@@ -189,13 +189,9 @@ public enum RideStatisticsAggregator {
             )
         }
 
-        var trustworthyDistanceRideCount = 0
         var excludedDistanceRideCount = 0
-        var distanceSum = 0.0
-        var distanceCompensation = 0.0
-        var longestRideDistanceMeters: Double?
-        var longestRideAttributedDate: Date?
-        var longestRideSessionID: UUID?
+        var trustworthyRides: [(ride: RideStatisticsRide, distance: Double)] = []
+        trustworthyRides.reserveCapacity(periodRides.count)
 
         for ride in periodRides {
             guard ride.distanceDisposition == .included,
@@ -203,6 +199,31 @@ public enum RideStatisticsAggregator {
                 excludedDistanceRideCount += 1
                 continue
             }
+            trustworthyRides.append((ride: ride, distance: distance))
+        }
+
+        // Only trustworthy rides inside the requested period need a stable
+        // arithmetic order. Do not sort years of unrelated history merely to
+        // summarize Today/Week/Month. The date+UUID order is semantic-neutral:
+        // it exists only so persistence fetch order cannot perturb floating-
+        // point aggregation or equal-distance tie selection.
+        trustworthyRides.sort { lhs, rhs in
+            if lhs.ride.attributedDate != rhs.ride.attributedDate {
+                return lhs.ride.attributedDate < rhs.ride.attributedDate
+            }
+            return lhs.ride.sessionID.uuidString < rhs.ride.sessionID.uuidString
+        }
+
+        let trustworthyDistanceRideCount = trustworthyRides.count
+        var distanceSum = 0.0
+        var distanceCompensation = 0.0
+        var longestRideDistanceMeters: Double?
+        var longestRideAttributedDate: Date?
+        var longestRideSessionID: UUID?
+
+        for trustworthyRide in trustworthyRides {
+            let ride = trustworthyRide.ride
+            let distance = trustworthyRide.distance
 
             // Neumaier compensated summation keeps small legitimate ride
             // distances from disappearing merely because a much larger total
@@ -224,7 +245,6 @@ public enum RideStatisticsAggregator {
                 throw RideStatisticsError.aggregateOverflow
             }
 
-            trustworthyDistanceRideCount += 1
             distanceSum = nextSum
             distanceCompensation = nextCompensation
 
@@ -331,16 +351,7 @@ public enum RideStatisticsAggregator {
             recordsBySessionID[ride.sessionID] = ride
             uniqueRides.append(ride)
         }
-
-        // History/persistence fetch order is not semantic evidence. Establish a
-        // stable order before floating-point aggregation so the same immutable
-        // ride set yields the same summary independent of upstream ordering.
-        return uniqueRides.sorted { lhs, rhs in
-            if lhs.attributedDate != rhs.attributedDate {
-                return lhs.attributedDate < rhs.attributedDate
-            }
-            return lhs.sessionID.uuidString < rhs.sessionID.uuidString
-        }
+        return uniqueRides
     }
 
     private static func isRepresentable(
