@@ -193,6 +193,27 @@ struct AdaptiveBatteryRangePersistenceTests {
         }
     }
 
+    @Test("exhausted accepted-window counter cannot be restored into live learning")
+    func exhaustedAcceptedWindowCounterRejected() throws {
+        let learned = try learnedModel()
+        let rawData = try mutatedJSON(for: learned) { object in
+            object["acceptedWindowCount"] = Int.max
+        }
+
+        // The parent model decoder permits this shape because its retained sample
+        // count still fits the accepted count. The persistence envelope must reject
+        // it before a future accepted ingest evaluates `acceptedWindowCount += 1`.
+        let shapeValidModel = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: rawData)
+        #expect(shapeValidModel.acceptedWindowCount == Int.max)
+
+        do {
+            _ = try AdaptiveBatteryRangePersistedState(validating: shapeValidModel)
+            Issue.record("exhausted accepted-window counter unexpectedly passed validation")
+        } catch let error as AdaptiveBatteryRangePersistedStateError {
+            #expect(error == .invalidHistoricalBounds)
+        }
+    }
+
     @Test("retained recent evidence cannot exceed cumulative accepted history")
     func recentEvidenceCannotExceedHistory() throws {
         let learned = try learnedModel()
