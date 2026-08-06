@@ -73,6 +73,15 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.accumulatedDistanceMeters == 50)
         #expect(assembler.distanceCoverage == .partial)
         #expect(assembler.transportGapOccurred)
+
+        try assembler.recordDistance(deltaMeters: 50, coverage: .complete)
+        let laterCandidate = try assembler.ingestSOC(reading(76, uptime: 21), policy: p)
+        let later = try #require(laterCandidate)
+        #expect(later.startSOC.percentage == 80)
+        #expect(later.endSOC.percentage == 76)
+        #expect(later.distanceMeters == 100)
+        #expect(later.distanceCoverage == .partial)
+        #expect(later.transportGapOccurred)
     }
 
     @Test("estimated rebound never rebases or advances measured learning state")
