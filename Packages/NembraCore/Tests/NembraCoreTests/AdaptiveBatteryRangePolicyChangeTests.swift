@@ -80,10 +80,12 @@ struct AdaptiveBatteryRangePolicyChangeTests {
         )
 
         #expect(model.recentSamples.count == 3)
-        #expect(model.blendedEfficiencyMetersPerPercentagePoint(using: originalPolicy) == 200)
+        let originalEfficiency = model.blendedEfficiencyMetersPerPercentagePoint(using: originalPolicy) ?? 0
+        #expect(abs(originalEfficiency - 200) < 0.000_001)
 
         let reducedPolicy = try policy(recentWindowCapacity: 1)
         #expect(model.recentSamples.count == 3)
-        #expect(model.blendedEfficiencyMetersPerPercentagePoint(using: reducedPolicy) == 300)
+        let reducedEfficiency = model.blendedEfficiencyMetersPerPercentagePoint(using: reducedPolicy) ?? 0
+        #expect(abs(reducedEfficiency - 300) < 0.000_001)
     }
 }
