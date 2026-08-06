@@ -4,7 +4,7 @@ This document describes the software-only persistence envelope for Nembra's lear
 
 ## Dependency
 
-This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, and estimator policy. This slice does not duplicate or replace that logic.
+This slice depends on the adaptive range core in PR #10. The parent model already validates its own decoded scalar/sample invariants and validates Codable restoration of normalized SoC readings, learning windows, estimator policy, and range-estimate outputs. This slice does not duplicate or replace that logic.
 
 ## Why the envelope exists
 
@@ -39,9 +39,11 @@ These checks intentionally avoid policy-specific assumptions such as minimum lea
 
 ## Physical scooter scoping
 
-The envelope deliberately does not invent a physical-scooter identifier. Nembra's current generic vehicle domain has model/profile identity, but real ES80 protocol work has not yet established which identity is stable and appropriate for durable per-scooter learning storage.
+The envelope deliberately does not invent a physical-scooter identifier. Nembra's current generic vehicle domain has model/profile identity, but the project has not yet established which ES80 identity is stable and appropriate for durable per-scooter learning storage.
 
-When application persistence wiring is added, each envelope must be scoped to the actual physical scooter using a legitimate stable identity source. Until that source is verified, learned history must not be silently shared between different scooters merely because they use the same `VehicleProfile`.
+That uncertainty is **not permission to wait for user-supplied hardware evidence before researching it**. Follow the repository's public-first ES80 protocol policy: exhaust reasonable official/public evidence, cross-correlate likely module/protocol identity sources, and preserve the distinction between `VERIFIED PUBLIC`, `CORROBORATED / PROBABLE`, `GENERIC TUYA / FAMILY FACT`, and `UNKNOWN / PHYSICAL VERIFICATION REQUIRED`. Public evidence may narrow or establish the storage-key architecture without being mislabeled as physical-scooter validation.
+
+When application persistence wiring is added, each envelope must be scoped to the actual physical scooter using a legitimate stable identity source whose evidence class is recorded. If public evidence is enough to define a safe candidate identity mechanism, implement/test that mechanism while retaining the appropriate confidence classification; use a real ES80 capture only for the remaining device-specific or final verification step. Until identity semantics are sufficiently established, learned history must not be silently shared between different scooters merely because they use the same `VehicleProfile`.
 
 Simulation/test identities remain simulation/test evidence and must not be promoted into a claim about real ES80 identity semantics.
 
@@ -61,4 +63,4 @@ This layer validates software persistence integrity only. It does **not** prove 
 - battery chemistry, sag, reserve, or cutoff behavior;
 - physical-scooter range accuracy.
 
-Those remain separate hardware/field-validation requirements.
+Those remain separate protocol/public-evidence/field-validation requirements according to their evidence tier.
