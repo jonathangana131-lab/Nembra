@@ -98,9 +98,6 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
         return try decode(stored, sessionID: sessionID)
     }
 
-    /// Returns validated durable records newest-first. Listing decodes every
-    /// payload through the same identity checks as point lookup; corrupted rows
-    /// fail closed rather than disappearing from the user's history silently.
     func records() throws -> [RideHistoryRecord] {
         let storedRecords = try modelContext.fetch(FetchDescriptor<StoredRideHistoryRecord>())
         let decoded = try storedRecords.map { stored in
@@ -117,12 +114,9 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
     private func storedRecord(sessionID: UUID) throws -> StoredRideHistoryRecord? {
         let key = sessionID
         var descriptor = FetchDescriptor<StoredRideHistoryRecord>(
-            predicate: #Predicate { stored in
-                stored.sessionID == key
-            }
+            predicate: #Predicate { stored in stored.sessionID == key }
         )
         descriptor.fetchLimit = 2
-
         let matches = try modelContext.fetch(descriptor)
         guard matches.count <= 1 else {
             throw RideHistoryPersistenceError.corruptRecord(sessionID)
@@ -130,14 +124,10 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
         return matches.first
     }
 
-    private func decode(
-        _ stored: StoredRideHistoryRecord,
-        sessionID: UUID
-    ) throws -> RideHistoryRecord {
+    private func decode(_ stored: StoredRideHistoryRecord, sessionID: UUID) throws -> RideHistoryRecord {
         do {
             let decoded = try JSONDecoder().decode(RideHistoryRecord.self, from: stored.payload)
-            guard stored.sessionID == sessionID,
-                  decoded.sessionID == sessionID else {
+            guard stored.sessionID == sessionID, decoded.sessionID == sessionID else {
                 throw RideHistoryPersistenceError.corruptRecord(sessionID)
             }
             return decoded
@@ -149,18 +139,13 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
     }
 }
 
-/// Separate route-geometry durability domain. Immutable chunks and the final
-/// manifest are exact JSON payloads with indexed identity duplicated only so
-/// corruption can be detected before geometry reaches presentation.
 @ModelActor
 actor SwiftDataRideRouteStore: RideRouteStore {
     func commit(_ chunk: RideRouteChunk) async throws -> RideRouteStoreCommitResult {
         let storageID = Self.storageID(for: chunk.id)
         if let existing = try storedChunk(storageID: storageID) {
             let decoded = try decode(existing, expectedID: chunk.id)
-            guard decoded == chunk else {
-                throw RideRouteStoreError.chunkConflict(chunk.id)
-            }
+            guard decoded == chunk else { throw RideRouteStoreError.chunkConflict(chunk.id) }
             return .alreadyPresent
         }
 
@@ -174,14 +159,12 @@ actor SwiftDataRideRouteStore: RideRouteStore {
                 payload: payload
             )
         )
-
         do {
             try modelContext.save()
         } catch {
             modelContext.rollback()
             throw error
         }
-
         guard let verified = try storedChunk(storageID: storageID),
               try decode(verified, expectedID: chunk.id) == chunk else {
             throw RideHistoryPersistenceError.durableRouteVerificationFailed(storageID)
@@ -198,9 +181,7 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     func chunks(sessionID: UUID) async throws -> [RideRouteChunk] {
         let key = sessionID
         let descriptor = FetchDescriptor<StoredRideRouteChunk>(
-            predicate: #Predicate { stored in
-                stored.sessionID == key
-            }
+            predicate: #Predicate { stored in stored.sessionID == key }
         )
         let stored = try modelContext.fetch(descriptor)
         let decoded = try stored.map { row in
@@ -212,9 +193,7 @@ actor SwiftDataRideRouteStore: RideRouteStore {
             return try decode(row, expectedID: id)
         }
         return decoded.sorted { lhs, rhs in
-            if lhs.id.segmentIndex != rhs.id.segmentIndex {
-                return lhs.id.segmentIndex < rhs.id.segmentIndex
-            }
+            if lhs.id.segmentIndex != rhs.id.segmentIndex { return lhs.id.segmentIndex < rhs.id.segmentIndex }
             return lhs.id.chunkIndex < rhs.id.chunkIndex
         }
     }
@@ -222,27 +201,18 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     func commit(_ manifest: RideRouteManifest) async throws -> RideRouteStoreCommitResult {
         if let existing = try storedManifest(sessionID: manifest.sessionID) {
             let decoded = try decode(existing, sessionID: manifest.sessionID)
-            guard decoded == manifest else {
-                throw RideRouteStoreError.manifestConflict(manifest.sessionID)
-            }
+            guard decoded == manifest else { throw RideRouteStoreError.manifestConflict(manifest.sessionID) }
             return .alreadyPresent
         }
 
         let payload = try JSONEncoder().encode(manifest)
-        modelContext.insert(
-            StoredRideRouteManifest(
-                sessionID: manifest.sessionID,
-                payload: payload
-            )
-        )
-
+        modelContext.insert(StoredRideRouteManifest(sessionID: manifest.sessionID, payload: payload))
         do {
             try modelContext.save()
         } catch {
             modelContext.rollback()
             throw error
         }
-
         guard let verified = try storedManifest(sessionID: manifest.sessionID),
               try decode(verified, sessionID: manifest.sessionID) == manifest else {
             throw RideHistoryPersistenceError.durableRouteVerificationFailed(manifest.sessionID.uuidString)
@@ -257,10 +227,7 @@ actor SwiftDataRideRouteStore: RideRouteStore {
 
     func geometry(sessionID: UUID) async throws -> RideRouteGeometry? {
         guard let manifest = try await manifest(sessionID: sessionID) else { return nil }
-        return try RideRouteGeometry(
-            manifest: manifest,
-            chunks: try await chunks(sessionID: sessionID)
-        )
+        return try RideRouteGeometry(manifest: manifest, chunks: try await chunks(sessionID: sessionID))
     }
 
     private static func storageID(for id: RideRouteChunkID) -> String {
@@ -270,37 +237,26 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     private func storedChunk(storageID: String) throws -> StoredRideRouteChunk? {
         let key = storageID
         var descriptor = FetchDescriptor<StoredRideRouteChunk>(
-            predicate: #Predicate { stored in
-                stored.storageID == key
-            }
+            predicate: #Predicate { stored in stored.storageID == key }
         )
         descriptor.fetchLimit = 2
         let matches = try modelContext.fetch(descriptor)
-        guard matches.count <= 1 else {
-            throw RideHistoryPersistenceError.corruptRouteChunk(storageID)
-        }
+        guard matches.count <= 1 else { throw RideHistoryPersistenceError.corruptRouteChunk(storageID) }
         return matches.first
     }
 
     private func storedManifest(sessionID: UUID) throws -> StoredRideRouteManifest? {
         let key = sessionID
         var descriptor = FetchDescriptor<StoredRideRouteManifest>(
-            predicate: #Predicate { stored in
-                stored.sessionID == key
-            }
+            predicate: #Predicate { stored in stored.sessionID == key }
         )
         descriptor.fetchLimit = 2
         let matches = try modelContext.fetch(descriptor)
-        guard matches.count <= 1 else {
-            throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
-        }
+        guard matches.count <= 1 else { throw RideHistoryPersistenceError.corruptRouteManifest(sessionID) }
         return matches.first
     }
 
-    private func decode(
-        _ stored: StoredRideRouteChunk,
-        expectedID: RideRouteChunkID
-    ) throws -> RideRouteChunk {
+    private func decode(_ stored: StoredRideRouteChunk, expectedID: RideRouteChunkID) throws -> RideRouteChunk {
         do {
             let decoded = try JSONDecoder().decode(RideRouteChunk.self, from: stored.payload)
             let storageID = Self.storageID(for: expectedID)
@@ -319,14 +275,10 @@ actor SwiftDataRideRouteStore: RideRouteStore {
         }
     }
 
-    private func decode(
-        _ stored: StoredRideRouteManifest,
-        sessionID: UUID
-    ) throws -> RideRouteManifest {
+    private func decode(_ stored: StoredRideRouteManifest, sessionID: UUID) throws -> RideRouteManifest {
         do {
             let decoded = try JSONDecoder().decode(RideRouteManifest.self, from: stored.payload)
-            guard stored.sessionID == sessionID,
-                  decoded.sessionID == sessionID else {
+            guard stored.sessionID == sessionID, decoded.sessionID == sessionID else {
                 throw RideHistoryPersistenceError.corruptRouteManifest(sessionID)
             }
             return decoded
@@ -338,8 +290,7 @@ actor SwiftDataRideRouteStore: RideRouteStore {
     }
 
     private func checkedUInt32(_ value: Int, storageID: String) throws -> UInt32 {
-        guard value >= 0,
-              value <= Int(UInt32.max) else {
+        guard value >= 0, value <= Int(UInt32.max) else {
             throw RideHistoryPersistenceError.corruptRouteChunk(storageID)
         }
         return UInt32(value)
@@ -355,15 +306,9 @@ enum RideRouteRecorderError: Error, Equatable, Sendable {
     case sequenceOverflow
 }
 
-/// App-lifetime route writer. Location producers hand it only already
-/// quality-screened coordinates; it assigns durable order and writes immutable
-/// chunks through the same store used by history presentation. A caller must
-/// explicitly classify coverage rather than letting the recorder infer that a
-/// visually continuous path proves whole-ride coverage.
 actor RideRouteRecorder {
     private let store: any RideRouteStore
     private let chunkSize: Int
-
     private var sessionID: UUID?
     private var segmentIndex: UInt32 = 0
     private var chunkIndex: UInt32 = 0
@@ -376,9 +321,7 @@ actor RideRouteRecorder {
     private var pendingGap = false
 
     init(store: any RideRouteStore, chunkSize: Int = 8) throws {
-        guard chunkSize > 0 else {
-            throw RideRouteRecorderError.invalidChunkSize
-        }
+        guard chunkSize > 0 else { throw RideRouteRecorderError.invalidChunkSize }
         self.store = store
         self.chunkSize = chunkSize
     }
@@ -388,16 +331,13 @@ actor RideRouteRecorder {
         startsAfterKnownGap: Bool = false,
         coverageAlreadyPartial: Bool = false
     ) async throws {
-        if let active = self.sessionID {
-            throw RideRouteRecorderError.alreadyRecording(active)
-        }
+        if let active = self.sessionID { throw RideRouteRecorderError.alreadyRecording(active) }
         if try await store.manifest(sessionID: sessionID) != nil {
             throw RideRouteRecorderError.finalizedSession(sessionID)
         }
 
         let existing = try await store.chunks(sessionID: sessionID)
         let draft = try Self.validateDraft(existing, sessionID: sessionID)
-
         self.sessionID = sessionID
         persistedPointCount = draft.pointCount
         nextSequence = draft.nextSequence
@@ -408,9 +348,6 @@ actor RideRouteRecorder {
             knownGapCount = Int(lastSegment)
             segmentIndex = lastSegment
             chunkIndex = draft.nextChunkIndex
-            // Existing unfinished chunks imply a prior recorder/process stopped.
-            // The next accepted coordinate must start a new segment so recovery
-            // never draws a plausible line across missing location coverage.
             pendingGap = draft.pointCount > 0
         } else {
             segmentIndex = 0
@@ -428,12 +365,10 @@ actor RideRouteRecorder {
         sourceMeasurementDate: Date? = nil,
         horizontalAccuracyMeters: Double? = nil
     ) async throws {
-        guard let sessionID else {
-            throw RideRouteRecorderError.noActiveSession
-        }
+        guard let sessionID else { throw RideRouteRecorderError.noActiveSession }
 
-        try materializePendingGap(sessionID: sessionID)
-
+        // Validate the incoming evidence before mutating segment topology. An
+        // invalid location after a pending gap must not create an empty segment.
         let point = try RideRoutePoint(
             sequence: nextSequence,
             latitude: latitude,
@@ -442,41 +377,25 @@ actor RideRouteRecorder {
             sourceMeasurementDate: sourceMeasurementDate,
             horizontalAccuracyMeters: horizontalAccuracyMeters
         )
+        try materializePendingGap(sessionID: sessionID)
 
-        guard nextSequence < UInt64.max else {
-            throw RideRouteRecorderError.sequenceOverflow
-        }
+        guard nextSequence < UInt64.max else { throw RideRouteRecorderError.sequenceOverflow }
         nextSequence += 1
         buffer.append(point)
-        if segmentCount == 0 {
-            segmentCount = 1
-        }
-
-        if buffer.count >= chunkSize {
-            try await flush()
-        }
+        if segmentCount == 0 { segmentCount = 1 }
+        if buffer.count >= chunkSize { try await flush() }
     }
 
     func markKnownGap() async throws {
-        guard sessionID != nil else {
-            throw RideRouteRecorderError.noActiveSession
-        }
+        guard sessionID != nil else { throw RideRouteRecorderError.noActiveSession }
         try await flush()
         forcedPartialCoverage = true
-
-        // A gap boundary is materialized only when another coordinate arrives.
-        // Repeated gap events collapse together and finishing after a gap cannot
-        // create a manifest that claims an empty trailing segment.
-        if persistedPointCount > 0 {
-            pendingGap = true
-        }
+        if persistedPointCount > 0 { pendingGap = true }
     }
 
     @discardableResult
     func finish(requestedCoverage: RideDistanceCoverage) async throws -> RideRouteManifest {
-        guard let sessionID else {
-            throw RideRouteRecorderError.noActiveSession
-        }
+        guard let sessionID else { throw RideRouteRecorderError.noActiveSession }
         try await flush()
 
         let manifest: RideRouteManifest
@@ -489,12 +408,9 @@ actor RideRouteRecorder {
                 knownGapCount: 0
             )
         } else {
-            let coverage: RideDistanceCoverage
-            if forcedPartialCoverage || pendingGap || knownGapCount > 0 {
-                coverage = .partial
-            } else {
-                coverage = requestedCoverage
-            }
+            let coverage: RideDistanceCoverage = (forcedPartialCoverage || pendingGap || knownGapCount > 0)
+                ? .partial
+                : requestedCoverage
             manifest = try RideRouteManifest(
                 sessionID: sessionID,
                 coverage: coverage,
@@ -503,7 +419,6 @@ actor RideRouteRecorder {
                 knownGapCount: knownGapCount
             )
         }
-
         _ = try await store.commit(manifest)
         reset()
         return manifest
@@ -514,9 +429,7 @@ actor RideRouteRecorder {
             pendingGap = false
             return
         }
-        guard segmentIndex < UInt32.max else {
-            throw RideRouteRecorderError.corruptDraft(sessionID)
-        }
+        guard segmentIndex < UInt32.max else { throw RideRouteRecorderError.corruptDraft(sessionID) }
         segmentIndex += 1
         chunkIndex = 0
         segmentCount += 1
@@ -525,23 +438,15 @@ actor RideRouteRecorder {
     }
 
     private func flush() async throws {
-        guard let sessionID,
-              !buffer.isEmpty else { return }
-
+        guard let sessionID, !buffer.isEmpty else { return }
         let chunk = try RideRouteChunk(
-            id: RideRouteChunkID(
-                sessionID: sessionID,
-                segmentIndex: segmentIndex,
-                chunkIndex: chunkIndex
-            ),
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: segmentIndex, chunkIndex: chunkIndex),
             points: buffer
         )
         _ = try await store.commit(chunk)
         persistedPointCount += buffer.count
         buffer.removeAll(keepingCapacity: true)
-        guard chunkIndex < UInt32.max else {
-            throw RideRouteRecorderError.corruptDraft(sessionID)
-        }
+        guard chunkIndex < UInt32.max else { throw RideRouteRecorderError.corruptDraft(sessionID) }
         chunkIndex += 1
     }
 
@@ -565,26 +470,14 @@ actor RideRouteRecorder {
         let pointCount: Int
     }
 
-    private static func validateDraft(
-        _ chunks: [RideRouteChunk],
-        sessionID: UUID
-    ) throws -> DraftState {
+    private static func validateDraft(_ chunks: [RideRouteChunk], sessionID: UUID) throws -> DraftState {
         guard !chunks.isEmpty else {
-            return DraftState(
-                lastSegmentIndex: nil,
-                nextChunkIndex: 0,
-                nextSequence: 0,
-                pointCount: 0
-            )
+            return DraftState(lastSegmentIndex: nil, nextChunkIndex: 0, nextSequence: 0, pointCount: 0)
         }
-
         let ordered = chunks.sorted { lhs, rhs in
-            if lhs.id.segmentIndex != rhs.id.segmentIndex {
-                return lhs.id.segmentIndex < rhs.id.segmentIndex
-            }
+            if lhs.id.segmentIndex != rhs.id.segmentIndex { return lhs.id.segmentIndex < rhs.id.segmentIndex }
             return lhs.id.chunkIndex < rhs.id.chunkIndex
         }
-
         var expectedSegment: UInt32 = 0
         var expectedChunk: UInt32 = 0
         var currentSegment: UInt32?
@@ -592,28 +485,17 @@ actor RideRouteRecorder {
         var pointCount = 0
 
         for chunk in ordered {
-            guard chunk.id.sessionID == sessionID else {
-                throw RideRouteRecorderError.corruptDraft(sessionID)
-            }
+            guard chunk.id.sessionID == sessionID else { throw RideRouteRecorderError.corruptDraft(sessionID) }
             if currentSegment != chunk.id.segmentIndex {
-                guard chunk.id.segmentIndex == expectedSegment else {
-                    throw RideRouteRecorderError.corruptDraft(sessionID)
-                }
+                guard chunk.id.segmentIndex == expectedSegment else { throw RideRouteRecorderError.corruptDraft(sessionID) }
                 currentSegment = chunk.id.segmentIndex
                 expectedChunk = 0
-                guard expectedSegment < UInt32.max else {
-                    throw RideRouteRecorderError.corruptDraft(sessionID)
-                }
+                guard expectedSegment < UInt32.max else { throw RideRouteRecorderError.corruptDraft(sessionID) }
                 expectedSegment += 1
             }
-            guard chunk.id.chunkIndex == expectedChunk else {
-                throw RideRouteRecorderError.corruptDraft(sessionID)
-            }
-            guard expectedChunk < UInt32.max else {
-                throw RideRouteRecorderError.corruptDraft(sessionID)
-            }
+            guard chunk.id.chunkIndex == expectedChunk else { throw RideRouteRecorderError.corruptDraft(sessionID) }
+            guard expectedChunk < UInt32.max else { throw RideRouteRecorderError.corruptDraft(sessionID) }
             expectedChunk += 1
-
             for point in chunk.points {
                 if let previousSequence, point.sequence <= previousSequence {
                     throw RideRouteRecorderError.corruptDraft(sessionID)
@@ -622,7 +504,6 @@ actor RideRouteRecorder {
                 pointCount += 1
             }
         }
-
         guard let lastSegmentIndex = currentSegment,
               let lastSequence = previousSequence,
               lastSequence < UInt64.max else {
@@ -645,23 +526,16 @@ enum RideHistoryPresentationStatus: Equatable, Sendable {
     case failed
 }
 
-/// Root-owned read model for the Rides surface. SwiftUI never reaches directly
-/// into SwiftData, and completed records remain immutable core evidence rather
-/// than being rewritten into prettier but less truthful summaries.
 @MainActor
 @Observable
 final class RideHistoryPresentationStore {
     private(set) var records: [RideHistoryRecord] = []
     private(set) var status: RideHistoryPresentationStatus
     private(set) var lastErrorMessage: String?
-
     @ObservationIgnored private let historyStore: SwiftDataRideHistoryStore?
     @ObservationIgnored private let startupPersistenceError: String?
 
-    init(
-        historyStore: SwiftDataRideHistoryStore?,
-        startupPersistenceError: String? = nil
-    ) {
+    init(historyStore: SwiftDataRideHistoryStore?, startupPersistenceError: String? = nil) {
         self.historyStore = historyStore
         self.startupPersistenceError = startupPersistenceError
         self.lastErrorMessage = startupPersistenceError
@@ -676,33 +550,21 @@ final class RideHistoryPresentationStore {
             setStatus(.unavailable)
             return
         }
-
-        if records.isEmpty {
-            setStatus(.loading)
-        }
-
+        if records.isEmpty { setStatus(.loading) }
         do {
             let loaded = try await historyStore.records()
-            if records != loaded {
-                records = loaded
-            }
-            if lastErrorMessage != nil {
-                lastErrorMessage = nil
-            }
+            if records != loaded { records = loaded }
+            if lastErrorMessage != nil { lastErrorMessage = nil }
             setStatus(.ready)
         } catch {
             let message = "Local ride history could not be read safely."
-            if lastErrorMessage != message {
-                lastErrorMessage = message
-            }
+            if lastErrorMessage != message { lastErrorMessage = message }
             setStatus(.failed)
         }
     }
 
     private func setStatus(_ newStatus: RideHistoryPresentationStatus) {
-        if status != newStatus {
-            status = newStatus
-        }
+        if status != newStatus { status = newStatus }
     }
 }
 
@@ -718,17 +580,13 @@ enum RideRoutePresentationStatus: Equatable, Sendable {
 @Observable
 final class RideRoutePresentationStore {
     private(set) var revision = 0
-
     @ObservationIgnored private let routeStore: SwiftDataRideRouteStore?
     @ObservationIgnored private let startupPersistenceError: String?
     @ObservationIgnored private var geometries: [UUID: RideRouteGeometry] = [:]
     @ObservationIgnored private var statuses: [UUID: RideRoutePresentationStatus] = [:]
     @ObservationIgnored private var errors: [UUID: String] = [:]
 
-    init(
-        routeStore: SwiftDataRideRouteStore?,
-        startupPersistenceError: String? = nil
-    ) {
+    init(routeStore: SwiftDataRideRouteStore?, startupPersistenceError: String? = nil) {
         self.routeStore = routeStore
         self.startupPersistenceError = startupPersistenceError
     }
@@ -756,12 +614,10 @@ final class RideRoutePresentationStore {
             revision &+= 1
             return
         }
-
         statuses[sessionID] = .loading
         revision &+= 1
         do {
-            if let geometry = try await routeStore.geometry(sessionID: sessionID),
-               geometry.hasRecordedGeometry {
+            if let geometry = try await routeStore.geometry(sessionID: sessionID), geometry.hasRecordedGeometry {
                 geometries[sessionID] = geometry
                 statuses[sessionID] = .ready
                 errors.removeValue(forKey: sessionID)
@@ -789,9 +645,7 @@ enum RidePersistenceScope: Equatable, Sendable {
             return ["production"]
         case .simulation(let scenario, let namespace):
             var components = ["simulation", scenario.rawValue]
-            if let namespace, !namespace.isEmpty {
-                components.append(Self.safePathComponent(namespace))
-            }
+            if let namespace, !namespace.isEmpty { components.append(Self.safePathComponent(namespace)) }
             return components
         }
     }
@@ -813,41 +667,21 @@ struct RidePersistenceStack: Sendable {
 }
 
 enum RidePersistenceFactory {
-    static func make(
-        scope: RidePersistenceScope,
-        baseDirectoryURL: URL? = nil
-    ) throws -> RidePersistenceStack {
-        let rootDirectory: URL
-        if let baseDirectoryURL {
-            rootDirectory = baseDirectoryURL
-        } else {
-            rootDirectory = try defaultRootDirectory()
-        }
-
+    static func make(scope: RidePersistenceScope, baseDirectoryURL: URL? = nil) throws -> RidePersistenceStack {
+        let rootDirectory = try baseDirectoryURL ?? defaultRootDirectory()
         var scopeDirectory = rootDirectory
         for component in scope.pathComponents {
             scopeDirectory.appendPathComponent(component, isDirectory: true)
         }
+        try FileManager.default.createDirectory(at: scopeDirectory, withIntermediateDirectories: true)
 
-        try FileManager.default.createDirectory(
-            at: scopeDirectory,
-            withIntermediateDirectories: true
-        )
-
-        let recoveryDirectory = scopeDirectory.appendingPathComponent(
-            "Recovery",
-            isDirectory: true
-        )
+        let recoveryDirectory = scopeDirectory.appendingPathComponent("Recovery", isDirectory: true)
         let checkpointStore = AtomicRideCheckpointStore(directoryURL: recoveryDirectory)
 
         let historyURL = scopeDirectory.appendingPathComponent("RideHistory.store")
         let historyContainer = try makeHistoryContainer(storeURL: historyURL)
         let historyStore = SwiftDataRideHistoryStore(modelContainer: historyContainer)
 
-        // Route geometry is an additive evidence domain. A route-store startup
-        // failure must not disable the already accepted recovery/history ledger.
-        // Presentation can truthfully show route unavailable while ride history
-        // remains readable and automatic ride recovery remains intact.
         let routeStore: SwiftDataRideRouteStore?
         do {
             let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
@@ -866,11 +700,7 @@ enum RidePersistenceFactory {
 
     static func makeHistoryContainer(storeURL: URL) throws -> ModelContainer {
         let parent = storeURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(
-            at: parent,
-            withIntermediateDirectories: true
-        )
-
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let schema = Schema([StoredRideHistoryRecord.self])
         let configuration = ModelConfiguration(
             "NembraRideHistory",
@@ -879,24 +709,13 @@ enum RidePersistenceFactory {
             allowsSave: true,
             cloudKitDatabase: .none
         )
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: nil,
-            configurations: [configuration]
-        )
+        return try ModelContainer(for: schema, migrationPlan: nil, configurations: [configuration])
     }
 
     static func makeRouteContainer(storeURL: URL) throws -> ModelContainer {
         let parent = storeURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(
-            at: parent,
-            withIntermediateDirectories: true
-        )
-
-        let schema = Schema([
-            StoredRideRouteChunk.self,
-            StoredRideRouteManifest.self
-        ])
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let schema = Schema([StoredRideRouteChunk.self, StoredRideRouteManifest.self])
         let configuration = ModelConfiguration(
             "NembraRideRoutes",
             schema: schema,
@@ -904,18 +723,11 @@ enum RidePersistenceFactory {
             allowsSave: true,
             cloudKitDatabase: .none
         )
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: nil,
-            configurations: [configuration]
-        )
+        return try ModelContainer(for: schema, migrationPlan: nil, configurations: [configuration])
     }
 
     private static func defaultRootDirectory() throws -> URL {
-        guard let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw RideHistoryPersistenceError.applicationSupportUnavailable
         }
         return applicationSupport
