@@ -74,7 +74,11 @@ public struct AccelerationRunResult: Equatable, Sendable {
     public let targetCrossingWindow: AccelerationTimingWindow
     public let elapsedLowerBoundSeconds: Double
     public let elapsedUpperBoundSeconds: Double
-    public let authoritativeSampleCount: Int
+    /// Count of accepted measurements actually retained by the final timing
+    /// trace: the last stationary launch anchor plus accepted post-launch samples.
+    /// Earlier stationary samples that were superseded by a newer anchor are not
+    /// represented in this count.
+    public let timingEvidenceSampleCount: Int
 
     public var timingUncertaintySeconds: Double {
         max(0, elapsedUpperBoundSeconds - elapsedLowerBoundSeconds)
@@ -101,7 +105,8 @@ public struct AccelerationRunProgress: Equatable, Sendable {
     public let targetMetersPerSecond: Double
     public let launchWindow: AccelerationTimingWindow
     public let latestMeasuredMetersPerSecond: Double
-    public let authoritativeSampleCount: Int
+    /// Same retained timing-evidence count used by the eventual completed result.
+    public let timingEvidenceSampleCount: Int
 }
 
 public enum AccelerationRunState: Equatable, Sendable {
@@ -135,7 +140,7 @@ public struct AccelerationRunEvaluator: Sendable {
     private var lastStationarySample: SpeedTelemetrySample?
     private var previousRunningSample: SpeedTelemetrySample?
     private var launchWindow: AccelerationTimingWindow?
-    private var runSampleCount = 0
+    private var timingEvidenceSampleCount = 0
 
     public init(policy: AccelerationRunPolicy) {
         self.policy = policy
@@ -149,7 +154,7 @@ public struct AccelerationRunEvaluator: Sendable {
         lastStationarySample = nil
         previousRunningSample = nil
         launchWindow = nil
-        runSampleCount = 0
+        timingEvidenceSampleCount = 0
     }
 
     public mutating func interrupt(_ interruption: AccelerationRunInterruption) {
@@ -271,13 +276,15 @@ public struct AccelerationRunEvaluator: Sendable {
         )
         launchWindow = launch
         previousRunningSample = sample
-        runSampleCount = 2
+        // Only the latest stationary sample and the first moving sample are
+        // retained by the final launch timing window.
+        timingEvidenceSampleCount = 2
 
         if sample.metersPerSecond >= policy.targetMetersPerSecond {
             complete(
                 source: sample.source,
                 targetCrossingWindow: launch,
-                authoritativeSampleCount: runSampleCount
+                timingEvidenceSampleCount: timingEvidenceSampleCount
             )
             return
         }
@@ -287,7 +294,7 @@ public struct AccelerationRunEvaluator: Sendable {
             targetMetersPerSecond: policy.targetMetersPerSecond,
             launchWindow: launch,
             latestMeasuredMetersPerSecond: sample.metersPerSecond,
-            authoritativeSampleCount: runSampleCount
+            timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
     }
 
@@ -301,7 +308,7 @@ public struct AccelerationRunEvaluator: Sendable {
             return
         }
 
-        runSampleCount += 1
+        timingEvidenceSampleCount += 1
 
         if sample.metersPerSecond >= policy.targetMetersPerSecond {
             let crossing = AccelerationTimingWindow(
@@ -311,7 +318,7 @@ public struct AccelerationRunEvaluator: Sendable {
             complete(
                 source: sample.source,
                 targetCrossingWindow: crossing,
-                authoritativeSampleCount: runSampleCount
+                timingEvidenceSampleCount: timingEvidenceSampleCount
             )
             return
         }
@@ -322,14 +329,14 @@ public struct AccelerationRunEvaluator: Sendable {
             targetMetersPerSecond: policy.targetMetersPerSecond,
             launchWindow: launchWindow,
             latestMeasuredMetersPerSecond: sample.metersPerSecond,
-            authoritativeSampleCount: runSampleCount
+            timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
     }
 
     private mutating func complete(
         source: SpeedTelemetrySource,
         targetCrossingWindow: AccelerationTimingWindow,
-        authoritativeSampleCount: Int
+        timingEvidenceSampleCount: Int
     ) {
         guard let launchWindow else {
             invalidate(.rollingStart)
@@ -351,7 +358,7 @@ public struct AccelerationRunEvaluator: Sendable {
             targetCrossingWindow: targetCrossingWindow,
             elapsedLowerBoundSeconds: Double(lowerBoundNanoseconds) / 1_000_000_000,
             elapsedUpperBoundSeconds: Double(upperBoundNanoseconds) / 1_000_000_000,
-            authoritativeSampleCount: authoritativeSampleCount
+            timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
     }
 
