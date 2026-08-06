@@ -6,52 +6,53 @@ Lane: `ride-route-evidence-summary`
 
 ## Purpose
 
-Completed-ride route storage already preserves real accepted coordinates as explicit segments, coverage classification, point count, and known-gap count. The production UI can render those facts, but it needs a small semantic boundary that prevents presentation code from quietly turning sparse or incomplete topology into stronger route claims.
+Completed-ride route storage already preserves real accepted coordinates as explicit segments, coverage classification, point count, and known-gap count. `RideRouteManifest` and `RideRouteGeometry` already own the fail-closed persistence/topology invariants.
 
-`RideRouteEvidenceSummary` is that boundary. It summarizes only persisted route topology that a caller has already validated. It does not calculate route distance, reconstruct missing geometry, or decide whether a route is suitable for a scooter.
+The production UI can render those facts, but it needs a small semantic projection that prevents presentation code from quietly turning sparse or incomplete topology into stronger route claims.
+
+`RideRouteEvidenceSummary` is that projection. It accepts only an already-validated `RideRouteGeometry` and exposes a compact presentation shape. It does not create a second route validator, calculate route distance, reconstruct missing geometry, or decide whether a route is suitable for a scooter.
 
 This is also an implementation foundation for the source-backed ride-history accessibility finding that Nembra needs a stable app-owned semantic description of recorded route coverage/points/known gaps. User-facing wording and localization remain an app-layer responsibility rather than being embedded in NembraCore.
 
-## Inputs
+## Authority and inputs
 
-The summary accepts:
+`RideRouteGeometry` remains authoritative for:
 
-- `RideDistanceCoverage` — `.complete`, `.partial`, or `.unknown`;
-- per-segment persisted point counts;
-- the persisted known-gap count.
+- session-consistent persisted route chunks;
+- contiguous segment/chunk topology;
+- global point ordering;
+- manifest point/segment count agreement;
+- `.complete`, `.partial`, or `.unknown` coverage supplied by the recording layer;
+- explicit known-gap count.
 
-It derives:
+The summary takes one validated `RideRouteGeometry` and projects:
 
-- total segment count;
-- total point count with overflow protection;
+- coverage without reinterpretation;
+- exact segment count;
+- exact point count;
+- exact known-gap count;
 - whether any route geometry exists;
-- whether any one continuous recorded segment contains enough points to draw a path;
-- whether explicit interior gaps are known.
+- whether any one continuous recorded segment contains enough points to draw a path.
+
+It deliberately performs no independent coverage/gap validation. If accepted geometry says coverage is `.unknown` while explicit segment gaps exist, the summary remains `.unknown`; it must not strengthen or rewrite upstream truth.
 
 ## Shape semantics
 
 `RideRouteEvidenceShape` deliberately has only three states:
 
-- `noRecordedGeometry` — no persisted route points exist. This state is accepted only with unknown coverage and zero known gaps.
-- `recordedPointsOnly` — real route points exist, but no single recorded continuous segment has two points, so drawing a path would fabricate an edge.
+- `noRecordedGeometry` — the validated geometry contains no persisted route points.
+- `recordedPointsOnly` — real route points exist, but no single recorded continuous segment has two points, so drawing an edge would fabricate geometry.
 - `drawablePath` — at least one continuous recorded segment has two or more real points. Only those persisted segment edges may be drawn; the state does not authorize drawing across gaps.
 
 A drawable path is not the same as complete ride coverage. `.partial` and `.unknown` coverage may both contain drawable recorded segments.
 
-## Fail-closed invariants
+## Why the projection does not revalidate
 
-The constructor rejects evidence that would create contradictory presentation state:
+An earlier draft constructor accepted raw counts and applied its own stricter coverage/gap rules. Static audit against the existing `RideRouteManifest` / `RideRouteGeometry` contract showed that approach could reject geometry that Nembra already accepts truthfully, specifically `.unknown` coverage with explicit persisted gaps.
 
-- negative gap counts;
-- empty/zero-length persisted segments;
-- point-count integer overflow;
-- no recorded geometry paired with complete/partial coverage or known gaps;
-- more known interior gaps than segment topology can contain;
-- known gaps paired with complete or unknown coverage.
+That duplicate validator was removed before acceptance. The current API consumes `RideRouteGeometry` directly so there is one topology authority rather than two subtly diverging truth models.
 
-Partial coverage with zero materialized interior gaps remains valid. Current route recording can truthfully be partial because capture started after an unobserved interval, ended with a pending gap, or was otherwise explicitly forced partial without producing a second persisted segment.
-
-Unknown coverage with recorded geometry also remains valid. The presence of coordinates does not prove whole-ride completeness.
+Partial coverage with zero materialized interior gaps also remains valid. Current recording can truthfully be partial because capture started after an unobserved interval, ended with a pending gap, or was otherwise explicitly forced partial without producing a second persisted segment.
 
 ## Truth boundaries
 
@@ -61,6 +62,7 @@ This domain does **not**:
 - bridge route gaps with straight lines or guessed coordinates;
 - convert ODO, speed integration, or other evidence into route points;
 - claim a recorded path covers the whole ride unless upstream evidence says coverage is complete;
+- turn unknown coverage into partial/complete merely because gaps are or are not visible;
 - infer place names, streets, destinations, route purpose, legality, or safety;
 - infer scooter-specific routing suitability;
 - alter ride persistence, MapKit geometry, GPS screening, adaptive range, battery truth, or BLE behavior;
@@ -82,16 +84,14 @@ A later Rides UI/accessibility integration may consume this semantic state to pr
 
 ## Verification
 
-Focused deterministic Swift Testing covers:
+Focused deterministic Swift Testing projects real validated `RideRouteGeometry` fixtures and covers:
 
-- no-geometry behavior;
-- points-only topology;
-- drawable continuous segments;
-- complete no-gap topology;
-- partial topology with and without explicit interior gaps;
-- unknown coverage with real geometry;
-- contradictory coverage/gap combinations;
-- invalid segment/gap counts;
-- total point-count overflow.
+- empty unknown geometry;
+- one-point points-only geometry;
+- complete drawable no-gap geometry;
+- partial multi-segment geometry with exact counts/gaps;
+- unknown multi-segment geometry with an explicit persisted gap, proving the summary does not strengthen coverage;
+- partial geometry without an interior gap;
+- multiple separated single points remaining points-only.
 
-A supplemental Swift 6.2.1 harness using the same source semantics passed the focused suite. Repository-wide NembraCore and Xcode 27/iPhone 12 Simulator acceptance is still required on the exact final branch head before merge.
+A supplemental Swift 6.2.1 projection harness is used for fast syntax/behavior checks. Repository-wide NembraCore and Xcode 27/iPhone 12 Simulator acceptance is still required on the exact final branch head before merge.
