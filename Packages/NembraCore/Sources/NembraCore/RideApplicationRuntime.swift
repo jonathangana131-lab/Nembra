@@ -6,6 +6,10 @@ public enum RideApplicationRuntimeFailure: String, Equatable, Sendable {
     case historyCommit
 }
 
+public enum RideApplicationRuntimeStartError: Error, Equatable, Sendable {
+    case initialObservationFailed
+}
+
 public struct RideApplicationRuntimeSnapshot: Equatable, Sendable {
     public let phase: RideEnginePhase
     public let pendingCompletedRideID: UUID?
@@ -143,7 +147,16 @@ public actor RideApplicationRuntime {
             }
         }
 
-        latestVehicleState = await service.snapshot()
+        // Reconcile restored state against the scooter snapshot once before
+        // subscriptions begin. This lets a recovered ride observe that the scooter
+        // is already reconnected / has newer ODO evidence without waiting for an
+        // unrelated later state mutation. It still carries no fabricated speed.
+        latestVehicleState = nil
+        await acceptVehicleState(await service.snapshot())
+        guard failure == nil else {
+            throw RideApplicationRuntimeStartError.initialObservationFailed
+        }
+
         started = true
         publish()
 
