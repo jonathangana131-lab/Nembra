@@ -53,9 +53,8 @@ struct RideTransportGapSchemaTests {
             checkpoint: checkpoint
         )
         let encoded = try JSONEncoder().encode(envelope)
-        var root = try #require(
-            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-        )
+        let decoded = try JSONSerialization.jsonObject(with: encoded)
+        var root = try #require(decoded as? [String: Any])
         var durable = try #require(root["checkpoint"] as? [String: Any])
         var payload = try #require(durable[path[0]] as? [String: Any])
         payload.removeValue(forKey: "transportGapEvidence")
