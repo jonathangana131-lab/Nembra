@@ -3,21 +3,40 @@ import UIKit
 
 struct AppRootView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(RideApplicationStore.self) private var rides
 
     var body: some View {
         Group {
             if verticalSizeClass == .compact {
                 DashboardView()
             } else {
-                NavigationStack {
-                    HomeView()
-                        .safeAreaInset(edge: .top, spacing: 0) {
-                            if rides.shouldPresentStatus {
-                                RideStatusStrip()
-                            }
+                PortraitRootView()
+            }
+        }
+    }
+}
+
+private struct PortraitRootView: View {
+    @Environment(RideApplicationStore.self) private var rides
+
+    var body: some View {
+        TabView {
+            NavigationStack {
+                HomeView()
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if rides.shouldPresentStatus {
+                            RideStatusStrip()
                         }
-                }
+                    }
+            }
+            .tabItem {
+                Label("Home", systemImage: "scooter")
+            }
+
+            NavigationStack {
+                RideHistoryView()
+            }
+            .tabItem {
+                Label("Rides", systemImage: "clock.arrow.circlepath")
             }
         }
     }
@@ -85,5 +104,232 @@ private struct RideStatusStrip: View {
         default:
             .primary
         }
+    }
+}
+
+private struct RideHistoryView: View {
+    @Environment(RideHistoryPresentationStore.self) private var history
+    @Environment(RideApplicationStore.self) private var rides
+
+    var body: some View {
+        Group {
+            if history.records.isEmpty {
+                emptyOrLoadingState
+            } else {
+                historyList
+            }
+        }
+        .navigationTitle("Rides")
+        .task(id: rides.lastCompletedSessionID) {
+            await history.refresh()
+        }
+        .refreshable {
+            await history.refresh()
+        }
+    }
+
+    @ViewBuilder
+    private var emptyOrLoadingState: some View {
+        switch history.status {
+        case .idle, .loading:
+            ProgressView("Loading rides…")
+                .accessibilityIdentifier("rides.loading")
+        case .ready:
+            ContentUnavailableView(
+                "No completed rides",
+                systemImage: "clock.arrow.circlepath",
+                description: Text("Safely saved rides will appear here. Nembra will not invent route or distance data that was never recorded.")
+            )
+            .accessibilityIdentifier("rides.empty")
+        case .unavailable, .failed:
+            ContentUnavailableView(
+                "Ride history unavailable",
+                systemImage: "exclamationmark.triangle",
+                description: Text(history.lastErrorMessage ?? "Local ride history could not be opened safely.")
+            )
+            .accessibilityIdentifier("rides.error")
+        }
+    }
+
+    private var historyList: some View {
+        List {
+            if history.status == .failed || history.status == .unavailable {
+                Section {
+                    Label(
+                        history.lastErrorMessage ?? "Ride history could not be refreshed safely.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                ForEach(history.records, id: \.sessionID) { record in
+                    NavigationLink {
+                        RideHistoryDetailView(record: record)
+                    } label: {
+                        RideHistoryRowView(record: record)
+                    }
+                    .accessibilityIdentifier("rides.completed-row")
+                }
+            } footer: {
+                Text("Distance sources remain evidence until their coverage can be reconciled. A row never turns one partial source into a final ride total.")
+            }
+        }
+        .accessibilityIdentifier("rides.history")
+    }
+}
+
+private struct RideHistoryRowView: View {
+    let record: RideHistoryRecord
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: record.evidence.continuity == .recoveredCheckpoint
+                  ? "arrow.triangle.2.circlepath"
+                  : "checkmark.circle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened))
+                    .font(.headline)
+                Text(continuityLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(primaryEvidenceValue)
+                    .font(.headline.monospacedDigit())
+                Text(primaryEvidenceLabel)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Completed ride")
+        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(primaryEvidenceLabel), \(primaryEvidenceValue), \(continuityLabel)")
+    }
+
+    private var continuityLabel: String {
+        record.evidence.continuity == .recoveredCheckpoint
+            ? "Recovered ride"
+            : "Completed ride"
+    }
+
+    private var primaryEvidenceValue: String {
+        if let odometerDeltaKilometers {
+            return VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
+        }
+        if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+            return VehicleDisplayFormatting.distance(
+                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+            )
+        }
+        return "—"
+    }
+
+    private var primaryEvidenceLabel: String {
+        if odometerDeltaKilometers != nil {
+            return "ODO delta"
+        }
+        if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+            return "GPS evidence"
+        }
+        return "Distance unavailable"
+    }
+
+    private var odometerDeltaKilometers: Double? {
+        guard let start = record.evidence.startingOdometerKilometers,
+              let end = record.evidence.endingOdometerKilometers else {
+            return nil
+        }
+        return end - start
+    }
+}
+
+private struct RideHistoryDetailView: View {
+    let record: RideHistoryRecord
+
+    var body: some View {
+        List {
+            Section("Ride timeline") {
+                LabeledContent("Started") {
+                    Text(timestamp(record.evidence.beganAtDate))
+                }
+                LabeledContent("Confirmed") {
+                    Text(timestamp(record.evidence.confirmedAtDate))
+                }
+                LabeledContent("Ended") {
+                    Text(timestamp(record.evidence.endedAtDate))
+                }
+                LabeledContent("Continuity") {
+                    Text(record.evidence.continuity == .recoveredCheckpoint
+                         ? "Recovered after relaunch"
+                         : "Uninterrupted process")
+                }
+            }
+
+            Section {
+                if let odometerDeltaKilometers {
+                    LabeledContent("Scooter odometer delta") {
+                        Text(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))
+                            .monospacedDigit()
+                    }
+                    .accessibilityIdentifier("rides.evidence.odometer")
+                }
+
+                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                    LabeledContent("GPS route evidence") {
+                        Text(
+                            VehicleDisplayFormatting.distance(
+                                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+                            )
+                        )
+                        .monospacedDigit()
+                    }
+                    .accessibilityIdentifier("rides.evidence.gps")
+                }
+
+                if odometerDeltaKilometers == nil,
+                   record.evidence.qualityScreenedGPSDistanceMeters == 0 {
+                    Text("No distance evidence was durably recorded for this ride.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Distance evidence")
+            } footer: {
+                Text("Nembra keeps independent sources separate until coverage can be reconciled. Neither value is silently promoted into a final ride distance.")
+            }
+
+            Section("Route") {
+                Label("No route geometry recorded", systemImage: "map")
+                    .font(.subheadline.weight(.semibold))
+                Text("A map will appear only after Nembra has stored real quality-screened route points. This record contains no coordinates to draw truthfully.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("rides.route-unavailable")
+            }
+        }
+        .navigationTitle("Ride Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("rides.detail")
+    }
+
+    private var odometerDeltaKilometers: Double? {
+        guard let start = record.evidence.startingOdometerKilometers,
+              let end = record.evidence.endingOdometerKilometers else {
+            return nil
+        }
+        return end - start
+    }
+
+    private func timestamp(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
     }
 }

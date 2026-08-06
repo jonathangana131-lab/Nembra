@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftData
 
 @Model
@@ -60,6 +61,22 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
         return try decode(stored, sessionID: sessionID)
     }
 
+    /// Returns validated durable records newest-first. Listing decodes every
+    /// payload through the same identity checks as point lookup; corrupted rows
+    /// fail closed rather than disappearing from the user's history silently.
+    func records() throws -> [RideHistoryRecord] {
+        let storedRecords = try modelContext.fetch(FetchDescriptor<StoredRideHistoryRecord>())
+        let decoded = try storedRecords.map { stored in
+            try decode(stored, sessionID: stored.sessionID)
+        }
+        return decoded.sorted { lhs, rhs in
+            if lhs.evidence.endedAtDate != rhs.evidence.endedAtDate {
+                return lhs.evidence.endedAtDate > rhs.evidence.endedAtDate
+            }
+            return lhs.sessionID.uuidString < rhs.sessionID.uuidString
+        }
+    }
+
     private func storedRecord(sessionID: UUID) throws -> StoredRideHistoryRecord? {
         let key = sessionID
         var descriptor = FetchDescriptor<StoredRideHistoryRecord>(
@@ -91,6 +108,75 @@ actor SwiftDataRideHistoryStore: RideHistoryStore {
             throw error
         } catch {
             throw RideHistoryPersistenceError.corruptRecord(sessionID)
+        }
+    }
+}
+
+enum RideHistoryPresentationStatus: Equatable, Sendable {
+    case idle
+    case loading
+    case ready
+    case unavailable
+    case failed
+}
+
+/// Root-owned read model for the Rides surface. SwiftUI never reaches directly
+/// into SwiftData, and completed records remain immutable core evidence rather
+/// than being rewritten into prettier but less truthful summaries.
+@MainActor
+@Observable
+final class RideHistoryPresentationStore {
+    private(set) var records: [RideHistoryRecord] = []
+    private(set) var status: RideHistoryPresentationStatus
+    private(set) var lastErrorMessage: String?
+
+    @ObservationIgnored private let historyStore: SwiftDataRideHistoryStore?
+    @ObservationIgnored private let startupPersistenceError: String?
+
+    init(
+        historyStore: SwiftDataRideHistoryStore?,
+        startupPersistenceError: String? = nil
+    ) {
+        self.historyStore = historyStore
+        self.startupPersistenceError = startupPersistenceError
+        self.lastErrorMessage = startupPersistenceError
+        self.status = historyStore == nil ? .unavailable : .idle
+    }
+
+    func refresh() async {
+        guard let historyStore else {
+            if lastErrorMessage == nil {
+                lastErrorMessage = startupPersistenceError ?? "Local ride history storage is unavailable."
+            }
+            setStatus(.unavailable)
+            return
+        }
+
+        if records.isEmpty {
+            setStatus(.loading)
+        }
+
+        do {
+            let loaded = try await historyStore.records()
+            if records != loaded {
+                records = loaded
+            }
+            if lastErrorMessage != nil {
+                lastErrorMessage = nil
+            }
+            setStatus(.ready)
+        } catch {
+            let message = "Local ride history could not be read safely."
+            if lastErrorMessage != message {
+                lastErrorMessage = message
+            }
+            setStatus(.failed)
+        }
+    }
+
+    private func setStatus(_ newStatus: RideHistoryPresentationStatus) {
+        if status != newStatus {
+            status = newStatus
         }
     }
 }

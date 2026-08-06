@@ -49,6 +49,38 @@ final class RideApplicationTests: XCTestCase {
         }
     }
 
+    func testSwiftDataHistoryListsValidatedRecordsNewestFirst() async throws {
+        let directory = temporaryDirectory(name: "history-list")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("RideHistory.store")
+        let container = try RidePersistenceFactory.makeHistoryContainer(storeURL: storeURL)
+        let store = SwiftDataRideHistoryStore(modelContainer: container)
+
+        let olderID = UUID()
+        let newerID = UUID()
+        let older = RideHistoryRecord(
+            evidence: try completedEvidence(
+                sessionID: olderID,
+                endingOdometerKilometers: 100.4,
+                beganAtEpoch: 1_000
+            )
+        )
+        let newer = RideHistoryRecord(
+            evidence: try completedEvidence(
+                sessionID: newerID,
+                endingOdometerKilometers: 101.0,
+                beganAtEpoch: 2_000
+            )
+        )
+
+        _ = try await store.commit(newer)
+        _ = try await store.commit(older)
+
+        let records = try await store.records()
+        XCTAssertEqual(records.map(\.sessionID), [newerID, olderID])
+        XCTAssertEqual(records, [newer, older])
+    }
+
     func testSwiftDataHistoryRejectsPayloadWhoseSessionIdentityDoesNotMatchRow() async throws {
         let directory = temporaryDirectory(name: "history-corruption")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -277,13 +309,14 @@ final class RideApplicationTests: XCTestCase {
 
     private func completedEvidence(
         sessionID: UUID,
-        endingOdometerKilometers: Double
+        endingOdometerKilometers: Double,
+        beganAtEpoch: TimeInterval = 1_000
     ) throws -> CompletedRideEvidence {
         try CompletedRideEvidence(
             sessionID: sessionID,
-            beganAtDate: Date(timeIntervalSince1970: 1_000),
-            confirmedAtDate: Date(timeIntervalSince1970: 1_002),
-            endedAtDate: Date(timeIntervalSince1970: 1_060),
+            beganAtDate: Date(timeIntervalSince1970: beganAtEpoch),
+            confirmedAtDate: Date(timeIntervalSince1970: beganAtEpoch + 2),
+            endedAtDate: Date(timeIntervalSince1970: beganAtEpoch + 60),
             startingOdometerKilometers: 100,
             endingOdometerKilometers: endingOdometerKilometers,
             qualityScreenedGPSDistanceMeters: 1_900,

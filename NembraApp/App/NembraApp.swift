@@ -9,6 +9,7 @@ struct NembraApp: App {
             AppRootView()
                 .environment(runtime.vehicleStore)
                 .environment(runtime.rideStore)
+                .environment(runtime.rideHistoryStore)
                 .task { await runtime.start() }
         }
     }
