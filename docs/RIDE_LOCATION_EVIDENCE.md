@@ -74,7 +74,7 @@ A source interruption is propagated to the route recorder immediately. Before th
 
 ## Simulator and tests
 
-`RideLocationQualityPolicy.simulatorQA()` exists only for deterministic software verification. Its numeric thresholds are QA fixtures, not real-world recommendations or MAXSHOT facts.
+`RideLocationQualityPolicy.simulatorQA()` exists only for deterministic software verification. Its numeric thresholds are QA fixtures, not real-world recommendations or AOVOPRO ES80 facts.
 
 Tests cover:
 - invalid raw samples and invalid policy values.
@@ -91,11 +91,11 @@ Tests cover:
 ## Production enablement gate
 
 Real automatic location capture must remain disabled until all of the following are implemented and field-validated:
-- real MAXSHOT ride-detection thresholds are verified enough to define when ride-scoped location begins and ends.
+- real AOVOPRO ES80 ride-detection thresholds are verified enough to define when ride-scoped location begins and ends.
 - full-vs-reduced location authorization UX is exercised on current iOS 27 hardware.
 - horizontal-accuracy, age, continuity-gap, and implied-speed thresholds are tuned from real outdoor traces rather than Simulator values.
 - background continuation and SwiftUI lifecycle behavior are designed and tested without pretending force-quit behavior is recoverable.
 - energy impact is measured so navigation-grade location does not run outside a legitimate ride.
 - physical iPhone 12 tests verify route continuity, GPS distance behavior, relaunch gaps, permission changes, and low-signal environments.
 
-Until that gate is met, this slice proves the software evidence architecture and current Core Location adapter only. It does not claim production GPS validation.
+Until that gate is met, this slice proves the software evidence architecture and current Core Location adapter only. It does not claim production GPS validation or real ES80 hardware validation.
