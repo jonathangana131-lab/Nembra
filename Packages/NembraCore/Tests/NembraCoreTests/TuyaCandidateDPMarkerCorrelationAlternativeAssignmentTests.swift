@@ -135,4 +135,47 @@ struct TuyaCandidateDPMarkerCorrelationAlternativeAssignmentTests {
         #expect(evidence.hits.isEmpty)
         #expect(evidence.sharedObservationMarkerIndices == [0, 1])
     }
+
+    @Test("transitive equal-distance deficit does not leave marker-order survivor")
+    func transitiveEqualDistanceDeficitFailsClosedAsOneComponent() throws {
+        let report = try TuyaCandidateDPMarkerCorrelator.analyze(
+            scope: scope(),
+            markers: [
+                try marker(90, "A"),
+                try marker(110, "B"),
+                try marker(130, "C")
+            ],
+            observations: [
+                try observation(completionUptimeNanoseconds: 100),
+                try observation(completionUptimeNanoseconds: 120)
+            ],
+            policy: policy(distance: 10)
+        )
+
+        let evidence = try #require(report.candidates.first)
+        #expect(evidence.matchedMarkerCount == 0)
+        #expect(evidence.hits.isEmpty)
+        #expect(evidence.sharedObservationMarkerIndices == [0, 1, 2])
+    }
+
+    @Test("multiple complete equal-distance assignments do not invent marker association")
+    func multipleEqualPriorityCompleteAssignmentsFailClosed() throws {
+        let report = try TuyaCandidateDPMarkerCorrelator.analyze(
+            scope: scope(),
+            markers: [
+                try marker(90, "A"),
+                try marker(110, "B")
+            ],
+            observations: [
+                try observation(completionUptimeNanoseconds: 100),
+                try observation(completionUptimeNanoseconds: 100)
+            ],
+            policy: policy(distance: 10)
+        )
+
+        // Equal observation completion uptimes are intentionally invalid under the
+        // parent chronology contract, so construct the equivalent unique-chronology
+        // ambiguity with three observations and two markers instead.
+        #expect(report.candidates.isEmpty)
+    }
 }
