@@ -200,13 +200,16 @@ public protocol RideCheckpointStore: Sendable {
 /// Two-slot atomic journal for compact ride recovery and completion-handoff evidence.
 ///
 /// Each save writes a new generation to the older/unused slot with Foundation's
-/// atomic file replacement. The other slot remains a previous known-good copy,
-/// so a truncated/corrupt newest write can fall back without erasing the ride.
+/// atomic file replacement. The other slot remains a previous known-good copy
+/// while both copies are readable. If either active slot becomes unreadable, its
+/// generation/session authority is unknowable, so load/save/clear fail closed
+/// rather than promoting or overwriting the readable sibling.
 /// This is intentionally separate from the later completed-ride SwiftData ledger.
 ///
-/// This design protects against ordinary process interruption and partial/corrupt
-/// checkpoint files. It does not claim a stronger power-loss durability guarantee
-/// than the underlying filesystem/Foundation atomic-write semantics provide.
+/// This design protects against ordinary process interruption and preserves
+/// ambiguous/corrupt journal evidence for explicit recovery. It does not claim a
+/// stronger power-loss durability guarantee than the underlying filesystem/
+/// Foundation atomic-write semantics provide.
 public actor AtomicRideCheckpointStore: RideCheckpointStore {
     /// v2 adds explicit ride transport-gap provenance. v1 is still readable so
     /// an existing in-progress ride can recover, but every subsequent write is
@@ -521,15 +524,9 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         let b = try readSlot(at: slotBURL)
         try rejectUnsupportedSchema(a, b)
         try rejectConflictingGenerations(a, b)
+        try rejectCorruptSlots(a, b)
 
         let valid = [a, b].compactMap(\.envelope)
-        if valid.isEmpty, a.isCorrupt, b.isCorrupt {
-            // With both copies unreadable there is no safe way to decide what
-            // generation/evidence would be overwritten. Explicit clear/recovery
-            // is required instead of silently erasing both forensic copies.
-            throw RideCheckpointError.corruptedCheckpoint
-        }
-
         let highestGeneration = valid.map(\.generation).max() ?? 0
         guard highestGeneration < UInt64.max else {
             throw RideCheckpointError.generationOverflow
@@ -547,7 +544,7 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         // Small synchronous verification is deliberate. A checkpoint cadence
         // layer must prevent high-frequency writes; when a durable write is
         // requested, immediately verify that the new slot is decodable before
-        // reporting success. The other slot remains the fallback.
+        // reporting success. The other readable slot remains the fallback.
         guard case let .valid(verified) = try readSlot(at: destination),
               verified == envelope else {
             throw RideCheckpointError.corruptedCheckpoint
@@ -559,14 +556,11 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         let b = try readSlot(at: slotBURL)
         try rejectUnsupportedSchema(a, b)
         try rejectConflictingGenerations(a, b)
+        try rejectCorruptSlots(a, b)
 
         let valid = [a, b].compactMap(\.envelope)
         if let newest = valid.max(by: { $0.generation < $1.generation }) {
             return newest.checkpoint
-        }
-
-        if a.isCorrupt || b.isCorrupt {
-            throw RideCheckpointError.corruptedCheckpoint
         }
         return nil
     }
@@ -581,9 +575,7 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         // the newest completion handoff while the readable slot is stale
         // in-progress evidence. Deleting either file would risk making the older
         // ride authoritative after restart, so preserve both forensic copies.
-        if a.isCorrupt || b.isCorrupt {
-            throw RideCheckpointError.corruptedCheckpoint
-        }
+        try rejectCorruptSlots(a, b)
 
         let slots: [(url: URL, read: SlotRead)] = [
             (slotAURL, a),
@@ -707,18 +699,16 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         throw RideCheckpointError.conflictingGenerations
     }
 
-    private func destinationURL(slotA: SlotRead, slotB: SlotRead) -> URL {
-        switch (slotA, slotB) {
-        case (.corrupt, .missing):
-            // Preserve the corrupt copy for diagnostics and recover into the
-            // unused slot rather than destroying the only forensic evidence.
-            return slotBURL
-        case (.missing, .corrupt):
-            return slotAURL
-        default:
-            break
+    private func rejectCorruptSlots(_ slots: SlotRead...) throws {
+        if slots.contains(where: \.isCorrupt) {
+            // A read failure and malformed bytes are intentionally equivalent at
+            // this boundary: either can hide the newest authoritative generation.
+            // Never promote or overwrite the readable peer based on missing data.
+            throw RideCheckpointError.corruptedCheckpoint
         }
+    }
 
+    private func destinationURL(slotA: SlotRead, slotB: SlotRead) -> URL {
         switch (slotA.envelope, slotB.envelope) {
         case (nil, _):
             return slotAURL
