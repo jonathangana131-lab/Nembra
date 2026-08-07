@@ -28,7 +28,9 @@ public struct PassiveBluetoothTuyaCandidateCaptureContext: Equatable, Sendable {
     public let sessionStartedAt: Date
     public let peripheralIdentifier: String
 
-    public init(
+    /// Producer-only construction prevents external callers from minting a
+    /// capture context that never came from an immutable capture session.
+    init(
         sessionID: UUID,
         vehicleIdentity: VehicleIdentity,
         sessionStartedAt: Date,
@@ -49,7 +51,9 @@ public struct PassiveBluetoothTuyaCandidateSourceStream: Equatable, Sendable {
     public let valueStreamIdentity: TuyaCandidateValueStreamIdentity
     public let origin: PassiveBluetoothValueOrigin
 
-    public init(
+    /// Producer-only construction keeps stream provenance bound to bridge
+    /// projection rather than caller-authored research claims.
+    init(
         valueStreamIdentity: TuyaCandidateValueStreamIdentity,
         origin: PassiveBluetoothValueOrigin
     ) {
@@ -68,7 +72,9 @@ public struct PassiveBluetoothTuyaCandidateSourceFragment: Equatable, Sendable {
     public let receivedAtDate: Date
     public let observation: TuyaCandidateFragmentObservation
 
-    public init(
+    /// Producer-only construction prevents a detached analyzer observation from
+    /// being relabeled as an exact raw-capture source mapping by external code.
+    init(
         captureRecordIndex: Int,
         captureSequenceNumber: UInt64,
         receivedAtDate: Date,
@@ -89,7 +95,9 @@ public struct PassiveBluetoothTuyaCandidateStreamTranscript: Equatable, Sendable
     public let sourceStream: PassiveBluetoothTuyaCandidateSourceStream
     public let fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
 
-    public init(
+    /// Producer-only construction ensures the public transcript view cannot be
+    /// assembled from mutually inconsistent context, stream, and fragments.
+    init(
         captureContext: PassiveBluetoothTuyaCandidateCaptureContext,
         sourceStream: PassiveBluetoothTuyaCandidateSourceStream,
         fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
@@ -119,7 +127,9 @@ public struct PassiveBluetoothTuyaCandidateStreamAnalysis: Equatable, Sendable {
     public let transcript: PassiveBluetoothTuyaCandidateStreamTranscript
     public let events: [TuyaCandidateTranscriptEvent]
 
-    public init(
+    /// Producer-only construction prevents external code from pairing arbitrary
+    /// analyzer events with provenance they were not actually derived from.
+    init(
         transcript: PassiveBluetoothTuyaCandidateStreamTranscript,
         events: [TuyaCandidateTranscriptEvent]
     ) {
