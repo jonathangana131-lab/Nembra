@@ -90,4 +90,45 @@ struct RideDurationStatisticsPeriodIsolationTests {
             )
         }
     }
+
+    @Test("all-time summary does not require calendar representation of an unused finite reference date")
+    func allTimeIgnoresUnusedCalendarReferenceRepresentation() throws {
+        let ride = try statisticsRide(
+            at: date(2026, 8, 7),
+            durationNanoseconds: 30
+        )
+        let extremeReference = Date(
+            timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude
+        )
+
+        #expect(extremeReference.timeIntervalSinceReferenceDate.isFinite)
+        #expect(calendar().dateInterval(of: .day, for: extremeReference)?.contains(extremeReference) != true)
+
+        let summary = try RideDurationStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [ride],
+            referenceDate: extremeReference,
+            calendar: calendar()
+        )
+
+        #expect(summary.rideCount == 1)
+        #expect(summary.durationAvailability == .complete)
+        #expect(summary.totalObservedDurationNanoseconds == 30)
+    }
+
+    @Test("calendar-bounded periods still reject an unrepresentable reference date")
+    func calendarBoundedPeriodRejectsUnrepresentableReference() throws {
+        let extremeReference = Date(
+            timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude
+        )
+
+        #expect(throws: RideDurationStatisticsError.invalidReferenceDate) {
+            _ = try RideDurationStatisticsAggregator.summarize(
+                period: .today,
+                rides: [],
+                referenceDate: extremeReference,
+                calendar: calendar()
+            )
+        }
+    }
 }
