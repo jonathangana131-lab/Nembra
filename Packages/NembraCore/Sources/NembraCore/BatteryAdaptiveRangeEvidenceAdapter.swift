@@ -23,6 +23,22 @@ enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
             return .continuityResetAndAuthoritativeSOCIngested
         }
     }
+
+    /// Several normalized fields may originate from one resumed transport
+    /// callback and therefore carry the same explicit boundary + receipt uptime.
+    /// Only the first field needs to reset the range assembler; later fields from
+    /// that same receipt must retain their value semantics without resetting the
+    /// fresh anchor again.
+    var suppressingContinuityReset: Self {
+        switch self {
+        case .ignore, .ingestSOC:
+            return self
+        case .resetContinuity:
+            return .ignore
+        case let .resetContinuityAndIngestSOC(reading):
+            return .ingestSOC(reading)
+        }
+    }
 }
 
 /// Payload-free public classification of what one validated pipeline transition
@@ -76,22 +92,48 @@ enum BatteryAdaptiveRangeEvidenceAdapter {
 struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
     private(set) var streamValidator: BatteryEvidenceStreamValidator
 
+    /// Receipt uptime whose explicit continuity reset has already been applied to
+    /// the adaptive-range assembler. It remains active across other fields with
+    /// the same uptime so repeated boundary tags from one normalized callback are
+    /// idempotent. It is cleared by a known new gap or once receipt time advances.
+    private(set) var lastContinuityResetReceiptUptimeNanoseconds: UInt64?
+
     init(streamValidator: BatteryEvidenceStreamValidator = .init()) {
         self.streamValidator = streamValidator
+        lastContinuityResetReceiptUptimeNanoseconds = nil
     }
 
     mutating func markUnobservedInterval() {
         streamValidator.markUnobservedInterval()
+        // A caller-known gap is always a new boundary even if a fresh process
+        // later happens to reuse the same numeric uptime value.
+        lastContinuityResetReceiptUptimeNanoseconds = nil
     }
 
     mutating func accept(
         _ observation: BatteryEvidenceObservation
     ) throws -> BatteryAdaptiveRangeEvidenceAction {
-        let action = try BatteryAdaptiveRangeEvidenceAdapter.action(for: observation)
+        let rawAction = try BatteryAdaptiveRangeEvidenceAdapter.action(for: observation)
+        let isRepeatedBoundaryForSameReceipt =
+            observation.requiresNewContinuityAnchor &&
+            streamValidator.requiresContinuityBoundary == false &&
+            lastContinuityResetReceiptUptimeNanoseconds == observation.receivedAtUptimeNanoseconds
+        let action = isRepeatedBoundaryForSameReceipt
+            ? rawAction.suppressingContinuityReset
+            : rawAction
 
         var candidateValidator = streamValidator
         try candidateValidator.accept(observation)
         streamValidator = candidateValidator
+
+        if observation.requiresNewContinuityAnchor {
+            if !isRepeatedBoundaryForSameReceipt {
+                lastContinuityResetReceiptUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+            }
+        } else if let resetUptime = lastContinuityResetReceiptUptimeNanoseconds,
+                  observation.receivedAtUptimeNanoseconds > resetUptime {
+            lastContinuityResetReceiptUptimeNanoseconds = nil
+        }
 
         return action
     }
