@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Propulsion gauge numeric truth")
 struct PropulsionGaugeNumericTruthTests {
-    private let identity = PropulsionGaugeIdentity(vehicleID: "numeric-es80")
+    private let identity = try! PropulsionGaugeIdentity(vehicleID: "numeric-es80")
 
     private func policy() throws -> PropulsionGaugeMotionPolicy {
         try PropulsionGaugeMotionPolicy(
