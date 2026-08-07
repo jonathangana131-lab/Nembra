@@ -71,6 +71,27 @@ The full first/last receipt interval is still preserved in every marker hit as p
 
 This prevents a marker that occurs between fragments from being treated as distance zero to a DP value that was only completed later. A symmetric caller-owned time window can still consider nearby before/after evidence, but the direction is retained rather than hidden.
 
+## One message cannot manufacture repeated evidence
+
+Repeated human markers must not all claim the same physical candidate message. Otherwise a single DP observation near several closely spaced markers could masquerade as repeated protocol evidence.
+
+For each structural DP candidate, marker matching therefore has two bounded stages:
+
+1. each marker proposes its nearest accepted message-completion observation inside policy;
+2. proposals that point to the same physical message are reconciled before support is counted.
+
+One candidate message can support **at most one** human marker.
+
+If several markers compete for the same message:
+
+- a uniquely closer marker may consume that observation;
+- the other markers are recorded in `sharedObservationMarkerIndices` and do not count as support;
+- if the closest distance itself is tied, none of the competing markers receives a hit and all are recorded as shared-observation ambiguity.
+
+This is deliberately conservative. More human annotations cannot create more physical evidence than the capture actually contains.
+
+The rule is per structural candidate, not global across all DPs in a packet. One Tuya packet may legitimately contain several different DP records, so distinct candidate IDs/types may each be evaluated against the same human marker while remaining separate hypotheses.
+
 ## What is compared
 
 Candidate structural identity is:
@@ -85,9 +106,9 @@ For every candidate and human marker, the analyzer finds the nearest accepted **
 
 A marker contributes at most **one** support hit to a candidate, no matter how many callbacks occurred nearby. This prevents a high-rate unrelated DP from winning merely because it generated more packets.
 
-If two equally-near occurrences of the same structural candidate disagree in raw value bytes, that marker is recorded as ambiguous and contributes no chosen hit. Nembra does not select whichever raw value looks more compatible with the desired field.
+If two equally-near occurrences of the same structural candidate disagree in raw value bytes, that marker is recorded in `ambiguousNearestMarkerIndices` and contributes no chosen hit. Nembra does not select whichever raw value looks more compatible with the desired field.
 
-If equally-near occurrences carry the same raw bytes, one deterministic earliest occurrence is retained as the marker hit.
+If equally-near occurrences carry the same raw bytes, one deterministic earliest occurrence becomes that marker's proposal; the one-message-one-marker reconciliation above still applies before it becomes accepted support.
 
 ## Equality-pattern evidence
 
@@ -96,7 +117,8 @@ The analyzer intentionally compares only exact strings and exact bytes.
 For accepted marker hits it records:
 
 - marker support count;
-- ambiguous marker indices;
+- conflicting-nearest marker indices;
+- shared-observation marker indices;
 - distinct displayed-reference count;
 - distinct raw-value count;
 - pairs where the stock-app displayed reference is exactly the same;
@@ -123,7 +145,7 @@ Candidate order is deterministic research prioritization only. The comparator pr
 1. more unambiguous marker support;
 2. more same-reference pairs with the same raw value;
 3. more different-reference pairs with a different raw value;
-4. fewer equally-near ambiguous markers;
+4. fewer combined conflicting-nearest and shared-observation ambiguities;
 5. smaller worst accepted completion-time distance;
 6. stable structural identity ordering.
 
@@ -142,7 +164,7 @@ A zero time-distance policy is legitimate when a research setup requires exact c
 
 ## Verification
 
-A standalone Swift 6.2.1 warnings-as-errors harness matching the parent API shape currently passes **15/15** focused tests in both debug and optimized release.
+A standalone Swift 6.2.1 warnings-as-errors harness matching the parent API shape currently passes **17/17** focused tests in both debug and optimized release.
 
 Coverage includes:
 
@@ -150,6 +172,8 @@ Coverage includes:
 - deterministic candidate ranking;
 - high-callback-rate de-biasing;
 - equally-near conflicting-value ambiguity;
+- one physical candidate message supporting only the uniquely closer of two competing markers;
+- equal-distance marker competition supporting neither marker;
 - exact display-string preservation;
 - completion-receipt timing and explicit before/after direction without interval look-ahead;
 - mixed stream rejection;
