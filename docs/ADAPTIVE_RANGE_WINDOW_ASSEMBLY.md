@@ -1,6 +1,6 @@
 # Adaptive Range Learning Window Assembly
 
-Status: software evidence-assembly contract. Depends on the adaptive range core in PR #10 / its coordinator-owned recovery. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
+Status: software evidence-assembly contract. Depends on coordinator recovery PR #40 of the original PR #10 adaptive-range core. It does **not** establish physical AOVOPRO ES80 battery or distance semantics.
 
 ## Purpose
 
@@ -54,6 +54,8 @@ Authoritative uptime ordering is likewise checked against the **latest accepted 
 
 `recordDistance(deltaMeters:coverage:)` accepts only finite nonnegative distance.
 
+Coverage classification is deliberately fail-closed. Calling `recordDistance(deltaMeters:)` **without** a `coverage:` argument records the delta as `.unknown`, never `.complete`. A caller that has actually proven complete distance coverage must pass `coverage: .complete` explicitly. This matches the higher-level battery→range pipeline's fail-closed default and prevents an omitted argument from silently manufacturing trusted distance evidence.
+
 The assembler never decides whether that distance came from:
 - scooter odometer;
 - quality-screened GPS;
@@ -88,7 +90,11 @@ Emitting a `BatteryRangeLearningWindow` **closes the assembler span immediately*
 That separation is intentional. Model rejection does not roll the assembler back:
 - a transport-gap or incomplete-coverage candidate must not keep contaminating future clean evidence;
 - a statistically rejected efficiency outlier must not cause its distance to be replayed into the next sample;
+- a numerically unrepresentable efficiency candidate (for example one whose implied full-charge range overflows) must also close without replaying its distance;
+- if the model is called with a **stricter policy than the policy that just emitted the candidate**, an `insufficientSOCConsumption` or `insufficientDistance` rejection also does not roll back the assembler or replay that closed span;
 - a rejection never authorizes a higher layer to re-add the old span's distance merely to recover a training sample.
+
+A caller should normally use the same policy snapshot for candidate assembly and immediate model ingestion. The model deliberately revalidates policy thresholds anyway, so a policy change/race remains fail-closed rather than silently teaching under stale criteria.
 
 The next clean evidence span therefore begins at the rejected candidate's end SoC. Persisted learned history remains unchanged when the model rejects the candidate, while ephemeral assembly continuity moves forward.
 
@@ -107,7 +113,29 @@ The assembler is ephemeral evidence state. It should be reset at an explicit rid
 
 A reset intentionally loses only the uncommitted learning candidate. It clears both the span anchor and latest-authoritative cursor. The first subsequent authoritative SoC reading becomes a fresh anchor; distance before that anchor is not retroactively assigned a battery-consumption start value.
 
+Reset also abandons the prior authoritative uptime-ordering baseline, so a genuinely new higher-layer epoch may begin from a lower process-local uptime value. That is only valid when the caller has explicit continuity/session evidence for a new epoch; `reset()` must not be used to hide an unexplained timestamp regression inside one observed epoch.
+
 Persisted learned efficiency remains owned by `AdaptiveBatteryRangeModel` and its persistence layer. This assembler does not introduce another learned-history store.
+
+## Future app-target source visibility
+
+Nembra's current iOS target does not automatically link every NembraCore SwiftPM source. It manually compiles a selected source subset through `project.pbxproj`. Therefore a package-green range feature is not automatically app-visible.
+
+For a future app consumer of the **current normalized battery-evidence → adaptive-range pipeline**, the minimum software-domain source closure is presently:
+- `BatteryEvidenceDomain.swift` (#34);
+- `BatteryEvidenceStreamValidator.swift` (#34);
+- `AdaptiveBatteryRange.swift` (#40);
+- `AdaptiveBatteryRangeCodableValidation.swift` (#40);
+- `AdaptiveBatteryRangeWindowAssembler.swift` (#54);
+- `BatteryAdaptiveRangeEvidenceAdapter.swift` (#38, including the sealed bridge and public pipeline).
+
+`AdaptiveBatteryRangeCodableValidation.swift` is a **semantic companion**, not merely a symbol dependency. It supplies custom decoding/encoding that routes restored SoC readings, learning windows, policies, and estimates back through validation. If a manual app-target integration compiles `AdaptiveBatteryRange.swift` while omitting this companion, Swift can still synthesize `Codable`; the app may compile while silently losing those restore guards. A local Swift compile probe reproduced that behavior: invalid JSON decoded when the companion extension was absent and was rejected when it was compiled.
+
+If the app renders the separate primary presentation policy from #83, add `AdaptiveBatteryRangePrimaryPresentation.swift` to the immediate presentation-layer closure. That file is optional for the six-file evidence→range pipeline itself; an app that only receives an already-manufactured `AdaptiveBatteryRangeEstimate` may need the range types + Codable companion + presentation source without all upstream battery-evidence/assembly files as immediate compile dependencies.
+
+If an app consumer also persists learned range state, the accepted descendant of #16's `AdaptiveBatteryRangePersistence.swift` becomes an additional source dependency. If a future production path constructs `BatteryEvidenceObservation` from a later accepted physical battery transport/authority chain, include the exact accepted upstream sources that path uses as well; this six-file software closure does **not** prove physical ES80 telemetry.
+
+Any `project.pbxproj` wiring must be owned by the active Class-A integration worker. This Class-B range lane deliberately records the closure but does not race the shared project file.
 
 ## Explicit non-goals
 

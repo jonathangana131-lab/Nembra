@@ -36,9 +36,12 @@ public struct BatteryRangeLearningWindowAssembler: Equatable, Sendable {
     /// Records a nonnegative distance delta that a higher layer has already
     /// classified for coverage. A zero delta is valid and can still be useful
     /// for degrading coverage without inventing distance.
+    ///
+    /// Omitted coverage intentionally means `.unknown`, never `.complete`.
+    /// A caller that has proven complete coverage must say so explicitly.
     public mutating func recordDistance(
         deltaMeters: Double,
-        coverage: BatteryRangeDistanceCoverage = .complete
+        coverage: BatteryRangeDistanceCoverage = .unknown
     ) throws {
         guard deltaMeters.isFinite, deltaMeters >= 0 else {
             throw BatteryRangeWindowAssemblyError.invalidDistanceDelta
