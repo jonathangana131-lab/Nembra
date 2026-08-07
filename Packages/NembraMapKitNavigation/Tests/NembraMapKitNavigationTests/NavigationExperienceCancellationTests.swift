@@ -28,8 +28,9 @@ struct NavigationExperienceCancellationTests {
             )
         )
         let alternativesBeforeCancel = try #require(completed.routeSelection)
+        let cancelled = try experience.cancelPlanning()
 
-        #expect(try !experience.cancelPlanning())
+        #expect(!cancelled)
         #expect(experience.snapshot.routeSelection == alternativesBeforeCancel)
         #expect(experience.snapshot.planningState == completed.planningState)
         #expect(experience.snapshot.selectedRoute == nil)
