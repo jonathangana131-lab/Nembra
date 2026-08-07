@@ -24,7 +24,135 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         #expect(anchor.percentage == 73)
         #expect(anchor.sourceReceiptIdentity == observation.receiptIdentity)
         #expect(anchor.receivedAtUptimeNanoseconds == 1_000)
+        #expect(anchor.continuitySegmentStartReceiptIdentity == nil)
         #expect(anchor.isCurrent(in: validator))
+    }
+
+    @Test("current projection rejects same receipt with forged continuous metadata")
+    func currentProjectionRejectsForgedContinuousMetadata() throws {
+        let epoch = UUID(uuidString: "12121212-1212-1212-1212-121212121212")!
+        var validator = BatteryEvidenceStreamValidator()
+        let beforeGap = try verifiedSOC(percent: 74, epoch: epoch, sequence: 1, uptime: 1_000)
+        try validator.accept(beforeGap)
+        validator.markUnobservedInterval()
+
+        let acceptedBoundary = try verifiedSOC(
+            percent: 73,
+            epoch: epoch,
+            sequence: 2,
+            uptime: 2_000,
+            continuity: .afterUnobservedInterval
+        )
+        try validator.accept(acceptedBoundary)
+
+        let forgedSibling = try verifiedSOC(
+            percent: 73,
+            epoch: epoch,
+            sequence: 2,
+            uptime: 2_000,
+            continuity: .continuous
+        )
+
+        #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
+            _ = try AcceptedBatterySOCAnchor.current(
+                observation: forgedSibling,
+                acceptedBy: validator
+            )
+        }
+        #expect(try AcceptedBatterySOCAnchor.current(
+            observation: acceptedBoundary,
+            acceptedBy: validator
+        ).continuity == .afterUnobservedInterval)
+    }
+
+    @Test("current projection rejects same receipt with forged post-gap metadata")
+    func currentProjectionRejectsForgedPostGapMetadata() throws {
+        let epoch = UUID(uuidString: "13131313-1313-1313-1313-131313131313")!
+        let accepted = try verifiedSOC(percent: 73, epoch: epoch, sequence: 1, uptime: 1_000)
+        var validator = BatteryEvidenceStreamValidator()
+        try validator.accept(accepted)
+
+        let forgedSibling = try verifiedSOC(
+            percent: 73,
+            epoch: epoch,
+            sequence: 1,
+            uptime: 1_000,
+            continuity: .afterUnobservedInterval
+        )
+
+        #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
+            _ = try AcceptedBatterySOCAnchor.current(
+                observation: forgedSibling,
+                acceptedBy: validator
+            )
+        }
+        #expect(try AcceptedBatterySOCAnchor.current(
+            observation: accepted,
+            acceptedBy: validator
+        ).continuity == .continuous)
+    }
+
+    @Test("accepted SoC stream rotates segment only after an accepted gap boundary")
+    func acceptedSOCStreamTracksContinuitySegments() throws {
+        let epoch = UUID(uuidString: "14141414-1414-1414-1414-141414141414")!
+        var stream = AcceptedBatterySOCStream()
+        let first = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        #expect(first.continuitySegmentStartReceiptIdentity == first.sourceReceiptIdentity)
+
+        stream.markUnobservedInterval()
+        let boundary = try #require(stream.accept(
+            try verifiedSOC(
+                percent: 79,
+                epoch: epoch,
+                sequence: 2,
+                uptime: 2_000,
+                continuity: .afterUnobservedInterval
+            )
+        ))
+        let later = try #require(stream.accept(
+            try verifiedSOC(percent: 78, epoch: epoch, sequence: 3, uptime: 3_000)
+        ))
+
+        #expect(boundary.continuitySegmentStartReceiptIdentity == boundary.sourceReceiptIdentity)
+        #expect(later.continuitySegmentStartReceiptIdentity == boundary.sourceReceiptIdentity)
+        #expect(first.continuitySegmentStartReceiptIdentity != later.continuitySegmentStartReceiptIdentity)
+    }
+
+    @Test("rejected boundary cannot rotate accepted SoC segment")
+    func rejectedBoundaryDoesNotRotateSegment() throws {
+        let epoch = UUID(uuidString: "15151515-1515-1515-1515-151515151515")!
+        var stream = AcceptedBatterySOCStream()
+        let first = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        stream.markUnobservedInterval()
+
+        let missingBoundary = try verifiedSOC(
+            percent: 79,
+            epoch: epoch,
+            sequence: 2,
+            uptime: 2_000,
+            continuity: .continuous
+        )
+        #expect(throws: BatteryEvidenceStreamValidationError.missingContinuityBoundary) {
+            _ = try stream.accept(missingBoundary)
+        }
+        #expect(stream.continuitySegmentStartReceiptIdentity == first.sourceReceiptIdentity)
+        #expect(stream.validator.requiresContinuityBoundary)
+
+        let recovery = try #require(stream.accept(
+            try verifiedSOC(
+                percent: 78,
+                epoch: epoch,
+                sequence: 3,
+                uptime: 3_000,
+                continuity: .afterUnobservedInterval
+            )
+        ))
+        #expect(recovery.continuitySegmentStartReceiptIdentity == recovery.sourceReceiptIdentity)
+        #expect(stream.validator.requiresContinuityBoundary == false)
     }
 
     @Test("stock-app correlation anchor cannot become live range SoC")
