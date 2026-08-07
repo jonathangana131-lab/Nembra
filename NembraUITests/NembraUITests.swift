@@ -12,7 +12,7 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testAppIconIsVisibleOnSpringBoardInDefaultDarkAndTintedAppearances() {
+    func testAppIconRendersOnSpringBoardInDefaultDarkAndTintedStyles() {
         let device = XCUIDevice.shared
         let originalAppearance = device.appearance
         defer {
@@ -20,20 +20,46 @@ final class NembraUITests: XCTestCase {
             device.orientation = .portrait
         }
 
+        // Hold the system interface constant. The icon-style assertions below
+        // drive SpringBoard's explicit appearance controls instead of assuming
+        // Dark interface style means Dark app-icon style.
+        device.appearance = .light
+
         let app = launch(scenario: "cold-disconnected", orientation: .portrait)
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 4))
+        device.press(.home)
 
-        captureHomeScreenIcon(
-            appearance: .light,
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(
+            springboard.wait(for: .runningForeground, timeout: 4),
+            "SpringBoard must be foreground before app-icon validation."
+        )
+        assertInstalledIcon(springboard.icons["Nembra"])
+
+        selectHomeScreenIconStyle(
+            "Default",
             screenshotName: "Nembra App Icon Home Screen Default",
-            app: app
+            in: springboard
         )
-        captureHomeScreenIcon(
-            appearance: .dark,
+        selectHomeScreenIconStyle(
+            "Dark",
             screenshotName: "Nembra App Icon Home Screen Dark",
-            app: app
+            in: springboard
         )
-        captureTintedHomeScreenIcon(app: app)
+        selectHomeScreenIconStyle(
+            "Tinted",
+            screenshotName: "Nembra App Icon Home Screen Tinted",
+            in: springboard
+        )
+
+        // Leave the shared Simulator in a neutral icon state for later tests.
+        selectHomeScreenIconStyle("Default", screenshotName: nil, in: springboard)
+
+        app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 4),
+            "Nembra must return to foreground after Home Screen icon validation."
+        )
     }
 
     @MainActor
@@ -193,48 +219,19 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    private func captureHomeScreenIcon(
-        appearance: XCUIDevice.Appearance,
-        screenshotName: String,
-        app: XCUIApplication
+    private func selectHomeScreenIconStyle(
+        _ style: String,
+        screenshotName: String?,
+        in springboard: XCUIApplication
     ) {
-        let device = XCUIDevice.shared
-        device.appearance = appearance
-        device.press(.home)
-
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        XCTAssertTrue(
-            springboard.wait(for: .runningForeground, timeout: 4),
-            "SpringBoard must be foreground before app-icon capture."
-        )
-
-        let icon = springboard.icons["Nembra"]
-        assertInstalledIcon(icon)
-        keepScreenshot(named: screenshotName)
-
-        app.activate()
-        XCTAssertTrue(
-            app.wait(for: .runningForeground, timeout: 4),
-            "Nembra must return to foreground after Home Screen icon capture."
-        )
-    }
-
-    @MainActor
-    private func captureTintedHomeScreenIcon(app: XCUIApplication) {
-        let device = XCUIDevice.shared
-        device.appearance = .light
-        device.press(.home)
-
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        XCTAssertTrue(
-            springboard.wait(for: .runningForeground, timeout: 4),
-            "SpringBoard must be foreground before Tinted app-icon capture."
-        )
-
+        // Re-resolve the icon after every SpringBoard transition. Retaining a
+        // pre-transition XCUIElement can otherwise produce stale UI evidence.
         let icon = springboard.icons["Nembra"]
         assertInstalledIcon(icon)
         icon.press(forDuration: 1.3)
 
+        // Depending on the current iOS interaction path, the long press may
+        // expose the quick action first or may already have entered edit mode.
         let editHomeScreen = springboard.buttons["Edit Home Screen"]
         if editHomeScreen.waitForExistence(timeout: 2) {
             editHomeScreen.tap()
@@ -254,28 +251,26 @@ final class NembraUITests: XCTestCase {
         )
         customize.tap()
 
-        let tinted = springboard.buttons["Tinted"]
+        let styleControl = springboard.buttons[style]
         XCTAssertTrue(
-            tinted.waitForExistence(timeout: 3),
-            "The iOS Home Screen customization panel must expose Tinted icon appearance."
+            styleControl.waitForExistence(timeout: 3),
+            "The Home Screen customization panel must expose the \(style) icon style."
         )
-        tinted.tap()
-        assertInstalledIcon(icon)
-        keepScreenshot(named: "Nembra App Icon Home Screen Tinted")
+        styleControl.tap()
 
-        let defaultStyle = springboard.buttons["Default"]
+        // Exit customization before the screenshot so the attachment is the
+        // actual Home Screen presentation rather than a partially obscured panel.
+        XCUIDevice.shared.press(.home)
         XCTAssertTrue(
-            defaultStyle.waitForExistence(timeout: 3),
-            "The customization panel must allow the validation fixture to restore Default icon appearance."
+            springboard.wait(for: .runningForeground, timeout: 4),
+            "SpringBoard must remain foreground after applying \(style) icon style."
         )
-        defaultStyle.tap()
-        device.press(.home)
 
-        app.activate()
-        XCTAssertTrue(
-            app.wait(for: .runningForeground, timeout: 4),
-            "Nembra must return to foreground after Tinted Home Screen icon capture."
-        )
+        let refreshedIcon = springboard.icons["Nembra"]
+        assertInstalledIcon(refreshedIcon)
+        if let screenshotName {
+            keepScreenshot(named: screenshotName)
+        }
     }
 
     @MainActor
