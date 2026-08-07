@@ -83,4 +83,27 @@ struct RideSpeedEvidenceSessionSourceIsolationTests {
         #expect(session.snapshot.telemetryBenchmark.rejectedSampleCount == 2)
         #expect(session.snapshot.peakEvidence == nil)
     }
+
+    @Test("motion-assist estimate is visible as foreign traffic, never peak evidence")
+    func motionAssistCannotDisappearBehindSelectedSourceSession() throws {
+        var session = RideSpeedEvidenceSessionAccumulator(
+            sessionID: sessionID,
+            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
+        )
+        let motion = try SpeedTelemetrySample(
+            source: .motionAssist,
+            provenance: .shortHorizonEstimate,
+            metersPerSecond: 30,
+            receivedAtUptimeNanoseconds: 50,
+            receivedAtDate: epoch
+        )
+
+        let result = session.record(motion)
+
+        #expect(result.peak == .rejected(.nonAuthoritativeSample))
+        #expect(result.benchmark == .rejected(.sourceMismatch))
+        #expect(session.snapshot.foreignSourceCallbackCount == 1)
+        #expect(session.snapshot.telemetryBenchmark.rejectedSampleCount == 1)
+        #expect(session.snapshot.peakEvidence == nil)
+    }
 }
