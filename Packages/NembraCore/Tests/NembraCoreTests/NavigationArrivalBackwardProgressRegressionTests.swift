@@ -44,7 +44,8 @@ struct NavigationArrivalBackwardProgressRegressionTests {
             maximumFinalStepDistanceRemainingMeters: 5,
             maximumRouteDistanceRemainingMeters: 8,
             minimumQualifyingObservationCount: 3,
-            minimumSustainedDurationNanoseconds: 2_000
+            minimumSustainedDurationNanoseconds: 2_000,
+            maximumAcceptedObservationGapNanoseconds: 10_000
         )
         var arrival = NavigationArrivalEvidenceTracker(policy: policy)
         try arrival.select(token: token, route: selectedRoute)
