@@ -20,6 +20,7 @@ This slice adds the identity/provenance boundary before any History, Statistics,
 - foreign sources and quality rejection continue to use the already-accepted peak-speed rules;
 - `recordInterruption` preserves known selected-source evidence loss;
 - `beginsAfterKnownObservationGap` records an initial application-lifecycle gap immediately instead of pretending the observer saw the whole ride;
+- that initial-gap fact is retained separately as `beganAfterKnownObservationGap`, so a later disconnect or unrelated quality rejection cannot masquerade as proof that recovery started after an unobserved interval;
 - there is deliberately no reset API on the ride-bound wrapper. A new ride should create a new accumulator rather than erase the old ride's evidence-loss history.
 
 `RidePeakSpeedEvidence` has no public free-form initializer. External callers obtain it from the ride-bound accumulator rather than pairing an arbitrary bare `PeakSpeedEvidence` with a UUID after the fact.
@@ -33,7 +34,13 @@ This slice adds the identity/provenance boundary before any History, Statistics,
 
 A session mismatch fails closed.
 
-A completed ride marked `.recoveredCheckpoint` also proves a process interval existed outside one uninterrupted process-local observer. Therefore a recovered ride is rejected if its supplied peak evidence claims `.noRecordedSelectedSourceEvidenceLoss`. The caller must have recorded the known gap before durable projection.
+A completed ride marked `.recoveredCheckpoint` proves this observer necessarily began after a process interval it could not observe. Recovery therefore requires all of the following:
+
+- `beganAfterKnownObservationGap == true`;
+- at least one explicit interruption recorded in the underlying peak evidence;
+- `.partialSelectedSourceEvidence` continuity.
+
+A GPS-quality rejection by itself is not enough. A later vehicle disconnect is also not enough if the observer did not declare that it began after the recovery gap. The specific initial-gap provenance is preserved separately so generic later evidence loss cannot satisfy the recovery invariant accidentally.
 
 ## What becomes durable
 
@@ -41,6 +48,7 @@ The projection keeps:
 
 - session UUID;
 - completed ride continuity;
+- whether this observer began after a known observation gap;
 - selected authoritative source;
 - observed peak meters/second;
 - peak sample speed accuracy when present;
@@ -64,9 +72,10 @@ Decoded durable peak evidence is rebuilt through the same validating initializer
 - peak accuracy worse than the persisted acceptance ceiling;
 - zero/negative accepted-sample count;
 - negative rejection/interruption counts;
-- `noRecordedSelectedSourceEvidenceLoss` paired with nonzero loss counters;
+- `noRecordedSelectedSourceEvidenceLoss` paired with nonzero loss counters or an initial-gap claim;
 - `partialSelectedSourceEvidence` with no recorded rejection/interruption cause;
-- a recovered ride claiming no recorded selected-source loss.
+- initial-gap provenance with no interruption evidence;
+- a recovered ride without explicit initial-gap provenance, partial continuity, and an interruption.
 
 `validate(against:)` rechecks session identity and completed-ride continuity before a future persistence/statistics adapter joins the records.
 
@@ -86,6 +95,8 @@ The next safe integration step should first combine ride-bound observed peak evi
 
 ## Verification target
 
-Focused package tests cover ride identity binding, source isolation, initial-gap retention, recovered-ride fail-closed behavior, accuracy-policy provenance, process-clock stripping, Codable round-trip/corruption, and durable join validation.
+Focused package tests cover ride identity binding, source isolation, initial-gap provenance, recovery-vs-later-loss distinction, quality-rejection-vs-recovery distinction, accuracy-policy provenance, process-clock stripping, derived-speed overflow rejection, count/continuity corruption, Codable round-trip, and durable join validation.
+
+A local Swift 6.2.1 warnings-as-errors harness compiles the production binding/projection in debug and release and exercises source isolation, round-trip, recovered initial-gap acceptance, gap-free recovery rejection, and quality-only recovery rejection. Swift Testing adversarial fixtures also compile/run against the same focused harness. Repository exact-head package QA remains the final integration proof for this branch.
 
 Software tests are not physical AOVOPRO ES80 verification.
