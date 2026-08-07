@@ -15,8 +15,8 @@ public enum RideSessionDurationEvidenceError: Error, Equatable, Sendable {
 
 /// Coverage of the elapsed-time evidence Nembra actually observed for a ride session.
 ///
-/// `partial` means at least one interval between two observation segments was not observed.
-/// The missing interval is never reconstructed from wall-clock timestamps.
+/// `partial` means at least one interval before or between observation segments was not
+/// observed. The missing interval is never reconstructed from wall-clock timestamps.
 public enum RideSessionDurationCoverage: String, Codable, Equatable, Sendable {
     case unknown
     case complete
@@ -29,6 +29,11 @@ public enum RideSessionDurationCoverage: String, Codable, Equatable, Sendable {
 /// their originating process/boot epoch. Only their checked difference is durable. A session
 /// may have more than one segment in the same process when app suspension or another explicit
 /// evidence interruption creates an unobserved interval.
+///
+/// `segmentID` is an idempotency identity for repeated checkpoints of this exact interval.
+/// `processGenerationID` identifies the process generation that produced it; callers should
+/// generate a new process-generation identity after relaunch instead of restoring an old one
+/// as active.
 public struct RideSessionDurationObservedSegment: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let segmentID: UUID
@@ -115,13 +120,23 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 /// separating it from the previous segment. Its process generation may be the same (for an
 /// in-process suspension/interruption) or different (for relaunch), but a retired generation
 /// cannot reappear after a different process generation has begun.
+///
+/// The default initializer means observation begins at the ride/session boundary, so sequence
+/// zero must not claim an earlier gap. Set `beginsAfterUnobservedInterval` only when attaching
+/// to a ride after elapsed time was already unobserved (for example conservative recovery);
+/// sequence zero must then acknowledge that initial gap and coverage becomes `.partial`.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
+    public let beginsAfterUnobservedInterval: Bool
     private var observationSegments: [RideSessionDurationObservedSegment]
     private var totalObservedDurationNanoseconds: UInt64
 
-    public init(sessionID: UUID) {
+    public init(
+        sessionID: UUID,
+        beginsAfterUnobservedInterval: Bool = false
+    ) {
         self.sessionID = sessionID
+        self.beginsAfterUnobservedInterval = beginsAfterUnobservedInterval
         self.observationSegments = []
         self.totalObservedDurationNanoseconds = 0
     }
@@ -207,7 +222,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         }
 
         if expectedSequence == 0 {
-            guard !segment.followsUnobservedInterval else {
+            guard segment.followsUnobservedInterval == beginsAfterUnobservedInterval else {
                 throw RideSessionDurationEvidenceError.invalidGapClassification
             }
         } else {
@@ -237,18 +252,26 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
+        case beginsAfterUnobservedInterval
         case observationSegments
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedSessionID = try container.decode(UUID.self, forKey: .sessionID)
+        let decodedBeginsAfterUnobservedInterval = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .beginsAfterUnobservedInterval
+        ) ?? false
         let decodedSegments = try container.decode(
             [RideSessionDurationObservedSegment].self,
             forKey: .observationSegments
         )
 
-        self.init(sessionID: decodedSessionID)
+        self.init(
+            sessionID: decodedSessionID,
+            beginsAfterUnobservedInterval: decodedBeginsAfterUnobservedInterval
+        )
         do {
             for segment in decodedSegments {
                 try upsert(segment)
@@ -266,6 +289,10 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(
+            beginsAfterUnobservedInterval,
+            forKey: .beginsAfterUnobservedInterval
+        )
         try container.encode(observationSegments, forKey: .observationSegments)
     }
 }
