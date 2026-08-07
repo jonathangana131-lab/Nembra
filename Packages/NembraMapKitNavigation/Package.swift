@@ -4,7 +4,8 @@ import PackageDescription
 let package = Package(
     name: "NembraMapKitNavigation",
     products: [
-        .library(name: "NembraMapKitNavigation", targets: ["NembraMapKitNavigation"])
+        .library(name: "NembraMapKitNavigation", targets: ["NembraMapKitNavigation"]),
+        .library(name: "NembraMapKitNavigationSimulation", targets: ["NembraMapKitNavigationSimulation"]),
     ],
     dependencies: [
         .package(path: "../NembraCore")
@@ -12,13 +13,22 @@ let package = Package(
     targets: [
         .target(
             name: "NembraMapKitNavigation",
+            dependencies: [.product(name: "NembraCore", package: "NembraCore")]
+        ),
+        .target(
+            name: "NembraMapKitNavigationSimulation",
             dependencies: [
-                .product(name: "NembraCore", package: "NembraCore")
+                "NembraMapKitNavigation",
+                .product(name: "NembraCore", package: "NembraCore"),
             ]
         ),
         .testTarget(
             name: "NembraMapKitNavigationTests",
             dependencies: ["NembraMapKitNavigation"]
-        )
+        ),
+        .testTarget(
+            name: "NembraMapKitNavigationSimulationTests",
+            dependencies: ["NembraMapKitNavigationSimulation"]
+        ),
     ]
 )
