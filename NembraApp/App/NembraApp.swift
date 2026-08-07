@@ -48,15 +48,14 @@ struct NembraApp: App {
             case .es80PassiveCapture:
                 NavigationStack {
                     if let researchController {
-                        ES80PassiveCaptureResearchView(controller: researchController)
-                            .accessibilityIdentifier("es80.research-capture")
+                        ES80CaptureShellView(controller: researchController)
                     } else {
                         ContentUnavailableView(
                             "Capture unavailable",
                             systemImage: "antenna.radiowaves.left.and.right.slash",
                             description: Text("The passive Bluetooth research controller could not be created.")
                         )
-                        .navigationTitle("ES80 Capture")
+                        .navigationTitle("Nembra Capture")
                         .accessibilityIdentifier("es80.research-capture-unavailable")
                     }
                 }
