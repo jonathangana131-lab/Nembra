@@ -121,7 +121,7 @@ struct SpeedDisplayInterpolationNumericTruthTests {
         )
     }
 
-    @Test("fresh rejected overflow still blocks replay of an older valid callback")
+    @Test("fresh rejected overflow blocks older replay but permits later valid recovery")
     func rejectedOverflowAdvancesObservationChronology() throws {
         var interpolator = SpeedDisplayInterpolator()
         let firstValid = try sample(
@@ -160,5 +160,20 @@ struct SpeedDisplayInterpolationNumericTruthTests {
         #expect(
             interpolator.frame(atUptimeNanoseconds: 2_100) == before
         )
+
+        let laterValid = try sample(
+            metersPerSecond: 14 / 3.6,
+            uptimeNanoseconds: 3_000
+        )
+        try interpolator.accept(
+            laterValid,
+            transitionDurationNanoseconds: 0
+        )
+        let recovered = try #require(
+            interpolator.frame(atUptimeNanoseconds: 3_000)
+        )
+        #expect(abs(recovered.kilometersPerHour - 14) < 0.000_001)
+        #expect(recovered.latestMeasurementUptimeNanoseconds == 3_000)
+        #expect(recovered.origin == .measured)
     }
 }
