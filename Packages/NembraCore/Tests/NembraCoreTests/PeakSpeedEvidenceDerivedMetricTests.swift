@@ -19,7 +19,7 @@ struct PeakSpeedEvidenceDerivedMetricTests {
         )
     }
 
-    @Test("finite raw peak remains evidence when km/h convenience conversion overflows")
+    @Test("finite raw speed whose km/h conversion overflows is rejected without poisoning peak")
     func derivedKilometersPerHourOverflowFailsClosed() throws {
         var accumulator = PeakSpeedEvidenceAccumulator(
             policy: try PeakSpeedPolicy(source: .scooterBluetooth)
@@ -27,26 +27,54 @@ struct PeakSpeedEvidenceDerivedMetricTests {
         let rawSpeed = Double.greatestFiniteMagnitude / 2
         #expect(rawSpeed.isFinite)
 
-        _ = accumulator.record(try sample(metersPerSecond: rawSpeed))
+        #expect(
+            accumulator.record(try sample(
+                metersPerSecond: rawSpeed,
+                uptime: 200
+            )) == .rejected(.nonFiniteDerivedSpeed)
+        )
+        #expect(accumulator.evidence == nil)
+
+        // The rejected callback remains real ordering evidence, so an older
+        // callback cannot become fresh merely because the huge value was unusable.
+        #expect(
+            accumulator.record(try sample(
+                metersPerSecond: 1,
+                uptime: 100
+            )) == .rejected(.nonIncreasingTimestamp)
+        )
+
+        let validResult = accumulator.record(try sample(
+            metersPerSecond: 2,
+            uptime: 300
+        ))
+        guard case let .peakUpdated(measurement) = validResult else {
+            Issue.record("Expected later valid speed to establish the observed peak")
+            return
+        }
+        #expect(measurement.kilometersPerHour == 7.2)
 
         let evidence = try #require(accumulator.evidence)
-        #expect(evidence.peak.metersPerSecond == rawSpeed)
-        #expect(evidence.peak.kilometersPerHour == nil)
+        #expect(evidence.peak.metersPerSecond == 2)
+        #expect(evidence.acceptedSampleCount == 1)
+        #expect(evidence.qualityRejectedSampleCount == 2)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
-    @Test("large but representable km/h conversion remains available")
+    @Test("large but representable km/h conversion remains accepted")
     func representableKilometersPerHourConversionSurvives() throws {
         var accumulator = PeakSpeedEvidenceAccumulator(
             policy: try PeakSpeedPolicy(source: .scooterBluetooth)
         )
         let rawSpeed = Double.greatestFiniteMagnitude / 4
 
-        _ = accumulator.record(try sample(metersPerSecond: rawSpeed))
-
-        let evidence = try #require(accumulator.evidence)
-        let converted = try #require(evidence.peak.kilometersPerHour)
-        #expect(converted.isFinite)
-        #expect(converted == rawSpeed * 3.6)
+        let result = accumulator.record(try sample(metersPerSecond: rawSpeed))
+        guard case let .peakUpdated(measurement) = result else {
+            Issue.record("Expected representable derived speed to remain valid peak evidence")
+            return
+        }
+        #expect(measurement.kilometersPerHour.isFinite)
+        #expect(measurement.kilometersPerHour == rawSpeed * 3.6)
     }
 
     @Test("ordinary observed peak exposes exact derived km/h value")
