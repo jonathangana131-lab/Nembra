@@ -115,7 +115,7 @@ struct PassiveBluetoothRepeatedCorrelationBatchTests {
         let reports = PassiveBluetoothRepeatedCorrelationBatch.analyzeAllObservedFields(in: session)
         #expect(reports.map(\.field) == ["Battery", "Voltage"])
         #expect(reports.allSatisfy { $0.disposition == .ambiguousPeripheralScope })
-        #expect(reports.allSatisfy(\.streamEvidence.isEmpty))
+        #expect(reports.allSatisfy { $0.streamEvidence.isEmpty })
     }
 
     @Test("capture without markers produces no fabricated field reports")
