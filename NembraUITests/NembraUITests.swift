@@ -12,6 +12,57 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testAppIconRendersOnSpringBoardInDefaultDarkAndTintedStyles() {
+        let device = XCUIDevice.shared
+        let originalAppearance = device.appearance
+        defer {
+            device.appearance = originalAppearance
+            device.orientation = .portrait
+        }
+
+        // Hold the system interface constant. The icon-style assertions below
+        // drive SpringBoard's explicit appearance controls instead of assuming
+        // Dark interface style means Dark app-icon style.
+        device.appearance = .light
+
+        let app = launch(scenario: "cold-disconnected", orientation: .portrait)
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 4))
+        device.press(.home)
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(
+            springboard.wait(for: .runningForeground, timeout: 4),
+            "SpringBoard must be foreground before app-icon validation."
+        )
+        assertInstalledIcon(springboard.icons["Nembra"])
+
+        selectHomeScreenIconStyle(
+            "Default",
+            screenshotName: "Nembra App Icon Home Screen Default",
+            in: springboard
+        )
+        selectHomeScreenIconStyle(
+            "Dark",
+            screenshotName: "Nembra App Icon Home Screen Dark",
+            in: springboard
+        )
+        selectHomeScreenIconStyle(
+            "Tinted",
+            screenshotName: "Nembra App Icon Home Screen Tinted",
+            in: springboard
+        )
+
+        // Leave the shared Simulator in a neutral icon state for later tests.
+        selectHomeScreenIconStyle("Default", screenshotName: nil, in: springboard)
+
+        app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 4),
+            "Nembra must return to foreground after Home Screen icon validation."
+        )
+    }
+
+    @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
@@ -165,6 +216,77 @@ final class NembraUITests: XCTestCase {
             "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
         )
         keepScreenshot(named: screenshotName)
+    }
+
+    @MainActor
+    private func selectHomeScreenIconStyle(
+        _ style: String,
+        screenshotName: String?,
+        in springboard: XCUIApplication
+    ) {
+        // Re-resolve the icon after every SpringBoard transition. Retaining a
+        // pre-transition XCUIElement can otherwise produce stale UI evidence.
+        let icon = springboard.icons["Nembra"]
+        assertInstalledIcon(icon)
+        icon.press(forDuration: 1.3)
+
+        // Depending on the current iOS interaction path, the long press may
+        // expose the quick action first or may already have entered edit mode.
+        let editHomeScreen = springboard.buttons["Edit Home Screen"]
+        if editHomeScreen.waitForExistence(timeout: 2) {
+            editHomeScreen.tap()
+        }
+
+        let edit = springboard.buttons["Edit"]
+        XCTAssertTrue(
+            edit.waitForExistence(timeout: 3),
+            "SpringBoard edit mode must expose the Edit menu before icon customization."
+        )
+        edit.tap()
+
+        let customize = springboard.buttons["Customize"]
+        XCTAssertTrue(
+            customize.waitForExistence(timeout: 3),
+            "SpringBoard Edit must expose Customize before icon-style validation."
+        )
+        customize.tap()
+
+        let styleControl = springboard.buttons[style]
+        XCTAssertTrue(
+            styleControl.waitForExistence(timeout: 3),
+            "The Home Screen customization panel must expose the \(style) icon style."
+        )
+        styleControl.tap()
+
+        // Exit customization before the screenshot so the attachment is the
+        // actual Home Screen presentation rather than a partially obscured panel.
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            springboard.wait(for: .runningForeground, timeout: 4),
+            "SpringBoard must remain foreground after applying \(style) icon style."
+        )
+
+        let refreshedIcon = springboard.icons["Nembra"]
+        assertInstalledIcon(refreshedIcon)
+        if let screenshotName {
+            keepScreenshot(named: screenshotName)
+        }
+    }
+
+    @MainActor
+    private func assertInstalledIcon(
+        _ icon: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            icon.waitForExistence(timeout: 4),
+            "The installed Nembra app icon must exist on the Simulator Home Screen.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(icon.frame.width, 0, file: file, line: line)
+        XCTAssertGreaterThan(icon.frame.height, 0, file: file, line: line)
     }
 
     @MainActor
