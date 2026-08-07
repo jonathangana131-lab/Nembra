@@ -213,7 +213,23 @@ public enum PassiveBluetoothRepeatedCorrelation {
                 markerMetadata: markerMetadata
             )
         }
-        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+
+        let trimmedPeripheralIdentifier = peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPeripheralIdentifier.isEmpty else {
+            return emptyReport(
+                disposition: .invalidPeripheralScope,
+                field: field,
+                markerMetadata: markerMetadata
+            )
+        }
+
+        // Explicit targeting is an attribution claim about this immutable artifact,
+        // not merely a string filter. Fail closed when the requested identifier is
+        // absent from the same structured connection/GATT/value evidence that the
+        // unscoped analyzer treats as attributable peripheral identity. Advertising
+        // alone intentionally does not establish a GATT correlation target.
+        let peripheralIdentifiers = correlationPeripheralIdentifiers(in: session)
+        guard peripheralIdentifiers.contains(peripheralIdentifier) else {
             return emptyReport(
                 disposition: .invalidPeripheralScope,
                 field: field,
