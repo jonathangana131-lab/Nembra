@@ -138,7 +138,7 @@ struct PassiveBluetoothCorrelationTests {
         let explicit = try #require(PassiveBluetoothCorrelation.windows(
             in: session,
             peripheralIdentifier: "target-a"
-        ).first)
+        )?.first)
         #expect(explicit.candidates.map(\.characteristicUUID) == ["A-VALUE"])
     }
 
@@ -173,7 +173,7 @@ struct PassiveBluetoothCorrelationTests {
             peripheralIdentifier: "target-a",
             lookbackNanoseconds: 500_000_000,
             lookaheadNanoseconds: 500_000_000
-        ).first)
+        )?.first)
 
         #expect(window.candidates.map(\.peripheralIdentifier) == ["target-a"])
         #expect(window.candidates.map(\.characteristicUUID) == ["A-VALUE"])
@@ -217,7 +217,7 @@ struct PassiveBluetoothCorrelationTests {
             peripheralIdentifier: "target-a",
             lookbackNanoseconds: 500_000_000,
             lookaheadNanoseconds: 500_000_000
-        ).first)
+        )?.first)
 
         #expect(Set(window.candidates.map(\.characteristicUUID)) == ["A-BEFORE", "A-AFTER"])
     }
@@ -260,9 +260,39 @@ struct PassiveBluetoothCorrelationTests {
             peripheralIdentifier: "target-a",
             lookbackNanoseconds: 500_000_000,
             lookaheadNanoseconds: 500_000_000
-        ).first)
+        )?.first)
 
         #expect(window.candidates.map(\.characteristicUUID) == ["A-AFTER"])
+    }
+
+    @Test("absent explicit target is distinct from an observed target with no nearby values")
+    func absentExplicitTargetFailsClosed() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendConnection(
+            to: &session,
+            sequence: 1,
+            uptime: 1_000,
+            peripheralIdentifier: "observed-target",
+            state: .connected
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Battery", displayedValue: "73%")),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 1_100,
+            receivedAtDate: .now
+        )
+
+        #expect(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "missing-target"
+        ) == nil)
+
+        let observed = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "observed-target"
+        ))
+        #expect(observed.count == 1)
+        #expect(observed[0].candidates.isEmpty)
     }
 
     @Test("overflow-safe lookahead still includes later values")

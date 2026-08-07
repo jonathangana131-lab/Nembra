@@ -34,6 +34,18 @@ struct PassiveCoreBluetoothAcquisitionPolicyTests {
         #expect(PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(Double.greatestFiniteMagnitude) == nil)
     }
 
+    @Test("finite acquisition progress timeout is explicit and uses the strict deadline conversion")
+    func acquisitionProgressTimeoutValidation() {
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.defaultAcquisitionProgressTimeout == 15)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(15) == 15_000_000_000)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(0.000000001) == 1)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(0) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(-1) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(.infinity) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(.nan) == nil)
+        #expect(PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(Double.greatestFiniteMagnitude) == nil)
+    }
+
     @Test("readable notifying characteristic permits read subscription and descriptor discovery only")
     func readableNotifyingPlan() {
         let characteristic = CBMutableCharacteristic(

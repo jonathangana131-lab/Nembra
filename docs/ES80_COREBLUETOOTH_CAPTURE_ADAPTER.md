@@ -46,7 +46,7 @@ Rules:
 - a different target may begin while the retired target drains;
 - late callbacks from retired target A cannot clear, contaminate, or enter active target B;
 - switching targets cannot redirect already-queued evidence: each queued event captures the exact recorder/session generation that existed at callback entry;
-- central-manager invalidation clears connection/quarantine objects because CoreBluetooth has invalidated that transport state.
+- central-manager unavailability retires/preserves same-peripheral quarantine rather than treating a non-`poweredOn` state as proof that old terminal callbacks already drained; the real terminal callback releases that UUID-only quarantine. If CoreBluetooth never supplies that callback, relaunch is the fail-closed recovery instead of admitting an ambiguous same-identifier retry.
 
 The pure state machine is unit-tested without fabricating CoreBluetooth objects.
 
@@ -133,6 +133,8 @@ Even the strongest candidate means “resembles the researched transport family,
 
 A stock-app marker is a human-observed reference such as battery percentage, voltage, current, or power recorded at a known point in the selected target's timeline. It remains correlation evidence only.
 
+The marker's receipt uptime/date identify when Nembra accepted the operator's **Record marker** action. They are not proof of when the stock app refreshed, when its displayed value changed, or when the scooter produced a corresponding transport value. Timing proximity remains correlation evidence rather than decoded field truth.
+
 Nembra records traffic delivered to Nembra's own CoreBluetooth session. It is not a raw-air BLE sniffer and does not claim to intercept another app's private exchange. If simultaneous legitimate observation is not possible, use truthful before/after or repeated controlled sessions and document the limitation.
 
 ## Raw packet boundary
@@ -153,14 +155,16 @@ Any reassembly/decryption/field hypothesis belongs in a derived layer and must r
 It shows:
 
 - central and connection state;
-- the currently selected research target;
+- the currently selected research target, including terminal-callback cancellation quarantine rather than an immediately misleading same-target reconnect action;
 - broad discovered candidates;
 - target-gated stock-app markers;
 - target-gated evidence analysis;
 - target-gated versioned JSON export;
 - fail-closed capture diagnostics.
 
-Changing target clears stale analysis/export presentation so evidence from A is not presented as B.
+Changing target clears stale analysis/export presentation and unsubmitted marker value/note drafted under the previous target so evidence from A is not presented or submitted as B. Reconnecting the same target preserves that draft because the durable target session did not change.
+
+Analysis/export use immutable evidence cuts. User evidence-changing controls are paused while an artifact snapshot is being prepared, and a prepared JSON document remains frozen until the exporter closes. Later CoreBluetooth callbacks remain later live evidence; they are not retroactively folded into the frozen artifact. A displayed analysis summary is likewise a snapshot and must be refreshed to include later accepted evidence.
 
 ## Export and secrets
 
