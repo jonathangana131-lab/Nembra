@@ -188,7 +188,13 @@ public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
 public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let matchedMarkerCount: Int
+    /// Marker indices rejected because equally-near observations disagreed in
+    /// raw bytes for this candidate.
     public let ambiguousNearestMarkerIndices: [Int]
+    /// Marker indices that could only reuse a candidate message already proposed
+    /// for another marker. One physical candidate message may support at most one
+    /// human marker in repeated-evidence counts.
+    public let sharedObservationMarkerIndices: [Int]
     public let distinctDisplayedReferenceCount: Int
     public let distinctRawValueCount: Int
     public let sameReferencePairCount: UInt64
@@ -201,6 +207,7 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
     fileprivate init(
         candidate: TuyaCandidateDPCorrelationCandidate,
         ambiguousNearestMarkerIndices: [Int],
+        sharedObservationMarkerIndices: [Int],
         hits: [TuyaCandidateDPMarkerHit]
     ) {
         var sameReferencePairs: UInt64 = 0
@@ -231,6 +238,7 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
         self.candidate = candidate
         matchedMarkerCount = hits.count
         self.ambiguousNearestMarkerIndices = ambiguousNearestMarkerIndices
+        self.sharedObservationMarkerIndices = sharedObservationMarkerIndices
         distinctDisplayedReferenceCount = Set(hits.map(\.displayedReference)).count
         distinctRawValueCount = Set(hits.map { Data($0.valueBytes) }).count
         sameReferencePairCount = sameReferencePairs
@@ -267,7 +275,8 @@ public struct TuyaCandidateDPMarkerCorrelationReport: Equatable, Sendable {
 }
 
 public enum TuyaCandidateDPMarkerCorrelator {
-    /// A high-rate candidate receives at most one support hit per human marker.
+    /// A high-rate candidate receives at most one support hit per human marker,
+    /// and one physical candidate message can support at most one human marker.
     /// Equally-near occurrences that disagree in raw bytes are marked ambiguous
     /// rather than choosing whichever value best matches a desired hypothesis.
     public static func analyze(
@@ -315,7 +324,7 @@ public enum TuyaCandidateDPMarkerCorrelator {
         evidence.reserveCapacity(occurrencesByCandidate.count)
 
         for (key, occurrences) in occurrencesByCandidate {
-            var hits: [TuyaCandidateDPMarkerHit] = []
+            var proposals: [MarkerHitProposal] = []
             var ambiguousIndices: [Int] = []
 
             for (markerIndex, marker) in markers.enumerated() {
@@ -334,23 +343,28 @@ public enum TuyaCandidateDPMarkerCorrelator {
                     continue
                 }
 
-                let selected = nearest.occurrences.min(by: deterministicOccurrenceOrder) ?? first
-                hits.append(
-                    TuyaCandidateDPMarkerHit(
+                proposals.append(
+                    MarkerHitProposal(
                         markerIndex: markerIndex,
                         marker: marker,
-                        occurrence: selected,
+                        occurrence: nearest.occurrences.min(by: deterministicOccurrenceOrder) ?? first,
                         temporalDistanceNanoseconds: distance
                     )
                 )
             }
 
-            guard !hits.isEmpty || !ambiguousIndices.isEmpty else { continue }
+            let resolved = resolveSharedObservations(proposals)
+            guard !resolved.hits.isEmpty
+                    || !ambiguousIndices.isEmpty
+                    || !resolved.sharedObservationMarkerIndices.isEmpty else {
+                continue
+            }
             evidence.append(
                 TuyaCandidateDPMarkerCandidateEvidence(
                     candidate: TuyaCandidateDPCorrelationCandidate(key: key),
                     ambiguousNearestMarkerIndices: ambiguousIndices,
-                    hits: hits
+                    sharedObservationMarkerIndices: resolved.sharedObservationMarkerIndices,
+                    hits: resolved.hits
                 )
             )
         }
@@ -362,6 +376,54 @@ public enum TuyaCandidateDPMarkerCorrelator {
             observationCount: observations.count,
             candidateOccurrenceCount: occurrenceCount,
             candidates: evidence
+        )
+    }
+
+    private static func resolveSharedObservations(
+        _ proposals: [MarkerHitProposal]
+    ) -> ResolvedMarkerHits {
+        var byObservation: [Int: [MarkerHitProposal]] = [:]
+        for proposal in proposals {
+            byObservation[proposal.occurrence.observationIndex, default: []].append(proposal)
+        }
+
+        var hits: [TuyaCandidateDPMarkerHit] = []
+        var sharedMarkerIndices: [Int] = []
+
+        for proposalsForObservation in byObservation.values {
+            guard proposalsForObservation.count > 1 else {
+                if let proposal = proposalsForObservation.first {
+                    hits.append(proposal.makeHit())
+                }
+                continue
+            }
+
+            let minimumDistance = proposalsForObservation
+                .map(\.temporalDistanceNanoseconds)
+                .min()!
+            let closest = proposalsForObservation.filter {
+                $0.temporalDistanceNanoseconds == minimumDistance
+            }
+
+            if closest.count == 1, let winner = closest.first {
+                hits.append(winner.makeHit())
+                sharedMarkerIndices.append(
+                    contentsOf: proposalsForObservation.compactMap { proposal in
+                        proposal.markerIndex == winner.markerIndex ? nil : proposal.markerIndex
+                    }
+                )
+            } else {
+                sharedMarkerIndices.append(
+                    contentsOf: proposalsForObservation.map(\.markerIndex)
+                )
+            }
+        }
+
+        hits.sort { $0.markerIndex < $1.markerIndex }
+        sharedMarkerIndices.sort()
+        return ResolvedMarkerHits(
+            hits: hits,
+            sharedObservationMarkerIndices: sharedMarkerIndices
         )
     }
 
@@ -476,8 +538,12 @@ public enum TuyaCandidateDPMarkerCorrelator {
         if lhs.differentReferenceDifferentRawValuePairCount != rhs.differentReferenceDifferentRawValuePairCount {
             return lhs.differentReferenceDifferentRawValuePairCount > rhs.differentReferenceDifferentRawValuePairCount
         }
-        if lhs.ambiguousNearestMarkerIndices.count != rhs.ambiguousNearestMarkerIndices.count {
-            return lhs.ambiguousNearestMarkerIndices.count < rhs.ambiguousNearestMarkerIndices.count
+        let lhsAmbiguityCount = lhs.ambiguousNearestMarkerIndices.count
+            + lhs.sharedObservationMarkerIndices.count
+        let rhsAmbiguityCount = rhs.ambiguousNearestMarkerIndices.count
+            + rhs.sharedObservationMarkerIndices.count
+        if lhsAmbiguityCount != rhsAmbiguityCount {
+            return lhsAmbiguityCount < rhsAmbiguityCount
         }
         switch (lhs.maximumTemporalDistanceNanoseconds, rhs.maximumTemporalDistanceNanoseconds) {
         case let (left?, right?) where left != right:
@@ -538,4 +604,25 @@ private struct CandidateOccurrence: Equatable, Sendable {
 private struct NearestOccurrences {
     let minimumDistanceNanoseconds: UInt64?
     let occurrences: [CandidateOccurrence]
+}
+
+private struct MarkerHitProposal {
+    let markerIndex: Int
+    let marker: TuyaCandidateDPStockAppMarker
+    let occurrence: CandidateOccurrence
+    let temporalDistanceNanoseconds: UInt64
+
+    func makeHit() -> TuyaCandidateDPMarkerHit {
+        TuyaCandidateDPMarkerHit(
+            markerIndex: markerIndex,
+            marker: marker,
+            occurrence: occurrence,
+            temporalDistanceNanoseconds: temporalDistanceNanoseconds
+        )
+    }
+}
+
+private struct ResolvedMarkerHits {
+    let hits: [TuyaCandidateDPMarkerHit]
+    let sharedObservationMarkerIndices: [Int]
 }
