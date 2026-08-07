@@ -244,8 +244,8 @@ struct LiveDistanceIntegrationTests {
         }
     }
 
-    @Test("distance overflow is rejected without advancing the valid anchor")
-    func overflowIsTransactional() throws {
+    @Test("distance overflow preserves accepted evidence, closes chronology, and marks a gap")
+    func overflowPreservesAcceptedEvidenceAndConsumesChronology() throws {
         var accumulator = LiveDistanceSegmentAccumulator(
             policy: try policy(maximumGap: 3_000_000_000),
             segmentStartUptimeNanoseconds: 0
@@ -257,13 +257,20 @@ struct LiveDistanceIntegrationTests {
                 try sample(speed: Double.greatestFiniteMagnitude, uptime: 2_000_000_000)
             ) == .rejected(.distanceOverflow)
         )
-        #expect(accumulator.snapshot == before)
 
-        let retry = accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
-        guard case .integrated = retry else {
-            Issue.record("overflow rejection must not advance the integration anchor")
-            return
-        }
+        let afterOverflow = accumulator.snapshot
+        #expect(afterOverflow.lastAcceptedSampleUptimeNanoseconds == before.lastAcceptedSampleUptimeNanoseconds)
+        #expect(afterOverflow.distanceMeters == before.distanceMeters)
+        #expect(afterOverflow.acceptedSampleCount == before.acceptedSampleCount)
+        #expect(afterOverflow.integratedIntervalCount == before.integratedIntervalCount)
+        #expect(afterOverflow.knownCoverageGapCount == before.knownCoverageGapCount + 1)
+        #expect(afterOverflow.hasKnownCoverageGap)
+
+        #expect(
+            accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
+                == .rejected(.nonIncreasingTimestamp)
+        )
+        #expect(accumulator.snapshot == afterOverflow)
     }
 
     @Test("finalizing without an integrated interval remains unavailable rather than fake zero")
