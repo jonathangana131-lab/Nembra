@@ -84,19 +84,26 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
 /// Selection tokens isolate route generations so late observations for a prior
 /// route cannot publish onto a newly selected route. Process-local monotonic
 /// uptime rejects re-ordered callbacks within the selected route generation.
+/// Once confident evidence advances to a later provider step, a newer match to
+/// an earlier step fails current progress closed instead of resurrecting an old
+/// maneuver. No meter-based backward-progress tolerance is guessed here; normal
+/// same-step distance jitter remains a geometry/presentation concern.
 /// This type deliberately does not snap coordinates, compute geometry, reroute,
 /// mutate ride distance, or infer maneuver semantics from localized text.
 public struct NavigationGuidanceProgressTracker: Sendable {
     public private(set) var state: NavigationGuidanceProgressState = .idle
     private var lastSelectionSequence: UInt64
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
+    private var highestConfidentStepIndex: Int?
 
     public init() {
         lastSelectionSequence = 0
+        highestConfidentStepIndex = nil
     }
 
     init(initialSelectionSequence: UInt64) {
         lastSelectionSequence = initialSelectionSequence
+        highestConfidentStepIndex = nil
     }
 
     @discardableResult
@@ -110,6 +117,7 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         lastSelectionSequence += 1
         let token = NavigationGuidanceSelectionToken(sequence: lastSelectionSequence)
         lastAcceptedObservationUptimeNanoseconds = nil
+        highestConfidentStepIndex = nil
         state = .unavailable(token: token, route: route, reason: .awaitingEvidence)
         return token
     }
@@ -159,6 +167,13 @@ public struct NavigationGuidanceProgressTracker: Sendable {
             return true
         }
 
+        if let highestConfidentStepIndex,
+           observation.stepIndex < highestConfidentStepIndex {
+            state = .unavailable(token: token, route: route, reason: .ambiguousProgress)
+            return true
+        }
+        highestConfidentStepIndex = observation.stepIndex
+
         let nextIndex = observation.stepIndex + 1
         let nextStep = route.steps.indices.contains(nextIndex) ? route.steps[nextIndex] : nil
         state = .active(
@@ -191,5 +206,6 @@ public struct NavigationGuidanceProgressTracker: Sendable {
     public mutating func clearSelection() {
         state = .idle
         lastAcceptedObservationUptimeNanoseconds = nil
+        highestConfidentStepIndex = nil
     }
 }
