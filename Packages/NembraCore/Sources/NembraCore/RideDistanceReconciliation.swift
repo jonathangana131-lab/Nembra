@@ -54,7 +54,11 @@ public struct RideDistanceEvidence: Equatable, Sendable {
                 throw RideDistanceReconciliationError.invalidEvidence
             }
         case let (.some(start), .some(end)):
-            guard start.isFinite, start >= 0, end.isFinite, end >= start else {
+            guard start.isFinite,
+                  start >= 0,
+                  end.isFinite,
+                  end >= start,
+                  Self.odometerDeltaMeters(start: start, end: end) != nil else {
                 throw RideDistanceReconciliationError.invalidEvidence
             }
         default:
@@ -101,7 +105,7 @@ public struct RideDistanceEvidence: Equatable, Sendable {
               let end = endingOdometerKilometers else {
             return nil
         }
-        return (end - start) * 1_000
+        return Self.odometerDeltaMeters(start: start, end: end)
     }
 
     public func distance(for source: RideDistanceSource) -> Double? {
@@ -124,6 +128,12 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         case .liveSpeedIntegration:
             liveIntegratedCoverage
         }
+    }
+
+    private static func odometerDeltaMeters(start: Double, end: Double) -> Double? {
+        let meters = (end - start) * 1_000
+        guard meters.isFinite, meters >= 0 else { return nil }
+        return meters
     }
 
     private static func validateOptionalDistance(
