@@ -358,7 +358,7 @@ private struct RideHistoryDetailView: View {
     private var routeSurface: some View {
         if let geometry = routes.geometry(sessionID: record.sessionID) {
             if geometry.hasDrawablePath {
-                ZStack(alignment: .bottomLeading) {
+                ZStack(alignment: .topLeading) {
                     RideRouteMapView(geometry: geometry)
                         .frame(height: 268)
                         .accessibilityElement(children: .ignore)
