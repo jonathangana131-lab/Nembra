@@ -221,6 +221,7 @@ public enum AccelerationEvidenceReadinessFailure: Equatable, Sendable {
     case runIncomplete
     case runInvalidated(AccelerationRunInvalidationReason)
     case resultSourceMismatch(expected: SpeedTelemetrySource, actual: SpeedTelemetrySource)
+    case insufficientTimingEvidenceSamples(required: Int, actual: Int)
     case selectedSourceBenchmarkRejectedSamples(count: Int)
     case knownObservationInterruption(count: Int)
     case telemetryQualityFailed([SpeedTelemetryQualityFailure])
@@ -263,6 +264,12 @@ public extension AccelerationEvidenceSessionSnapshot {
                 failures.append(.resultSourceMismatch(
                     expected: policy.source,
                     actual: completed.source
+                ))
+            }
+            if completed.timingEvidenceSampleCount < policy.telemetry.minimumAcceptedSampleCount {
+                failures.append(.insufficientTimingEvidenceSamples(
+                    required: policy.telemetry.minimumAcceptedSampleCount,
+                    actual: completed.timingEvidenceSampleCount
                 ))
             }
         case let .invalidated(reason):
