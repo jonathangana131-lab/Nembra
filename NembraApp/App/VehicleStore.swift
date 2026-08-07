@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Presentation timing is injected explicitly so Simulator QA can exercise the
-/// speed animation without silently choosing a production MAXSHOT cadence.
+/// speed animation without silently choosing an unverified production hardware cadence.
 struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
     let minimumTransitionNanoseconds: UInt64
     let maximumContinuousSampleIntervalNanoseconds: UInt64
@@ -14,7 +14,7 @@ struct SpeedInstrumentInterpolationPolicy: Equatable, Sendable {
         intervalFraction: 0
     )
 
-    /// QA-only profile. These values are not a claim about MAXSHOT hardware.
+    /// QA-only profile. These values are not a claim about any physical scooter hardware.
     static let simulatorQA = SpeedInstrumentInterpolationPolicy(
         minimumTransitionNanoseconds: 50_000_000,
         maximumContinuousSampleIntervalNanoseconds: 300_000_000,
