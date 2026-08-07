@@ -177,6 +177,19 @@ public enum RidePowerStatisticsPresenter {
             throw RidePowerStatisticsPresentationError.invalidSummary
         }
 
+        if let winningContinuity = summary.highestAcceptedObservedPowerContinuity {
+            switch winningContinuity {
+            case .noRecordedSelectedSourceEvidenceLoss:
+                guard summary.gapFreePeakPowerRideCount > 0 else {
+                    throw RidePowerStatisticsPresentationError.invalidSummary
+                }
+            case .partialSelectedSourceEvidence:
+                guard summary.partialPeakPowerRideCount > 0 else {
+                    throw RidePowerStatisticsPresentationError.invalidSummary
+                }
+            }
+        }
+
         let state: RidePowerStatisticsPresentationState
         switch summary.peakPowerAvailability {
         case .noRides:
