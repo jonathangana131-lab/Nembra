@@ -93,15 +93,27 @@ It does **not** mean:
 - an unsampled earlier target excursion was impossible;
 - Simulator evidence proves scooter behavior.
 
+## Application attempt ownership
+
+`AccelerationAttemptOwner` adds the software application boundary above one evidence session without selecting any ES80 policy values.
+
+Each new attempt receives a monotonically increasing generation token. Raw speed callbacks and connection/lifecycle interruptions must carry that token back to the owner. A callback retained by an older async task is therefore rejected instead of being allowed to mutate a replacement attempt.
+
+The owner also records a process-local monotonic start fence. A raw sample received at or before that fence is ignored, because a callback at the exact boundary is ambiguous with traffic already queued when the attempt began. The first usable observation must be strictly newer than the attempt boundary.
+
+An active mutable attempt cannot be silently replaced. Completed, invalidated, and continuity-broken attempts are terminal and remain inspectable until the caller explicitly begins a newer attempt. Attempt start fences themselves must advance monotonically within one owner.
+
+This closes the reusable software ownership primitive only. It does **not** mean Nembra currently starts acceleration attempts from production UI, has a verified ES80 speed source, has validated physical quality thresholds, or maps every real app/Bluetooth lifecycle edge into this owner yet.
+
 ## Product integration still required
 
 Before user-facing acceleration results can be enabled in production, Nembra still needs:
 
 1. a physically verified ES80 read-only speed source and its real cadence/latency/resolution behavior;
 2. evidence-driven production quality thresholds;
-3. a trusted application owner that creates one session per attempt and maps real source/lifecycle interruptions correctly;
+3. app-root wiring that creates/owns `AccelerationAttemptOwner`, feeds it only raw authoritative `SpeedTelemetrySample` evidence, and maps real connection/application lifecycle interruptions with the correct generation;
 4. deliberate app-target source visibility and UI wiring;
 5. iPhone 12 / iOS 27 runtime and accessibility acceptance;
 6. physical field validation before any wording implies real ES80 acceleration accuracy.
 
-This layer is intentionally additive and does not alter Bluetooth commands, Dashboard interpolation, ride persistence, or vehicle-control behavior.
+The current owner/session layers are intentionally additive and do not alter Bluetooth commands, Dashboard interpolation, ride persistence, or vehicle-control behavior.
