@@ -172,4 +172,63 @@ struct TuyaCandidateDPAnalysisTests {
         #expect(payload.records[1].valueByteOffset == 9)
         #expect(payload.records[1].endByteOffsetExclusive == 10)
     }
+
+    @Test("public variable-length bounds are findings rather than parser rewrites")
+    func preservesVariableLengthShapeFindings() throws {
+        let rawEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(1, 0x00, []), policy: policy())
+        #expect(
+            rawEmpty.records[0].shapeFinding
+                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...255, actualLength: 0)
+        )
+
+        let stringEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(2, 0x03, []), policy: policy())
+        #expect(
+            stringEmpty.records[0].shapeFinding
+                == .variableLengthKnownType(.string, allowedLengthRange: 0...255)
+        )
+
+        let oversizedRaw = try TuyaCandidateDPPayloadParser.parse(
+            dp2(3, 0x00, Array(repeating: 0xAA, count: 256)),
+            policy: policy(maximumValueBytes: 300)
+        )
+        #expect(
+            oversizedRaw.records[0].shapeFinding
+                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...255, actualLength: 256)
+        )
+        #expect(oversizedRaw.records[0].valueBytes.count == 256)
+    }
+
+    @Test("deterministic malformed-input stress never searches past supplied bytes")
+    func deterministicMalformedInputStress() throws {
+        var state: UInt64 = 0x4E454D4252414450
+        func nextByte() -> UInt8 {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return UInt8(truncatingIfNeeded: state >> 24)
+        }
+
+        let policies = [
+            try policy(width: .oneByte, maximumDatapointCount: 32, maximumValueBytes: 512),
+            try policy(width: .twoByteBigEndian, maximumDatapointCount: 32, maximumValueBytes: 512)
+        ]
+
+        for length in 0..<257 {
+            for parserPolicy in policies {
+                let bytes = (0..<length).map { _ in nextByte() }
+                do {
+                    let parsed = try TuyaCandidateDPPayloadParser.parse(bytes, policy: parserPolicy)
+                    #expect(parsed.sourceByteCount == bytes.count)
+                    #expect(parsed.records.count <= parserPolicy.maximumDatapointCount)
+                    #expect(parsed.records.allSatisfy {
+                        $0.headerByteOffset >= 0
+                            && $0.valueByteOffset >= $0.headerByteOffset
+                            && $0.endByteOffsetExclusive >= $0.valueByteOffset
+                            && $0.endByteOffsetExclusive <= bytes.count
+                            && $0.valueBytes.count == $0.declaredValueLength
+                    })
+                } catch is TuyaCandidateDPAnalysisError {
+                    // Random bytes are expected to fail structure/resource checks.
+                }
+            }
+        }
+    }
 }
