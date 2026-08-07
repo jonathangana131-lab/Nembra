@@ -142,4 +142,26 @@ struct TuyaCandidateTranscriptRestartTests {
         #expect(message.continuityGeneration == 8)
         #expect(message.encryptedBytes == [9])
     }
+
+    @Test("non-monotonic packet zero cannot bypass the active candidate chronology check")
+    func nonMonotonicRestartRemainsRejected() throws {
+        let policy = try TuyaCandidateFragmentReassemblyPolicy(
+            maximumEncryptedMessageBytes: 64,
+            maximumFragmentCount: 8
+        )
+        let observations = [
+            try observation(payload: [1], packetIndex: 0, uptime: 2, totalLength: 2),
+            try observation(payload: [9], packetIndex: 0, uptime: 2, totalLength: 1)
+        ]
+
+        let events = TuyaCandidateTranscriptAnalyzer.analyze(observations, policy: policy)
+        #expect(events == [
+            .rejectedCandidate(
+                startObservationIndex: 0,
+                lastAcceptedObservationIndex: 0,
+                failingObservationIndex: 1,
+                error: .nonMonotonicReceiptUptime
+            )
+        ])
+    }
 }
