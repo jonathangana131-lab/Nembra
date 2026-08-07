@@ -159,7 +159,17 @@ public struct AccelerationRunEvaluator: Sendable {
     public let policy: AccelerationRunPolicy
     public private(set) var state: AccelerationRunState = .waitingForStandstill
 
+    private struct PreselectionSourceObservation: Sendable {
+        let source: SpeedTelemetrySource
+        var latestUptimeNanoseconds: UInt64
+    }
+
     private var lockedSource: SpeedTelemetrySource?
+    /// Before an optional source is selected, retain chronology separately per
+    /// authoritative source. A low-quality callback must not choose the source,
+    /// but a later older callback from that same source must not masquerade as
+    /// the first fresh usable observation either.
+    private var preselectionSourceObservations: [PreselectionSourceObservation] = []
     /// Advances for every monotonic observation from the locked/required source,
     /// even when that observation is later rejected by accuracy policy. Rejected
     /// quality cannot erase chronology and let an older callback look fresh.
@@ -181,6 +191,7 @@ public struct AccelerationRunEvaluator: Sendable {
     public mutating func reset() {
         state = .waitingForStandstill
         lockedSource = nil
+        preselectionSourceObservations.removeAll(keepingCapacity: false)
         lastObservedUptimeNanoseconds = nil
         lastAcceptedUptimeNanoseconds = nil
         lastStationarySample = nil
@@ -237,14 +248,19 @@ public struct AccelerationRunEvaluator: Sendable {
             }
             guard accuracyIsAcceptable(sample) else { return }
         } else {
-            // Without an explicit source requirement, only the first usable
-            // measurement selects the source; unrelated low-quality providers
-            // should not poison a run before it has chosen evidence.
-            guard accuracyIsAcceptable(sample) else { return }
-            lockedSource = sample.source
-            guard acceptObservedTimestamp(sample.receivedAtUptimeNanoseconds) else {
+            // Without an explicit source requirement, low-quality traffic must
+            // not select a provider. Preserve per-source chronology anyway so a
+            // later older callback from the eventual source cannot become fresh.
+            guard acceptPreselectionObservedTimestamp(
+                source: sample.source,
+                uptimeNanoseconds: sample.receivedAtUptimeNanoseconds
+            ) else {
                 return
             }
+            guard accuracyIsAcceptable(sample) else { return }
+            lockedSource = sample.source
+            lastObservedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+            preselectionSourceObservations.removeAll(keepingCapacity: false)
         }
 
         if shouldEnforceAcceptedMeasurementGap(for: sample),
@@ -292,6 +308,25 @@ public struct AccelerationRunEvaluator: Sendable {
     private func sourceMatchesPolicy(_ source: SpeedTelemetrySource) -> Bool {
         guard let requiredSource = policy.requiredSource else { return true }
         return source == requiredSource
+    }
+
+    private mutating func acceptPreselectionObservedTimestamp(
+        source: SpeedTelemetrySource,
+        uptimeNanoseconds: UInt64
+    ) -> Bool {
+        if let index = preselectionSourceObservations.firstIndex(where: { $0.source == source }) {
+            guard uptimeNanoseconds > preselectionSourceObservations[index].latestUptimeNanoseconds else {
+                return false
+            }
+            preselectionSourceObservations[index].latestUptimeNanoseconds = uptimeNanoseconds
+            return true
+        }
+
+        preselectionSourceObservations.append(PreselectionSourceObservation(
+            source: source,
+            latestUptimeNanoseconds: uptimeNanoseconds
+        ))
+        return true
     }
 
     private mutating func acceptObservedTimestamp(_ uptimeNanoseconds: UInt64) -> Bool {
