@@ -131,6 +131,7 @@ public struct NavigationRouteGeometryMatcher: Sendable {
         let routeProgressUsable = routeProjection.hasDirectionalExtent || route.distanceMeters == 0
         let stepProgressUsable = bestStep.1.hasDirectionalExtent || step.distanceMeters == 0
         let confident = routeProjection.distanceMeters <= policy.maximumRouteDistanceMeters
+            && bestStep.1.distanceMeters <= policy.maximumRouteDistanceMeters
             && !stepAmbiguous
             && !routeProjection.hasAmbiguousProgressPosition
             && !bestStep.1.hasAmbiguousProgressPosition
