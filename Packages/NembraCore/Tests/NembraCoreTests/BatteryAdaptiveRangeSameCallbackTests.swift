@@ -152,4 +152,49 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(candidate.distanceCoverage == .complete)
         #expect(candidate.transportGapOccurred == false)
     }
+
+    @Test("verified SoC first at one callback uptime is not disturbed by later verified voltage")
+    func SOCThenVoltageAtSameUptimePreservesNewAnchor() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(80),
+                uptime: 100
+            ),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+
+        let socResult = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(77),
+                uptime: 200
+            ),
+            policy: p
+        )
+        let candidate = try #require(socResult.candidateLearningWindow)
+        #expect(candidate.startSOC.percentage == 80)
+        #expect(candidate.endSOC.percentage == 77)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        let voltageResult = try pipeline.acceptBatteryObservation(
+            observation(
+                value: try BatterySemanticValue.voltageVolts(40.0),
+                uptime: 200
+            ),
+            policy: p
+        )
+
+        #expect(voltageResult.disposition == .ignored)
+        #expect(voltageResult.candidateLearningWindow == nil)
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 200)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+        #expect(pipeline.windowAssembler.distanceCoverage == .complete)
+        #expect(pipeline.windowAssembler.transportGapOccurred == false)
+    }
 }
