@@ -144,8 +144,9 @@ public struct NavigationRoutePlanningCoordinator: Sendable {
     }
 
     /// Publishes routes only when `token` is still the active request token.
-    /// An empty provider response fails closed instead of becoming an
-    /// apparently valid selected route state.
+    /// Empty results or route provenance that contradicts the active request's
+    /// requested transport mode fail closed as an invalid provider response.
+    /// Returned transport may legitimately differ and is preserved as provider truth.
     @discardableResult
     public mutating func complete(
         token: NavigationRouteRequestToken,
@@ -156,7 +157,8 @@ public struct NavigationRoutePlanningCoordinator: Sendable {
             return false
         }
 
-        guard !routes.isEmpty else {
+        guard !routes.isEmpty,
+              routes.allSatisfy({ $0.provenance.requestedTransportMode == request.transportMode }) else {
             state = .failed(
                 token: currentToken,
                 request: request,

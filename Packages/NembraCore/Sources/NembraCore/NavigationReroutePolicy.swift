@@ -8,28 +8,32 @@ public enum NavigationReroutePolicyError: Error, Equatable, Sendable {
 /// evidence is strong enough to request a new provider route.
 ///
 /// There is intentionally no production default. Real iPhone/ES80 outdoor traces
-/// must justify the corridor distance and cooldown. The domain does enforce that
-/// more than one accepted sample is required so one noisy coordinate cannot
-/// request a reroute.
+/// must justify the deviation corridor, sustained-duration window, and cooldown.
+/// The domain requires both multiple accepted samples and elapsed deviation time
+/// so one noisy coordinate or an unrealistically dense callback burst cannot reroute.
 public struct NavigationReroutePolicy: Equatable, Sendable {
     public let minimumDeviationDistanceMeters: Double
     public let requiredConsecutiveAcceptedSamples: Int
+    public let minimumConsecutiveDeviationDurationNanoseconds: UInt64
     public let rerouteCooldownNanoseconds: UInt64
 
     public init(
         minimumDeviationDistanceMeters: Double,
         requiredConsecutiveAcceptedSamples: Int,
+        minimumConsecutiveDeviationDurationNanoseconds: UInt64,
         rerouteCooldownNanoseconds: UInt64
     ) throws {
         guard minimumDeviationDistanceMeters.isFinite,
               minimumDeviationDistanceMeters > 0,
               requiredConsecutiveAcceptedSamples >= 2,
+              minimumConsecutiveDeviationDurationNanoseconds > 0,
               rerouteCooldownNanoseconds > 0 else {
             throw NavigationReroutePolicyError.invalidPolicy
         }
 
         self.minimumDeviationDistanceMeters = minimumDeviationDistanceMeters
         self.requiredConsecutiveAcceptedSamples = requiredConsecutiveAcceptedSamples
+        self.minimumConsecutiveDeviationDurationNanoseconds = minimumConsecutiveDeviationDurationNanoseconds
         self.rerouteCooldownNanoseconds = rerouteCooldownNanoseconds
     }
 }
@@ -38,18 +42,19 @@ public struct NavigationReroutePolicy: Equatable, Sendable {
 /// passed Nembra's location-quality screen and a future guidance geometry layer
 /// has compared it with the active route.
 ///
-/// `isProgressAssignmentConfident` must be false when the guidance layer cannot
-/// distinguish plausible route progress from an ambiguous nearby/parallel path.
-/// Ambiguous observations never accumulate toward rerouting.
+/// `isDeviationAssessmentConfident` describes confidence in the distance-from-route
+/// assessment only. It is intentionally separate from route-progress assignment:
+/// a location may be too far from the route for trustworthy progress while still
+/// providing strong evidence that the rider is materially off the active route.
 public struct NavigationRouteDeviationObservation: Equatable, Sendable {
     public let receivedAtUptimeNanoseconds: UInt64
     public let distanceFromActiveRouteMeters: Double
-    public let isProgressAssignmentConfident: Bool
+    public let isDeviationAssessmentConfident: Bool
 
     public init(
         receivedAtUptimeNanoseconds: UInt64,
         distanceFromActiveRouteMeters: Double,
-        isProgressAssignmentConfident: Bool
+        isDeviationAssessmentConfident: Bool
     ) throws {
         guard distanceFromActiveRouteMeters.isFinite,
               distanceFromActiveRouteMeters >= 0 else {
@@ -58,7 +63,7 @@ public struct NavigationRouteDeviationObservation: Equatable, Sendable {
 
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
         self.distanceFromActiveRouteMeters = distanceFromActiveRouteMeters
-        self.isProgressAssignmentConfident = isProgressAssignmentConfident
+        self.isDeviationAssessmentConfident = isDeviationAssessmentConfident
     }
 }
 
@@ -75,6 +80,7 @@ public enum NavigationRerouteDecision: Equatable, Sendable {
 public struct NavigationRerouteEvaluator: Sendable {
     private let policy: NavigationReroutePolicy
     public private(set) var consecutiveDeviationSamples: Int = 0
+    public private(set) var deviationRunStartUptimeNanoseconds: UInt64?
     public private(set) var lastAcceptedObservationUptimeNanoseconds: UInt64?
     public private(set) var lastRerouteRequestUptimeNanoseconds: UInt64?
 
@@ -96,17 +102,25 @@ public struct NavigationRerouteEvaluator: Sendable {
         // prior deviation run instead of allowing disconnected evidence to stack.
         lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
 
-        guard observation.isProgressAssignmentConfident,
+        guard observation.isDeviationAssessmentConfident,
               observation.distanceFromActiveRouteMeters >= policy.minimumDeviationDistanceMeters else {
-            consecutiveDeviationSamples = 0
+            resetDeviationRun()
             return .keepCurrentRoute
         }
 
+        if consecutiveDeviationSamples == 0 {
+            deviationRunStartUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        }
         if consecutiveDeviationSamples < Int.max {
             consecutiveDeviationSamples += 1
         }
 
-        guard consecutiveDeviationSamples >= policy.requiredConsecutiveAcceptedSamples else {
+        guard consecutiveDeviationSamples >= policy.requiredConsecutiveAcceptedSamples,
+              let deviationRunStartUptimeNanoseconds else {
+            return .keepCurrentRoute
+        }
+        let deviationElapsed = observation.receivedAtUptimeNanoseconds - deviationRunStartUptimeNanoseconds
+        guard deviationElapsed >= policy.minimumConsecutiveDeviationDurationNanoseconds else {
             return .keepCurrentRoute
         }
 
@@ -118,7 +132,7 @@ public struct NavigationRerouteEvaluator: Sendable {
         }
 
         lastRerouteRequestUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
-        consecutiveDeviationSamples = 0
+        resetDeviationRun()
         return .requestReroute
     }
 
@@ -127,14 +141,19 @@ public struct NavigationRerouteEvaluator: Sendable {
     /// and is retained so an older callback arriving after the gap cannot become
     /// current evidence.
     public mutating func markKnownContinuityGap() {
-        consecutiveDeviationSamples = 0
+        resetDeviationRun()
     }
 
     /// A newly selected route invalidates both accumulated deviation and reroute
     /// cooldown from the previous route identity. The observation clock remains
     /// monotonic within the process to reject stale callbacks.
     public mutating func didSelectNewRoute() {
-        consecutiveDeviationSamples = 0
+        resetDeviationRun()
         lastRerouteRequestUptimeNanoseconds = nil
+    }
+
+    private mutating func resetDeviationRun() {
+        consecutiveDeviationSamples = 0
+        deviationRunStartUptimeNanoseconds = nil
     }
 }

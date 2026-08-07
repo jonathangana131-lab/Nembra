@@ -33,11 +33,13 @@ struct NavigationSessionCoordinatorTests {
         NavigationSessionCoordinator(
             geometryPolicy: try NavigationRouteGeometryMatchingPolicy(
                 maximumRouteDistanceMeters: 100,
-                minimumStepAmbiguitySeparationMeters: 4
+                minimumStepAmbiguitySeparationMeters: 4,
+                minimumWithinGeometryProgressSeparationMeters: 25
             ),
             reroutePolicy: try NavigationReroutePolicy(
                 minimumDeviationDistanceMeters: 20,
                 requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 10,
                 rerouteCooldownNanoseconds: 100
             )
         )
@@ -86,6 +88,27 @@ struct NavigationSessionCoordinatorTests {
         let secondValue = try session.process(location: location(lat: 45.0006, lon: -122.0004, uptime: 20))
         let second = try #require(secondValue)
 
+        #expect(first.rerouteDecision == .keepCurrentRoute)
+        #expect(second.rerouteDecision == .requestReroute)
+    }
+
+    @Test("sustained deviation beyond progress corridor still requests reroute")
+    func farOffRouteStillReroutes() throws {
+        var session = try coordinator()
+        _ = try session.select(route: route())
+
+        let firstValue = try session.process(
+            location: location(lat: 45.0005, lon: -122.0020, uptime: 10)
+        )
+        let first = try #require(firstValue)
+        let secondValue = try session.process(
+            location: location(lat: 45.0006, lon: -122.0020, uptime: 20)
+        )
+        let second = try #require(secondValue)
+
+        #expect(first.geometryMatch.distanceFromRouteMeters > 100)
+        #expect(!first.geometryMatch.isProgressAssignmentConfident)
+        #expect(first.geometryMatch.isDeviationAssessmentConfident)
         #expect(first.rerouteDecision == .keepCurrentRoute)
         #expect(second.rerouteDecision == .requestReroute)
     }
@@ -153,6 +176,52 @@ struct NavigationSessionCoordinatorTests {
         #expect(update.rerouteDecision == .keepCurrentRoute)
         guard case let .unavailable(_, _, reason) = update.guidanceState else {
             Issue.record("Expected unavailable guidance")
+            return
+        }
+        #expect(reason == .ambiguousProgress)
+    }
+
+    @Test("self-intersecting single step fails progress closed at crossing")
+    func selfIntersectingStepFailsClosed() throws {
+        let nw = try coordinate(45.001, -122.001)
+        let se = try coordinate(44.999, -121.999)
+        let ne = try coordinate(45.001, -121.999)
+        let sw = try coordinate(44.999, -122.001)
+        let geometry = [nw, se, ne, sw]
+        let step = try NavigationRouteStepSnapshot(
+            geometry: geometry,
+            instructions: "Crossing step",
+            notice: nil,
+            distanceMeters: 600,
+            transportMode: .cycling
+        )
+        let crossingRoute = try NavigationRouteSnapshot(
+            provenance: .appleMapKitCycling(),
+            name: "Crossing",
+            geometry: geometry,
+            steps: [step],
+            distanceMeters: 600,
+            expectedTravelTimeSeconds: 200,
+            hasHighways: false,
+            hasTolls: false,
+            advisoryNotices: []
+        )
+        var session = try coordinator()
+        _ = try session.select(route: crossingRoute)
+
+        let approachValue = try session.process(
+            location: location(lat: 45.0005, lon: -121.9995, uptime: 10)
+        )
+        let approach = try #require(approachValue)
+        #expect(approach.geometryMatch.isProgressAssignmentConfident)
+
+        let crossingValue = try session.process(
+            location: location(lat: 45.0, lon: -122.0, uptime: 20)
+        )
+        let crossing = try #require(crossingValue)
+        #expect(!crossing.geometryMatch.isProgressAssignmentConfident)
+        guard case let .unavailable(_, _, reason) = crossing.guidanceState else {
+            Issue.record("Expected ambiguous progress at self-intersection")
             return
         }
         #expect(reason == .ambiguousProgress)

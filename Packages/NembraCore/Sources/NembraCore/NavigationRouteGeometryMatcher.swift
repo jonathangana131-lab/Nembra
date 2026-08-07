@@ -10,20 +10,25 @@ public enum NavigationRouteGeometryMatchingError: Error, Equatable, Sendable {
 public struct NavigationRouteGeometryMatchingPolicy: Equatable, Sendable {
     public let maximumRouteDistanceMeters: Double
     public let minimumStepAmbiguitySeparationMeters: Double
+    public let minimumWithinGeometryProgressSeparationMeters: Double
 
     public init(
         maximumRouteDistanceMeters: Double,
-        minimumStepAmbiguitySeparationMeters: Double
+        minimumStepAmbiguitySeparationMeters: Double,
+        minimumWithinGeometryProgressSeparationMeters: Double
     ) throws {
         guard maximumRouteDistanceMeters.isFinite,
               maximumRouteDistanceMeters > 0,
               minimumStepAmbiguitySeparationMeters.isFinite,
-              minimumStepAmbiguitySeparationMeters > 0 else {
+              minimumStepAmbiguitySeparationMeters > 0,
+              minimumWithinGeometryProgressSeparationMeters.isFinite,
+              minimumWithinGeometryProgressSeparationMeters > 0 else {
             throw NavigationRouteGeometryMatchingError.invalidPolicy
         }
 
         self.maximumRouteDistanceMeters = maximumRouteDistanceMeters
         self.minimumStepAmbiguitySeparationMeters = minimumStepAmbiguitySeparationMeters
+        self.minimumWithinGeometryProgressSeparationMeters = minimumWithinGeometryProgressSeparationMeters
     }
 }
 
@@ -37,6 +42,7 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
     public let distanceRemainingOnStepMeters: Double
     public let distanceRemainingOnRouteMeters: Double
     public let isProgressAssignmentConfident: Bool
+    public let isDeviationAssessmentConfident: Bool
     public let startsNewRouteSegment: Bool
 
     public func guidanceObservation(
@@ -56,7 +62,7 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
         try NavigationRouteDeviationObservation(
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             distanceFromActiveRouteMeters: distanceFromRouteMeters,
-            isProgressAssignmentConfident: isProgressAssignmentConfident
+            isDeviationAssessmentConfident: isDeviationAssessmentConfident
         )
     }
 }
@@ -65,9 +71,12 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
 ///
 /// The matcher performs no Core Location quality screening itself. It projects
 /// the accepted coordinate onto provider route/step geometry, derives provider-
-/// scaled remaining-distance estimates, and fails confidence closed for route
-/// distance or step-assignment ambiguity. Numeric confidence thresholds remain
-/// injected so Simulator math cannot become an outdoor production claim.
+/// scaled remaining-distance estimates, and fails progress confidence closed for
+/// excessive route distance, competing steps, or multiple near-equal positions
+/// separated far along one polyline (for example a self-intersection). Deviation
+/// confidence remains separate so being too far away for trustworthy progress does
+/// not erase strong off-route-distance evidence. All numeric thresholds are injected
+/// so Simulator math cannot become an outdoor production claim.
 public struct NavigationRouteGeometryMatcher: Sendable {
     private let policy: NavigationRouteGeometryMatchingPolicy
 
@@ -84,11 +93,22 @@ public struct NavigationRouteGeometryMatcher: Sendable {
         let routeProjection = Self.project(
             latitude: latitude,
             longitude: longitude,
-            onto: route.geometry
+            onto: route.geometry,
+            distanceAmbiguityToleranceMeters: policy.minimumStepAmbiguitySeparationMeters,
+            progressSeparationMeters: policy.minimumWithinGeometryProgressSeparationMeters
         )
 
         let stepProjections = route.steps.enumerated().map { index, step in
-            (index, Self.project(latitude: latitude, longitude: longitude, onto: step.geometry))
+            (
+                index,
+                Self.project(
+                    latitude: latitude,
+                    longitude: longitude,
+                    onto: step.geometry,
+                    distanceAmbiguityToleranceMeters: policy.minimumStepAmbiguitySeparationMeters,
+                    progressSeparationMeters: policy.minimumWithinGeometryProgressSeparationMeters
+                )
+            )
         }
         let sortedSteps = stepProjections.sorted { lhs, rhs in
             if lhs.1.distanceMeters == rhs.1.distanceMeters {
@@ -111,9 +131,13 @@ public struct NavigationRouteGeometryMatcher: Sendable {
         let routeProgressUsable = routeProjection.hasDirectionalExtent || route.distanceMeters == 0
         let stepProgressUsable = bestStep.1.hasDirectionalExtent || step.distanceMeters == 0
         let confident = routeProjection.distanceMeters <= policy.maximumRouteDistanceMeters
+            && bestStep.1.distanceMeters <= policy.maximumRouteDistanceMeters
             && !stepAmbiguous
+            && !routeProjection.hasAmbiguousProgressPosition
+            && !bestStep.1.hasAmbiguousProgressPosition
             && routeProgressUsable
             && stepProgressUsable
+        let deviationConfident = routeProgressUsable
 
         return NavigationRouteGeometryMatch(
             receivedAtUptimeNanoseconds: location.sample.receivedAtUptimeNanoseconds,
@@ -128,6 +152,7 @@ public struct NavigationRouteGeometryMatcher: Sendable {
                 progressFraction: routeProjection.progressFraction
             ),
             isProgressAssignmentConfident: confident,
+            isDeviationAssessmentConfident: deviationConfident,
             startsNewRouteSegment: location.startsNewRouteSegment
         )
     }
@@ -136,12 +161,20 @@ public struct NavigationRouteGeometryMatcher: Sendable {
         let distanceMeters: Double
         let progressFraction: Double
         let hasDirectionalExtent: Bool
+        let hasAmbiguousProgressPosition: Bool
+    }
+
+    private struct SegmentProjection {
+        let distanceMeters: Double
+        let distanceAlongMeters: Double
     }
 
     private static func project(
         latitude: Double,
         longitude: Double,
-        onto geometry: [NavigationRouteCoordinate]
+        onto geometry: [NavigationRouteCoordinate],
+        distanceAmbiguityToleranceMeters: Double,
+        progressSeparationMeters: Double
     ) -> Projection {
         if geometry.count == 1 {
             return Projection(
@@ -152,7 +185,8 @@ public struct NavigationRouteGeometryMatcher: Sendable {
                     longitude2: geometry[0].longitude
                 ),
                 progressFraction: 0,
-                hasDirectionalExtent: false
+                hasDirectionalExtent: false,
+                hasAmbiguousProgressPosition: false
             )
         }
 
@@ -170,6 +204,8 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             totalLength += length
         }
 
+        var candidates: [SegmentProjection] = []
+        candidates.reserveCapacity(geometry.count - 1)
         var bestDistance = Double.infinity
         var bestDistanceAlong = 0.0
         var cumulative = 0.0
@@ -199,20 +235,40 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             let closestX = a.x + t * dx
             let closestY = a.y + t * dy
             let distance = hypot(closestX, closestY)
+            let distanceAlong = cumulative + t * segmentLengths[index]
+            candidates.append(
+                SegmentProjection(
+                    distanceMeters: distance,
+                    distanceAlongMeters: distanceAlong
+                )
+            )
 
             if distance < bestDistance {
                 bestDistance = distance
-                bestDistanceAlong = cumulative + t * segmentLengths[index]
+                bestDistanceAlong = distanceAlong
             }
             cumulative += segmentLengths[index]
         }
 
         let hasDirectionalExtent = totalLength > 0
+        var hasAmbiguousProgressPosition = false
+        if hasDirectionalExtent {
+            for candidate in candidates {
+                let distanceSeparation = candidate.distanceMeters - bestDistance
+                let progressSeparation = abs(candidate.distanceAlongMeters - bestDistanceAlong)
+                if distanceSeparation < distanceAmbiguityToleranceMeters,
+                   progressSeparation >= progressSeparationMeters {
+                    hasAmbiguousProgressPosition = true
+                    break
+                }
+            }
+        }
         let fraction = hasDirectionalExtent ? min(1, max(0, bestDistanceAlong / totalLength)) : 0
         return Projection(
             distanceMeters: bestDistance.isFinite ? bestDistance : 0,
             progressFraction: fraction,
-            hasDirectionalExtent: hasDirectionalExtent
+            hasDirectionalExtent: hasDirectionalExtent,
+            hasAmbiguousProgressPosition: hasAmbiguousProgressPosition
         )
     }
 
