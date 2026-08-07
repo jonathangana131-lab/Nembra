@@ -188,7 +188,7 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
 ///
 /// This type does not select a distance source, decode BLE/Tuya, train/persist
 /// `AdaptiveBatteryRangeModel`, or expose ephemeral assembler state as UI truth.
-public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
+public struct BatteryAdaptiveRangeLearningPipeline: Sendable {
     private(set) var evidenceBridge: BatteryAdaptiveRangeEvidenceBridge
 
     /// Internal learning machinery, never a public presentation model.
@@ -197,6 +197,16 @@ public struct BatteryAdaptiveRangeLearningPipeline: Equatable, Sendable {
     public init() {
         evidenceBridge = BatteryAdaptiveRangeEvidenceBridge()
         windowAssembler = BatteryRangeLearningWindowAssembler()
+    }
+
+    /// Internal-only state equivalence for atomicity tests. The pipeline does not
+    /// expose public `Equatable`, because equality over hidden anchor/evidence
+    /// state would become an observable side channel into non-public telemetry.
+    func hasSameInternalState(
+        as other: BatteryAdaptiveRangeLearningPipeline
+    ) -> Bool {
+        evidenceBridge == other.evidenceBridge &&
+        windowAssembler == other.windowAssembler
     }
 
     /// A higher layer has proof that normalized battery evidence was missed.
