@@ -21,16 +21,18 @@ This slice adds the identity/provenance boundary before any History, Statistics,
 - `recordInterruption` preserves known selected-source evidence loss;
 - `beginsAfterKnownObservationGap` records an initial application-lifecycle gap immediately instead of pretending the observer saw the whole ride;
 - that initial-gap fact is retained separately as `beganAfterKnownObservationGap`, so a later disconnect or unrelated quality rejection cannot masquerade as proof that recovery started after an unobserved interval;
-- there is deliberately no reset API on the ride-bound wrapper. A new ride should create a new accumulator rather than erase the old ride's evidence-loss history.
+- there is deliberately no reset API, and accumulator construction is package-scoped until a trusted ride-lifecycle adapter can mechanically guarantee one observer lifetime per immutable ride identity. A caller-chosen UUID alone is not authority to restart observation and erase prior evidence-loss history.
 
-`RidePeakSpeedEvidence` has no public free-form initializer. External callers obtain it from the ride-bound accumulator rather than pairing an arbitrary bare `PeakSpeedEvidence` with a UUID after the fact.
+`RidePeakSpeedEvidence` has no public free-form initializer. The ride-bound accumulator is also package-constructed: trusted NembraCore lifecycle adapters may create it, while ordinary external clients cannot start or restart arbitrary same-UUID observers. External clients may consume evidence that a trusted production path later emits; they cannot manufacture a fresh observation lifetime themselves.
 
 ## Completed-ride projection
 
-`CompletedRidePeakSpeedEvidence` is a durable projection created from:
+`CompletedRidePeakSpeedEvidence` is a durable projection created by a trusted NembraCore package adapter from:
 
 - one immutable `CompletedRideEvidence`;
 - one `RidePeakSpeedEvidence` with the same session UUID.
+
+The two-value bridge is package-scoped. UUID + ride continuity are necessary checks, but they do not by themselves prove that two independently supplied completed records are the exact same immutable ride. Until a future durable identity binding can prove that stronger statement, ordinary external clients cannot perform this join and treat it as Nembra-authoritative.
 
 A session mismatch fails closed.
 
@@ -77,7 +79,7 @@ Decoded durable peak evidence is rebuilt through the same validating initializer
 - initial-gap provenance with no interruption evidence;
 - a recovered ride without explicit initial-gap provenance, partial continuity, and an interruption.
 
-`validate(against:)` rechecks session identity and completed-ride continuity before a future persistence/statistics adapter joins the records.
+`validate(against:)` is also package-scoped. Trusted adapters may use it as a necessary session/continuity recheck inside a mechanically bound join; external clients cannot use it as if UUID + continuity were proof of exact completed-record identity.
 
 ## Important limitation: still not reportable top-speed truth by itself
 

@@ -26,19 +26,24 @@ public struct RidePeakSpeedEvidence: Equatable, Sendable {
 
 /// Owns one `PeakSpeedEvidenceAccumulator` for exactly one ride session.
 ///
-/// There is deliberately no reset API. A new ride must create a new accumulator
-/// with a new session identity rather than erasing evidence-loss history and
-/// reusing an old binding.
+/// There is deliberately no reset API. Creation is package-sealed until the
+/// ride-lifecycle integration can mechanically guarantee one accumulator owner
+/// per immutable ride identity. A public initializer taking only a caller-chosen
+/// UUID would let a client recreate the same session and erase already recorded
+/// evidence-loss history without ever calling reset.
 public struct RidePeakSpeedEvidenceAccumulator: Sendable {
     public let sessionID: UUID
     public let beganAfterKnownObservationGap: Bool
     private var peakAccumulator: PeakSpeedEvidenceAccumulator
 
+    /// Trusted package adapters may create the observer only while mechanically
+    /// binding its lifetime to the authoritative ride lifecycle.
+    ///
     /// - Parameter beginsAfterKnownObservationGap: Set only when this ride-bound
     ///   observer starts after a known interval in which selected-source peak
     ///   evidence was unavailable (for example after conservative checkpoint
     ///   recovery). The gap is recorded immediately; it is never reconstructed.
-    public init(
+    package init(
         sessionID: UUID,
         policy: PeakSpeedPolicy,
         beginsAfterKnownObservationGap: Bool = false
@@ -109,7 +114,11 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
     public let knownInterruptionCount: Int
     public let observationContinuity: PeakSpeedObservationContinuity
 
-    public init(
+    /// Package-sealed until NembraCore has a mechanically bound completed-record
+    /// adapter. Session UUID + continuity are necessary identity evidence, but by
+    /// themselves do not prove that two independently supplied completed records
+    /// are the exact same immutable ride.
+    package init(
         completedRide: CompletedRideEvidence,
         ridePeak: RidePeakSpeedEvidence
     ) throws {
@@ -143,9 +152,10 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         )
     }
 
-    /// Verifies that this durable projection still belongs to the completed ride
-    /// a caller is about to join it with. This never consults wall-clock deltas.
-    public func validate(against completedRide: CompletedRideEvidence) throws {
+    /// Trusted package adapters may revalidate session + continuity before a
+    /// mechanically bound join. This is deliberately not a public proof that two
+    /// arbitrary same-UUID completed records are the same immutable ride.
+    package func validate(against completedRide: CompletedRideEvidence) throws {
         guard completedRide.sessionID == sessionID else {
             throw CompletedRidePeakSpeedEvidenceError.sessionMismatch
         }
