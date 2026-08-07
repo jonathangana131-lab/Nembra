@@ -30,7 +30,11 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
 
-    public init(
+    /// Package-only because `CompletedRideDurationEvidence` currently proves
+    /// session + continuity identity, not the full immutable completed record.
+    /// Trusted package adapters must mechanically join both values from the same
+    /// completed-ride record before constructing statistics input.
+    package init(
         completedRide: CompletedRideEvidence,
         durationEvidence: CompletedRideDurationEvidence,
         calendarAttribution: RideStatisticsCalendarAttribution
