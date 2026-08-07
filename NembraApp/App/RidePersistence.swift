@@ -56,6 +56,135 @@ enum RideHistoryPersistenceError: Error, Equatable, Sendable {
     case applicationSupportUnavailable
 }
 
+enum RideRouteOutcomeState: String, Codable, Equatable, Sendable {
+    case recorded
+    case noRecordedGeometry
+    case storageFailed
+    case unknown
+}
+
+struct RideRouteOutcomeRecord: Codable, Equatable, Sendable {
+    let sessionID: UUID
+    let state: RideRouteOutcomeState
+    let acceptedPointCount: Int?
+
+    init(
+        sessionID: UUID,
+        state: RideRouteOutcomeState,
+        acceptedPointCount: Int?
+    ) throws {
+        guard acceptedPointCount.map({ $0 >= 0 }) ?? true else {
+            throw RideRouteOutcomeStoreError.invalidAcceptedPointCount
+        }
+        self.sessionID = sessionID
+        self.state = state
+        self.acceptedPointCount = acceptedPointCount
+    }
+}
+
+enum RideRouteOutcomeStoreError: Error, Equatable, Sendable {
+    case invalidAcceptedPointCount
+    case corruptRecord(UUID)
+    case conflictingOutcome(UUID)
+    case durableVerificationFailed(UUID)
+}
+
+/// Small per-session truth ledger that deliberately lives outside the optional
+/// SwiftData route database. A route database can fail to open, fail mid-write,
+/// or leave salvageable chunks without a manifest; none of those failures may be
+/// rewritten later as the materially different claim "no route was recorded."
+///
+/// Each record is one atomically replaced JSON file. `storageFailed` and
+/// `unknown` remain repairable states; a later verified manifest may promote them
+/// to `recorded`. Terminal contradictory outcomes are rejected rather than
+/// silently rewriting historical truth.
+actor AtomicRideRouteOutcomeStore {
+    private let directoryURL: URL
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    init(directoryURL: URL, fileManager: FileManager = .default) {
+        self.directoryURL = directoryURL
+        self.fileManager = fileManager
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        self.encoder = encoder
+        self.decoder = JSONDecoder()
+    }
+
+    func record(sessionID: UUID) throws -> RideRouteOutcomeRecord? {
+        let url = recordURL(sessionID: sessionID)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: url)
+            let record = try decoder.decode(RideRouteOutcomeRecord.self, from: data)
+            guard record.sessionID == sessionID else {
+                throw RideRouteOutcomeStoreError.corruptRecord(sessionID)
+            }
+            return record
+        } catch let error as RideRouteOutcomeStoreError {
+            throw error
+        } catch {
+            throw RideRouteOutcomeStoreError.corruptRecord(sessionID)
+        }
+    }
+
+    @discardableResult
+    func commit(_ incoming: RideRouteOutcomeRecord) throws -> RideRouteOutcomeRecord {
+        if let existing = try record(sessionID: incoming.sessionID) {
+            if existing == incoming { return existing }
+            guard Self.canTransition(from: existing, to: incoming) else {
+                throw RideRouteOutcomeStoreError.conflictingOutcome(incoming.sessionID)
+            }
+        }
+
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        let data = try encoder.encode(incoming)
+        try data.write(to: recordURL(sessionID: incoming.sessionID), options: .atomic)
+
+        guard try record(sessionID: incoming.sessionID) == incoming else {
+            throw RideRouteOutcomeStoreError.durableVerificationFailed(incoming.sessionID)
+        }
+        return incoming
+    }
+
+    private static func canTransition(
+        from existing: RideRouteOutcomeRecord,
+        to incoming: RideRouteOutcomeRecord
+    ) -> Bool {
+        guard existing.sessionID == incoming.sessionID else { return false }
+
+        if existing.state == incoming.state {
+            switch (existing.acceptedPointCount, incoming.acceptedPointCount) {
+            case (nil, _):
+                return true
+            case let (existingCount?, incomingCount?):
+                return existingCount == incomingCount
+            case (.some, nil):
+                return false
+            }
+        }
+
+        switch (existing.state, incoming.state) {
+        case (.unknown, .recorded),
+             (.unknown, .noRecordedGeometry),
+             (.unknown, .storageFailed),
+             (.storageFailed, .recorded):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func recordURL(sessionID: UUID) -> URL {
+        directoryURL.appendingPathComponent("\(sessionID.uuidString).json", isDirectory: false)
+    }
+}
+
 /// Concrete local completed-ride history. The stored payload remains the exact
 /// validated core record so reconciliation can evolve without changing ride
 /// identity or silently rewriting old evidence.
@@ -587,13 +716,19 @@ enum RideRoutePresentationStatus: Equatable, Sendable {
 final class RideRoutePresentationStore {
     private(set) var revision = 0
     @ObservationIgnored private let routeStore: SwiftDataRideRouteStore?
+    @ObservationIgnored private let outcomeStore: AtomicRideRouteOutcomeStore?
     @ObservationIgnored private let startupPersistenceError: String?
     @ObservationIgnored private var geometries: [UUID: RideRouteGeometry] = [:]
     @ObservationIgnored private var statuses: [UUID: RideRoutePresentationStatus] = [:]
     @ObservationIgnored private var errors: [UUID: String] = [:]
 
-    init(routeStore: SwiftDataRideRouteStore?, startupPersistenceError: String? = nil) {
+    init(
+        routeStore: SwiftDataRideRouteStore?,
+        outcomeStore: AtomicRideRouteOutcomeStore? = nil,
+        startupPersistenceError: String? = nil
+    ) {
         self.routeStore = routeStore
+        self.outcomeStore = outcomeStore
         self.startupPersistenceError = startupPersistenceError
     }
 
@@ -613,15 +748,33 @@ final class RideRoutePresentationStore {
     }
 
     func refresh(sessionID: UUID) async {
-        guard let routeStore else {
+        statuses[sessionID] = .loading
+        revision &+= 1
+
+        let outcome: RideRouteOutcomeRecord?
+        do {
+            outcome = try await outcomeStore?.record(sessionID: sessionID)
+        } catch {
             geometries.removeValue(forKey: sessionID)
-            statuses[sessionID] = .unavailable
-            errors[sessionID] = startupPersistenceError ?? "Local route storage is unavailable."
+            statuses[sessionID] = .failed
+            errors[sessionID] = "Stored route outcome could not be verified safely."
             revision &+= 1
             return
         }
-        statuses[sessionID] = .loading
-        revision &+= 1
+
+        guard let routeStore else {
+            geometries.removeValue(forKey: sessionID)
+            if outcome?.state == .storageFailed {
+                statuses[sessionID] = .failed
+                errors[sessionID] = "Route recording or storage failed for this ride."
+            } else {
+                statuses[sessionID] = .unavailable
+                errors[sessionID] = startupPersistenceError ?? "Local route storage is unavailable."
+            }
+            revision &+= 1
+            return
+        }
+
         do {
             if let geometry = try await routeStore.geometry(sessionID: sessionID), geometry.hasRecordedGeometry {
                 geometries[sessionID] = geometry
@@ -629,8 +782,20 @@ final class RideRoutePresentationStore {
                 errors.removeValue(forKey: sessionID)
             } else {
                 geometries.removeValue(forKey: sessionID)
-                statuses[sessionID] = .unavailable
-                errors.removeValue(forKey: sessionID)
+                switch outcome?.state {
+                case .storageFailed:
+                    statuses[sessionID] = .failed
+                    errors[sessionID] = "Route recording or storage failed for this ride."
+                case .unknown:
+                    statuses[sessionID] = .unavailable
+                    errors[sessionID] = "Route recording outcome is unknown for this recovered ride."
+                case .recorded:
+                    statuses[sessionID] = .failed
+                    errors[sessionID] = "Recorded route geometry is missing or could not be verified."
+                case .noRecordedGeometry, .none:
+                    statuses[sessionID] = .unavailable
+                    errors.removeValue(forKey: sessionID)
+                }
             }
         } catch {
             geometries.removeValue(forKey: sessionID)
@@ -670,6 +835,7 @@ struct RidePersistenceStack: Sendable {
     let checkpointStore: AtomicRideCheckpointStore
     let historyStore: SwiftDataRideHistoryStore
     let routeStore: SwiftDataRideRouteStore?
+    let routeOutcomeStore: AtomicRideRouteOutcomeStore
 }
 
 enum RidePersistenceFactory {
@@ -683,6 +849,9 @@ enum RidePersistenceFactory {
 
         let recoveryDirectory = scopeDirectory.appendingPathComponent("Recovery", isDirectory: true)
         let checkpointStore = AtomicRideCheckpointStore(directoryURL: recoveryDirectory)
+        let routeOutcomeStore = AtomicRideRouteOutcomeStore(
+            directoryURL: recoveryDirectory.appendingPathComponent("RouteOutcomes", isDirectory: true)
+        )
 
         let historyURL = scopeDirectory.appendingPathComponent("RideHistory.store")
         let historyContainer = try makeHistoryContainer(storeURL: historyURL)
@@ -690,8 +859,8 @@ enum RidePersistenceFactory {
 
         // Route geometry is an additive evidence domain. A route-store startup
         // failure must not disable the already accepted recovery/history ledger.
-        // Presentation can truthfully show route unavailable while ride history
-        // remains readable and automatic ride recovery remains intact.
+        // The independent outcome ledger remains available to preserve failure
+        // truth even when this optional database cannot be created or opened.
         let routeStore: SwiftDataRideRouteStore?
         do {
             let routesURL = scopeDirectory.appendingPathComponent("RideRoutes.store")
@@ -704,7 +873,8 @@ enum RidePersistenceFactory {
         return RidePersistenceStack(
             checkpointStore: checkpointStore,
             historyStore: historyStore,
-            routeStore: routeStore
+            routeStore: routeStore,
+            routeOutcomeStore: routeOutcomeStore
         )
     }
 
