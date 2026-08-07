@@ -1,0 +1,32 @@
+name: ES80 Reanchor Platform Preflight
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-reanchor/ci/chat-t8n4q-platform-preflight-*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Test current-main NembraCore platform floor
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify immutable checkout
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Test NembraCore
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore
