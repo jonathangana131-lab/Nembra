@@ -52,6 +52,25 @@ struct RideCheckpointClearOrderingTests {
         )
     }
 
+    private func slotURL(_ fileName: String, in directory: URL) -> URL {
+        directory.appendingPathComponent(fileName)
+    }
+
+    private func encodedEnvelope(
+        generation: UInt64,
+        checkpoint: RideDurableCheckpoint
+    ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(
+            AtomicRideCheckpointStore.Envelope(
+                schemaVersion: AtomicRideCheckpointStore.schemaVersion,
+                generation: generation,
+                checkpoint: checkpoint
+            )
+        )
+    }
+
     @Test("interrupted clear keeps newest completion when slot B is authoritative")
     func interruptedClearKeepsNewestSlotBCompletion() async throws {
         let dir = try directory()
@@ -99,43 +118,132 @@ struct RideCheckpointClearOrderingTests {
         #expect(try await fresh.load() == nil)
     }
 
-    @Test("corrupt fallback is removed before the sole valid authority")
-    func corruptFallbackIsRemovedBeforeValidAuthority() async throws {
+    @Test("corrupt newest plus older readable ride fails clear without deleting either file")
+    func corruptNewestPreservesOlderReadableRideAndForensicBytes() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let sessionID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
-        let checkpoint = try checkpoint(id: sessionID, latestODO: 100.6, gpsMeters: 600)
-        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2)
-        let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
 
-        try await store.save(.inProgress(checkpoint))
-        let corruptB = dir.appendingPathComponent(AtomicRideCheckpointStore.slotBFileName)
-        try Data("corrupt-fallback".utf8).write(to: corruptB)
+        try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.6, gpsMeters: 600)))
+        try await store.save(.completedPendingCommit(
+            try completed(id: sessionID, endingODO: 101.2, gpsMeters: 1_200)
+        ))
 
-        await #expect(throws: FailOnNthRemovalFileManager.InjectedFailure.removal(2)) {
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        let originalA = try Data(contentsOf: slotA)
+        let corruptNewest = Data("corrupt-newest-completion".utf8)
+        try corruptNewest.write(to: slotB)
+
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames == [AtomicRideCheckpointStore.slotBFileName])
-
-        let fresh = AtomicRideCheckpointStore(directoryURL: dir)
-        #expect(try await fresh.load() == .inProgress(checkpoint))
+        #expect(try Data(contentsOf: slotA) == originalA)
+        #expect(try Data(contentsOf: slotB) == corruptNewest)
     }
 
-    @Test("unsupported schema fails clear before deleting any evidence")
+    @Test("corrupt plus missing fails clear without deleting forensic bytes")
+    func corruptPlusMissingFailsClosed() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let bytes = Data("corrupt-only-copy".utf8)
+        try bytes.write(to: slotA)
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            try await store.clear()
+        }
+        #expect(try Data(contentsOf: slotA) == bytes)
+        #expect(!FileManager.default.fileExists(
+            atPath: slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir).path
+        ))
+    }
+
+    @Test("two corrupt slots fail clear without deleting forensic bytes")
+    func bothCorruptFailClosed() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        let bytesA = Data("corrupt-a".utf8)
+        let bytesB = Data("corrupt-b".utf8)
+        try bytesA.write(to: slotA)
+        try bytesB.write(to: slotB)
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            try await store.clear()
+        }
+        #expect(try Data(contentsOf: slotA) == bytesA)
+        #expect(try Data(contentsOf: slotB) == bytesB)
+    }
+
+    @Test("unsupported schema plus valid slot fails clear before deleting either file")
     func unsupportedSchemaFailsBeforeDeletion() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let slotA = dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
-        let bytes = Data("{\"schemaVersion\":999}".utf8)
-        try bytes.write(to: slotA)
-        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 99)
-        let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
+        let sessionID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+        try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.2, gpsMeters: 200)))
+
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        let originalA = try Data(contentsOf: slotA)
+        let unsupported = Data("{\"schemaVersion\":999}".utf8)
+        try unsupported.write(to: slotB)
 
         await #expect(throws: RideCheckpointError.unsupportedSchema(999)) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames.isEmpty)
-        #expect(try Data(contentsOf: slotA) == bytes)
+        #expect(try Data(contentsOf: slotA) == originalA)
+        #expect(try Data(contentsOf: slotB) == unsupported)
+    }
+
+    @Test("divergent valid evidence at the same generation fails clear before deletion")
+    func conflictingSameGenerationFailsBeforeDeletion() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sessionID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        let bytesA = try encodedEnvelope(
+            generation: 7,
+            checkpoint: .inProgress(try checkpoint(id: sessionID, latestODO: 100.4, gpsMeters: 400))
+        )
+        let bytesB = try encodedEnvelope(
+            generation: 7,
+            checkpoint: .completedPendingCommit(
+                try completed(id: sessionID, endingODO: 101, gpsMeters: 1_000)
+            )
+        )
+        try bytesA.write(to: slotA)
+        try bytesB.write(to: slotB)
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+
+        await #expect(throws: RideCheckpointError.conflictingGenerations) {
+            try await store.clear()
+        }
+        #expect(try Data(contentsOf: slotA) == bytesA)
+        #expect(try Data(contentsOf: slotB) == bytesB)
+    }
+
+    @Test("one valid slot clears and both missing is an idempotent no-op")
+    func oneValidAndBothMissingClearSuccessfully() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sessionID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+
+        try await store.clear()
+        #expect(try await store.load() == nil)
+
+        try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.7, gpsMeters: 700)))
+        try await store.clear()
+        #expect(try await store.load() == nil)
+        try await store.clear()
+        #expect(try await store.load() == nil)
     }
 }
 
