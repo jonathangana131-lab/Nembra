@@ -382,7 +382,6 @@ struct HomeView: View {
                 in: RoundedRectangle(cornerRadius: 17, style: .continuous)
             )
         }
-        .sensoryFeedback(.selection, trigger: vehicle.state.rideMode)
     }
 
     private var vehicleSection: some View {
