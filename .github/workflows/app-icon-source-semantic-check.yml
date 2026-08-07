@@ -1,0 +1,84 @@
+name: App Icon Source Semantic Check
+
+on:
+  push:
+    branches:
+      - parallel/utility-app-icon-source-check/chat-n4x7p
+
+permissions:
+  contents: read
+
+jobs:
+  verify-pixels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact utility head
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install pinned Pillow
+        run: python -m pip install --disable-pip-version-check Pillow==12.2.0
+
+      - name: Compare checked-in icon pixels with generator output
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import importlib.util
+          from pathlib import Path
+
+          from PIL import Image, ImageChops
+
+          generator_path = Path('scripts/generate_nembra_app_icon.py')
+          spec = importlib.util.spec_from_file_location('nembra_icon_generator', generator_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('Could not load icon generator.')
+          generator = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(generator)
+
+          icon_dir = Path('NembraApp/Resources/Assets.xcassets/AppIcon.appiconset')
+
+          def git_blob_sha(data: bytes) -> str:
+              header = f'blob {len(data)}\0'.encode()
+              return hashlib.sha1(header + data).hexdigest()
+
+          for filename, variant in generator.VARIANTS.items():
+              checked_path = icon_dir / filename
+              if not checked_path.is_file():
+                  raise SystemExit(f'Missing checked-in icon: {checked_path}')
+
+              with Image.open(checked_path) as checked:
+                  checked.load()
+                  expected = generator.render(variant)
+
+                  if checked.mode != expected.mode:
+                      raise SystemExit(
+                          f'{filename}: mode mismatch: checked-in={checked.mode}, expected={expected.mode}'
+                      )
+                  if checked.size != expected.size:
+                      raise SystemExit(
+                          f'{filename}: size mismatch: checked-in={checked.size}, expected={expected.size}'
+                      )
+                  if checked.tobytes() != expected.tobytes():
+                      difference = ImageChops.difference(checked, expected)
+                      bbox = difference.getbbox()
+                      raise SystemExit(f'{filename}: pixel mismatch; differing bounds={bbox}')
+
+              checked_bytes = checked_path.read_bytes()
+              generated_bytes = generator.encoded_png_bytes(variant)
+              print(
+                  f'{filename}: PIXELS MATCH; '
+                  f'checked_blob={git_blob_sha(checked_bytes)}; '
+                  f'generated_blob={git_blob_sha(generated_bytes)}; '
+                  f'checked_bytes={len(checked_bytes)}; generated_bytes={len(generated_bytes)}'
+              )
+
+          print('All checked-in Nembra app-icon pixels match the maintainable generator source.')
+          PY
