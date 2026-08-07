@@ -26,12 +26,79 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
-    func staleOperationCannotCompleteNewAcquisitionGeneration() throws {
+    func overlappingAcquisitionCannotDiscardPendingOperations() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let pending = try readiness.beginOperation()
+
+        #expect(throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionAlreadyActive) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.pendingOperationCount == 1)
+        let completedPending = readiness.completeOperation(pending)
+        #expect(completedPending)
+        #expect(readiness.isReady)
+    }
+
+    @Test
+    func acquisitionRequiresSelectedTargetLifecycle() {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.noTarget)
+        ) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .noTarget)
+        #expect(readiness.generation == 0)
+    }
+
+    @Test
+    func terminalAttemptRequiresNewConnectionAttemptBeforeAcquisition() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.finishWithoutGattAcquisition()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.terminalWithoutGattAcquisition)
+        ) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.generation == 0)
+
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == 1)
+    }
+
+    @Test
+    func readyGenerationMayBeginQuiescentReacquisition() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let first = try readiness.beginOperation()
+        let completedFirst = readiness.completeOperation(first)
+        #expect(completedFirst)
+        #expect(readiness.phase == .ready)
+        let firstGeneration = readiness.generation
+
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == firstGeneration + 1)
+    }
+
+    @Test
+    func staleOperationCannotCompleteAfterLegitimateConnectionBoundary() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let old = try readiness.beginOperation()
 
+        readiness.beginConnectionAttempt()
         try readiness.startAcquisition()
         let current = try readiness.beginOperation()
 
@@ -72,6 +139,27 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
+    func incompleteFiniteAcquisitionCanRecoverOnlyInANewGeneration() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        _ = try readiness.beginOperation()
+        let incompleteGeneration = readiness.generation
+
+        readiness.finishWithoutGattAcquisition()
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.isIncomplete)
+        #expect(!readiness.isReady)
+        #expect(readiness.pendingOperationCount == 0)
+
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == incompleteGeneration + 1)
+    }
+
+    @Test
     func parentOperationTransitionsAtomicallyToChildOperations() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
@@ -98,12 +186,13 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
-    func staleParentCannotSpawnChildOperationsInNewGeneration() throws {
+    func staleParentCannotSpawnChildrenAfterLegitimateConnectionBoundary() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let oldParent = try readiness.beginOperation()
 
+        readiness.beginConnectionAttempt()
         try readiness.startAcquisition()
         let current = try readiness.beginOperation()
 

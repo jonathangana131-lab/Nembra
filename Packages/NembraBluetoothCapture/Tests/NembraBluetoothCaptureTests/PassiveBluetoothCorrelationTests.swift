@@ -19,43 +19,16 @@ struct PassiveBluetoothCorrelationTests {
             startedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
 
-        try appendValue(
-            to: &session,
-            sequence: 1,
-            uptime: 1_000_000_000,
-            characteristic: "FFF1",
-            payload: [0x01]
-        )
-        try appendValue(
-            to: &session,
-            sequence: 2,
-            uptime: 2_900_000_000,
-            characteristic: "FFF2",
-            payload: [0x27, 0x10]
-        )
+        try appendValue(to: &session, sequence: 1, uptime: 1_000_000_000, characteristic: "FFF1", payload: [0x01])
+        try appendValue(to: &session, sequence: 2, uptime: 2_900_000_000, characteristic: "FFF2", payload: [0x27, 0x10])
         try session.append(
-            .stockAppState(try PassiveBluetoothStockAppObservation(
-                field: "Voltage",
-                displayedValue: "39.8 V"
-            )),
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Voltage", displayedValue: "39.8 V")),
             sequenceNumber: 3,
             receivedAtUptimeNanoseconds: 3_000_000_000,
             receivedAtDate: Date(timeIntervalSince1970: 1_700_000_003)
         )
-        try appendValue(
-            to: &session,
-            sequence: 4,
-            uptime: 3_050_000_000,
-            characteristic: "FFF3",
-            payload: [0x9B, 0x7C]
-        )
-        try appendValue(
-            to: &session,
-            sequence: 5,
-            uptime: 5_100_000_000,
-            characteristic: "FFF4",
-            payload: [0xFF]
-        )
+        try appendValue(to: &session, sequence: 4, uptime: 3_050_000_000, characteristic: "FFF3", payload: [0x9B, 0x7C])
+        try appendValue(to: &session, sequence: 5, uptime: 5_100_000_000, characteristic: "FFF4", payload: [0xFF])
 
         let windows = PassiveBluetoothCorrelation.windows(
             in: session,
@@ -76,13 +49,7 @@ struct PassiveBluetoothCorrelationTests {
     @Test("known continuity interruption prevents cross-gap correlation")
     func interruptionIsHardBoundary() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
-        try appendValue(
-            to: &session,
-            sequence: 1,
-            uptime: 10_000,
-            characteristic: "OLD",
-            payload: [0xAA]
-        )
+        try appendValue(to: &session, sequence: 1, uptime: 10_000, characteristic: "OLD", payload: [0xAA])
         try session.append(
             .interruption(try PassiveBluetoothCaptureInterruption(reason: "disconnect")),
             sequenceNumber: 2,
@@ -90,21 +57,12 @@ struct PassiveBluetoothCorrelationTests {
             receivedAtDate: .now
         )
         try session.append(
-            .stockAppState(try PassiveBluetoothStockAppObservation(
-                field: "Current",
-                displayedValue: "4.2 A"
-            )),
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Current", displayedValue: "4.2 A")),
             sequenceNumber: 3,
             receivedAtUptimeNanoseconds: 10_200,
             receivedAtDate: .now
         )
-        try appendValue(
-            to: &session,
-            sequence: 4,
-            uptime: 10_300,
-            characteristic: "NEW",
-            payload: [0xBB]
-        )
+        try appendValue(to: &session, sequence: 4, uptime: 10_300, characteristic: "NEW", payload: [0xBB])
 
         let window = try #require(PassiveBluetoothCorrelation.windows(
             in: session,
@@ -127,10 +85,7 @@ struct PassiveBluetoothCorrelationTests {
             peripheralIdentifier: "target-a"
         )
         try session.append(
-            .stockAppState(try PassiveBluetoothStockAppObservation(
-                field: "Battery",
-                displayedValue: "73%"
-            )),
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Battery", displayedValue: "73%")),
             sequenceNumber: 2,
             receivedAtUptimeNanoseconds: 3_000_000_000,
             receivedAtDate: .now
@@ -153,6 +108,40 @@ struct PassiveBluetoothCorrelationTests {
         #expect(windows.isEmpty)
     }
 
+    @Test("unscoped imported correlation treats another peripheral connection as attribution ambiguity")
+    func mixedConnectionEvidenceFailsClosed() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 2_900_000_000,
+            characteristic: "A-VALUE",
+            payload: [0x01],
+            peripheralIdentifier: "target-a"
+        )
+        try appendConnection(
+            to: &session,
+            sequence: 2,
+            uptime: 2_950_000_000,
+            peripheralIdentifier: "unrelated-b",
+            state: .connected
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Battery", displayedValue: "73%")),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: .now
+        )
+
+        #expect(PassiveBluetoothCorrelation.windows(in: session).isEmpty)
+
+        let explicit = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "target-a"
+        ).first)
+        #expect(explicit.candidates.map(\.characteristicUUID) == ["A-VALUE"])
+    }
+
     @Test("explicit target correlation filters mixed imported evidence")
     func explicitTargetFiltersMixedPeripheralEvidence() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
@@ -165,10 +154,7 @@ struct PassiveBluetoothCorrelationTests {
             peripheralIdentifier: "target-a"
         )
         try session.append(
-            .stockAppState(try PassiveBluetoothStockAppObservation(
-                field: "Battery",
-                displayedValue: "73%"
-            )),
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Battery", displayedValue: "73%")),
             sequenceNumber: 2,
             receivedAtUptimeNanoseconds: 3_000_000_000,
             receivedAtDate: .now
@@ -193,15 +179,98 @@ struct PassiveBluetoothCorrelationTests {
         #expect(window.candidates.map(\.characteristicUUID) == ["A-VALUE"])
     }
 
+    @Test("explicit target correlation ignores unrelated peripheral disconnect boundaries")
+    func unrelatedDisconnectDoesNotSplitExplicitTarget() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 2_900_000_000,
+            characteristic: "A-BEFORE",
+            payload: [0x01],
+            peripheralIdentifier: "target-a"
+        )
+        try appendConnection(
+            to: &session,
+            sequence: 2,
+            uptime: 2_950_000_000,
+            peripheralIdentifier: "unrelated-b",
+            state: .disconnected
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Power", displayedValue: "167 W")),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 3_050_000_000,
+            characteristic: "A-AFTER",
+            payload: [0x02],
+            peripheralIdentifier: "target-a"
+        )
+
+        let window = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "target-a",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        ).first)
+
+        #expect(Set(window.candidates.map(\.characteristicUUID)) == ["A-BEFORE", "A-AFTER"])
+    }
+
+    @Test("explicit target disconnect remains a hard correlation boundary")
+    func targetDisconnectStillSplitsExplicitTarget() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 2_900_000_000,
+            characteristic: "A-BEFORE",
+            payload: [0x01],
+            peripheralIdentifier: "target-a"
+        )
+        try appendConnection(
+            to: &session,
+            sequence: 2,
+            uptime: 2_950_000_000,
+            peripheralIdentifier: "target-a",
+            state: .disconnected
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Power", displayedValue: "167 W")),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 3_050_000_000,
+            characteristic: "A-AFTER",
+            payload: [0x02],
+            peripheralIdentifier: "target-a"
+        )
+
+        let window = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "target-a",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        ).first)
+
+        #expect(window.candidates.map(\.characteristicUUID) == ["A-AFTER"])
+    }
+
     @Test("overflow-safe lookahead still includes later values")
     func uptimeOverflowSafety() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
         let markerTime = UInt64.max - 5
         try session.append(
-            .stockAppState(try PassiveBluetoothStockAppObservation(
-                field: "Power",
-                displayedValue: "167 W"
-            )),
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Power", displayedValue: "167 W")),
             sequenceNumber: 1,
             receivedAtUptimeNanoseconds: markerTime,
             receivedAtDate: .now
@@ -257,6 +326,24 @@ struct PassiveBluetoothCorrelationTests {
                 characteristicUUID: characteristic,
                 origin: .subscriptionUpdate,
                 payload: Data(payload)
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+
+    private func appendConnection(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        peripheralIdentifier: String,
+        state: PassiveBluetoothConnectionState
+    ) throws {
+        try session.append(
+            .connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: peripheralIdentifier,
+                state: state
             )),
             sequenceNumber: sequence,
             receivedAtUptimeNanoseconds: uptime,
