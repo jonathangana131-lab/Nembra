@@ -128,6 +128,106 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.descriptorUUID == "2902")
     }
 
+    @Test("connection callbacks preserve structured state, platform timestamp, reconnect flag, and error evidence")
+    func preservesStructuredConnectionLifecycle() throws {
+        let disconnectError = try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 7)
+        let disconnected = try PassiveBluetoothConnectionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            state: .disconnected,
+            platformEventTimestamp: 812_345.25,
+            isReconnecting: true,
+            error: disconnectError
+        )
+        let failed = try PassiveBluetoothConnectionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            state: .failedToConnect,
+            error: try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 10)
+        )
+
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_800))
+        try session.append(
+            .connection(disconnected),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 18,
+            receivedAtDate: Date(timeIntervalSince1970: 1_801)
+        )
+        try session.append(
+            .connection(failed),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 19,
+            receivedAtDate: Date(timeIntervalSince1970: 1_802)
+        )
+
+        let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
+        guard case let .connection(capturedDisconnect) = decoded.records[0].event,
+              case let .connection(capturedFailure) = decoded.records[1].event else {
+            Issue.record("Expected structured connection events")
+            return
+        }
+        #expect(capturedDisconnect.state == .disconnected)
+        #expect(capturedDisconnect.platformEventTimestamp == 812_345.25)
+        #expect(capturedDisconnect.isReconnecting == true)
+        #expect(capturedDisconnect.error == disconnectError)
+        #expect(capturedFailure.state == .failedToConnect)
+        #expect(capturedFailure.platformEventTimestamp == nil)
+        #expect(capturedFailure.isReconnecting == nil)
+        #expect(capturedFailure.error?.code == 10)
+    }
+
+    @Test("connection metadata fails closed when platform-only fields contradict callback state")
+    func rejectsContradictoryConnectionMetadata() {
+        #expect(throws: PassiveBluetoothCaptureValidationError.invalidConnectionMetadata) {
+            _ = try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                state: .connected,
+                platformEventTimestamp: 1
+            )
+        }
+        #expect(throws: PassiveBluetoothCaptureValidationError.invalidConnectionMetadata) {
+            _ = try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                state: .connected,
+                error: try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 1)
+            )
+        }
+        #expect(throws: PassiveBluetoothCaptureValidationError.nonFinitePlatformEventTimestamp) {
+            _ = try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                state: .disconnected,
+                platformEventTimestamp: .infinity
+            )
+        }
+    }
+
+    @Test("subscription callbacks preserve request context, resulting state, and failure evidence")
+    func preservesSubscriptionStateAndResult() throws {
+        let subscriptionError = try PassiveBluetoothErrorObservation(domain: "CBATTErrorDomain", code: 14)
+        let subscription = try PassiveBluetoothSubscriptionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "00000002-0000-1001-8001-00805F9B07D0",
+            requestedEnabled: true,
+            resultingIsNotifying: false,
+            error: subscriptionError
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_900))
+        try session.append(
+            .subscription(subscription),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 20,
+            receivedAtDate: Date(timeIntervalSince1970: 1_901)
+        )
+
+        let decoded = try PassiveBluetoothCaptureJSON.decode(PassiveBluetoothCaptureJSON.encode(session))
+        guard case let .subscription(captured) = decoded.records[0].event else {
+            Issue.record("Expected subscription event")
+            return
+        }
+        #expect(captured.requestedEnabled == true)
+        #expect(captured.resultingIsNotifying == false)
+        #expect(captured.error == subscriptionError)
+    }
+
     @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
     func valueOriginsAreNonMutating() {
         #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
@@ -224,6 +324,25 @@ struct PassiveBluetoothCaptureTests {
         #expect(decoded == session)
     }
 
+    @Test("schema v1 captures remain readable after adding structured lifecycle evidence")
+    func decodesSchemaV1Capture() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_950))
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "legacy fixture")),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: Date(timeIntervalSince1970: 1_951)
+        )
+
+        let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        let currentToken = "\"schemaVersion\":\(PassiveBluetoothCaptureJSON.currentSchemaVersion)"
+        var json = String(decoding: encoded, as: UTF8.self)
+        #expect(json.contains(currentToken))
+        json = json.replacingOccurrences(of: currentToken, with: "\"schemaVersion\":1")
+
+        #expect(try PassiveBluetoothCaptureJSON.decode(Data(json.utf8)) == session)
+    }
+
     @Test("JSON import cannot bypass record ordering validation")
     func jsonImportRevalidatesRecordOrder() throws {
         struct UncheckedSessionPayload: Encodable {
@@ -285,9 +404,10 @@ struct PassiveBluetoothCaptureTests {
         )
 
         let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        let currentToken = "\"schemaVersion\":\(PassiveBluetoothCaptureJSON.currentSchemaVersion)"
         var json = String(decoding: encoded, as: UTF8.self)
-        #expect(json.contains("\"schemaVersion\":1"))
-        json = json.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":999")
+        #expect(json.contains(currentToken))
+        json = json.replacingOccurrences(of: currentToken, with: "\"schemaVersion\":999")
 
         #expect(throws: PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(999)) {
             _ = try PassiveBluetoothCaptureJSON.decode(Data(json.utf8))
@@ -319,6 +439,34 @@ struct PassiveBluetoothCaptureTests {
         }
     }
 
+    @Test("JSON import revalidates nested error evidence")
+    func jsonImportRevalidatesNestedErrorEvidence() throws {
+        let subscription = try PassiveBluetoothSubscriptionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "FFE2",
+            requestedEnabled: true,
+            resultingIsNotifying: false,
+            error: try PassiveBluetoothErrorObservation(domain: "CBATTErrorDomain", code: 14)
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 3_100))
+        try session.append(
+            .subscription(subscription),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 31,
+            receivedAtDate: Date(timeIntervalSince1970: 3_101)
+        )
+
+        let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        var json = String(decoding: encoded, as: UTF8.self)
+        #expect(json.contains("\"domain\":\"CBATTErrorDomain\""))
+        json = json.replacingOccurrences(of: "\"domain\":\"CBATTErrorDomain\"", with: "\"domain\":\"   \"")
+
+        #expect(throws: PassiveBluetoothCaptureValidationError.emptyErrorDomain) {
+            _ = try PassiveBluetoothCaptureJSON.decode(Data(json.utf8))
+        }
+    }
+
     @Test("invalid blank identifiers fail closed instead of creating plausible evidence")
     func rejectsBlankIdentifiers() {
         #expect(throws: PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier) {
@@ -335,6 +483,9 @@ struct PassiveBluetoothCaptureTests {
                 characteristicUUID: "FFE1",
                 descriptorUUID: " "
             )
+        }
+        #expect(throws: PassiveBluetoothCaptureValidationError.emptyErrorDomain) {
+            _ = try PassiveBluetoothErrorObservation(domain: " ", code: 1)
         }
     }
 }
