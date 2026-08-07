@@ -71,11 +71,28 @@ The Nembra app target manually compiles selected NembraCore sources. `BatteryPri
 
 At the current recovery head, the landed `BatteryPrimaryReadoutState.swift` source is self-contained for this Dashboard integration. No unmerged transition-planner, adaptive-range, battery-evidence, freshness, or live-truth implementation is treated as an app-build dependency.
 
+### Future field-currentness source closure
+
+When the accepted per-field live-truth chain is actually consumed by the app, package green alone will still be insufficient because the current Xcode target does not link the `NembraCore` package product. Under today's manual-source build graph, the minimum existing Core dependency closure for the #52 SoC live-truth projection is:
+
+1. `BatteryEvidenceDomain.swift` — normalized field/value/role/observation domain;
+2. `BatteryEvidenceStreamValidator.swift` — process-local ordering + continuity validation;
+3. `BatteryEvidenceSnapshotAccumulator.swift` — validated current-segment snapshot;
+4. `BatteryEvidenceAvailability.swift` — injected per-field freshness evaluation;
+5. `BatteryEvidenceLiveTruth.swift` — sealed field-level live-truth resolution.
+
+Those files must not be wired piecemeal as independent feature conveniences. The final Class-A integration packet must use the accepted parent/child heads, include the complete same-module dependency closure, and prove the exact Nembra app target compiles after wiring.
+
+Source visibility also does **not** solve authority construction. The battery domain deliberately keeps the lowest-level verified-observation constructor file-scoped when sources are compiled directly into the app module; package-only test seams do not exist in that composition. Ordinary app code therefore cannot legitimately manufacture `.verifiedVehicleMeasurement` merely because the five files become visible. A future physically verified ES80 adapter must preserve a non-forgeable authority boundary—such as a trusted file-scoped acquisition seam or a deliberate separate-module boundary—rather than widening the constructor to make integration convenient.
+
+Until both requirements are satisfied—complete app source visibility **and** a trusted physical-authority acquisition seam—the Dashboard must remain on the current last-known/unavailable fallback. A successful build is never battery-truth proof.
+
 ## Deterministic UI coverage
 
 The Dashboard UI suite includes focused coverage for:
 
 - connected `92%` legacy charge remaining explicitly last-known rather than being promoted by connection state;
+- retained `71%` → real Simulator reconnect → connected transport while the same cached 71% remains explicitly last-known, with a keep-always landscape screenshot;
 - a tap to range mode producing unavailable rather than synthetic mileage while retaining the last-known charge qualifier;
 - persistence of the user-facing mode across app relaunch without changing currentness semantics;
 - restoration to percentage mode for deterministic following tests;
