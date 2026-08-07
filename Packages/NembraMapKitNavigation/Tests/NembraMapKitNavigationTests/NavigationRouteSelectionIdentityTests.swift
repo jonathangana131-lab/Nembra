@@ -32,6 +32,36 @@ struct NavigationRouteSelectionIdentityTests {
         #expect(selected.routeSelection?.selectedIndex == 0)
     }
 
+    @Test("selection identity cannot collide across replacement coordinators")
+    func replacementCoordinatorCollisionFailsClosed() async throws {
+        let oldRoute = try route(name: "Old coordinator route")
+        let newRoute = try route(name: "New coordinator route")
+        let oldExperience = try coordinator(routeResults: [[oldRoute]])
+        let newExperience = try coordinator(routeResults: [[newRoute]])
+
+        _ = try await oldExperience.plan(request(destinationOffset: 0.01))
+        let oldPresentation = NavigationPresentationProjector.snapshot(from: oldExperience.snapshot)
+        let staleSelectionID = try #require(oldPresentation.routeOptions.first?.selectionID)
+
+        _ = try await newExperience.plan(request(destinationOffset: 0.02))
+        let newPresentation = NavigationPresentationProjector.snapshot(from: newExperience.snapshot)
+        let freshSelectionID = try #require(newPresentation.routeOptions.first?.selectionID)
+
+        // Each fresh coordinator begins its provider request token sequence at 1,
+        // and both alternatives are index zero. Exact route identity is therefore
+        // required to keep an old UI action from colliding with the new workflow.
+        #expect(staleSelectionID.requestToken == freshSelectionID.requestToken)
+        #expect(staleSelectionID.index == freshSelectionID.index)
+        #expect(staleSelectionID != freshSelectionID)
+        #expect(throws: NavigationExperienceError.staleRouteOptions) {
+            try newExperience.selectRoute(staleSelectionID)
+        }
+        #expect(newExperience.snapshot.selectedRoute == nil)
+
+        let selected = try newExperience.selectRoute(freshSelectionID)
+        #expect(selected.selectedRoute == newRoute)
+    }
+
     private func coordinate(_ latitude: Double, _ longitude: Double) throws -> NavigationRouteCoordinate {
         try NavigationRouteCoordinate(latitude: latitude, longitude: longitude)
     }
