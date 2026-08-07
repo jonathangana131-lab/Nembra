@@ -59,6 +59,7 @@ struct NembraApp: App {
                         .accessibilityIdentifier("es80.research-capture-unavailable")
                     }
                 }
+                .preferredColorScheme(.dark)
             }
         }
     }
