@@ -132,20 +132,60 @@ struct PassiveCoreBluetoothTargetStateTests {
     }
 
     @Test
-    func centralInvalidationClearsAttemptAndQuarantineButKeepsSelectedTarget() throws {
+    func centralInvalidationRetiresActiveAttemptAndBlocksSamePeripheralRetryUntilTerminal() throws {
         let peripheral = UUID()
         var state = PassiveCoreBluetoothTargetState()
         state.selectTarget(peripheral)
-        _ = try state.beginAttempt(for: peripheral)
-        _ = state.retireActiveAttempt()
+        let first = try state.beginAttempt(for: peripheral)
+
+        state.resetForCentralInvalidation()
+
+        #expect(state.selectedTargetIdentifier == peripheral)
+        #expect(state.activeAttempt == nil)
+        #expect(state.isAwaitingTerminalCallback(for: peripheral))
+
+        do {
+            _ = try state.beginAttempt(for: peripheral)
+            Issue.record("Expected central invalidation to preserve same-peripheral quarantine")
+        } catch let error as PassiveCoreBluetoothTargetState.StateError {
+            #expect(error == .peripheralAwaitingTerminalCallback(peripheral))
+        }
+
+        let oldTerminal = state.completeDisconnect(from: peripheral)
+        #expect(oldTerminal == .retired)
+        #expect(!state.isAwaitingTerminalCallback(for: peripheral))
+
+        let retry = try state.beginAttempt(for: peripheral)
+        #expect(retry.generation == first.generation + 1)
+        #expect(state.activeAttempt == retry)
+    }
+
+    @Test
+    func centralInvalidationPreservesExistingRetiredQuarantineUntilTerminal() throws {
+        let peripheral = UUID()
+        var state = PassiveCoreBluetoothTargetState()
+        state.selectTarget(peripheral)
+        let first = try state.beginAttempt(for: peripheral)
+        let retired = state.retireActiveAttempt()
+        #expect(retired == first)
         #expect(state.isAwaitingTerminalCallback(for: peripheral))
 
         state.resetForCentralInvalidation()
 
         #expect(state.selectedTargetIdentifier == peripheral)
         #expect(state.activeAttempt == nil)
-        #expect(!state.isAwaitingTerminalCallback(for: peripheral))
+        #expect(state.isAwaitingTerminalCallback(for: peripheral))
+
+        do {
+            _ = try state.beginAttempt(for: peripheral)
+            Issue.record("Expected an already-retired attempt to stay quarantined across central invalidation")
+        } catch let error as PassiveCoreBluetoothTargetState.StateError {
+            #expect(error == .peripheralAwaitingTerminalCallback(peripheral))
+        }
+
+        let terminal = state.completeFailedConnection(from: peripheral)
+        #expect(terminal == .retired)
         let retry = try state.beginAttempt(for: peripheral)
-        #expect(retry.generation == 2)
+        #expect(retry.generation == first.generation + 1)
     }
 }
