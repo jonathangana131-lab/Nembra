@@ -4,7 +4,15 @@ import Testing
 
 @Suite("Adaptive battery range Codable validation")
 struct AdaptiveBatteryRangeCodableValidationTests {
-    private func validSOC(_ percentage: Double, uptime: UInt64) throws -> BatterySOCReading {
+    private func estimatedSOC(_ percentage: Double, uptime: UInt64) throws -> BatterySOCReading {
+        try BatterySOCReading(
+            percentage: percentage,
+            provenance: .estimate,
+            receivedAtUptimeNanoseconds: uptime
+        )
+    }
+
+    private func authoritativeSOC(_ percentage: Double, uptime: UInt64) throws -> BatterySOCReading {
         try BatterySOCReading(
             percentage: percentage,
             provenance: .authoritativeMeasurement,
@@ -36,17 +44,36 @@ struct AdaptiveBatteryRangeCodableValidationTests {
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
-    @Test("valid normalized SoC round-trips through Codable")
-    func validSOCRoundTrip() throws {
-        let original = try validSOC(73, uptime: 123)
+    @Test("estimated normalized SoC round-trips through generic Codable")
+    func estimatedSOCRoundTrip() throws {
+        let original = try estimatedSOC(73, uptime: 123)
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(BatterySOCReading.self, from: data)
         #expect(decoded == original)
     }
 
+    @Test("authoritative SoC cannot serialize into generic persistence")
+    func authoritativeSOCEncodeRejected() throws {
+        let reading = try authoritativeSOC(73, uptime: 123)
+        #expect(throws: EncodingError.self) {
+            _ = try JSONEncoder().encode(reading)
+        }
+    }
+
+    @Test("generic import cannot self-assert authoritative SoC")
+    func authoritativeSOCDecodeRejected() throws {
+        var object = try jsonObject(for: estimatedSOC(73, uptime: 123))
+        object["provenance"] = BatterySOCProvenance.authoritativeMeasurement.rawValue
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(BatterySOCReading.self, from: data)
+        }
+    }
+
     @Test("decoded SoC cannot bypass normalized 0...100 validation")
     func corruptSOCRejected() throws {
-        var object = try jsonObject(for: validSOC(73, uptime: 123))
+        var object = try jsonObject(for: estimatedSOC(73, uptime: 123))
         object["percentage"] = 140.0
         let data = try JSONSerialization.data(withJSONObject: object)
 
@@ -55,18 +82,33 @@ struct AdaptiveBatteryRangeCodableValidationTests {
         }
     }
 
-    @Test("valid learning window round-trips through validated evidence initializers")
-    func validWindowRoundTrip() throws {
+    @Test("non-authoritative learning window round-trips through validated initializers")
+    func estimatedWindowRoundTrip() throws {
         let original = try BatteryRangeLearningWindow(
             distanceMeters: 1_200,
             distanceCoverage: .complete,
             transportGapOccurred: false,
-            startSOC: validSOC(80, uptime: 10),
-            endSOC: validSOC(70, uptime: 20)
+            startSOC: estimatedSOC(80, uptime: 10),
+            endSOC: estimatedSOC(70, uptime: 20)
         )
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(BatteryRangeLearningWindow.self, from: data)
         #expect(decoded == original)
+    }
+
+    @Test("authoritative learning window cannot serialize away its live authority boundary")
+    func authoritativeWindowEncodeRejected() throws {
+        let window = try BatteryRangeLearningWindow(
+            distanceMeters: 1_200,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: authoritativeSOC(80, uptime: 10),
+            endSOC: authoritativeSOC(70, uptime: 20)
+        )
+
+        #expect(throws: EncodingError.self) {
+            _ = try JSONEncoder().encode(window)
+        }
     }
 
     @Test("decoded learning window cannot bypass monotonic time validation")
@@ -75,8 +117,8 @@ struct AdaptiveBatteryRangeCodableValidationTests {
             distanceMeters: 1_200,
             distanceCoverage: .complete,
             transportGapOccurred: false,
-            startSOC: validSOC(80, uptime: 10),
-            endSOC: validSOC(70, uptime: 20)
+            startSOC: estimatedSOC(80, uptime: 10),
+            endSOC: estimatedSOC(70, uptime: 20)
         )
         var object = try jsonObject(for: original)
         var endSOC = try #require(object["endSOC"] as? [String: Any])
