@@ -29,7 +29,14 @@ The session owns:
 
 Every raw callback is sent to both evidence pipelines through the same `record(_:)` method.
 
-Every known selected-source interruption is sent to both through the same `recordInterruption(_:)` method.
+Every **selected-speed-source** observation break is sent to both through `recordInterruption(_:)` using `RideSpeedEvidenceSessionInterruption`.
+
+That interruption API is intentionally narrower than ride/vehicle lifecycle events:
+
+- `.selectedSourceUnavailable` means the caller has already determined that the selected speed evidence source itself was unavailable;
+- `.applicationLifecycleInterrupted` means the app/process lifecycle interrupted observation.
+
+There is deliberately no public `.vehicleConnectionLost` case here. A scooter BLE disconnect is a speed-source gap when BLE is the selected source, but it is not automatically a GPS evidence gap. The adapter that observes a physical vehicle event must translate it to `.selectedSourceUnavailable` only after making that source-specific determination.
 
 `RideSpeedEvidenceSessionSnapshot` has no public free-form initializer, so external code cannot manufacture a snapshot by combining an arbitrary ride peak and an arbitrary benchmark after the fact.
 
@@ -44,7 +51,7 @@ This layer depends on the benchmark-continuity behavior from PR #185:
 - the prior accepted uptime remains the chronology anchor, so delayed stale callbacks cannot become fresh;
 - a rejected callback does not consume a pending observation-gap marker.
 
-The ride peak pipeline separately records the same interruption as evidence loss. Therefore a benchmark may remain useful for within-segment source characterization while the observed peak is still correctly rejected for reportable use because its ride observation was partial.
+The ride peak pipeline separately records the same selected-source interruption as evidence loss. Therefore a benchmark may remain useful for within-segment source characterization while the observed peak is still correctly rejected for reportable use because its ride observation was partial.
 
 An initial recovery gap before the first accepted benchmark packet cannot be represented as a fictitious benchmark segment. Instead it remains explicit through `beganAfterKnownObservationGap` and through the ride peak's partial continuity.
 
@@ -54,9 +61,9 @@ An initial recovery gap before the first accepted benchmark packet cannot be rep
 
 The ride session therefore also keeps `foreignSourceCallbackCount`.
 
-Any nonzero foreign-source callback count is an unconditional `foreignSourceTraffic` readiness failure, even if the caller's generic `maximumRejectedSampleFraction` would otherwise pass the benchmark.
+Any callback from a source other than the session's selected source increments that count, including a motion-assist estimate. Any nonzero count is an unconditional `foreignSourceTraffic` readiness failure, even if the caller's generic `maximumRejectedSampleFraction` would otherwise pass the benchmark.
 
-This prevents a permissive quality policy from silently authorizing a mixed-source peak.
+This prevents a permissive quality policy from silently authorizing a mixed-source peak or making display-assist estimates disappear from the evidence trail.
 
 ## Feature-level observed-peak quality policy
 
@@ -123,14 +130,19 @@ After #185 merges:
 
 Focused Swift 6.2.1 warnings-as-errors debug and release harnesses pass against the #185 benchmark-continuity contract plus the merged ride-bound peak contract.
 
+The latest focused run passes **18/18 tests in debug and 18/18 in release** across same-ride readiness, feature-policy, source/interruption edge cases, and durable peak corruption checks.
+
 Covered behavior includes:
 
 - clean same-ride BLE peak + benchmark qualification under explicit complete policy;
-- large known observation gap excluded from benchmark intervals while peak becomes partial;
+- large known selected-source gap excluded from benchmark intervals while peak becomes partial;
+- application lifecycle interruption reaching both evidence pipelines;
 - initial recovery gap remaining disqualifying even though the benchmark begins with a clean first segment;
 - GPS peak-specific accuracy rejection remaining visible when raw benchmark quality itself is clean;
 - GPS quality policy requiring explicit latency evidence;
 - incomplete feature policies failing construction instead of silently using defaults;
-- foreign-source traffic failing peak readiness even under a permissive generic rejected-sample policy.
+- explicit quality-policy source mismatch failing assessment;
+- foreign-source traffic failing peak readiness even under a permissive generic rejected-sample policy;
+- motion-assist estimates remaining visible as foreign traffic and never becoming peak evidence.
 
 Software verification is not physical AOVOPRO ES80 validation.
