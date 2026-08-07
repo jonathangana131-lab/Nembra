@@ -35,11 +35,24 @@ A duration store must treat same-session replacement as a conflict. Replaying id
 
 This ordering intentionally prefers a temporarily missing optional duration attachment over a corrupted or mismatched history metric. It does not yet solve how an app process durably carries in-flight duration evidence across the completion handoff; that remains an integration responsibility for the root ride lifecycle/persistence layer.
 
+## Trusted statistics bridge
+
+`RideDurationStatisticsRide` deliberately keeps its independent completed-ride + duration constructor package-scoped so app code cannot bypass the cross-record trust boundary. `RideHistoryDurationStatisticsAdapter.swift` supplies the production bridge from `RideHistoryDurationJoinedRecord`, which has already revalidated session identity and continuity.
+
+The bridge preserves the existing statistics semantics exactly:
+
+- observed duration comes only from `CompletedRideDurationEvidence`;
+- unavailable duration remains unavailable rather than becoming zero;
+- partial recovered duration remains partial and never fills missing intervals;
+- the caller must still explicitly choose `.rideBegan` or `.rideEnded` calendar attribution for rides that cross a bucket boundary.
+
+This makes the durable history join usable by the existing duration-statistics domain without reopening a raw-record construction path.
+
 ## Parallel ownership boundary
 
 This slice is additive and does not modify `RideHistoryCommit.swift`, `RideApplicationStore.swift`, `RidePersistence.swift`, `AppBootstrap.swift`, Dashboard/Home views, the Xcode project, or global project-memory files. That avoids active ownership in the compact-history and ride-location lifecycle lanes.
 
-The next production step, after those owners are clear, is a concrete app persistence implementation for `RideHistoryDurationStore` plus completion-handoff wiring from the authoritative `RideDurationObservationOwner`. Only after that durable app join exists should Ride Details/Home/Statistics display completed observed duration.
+The next production step, after those owners are clear, is a concrete app persistence implementation for `RideHistoryDurationStore` plus completion-handoff wiring from the authoritative `RideDurationObservationOwner`. Only after that durable app storage/handoff exists should Ride Details/Home/Statistics display completed observed duration; the statistics conversion boundary itself is now available once a validated joined record can be loaded.
 
 ## Truth boundary
 
