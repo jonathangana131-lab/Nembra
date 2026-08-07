@@ -1,29 +1,22 @@
 import Foundation
 
-/// Result of feeding one raw speed callback through the two evidence pipelines
-/// that must stay mechanically attached to the same ride session.
 public struct RideSpeedEvidenceRecordResult: Equatable, Sendable {
     public let peak: PeakSpeedRecordResult
     public let benchmark: TelemetryBenchmarkRecordResult
 
-    fileprivate init(
-        peak: PeakSpeedRecordResult,
-        benchmark: TelemetryBenchmarkRecordResult
-    ) {
+    fileprivate init(peak: PeakSpeedRecordResult, benchmark: TelemetryBenchmarkRecordResult) {
         self.peak = peak
         self.benchmark = benchmark
     }
 }
 
-/// Immutable same-ride snapshot of peak and raw-source quality evidence.
-///
-/// There is deliberately no public initializer. The snapshot can only be emitted
-/// by `RideSpeedEvidenceSessionAccumulator`, which feeds both collectors from the
-/// same callback/interruption stream and fixes both to one selected source.
 public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let beganAfterKnownObservationGap: Bool
+    /// Foreign authoritative callbacks are source-switch/mixing evidence. They
+    /// block peak reporting independently of a generic rejection-fraction policy.
+    public let foreignSourceCallbackCount: Int
     public let peakEvidence: RidePeakSpeedEvidence?
     public let telemetryBenchmark: TelemetryBenchmarkSummary
 
@@ -31,23 +24,20 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
         sessionID: UUID,
         source: SpeedTelemetrySource,
         beganAfterKnownObservationGap: Bool,
+        foreignSourceCallbackCount: Int,
         peakEvidence: RidePeakSpeedEvidence?,
         telemetryBenchmark: TelemetryBenchmarkSummary
     ) {
         self.sessionID = sessionID
         self.source = source
         self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+        self.foreignSourceCallbackCount = foreignSourceCallbackCount
         self.peakEvidence = peakEvidence
         self.telemetryBenchmark = telemetryBenchmark
     }
 }
 
-/// Owns peak-speed and raw telemetry-quality accumulation for one immutable ride
-/// session and one authoritative source.
-///
-/// A caller cannot separately supply a peak from one ride and a benchmark from
-/// another. Every callback reaches both collectors in one method and every known
-/// observation interruption reaches both evidence pipelines in one method.
+/// Owns peak and raw telemetry-quality evidence for one immutable ride/source.
 public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
@@ -55,6 +45,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
 
     private var peakAccumulator: RidePeakSpeedEvidenceAccumulator
     private var benchmarkCollector: TelemetryBenchmarkCollector
+    private var foreignSourceCallbackCount = 0
 
     public init(
         sessionID: UUID,
@@ -74,21 +65,21 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
 
     @discardableResult
     public mutating func record(_ sample: SpeedTelemetrySample) -> RideSpeedEvidenceRecordResult {
-        // Benchmark first so its source-arrival evidence is independent of a
-        // peak-specific GPS accuracy gate. Both still receive the exact callback.
+        // Benchmark first so raw source-arrival evidence is independent of a
+        // peak-specific GPS accuracy gate. Both receive the exact callback.
         let benchmarkResult = benchmarkCollector.record(sample)
         let peakResult = peakAccumulator.record(sample)
-        return RideSpeedEvidenceRecordResult(
-            peak: peakResult,
-            benchmark: benchmarkResult
-        )
+
+        if case .rejected(.sourceMismatch) = benchmarkResult {
+            foreignSourceCallbackCount += 1
+        }
+
+        return RideSpeedEvidenceRecordResult(peak: peakResult, benchmark: benchmarkResult)
     }
 
-    /// Records one known selected-source observation break in both pipelines.
-    ///
-    /// The benchmark dependency deliberately starts a new segment only after it
-    /// has accepted evidence; an initial pre-observation recovery gap is instead
-    /// preserved by `beganAfterKnownObservationGap` and by the peak accumulator.
+    /// The benchmark starts a new segment only after accepted evidence; an
+    /// initial pre-observation recovery gap is separately retained by the ride
+    /// peak accumulator and `beganAfterKnownObservationGap`.
     public mutating func recordInterruption(_ interruption: PeakSpeedInterruption) {
         peakAccumulator.recordInterruption(interruption)
         benchmarkCollector.markKnownObservationInterruption()
@@ -99,6 +90,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
             sessionID: sessionID,
             source: source,
             beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            foreignSourceCallbackCount: foreignSourceCallbackCount,
             peakEvidence: peakAccumulator.evidence,
             telemetryBenchmark: benchmarkCollector.summary
         )
@@ -118,14 +110,9 @@ public enum RideObservedPeakQualityPolicyError: Error, Equatable, Sendable {
 }
 
 /// Feature-level requirements for deciding whether a same-ride observed peak is
-/// strong enough to be reportable.
-///
-/// This type chooses **no numeric thresholds**. It only requires the caller to
-/// supply explicit thresholds for the evidence dimensions a peak-speed feature
-/// must not silently ignore: rejection rate, cadence, worst observed interval,
-/// jitter and empirical speed resolution. GPS additionally requires explicit
-/// delivery-latency coverage and latency limits because Core Location supplies a
-/// measurement timestamp that can support that check.
+/// strong enough to report. This type chooses no numeric thresholds; it only
+/// requires callers to provide the evidence dimensions peak reporting cannot
+/// silently ignore.
 public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
     public let telemetry: SpeedTelemetryQualityPolicy
 
@@ -168,20 +155,15 @@ public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
 
 public enum RideObservedPeakReadinessFailure: Equatable, Sendable {
     case peakUnavailable
-    case selectedSourceMismatch(
-        peak: SpeedTelemetrySource,
-        benchmark: SpeedTelemetrySource
-    )
+    case selectedSourceMismatch(peak: SpeedTelemetrySource, benchmark: SpeedTelemetrySource)
+    case foreignSourceTraffic(callbackCount: Int)
     case partialPeakObservation
     case gpsPeakAccuracyPolicyUnavailable
     case telemetryQualityFailed([SpeedTelemetryQualityFailure])
 }
 
-/// Same-ride decision evidence for whether Nembra may report an observed peak.
-///
-/// `isReady` means the supplied software evidence satisfies the supplied feature
-/// policy. It does **not** mean the policy thresholds themselves have been
-/// physically validated for the AOVOPRO ES80.
+/// `isReady` means software evidence satisfies the caller-supplied feature
+/// policy. It does not mean those thresholds are physically validated for ES80.
 public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
@@ -189,9 +171,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let telemetryQuality: SpeedTelemetryQualityAssessment
     public let failures: [RideObservedPeakReadinessFailure]
 
-    public var isReady: Bool {
-        failures.isEmpty
-    }
+    public var isReady: Bool { failures.isEmpty }
 
     fileprivate init(
         sessionID: UUID,
@@ -209,13 +189,8 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
 }
 
 public extension RideSpeedEvidenceSessionSnapshot {
-    /// Evaluates a reportable observed peak using evidence collected from this
-    /// exact ride/source session.
-    ///
-    /// The benchmark quality check cannot repair partial peak observation. A
-    /// source may have excellent cadence while the ride still contains a known
-    /// transport/app gap or a peak-specific quality rejection; that remains a
-    /// separate failure.
+    /// Benchmark quality cannot repair a partial peak observation. Foreign-source
+    /// traffic also fails independently of the caller's generic rejection limit.
     func observedPeakReadiness(
         using policy: RideObservedPeakQualityPolicy
     ) -> RideObservedPeakReadiness {
@@ -229,17 +204,19 @@ public extension RideSpeedEvidenceSessionSnapshot {
                     benchmark: telemetryBenchmark.source
                 ))
             }
-
             if peakEvidence.peakEvidence.continuity != .noRecordedSelectedSourceEvidenceLoss {
                 failures.append(.partialPeakObservation)
             }
-
             if peakEvidence.policy.source == .gps,
                peakEvidence.policy.maximumSpeedAccuracyMetersPerSecond == nil {
                 failures.append(.gpsPeakAccuracyPolicyUnavailable)
             }
         } else {
             failures.append(.peakUnavailable)
+        }
+
+        if foreignSourceCallbackCount > 0 {
+            failures.append(.foreignSourceTraffic(callbackCount: foreignSourceCallbackCount))
         }
 
         if !telemetryQuality.isQualified {
