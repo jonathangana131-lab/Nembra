@@ -164,7 +164,7 @@ final class RideLocationCaptureTests: XCTestCase {
         let container = try RidePersistenceFactory.makeRouteContainer(storeURL: routeURL)
         let routeStore = SwiftDataRideRouteStore(modelContainer: container)
         let source = TestRideLocationSource()
-        let admission = LocationAdmissionSequence(decisions: [true, true, false])
+        let admission = LocationAdmissionSequence(decisions: [true, true, false, true])
         let sessionID = UUID()
 
         let coordinator = try RideLocationCaptureCoordinator(
@@ -200,26 +200,38 @@ final class RideLocationCaptureTests: XCTestCase {
             uptime: 3_000_000_000,
             dateOffset: 2
         )))
+        await source.emit(event(sample: try sample(
+            latitude: 45.638970,
+            longitude: -122.661500,
+            uptime: 4_000_000_000,
+            dateOffset: 3
+        )))
 
         let summary = try await coordinator.finish()
         let manifest = try XCTUnwrap(summary.routeManifest)
-        XCTAssertEqual(summary.acceptedPointCount, 2)
+        XCTAssertEqual(summary.acceptedPointCount, 3)
         XCTAssertGreaterThan(summary.qualityScreenedDistanceMeters, 9)
         XCTAssertLessThan(summary.qualityScreenedDistanceMeters, 11)
-        XCTAssertEqual(manifest.pointCount, 2)
+        XCTAssertEqual(manifest.coverage, .partial)
+        XCTAssertEqual(manifest.segmentCount, 2)
+        XCTAssertEqual(manifest.pointCount, 3)
+        XCTAssertEqual(manifest.knownGapCount, 1)
 
         let loadedGeometry = try await routeStore.geometry(sessionID: sessionID)
         let geometry = try XCTUnwrap(loadedGeometry)
-        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments.count, 2)
         XCTAssertEqual(geometry.segments[0].points.count, 2)
+        XCTAssertEqual(geometry.segments[1].points.count, 1)
         XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+        XCTAssertEqual(geometry.segments[1].points.map(\.sequence), [2])
 
         let calls = await admission.values()
-        XCTAssertEqual(calls.count, 3)
-        XCTAssertEqual(calls.map(\.sessionID), [sessionID, sessionID, sessionID])
+        XCTAssertEqual(calls.count, 4)
+        XCTAssertEqual(calls.map(\.sessionID), [sessionID, sessionID, sessionID, sessionID])
         XCTAssertNil(calls[0].meters)
         XCTAssertNotNil(calls[1].meters)
         XCTAssertNotNil(calls[2].meters)
+        XCTAssertNil(calls[3].meters, "Rejected evidence must break continuity before the next admitted point.")
     }
 
     func testCoordinatorCanBeReusedWithoutLeakingPreviousSessionState() async throws {
@@ -506,6 +518,16 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertEqual(evidence.sessionID, sessionID)
         let historyBeforeRetry = try await persistence.historyStore.record(sessionID: sessionID)
         XCTAssertNil(historyBeforeRetry)
+
+        let lateAnchorAdmitted = await rideStore.admitQualityScreenedLocationEvidence(
+            distanceDeltaMeters: nil,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            for: sessionID
+        )
+        XCTAssertFalse(
+            lateAnchorAdmitted,
+            "Even a zero-distance anchor must observe completedPendingCommit before route admission."
+        )
 
         rideStore.setRideCompletionBarrier { _ in }
         await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
