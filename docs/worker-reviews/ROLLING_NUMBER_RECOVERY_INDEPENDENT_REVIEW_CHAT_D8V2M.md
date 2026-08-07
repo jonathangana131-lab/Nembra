@@ -17,12 +17,13 @@ This worker owns **no product/source/test/workflow path** in PR #95. Incumbent `
 
 This file is a worker-specific Class-C durable checkpoint on the isolated lease branch only. It is not a substitute for the v7 control-issue message bus; the normal control claim/review should be posted when GitHub comment creation accepts writes again.
 
-## Review target
+## Review target / isolation
 
 - PR: #95
 - reviewed head: `e675fb995bde98f1718ed31624253f648beb547c`
+- exact PR changed-file inventory: the three incumbent paths listed above, no fourth path
 - live main at latest refresh: `8dcf1459bd9152a94d6616fe1597e4a835a4972a`
-- main movement after the PR candidate: merged route-evidence summary #74 only; changed paths are additive route-summary source/test/doc and do not overlap rolling-number paths.
+- `60d8ecc... -> 8dcf145...` main movement changes exactly three additive route-summary paths (`RideRouteEvidenceSummary.swift`, its test, and its doc), with zero rolling-number overlap.
 
 ## Source/API review result
 
@@ -37,6 +38,7 @@ Checked boundaries:
 - Transition work remains bounded to fixed digit-slot count, with roll steps in `0...9` and direction based only on display-scaled ordering.
 - Live Dashboard still consumes `snapshot(for:)`; the new exact-integer overload is additive and does not silently alter current speed behavior.
 - Adjacent PR #33 explicitly leaves `RollingSpeedValueView` and `RollingNumberModel` untouched, so no current same-path integration collision was found.
+- Current battery-primary-readout PR #57 does not reference `RollingNumberModel`; it explicitly defers final integer battery-roll animation, so #95 does not create a hidden immediate parent/API dependency there.
 
 ## Independent supplemental verification
 
@@ -48,14 +50,23 @@ A standalone Swift 6.2.1 mirror of the exact rolling-number algorithm passed **1
 - transition direction and bounded roll steps;
 - largest 15-slot boundary cases.
 
-Supplemental software evidence only; this is not repository Xcode, Simulator artifact, or physical-device proof.
+A second old-vs-new Swift 6.2.1 boundary harness passed **294 / 294 comparisons with zero behavior differences** across:
+
+- `.5` scaled rounding thresholds plus adjacent `nextDown` / `nextUp` values;
+- exact and adjacent capacity values;
+- zero / negative-zero / tiny positive and negative inputs;
+- negative values;
+- positive/negative infinity and NaN;
+- representative 15-slot and fractional layouts.
+
+These are supplemental software checks only; they are not repository Xcode, Simulator artifact, or physical-device proof.
 
 ## CI truth
 
 Exact-final-head workflow run `31136468286` targets `e675fb995...`.
 
 - trusted same-repo resolver job `92736839496`: success
-- Xcode 27 build/test/capture job `92736860915`: queued at latest inspection
+- Xcode 27 build/test/capture job `92736860915`: queued at latest meaningful inspection
 
 Therefore source review is clean but **merge acceptance is not yet green**.
 
