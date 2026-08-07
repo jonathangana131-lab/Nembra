@@ -43,6 +43,18 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
         )
     }
 
+    private func singleWindowModelJSON() throws -> [String: Any] {
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(
+            try window(startPercentage: 100, endPercentage: 90, startUptime: 1, endUptime: 2),
+            policy: try policy()
+        )
+        #expect(result.disposition == .accepted)
+        return try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(model)) as? [String: Any]
+        )
+    }
+
     @Test("valid multi-window evidence still round-trips with aggregate validation")
     func validMultiWindowEvidenceRoundTrip() throws {
         var model = AdaptiveBatteryRangeModel()
@@ -64,5 +76,27 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
         let data = try JSONEncoder().encode(model)
         let decoded = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
         #expect(decoded == model)
+    }
+
+    @Test("restore rejects historical consumption impossible for accepted window count")
+    func historicalConsumptionCannotExceedHundredPerWindow() throws {
+        var object = try singleWindowModelJSON()
+        object["historicalConsumedPercentagePoints"] = 101.0
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
+        }
+    }
+
+    @Test("restore accepts the normalized upper bound for one window")
+    func oneWindowHundredPointUpperBoundIsValid() throws {
+        var object = try singleWindowModelJSON()
+        object["historicalConsumedPercentagePoints"] = 100.0
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
+        #expect(decoded.historicalConsumedPercentagePoints == 100)
+        #expect(decoded.acceptedWindowCount == 1)
     }
 }
