@@ -1,0 +1,35 @@
+name: ES80 Capture Syntax Preflight
+
+on:
+  push:
+    branches:
+      - 'ci/es80-solicited-syntax-*'
+
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    name: Parse passive capture Swift sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify immutable checkout
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "expected=$GITHUB_SHA"
+          echo "actual=$actual_sha"
+          test "$actual_sha" = "$GITHUB_SHA"
+
+      - name: Swift parser preflight
+        run: |
+          set -euo pipefail
+          swift --version
+          find Packages/NembraBluetoothCapture/Sources Packages/NembraBluetoothCapture/Tests \
+            -name '*.swift' -print0 \
+            | xargs -0 -n1 swiftc -frontend -parse
