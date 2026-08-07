@@ -156,13 +156,13 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             throw NavigationArrivalEvidenceError.nonMonotonicObservation
         }
 
-        lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
-
         if case .arrived = state {
+            lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
             return .alreadyArrived
         }
 
         guard qualification else {
+            lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
             state = .awaitingEvidence(token: selectedToken)
             return .awaitingEvidence
         }
@@ -198,6 +198,8 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         let sustainedDuration =
             candidate.latestQualifyingObservationUptimeNanoseconds -
             candidate.firstQualifyingObservationUptimeNanoseconds
+
+        lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
 
         guard candidate.qualifyingObservationCount >= policy.minimumQualifyingObservationCount,
               sustainedDuration >= policy.minimumSustainedDurationNanoseconds else {
