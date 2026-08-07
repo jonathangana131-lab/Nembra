@@ -351,9 +351,10 @@ enum AppBootstrap {
                     qualityPolicy: policy,
                     routeStore: persistence.routeStore,
                     routeChunkSize: 2,
-                    sessionScopedDistanceSink: { [weak rideStore] sessionID, meters, uptime in
-                        await rideStore?.ingestQualityScreenedGPSDistanceDelta(
-                            meters,
+                    sessionScopedEvidenceAdmissionSink: { [weak rideStore] sessionID, meters, uptime in
+                        guard let rideStore else { return false }
+                        return await rideStore.admitQualityScreenedLocationEvidence(
+                            distanceDeltaMeters: meters,
                             receivedAtUptimeNanoseconds: uptime,
                             for: sessionID
                         )
