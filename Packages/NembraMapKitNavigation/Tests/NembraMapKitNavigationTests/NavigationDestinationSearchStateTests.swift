@@ -44,13 +44,25 @@ struct NavigationDestinationSearchStateTests {
         #expect(!request.resultTypes.contains(.physicalFeature))
     }
 
-    @Test("blank queries and empty result types fail closed")
+    @Test("blank queries and invalid result types fail closed")
     func invalidRequestRejected() {
         #expect(throws: NavigationDestinationSearchDomainError.invalidQuery) {
             try NavigationDestinationSearchRequest(query: " \n\t ")
         }
         #expect(throws: NavigationDestinationSearchDomainError.invalidResultTypes) {
             try NavigationDestinationSearchRequest(query: "coffee", resultTypes: [])
+        }
+
+        let unknownBit = NavigationDestinationSearchResultTypes(rawValue: UInt8(1 << 7))
+        #expect(throws: NavigationDestinationSearchDomainError.invalidResultTypes) {
+            try NavigationDestinationSearchRequest(query: "coffee", resultTypes: unknownBit)
+        }
+
+        let knownAndUnknown = NavigationDestinationSearchResultTypes(
+            rawValue: NavigationDestinationSearchResultTypes.address.rawValue | UInt8(1 << 7)
+        )
+        #expect(throws: NavigationDestinationSearchDomainError.invalidResultTypes) {
+            try NavigationDestinationSearchRequest(query: "coffee", resultTypes: knownAndUnknown)
         }
     }
 
