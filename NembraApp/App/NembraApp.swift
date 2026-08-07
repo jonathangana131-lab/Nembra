@@ -6,7 +6,7 @@ import SwiftUI
 @main
 @MainActor
 struct NembraApp: App {
-    private enum LaunchMode {
+    private enum LaunchMode: Equatable {
         case standard
         case es80PassiveCapture
     }
