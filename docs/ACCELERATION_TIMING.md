@@ -26,8 +26,10 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only evidence that can
 - visual/interpolated Dashboard frames never enter the evaluator;
 - `motionAssist` short-horizon estimates cannot arm or advance a trace;
 - `requiredSource: .motionAssist` is rejected at policy construction;
-- the evaluator independently rejects `.motionAssist` regardless of decoded provenance as defense in depth, because the current upstream `SpeedTelemetrySample` synthesized `Codable` boundary can deserialize an impossible source/provenance pair without invoking its validating initializer;
-- this defense does not claim the normal live telemetry path currently emits malformed samples; upstream Codable validation remains the cleaner trust-boundary fix;
+- the evaluator independently rejects `.motionAssist` regardless of decoded provenance as defense in depth, so a malformed imported sample cannot become timing evidence even if it crosses a permissive persistence/import boundary;
+- when this recovery finding was identified, the upstream synthesized `Codable` boundary could deserialize an impossible source/provenance pair without invoking the validating initializer; upstream PR #99 separately owns revalidation of decoded `SpeedTelemetrySample` values through that initializer;
+- the acceleration regression is intentionally compatible with both safe states: a hardened decoder may reject the malformed pair before the evaluator sees it, while an older permissive decoder must still be contained by the evaluator's `.motionAssist` guard;
+- this defense does not claim the normal live telemetry path emits malformed samples, and the evaluator guard remains safe redundancy after upstream decoding is hardened;
 - a configured authoritative source can be required explicitly;
 - if no source is required, the first usable authoritative source becomes locked for that trace and a later source change invalidates it;
 - optional speed-accuracy gating is available for sources such as GPS;
@@ -199,7 +201,7 @@ The focused test matrix contains **21 deterministic tests across 2 suites** cove
 - retained timing-evidence count excluding superseded stationary anchors;
 - sparse immediate target observation;
 - ordinary motion-estimate rejection;
-- decoded impossible `.motionAssist + .absoluteMeasurement` defense-in-depth rejection;
+- malformed `.motionAssist + .absoluteMeasurement` evidence rejected either by a hardened imported-sample decoder or, on an older permissive boundary, by the evaluator's defense-in-depth guard;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
 - impossible `.motionAssist` authoritative required-source policy rejection;
