@@ -9,12 +9,22 @@ DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
+ACCESSIBILITY_CAPTURE="${NEMBRA_ACCESSIBILITY_CAPTURE:-0}"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf "$RESULT_BUNDLE"
+
+case "$ACCESSIBILITY_CAPTURE" in
+  0|1) ;;
+  *)
+    echo "NEMBRA_ACCESSIBILITY_CAPTURE must be 0 or 1, got: $ACCESSIBILITY_CAPTURE" >&2
+    exit 1
+    ;;
+esac
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
+  echo "accessibility_capture=$ACCESSIBILITY_CAPTURE"
   sw_vers
   xcodebuild -version
   xcrun simctl list runtimes
@@ -63,6 +73,48 @@ echo "simulator_udid=$UDID" >> "$ARTIFACTS_DIR/environment.txt"
 
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
+
+SIMCTL_UI_HELP="$ARTIFACTS_DIR/logs/simctl-ui-help.txt"
+set +e
+xcrun simctl help ui > "$SIMCTL_UI_HELP" 2>&1
+SIMCTL_UI_HELP_STATUS=$?
+set -e
+echo "simctl_ui_help_status=$SIMCTL_UI_HELP_STATUS" >> "$ARTIFACTS_DIR/environment.txt"
+
+simctl_ui_supports() {
+  local setting="$1"
+  [[ "$SIMCTL_UI_HELP_STATUS" -eq 0 ]] && \
+    grep -Eq "(^|[[:space:]])${setting}([[:space:]]|$)" "$SIMCTL_UI_HELP"
+}
+
+read_simctl_ui_setting() {
+  local setting="$1"
+  xcrun simctl ui "$UDID" "$setting" 2>/dev/null | tr -d '\r' | tail -n 1
+}
+
+record_simctl_ui_state() {
+  local output_path="$1"
+  {
+    echo "simctl_ui_help_status=$SIMCTL_UI_HELP_STATUS"
+    if simctl_ui_supports appearance; then
+      echo "appearance=$(read_simctl_ui_setting appearance || echo query-error)"
+    else
+      echo "appearance=unadvertised"
+    fi
+    if simctl_ui_supports increase_contrast; then
+      echo "increase_contrast=$(read_simctl_ui_setting increase_contrast || echo query-error)"
+    else
+      echo "increase_contrast=unadvertised"
+    fi
+    if simctl_ui_supports content_size; then
+      echo "content_size=$(read_simctl_ui_setting content_size || echo query-error)"
+    else
+      echo "content_size=unadvertised"
+    fi
+  } > "$output_path"
+}
+
+record_simctl_ui_state "$ARTIFACTS_DIR/logs/simctl-ui-state-before.txt"
 
 set +e
 set -o pipefail
@@ -123,13 +175,19 @@ xcrun simctl status_bar "$UDID" override \
 capture_state() {
   local state="$1"
   local appearance="${2:-light}"
+  local variant="${3:-}"
+  local artifact_key="${state}-${appearance}"
+  if [[ -n "$variant" ]]; then
+    artifact_key="${artifact_key}-${variant}"
+  fi
+
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
-      | tee "$ARTIFACTS_DIR/logs/launch-${state}-${appearance}.log"
+      | tee "$ARTIFACTS_DIR/logs/launch-${artifact_key}.log"
   )"
   pid="${launch_output##*: }"
   if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
@@ -139,16 +197,67 @@ capture_state() {
 
   sleep 2
   if ! kill -0 "$pid" >/dev/null 2>&1; then
-    echo "Nembra exited before ${state}/${appearance} screenshot capture." >&2
+    echo "Nembra exited before ${artifact_key} screenshot capture." >&2
     exit 6
   fi
 
-  screenshot_path="$ARTIFACTS_DIR/screenshots/${state}-${appearance}.png"
+  screenshot_path="$ARTIFACTS_DIR/screenshots/${artifact_key}.png"
   xcrun simctl io "$UDID" screenshot "$screenshot_path"
   if [[ ! -s "$screenshot_path" ]]; then
-    echo "Simulator screenshot was not created for ${state}/${appearance}." >&2
+    echo "Simulator screenshot was not created for ${artifact_key}." >&2
     exit 7
   fi
+}
+
+capture_increase_contrast_matrix() {
+  if ! simctl_ui_supports increase_contrast; then
+    echo "Accessibility capture requested, but this Xcode runner does not advertise simctl ui increase_contrast." >&2
+    exit 8
+  fi
+
+  local original_contrast applied_contrast restored_contrast
+  original_contrast="$(read_simctl_ui_setting increase_contrast || true)"
+  case "$original_contrast" in
+    enabled|disabled) ;;
+    *)
+      echo "Could not establish initial Increase Contrast state; got: ${original_contrast:-<empty>}" >&2
+      exit 8
+      ;;
+  esac
+
+  if ! xcrun simctl ui "$UDID" increase_contrast enabled \
+    > "$ARTIFACTS_DIR/logs/simctl-increase-contrast-set.log" 2>&1; then
+    echo "Runner advertises Increase Contrast but could not enable it; see simctl-increase-contrast-set.log." >&2
+    exit 8
+  fi
+  applied_contrast="$(read_simctl_ui_setting increase_contrast || true)"
+  if [[ "$applied_contrast" != "enabled" ]]; then
+    echo "Increase Contrast readback mismatch after enable: ${applied_contrast:-<empty>}" >&2
+    exit 8
+  fi
+
+  {
+    echo "requested=enabled"
+    echo "initial=$original_contrast"
+    echo "applied=$applied_contrast"
+  } > "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
+
+  capture_state connected-stopped light increase-contrast
+  capture_state reconnecting light increase-contrast
+  capture_state low-battery light increase-contrast
+  capture_state connected-stopped dark increase-contrast
+
+  if ! xcrun simctl ui "$UDID" increase_contrast "$original_contrast" \
+    >> "$ARTIFACTS_DIR/logs/simctl-increase-contrast-set.log" 2>&1; then
+    echo "Could not restore Increase Contrast to $original_contrast." >&2
+    exit 8
+  fi
+  restored_contrast="$(read_simctl_ui_setting increase_contrast || true)"
+  if [[ "$restored_contrast" != "$original_contrast" ]]; then
+    echo "Increase Contrast readback mismatch after restore: ${restored_contrast:-<empty>}" >&2
+    exit 8
+  fi
+  echo "restored=$restored_contrast" >> "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
 }
 
 for state in \
@@ -166,6 +275,11 @@ do
 done
 capture_state connected-stopped dark
 capture_state reconnecting dark
+
+if [[ "$ACCESSIBILITY_CAPTURE" == "1" ]]; then
+  capture_increase_contrast_matrix
+fi
+record_simctl_ui_state "$ARTIFACTS_DIR/logs/simctl-ui-state-after.txt"
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
