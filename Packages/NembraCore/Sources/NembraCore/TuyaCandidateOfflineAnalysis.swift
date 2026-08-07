@@ -8,6 +8,7 @@ public enum TuyaCandidateOfflineAnalysisError: Error, Equatable, Sendable {
     case emptyFragment
     case emptyReceiptSequenceScope
     case receiptSequenceScopeRequiresSequence
+    case receiptSequenceRequiresScope
     case malformedVarint
     case varintOverflow
     case firstFragmentRequired
@@ -62,19 +63,18 @@ public struct TuyaCandidateValueStreamIdentity: Hashable, Sendable {
 /// analysis. `continuityGeneration` must be advanced by the capture layer across
 /// any gap that breaks byte continuity; this analyzer never guesses recovery.
 ///
-/// `receiptSequenceNumber` is optional only for source compatibility with older
-/// transcript producers. When a capture layer has an immutable callback receipt
-/// sequence, callers should supply it. The reassembler then uses sequence as the
-/// callback-order authority and uptime as a nondecreasing monotonic clock, which
-/// permits distinct callbacks that legitimately share one clock tick without
-/// fabricating timestamp precision.
+/// Ordering has exactly two supported authority modes:
+/// - legacy uptime-only observations carry neither sequence field and preserve
+///   the original strict accepted-uptime behavior;
+/// - receipt-backed observations carry BOTH `receiptSequenceNumber` and the
+///   opaque `receiptSequenceScope` that owns that counter. Sequence is then the
+///   strict callback-order authority while uptime is nondecreasing clock metadata.
 ///
-/// `receiptSequenceScope` is an opaque identity for the counter epoch that owns a
-/// sequence (for example, Nembra passive capture's immutable session ID). A scope
-/// may only exist with a sequence. Generic/public-family callers may leave both
-/// fields nil, and existing sequence-only research callers remain supported, but
-/// a physical capture bridge should carry its real session/epoch scope so numeric
-/// sequence values from separate acquisitions can never be silently combined.
+/// A bare numeric sequence is intentionally rejected. Nembra passive capture
+/// scopes record sequence to one immutable capture-session ID, so permitting an
+/// unscoped integer here would make numerically similar callbacks from unrelated
+/// acquisitions falsely comparable. The scope is provenance only; it assigns no
+/// packet/DP/vehicle meaning.
 public struct TuyaCandidateFragmentObservation: Equatable, Sendable {
     public let streamIdentity: TuyaCandidateValueStreamIdentity
     public let continuityGeneration: UInt64
@@ -94,14 +94,20 @@ public struct TuyaCandidateFragmentObservation: Equatable, Sendable {
         guard !bytes.isEmpty else {
             throw TuyaCandidateOfflineAnalysisError.emptyFragment
         }
-        if let receiptSequenceScope {
-            guard receiptSequenceNumber != nil else {
-                throw TuyaCandidateOfflineAnalysisError.receiptSequenceScopeRequiresSequence
-            }
-            guard !receiptSequenceScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+
+        switch (receiptSequenceNumber, receiptSequenceScope) {
+        case (nil, nil):
+            break
+        case (nil, .some):
+            throw TuyaCandidateOfflineAnalysisError.receiptSequenceScopeRequiresSequence
+        case (.some, nil):
+            throw TuyaCandidateOfflineAnalysisError.receiptSequenceRequiresScope
+        case let (.some, .some(scope)):
+            guard !scope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw TuyaCandidateOfflineAnalysisError.emptyReceiptSequenceScope
             }
         }
+
         self.streamIdentity = streamIdentity
         self.continuityGeneration = continuityGeneration
         self.receiptUptimeNanoseconds = receiptUptimeNanoseconds
@@ -242,9 +248,9 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
         }
 
         // Commit message state only after all framing validation above succeeds.
-        // Sequence-backed receipt chronology is deliberately not rolled back by
-        // later framing rejection: one immutable callback cannot be rewritten as
-        // older evidence after it has already been seen.
+        // Receipt-backed chronology is deliberately not rolled back by later
+        // framing rejection: one immutable callback cannot be rewritten as older
+        // evidence after it has already been seen.
         if packetIndex == 0 {
             streamIdentity = observation.streamIdentity
             continuityGeneration = observation.continuityGeneration
@@ -284,17 +290,17 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
         )
     }
 
-    /// Sequence-backed capture receipts are the stronger ordering authority.
-    /// Their sequence watermark is consumed before later framing validation so a
-    /// rejected newer callback cannot be retried or followed by delayed older
-    /// evidence. Uptime remains a nondecreasing plausibility/clock constraint and
-    /// may legitimately be equal across distinct callbacks. Legacy observations
-    /// without a sequence preserve the original strict accepted-uptime behavior.
+    /// Receipt-backed capture observations are the stronger ordering authority.
+    /// Their scoped sequence watermark is consumed before later framing
+    /// validation so a rejected newer callback cannot be retried or followed by
+    /// delayed older evidence. Uptime remains a nondecreasing clock constraint
+    /// and may legitimately be equal across distinct callbacks. Legacy
+    /// observations without scoped sequence preserve strict accepted uptime.
     ///
-    /// When a sequence scope is supplied, it is part of the immutable ordering
-    /// authority. A different scope is rejected before sequence/time watermarks
-    /// mutate; numeric sequence values from another acquisition are therefore not
-    /// comparable merely because they happen to be larger.
+    /// Scope is part of the immutable ordering authority. A different scope is
+    /// rejected before sequence/time watermarks mutate; numeric sequence values
+    /// from another acquisition are never comparable merely because they are
+    /// larger.
     private mutating func admitReceiptChronology(
         _ observation: TuyaCandidateFragmentObservation
     ) throws {
