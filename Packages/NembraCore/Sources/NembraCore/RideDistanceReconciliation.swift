@@ -78,10 +78,12 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         self.transportGapOccurred = transportGapOccurred
     }
 
-    /// Bridges completed ride evidence with durable live-distance evidence only
-    /// when both values belong to the same ride session. A missing aggregate
-    /// remains unavailable rather than becoming fake zero distance.
-    public init(
+#if SWIFT_PACKAGE
+    /// Package-only bridge for deterministic core fixtures and future trusted
+    /// adapters. Matching session UUIDs reject obvious cross-session mixing but
+    /// do not prove that two independently constructible records are the exact
+    /// same immutable ride evidence, so this bridge must not be public API.
+    package init(
         completedRide: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
         gpsRouteCoverage: RideDistanceCoverage,
@@ -104,6 +106,35 @@ public struct RideDistanceEvidence: Equatable, Sendable {
             transportGapOccurred: transportGapOccurred
         )
     }
+#else
+    /// `RideDistanceReconciliation.swift` is also compiled directly into the
+    /// app target. There is no mechanically bound production adapter yet, so
+    /// keep this convenience composition file-owned rather than exposing a
+    /// same-module path that can pair independently constructed ride records.
+    fileprivate init(
+        completedRide: CompletedRideEvidence,
+        odometerCoverage: RideDistanceCoverage,
+        gpsRouteCoverage: RideDistanceCoverage,
+        liveDistanceAggregate: RideLiveDistanceAggregate?,
+        transportGapOccurred: Bool
+    ) throws {
+        if let liveDistanceAggregate,
+           liveDistanceAggregate.rideSessionID != completedRide.sessionID {
+            throw RideDistanceReconciliationError.invalidEvidence
+        }
+
+        try self.init(
+            startingOdometerKilometers: completedRide.startingOdometerKilometers,
+            endingOdometerKilometers: completedRide.endingOdometerKilometers,
+            odometerCoverage: odometerCoverage,
+            gpsRouteDistanceMeters: completedRide.qualityScreenedGPSDistanceMeters,
+            gpsRouteCoverage: gpsRouteCoverage,
+            liveIntegratedDistanceMeters: liveDistanceAggregate?.distanceMeters,
+            liveIntegratedCoverage: liveDistanceAggregate?.coverage ?? .unknown,
+            transportGapOccurred: transportGapOccurred
+        )
+    }
+#endif
 
     public var scooterOdometerDeltaMeters: Double? {
         guard let start = startingOdometerKilometers,
