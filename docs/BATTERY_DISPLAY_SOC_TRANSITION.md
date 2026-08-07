@@ -26,6 +26,8 @@ Intermediate frames are visual-only. They must never be:
 
 An unavailable or invalid target clears the readout rather than animating toward zero. `0%` remains valid only when zero is actually supplied as the target display value.
 
+The transition/frame types are intentionally not `Codable`; NembraCore does not provide a default persistence path for visual intermediate frames.
+
 ## Interruption behavior
 
 The planner is intentionally stateless. If a new battery target arrives while an animation is partway through, the UI can plan again from the integer currently being rendered. This prevents a stale transition queue from having to finish before a newer display target can take over.
@@ -37,6 +39,7 @@ The planner produces at most 100 frames because normalized display SoC is restri
 The planner describes a truth-preserving path, not an obligation to spatially animate every frame. The SwiftUI presentation layer owns pacing and accessibility policy.
 
 - With normal motion enabled, percentage text and battery fill should advance from the same selected frame so they cannot visually disagree about the displayed SoC.
+- If the primary numeric readout is estimated range, SoC frames remain charge/fill presentation state; they must never be used to roll or synthesize the numeric range value.
 - With Reduce Motion enabled, the UI may snap or use a restrained non-spatial transition directly to the target display value instead of traversing every intermediate integer on screen.
 - VoiceOver should announce the current authoritative/selected battery readout target, not transient `presentationIntermediate` frames.
 - If a newer target arrives mid-transition, cancel/replan from the currently rendered integer; do not force a stale queue to finish first.
@@ -64,11 +67,12 @@ Focused deterministic Swift 6.2.1 tests cover:
 - unchanged values;
 - unknown/invalid current display values;
 - unknown/invalid target display values;
+- extreme invalid `Int.min` / `Int.max` endpoints failing closed before arithmetic;
 - valid `0%` and `100%` boundaries;
 - the bounded `100 -> 0` full-scale correction;
 - interruption/replanning from the currently rendered integer;
 - every changed valid `0...100` endpoint pair, exhaustively checking bounded sequential frames and final target-role termination.
 
-The focused harness passes 10/10 tests in both debug and release configurations after co-location into `BatteryPrimaryReadoutState.swift`.
+The transition suite passes 11/11 tests in both debug and release configurations. The combined exact-source-shape `BatteryPrimaryReadoutState` + transition harness passes 23/23 tests in both configurations with warnings treated as errors.
 
 This is software presentation behavior only. It does not verify any physical AOVOPRO ES80 battery source, resolution, cadence, voltage behavior, charging semantics, or Tuya data point.
