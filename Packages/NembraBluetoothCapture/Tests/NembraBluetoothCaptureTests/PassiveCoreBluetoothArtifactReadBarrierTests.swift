@@ -19,6 +19,47 @@ struct PassiveCoreBluetoothArtifactReadBarrierTests {
     }
 
     @Test
+    func queuePolicyExcludesPostCutEventUntilArtifactReadEndsThenDrainsItExactlyOnce() throws {
+        var barrier = PassiveCoreBluetoothArtifactReadBarrier()
+        var pending = [10]
+        var recorded: [Int] = []
+
+        try barrier.begin(through: 10)
+        let firstUpperBound = try #require(
+            barrier.permittedDrainUpperBound(
+                firstPending: UInt64(try #require(pending.first)),
+                pendingTail: UInt64(try #require(pending.last))
+            )
+        )
+        recorded.append(contentsOf: pending.filter { UInt64($0) <= firstUpperBound })
+        pending.removeAll { UInt64($0) <= firstUpperBound }
+
+        // N+1 arrives after the immutable artifact cut while the read is active.
+        pending.append(11)
+        #expect(
+            barrier.permittedDrainUpperBound(
+                firstPending: 11,
+                pendingTail: 11
+            ) == nil
+        )
+        #expect(recorded == [10])
+        #expect(pending == [11])
+
+        barrier.end()
+        let resumedUpperBound = try #require(
+            barrier.permittedDrainUpperBound(
+                firstPending: UInt64(try #require(pending.first)),
+                pendingTail: UInt64(try #require(pending.last))
+            )
+        )
+        recorded.append(contentsOf: pending.filter { UInt64($0) <= resumedUpperBound })
+        pending.removeAll { UInt64($0) <= resumedUpperBound }
+
+        #expect(recorded == [10, 11])
+        #expect(pending.isEmpty)
+    }
+
+    @Test
     func overlappingArtifactReadFailsClosedWithoutMovingFirstWatermark() throws {
         var barrier = PassiveCoreBluetoothArtifactReadBarrier()
         try barrier.begin(through: 7)
@@ -39,6 +80,7 @@ struct PassiveCoreBluetoothArtifactReadBarrierTests {
         #expect(barrier.isActive)
         #expect(barrier.watermark == 0)
         #expect(barrier.drainUpperBound(pendingTail: 1) == 0)
+        #expect(barrier.permittedDrainUpperBound(firstPending: 1, pendingTail: 1) == nil)
     }
 
     @Test
@@ -47,5 +89,6 @@ struct PassiveCoreBluetoothArtifactReadBarrierTests {
 
         try barrier.begin(through: 50)
         #expect(barrier.drainUpperBound(pendingTail: 12) == 12)
+        #expect(barrier.permittedDrainUpperBound(firstPending: 10, pendingTail: 12) == 12)
     }
 }
