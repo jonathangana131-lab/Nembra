@@ -21,15 +21,30 @@ This is a numerical estimate from raw measurements. It is **not** the dashboard'
 
 No interval is integrated until two valid endpoints exist. A single sample is only an anchor, so "no evidence yet" remains distinct from a measured zero-meter interval.
 
+## Chronology and accepted anchors are separate truth
+
+A selected authoritative callback has two distinct roles:
+
+1. its monotonic uptime establishes where that callback belongs in the immutable measurement stream;
+2. only numerically usable evidence may become an integration anchor or add distance.
+
+Those roles must not be collapsed. If a fresh selected-authoritative callback is numerically unusable, Nembra still consumes its chronology. A delayed or replayed callback with an older/equal uptime cannot become fresh merely because the newer callback failed distance arithmetic.
+
+The numeric rejection does not rewrite the last accepted anchor, accepted sample count, or already integrated distance. It **does** establish a real coverage interruption. The next usable selected-authoritative callback therefore re-anchors after that interruption rather than integrating from the older accepted anchor through the rejected observation.
+
+A finalized segment also cannot end before the newest selected-authoritative callback already consumed by the accumulator, even when that callback was rejected numerically.
+
 ## Gaps are not crossed optimistically
 
 The policy supplies `maximumIntegrationIntervalNanoseconds`.
 
-- interval <= threshold: integrate it;
+- interval <= threshold with uninterrupted usable evidence: integrate it;
 - interval > threshold: do not add distance across it, mark a known gap, and use the newer sample only as the next anchor;
+- a numerically rejected selected-authoritative observation marks a known gap, and the next usable sample becomes a fresh anchor without crossing that gap;
 - a first sample after the declared segment start creates a leading gap;
-- a segment finalized after its last raw sample creates a trailing gap;
-- out-of-order/repeated timestamps, wrong sources, pre-segment samples, and numeric overflow are rejected transactionally.
+- a segment finalized after its last raw usable sample creates a trailing gap unless a numeric-rejection interruption already represents that same contiguous missing interval;
+- out-of-order/repeated timestamps, wrong sources, and pre-segment samples are rejected without gaining selected-stream chronology;
+- numeric overflow is rejected as distance evidence while still consuming selected-stream chronology and preserving its coverage gap.
 
 A known gap can make finalized coverage `partial`, but Nembra does not invent what happened inside it. Scooter ODO/reconciliation may later recover provable vehicle mileage while the missing path/speed trace remains unknown.
 
