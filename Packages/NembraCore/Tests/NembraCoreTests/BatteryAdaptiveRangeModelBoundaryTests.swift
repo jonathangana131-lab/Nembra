@@ -194,8 +194,8 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
-    @Test("stricter model policy can reject an emitted candidate without reopening its span")
-    func modelPolicyRaceDoesNotReplayRejectedSpan() throws {
+    @Test("stricter model SoC policy can reject an emitted candidate without reopening its span")
+    func modelSOCPolicyRaceDoesNotReplayRejectedSpan() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         var model = AdaptiveBatteryRangeModel()
         let assemblyPolicy = try policy(
@@ -246,6 +246,58 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
+    @Test("stricter model distance policy can reject an emitted candidate without reopening its span")
+    func modelDistancePolicyRaceDoesNotReplayRejectedSpan() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+        let assemblyPolicy = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 300
+        )
+        let stricterModelPolicy = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 400
+        )
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 1),
+            policy: assemblyPolicy
+        )
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+
+        let looseResult = try pipeline.acceptBatteryObservation(
+            observation(77, uptime: 2),
+            policy: assemblyPolicy
+        )
+        let looseWindow = try #require(looseResult.candidateLearningWindow)
+        let before = model
+        let rejected = model.ingest(looseWindow, policy: stricterModelPolicy)
+
+        #expect(looseWindow.startSOC.percentage == 80)
+        #expect(looseWindow.endSOC.percentage == 77)
+        #expect(looseWindow.distanceMeters == 300)
+        #expect(rejected.disposition == .rejected(.insufficientDistance))
+        #expect(rejected.sample == nil)
+        #expect(model == before)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        try pipeline.recordDistance(deltaMeters: 400, coverage: .complete)
+        let cleanResult = try pipeline.acceptBatteryObservation(
+            observation(74, uptime: 3),
+            policy: assemblyPolicy
+        )
+        let cleanWindow = try #require(cleanResult.candidateLearningWindow)
+        let accepted = model.ingest(cleanWindow, policy: stricterModelPolicy)
+
+        #expect(cleanWindow.startSOC.percentage == 77)
+        #expect(cleanWindow.endSOC.percentage == 74)
+        #expect(cleanWindow.distanceMeters == 400)
+        #expect(accepted.disposition == .accepted)
+        #expect(accepted.sample?.metersPerPercentagePoint == (400.0 / 3.0))
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("model outlier rejection never replays the emitted assembler span")
     func rejectedOutlierSpanIsNotReplayed() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
@@ -270,8 +322,6 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
-        // 900 m / 3 percentage points = 300 m/%: 3x the learned 100 m/%
-        // baseline, above the policy's 2.5x outlier ceiling.
         try pipeline.recordDistance(deltaMeters: 900, coverage: .complete)
         let outlierResult = try pipeline.acceptBatteryObservation(
             observation(74, uptime: 3),
@@ -288,9 +338,6 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(rejected.disposition == .rejected(.efficiencyOutlier))
         #expect(rejected.sample == nil)
         #expect(model == beforeOutlier)
-
-        // The assembler closed the rejected span at 74% before model acceptance.
-        // Its 900 m must never be replayed into the next clean window.
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 74)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 74)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
