@@ -11,7 +11,7 @@ The gauge is **propulsion / power**, not throttle. Measured electrical output do
 `PropulsionPowerSample` is an accepted observation. `PropulsionGaugeFrame` is a render-only frame.
 
 Accepted samples carry:
-- exact vehicle/mode presentation identity;
+- exact validated vehicle/mode presentation identity;
 - nonnegative finite watts;
 - source-owned receipt sequence/order;
 - receive uptime;
@@ -30,9 +30,9 @@ The display model uses a retargetable critically damped step response. Rise and 
 
 ## Identity boundary
 
-`PropulsionGaugeIdentity` is a presentation key, not proof of physical scooter identity. Authority-bearing sample and scale factories require a non-empty/non-whitespace vehicle key, and any supplied mode key must also be non-empty/non-whitespace. This prevents placeholder identities from collapsing otherwise separate vehicle/mode evidence domains.
+`PropulsionGaugeIdentity` is a presentation key, not proof of physical scooter identity. Its public constructor rejects an empty/whitespace vehicle key and rejects a present empty/whitespace mode key. Custom `Codable` decoding routes through the same validation, so persisted/imported payloads cannot bypass the invariant. Authority-bearing sample and scale factories retain a second fail-closed structural check at their own boundary.
 
-The code still does not decide what the ES80's verified identity key should be. That remains a separate physical/session-identity responsibility.
+This prevents placeholder identities from collapsing otherwise separate vehicle/mode evidence domains while still preserving the exact opaque key bytes supplied by the verified identity owner. The code does not decide what the ES80's verified identity key should be; that remains a separate physical/session-identity responsibility.
 
 ## Gaps, stale data, and disconnects
 
