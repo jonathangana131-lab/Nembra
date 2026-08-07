@@ -1,3 +1,5 @@
+import Foundation
+
 public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
     case invalidObservation
     case invalidStepIndex
@@ -5,10 +7,25 @@ public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
     case selectionSequenceExhausted
 }
 
+/// Opaque identity for one exact route selection.
+///
+/// `sequence` remains public as the ordering counter within one tracker generation.
+/// The internal tracker/selection UUIDs prevent two fresh trackers — or two copied
+/// tracker values that later diverge — from minting equal tokens at the same sequence.
+/// Consumers outside NembraCore should continue treating the full token as opaque
+/// equality identity instead of assuming sequences are globally ordered.
 public struct NavigationGuidanceSelectionToken: Equatable, Sendable {
     public let sequence: UInt64
+    let trackerGenerationID: UUID
+    let selectionID: UUID
 
-    fileprivate init(sequence: UInt64) {
+    fileprivate init(
+        trackerGenerationID: UUID,
+        selectionID: UUID,
+        sequence: UInt64
+    ) {
+        self.trackerGenerationID = trackerGenerationID
+        self.selectionID = selectionID
         self.sequence = sequence
     }
 }
@@ -82,8 +99,11 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
 /// Platform-neutral guidance-state reducer above route geometry matching.
 ///
 /// Selection tokens isolate route generations so late observations for a prior
-/// route cannot publish onto a newly selected route. Process-local monotonic
-/// uptime rejects re-ordered callbacks within the selected route generation.
+/// route cannot publish onto a newly selected route. Token identity includes a
+/// tracker-generation namespace and a fresh per-selection identity in addition
+/// to the sequence counter, so recreating or copying a tracker cannot accidentally
+/// reuse another route generation's token. Process-local monotonic uptime rejects
+/// re-ordered callbacks within the selected route generation.
 /// Once confident evidence advances to a later provider step, a newer match to
 /// an earlier step fails current progress closed instead of resurrecting an old
 /// maneuver. No meter-based backward-progress tolerance is guessed here; normal
@@ -92,16 +112,24 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
 /// mutate ride distance, or infer maneuver semantics from localized text.
 public struct NavigationGuidanceProgressTracker: Sendable {
     public private(set) var state: NavigationGuidanceProgressState = .idle
+    private let trackerGenerationID: UUID
     private var lastSelectionSequence: UInt64
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
     private var highestConfidentStepIndex: Int?
 
     public init() {
+        trackerGenerationID = UUID()
         lastSelectionSequence = 0
         highestConfidentStepIndex = nil
     }
 
-    init(initialSelectionSequence: UInt64) {
+    /// Internal deterministic construction supports exhaustion and identity tests
+    /// without turning tracker-generation identity into a public caller contract.
+    init(
+        initialSelectionSequence: UInt64,
+        trackerGenerationID: UUID = UUID()
+    ) {
+        self.trackerGenerationID = trackerGenerationID
         lastSelectionSequence = initialSelectionSequence
         highestConfidentStepIndex = nil
     }
@@ -110,12 +138,26 @@ public struct NavigationGuidanceProgressTracker: Sendable {
     public mutating func select(
         route: NavigationRouteSnapshot
     ) throws -> NavigationGuidanceSelectionToken {
+        try select(route: route, selectionID: UUID())
+    }
+
+    /// Internal deterministic selection identity keeps unit tests non-probabilistic
+    /// while production selections always mint a fresh UUID through the public API.
+    @discardableResult
+    mutating func select(
+        route: NavigationRouteSnapshot,
+        selectionID: UUID
+    ) throws -> NavigationGuidanceSelectionToken {
         guard lastSelectionSequence < UInt64.max else {
             throw NavigationGuidanceProgressError.selectionSequenceExhausted
         }
 
         lastSelectionSequence += 1
-        let token = NavigationGuidanceSelectionToken(sequence: lastSelectionSequence)
+        let token = NavigationGuidanceSelectionToken(
+            trackerGenerationID: trackerGenerationID,
+            selectionID: selectionID,
+            sequence: lastSelectionSequence
+        )
         lastAcceptedObservationUptimeNanoseconds = nil
         highestConfidentStepIndex = nil
         state = .unavailable(token: token, route: route, reason: .awaitingEvidence)
