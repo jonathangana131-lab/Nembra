@@ -68,7 +68,8 @@ struct AccelerationAttemptOwnerTests {
             )
         }
 
-        #expect(owner.interrupt(.operatorCancelled, for: first) == .applied(
+        let cancellation = owner.interrupt(.operatorCancelled, for: first)
+        #expect(cancellation == .applied(
             runState: .invalidated(.interruption(.operatorCancelled))
         ))
 
@@ -80,23 +81,32 @@ struct AccelerationAttemptOwnerTests {
         #expect(owner.currentGeneration == second)
     }
 
-    @Test("queued pre-attempt speed evidence cannot arm a fresh attempt")
-    func monotonicStartFenceRejectsPreAttemptSamples() throws {
+    @Test("queued evidence at or before the attempt fence cannot arm a fresh attempt")
+    func monotonicStartFenceRejectsAmbiguousSamples() throws {
         var owner = AccelerationAttemptOwner()
         let generation = try owner.begin(
             policy: policy(),
             startedAtUptimeNanoseconds: 1_000
         )
 
-        let queued = try sample(metersPerSecond: 0, uptimeNanoseconds: 999)
-        #expect(owner.record(queued, for: generation) == .ignoredBeforeAttemptStart(
+        let queuedBefore = try sample(metersPerSecond: 0, uptimeNanoseconds: 999)
+        let beforeResult = owner.record(queuedBefore, for: generation)
+        #expect(beforeResult == .ignoredAtOrBeforeAttemptStart(
             startedAt: 1_000,
             sampleAt: 999
         ))
+
+        let ambiguousEquality = try sample(metersPerSecond: 0, uptimeNanoseconds: 1_000)
+        let equalityResult = owner.record(ambiguousEquality, for: generation)
+        #expect(equalityResult == .ignoredAtOrBeforeAttemptStart(
+            startedAt: 1_000,
+            sampleAt: 1_000
+        ))
         #expect(owner.currentSnapshot?.evidence.runState == .waitingForStandstill)
 
-        let firstInAttempt = try sample(metersPerSecond: 0, uptimeNanoseconds: 1_000)
-        #expect(owner.record(firstInAttempt, for: generation) == .session(
+        let firstInAttempt = try sample(metersPerSecond: 0, uptimeNanoseconds: 1_001)
+        let firstResult = owner.record(firstInAttempt, for: generation)
+        #expect(firstResult == .session(
             .processed(runState: .armed(source: .scooterBluetooth))
         ))
     }
@@ -115,11 +125,14 @@ struct AccelerationAttemptOwnerTests {
         )
 
         let delayed = try sample(metersPerSecond: 0, uptimeNanoseconds: 3_000)
-        #expect(owner.record(delayed, for: first) == .ignoredStaleGeneration(
+        let delayedRecordResult = owner.record(delayed, for: first)
+        #expect(delayedRecordResult == .ignoredStaleGeneration(
             expected: second,
             actual: first
         ))
-        #expect(owner.interrupt(.vehicleConnectionLost, for: first) == .ignoredStaleGeneration(
+
+        let delayedInterruptionResult = owner.interrupt(.vehicleConnectionLost, for: first)
+        #expect(delayedInterruptionResult == .ignoredStaleGeneration(
             expected: second,
             actual: first
         ))
@@ -181,7 +194,8 @@ struct AccelerationAttemptOwnerTests {
         #expect(abs(result.stationaryToTargetObservationElapsedSeconds - 0.6) < 0.000_001)
 
         let later = try sample(metersPerSecond: 11, uptimeNanoseconds: 1_800_000_000)
-        #expect(owner.record(later, for: generation) == .session(.ignoredAfterTerminalEvidence))
+        let laterResult = owner.record(later, for: generation)
+        #expect(laterResult == .session(.ignoredAfterTerminalEvidence))
         #expect(owner.currentSnapshot == snapshot)
     }
 
@@ -203,10 +217,13 @@ struct AccelerationAttemptOwnerTests {
             speedAccuracyMetersPerSecond: 5,
             deliveryLatencyMilliseconds: 20
         )
-        #expect(owner.record(poorAccuracy, for: first) == .session(
+        let recordResult = owner.record(poorAccuracy, for: first)
+        #expect(recordResult == .session(
             .processed(runState: .waitingForStandstill)
         ))
-        #expect(owner.interrupt(.vehicleConnectionLost, for: first) == .applied(
+
+        let interruptionResult = owner.interrupt(.vehicleConnectionLost, for: first)
+        #expect(interruptionResult == .applied(
             runState: .waitingForStandstill
         ))
 
@@ -233,7 +250,8 @@ struct AccelerationAttemptOwnerTests {
         _ = owner.interrupt(.operatorCancelled, for: generation)
         let terminal = try #require(owner.currentSnapshot)
 
-        #expect(owner.interrupt(.applicationLifecycleInterrupted, for: generation) == .ignoredAfterTerminalEvidence)
+        let lateInterruption = owner.interrupt(.applicationLifecycleInterrupted, for: generation)
+        #expect(lateInterruption == .ignoredAfterTerminalEvidence)
         #expect(owner.currentSnapshot == terminal)
     }
 }
