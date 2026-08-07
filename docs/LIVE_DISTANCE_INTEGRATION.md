@@ -11,7 +11,7 @@ This layer turns one selected stream of raw absolute speed measurements into a p
 - a sample from a different absolute source is rejected rather than mixed into the same integration sequence;
 - `SpeedDisplayFrame` / rolling-number output is a separate render layer and cannot enter this API.
 
-There is deliberately no production MAXSHOT source or packet-gap threshold yet. Real BLE cadence/jitter traces must calibrate that policy.
+There is deliberately no production AOVOPRO ES80 source or packet-gap threshold yet. Real ES80 BLE cadence/jitter traces must calibrate that policy.
 
 ## Integration method is explicit
 
@@ -45,18 +45,46 @@ Only `FinalizedLiveDistanceSegment`, produced after a monotonic segment end is k
 
 This type split prevents an in-progress snapshot that is merely current through the latest packet from being mislabeled as complete completed-ride evidence.
 
+## Ride-level aggregation across process segments
+
+`RideLiveDistanceSegmentEvidence` is the durable projection of one finalized process-local segment. It deliberately omits monotonic uptime because uptime from a previous process or boot is not valid ordering evidence after recovery. Instead it carries:
+
+- ride session UUID;
+- durable segment UUID for idempotent replay;
+- `processSegmentSequence`, assigned by the ride/recovery layer starting at zero and incremented for every new monotonic process epoch;
+- source/method;
+- known distance versus unavailable distance;
+- segment-local coverage and known gap count.
+
+`RideLiveDistanceAggregator` requires a complete contiguous sequence `0...N-1`. Duplicate replay of the same durable segment is ignored; two different segment IDs cannot claim the same process sequence; a missing earlier sequence fails closed. UUID order has no chronological meaning.
+
+Every transition from process segment `N` to `N+1` is automatically counted as one unobserved interval. There is no caller-controlled “gap happened” Boolean to forget. Therefore:
+
+- one complete process segment can remain `complete`;
+- two or more process segments are necessarily `partial`, even if each individual segment is internally complete;
+- the known distance still sums across segments, but no meters are invented inside process/recovery gaps;
+- all-unavailable evidence remains `nil/.unknown`;
+- a real integrated zero-meter segment remains measured zero rather than becoming unavailable.
+
+The aggregator also rejects ride-session/source/method mixing, conflicting replay, non-finite total distance, and gap-count overflow.
+
+## Reconciliation bridge is session-bound
+
+`RideDistanceEvidence` can consume a `RideLiveDistanceAggregate` directly. That bridge requires the aggregate ride UUID to equal the `CompletedRideEvidence.sessionID` before copying the aggregate distance and coverage into reconciliation evidence. Valid scalar distance from one ride therefore cannot be paired with another ride merely because both values look numerically plausible.
+
+A missing aggregate remains `nil/.unknown`; it is never converted to zero distance.
+
+This binding applies only to live-distance aggregation. It does not solve unrelated identity/provenance work in statistics or other consumers.
+
 ## Process recovery boundary
 
-Monotonic uptime is process/boot-local and must not be persisted as if it survives relaunch or reboot. A recovered ride therefore starts a **new integration segment** in the new monotonic epoch.
-
-This primitive does not yet aggregate multiple process-local segments into one crash-safe live trip value. The next ride-level layer must preserve accumulated segment distance/checkpoints without replaying stale uptime, and must mark the unobserved recovery interval honestly so ODO reconciliation can account for proven missing mileage.
+Monotonic uptime is process/boot-local and must not be persisted as if it survives relaunch or reboot. A recovered ride therefore starts a **new integration segment** in the new monotonic epoch and increments the durable process segment sequence. The aggregate preserves already integrated distance while automatically preserving the intervening unobserved interval as partial coverage.
 
 ## Still pending
 
-- ride-level aggregation across multiple monotonic segments;
-- crash-safe persistence of accumulated live-distance evidence without persisting stale uptime clocks;
-- production source selection and gap threshold from real MAXSHOT telemetry benchmarks;
+- app/ride-coordinator wiring that assigns/persists stable process segment IDs and contiguous sequences;
+- persistence implementation for durable segment records and aggregate reconstruction at launch;
+- production source selection and gap threshold from real AOVOPRO ES80 telemetry benchmarks;
 - GPS quality-screening policy before choosing GPS as an integration source;
-- app/ride-coordinator wiring;
 - real iOS background and hardware validation;
 - presentation-layer smoothing for trip distance (render only, never evidence).
