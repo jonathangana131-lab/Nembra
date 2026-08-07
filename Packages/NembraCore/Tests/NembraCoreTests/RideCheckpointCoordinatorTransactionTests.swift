@@ -77,6 +77,49 @@ private actor OverlapDetectingCheckpointStore: RideCheckpointStore {
     }
 }
 
+private enum SuspendedSaveFailure: Error, Equatable {
+    case injected
+}
+
+private actor SuspendedFailingCheckpointStore: RideCheckpointStore {
+    private(set) var saveCount = 0
+    private var firstSaveStarted = false
+    private var firstSaveWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func save(_ checkpoint: RideDurableCheckpoint) async throws {
+        _ = checkpoint
+        saveCount += 1
+        if saveCount == 1 {
+            firstSaveStarted = true
+            let waiters = firstSaveWaiters
+            firstSaveWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+            // Give a competing coordinator ingest time to enqueue behind the
+            // mutation permit while this required durable save is suspended.
+            try await Task.sleep(for: .milliseconds(75))
+            throw SuspendedSaveFailure.injected
+        }
+        Issue.record("a queued ingest reached the store after persistence fault")
+    }
+
+    func load() async throws -> RideDurableCheckpoint? {
+        nil
+    }
+
+    func clear() async throws {}
+
+    func waitUntilFirstSaveStarts() async {
+        if firstSaveStarted {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            firstSaveWaiters.append(continuation)
+        }
+    }
+}
+
 @Suite("Ride checkpoint coordinator transaction hardening")
 struct RideCheckpointCoordinatorTransactionTests {
     private let epoch = Date(timeIntervalSince1970: 1_700_200_000)
@@ -244,5 +287,37 @@ struct RideCheckpointCoordinatorTransactionTests {
                 observation(1_500, speedKPH: 8, odometer: 100.05)
             )
         }
+    }
+
+    @Test("queued ingest observes a checkpoint-save fault before staging or saving")
+    func queuedIngestFailsClosedAfterSuspendedSaveError() async throws {
+        let sessionID = fixedSessionID
+        let store = SuspendedFailingCheckpointStore()
+        let coordinator = RideCheckpointCoordinator(
+            engine: RideEngine(policy: try policy(), makeSessionID: { sessionID }),
+            store: store,
+            cadence: try cadence()
+        )
+        let firstObservation = try observation(1_000, speedKPH: 8, odometer: 100)
+        let secondObservation = try observation(2_000, speedKPH: 8, odometer: 100.1)
+
+        let firstTask = Task {
+            try await coordinator.ingest(firstObservation)
+        }
+        await store.waitUntilFirstSaveStarts()
+
+        let secondTask = Task {
+            try await coordinator.ingest(secondObservation)
+        }
+
+        await #expect(throws: SuspendedSaveFailure.injected) {
+            _ = try await firstTask.value
+        }
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await secondTask.value
+        }
+
+        #expect(await store.saveCount == 1)
+        #expect(await coordinator.currentPhase() == .idle)
     }
 }
