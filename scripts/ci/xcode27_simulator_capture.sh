@@ -110,7 +110,11 @@ set_simctl_ui_setting_verified() {
 
   observed="$(read_simctl_ui_setting "$setting" || true)"
   printf 'setting=%s\nrequested=%s\nobserved=%s\n' "$setting" "$requested" "${observed:-<empty>}" >> "$log_path"
-  [[ "$observed" == "$requested" ]]
+  if [[ "$observed" != "$requested" ]]; then
+    echo "result=readback-mismatch" >> "$log_path"
+    return 1
+  fi
+  echo "result=verified" >> "$log_path"
 }
 
 record_simctl_ui_state() {
@@ -245,7 +249,7 @@ capture_increase_contrast_matrix() {
     exit 8
   fi
 
-  local original_contrast applied_contrast restored_contrast
+  local original_contrast restored_contrast
   original_contrast="$(read_simctl_ui_setting increase_contrast || true)"
   case "$original_contrast" in
     enabled|disabled) ;;
@@ -255,21 +259,16 @@ capture_increase_contrast_matrix() {
       ;;
   esac
 
-  if ! xcrun simctl ui "$UDID" increase_contrast enabled \
-    > "$ARTIFACTS_DIR/logs/simctl-increase-contrast-set.log" 2>&1; then
-    echo "Runner advertises Increase Contrast but could not enable it; see simctl-increase-contrast-set.log." >&2
-    exit 8
-  fi
-  applied_contrast="$(read_simctl_ui_setting increase_contrast || true)"
-  if [[ "$applied_contrast" != "enabled" ]]; then
-    echo "Increase Contrast readback mismatch after enable: ${applied_contrast:-<empty>}" >&2
+  if ! set_simctl_ui_setting_verified increase_contrast enabled \
+    "$ARTIFACTS_DIR/logs/simctl-increase-contrast-enable.log"; then
+    echo "Could not verify Increase Contrast enabled state." >&2
     exit 8
   fi
 
   {
     echo "requested=enabled"
     echo "initial=$original_contrast"
-    echo "applied=$applied_contrast"
+    echo "applied=enabled"
   } > "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
 
   capture_state connected-stopped light increase-contrast
@@ -277,17 +276,62 @@ capture_increase_contrast_matrix() {
   capture_state low-battery light increase-contrast
   capture_state connected-stopped dark increase-contrast
 
-  if ! xcrun simctl ui "$UDID" increase_contrast "$original_contrast" \
-    >> "$ARTIFACTS_DIR/logs/simctl-increase-contrast-set.log" 2>&1; then
-    echo "Could not restore Increase Contrast to $original_contrast." >&2
+  if ! set_simctl_ui_setting_verified increase_contrast "$original_contrast" \
+    "$ARTIFACTS_DIR/logs/simctl-increase-contrast-restore.log"; then
+    echo "Could not restore and verify Increase Contrast to $original_contrast." >&2
     exit 8
   fi
   restored_contrast="$(read_simctl_ui_setting increase_contrast || true)"
-  if [[ "$restored_contrast" != "$original_contrast" ]]; then
-    echo "Increase Contrast readback mismatch after restore: ${restored_contrast:-<empty>}" >&2
+  echo "restored=$restored_contrast" >> "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
+}
+
+capture_dynamic_type_matrix() {
+  if ! simctl_ui_supports content_size; then
+    echo "Accessibility capture requested, but this Xcode runner does not advertise simctl ui content_size." >&2
     exit 8
   fi
-  echo "restored=$restored_contrast" >> "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
+
+  local original_content_size restored_content_size category
+  original_content_size="$(read_simctl_ui_setting content_size || true)"
+  case "$original_content_size" in
+    ""|unsupported|unknown)
+      echo "Could not establish initial content-size state; got: ${original_content_size:-<empty>}" >&2
+      exit 8
+      ;;
+  esac
+
+  {
+    echo "initial=$original_content_size"
+    echo "requested=accessibility-medium,accessibility-extra-large,accessibility-extra-extra-extra-large"
+  } > "$ARTIFACTS_DIR/logs/dynamic-type-state.txt"
+
+  for category in \
+    accessibility-medium \
+    accessibility-extra-large \
+    accessibility-extra-extra-extra-large
+  do
+    if ! set_simctl_ui_setting_verified content_size "$category" \
+      "$ARTIFACTS_DIR/logs/simctl-content-size-${category}.log"; then
+      echo "Could not set and verify Dynamic Type content size $category." >&2
+      exit 8
+    fi
+
+    capture_state connected-stopped light "content-size-${category}"
+    if [[ "$category" != "accessibility-medium" ]]; then
+      capture_state reconnecting light "content-size-${category}"
+    fi
+    if [[ "$category" == "accessibility-extra-extra-extra-large" ]]; then
+      capture_state low-battery light "content-size-${category}"
+    fi
+  done
+
+  if ! set_simctl_ui_setting_verified content_size "$original_content_size" \
+    "$ARTIFACTS_DIR/logs/simctl-content-size-restore.log"; then
+    echo "Could not restore and verify content size to $original_content_size." >&2
+    exit 8
+  fi
+  restored_content_size="$(read_simctl_ui_setting content_size || true)"
+  echo "restored=$restored_content_size" >> "$ARTIFACTS_DIR/logs/dynamic-type-state.txt"
 }
 
 for state in \
@@ -308,6 +352,7 @@ capture_state reconnecting dark
 
 if [[ "$ACCESSIBILITY_CAPTURE" == "1" ]]; then
   capture_increase_contrast_matrix
+  capture_dynamic_type_matrix
 fi
 record_simctl_ui_state "$ARTIFACTS_DIR/logs/simctl-ui-state-after.txt"
 
