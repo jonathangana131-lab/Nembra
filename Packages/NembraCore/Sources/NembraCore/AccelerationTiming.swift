@@ -17,7 +17,7 @@ public struct AccelerationRunPolicy: Equatable, Sendable {
 
     public init(
         targetMetersPerSecond: Double,
-        stationaryMaximumMetersPerSecond: Double = 0.5,
+        stationaryMaximumMetersPerSecond: Double,
         requiredSource: SpeedTelemetrySource? = nil,
         maximumSpeedAccuracyMetersPerSecond: Double? = nil,
         maximumSampleIntervalNanoseconds: UInt64? = nil
@@ -190,6 +190,16 @@ public struct AccelerationRunEvaluator: Sendable {
     }
 
     public mutating func interrupt(_ interruption: AccelerationRunInterruption) {
+        if interruption == .operatorCancelled {
+            switch state {
+            case .waitingForStandstill, .armed, .running:
+                invalidate(.interruption(interruption))
+            case .completed, .invalidated:
+                break
+            }
+            return
+        }
+
         switch state {
         case .armed, .running:
             invalidate(.interruption(interruption))
@@ -200,6 +210,11 @@ public struct AccelerationRunEvaluator: Sendable {
 
     public mutating func accept(_ sample: SpeedTelemetrySample) {
         guard canAcceptMoreEvidence else { return }
+        // Defense in depth: SpeedTelemetrySample currently has synthesized Codable,
+        // so a decoded impossible `.motionAssist + .absoluteMeasurement` pair can
+        // bypass its validating initializer. This evidence consumer must still fail
+        // closed even if an upstream persistence/import boundary is malformed.
+        guard sample.source != .motionAssist else { return }
         guard sample.isAuthoritativeMeasurement else { return }
         guard sourceMatchesPolicy(sample.source) else { return }
 
