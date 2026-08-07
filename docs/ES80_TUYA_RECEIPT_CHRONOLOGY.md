@@ -12,6 +12,8 @@ The first accepted offline analyzer ordered fragments only by `receiptUptimeNano
 
 That is conservative when uptime is the only ordering evidence, but it creates a mechanical mismatch with passive capture: two distinct CoreBluetooth callbacks may legitimately be recorded on the same monotonic clock tick while the capture layer still knows their immutable callback order. Rejecting the second callback loses usable evidence. Inventing `+1 ns` timestamps to make it fit would be worse because fabricated time would become false provenance.
 
+There is also a source-history problem if chronology advances only when framing succeeds. A newer callback that fails packet-index/length/framing validation still happened. Forgetting it can reopen the past and allow a delayed older callback into the candidate later. Both receipt-backed and legacy uptime-only modes therefore separate **seen source chronology** from **accepted candidate bytes**.
+
 The capture/bridge path already retains callback sequence identity. This slice lets the analyzer use that stronger evidence directly without turning an unscoped integer into false global authority.
 
 ## Sequence identity is scoped evidence
@@ -27,7 +29,7 @@ That means a numeric sequence is meaningful only inside the counter epoch that m
 
 A scope without a sequence is invalid. A sequence without a scope is also invalid. Blank scope identity is invalid. Once a receipt-backed candidate starts, a different scope fails closed **before** sequence or uptime watermarks mutate. The completed candidate retains that scope alongside its first/last accepted sequence numbers.
 
-For Nembra's physical passive-capture bridge, the correct source scope is the exact immutable capture session ID. A display/model string, peripheral name, wall-clock timestamp, or inferred epoch must not replace it.
+For Nembra's physical passive-capture bridge, the correct source scope is the exact immutable capture session ID. A display/model string, peripheral name, wall-clock timestamp, or inferred epoch must not replace it. The scope is deliberately **non-secret provenance identity**: never place a Tuya local key, token, session secret, credential, or other authentication material in this field.
 
 ## Two explicit ordering modes
 
@@ -40,7 +42,7 @@ When the first observation carries the required sequence + scope pair:
 - sequence must increase strictly;
 - uptime must be nondecreasing, so two distinct callbacks may share one real clock tick;
 - no timestamp precision is synthesized;
-- the highest seen sequence is consumed before later framing validation;
+- the highest seen sequence is consumed before later uptime/framing validation;
 - a newer callback rejected for backward uptime or framing cannot later be replaced by an older/delayed callback;
 - a rejected receipt identity cannot be retried with rewritten uptime;
 - a foreign sequence scope is rejected before selected-scope chronology changes;
@@ -50,32 +52,36 @@ Sequence is callback-order evidence only. It is not packet meaning, protocol seq
 
 ### Legacy uptime-only mode
 
-When the first observation carries neither sequence field, the original behavior remains:
+When the first observation carries neither sequence field:
 
-- accepted fragment uptime must increase strictly;
-- equal uptime is rejected;
-- existing legacy producers are not silently assigned synthetic receipt identities.
+- uptime is the only ordering authority and must increase strictly across **seen observations**, not only accepted fragments;
+- the new admissible uptime high-water is consumed before packet framing validation;
+- a newer malformed/rejected callback therefore blocks delayed older callback evidence from entering later;
+- equal uptime is rejected because no stronger receipt sequence exists to prove order;
+- existing legacy producers are not silently assigned synthetic receipt identities or timestamp precision.
 
 A candidate cannot switch between receipt-backed and legacy ordering midway. Mixed authority fails closed rather than silently changing chronology rules.
 
-## Why rejected callbacks consume sequence chronology
+## Why rejected callbacks consume source chronology
 
 An immutable scoped receipt sequence identifies one raw acquisition callback. Once sequence `12` has been seen in that scope, later receipt `11` is stale even if callback `12` fails packet-index, length, or other framing checks.
 
+Legacy uptime-only evidence follows the same no-rewrite principle with the weaker authority it has: once uptime `300` is seen and admitted as newer than the previous high-water, a later uptime `200` is stale even if the callback at `300` failed framing. The rejected callback does not become candidate bytes, but it cannot disappear from acquisition history.
+
 The analyzer therefore keeps two concepts separate:
 
-1. **seen callback chronology** — immutable source ordering evidence;
-2. **accepted candidate bytes** — fragments that also pass framing validation.
+1. **seen callback chronology** — immutable/source-owned ordering evidence;
+2. **accepted candidate bytes** — observations that also pass framing validation.
 
 A rejected callback does not enter the reconstructed encrypted message, but it also cannot disappear from source order and reopen the past.
 
-This mirrors Nembra's wider truth rule: rejection must not promote bad semantic evidence, but immutable transport chronology must not be rewritten to make a later parse convenient.
+This mirrors Nembra's wider truth rule: rejection must not promote bad semantic evidence, but transport chronology must not be rewritten to make a later parse convenient.
 
 ## Stream and continuity isolation
 
 Exact stream identity and continuity generation are still checked before receipt chronology admission.
 
-A callback from another peripheral/service/characteristic or another continuity generation therefore cannot poison the selected stream's sequence watermark. The existing transcript boundary contract remains authoritative for starting a fresh candidate after a known byte-continuity break.
+A callback from another peripheral/service/characteristic or another continuity generation therefore cannot poison the selected stream's sequence/uptime watermark. The existing transcript boundary contract remains authoritative for starting a fresh candidate after a known byte-continuity break.
 
 Sequence scope is separate from stream and continuity identity: session/epoch scope answers **which counter owns this sequence**, stream identity answers **which GATT value stream produced the bytes**, and continuity generation answers **whether byte continuity is known across observations**. None substitutes for another.
 
@@ -86,7 +92,7 @@ Active PR #272 owns transcript-wide chronology across candidate completion, reje
 Final composition must preserve the parent chain's behavior while using the same authority law as the reassembler:
 
 - receipt-backed transcript: same scope, strict sequence, nondecreasing uptime;
-- legacy transcript: strict uptime;
+- legacy transcript: strict **seen** uptime;
 - rejected newer receipts consume source chronology without promoting candidate bytes;
 - boundary evidence remains explicit before the next observation is rejected;
 - chronology authority does not reset merely because one candidate completes or fails;
@@ -118,11 +124,12 @@ Focused branch regressions cover:
 - scope-without-sequence rejection;
 - sequence-without-scope rejection;
 - blank-scope rejection;
-- a rejected newer callback blocking a delayed older receipt;
+- a rejected newer receipt-backed callback blocking delayed older receipt evidence;
 - a backward-uptime callback consuming its newer receipt identity so it cannot be rewritten in place;
 - recovery with a genuinely newer sequence at the preserved uptime floor;
 - rejection of receipt-backed/legacy authority switching in either direction;
-- preservation of legacy strict-uptime behavior;
+- preservation of legacy strict seen-uptime behavior;
+- a rejected newer legacy callback consuming uptime high-water so delayed older input is rejected and only genuinely newer input can recover;
 - foreign-stream rejection occurring before selected-stream chronology admission.
 
 Local composition testing additionally keeps #272's transcript-wide boundary/recovery regressions and #286's packet-zero restart regressions active while exercising same-tick receipt-backed ordering, cross-candidate scoped high-water, rejected-receipt consumption, authority switching, scope changes, and restart precedence. Repository-native exact-head QA remains the acceptance gate.
