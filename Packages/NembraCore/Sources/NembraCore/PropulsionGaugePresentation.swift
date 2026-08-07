@@ -188,12 +188,12 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
 }
 
 public enum PropulsionGaugeMotionPolicyError: Error, Equatable, Sendable {
-    case invalidRiseSettlingDuration
-    case invalidFallSettlingDuration
     case invalidStaleInterval
 }
 
 /// Display-clock timing only. These values do not define BLE cadence or physical scooter dynamics.
+/// A zero rise or fall settling duration deliberately snaps that direction to the accepted target,
+/// allowing Reduce Motion presentation without changing measurement truth.
 public struct PropulsionGaugeMotionPolicy: Equatable, Sendable {
     public let riseSettlingDurationNanoseconds: UInt64
     public let fallSettlingDurationNanoseconds: UInt64
@@ -206,12 +206,6 @@ public struct PropulsionGaugeMotionPolicy: Equatable, Sendable {
         staleAfterNanoseconds: UInt64,
         acceptedPeakHoldNanoseconds: UInt64
     ) throws {
-        guard riseSettlingDurationNanoseconds > 0 else {
-            throw PropulsionGaugeMotionPolicyError.invalidRiseSettlingDuration
-        }
-        guard fallSettlingDurationNanoseconds > 0 else {
-            throw PropulsionGaugeMotionPolicyError.invalidFallSettlingDuration
-        }
         guard staleAfterNanoseconds > 0 else {
             throw PropulsionGaugeMotionPolicyError.invalidStaleInterval
         }
