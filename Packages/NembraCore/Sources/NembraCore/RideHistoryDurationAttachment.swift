@@ -41,14 +41,14 @@ public enum RideHistoryDurationJoinError: Error, Equatable, Sendable {
 /// A validated runtime join between base completed-ride history and its duration attachment.
 ///
 /// The join is intentionally not `Codable`: durable storage remains two independently valid
-/// records. Every consumer must re-establish their session/continuity relationship before
-/// presenting or aggregating duration, preventing a matching UUID with mismatched continuity
-/// from silently becoming ride truth.
+/// records. Construction is package-scoped so app code cannot manufacture a trusted join from
+/// arbitrary matching records; production consumers receive one only after a core coordinator
+/// re-establishes the session/continuity relationship from its stores.
 public struct RideHistoryDurationJoinedRecord: Equatable, Sendable {
     public let historyRecord: RideHistoryRecord
     public let durationRecord: RideHistoryDurationRecord
 
-    public init(
+    package init(
         historyRecord: RideHistoryRecord,
         durationRecord: RideHistoryDurationRecord
     ) throws {
