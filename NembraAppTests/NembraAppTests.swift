@@ -382,6 +382,15 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardUnavailableSpeedHasSemanticAccessibilityValue() {
+        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: nil), "Unavailable")
+        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: -0.01), "Unavailable")
+        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .nan), "Unavailable")
+        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .infinity), "Unavailable")
+        XCTAssertNotEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: 0), "Unavailable")
+    }
+
+    @MainActor
     func testDashboardReadyStatusRequiresKnownFiniteNonnegativeSpeed() {
         XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: nil), "NO LIVE SPEED")
         XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: -0.01), "NO LIVE SPEED")
