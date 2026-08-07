@@ -241,6 +241,81 @@ struct TuyaCandidateReceiptChronologyTests {
         }
     }
 
+    @Test("a rejected first observation still locks receipt ordering authority")
+    func rejectedFirstObservationLocksReceiptOrderingAuthority() throws {
+        var legacyFirst = TuyaCandidateFragmentReassembler(policy: try policy())
+        #expect(throws: TuyaCandidateOfflineAnalysisError.unexpectedPacketIndex(expected: 0, actual: 1)) {
+            try legacyFirst.ingest(
+                try observation(
+                    payload: [9],
+                    packetIndex: 1,
+                    uptime: 100,
+                    sequence: nil
+                )
+            )
+        }
+        #expect(throws: TuyaCandidateOfflineAnalysisError.receiptOrderingAuthorityChanged) {
+            try legacyFirst.ingest(
+                try observation(
+                    payload: [1],
+                    packetIndex: 0,
+                    uptime: 101,
+                    sequence: 2,
+                    totalLength: 1
+                )
+            )
+        }
+        if case .complete = try legacyFirst.ingest(
+            try observation(
+                payload: [1],
+                packetIndex: 0,
+                uptime: 101,
+                sequence: nil,
+                totalLength: 1
+            )
+        ) {
+            // Legacy authority remained bound despite rejected first framing.
+        } else {
+            Issue.record("Expected legacy authority to remain recoverable")
+        }
+
+        var receiptFirst = TuyaCandidateFragmentReassembler(policy: try policy())
+        #expect(throws: TuyaCandidateOfflineAnalysisError.unexpectedPacketIndex(expected: 0, actual: 1)) {
+            try receiptFirst.ingest(
+                try observation(
+                    payload: [9],
+                    packetIndex: 1,
+                    uptime: 200,
+                    sequence: 10
+                )
+            )
+        }
+        #expect(throws: TuyaCandidateOfflineAnalysisError.receiptOrderingAuthorityChanged) {
+            try receiptFirst.ingest(
+                try observation(
+                    payload: [1],
+                    packetIndex: 0,
+                    uptime: 201,
+                    sequence: nil,
+                    totalLength: 1
+                )
+            )
+        }
+        if case .complete = try receiptFirst.ingest(
+            try observation(
+                payload: [1],
+                packetIndex: 0,
+                uptime: 200,
+                sequence: 11,
+                totalLength: 1
+            )
+        ) {
+            // Receipt-backed authority remained bound despite rejected first framing.
+        } else {
+            Issue.record("Expected receipt-backed authority to remain recoverable")
+        }
+    }
+
     @Test("legacy observations preserve strict seen-uptime ordering")
     func legacyModeStillRejectsEqualUptime() throws {
         var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
