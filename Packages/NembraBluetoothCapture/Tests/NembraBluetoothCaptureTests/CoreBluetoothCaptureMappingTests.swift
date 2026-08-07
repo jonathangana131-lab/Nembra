@@ -39,7 +39,7 @@ struct CoreBluetoothCaptureMappingTests {
         #expect(mapped.txPowerLevel == -8)
     }
 
-    @Test("advertisement mapping keeps absent optional evidence absent")
+    @Test("advertisement mapping keeps absent fields and unavailable RSSI absent")
     func absentAdvertisementFields() throws {
         let mapped = try CoreBluetoothCaptureMapping.advertisement(
             peripheralIdentifier: UUID(),
@@ -48,7 +48,7 @@ struct CoreBluetoothCaptureMappingTests {
         )
 
         #expect(mapped.localName == nil)
-        #expect(mapped.rssi == 127)
+        #expect(mapped.rssi == nil)
         #expect(mapped.isConnectable == nil)
         #expect(mapped.manufacturerData == nil)
         #expect(mapped.serviceUUIDs.isEmpty)
@@ -70,22 +70,25 @@ struct CoreBluetoothCaptureMappingTests {
             isReconnecting: true,
             error: error
         )
+        let expectedError = try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 7)
 
         #expect(mapped.peripheralIdentifier == peripheralID.uuidString)
         #expect(mapped.state == .disconnected)
         #expect(mapped.platformEventTimestamp == 1234.5)
         #expect(mapped.isReconnecting == true)
-        #expect(mapped.error == try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 7))
+        #expect(mapped.error == expectedError)
     }
 
     @Test("error mapping keeps absence absent and NSError domain/code stable")
     func errorMapping() throws {
-        #expect(try CoreBluetoothCaptureMapping.errorObservation(nil) == nil)
-        #expect(
-            try CoreBluetoothCaptureMapping.errorObservation(
-                NSError(domain: "example.transport", code: -42)
-            ) == PassiveBluetoothErrorObservation(domain: "example.transport", code: -42)
+        let absent = try CoreBluetoothCaptureMapping.errorObservation(nil)
+        let mapped = try CoreBluetoothCaptureMapping.errorObservation(
+            NSError(domain: "example.transport", code: -42)
         )
+        let expected = try PassiveBluetoothErrorObservation(domain: "example.transport", code: -42)
+
+        #expect(absent == nil)
+        #expect(mapped == expected)
     }
 
     @Test("characteristic property mapping preserves read write notify indicate and security metadata")
