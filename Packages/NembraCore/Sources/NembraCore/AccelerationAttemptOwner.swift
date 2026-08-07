@@ -51,7 +51,7 @@ public enum AccelerationAttemptRecordResult: Equatable, Sendable {
         expected: AccelerationAttemptGeneration,
         actual: AccelerationAttemptGeneration
     )
-    case ignoredBeforeAttemptStart(startedAt: UInt64, sampleAt: UInt64)
+    case ignoredAtOrBeforeAttemptStart(startedAt: UInt64, sampleAt: UInt64)
     case session(AccelerationEvidenceSessionRecordResult)
 }
 
@@ -109,8 +109,8 @@ public struct AccelerationAttemptOwner: Sendable {
     ///
     /// `startedAtUptimeNanoseconds` must come from the same process-local
     /// monotonic time domain as `SpeedTelemetrySample.receivedAtUptimeNanoseconds`.
-    /// Samples received before this fence are ignored rather than being allowed to
-    /// arm a newly created attempt from queued pre-attempt traffic.
+    /// Samples observed at or before this fence are ignored rather than being
+    /// allowed to arm a newly created attempt from queued pre-attempt traffic.
     @discardableResult
     public mutating func begin(
         policy: AccelerationEvidenceSessionPolicy,
@@ -162,8 +162,8 @@ public struct AccelerationAttemptOwner: Sendable {
                 actual: generation
             )
         }
-        guard sample.receivedAtUptimeNanoseconds >= attempt.startedAtUptimeNanoseconds else {
-            return .ignoredBeforeAttemptStart(
+        guard sample.receivedAtUptimeNanoseconds > attempt.startedAtUptimeNanoseconds else {
+            return .ignoredAtOrBeforeAttemptStart(
                 startedAt: attempt.startedAtUptimeNanoseconds,
                 sampleAt: sample.receivedAtUptimeNanoseconds
             )
