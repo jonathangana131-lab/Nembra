@@ -21,8 +21,8 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         )
     }
 
-    /// Records one event using a process-local monotonic clock for ordering and
-    /// wall-clock Date only as correlation metadata.
+    /// Records one event using the system-boot-relative monotonic uptime clock
+    /// for ordering and wall-clock Date only as correlation metadata.
     public func record(_ event: PassiveBluetoothCaptureEvent) throws {
         try record(
             event,
