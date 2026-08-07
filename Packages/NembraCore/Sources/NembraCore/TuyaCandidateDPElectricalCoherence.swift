@@ -296,20 +296,27 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
             if evaluation.supportsJointHypothesis { count += 1 }
         }
 
-        if evaluations.isEmpty {
-            meanReferenceAbsolutePowerError = nil
-            meanCandidateAbsolutePowerError = nil
-            maximumCandidateAbsolutePowerError = nil
-        } else {
-            meanReferenceAbsolutePowerError =
-                evaluations.reduce(0) { $0 + $1.referenceAbsolutePowerError }
-                / Double(evaluations.count)
-            meanCandidateAbsolutePowerError =
-                evaluations.reduce(0) { $0 + $1.candidateAbsolutePowerError }
-                / Double(evaluations.count)
-            maximumCandidateAbsolutePowerError =
-                evaluations.map(\.candidateAbsolutePowerError).max()
+        meanReferenceAbsolutePowerError = Self.stableMean(
+            evaluations.map(\.referenceAbsolutePowerError)
+        )
+        meanCandidateAbsolutePowerError = Self.stableMean(
+            evaluations.map(\.candidateAbsolutePowerError)
+        )
+        maximumCandidateAbsolutePowerError =
+            evaluations.map(\.candidateAbsolutePowerError).max()
+    }
+
+    /// Normalizing each finite term before accumulation prevents a finite set of
+    /// extreme per-anchor errors from producing an infinite intermediate sum.
+    /// The returned mean therefore remains finite whenever every input is finite.
+    private static func stableMean(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let count = Double(values.count)
+        var mean = 0.0
+        for value in values {
+            mean += value / count
         }
+        return mean.isFinite ? mean : nil
     }
 }
 
