@@ -284,14 +284,62 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
     }
 }
 
+public enum PropulsionGaugeAnimationPolicyError: Error, Equatable, Sendable {
+    case fallResponseSlowerThanRise
+}
+
+/// Render-clock motion only. This policy may change for visual tuning or Reduce Motion
+/// without changing how long an accepted physical measurement remains live evidence.
+public struct PropulsionGaugeAnimationPolicy: Equatable, Sendable {
+    public let riseSettlingDurationNanoseconds: UInt64
+    public let fallSettlingDurationNanoseconds: UInt64
+    public let acceptedPeakHoldNanoseconds: UInt64
+
+    public init(
+        riseSettlingDurationNanoseconds: UInt64,
+        fallSettlingDurationNanoseconds: UInt64,
+        acceptedPeakHoldNanoseconds: UInt64
+    ) throws {
+        guard fallSettlingDurationNanoseconds <= riseSettlingDurationNanoseconds else {
+            throw PropulsionGaugeAnimationPolicyError.fallResponseSlowerThanRise
+        }
+
+        self.riseSettlingDurationNanoseconds = riseSettlingDurationNanoseconds
+        self.fallSettlingDurationNanoseconds = fallSettlingDurationNanoseconds
+        self.acceptedPeakHoldNanoseconds = acceptedPeakHoldNanoseconds
+    }
+}
+
+public enum PropulsionGaugeFreshnessPolicyError: Error, Equatable, Sendable {
+    case invalidStaleInterval
+}
+
+/// Accepted-measurement currentness only. This is evidence/presentation admission policy,
+/// not animation tuning and not a claim about the ES80's BLE publication cadence.
+///
+/// Once the latest accepted sample is older than this interval, the gauge retains that
+/// exact accepted value but stops presenting it as live. A later sample after the same
+/// gap also starts a fresh visual segment rather than interpolating across missing evidence.
+public struct PropulsionGaugeFreshnessPolicy: Equatable, Sendable {
+    public let staleAfterNanoseconds: UInt64
+
+    public init(staleAfterNanoseconds: UInt64) throws {
+        guard staleAfterNanoseconds > 0 else {
+            throw PropulsionGaugeFreshnessPolicyError.invalidStaleInterval
+        }
+        self.staleAfterNanoseconds = staleAfterNanoseconds
+    }
+}
+
 public enum PropulsionGaugeMotionPolicyError: Error, Equatable, Sendable {
     case invalidStaleInterval
     case fallResponseSlowerThanRise
 }
 
-/// Display-clock timing only. These values do not define BLE cadence or physical scooter dynamics.
-/// A zero rise or fall settling duration deliberately snaps that direction to the accepted target,
-/// allowing Reduce Motion presentation without changing measurement truth.
+/// Compatibility policy for callers that predate the explicit animation/freshness split.
+/// New integration code should construct `PropulsionGaugeAnimationPolicy` and
+/// `PropulsionGaugeFreshnessPolicy` independently so visual preferences cannot change
+/// accepted-measurement currentness.
 public struct PropulsionGaugeMotionPolicy: Equatable, Sendable {
     public let riseSettlingDurationNanoseconds: UInt64
     public let fallSettlingDurationNanoseconds: UInt64
@@ -315,6 +363,20 @@ public struct PropulsionGaugeMotionPolicy: Equatable, Sendable {
         self.fallSettlingDurationNanoseconds = fallSettlingDurationNanoseconds
         self.staleAfterNanoseconds = staleAfterNanoseconds
         self.acceptedPeakHoldNanoseconds = acceptedPeakHoldNanoseconds
+    }
+
+    fileprivate var splitPolicies: (animation: PropulsionGaugeAnimationPolicy, freshness: PropulsionGaugeFreshnessPolicy) {
+        // This cannot fail: the compatibility initializer already validates the
+        // exact invariants required by both split policies.
+        let animation = try! PropulsionGaugeAnimationPolicy(
+            riseSettlingDurationNanoseconds: riseSettlingDurationNanoseconds,
+            fallSettlingDurationNanoseconds: fallSettlingDurationNanoseconds,
+            acceptedPeakHoldNanoseconds: acceptedPeakHoldNanoseconds
+        )
+        let freshness = try! PropulsionGaugeFreshnessPolicy(
+            staleAfterNanoseconds: staleAfterNanoseconds
+        )
+        return (animation, freshness)
     }
 }
 
@@ -376,7 +438,19 @@ private struct PropulsionGaugeChronologyState: Sendable {
 /// ask for frames at display refresh rate. The response never predicts beyond the latest accepted target.
 public struct PropulsionGaugeDisplayModel: Sendable {
     public let identity: PropulsionGaugeIdentity
-    public let policy: PropulsionGaugeMotionPolicy
+    public let animationPolicy: PropulsionGaugeAnimationPolicy
+    public let freshnessPolicy: PropulsionGaugeFreshnessPolicy
+
+    /// Compatibility projection for pre-split callers. The display model itself no
+    /// longer consults this combined shape for currentness or animation decisions.
+    public var policy: PropulsionGaugeMotionPolicy {
+        try! PropulsionGaugeMotionPolicy(
+            riseSettlingDurationNanoseconds: animationPolicy.riseSettlingDurationNanoseconds,
+            fallSettlingDurationNanoseconds: animationPolicy.fallSettlingDurationNanoseconds,
+            staleAfterNanoseconds: freshnessPolicy.staleAfterNanoseconds,
+            acceptedPeakHoldNanoseconds: animationPolicy.acceptedPeakHoldNanoseconds
+        )
+    }
 
     private var hasMeasurement = false
     private var latestAcceptedWatts = 0.0
@@ -404,9 +478,26 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     /// source generation. A foreign authority has its own generation namespace.
     private var retiredContinuityGenerationByAuthority: [PropulsionPowerSampleAuthority: UInt64] = [:]
 
-    public init(identity: PropulsionGaugeIdentity, policy: PropulsionGaugeMotionPolicy) {
+    /// Preferred initializer. Motion and accepted-measurement freshness are deliberately
+    /// separate so accessibility/Reduce Motion or visual tuning cannot alter evidence currentness.
+    public init(
+        identity: PropulsionGaugeIdentity,
+        animationPolicy: PropulsionGaugeAnimationPolicy,
+        freshnessPolicy: PropulsionGaugeFreshnessPolicy
+    ) {
         self.identity = identity
-        self.policy = policy
+        self.animationPolicy = animationPolicy
+        self.freshnessPolicy = freshnessPolicy
+    }
+
+    /// Source-compatible adapter for the original combined policy shape.
+    public init(identity: PropulsionGaugeIdentity, policy: PropulsionGaugeMotionPolicy) {
+        let split = policy.splitPolicies
+        self.init(
+            identity: identity,
+            animationPolicy: split.animation,
+            freshnessPolicy: split.freshness
+        )
     }
 
     public mutating func accept(_ sample: PropulsionPowerSample) throws {
@@ -465,7 +556,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             // Same-authority chronology validation above guarantees this
             // subtraction cannot underflow.
             let gap = sample.receivedAtUptimeNanoseconds - latestAcceptedUptimeNanoseconds
-            sharesContinuity = gap <= policy.staleAfterNanoseconds
+            sharesContinuity = gap <= freshnessPolicy.staleAfterNanoseconds
         } else {
             sharesContinuity = false
         }
@@ -481,15 +572,15 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         let hasVisualDistance = transitionTargetWatts != transitionAnchorWatts
         if sharesContinuity, hasVisualDistance {
             transitionSettlingDurationNanoseconds = transitionTargetWatts >= transitionAnchorWatts
-                ? policy.riseSettlingDurationNanoseconds
-                : policy.fallSettlingDurationNanoseconds
+                ? animationPolicy.riseSettlingDurationNanoseconds
+                : animationPolicy.fallSettlingDurationNanoseconds
         } else {
             transitionSettlingDurationNanoseconds = 0
         }
 
         if !hasMeasurement
             || !sharesContinuity
-            || sample.receivedAtUptimeNanoseconds - acceptedPeakUptimeNanoseconds > policy.acceptedPeakHoldNanoseconds {
+            || sample.receivedAtUptimeNanoseconds - acceptedPeakUptimeNanoseconds > animationPolicy.acceptedPeakHoldNanoseconds {
             acceptedPeakWatts = sample.watts
             acceptedPeakUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         } else if sample.watts >= acceptedPeakWatts {
@@ -573,7 +664,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         }
 
         let age = now - latestAcceptedUptimeNanoseconds
-        if age > policy.staleAfterNanoseconds {
+        if age > freshnessPolicy.staleAfterNanoseconds {
             return PropulsionGaugeFrame(
                 availability: .retained,
                 origin: .retainedAcceptedMeasurement,
@@ -614,7 +705,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             : 0
         let acceptedPeakNormalized: Double?
         if let compatibleScale,
-           peakAge <= policy.acceptedPeakHoldNanoseconds {
+           peakAge <= animationPolicy.acceptedPeakHoldNanoseconds {
             acceptedPeakNormalized = min(1, max(0, acceptedPeakWatts / compatibleScale.ceilingWatts))
         } else {
             acceptedPeakNormalized = nil
