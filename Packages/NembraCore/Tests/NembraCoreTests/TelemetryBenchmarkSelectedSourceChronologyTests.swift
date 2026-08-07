@@ -72,6 +72,63 @@ struct TelemetryBenchmarkSelectedSourceChronologyTests {
         #expect(abs((resumed.meanIntervalMilliseconds ?? 0) - 300) < 0.000_001)
     }
 
+    @Test("equal timestamp replay after a rejected newer callback fails closed")
+    func equalTimestampReplayAfterRejectedNewerObservationIsRejected() throws {
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+
+        #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 3.6)) == .accepted)
+
+        let overflow = try overflowingSample(milliseconds: 300)
+        #expect(!overflow.kilometersPerHour.isFinite)
+        #expect(collector.record(overflow) == .rejected(.nonFiniteDerivedSpeed))
+
+        // Strict chronology is >, not >=. A second selected-source callback carrying
+        // the exact receive uptime of the rejected @300 callback cannot be admitted
+        // as a replacement sample after the fact.
+        #expect(
+            collector.record(try sample(milliseconds: 300, speedKilometersPerHour: 7.2))
+                == .rejected(.nonMonotonicTimestamp)
+        )
+
+        #expect(collector.record(try sample(milliseconds: 301, speedKilometersPerHour: 10.8)) == .accepted)
+        let summary = collector.summary
+        #expect(summary.acceptedSampleCount == 2)
+        #expect(summary.rejectedSampleCount == 2)
+        #expect(summary.intervalCount == 1)
+        #expect(abs(summary.observedDurationSeconds - 0.201) < 0.000_001)
+        #expect(abs((summary.meanIntervalMilliseconds ?? 0) - 201) < 0.000_001)
+    }
+
+    @Test("foreign callbacks never advance selected-source chronology")
+    func foreignSourceCannotPoisonSelectedSourceWatermark() throws {
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+
+        #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 3.6)) == .accepted)
+
+        let futureGPS = try SpeedTelemetrySample(
+            source: .gps,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 2,
+            receivedAtUptimeNanoseconds: 500_000_000,
+            receivedAtDate: epoch.addingTimeInterval(0.5),
+            measurementDate: epoch.addingTimeInterval(0.49),
+            speedAccuracyMetersPerSecond: 0.5
+        )
+        #expect(collector.record(futureGPS) == .rejected(.sourceMismatch))
+
+        // The collector is scoped to scooter Bluetooth, so the unrelated GPS @500
+        // callback must not move its selected-source watermark. @200 remains fresh.
+        #expect(collector.record(try sample(milliseconds: 200, speedKilometersPerHour: 7.2)) == .accepted)
+
+        let summary = collector.summary
+        #expect(summary.acceptedSampleCount == 2)
+        #expect(summary.rejectedSampleCount == 1)
+        #expect(summary.observationSegmentCount == 1)
+        #expect(summary.intervalCount == 1)
+        #expect(abs(summary.observedDurationSeconds - 0.1) < 0.000_001)
+        #expect(abs((summary.meanIntervalMilliseconds ?? 0) - 100) < 0.000_001)
+    }
+
     @Test("derived-speed rejection preserves a pending interruption while still closing chronology")
     func pendingInterruptionSurvivesRejectedNewerObservationAndReplay() throws {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
