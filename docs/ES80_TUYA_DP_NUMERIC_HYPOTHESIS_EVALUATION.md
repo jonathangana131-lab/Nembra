@@ -96,6 +96,8 @@ Each evaluable sample preserves:
 - absolute display-space error;
 - whether that error is inside caller-supplied tolerance.
 
+The report also retains the exact caller-owned `absoluteTolerance` that produced every `isWithinTolerance` flag. This keeps the derived boolean auditable after the policy object leaves scope and allows downstream tooling to distinguish equal-threshold comparisons from reports produced under different thresholds instead of treating incomparable booleans as equivalent evidence.
+
 Per-hypothesis summaries expose descriptive counts and error statistics only. They are not protocol confidence scores.
 
 Deterministic ranking favors more in-tolerance support, broader distinct numeric-reference variation, greater evaluable coverage, lower mean absolute display-space error, then stable hypothesis identifier / scale / offset ordering. Mean absolute error is accumulated in normalized form so repeated extreme-but-finite errors do not become an infinite result merely because an intermediate raw sum overflowed. Ranking only helps decide what hypothesis to test next.
@@ -148,6 +150,7 @@ The child suite covers:
 - preservation of parent conflicting-nearest ambiguity;
 - preservation of parent shared-observation rejection;
 - preservation of exact marker receipt, first/last observation receipt, temporal distance/direction, and DP byte offsets;
+- exact tolerance provenance with the same raw error evaluated under strict and loose thresholds;
 - duplicate and out-of-range marker reference rejection;
 - invalid candidate rejection;
 - non-finite input and zero-scale rejection;
