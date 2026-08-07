@@ -95,10 +95,17 @@ public enum TuyaCandidateTranscriptAnalyzer {
             // message. Detect only the candidate packet index here; the fresh
             // reassembler below still validates the complete first-fragment
             // structure and can reject it normally without mutating raw evidence.
+            //
+            // Keep the existing chronology contract stronger than restart
+            // recovery. A stale/equal receipt must still reach the bound
+            // reassembler and fail as non-monotonic instead of being reset into a
+            // fresh candidate that would accidentally accept its timestamp.
             if reassembler != nil,
-               beginsWithCandidatePacketZero(observation),
                let priorStartObservationIndex = startObservationIndex,
-               let priorLastAcceptedObservationIndex = lastAcceptedObservationIndex {
+               let priorLastAcceptedObservationIndex = lastAcceptedObservationIndex,
+               observation.receiptUptimeNanoseconds
+                   > observations[priorLastAcceptedObservationIndex].receiptUptimeNanoseconds,
+               beginsWithCandidatePacketZero(observation) {
                 events.append(
                     .incompleteAtBoundary(
                         startObservationIndex: priorStartObservationIndex,
