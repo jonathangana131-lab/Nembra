@@ -54,6 +54,8 @@ Authoritative uptime ordering is likewise checked against the **latest accepted 
 
 `recordDistance(deltaMeters:coverage:)` accepts only finite nonnegative distance.
 
+Coverage classification is deliberately fail-closed. Calling `recordDistance(deltaMeters:)` **without** a `coverage:` argument records the delta as `.unknown`, never `.complete`. A caller that has actually proven complete distance coverage must pass `coverage: .complete` explicitly. This matches the higher-level battery→range pipeline's fail-closed default and prevents an omitted argument from silently manufacturing trusted distance evidence.
+
 The assembler never decides whether that distance came from:
 - scooter odometer;
 - quality-screened GPS;
@@ -128,6 +130,8 @@ For a future app consumer of the **current normalized battery-evidence → adapt
 - `BatteryAdaptiveRangeEvidenceAdapter.swift` (#38, including the sealed bridge and public pipeline).
 
 `AdaptiveBatteryRangeCodableValidation.swift` is a **semantic companion**, not merely a symbol dependency. It supplies custom decoding/encoding that routes restored SoC readings, learning windows, policies, and estimates back through validation. If a manual app-target integration compiles `AdaptiveBatteryRange.swift` while omitting this companion, Swift can still synthesize `Codable`; the app may compile while silently losing those restore guards. A local Swift compile probe reproduced that behavior: invalid JSON decoded when the companion extension was absent and was rejected when it was compiled.
+
+If the app renders the separate primary presentation policy from #83, add `AdaptiveBatteryRangePrimaryPresentation.swift` to the immediate presentation-layer closure. That file is optional for the six-file evidence→range pipeline itself; an app that only receives an already-manufactured `AdaptiveBatteryRangeEstimate` may need the range types + Codable companion + presentation source without all upstream battery-evidence/assembly files as immediate compile dependencies.
 
 If an app consumer also persists learned range state, the accepted descendant of #16's `AdaptiveBatteryRangePersistence.swift` becomes an additional source dependency. If a future production path constructs `BatteryEvidenceObservation` from a later accepted physical battery transport/authority chain, include the exact accepted upstream sources that path uses as well; this six-file software closure does **not** prove physical ES80 telemetry.
 
