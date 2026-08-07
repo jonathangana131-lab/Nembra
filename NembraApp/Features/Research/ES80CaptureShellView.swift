@@ -1,6 +1,7 @@
 @preconcurrency import CoreBluetooth
 import Foundation
 import NembraBluetoothCapture
+import NembraCore
 import SwiftUI
 
 /// A product-facing shell around the passive ES80 research controller.
@@ -24,6 +25,44 @@ struct ES80CaptureShellView: View {
         case failed(String)
     }
 
+    private struct PreparedCaptureSummary: Equatable {
+        let recordCount: Int
+        let valueObservationCount: Int
+        let continuityBreakCount: Int
+        let observedSpanSeconds: TimeInterval
+        let schemaVersion: Int
+
+        init(session: PassiveBluetoothCaptureSession) {
+            recordCount = session.records.count
+            valueObservationCount = session.records.reduce(into: 0) { count, record in
+                if case .value = record.event { count += 1 }
+            }
+            continuityBreakCount = session.records.reduce(into: 0) { count, record in
+                if record.event.breaksByteContinuity { count += 1 }
+            }
+            schemaVersion = PassiveBluetoothCaptureJSON.currentSchemaVersion
+
+            if let first = session.records.first, let last = session.records.last {
+                let elapsedNanoseconds = last.receivedAtUptimeNanoseconds - first.receivedAtUptimeNanoseconds
+                observedSpanSeconds = TimeInterval(elapsedNanoseconds) / 1_000_000_000
+            } else {
+                observedSpanSeconds = 0
+            }
+        }
+
+        var observedSpanDescription: String {
+            if observedSpanSeconds < 1 {
+                return String(format: "%.2f s", observedSpanSeconds)
+            }
+            if observedSpanSeconds < 60 {
+                return String(format: "%.1f s", observedSpanSeconds)
+            }
+
+            let wholeSeconds = Int(observedSpanSeconds.rounded(.down))
+            return String(format: "%d:%02d", wholeSeconds / 60, wholeSeconds % 60)
+        }
+    }
+
     let controller: ForegroundCoreBluetoothCaptureController
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,6 +70,7 @@ struct ES80CaptureShellView: View {
     @State private var selectedCandidateIdentifier: UUID?
     @State private var diagnosticMessage: String?
     @State private var exportDocument: PassiveCaptureJSONDocument?
+    @State private var preparedSummary: PreparedCaptureSummary?
     @State private var isExporting = false
     @State private var isPreparingExport = false
 
@@ -273,6 +313,10 @@ struct ES80CaptureShellView: View {
                 symbol: "checkmark.seal"
             )
 
+            if let preparedSummary {
+                preparedCaptureSummaryPanel(preparedSummary)
+            }
+
             primaryButton("Share Capture File", systemImage: "square.and.arrow.up") {
                 isExporting = true
             }
@@ -399,6 +443,55 @@ struct ES80CaptureShellView: View {
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Capture active. Put the phone away while riding and finish only when safely stopped.")
+    }
+
+    private func preparedCaptureSummaryPanel(_ summary: PreparedCaptureSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("PREPARED FILE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("FORMAT v\(summary.schemaVersion)")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                preparedSummaryRow("Recorded events", value: "\(summary.recordCount)")
+                preparedSummaryRow("Value observations", value: "\(summary.valueObservationCount)")
+                preparedSummaryRow("Continuity breaks", value: "\(summary.continuityBreakCount)")
+                preparedSummaryRow("Observed span", value: summary.observedSpanDescription)
+            }
+
+            Text("These describe the exact prepared JSON file. They do not identify scooter fields or prove protocol semantics.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Prepared capture file. Format version \(summary.schemaVersion). \(summary.recordCount) recorded events. \(summary.valueObservationCount) value observations. \(summary.continuityBreakCount) continuity breaks. Observed span \(summary.observedSpanDescription)."
+        )
+    }
+
+    private func preparedSummaryRow(_ label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.trailing)
+        }
     }
 
     private func statePanel(
@@ -620,6 +713,8 @@ struct ES80CaptureShellView: View {
         diagnosticMessage = nil
         do {
             let data = try await controller.encodedCaptureJSON(prettyPrinted: true)
+            let finalizedSession = try PassiveBluetoothCaptureJSON.decode(data)
+            preparedSummary = PreparedCaptureSummary(session: finalizedSession)
             exportDocument = PassiveCaptureJSONDocument(data: data)
             controller.cancelActiveConnection()
             isExporting = true
