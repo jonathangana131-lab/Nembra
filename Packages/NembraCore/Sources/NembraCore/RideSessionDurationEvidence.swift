@@ -4,7 +4,9 @@ public enum RideSessionDurationEvidenceError: Error, Equatable, Sendable {
     case invalidObservationSegment
     case sessionMismatch
     case conflictingSegmentIdentity
+    case closedSegmentCannotExtend
     case segmentIdentityReused
+    case retiredProcessGenerationReused
     case unexpectedSequence
     case invalidGapClassification
     case sequenceExhausted
@@ -108,9 +110,11 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 ///
 /// A caller may checkpoint one observation segment repeatedly. Replaying that segment with
 /// a longer observed duration extends it by only the new delta; an older checkpoint is
-/// ignored. A new segment must use the next sequence number and explicitly acknowledge the
-/// unobserved interval separating it from the previous segment. Its process generation may
-/// be the same (for an in-process suspension/interruption) or different (for relaunch).
+/// ignored. Once a later segment begins, earlier segments are sealed and cannot grow. A new
+/// segment must use the next sequence number and explicitly acknowledge the unobserved interval
+/// separating it from the previous segment. Its process generation may be the same (for an
+/// in-process suspension/interruption) or different (for relaunch), but a retired generation
+/// cannot reappear after a different process generation has begun.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     private var observationSegments: [RideSessionDurationObservedSegment]
@@ -167,6 +171,9 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             if segment.observedDurationNanoseconds < existing.observedDurationNanoseconds {
                 return .staleReplayIgnored
             }
+            guard existingIndex == observationSegments.index(before: observationSegments.endIndex) else {
+                throw RideSessionDurationEvidenceError.closedSegmentCannotExtend
+            }
 
             let additional = segment.observedDurationNanoseconds - existing.observedDurationNanoseconds
             let (newTotal, overflow) = totalObservedDurationNanoseconds
@@ -207,6 +214,14 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             guard segment.followsUnobservedInterval else {
                 throw RideSessionDurationEvidenceError.invalidGapClassification
             }
+        }
+
+        if let previousSegment = observationSegments.last,
+           previousSegment.processGenerationID != segment.processGenerationID,
+           observationSegments.contains(where: {
+               $0.processGenerationID == segment.processGenerationID
+           }) {
+            throw RideSessionDurationEvidenceError.retiredProcessGenerationReused
         }
 
         let (newTotal, overflow) = totalObservedDurationNanoseconds
