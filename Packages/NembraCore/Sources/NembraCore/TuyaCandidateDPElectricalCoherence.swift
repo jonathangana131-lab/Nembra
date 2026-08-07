@@ -1,9 +1,8 @@
 import Foundation
 
-/// Caller-assigned roles for a narrow electrical relationship hypothesis.
-///
-/// These roles describe the stock-app anchors the researcher deliberately chose.
-/// They do not assign AOVOPRO ES80 DP semantics to any candidate.
+/// Caller-assigned roles for one narrow electrical relationship hypothesis.
+/// Roles describe the stock-app anchors a researcher deliberately chose; they
+/// never assign AOVOPRO ES80 DP semantics to a candidate.
 public enum TuyaCandidateDPElectricalRole: String, Equatable, Hashable, Sendable {
     case voltage
     case current
@@ -11,6 +10,8 @@ public enum TuyaCandidateDPElectricalRole: String, Equatable, Hashable, Sendable
 }
 
 public enum TuyaCandidateDPElectricalCoherenceError: Error, Equatable, Sendable {
+    case emptyEvidenceContextIdentifier
+    case evidenceContextMismatch(role: TuyaCandidateDPElectricalRole)
     case invalidMaximumAnchorCount
     case invalidAbsolutePowerTolerance
     case invalidRelativePowerTolerance
@@ -27,11 +28,43 @@ public enum TuyaCandidateDPElectricalCoherenceError: Error, Equatable, Sendable 
     case duplicateHypothesisSample(role: TuyaCandidateDPElectricalRole, markerIndex: Int)
 }
 
-/// One explicit three-field stock-app anchor group.
-///
-/// Marker indices are local to the three caller-supplied numeric-hypothesis
-/// reports. Reusing the same marker within one role across multiple anchors is
-/// rejected so repeated support cannot be manufactured from one observation.
+/// Caller-attested identity for one capture/analysis context whose monotonic
+/// receipt times are legitimately comparable. The identifier should originate
+/// from retained capture metadata. Equality prevents accidental cross-session
+/// mixing; it is not authentication or physical protocol proof.
+public struct TuyaCandidateDPElectricalEvidenceContextIdentity: Equatable, Hashable, Sendable {
+    public let identifier: String
+
+    public init(identifier: String) throws {
+        guard !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw TuyaCandidateDPElectricalCoherenceError.emptyEvidenceContextIdentifier
+        }
+        self.identifier = identifier
+    }
+}
+
+/// Explicit per-role association between each numeric report and its capture
+/// context. All three identities must match before uptime-based span math occurs.
+public struct TuyaCandidateDPElectricalEvidenceContextBindings: Equatable, Sendable {
+    public let voltage: TuyaCandidateDPElectricalEvidenceContextIdentity
+    public let current: TuyaCandidateDPElectricalEvidenceContextIdentity
+    public let power: TuyaCandidateDPElectricalEvidenceContextIdentity
+
+    public init(
+        voltage: TuyaCandidateDPElectricalEvidenceContextIdentity,
+        current: TuyaCandidateDPElectricalEvidenceContextIdentity,
+        power: TuyaCandidateDPElectricalEvidenceContextIdentity
+    ) {
+        self.voltage = voltage
+        self.current = current
+        self.power = power
+    }
+}
+
+/// One explicit three-field stock-app anchor group. Marker indices are local to
+/// the three caller-supplied numeric-hypothesis reports. Reusing one marker
+/// within a role across multiple anchors is rejected so support cannot be
+/// inflated from one observation.
 public struct TuyaCandidateDPElectricalAnchor: Equatable, Hashable, Sendable {
     public let voltageMarkerIndex: Int
     public let currentMarkerIndex: Int
@@ -67,11 +100,9 @@ public struct TuyaCandidateDPElectricalAnchor: Equatable, Hashable, Sendable {
 }
 
 /// Caller-owned bounds for the explicit research relationship
-/// `power = voltage × current`.
-///
-/// Values are interpreted only in the caller's chosen display-space units after
-/// the numeric transforms. There are intentionally no ES80 timing or tolerance
-/// defaults.
+/// `power = voltage × current`. Values are interpreted only in the caller's
+/// chosen display-space units after #280's explicit numeric transforms. There
+/// are intentionally no ES80 timing or tolerance defaults.
 public struct TuyaCandidateDPElectricalCoherencePolicy: Equatable, Sendable {
     public let maximumAnchorCount: Int
     public let maximumEvidenceSpanNanoseconds: UInt64
@@ -100,10 +131,11 @@ public struct TuyaCandidateDPElectricalCoherencePolicy: Equatable, Sendable {
     }
 }
 
-/// Shared transport/framing scope required before three numeric series may be
-/// compared. Field labels remain exact stock-app/research labels; they are not
-/// parsed or promoted into DP meaning.
+/// Shared provenance scope required before three numeric series may be compared.
+/// Field labels remain exact stock-app/research labels and are never parsed or
+/// promoted into DP meaning.
 public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
+    public let evidenceContextIdentity: TuyaCandidateDPElectricalEvidenceContextIdentity
     public let streamIdentity: TuyaCandidateValueStreamIdentity
     public let continuityGeneration: UInt64
     public let dataLengthWidth: TuyaCandidateDPDataLengthWidth
@@ -112,10 +144,12 @@ public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
     public let powerFieldLabel: String
 
     fileprivate init(
+        evidenceContextIdentity: TuyaCandidateDPElectricalEvidenceContextIdentity,
         voltage: TuyaCandidateDPMarkerCorrelationScope,
         current: TuyaCandidateDPMarkerCorrelationScope,
         power: TuyaCandidateDPMarkerCorrelationScope
     ) {
+        self.evidenceContextIdentity = evidenceContextIdentity
         streamIdentity = voltage.streamIdentity
         continuityGeneration = voltage.continuityGeneration
         dataLengthWidth = voltage.dataLengthWidth
@@ -126,7 +160,7 @@ public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
 }
 
 /// Exact candidate + transform selected by the caller for one research role.
-/// A selection is evidence provenance only, never a decoded-field declaration.
+/// Selection remains evidence provenance only, never a decoded-field declaration.
 public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
     public let role: TuyaCandidateDPElectricalRole
     public let fieldLabel: String
@@ -156,8 +190,8 @@ public enum TuyaCandidateDPElectricalAnchorRejectionReason: Equatable, Sendable 
     case nonFiniteCandidateRelationship
 }
 
-/// Explicitly rejected anchor. Missing/too-distant/overflowing evidence stays
-/// visible instead of being silently dropped from the support count.
+/// Explicitly rejected anchor. Missing, too-distant, and overflowing evidence
+/// remains visible instead of being silently dropped from support counts.
 public struct TuyaCandidateDPElectricalRejectedAnchor: Equatable, Sendable {
     public let anchorIndex: Int
     public let anchor: TuyaCandidateDPElectricalAnchor
@@ -174,16 +208,16 @@ public struct TuyaCandidateDPElectricalRejectedAnchor: Equatable, Sendable {
     }
 }
 
-/// One accepted, time-bounded comparison.
+/// One accepted, time-bounded comparison. Both independently entered stock-app
+/// numeric references and transformed raw-candidate values are checked against
+/// the same explicit `power = voltage × current` relationship.
 ///
-/// Both the independently entered stock-app numeric references and the
-/// transformed raw-candidate values are checked against the same explicit
-/// `power = voltage × current` relationship. Joint support requires:
-/// 1. the stock-app references themselves are relationship-coherent;
-/// 2. all three candidate transforms individually match their numeric anchors;
-/// 3. the transformed candidate values are relationship-coherent.
+/// Joint support requires:
+/// 1. stock-app references themselves are relationship-coherent;
+/// 2. all three #280 transforms individually match their numeric anchors;
+/// 3. transformed candidate values are relationship-coherent.
 ///
-/// This is research prioritization evidence, not protocol confidence.
+/// This is research prioritization evidence, never protocol confidence.
 public struct TuyaCandidateDPElectricalAnchorEvaluation: Equatable, Sendable {
     public let anchorIndex: Int
     public let anchor: TuyaCandidateDPElectricalAnchor
@@ -248,9 +282,8 @@ public struct TuyaCandidateDPElectricalAnchorEvaluation: Equatable, Sendable {
 }
 
 /// Descriptive result for one explicit triplet of DP candidates/transforms.
-///
-/// Counts are not confidence scores. They exist to make repeated independent
-/// support and rejected anchors auditable before any physical semantic claim.
+/// Counts are not confidence scores; they make repeated independent support and
+/// rejected anchors auditable before any physical semantic claim.
 public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
     public let scope: TuyaCandidateDPElectricalCoherenceScope
     public let voltageSelection: TuyaCandidateDPElectricalSeriesSelection
@@ -283,6 +316,7 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
         self.requestedAnchorCount = requestedAnchorCount
         self.evaluations = evaluations
         self.rejectedAnchors = rejectedAnchors
+
         referenceRelationshipMatchedCount = evaluations.reduce(into: 0) { count, evaluation in
             if evaluation.referenceRelationshipWithinTolerance { count += 1 }
         }
@@ -306,9 +340,8 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
             evaluations.map(\.candidateAbsolutePowerError).max()
     }
 
-    /// Normalizing each finite term before accumulation prevents a finite set of
-    /// extreme per-anchor errors from producing an infinite intermediate sum.
-    /// The returned mean therefore remains finite whenever every input is finite.
+    /// Normalize every finite term before accumulation so repeated extreme
+    /// finite errors cannot overflow only because an intermediate raw sum did.
     private static func stableMean(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         let count = Double(values.count)
@@ -323,10 +356,10 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
 public enum TuyaCandidateDPElectricalCoherenceEvaluator {
     /// Evaluates one caller-selected voltage/current/power candidate triplet.
     ///
-    /// The three reports must already describe the same exact GATT stream,
-    /// continuity generation, and DP framing-width hypothesis. Field labels may
-    /// differ and are preserved verbatim. No candidate search or semantic
-    /// promotion occurs here.
+    /// Before uptime-based comparison, the caller must bind each report to the
+    /// same retained capture/clock context. Reports must also share the exact
+    /// GATT value stream, continuity generation, and DP length-width hypothesis.
+    /// No candidate search or semantic promotion occurs here.
     public static func evaluate(
         voltageReport: TuyaCandidateDPNumericHypothesisReport,
         voltageHypothesisIdentifier: String,
@@ -334,6 +367,7 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
         currentHypothesisIdentifier: String,
         powerReport: TuyaCandidateDPNumericHypothesisReport,
         powerHypothesisIdentifier: String,
+        evidenceContexts: TuyaCandidateDPElectricalEvidenceContextBindings,
         anchors: [TuyaCandidateDPElectricalAnchor],
         policy: TuyaCandidateDPElectricalCoherencePolicy
     ) throws -> TuyaCandidateDPElectricalCoherenceReport {
@@ -343,6 +377,7 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
             )
         }
 
+        try validateEvidenceContexts(evidenceContexts)
         try validateScope(
             voltage: voltageReport.correlationScope,
             current: currentReport.correlationScope,
@@ -483,6 +518,7 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
 
         return TuyaCandidateDPElectricalCoherenceReport(
             scope: TuyaCandidateDPElectricalCoherenceScope(
+                evidenceContextIdentity: evidenceContexts.voltage,
                 voltage: voltageReport.correlationScope,
                 current: currentReport.correlationScope,
                 power: powerReport.correlationScope
@@ -506,6 +542,17 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
             evaluations: evaluations,
             rejectedAnchors: rejections
         )
+    }
+
+    private static func validateEvidenceContexts(
+        _ contexts: TuyaCandidateDPElectricalEvidenceContextBindings
+    ) throws {
+        guard contexts.current == contexts.voltage else {
+            throw TuyaCandidateDPElectricalCoherenceError.evidenceContextMismatch(role: .current)
+        }
+        guard contexts.power == contexts.voltage else {
+            throw TuyaCandidateDPElectricalCoherenceError.evidenceContextMismatch(role: .power)
+        }
     }
 
     private static func validateScope(
