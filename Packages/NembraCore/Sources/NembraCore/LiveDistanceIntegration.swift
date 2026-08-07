@@ -50,10 +50,14 @@ public enum LiveDistanceRecordResult: Equatable, Sendable {
     case anchored
     /// One measured interval was integrated successfully.
     case integrated(addedMeters: Double)
-    /// The two valid samples were too far apart to integrate honestly. The new
-    /// sample becomes the next anchor, but no distance is invented across the gap.
+    /// The interval cannot be integrated honestly. This can be caused either by
+    /// an oversized accepted-sample interval or by an unusable selected
+    /// authoritative measurement inside the interval. The new usable sample
+    /// becomes the next anchor, but no distance is invented across the gap.
     case gapDetected(intervalNanoseconds: UInt64)
-    /// Invalid evidence never mutates the accumulator.
+    /// Rejection never rewrites accepted distance/anchor evidence. A fresh
+    /// source-selected authoritative callback may still consume chronology and,
+    /// when numeric evidence is unusable, mark a real coverage interruption.
     case rejected(LiveDistanceSampleRejection)
 }
 
@@ -164,6 +168,14 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
 
     private var firstAcceptedSample: SpeedTelemetrySample?
     private var lastAcceptedSample: SpeedTelemetrySample?
+    /// Monotonic chronology of source-selected authoritative callbacks is kept
+    /// separately from accepted integration anchors. Numeric rejection must not
+    /// reopen the stream to an older delayed callback.
+    private var lastSeenAuthoritativeSampleUptimeNanoseconds: UInt64?
+    /// A selected authoritative measurement was chronologically valid but could
+    /// not participate in distance arithmetic. The next usable measurement must
+    /// re-anchor instead of integrating through that known evidence hole.
+    private var integrationContinuityInterrupted = false
     private var accumulatedDistanceMeters = 0.0
     private var acceptedSampleCount = 0
     private var integratedIntervalCount = 0
@@ -188,6 +200,16 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
         guard sample.receivedAtUptimeNanoseconds >= segmentStartUptimeNanoseconds else {
             return .rejected(.beforeSegmentStart)
         }
+        if let lastSeenAuthoritativeSampleUptimeNanoseconds,
+           sample.receivedAtUptimeNanoseconds <= lastSeenAuthoritativeSampleUptimeNanoseconds {
+            return .rejected(.nonIncreasingTimestamp)
+        }
+
+        // Once a fresh callback belongs to this selected authoritative stream,
+        // consume its immutable chronology before numeric integration. If the
+        // interval later overflows, that callback remains seen; an older delayed
+        // callback cannot be admitted by falling back to the last accepted anchor.
+        lastSeenAuthoritativeSampleUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
         guard let previous = lastAcceptedSample else {
             firstAcceptedSample = sample
@@ -199,12 +221,16 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
             return .anchored
         }
 
-        guard sample.receivedAtUptimeNanoseconds > previous.receivedAtUptimeNanoseconds else {
-            return .rejected(.nonIncreasingTimestamp)
-        }
-
         let intervalNanoseconds =
             sample.receivedAtUptimeNanoseconds - previous.receivedAtUptimeNanoseconds
+
+        if integrationContinuityInterrupted {
+            integrationContinuityInterrupted = false
+            lastAcceptedSample = sample
+            acceptedSampleCount += 1
+            return .gapDetected(intervalNanoseconds: intervalNanoseconds)
+        }
+
         if intervalNanoseconds > policy.maximumIntegrationIntervalNanoseconds {
             lastAcceptedSample = sample
             acceptedSampleCount += 1
@@ -226,6 +252,10 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
             addedMeters >= 0,
             (accumulatedDistanceMeters + addedMeters).isFinite
         else {
+            if !integrationContinuityInterrupted {
+                integrationContinuityInterrupted = true
+                knownCoverageGapCount += 1
+            }
             return .rejected(.distanceOverflow)
         }
 
@@ -265,15 +295,19 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
         guard segmentEndUptimeNanoseconds >= segmentStartUptimeNanoseconds else {
             throw LiveDistanceIntegrationError.invalidSegmentEnd
         }
-        if let lastAcceptedSample,
-            segmentEndUptimeNanoseconds < lastAcceptedSample.receivedAtUptimeNanoseconds
+        if let lastSeenAuthoritativeSampleUptimeNanoseconds,
+           segmentEndUptimeNanoseconds < lastSeenAuthoritativeSampleUptimeNanoseconds
         {
             throw LiveDistanceIntegrationError.invalidSegmentEnd
         }
 
         let hasTrailingGap: Bool
         if let lastAcceptedSample {
-            hasTrailingGap = segmentEndUptimeNanoseconds > lastAcceptedSample.receivedAtUptimeNanoseconds
+            // If numeric rejection already opened a known continuity gap, any
+            // still-unobserved tail is contiguous with that same gap and must not
+            // be double-counted merely because no new usable anchor arrived.
+            hasTrailingGap = !integrationContinuityInterrupted
+                && segmentEndUptimeNanoseconds > lastAcceptedSample.receivedAtUptimeNanoseconds
         } else {
             hasTrailingGap = false
         }
