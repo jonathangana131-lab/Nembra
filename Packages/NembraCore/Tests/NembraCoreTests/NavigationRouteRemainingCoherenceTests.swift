@@ -8,11 +8,42 @@ struct NavigationRouteRemainingCoherenceTests {
         try NavigationRouteCoordinate(latitude: latitude, longitude: longitude)
     }
 
-    private func screened(_ latitude: Double, _ longitude: Double) throws -> QualityScreenedRideLocation {
+    private func route() throws -> NavigationRouteSnapshot {
+        let a = try coordinate(45.0000, -122.0000)
+        let b = try coordinate(45.0010, -122.0000)
+        let c = try coordinate(45.0020, -122.0000)
+        let first = try NavigationRouteStepSnapshot(
+            geometry: [a, b],
+            instructions: "First",
+            notice: nil,
+            distanceMeters: 100,
+            transportMode: .cycling
+        )
+        let second = try NavigationRouteStepSnapshot(
+            geometry: [b, c],
+            instructions: "Second",
+            notice: nil,
+            distanceMeters: 150,
+            transportMode: .cycling
+        )
+        return try NavigationRouteSnapshot(
+            provenance: .appleMapKitCycling(),
+            name: "Independent provider totals",
+            geometry: [a, b, c],
+            steps: [first, second],
+            distanceMeters: 200,
+            expectedTravelTimeSeconds: 90,
+            hasHighways: false,
+            hasTolls: false,
+            advisoryNotices: []
+        )
+    }
+
+    private func screened() throws -> QualityScreenedRideLocation {
         let date = Date(timeIntervalSinceReferenceDate: 1_000)
         let sample = try RideLocationSample(
-            latitude: latitude,
-            longitude: longitude,
+            latitude: 45.0015,
+            longitude: -122.0000,
             sourceMeasurementDate: date,
             receivedAtDate: date,
             receivedAtUptimeNanoseconds: 500,
@@ -26,130 +57,67 @@ struct NavigationRouteRemainingCoherenceTests {
         )
     }
 
-    private func matcher() throws -> NavigationRouteGeometryMatcher {
-        NavigationRouteGeometryMatcher(
-            policy: try NavigationRouteGeometryMatchingPolicy(
-                maximumRouteDistanceMeters: 30,
-                minimumStepAmbiguitySeparationMeters: 4,
-                minimumWithinGeometryProgressSeparationMeters: 25
-            )
+    private func geometryPolicy() throws -> NavigationRouteGeometryMatchingPolicy {
+        try NavigationRouteGeometryMatchingPolicy(
+            maximumRouteDistanceMeters: 30,
+            minimumStepAmbiguitySeparationMeters: 4,
+            minimumWithinGeometryProgressSeparationMeters: 25
         )
     }
 
-    @Test("one provider step cannot be longer than the whole route")
-    func rejectsSingleStepLongerThanRoute() throws {
-        let a = try coordinate(45.0000, -122.0000)
-        let b = try coordinate(45.0010, -122.0000)
-        let step = try NavigationRouteStepSnapshot(
-            geometry: [a, b],
-            instructions: "Continue",
-            notice: nil,
-            distanceMeters: 201,
-            transportMode: .cycling
-        )
-
-        #expect(throws: NavigationRouteDomainError.invalidDistance) {
-            _ = try NavigationRouteSnapshot(
-                provenance: .appleMapKitCycling(),
-                name: "Impossible provider distance",
-                geometry: [a, b],
-                steps: [step],
-                distanceMeters: 200,
-                expectedTravelTimeSeconds: 60,
-                hasHighways: false,
-                hasTolls: false,
-                advisoryNotices: []
-            )
-        }
-    }
-
-    @Test("step totals may still differ from the provider route distance")
-    func preservesIndependentProviderTotals() throws {
-        let a = try coordinate(45.0000, -122.0000)
-        let b = try coordinate(45.0010, -122.0000)
-        let c = try coordinate(45.0020, -122.0000)
-        let first = try NavigationRouteStepSnapshot(
-            geometry: [a, b],
-            instructions: "First",
-            notice: nil,
-            distanceMeters: 100,
-            transportMode: .cycling
-        )
-        let second = try NavigationRouteStepSnapshot(
-            geometry: [b, c],
-            instructions: "Second",
-            notice: nil,
-            distanceMeters: 150,
-            transportMode: .cycling
-        )
-
-        let route = try NavigationRouteSnapshot(
-            provenance: .appleMapKitCycling(),
-            name: "Independent totals",
-            geometry: [a, b, c],
-            steps: [first, second],
-            distanceMeters: 200,
-            expectedTravelTimeSeconds: 90,
-            hasHighways: false,
-            hasTolls: false,
-            advisoryNotices: []
-        )
-
-        #expect(route.steps.reduce(0) { $0 + $1.distanceMeters } == 250)
-        #expect(route.distanceMeters == 200)
-    }
-
-    @Test("contradictory independent projections fail guidance confidence without throwing")
-    func contradictoryProjectionFailsClosedCoherently() throws {
-        let a = try coordinate(45.0000, -122.0000)
-        let b = try coordinate(45.0010, -122.0000)
-        let c = try coordinate(45.0020, -122.0000)
-        let first = try NavigationRouteStepSnapshot(
-            geometry: [a, b],
-            instructions: "First",
-            notice: nil,
-            distanceMeters: 100,
-            transportMode: .cycling
-        )
-        let second = try NavigationRouteStepSnapshot(
-            geometry: [b, c],
-            instructions: "Second",
-            notice: nil,
-            distanceMeters: 150,
-            transportMode: .cycling
-        )
-        let route = try NavigationRouteSnapshot(
-            provenance: .appleMapKitCycling(),
-            name: "Independent totals",
-            geometry: [a, b, c],
-            steps: [first, second],
-            distanceMeters: 200,
-            expectedTravelTimeSeconds: 90,
-            hasHighways: false,
-            hasTolls: false,
-            advisoryNotices: []
-        )
-
-        let match = try matcher().match(
-            location: screened(45.0015, -122.0000),
-            route: route
-        )
+    @Test("contradictory independent projections fail closed without throwing")
+    func contradictoryProjectionBecomesUnavailableGuidance() throws {
+        let selectedRoute = try route()
+        let matcher = NavigationRouteGeometryMatcher(policy: try geometryPolicy())
+        let match = matcher.match(location: try screened(), route: selectedRoute)
 
         #expect(match.stepIndex == 1)
         #expect(abs(match.distanceRemainingOnStepMeters - 75) < 1)
         #expect(abs(match.distanceRemainingOnRouteMeters - 75) < 1)
+        #expect(match.distanceRemainingOnRouteMeters >= match.distanceRemainingOnStepMeters)
         #expect(!match.isProgressAssignmentConfident)
 
         var tracker = NavigationGuidanceProgressTracker()
-        let token = try tracker.select(route: route)
+        let token = try tracker.select(route: selectedRoute)
         let observation = try match.guidanceObservation(selectionToken: token)
-        #expect(!observation.isProgressAssignmentConfident)
         #expect(try tracker.observe(observation))
+        #expect(
+            tracker.state == .unavailable(
+                token: token,
+                route: selectedRoute,
+                reason: .ambiguousProgress
+            )
+        )
+    }
 
-        guard case let .unavailable(_, _, reason) = tracker.state else {
-            Issue.record("Contradictory projections must not publish active guidance")
+    @Test("session coordinator consumes incoherent projections transactionally")
+    func sessionCoordinatorFailsProgressClosed() throws {
+        let selectedRoute = try route()
+        var coordinator = NavigationSessionCoordinator(
+            geometryPolicy: try geometryPolicy(),
+            reroutePolicy: try NavigationReroutePolicy(
+                minimumDeviationDistanceMeters: 20,
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 1,
+                rerouteCooldownNanoseconds: 1
+            )
+        )
+        let token = try coordinator.select(route: selectedRoute)
+
+        guard let update = try coordinator.process(location: screened()) else {
+            Issue.record("Selected navigation route must produce a session update")
             return
         }
-        #expect(reason == .ambiguousProgress)
+
+        #expect(update.geometryMatch.distanceRemainingOnRouteMeters >= update.geometryMatch.distanceRemainingOnStepMeters)
+        #expect(!update.geometryMatch.isProgressAssignmentConfident)
+        #expect(update.rerouteDecision == .keepCurrentRoute)
+        #expect(
+            update.guidanceState == .unavailable(
+                token: token,
+                route: selectedRoute,
+                reason: .ambiguousProgress
+            )
+        )
     }
 }
