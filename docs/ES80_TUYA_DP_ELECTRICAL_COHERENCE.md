@@ -4,13 +4,13 @@ Status: **software research tooling only / physical ES80 semantics unverified**
 
 Dependency chain:
 
-`#219 public-family framing -> #238 structural DP candidates -> #262 stock-app marker correlation -> #270 explicit numeric transforms -> this layer`
+`#219 public-family framing -> #238 structural DP candidates -> #262 stock-app marker correlation -> #280 explicit numeric transforms -> this layer`
 
 ## Purpose
 
 The stock Tuya app has been observed exposing battery percentage, voltage, current/amps, and watts/power for the target AOVOPRO ES80 generation. Those visible values are useful **correlation anchors**, but they do not prove which raw Tuya DP carries any field, what its scale is, or whether Nembra has production authority for it.
 
-`TuyaCandidateDPElectricalCoherenceEvaluator` adds one narrow research question after #270 has already produced explicit candidate/scale hypotheses:
+`TuyaCandidateDPElectricalCoherenceEvaluator` adds one narrow research question after #280 has already produced explicit candidate/scale hypotheses:
 
 > Do one caller-selected voltage candidate, one current candidate, and one power candidate remain mutually consistent with the explicit relationship `power = voltage × current` across repeated, time-bounded stock-app anchors?
 
@@ -20,17 +20,28 @@ This can prioritize which hypotheses deserve more physical capture. It is not a 
 
 The caller supplies:
 
-- one #270 numeric-hypothesis report assigned to the **voltage anchor role**;
+- one #280 numeric-hypothesis report assigned to the **voltage anchor role**;
 - one report assigned to **current**;
 - one report assigned to **power**;
 - the exact transform identifier selected from each report;
+- an explicit evidence-context identity for each role;
 - explicit three-way marker-index groups;
 - a maximum allowed evidence span;
 - absolute and relative power-error tolerances.
 
 There are no ES80 defaults for timing, scale, signedness, or tolerance. Field-label strings are preserved but never parsed to infer meaning.
 
-All three reports must come from the same exact:
+## Capture / monotonic-clock boundary
+
+The three reports contain monotonic receipt uptimes. Those numbers are meaningful for cross-field timing only when all three reports come from the same retained capture/analysis clock context. Equal GATT identity and continuity generation alone do not prove that two independently created captures share a comparable uptime origin.
+
+The evaluator therefore requires caller-attested per-role `TuyaCandidateDPElectricalEvidenceContextIdentity` values and fails closed unless all three match **before** it performs timing-span math.
+
+The identifier should come from retained capture metadata or another durable analysis-session identity. It is deliberately opaque. This layer does not invent one by hashing timestamps or GATT identity.
+
+This binding is a provenance contract, not authentication. A caller can still supply the wrong identifier. Production research wiring should therefore feed it from Nembra's retained capture/session metadata rather than asking a user to type it manually.
+
+All three reports must also come from the same exact:
 
 - peripheral/service/characteristic value-stream identity;
 - continuity generation;
@@ -45,13 +56,13 @@ Each accepted anchor evaluates two relationships separately:
 1. **stock-reference relationship** — independently entered numeric stock-app values must themselves be coherent enough for the chosen timing/tolerance policy;
 2. **candidate relationship** — the transformed raw DP candidate values must also be coherent.
 
-Joint support additionally requires all three #270 candidate samples to individually match their own caller-supplied numeric anchors.
+Joint support additionally requires all three #280 candidate samples to individually match their own caller-supplied numeric anchors.
 
 So one accidental `V × I ≈ P` result cannot hide that a selected transform failed its original stock-app value, and asynchronous/incoherent stock-app anchors cannot silently become positive candidate evidence.
 
 ## Timing boundary
 
-An electrical anchor is accepted only when the span across all six relevant monotonic timestamps is within caller policy:
+After the shared evidence context has been established, an electrical anchor is accepted only when the span across all six relevant monotonic timestamps is within caller policy:
 
 - voltage marker receipt;
 - current marker receipt;
@@ -68,9 +79,15 @@ One stock marker may support at most one anchor within each role in a single eva
 
 Missing numeric samples, excessive timing span, and non-finite relationship math are retained as explicit rejection reasons instead of being silently dropped.
 
+## Numeric stability
+
+Each accepted anchor must keep predicted power, absolute error, relative allowance, and relative error finite. Overflowing relationship math is rejected rather than treated as a match.
+
+Aggregate mean absolute errors use normalized finite accumulation (`value / count` before summation) so several very large but finite per-anchor errors do not become infinite only because an intermediate raw sum overflowed. This does not increase evidence strength; it preserves truthful descriptive math.
+
 ## Signed values
 
-The evaluator multiplies the transformed values exactly as supplied. It does not take absolute current, guess signedness, or infer regenerative braking. If a researcher wants to evaluate a negative transform, that transform must already have been explicitly supplied to #270.
+The evaluator multiplies the transformed values exactly as supplied. It does not take absolute current, guess signedness, or infer regenerative braking. If a researcher wants to evaluate a negative transform, that transform must already have been explicitly supplied to #280.
 
 A negative result is therefore still only research math. It is **not** verified regen.
 
@@ -78,15 +95,16 @@ A negative result is therefore still only research math. It is **not** verified 
 
 The report preserves:
 
+- exact shared evidence-context identity;
 - exact shared stream/generation/framing scope;
 - exact field labels;
 - each selected raw DP candidate identity;
 - each selected numeric transform;
-- full #270 samples including raw bytes and timing provenance;
+- full #280 samples including raw bytes and timing provenance;
 - reference-side and candidate-side predicted power/error/tolerance;
 - whether each of the three numeric hypotheses matched its own stock anchor;
 - explicit rejected anchors;
-- descriptive repeated-support counts and aggregate errors.
+- descriptive repeated-support counts and finite aggregate errors.
 
 Counts are not confidence scores and are never sufficient to promote a DP into production telemetry.
 
@@ -98,6 +116,7 @@ This layer does **not**:
 - discover DP IDs or transforms automatically;
 - parse stock-app display strings into numbers;
 - claim any candidate is voltage/current/power;
+- prove the caller supplied the correct capture-context identity;
 - establish units, scale, signedness, cadence, freshness, or source authority;
 - infer battery energy, Wh, Wh/mi, torque, throttle, or regen;
 - authorize Bluetooth writes or vehicle commands;
@@ -107,6 +126,6 @@ Before Nembra may expose voltage/current/power as production truth, each field s
 
 ## Suggested physical use after the capture UI is ready
 
-A later research workflow can record short, safe stationary/benign sessions in which the stock app's voltage/current/power values are marked close together, then let Nembra perform framing, structural DP parsing, marker correlation, numeric transform evaluation, and this coherence check offline.
+A later research workflow can record a short, safe physical session in one retained Nembra capture context, place stock-app voltage/current/power markers close together, and let Nembra perform framing, structural DP parsing, marker correlation, numeric transform evaluation, and this coherence check offline.
 
-The user should not need to decode hex manually. This layer only narrows what Nembra should investigate next.
+The capture tooling should carry the evidence-context identity automatically. The user should not need to decode hex or invent session identifiers manually. This layer only narrows what Nembra should investigate next.
