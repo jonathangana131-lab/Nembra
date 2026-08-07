@@ -43,9 +43,20 @@ The parser recognizes the public Tuya type identifiers only as generic family st
 
 Recognition does not establish ES80 meaning.
 
-The parser records a shape finding for known fixed-size public forms. A surprising length is preserved as evidence and flagged; the parser does not mutate, skip, truncate, or search for a nearby interpretation just to obtain a clean parse.
+The parser records a shape finding for known public forms. A surprising length is preserved as evidence and flagged; the parser does not mutate, skip, truncate, or search for a nearby interpretation just to obtain a clean parse.
+
+Current generic shape evidence retained by this candidate analyzer is:
+
+- raw: `1...255` bytes;
+- boolean: `1` byte;
+- value: `4` bytes;
+- string: `0...255` bytes;
+- enum: `1` byte;
+- bitmap: `1`, `2`, or `4` bytes.
 
 For bitmap length, Nembra preserves the broader public-family `1/2/4`-byte shape because current Tuya documents are not perfectly uniform across product/protocol material. This is intentionally a structural candidate, not a product schema.
+
+Out-of-family raw/string lengths are still retained byte-for-byte when the caller's resource policy permits them; the finding says only that the shape is surprising under this public candidate family. This keeps protocol falsification possible instead of turning a mismatch into discarded evidence.
 
 ## Scalar projection boundary
 
@@ -75,6 +86,8 @@ It fails closed on:
 
 Unknown type IDs are not failures. They are retained as raw structural evidence because an unknown/proprietary field is materially different from malformed transport.
 
+Known-type shape mismatches are findings rather than parser errors when the bytes are structurally complete. This distinction is deliberate: transport truncation must fail closed, while a complete but surprising field is useful evidence against the current hypothesis.
+
 Empty input produces an empty candidate payload and never manufactures a DP.
 
 ## Relationship to PR #219
@@ -90,6 +103,12 @@ This dependent slice can consume only the resulting `logicalPacket.data` bytes. 
 It does not mean:
 
 > "This command is known to be an ES80 DP report."
+
+## Verification
+
+The focused suite covers both explicit length-width hypotheses, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
+
+A local Swift 6.2.1 warnings-as-errors mirror of the exact feature logic passes **14/14** tests in both debug and optimized release. That is supporting software evidence only; repository-native exact-head NembraCore/Xcode acceptance remains required on the final dependency composition.
 
 ## Physical closure path
 
