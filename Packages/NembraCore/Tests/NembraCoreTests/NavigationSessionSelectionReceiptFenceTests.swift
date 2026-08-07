@@ -135,6 +135,42 @@ struct NavigationSessionSelectionReceiptFenceTests {
         _ = try #require(freshResult)
     }
 
+    @Test("fenced route selections cannot regress their own process chronology")
+    func fencedSelectionChronologyCannotRegress() throws {
+        var session = try coordinator()
+        _ = try session.select(
+            route: route(),
+            receiptFence: NavigationRouteSelectionReceiptFence(selectedAtUptimeNanoseconds: 100)
+        )
+        let firstSelectionState = session.guidanceState
+
+        #expect(throws: NavigationSessionCoordinatorError.nonMonotonicSelectionFence) {
+            try session.select(
+                route: route(),
+                receiptFence: NavigationRouteSelectionReceiptFence(selectedAtUptimeNanoseconds: 99)
+            )
+        }
+        #expect(session.guidanceState == firstSelectionState)
+
+        // Clearing the active route must not erase the process-local selection
+        // high-water mark and permit an older selection event to resurrect.
+        session.clearRoute()
+        #expect(throws: NavigationSessionCoordinatorError.nonMonotonicSelectionFence) {
+            try session.select(
+                route: route(),
+                receiptFence: NavigationRouteSelectionReceiptFence(selectedAtUptimeNanoseconds: 99)
+            )
+        }
+        #expect(session.guidanceState == .idle)
+
+        _ = try session.select(
+            route: route(),
+            receiptFence: NavigationRouteSelectionReceiptFence(selectedAtUptimeNanoseconds: 101)
+        )
+        let freshResult = try session.process(location: location(uptime: 102))
+        _ = try #require(freshResult)
+    }
+
     @Test("clearing navigation removes the old route-selection fence without resetting seen chronology")
     func clearRouteRemovesSelectionFence() throws {
         var session = try coordinator()
