@@ -19,7 +19,7 @@ public enum CoreBluetoothCaptureMapping {
         return try PassiveBluetoothAdvertisementObservation(
             peripheralIdentifier: peripheralIdentifier.uuidString,
             localName: advertisementData[CBAdvertisementDataLocalNameKey] as? String,
-            rssi: rssi.intValue,
+            rssi: normalizedRSSI(rssi),
             isConnectable: (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue,
             manufacturerData: advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
             serviceUUIDs: uuidStrings(advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]),
@@ -173,6 +173,11 @@ public enum CoreBluetoothCaptureMapping {
     /// capture diffs stable without changing the identifier's semantics.
     public static func normalizedUUID(_ uuid: CBUUID) -> String {
         uuid.uuidString.uppercased()
+    }
+
+    private static func normalizedRSSI(_ rssi: NSNumber) -> Int? {
+        let value = rssi.intValue
+        return value == 127 ? nil : value
     }
 
     private static func uuidStrings(_ uuids: [CBUUID]?) -> [String] {
