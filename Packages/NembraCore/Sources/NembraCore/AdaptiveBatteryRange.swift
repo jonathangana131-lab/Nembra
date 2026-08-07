@@ -67,17 +67,6 @@ public struct BatterySOCReading: Equatable, Codable, Sendable {
         )
     }
 
-    /// Converts a sealed accepted SoC anchor into the pure math model's authoritative input.
-    /// A caller cannot mint the anchor from a percentage; it must first cross battery receipt
-    /// validation in `AcceptedBatterySOCAnchor.current(observation:acceptedBy:)`.
-    public static func accepted(_ anchor: AcceptedBatterySOCAnchor) throws -> Self {
-        try Self(
-            percentage: anchor.percentage,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: anchor.receivedAtUptimeNanoseconds
-        )
-    }
-
     public var isAuthoritativeMeasurement: Bool {
         provenance == .authoritativeMeasurement
     }
@@ -461,6 +450,34 @@ public struct AdaptiveBatteryRangeEstimate: Equatable, Codable, Sendable {
     }
 }
 
+/// A live derived range result bound to the exact accepted SoC receipt used to compute it.
+///
+/// The initializer is file-scoped so direct-source app code cannot attach arbitrary receipt
+/// metadata to a generic estimate. Callers receive this only from
+/// `estimateRemainingRange(atAcceptedSOC:acceptedBy:...)`, which rechecks validator currentness
+/// at calculation time. The wrapper remains non-Codable because receipt identity is process-local.
+public struct AdaptiveBatteryRangeLiveEstimate: Equatable, Sendable {
+    public let estimate: AdaptiveBatteryRangeEstimate
+    public let sourceReceiptIdentity: BatteryEvidenceReceiptIdentity
+    public let sourceSOCUptimeNanoseconds: UInt64
+
+    fileprivate init(
+        estimate: AdaptiveBatteryRangeEstimate,
+        sourceReceiptIdentity: BatteryEvidenceReceiptIdentity,
+        sourceSOCUptimeNanoseconds: UInt64
+    ) {
+        self.estimate = estimate
+        self.sourceReceiptIdentity = sourceReceiptIdentity
+        self.sourceSOCUptimeNanoseconds = sourceSOCUptimeNanoseconds
+    }
+
+    public func isCurrent(in validator: BatteryEvidenceStreamValidator) -> Bool {
+        validator.requiresContinuityBoundary == false
+            && validator.lastAcceptedReceiptIdentity == sourceReceiptIdentity
+            && validator.lastAcceptedUptimeNanoseconds == sourceSOCUptimeNanoseconds
+    }
+}
+
 /// Persistable learning state for one physical scooter.
 ///
 /// This model intentionally learns only distance per authoritative battery
@@ -618,11 +635,71 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         )
     }
 
-    /// Uses learned efficiency when available. With no accepted history, a higher layer may
-    /// provide a conservative provisional seed. If neither exists, range stays unavailable.
+    /// Generic/public estimation accepts estimated SoC only. This keeps simulator/offline math
+    /// available without allowing direct-source app code to throw away an accepted receipt and
+    /// still receive an estimate labeled as authoritative.
     public func estimateRemainingRange(
+        atEstimatedSOC soc: BatterySOCReading,
+        previousPresentedRemainingMeters: Double? = nil,
+        policy: AdaptiveBatteryRangePolicy
+    ) -> AdaptiveBatteryRangeEstimate? {
+        guard soc.isAuthoritativeMeasurement == false else { return nil }
+        return estimateRemainingRangeImpl(
+            at: soc,
+            previousPresentedRemainingMeters: previousPresentedRemainingMeters,
+            policy: policy
+        )
+    }
+
+#if SWIFT_PACKAGE
+    /// Package-only raw estimator retained for focused pure-model tests and trusted package
+    /// integration. Direct-source app code does not receive this overload.
+    package func estimateRemainingRange(
         at soc: BatterySOCReading,
         previousPresentedRemainingMeters: Double? = nil,
+        policy: AdaptiveBatteryRangePolicy
+    ) -> AdaptiveBatteryRangeEstimate? {
+        estimateRemainingRangeImpl(
+            at: soc,
+            previousPresentedRemainingMeters: previousPresentedRemainingMeters,
+            policy: policy
+        )
+    }
+#endif
+
+    /// Production live estimation requires both a sealed accepted SoC anchor and the validator
+    /// that still considers that exact receipt current. A retained anchor cannot be recomputed
+    /// into a fresh-looking live estimate after a gap or newer battery callback.
+    public func estimateRemainingRange(
+        atAcceptedSOC soc: AcceptedBatterySOCAnchor,
+        acceptedBy validator: BatteryEvidenceStreamValidator,
+        previousPresentedRemainingMeters: Double? = nil,
+        policy: AdaptiveBatteryRangePolicy
+    ) -> AdaptiveBatteryRangeLiveEstimate? {
+        guard soc.isCurrent(in: validator),
+              let normalizedSOC = try? BatterySOCReading(
+                percentage: soc.percentage,
+                provenance: .authoritativeMeasurement,
+                receivedAtUptimeNanoseconds: soc.receivedAtUptimeNanoseconds
+              ),
+              let estimate = estimateRemainingRangeImpl(
+                at: normalizedSOC,
+                previousPresentedRemainingMeters: previousPresentedRemainingMeters,
+                policy: policy
+              ) else {
+            return nil
+        }
+
+        return AdaptiveBatteryRangeLiveEstimate(
+            estimate: estimate,
+            sourceReceiptIdentity: soc.sourceReceiptIdentity,
+            sourceSOCUptimeNanoseconds: soc.receivedAtUptimeNanoseconds
+        )
+    }
+
+    private func estimateRemainingRangeImpl(
+        at soc: BatterySOCReading,
+        previousPresentedRemainingMeters: Double?,
         policy: AdaptiveBatteryRangePolicy
     ) -> AdaptiveBatteryRangeEstimate? {
         let selected: (efficiency: Double, basis: AdaptiveRangeEstimateBasis)
