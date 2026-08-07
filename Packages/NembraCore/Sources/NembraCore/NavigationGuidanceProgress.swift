@@ -10,7 +10,7 @@ public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
 /// Opaque identity for one exact route selection.
 ///
 /// `sequence` remains public as the ordering counter within one tracker generation.
-/// The internal tracker/selection UUIDs prevent two fresh trackers — or two copied
+/// Internal tracker/selection UUIDs prevent two fresh trackers — or two copied
 /// tracker values that later diverge — from minting equal tokens at the same sequence.
 /// Consumers outside NembraCore should continue treating the full token as opaque
 /// equality identity instead of assuming sequences are globally ordered.
@@ -123,13 +123,10 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         highestConfidentStepIndex = nil
     }
 
-    /// Internal deterministic construction supports exhaustion and identity tests
-    /// without turning tracker-generation identity into a public caller contract.
-    init(
-        initialSelectionSequence: UInt64,
-        trackerGenerationID: UUID = UUID()
-    ) {
-        self.trackerGenerationID = trackerGenerationID
+    /// Internal construction exists only for sequence-exhaustion regression coverage.
+    /// Generation identity remains tracker-owned rather than caller-supplied.
+    init(initialSelectionSequence: UInt64) {
+        trackerGenerationID = UUID()
         lastSelectionSequence = initialSelectionSequence
         highestConfidentStepIndex = nil
     }
@@ -138,16 +135,6 @@ public struct NavigationGuidanceProgressTracker: Sendable {
     public mutating func select(
         route: NavigationRouteSnapshot
     ) throws -> NavigationGuidanceSelectionToken {
-        try select(route: route, selectionID: UUID())
-    }
-
-    /// Internal deterministic selection identity keeps unit tests non-probabilistic
-    /// while production selections always mint a fresh UUID through the public API.
-    @discardableResult
-    mutating func select(
-        route: NavigationRouteSnapshot,
-        selectionID: UUID
-    ) throws -> NavigationGuidanceSelectionToken {
         guard lastSelectionSequence < UInt64.max else {
             throw NavigationGuidanceProgressError.selectionSequenceExhausted
         }
@@ -155,7 +142,7 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         lastSelectionSequence += 1
         let token = NavigationGuidanceSelectionToken(
             trackerGenerationID: trackerGenerationID,
-            selectionID: selectionID,
+            selectionID: UUID(),
             sequence: lastSelectionSequence
         )
         lastAcceptedObservationUptimeNanoseconds = nil
