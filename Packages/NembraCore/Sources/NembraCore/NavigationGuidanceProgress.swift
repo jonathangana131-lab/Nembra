@@ -43,7 +43,8 @@ public struct NavigationGuidanceProgressObservation: Equatable, Sendable {
               distanceRemainingOnStepMeters.isFinite,
               distanceRemainingOnStepMeters >= 0,
               distanceRemainingOnRouteMeters.isFinite,
-              distanceRemainingOnRouteMeters >= 0 else {
+              distanceRemainingOnRouteMeters >= 0,
+              distanceRemainingOnStepMeters <= distanceRemainingOnRouteMeters else {
             throw NavigationGuidanceProgressError.invalidObservation
         }
 
