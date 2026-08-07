@@ -105,7 +105,9 @@ This prevents a permissive quality policy from silently authorizing a mixed-sour
 - maximum interval jitter;
 - maximum empirical nonzero speed step / resolution.
 
-The three-sample floor is a statistical shape invariant, not an ES80 quality threshold. Jitter is variation between intervals. Two accepted samples provide only one interval, whose population standard deviation is trivially zero and therefore is not meaningful jitter evidence. Three accepted samples are the minimum capable of providing two uninterrupted intervals.
+The three-sample construction floor is a statistical shape invariant, not an ES80 quality threshold. Jitter is variation between intervals. Two accepted samples provide only one interval, whose population standard deviation is trivially zero and therefore is not meaningful jitter evidence.
+
+Three accepted samples are only the minimum *capable* of providing two intervals. A known observation gap can split those samples across segments and leave only one intra-segment interval. `observedPeakReadiness(using:)` therefore also requires `telemetryBenchmark.intervalCount >= 2`. If the ride has fewer than two actually observed intervals, readiness reports `insufficientJitterIntervalEvidence` even if the generic telemetry assessment would otherwise call that one interval qualified.
 
 For GPS, the policy additionally requires:
 
@@ -124,6 +126,7 @@ The actual threshold values must come from legitimate feature requirements and p
 - peak and benchmark sources disagree (defensive invariant);
 - foreign-source callbacks were observed;
 - selected-source peak observation is partial because of a known gap or peak-specific quality rejection;
+- fewer than two actual intra-segment timing intervals exist for jitter evidence;
 - GPS peak evidence had no explicit speed-accuracy ceiling;
 - same-ride raw telemetry failed the supplied cadence/jitter/latency/resolution policy.
 
@@ -167,9 +170,10 @@ Additional post-hardening evidence currently includes:
 - same-package `package` access compile: pass with warnings-as-errors;
 - external-package fresh observer construction: rejected at compile time as intended;
 - deterministic policy regressions reject minimum accepted sample counts of 1 and 2 and accept 3: **3/3 debug + 3/3 release**;
-- logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors, covering repeated-gap deduplication, recovery-start deduplication, rejected-source evidence preserving a pending gap, and GPS raw resumption re-arming a later gap even when peak-specific accuracy rejects that sample.
+- logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors, covering repeated-gap deduplication, recovery-start deduplication, rejected-source evidence preserving a pending gap, and GPS raw resumption re-arming a later gap even when peak-specific accuracy rejects that sample;
+- observed-interval readiness probe: **2/2 debug + 2/2 release** with warnings-as-errors, proving a 3-sample 2+1 segmented stream fails the two-interval jitter floor while a clean two-interval snapshot passes.
 
-A separate read-only dependency review also identified a possible rejected-newer/stale-replay chronology edge in #185 and recorded it in PR #185 comment `5215568271`. This lane does not modify the dependency's owned files.
+A separate read-only dependency review identified a possible rejected-newer/stale-replay chronology edge in #185 and recorded it in PR #185 comment `5215568271`; after #185's exact-head CI turned green, follow-up `5215774811` records that the green run does not disposition that uncovered trace. This lane does not modify the dependency's owned files.
 
 Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
 
