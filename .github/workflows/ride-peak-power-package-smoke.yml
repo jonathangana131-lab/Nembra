@@ -1,0 +1,34 @@
+name: Ride Peak Power Package Smoke
+
+on:
+  push:
+    branches:
+      - qa/ride-peak-power/chat-r6p8-v1
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD=6d6203bf11ca38c29003ad168f74fd5581e92abc
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          changed="$(git diff --name-only "$PRODUCT_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/ride-peak-power-package-smoke.yml"
+          echo "QA mirror contains exactly one workflow-only commit above $PRODUCT_HEAD"
+
+      - name: Report Swift toolchain
+        run: swift --version
+
+      - name: Test NembraCore with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
