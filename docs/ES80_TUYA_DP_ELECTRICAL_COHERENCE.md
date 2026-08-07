@@ -33,6 +33,8 @@ There are no ES80 defaults for timing, scale, signedness, unit, or tolerance. Fi
 
 Each #280 report carries the complete validated caller numeric-reference set and the exact caller-owned numeric `absoluteTolerance` that produced its samples' `isWithinTolerance` flags. This layer retains both separately for voltage, current, and power, including references whose candidate samples were excluded by the parent. The three roles may legitimately use different numeric tolerances.
 
+For each selected role, the child also retains the **complete source #280 report** and the **exact selected #280 evidence object**. That keeps parent unused/ambiguous/shared-reference indices, nonnumeric and transformation-failure counts, alternate hypothesis evidence, exact selected samples, and all parent timing/raw-byte provenance available from the child result. The electrical layer adds evidence; it does not compress away the evidence below it.
+
 ## Unit contract
 
 The relationship `power = voltage × current` is evaluated only in the caller-supplied numeric spaces. The caller is responsible for supplying mutually compatible units for the intended research question, for example numeric anchors normalized to volts, amps, and watts.
@@ -75,9 +77,11 @@ After the shared evidence context has been established, an electrical anchor is 
 - voltage marker receipt;
 - current marker receipt;
 - power marker receipt;
-- voltage candidate-message completion receipt;
-- current candidate-message completion receipt;
-- power candidate-message completion receipt.
+- voltage accepted candidate-message completion receipt;
+- current accepted candidate-message completion receipt;
+- power accepted candidate-message completion receipt.
+
+This deliberately follows #262's accepted measurement clock, which pairs markers against candidate message **completion** receipt. The parent still retains first-receipt timestamps as provenance, but this layer does not silently redefine the parent's accepted sample clock.
 
 The evaluator never repairs, interpolates, or pretends separated observations were simultaneous. A too-wide group remains an explicit rejected anchor.
 
@@ -85,7 +89,7 @@ The evaluator never repairs, interpolates, or pretends separated observations we
 
 One stock marker may support at most one anchor within each role in a single evaluation. Duplicate anchor tuples and per-role marker reuse fail closed so callers cannot inflate support counts by repeating the same evidence.
 
-Missing numeric samples, excessive timing span, and non-finite relationship math are retained as explicit rejection reasons instead of being silently dropped. Because every role selection also preserves the parent's complete numeric-reference set, a rejected marker index can still be audited back to the caller value even when it never produced a usable sample.
+Missing numeric samples, excessive timing span, and non-finite relationship math are retained as explicit rejection reasons instead of being silently dropped. Because every role selection retains the entire parent report and selected evidence, a missing sample can still be audited against parent exclusions and caller references rather than collapsing into a context-free index.
 
 ## Numeric stability
 
@@ -106,6 +110,8 @@ The report preserves:
 - exact shared evidence-context identity;
 - exact shared stream/generation/framing scope;
 - exact field labels;
+- each role's complete source #280 numeric report;
+- each role's exact selected #280 evidence object;
 - each selected raw DP candidate identity;
 - each selected numeric transform;
 - each role's complete validated parent numeric-reference set;
