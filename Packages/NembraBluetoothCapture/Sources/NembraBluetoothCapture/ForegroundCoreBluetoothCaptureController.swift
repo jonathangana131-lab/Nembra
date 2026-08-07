@@ -356,6 +356,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         guard let peripheral = activePeripheral else { return }
+        lastDiagnostic = "Connection cancellation requested."
 
         if targetState.selectedTargetIdentifier == peripheral.identifier {
             selectedTargetCancellationPending = true
@@ -559,9 +560,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
             self.acquisitionWatchdogTask = nil
             let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
-            self.lastDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
+            let timeoutDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
             self.enqueueInterruption("finite GATT acquisition progress timed out")
             self.cancelActiveConnection()
+            self.lastDiagnostic = timeoutDiagnostic
         }
     }
 
@@ -909,7 +911,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 failCapture(error)
                 return
             }
-            lastDiagnostic = Self.diagnostic(error, fallback: "Peripheral disconnected.")
+            if case .active = disposition {
+                lastDiagnostic = Self.diagnostic(error, fallback: "Peripheral disconnected.")
+            }
         }
 
         if case .active = disposition {
@@ -1064,7 +1068,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                 failCapture(error)
                 return
             }
-            lastDiagnostic = Self.diagnostic(error, fallback: "Failed to connect to peripheral.")
+            if case .active = disposition {
+                lastDiagnostic = Self.diagnostic(error, fallback: "Failed to connect to peripheral.")
+            }
         }
 
         if case .active = disposition {
