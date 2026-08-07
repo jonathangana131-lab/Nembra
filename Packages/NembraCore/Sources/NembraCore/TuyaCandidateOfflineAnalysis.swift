@@ -65,7 +65,7 @@ public struct TuyaCandidateValueStreamIdentity: Hashable, Sendable {
 ///
 /// Ordering has exactly two supported authority modes:
 /// - legacy uptime-only observations carry neither sequence field and preserve
-///   the original strict accepted-uptime behavior;
+///   strict seen-uptime chronology;
 /// - receipt-backed observations carry BOTH `receiptSequenceNumber` and the
 ///   opaque `receiptSequenceScope` that owns that counter. Sequence is then the
 ///   strict callback-order authority while uptime is nondecreasing clock metadata.
@@ -248,9 +248,8 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
         }
 
         // Commit message state only after all framing validation above succeeds.
-        // Receipt-backed chronology is deliberately not rolled back by later
-        // framing rejection: one immutable callback cannot be rewritten as older
-        // evidence after it has already been seen.
+        // Receipt chronology is deliberately not rolled back by later framing
+        // rejection: one seen callback cannot be rewritten as older evidence.
         if packetIndex == 0 {
             streamIdentity = observation.streamIdentity
             continuityGeneration = observation.continuityGeneration
@@ -295,7 +294,7 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
     /// validation so a rejected newer callback cannot be retried or followed by
     /// delayed older evidence. Uptime remains a nondecreasing clock constraint
     /// and may legitimately be equal across distinct callbacks. Legacy
-    /// observations without scoped sequence preserve strict accepted uptime.
+    /// observations consume strict seen uptime before later framing validation.
     ///
     /// Scope is part of the immutable ordering authority. A different scope is
     /// rejected before sequence/time watermarks mutate; numeric sequence values
@@ -346,10 +345,15 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
             return
         }
 
-        if let lastReceiptUptimeNanoseconds,
-           observation.receiptUptimeNanoseconds <= lastReceiptUptimeNanoseconds {
+        if let uptimeFloor = highestSeenReceiptUptimeNanoseconds,
+           observation.receiptUptimeNanoseconds <= uptimeFloor {
             throw TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptUptime
         }
+
+        // With no scoped sequence, uptime is the only source-order authority.
+        // Consume each newly seen tick before framing validation so a rejected
+        // newer callback cannot disappear and reopen chronology to older input.
+        highestSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
     }
 
     /// Candidate varint format used by the public implementations currently
