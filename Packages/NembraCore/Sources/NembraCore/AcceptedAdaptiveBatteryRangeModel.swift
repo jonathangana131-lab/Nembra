@@ -130,23 +130,15 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
         _ window: AcceptedBatteryRangeLearningWindow,
         policy: AdaptiveBatteryRangePolicy
     ) -> BatteryRangeLearningResult {
-        guard let start = try? BatterySOCReading(
-            percentage: window.startSOC.percentage,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: window.startSOC.receivedAtUptimeNanoseconds
-        ),
-        let end = try? BatterySOCReading(
-            percentage: window.endSOC.percentage,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: window.endSOC.receivedAtUptimeNanoseconds
-        ),
-        let rawWindow = try? BatteryRangeLearningWindow(
-            distanceMeters: window.distanceMeters,
-            distanceCoverage: window.distanceCoverage,
-            transportGapOccurred: window.transportGapOccurred,
-            startSOC: start,
-            endSOC: end
-        ) else {
+        guard let start = try? BatterySOCReading.accepted(window.startSOC),
+              let end = try? BatterySOCReading.accepted(window.endSOC),
+              let rawWindow = try? BatteryRangeLearningWindow(
+                distanceMeters: window.distanceMeters,
+                distanceCoverage: window.distanceCoverage,
+                transportGapOccurred: window.transportGapOccurred,
+                startSOC: start,
+                endSOC: end
+              ) else {
             return BatteryRangeLearningResult(
                 disposition: .rejected(.numericalOverflow),
                 sample: nil,
