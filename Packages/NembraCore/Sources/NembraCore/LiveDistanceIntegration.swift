@@ -242,5 +242,256 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
             knownCoverageGapCount: totalKnownGaps
         )
     }
+}
 
+public enum RideLiveDistanceAggregationError: Error, Equatable, Sendable {
+    case invalidSegmentEvidence
+    case invalidExpectedSource
+    case mismatchedRideSession
+    case mismatchedSource
+    case mismatchedMethod
+    case conflictingSegment(UUID)
+    case distanceOverflow
+    case gapCountOverflow
+}
+
+/// Durable, process-agnostic projection of one finalized live-distance segment.
+///
+/// Monotonic uptime is deliberately omitted: uptime from one process/boot must
+/// never be compared with uptime restored from another. `segmentID` is supplied
+/// by the ride/recovery layer and provides an idempotency key for durable replay.
+/// `followsUnobservedInterval` preserves a known recovery/process gap without
+/// inventing distance across it.
+public struct RideLiveDistanceSegmentEvidence: Codable, Equatable, Sendable {
+    public let rideSessionID: UUID
+    public let segmentID: UUID
+    public let source: SpeedTelemetrySource
+    public let method: LiveDistanceIntegrationMethod
+    public let distanceMeters: Double?
+    public let coverage: RideDistanceCoverage
+    public let knownCoverageGapCount: Int
+    public let followsUnobservedInterval: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case rideSessionID
+        case segmentID
+        case source
+        case method
+        case distanceMeters
+        case coverage
+        case knownCoverageGapCount
+        case followsUnobservedInterval
+    }
+
+    public init(
+        rideSessionID: UUID,
+        segmentID: UUID,
+        finalizedSegment: FinalizedLiveDistanceSegment,
+        followsUnobservedInterval: Bool
+    ) throws {
+        try self.init(
+            rideSessionID: rideSessionID,
+            segmentID: segmentID,
+            source: finalizedSegment.source,
+            method: finalizedSegment.method,
+            distanceMeters: finalizedSegment.distanceMeters,
+            coverage: finalizedSegment.coverage,
+            knownCoverageGapCount: finalizedSegment.knownCoverageGapCount,
+            followsUnobservedInterval: followsUnobservedInterval
+        )
+    }
+
+    private init(
+        rideSessionID: UUID,
+        segmentID: UUID,
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        distanceMeters: Double?,
+        coverage: RideDistanceCoverage,
+        knownCoverageGapCount: Int,
+        followsUnobservedInterval: Bool
+    ) throws {
+        guard source != .motionAssist,
+              knownCoverageGapCount >= 0 else {
+            throw RideLiveDistanceAggregationError.invalidSegmentEvidence
+        }
+
+        switch (distanceMeters, coverage) {
+        case (nil, .unknown):
+            break
+        case let (.some(distance), .complete):
+            guard distance.isFinite,
+                  distance >= 0,
+                  knownCoverageGapCount == 0 else {
+                throw RideLiveDistanceAggregationError.invalidSegmentEvidence
+            }
+        case let (.some(distance), .partial):
+            guard distance.isFinite,
+                  distance >= 0,
+                  knownCoverageGapCount > 0 else {
+                throw RideLiveDistanceAggregationError.invalidSegmentEvidence
+            }
+        default:
+            throw RideLiveDistanceAggregationError.invalidSegmentEvidence
+        }
+
+        self.rideSessionID = rideSessionID
+        self.segmentID = segmentID
+        self.source = source
+        self.method = method
+        self.distanceMeters = distanceMeters
+        self.coverage = coverage
+        self.knownCoverageGapCount = knownCoverageGapCount
+        self.followsUnobservedInterval = followsUnobservedInterval
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            rideSessionID: container.decode(UUID.self, forKey: .rideSessionID),
+            segmentID: container.decode(UUID.self, forKey: .segmentID),
+            source: container.decode(SpeedTelemetrySource.self, forKey: .source),
+            method: container.decode(LiveDistanceIntegrationMethod.self, forKey: .method),
+            distanceMeters: container.decodeIfPresent(Double.self, forKey: .distanceMeters),
+            coverage: container.decode(RideDistanceCoverage.self, forKey: .coverage),
+            knownCoverageGapCount: container.decode(Int.self, forKey: .knownCoverageGapCount),
+            followsUnobservedInterval: container.decode(Bool.self, forKey: .followsUnobservedInterval)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(rideSessionID, forKey: .rideSessionID)
+        try container.encode(segmentID, forKey: .segmentID)
+        try container.encode(source, forKey: .source)
+        try container.encode(method, forKey: .method)
+        try container.encodeIfPresent(distanceMeters, forKey: .distanceMeters)
+        try container.encode(coverage, forKey: .coverage)
+        try container.encode(knownCoverageGapCount, forKey: .knownCoverageGapCount)
+        try container.encode(followsUnobservedInterval, forKey: .followsUnobservedInterval)
+    }
+}
+
+/// Reconciled live-distance evidence for one ride across any number of finalized
+/// process-local segments. The sum contains only distance that was actually
+/// integrated inside segments; recovery gaps remain coverage gaps, never guessed
+/// mileage. Equivalent duplicate segment records are ignored idempotently.
+public struct RideLiveDistanceAggregate: Equatable, Sendable {
+    public let rideSessionID: UUID
+    public let source: SpeedTelemetrySource
+    public let method: LiveDistanceIntegrationMethod
+    public let distanceMeters: Double?
+    public let coverage: RideDistanceCoverage
+    public let uniqueSegmentCount: Int
+    public let duplicateRecordCount: Int
+    public let distanceEvidenceSegmentCount: Int
+    public let knownCoverageGapCount: Int
+    public let unobservedIntervalCount: Int
+}
+
+public enum RideLiveDistanceAggregator {
+    public static func aggregate(
+        rideSessionID: UUID,
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        records: [RideLiveDistanceSegmentEvidence]
+    ) throws -> RideLiveDistanceAggregate {
+        guard source != .motionAssist else {
+            throw RideLiveDistanceAggregationError.invalidExpectedSource
+        }
+
+        var uniqueBySegmentID: [UUID: RideLiveDistanceSegmentEvidence] = [:]
+        var duplicateRecordCount = 0
+
+        for record in records {
+            guard record.rideSessionID == rideSessionID else {
+                throw RideLiveDistanceAggregationError.mismatchedRideSession
+            }
+            guard record.source == source else {
+                throw RideLiveDistanceAggregationError.mismatchedSource
+            }
+            guard record.method == method else {
+                throw RideLiveDistanceAggregationError.mismatchedMethod
+            }
+
+            if let existing = uniqueBySegmentID[record.segmentID] {
+                guard existing == record else {
+                    throw RideLiveDistanceAggregationError.conflictingSegment(record.segmentID)
+                }
+                duplicateRecordCount += 1
+            } else {
+                uniqueBySegmentID[record.segmentID] = record
+            }
+        }
+
+        // UUID ordering is used only to make floating-point summation deterministic
+        // for the same durable record set. It carries no temporal meaning.
+        let orderedRecords = uniqueBySegmentID.values.sorted {
+            $0.segmentID.uuidString < $1.segmentID.uuidString
+        }
+
+        var accumulatedDistanceMeters = 0.0
+        var distanceEvidenceSegmentCount = 0
+        var knownCoverageGapCount = 0
+        var unobservedIntervalCount = 0
+        var hasIncompleteCoverage = false
+
+        for record in orderedRecords {
+            if let distanceMeters = record.distanceMeters {
+                let candidate = accumulatedDistanceMeters + distanceMeters
+                guard candidate.isFinite, candidate >= 0 else {
+                    throw RideLiveDistanceAggregationError.distanceOverflow
+                }
+                accumulatedDistanceMeters = candidate
+                distanceEvidenceSegmentCount += 1
+            } else {
+                hasIncompleteCoverage = true
+            }
+
+            if record.coverage != .complete {
+                hasIncompleteCoverage = true
+            }
+
+            let gapAddition = knownCoverageGapCount.addingReportingOverflow(record.knownCoverageGapCount)
+            guard !gapAddition.overflow else {
+                throw RideLiveDistanceAggregationError.gapCountOverflow
+            }
+            knownCoverageGapCount = gapAddition.partialValue
+
+            if record.followsUnobservedInterval {
+                let totalGapAddition = knownCoverageGapCount.addingReportingOverflow(1)
+                let intervalAddition = unobservedIntervalCount.addingReportingOverflow(1)
+                guard !totalGapAddition.overflow,
+                      !intervalAddition.overflow else {
+                    throw RideLiveDistanceAggregationError.gapCountOverflow
+                }
+                knownCoverageGapCount = totalGapAddition.partialValue
+                unobservedIntervalCount = intervalAddition.partialValue
+                hasIncompleteCoverage = true
+            }
+        }
+
+        let distanceMeters: Double?
+        let coverage: RideDistanceCoverage
+        if distanceEvidenceSegmentCount == 0 {
+            distanceMeters = nil
+            coverage = .unknown
+        } else {
+            distanceMeters = accumulatedDistanceMeters
+            coverage = hasIncompleteCoverage ? .partial : .complete
+        }
+
+        return RideLiveDistanceAggregate(
+            rideSessionID: rideSessionID,
+            source: source,
+            method: method,
+            distanceMeters: distanceMeters,
+            coverage: coverage,
+            uniqueSegmentCount: orderedRecords.count,
+            duplicateRecordCount: duplicateRecordCount,
+            distanceEvidenceSegmentCount: distanceEvidenceSegmentCount,
+            knownCoverageGapCount: knownCoverageGapCount,
+            unobservedIntervalCount: unobservedIntervalCount
+        )
+    }
 }
