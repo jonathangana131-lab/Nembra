@@ -167,7 +167,7 @@ struct TuyaCandidateOfflineAnalysisTests {
         }
     }
 
-    @Test("non-monotonic receipt timing and packet gaps are rejected atomically")
+    @Test("packet-gap rejection consumes source chronology without mutating candidate framing")
     func rejectsChronologyAndPacketGaps() throws {
         let policy = try TuyaCandidateFragmentReassemblyPolicy(maximumEncryptedMessageBytes: 64, maximumFragmentCount: 6)
         var reassembler = TuyaCandidateFragmentReassembler(policy: policy)
@@ -180,7 +180,12 @@ struct TuyaCandidateOfflineAnalysisTests {
             try reassembler.ingest(try observation([2], index: 2, uptime: 200))
         }
 
-        #expect(try reassembler.ingest(try observation([2], index: 1, uptime: 200)) == .awaitingMore(nextPacketIndex: 2, remainingBytes: 1))
+        // The malformed packet-index callback is not promoted into candidate
+        // bytes, but its real receipt cannot disappear and reopen the past.
+        #expect(throws: TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptUptime) {
+            try reassembler.ingest(try observation([2], index: 1, uptime: 200))
+        }
+        #expect(try reassembler.ingest(try observation([2], index: 1, uptime: 201)) == .awaitingMore(nextPacketIndex: 2, remainingBytes: 1))
     }
 
     @Test("declared length and fragment-count bounds are caller policy, not guessed ES80 constants")
