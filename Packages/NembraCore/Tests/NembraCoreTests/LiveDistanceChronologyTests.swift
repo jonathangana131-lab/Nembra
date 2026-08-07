@@ -32,7 +32,7 @@ struct LiveDistanceChronologyTests {
         )
     }
 
-    @Test("fresh numeric rejection consumes selected authoritative chronology")
+    @Test("fresh numeric rejection consumes chronology and opens a coverage gap")
     func rejectedOverflowClosesChronologyToDelayedCallbacks() throws {
         var accumulator = LiveDistanceSegmentAccumulator(
             policy: try policy(),
@@ -52,10 +52,17 @@ struct LiveDistanceChronologyTests {
             ) == .rejected(.distanceOverflow)
         )
 
-        // Numeric rejection must not rewrite accepted distance/anchor evidence.
-        #expect(accumulator.snapshot == acceptedBeforeOverflow)
+        let afterOverflow = accumulator.snapshot
+        // Numeric rejection preserves accepted integration evidence, but the
+        // unusable selected-authoritative observation is a real coverage hole.
+        #expect(afterOverflow.lastAcceptedSampleUptimeNanoseconds == acceptedBeforeOverflow.lastAcceptedSampleUptimeNanoseconds)
+        #expect(afterOverflow.distanceMeters == acceptedBeforeOverflow.distanceMeters)
+        #expect(afterOverflow.acceptedSampleCount == acceptedBeforeOverflow.acceptedSampleCount)
+        #expect(afterOverflow.integratedIntervalCount == acceptedBeforeOverflow.integratedIntervalCount)
+        #expect(afterOverflow.knownCoverageGapCount == acceptedBeforeOverflow.knownCoverageGapCount + 1)
+        #expect(afterOverflow.hasKnownCoverageGap)
 
-        // But the newer callback identity is still part of this immutable stream.
+        // The newer callback identity is still part of this immutable stream.
         #expect(
             accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
                 == .rejected(.nonIncreasingTimestamp)
@@ -64,7 +71,40 @@ struct LiveDistanceChronologyTests {
             accumulator.record(try sample(speed: 0, uptime: 2_000_000_000))
                 == .rejected(.nonIncreasingTimestamp)
         )
-        #expect(accumulator.snapshot == acceptedBeforeOverflow)
+        #expect(accumulator.snapshot == afterOverflow)
+    }
+
+    @Test("a later usable sample re-anchors instead of integrating through numeric rejection")
+    func laterUsableSampleDoesNotBridgeRejectedMeasurement() throws {
+        var accumulator = LiveDistanceSegmentAccumulator(
+            policy: try policy(maximumGap: 3_000_000_000),
+            segmentStartUptimeNanoseconds: 0
+        )
+
+        #expect(accumulator.record(try sample(speed: 0, uptime: 0)) == .anchored)
+        #expect(
+            accumulator.record(
+                try sample(speed: Double.greatestFiniteMagnitude, uptime: 2_000_000_000)
+            ) == .rejected(.distanceOverflow)
+        )
+
+        #expect(
+            accumulator.record(try sample(speed: 0, uptime: 3_000_000_000))
+                == .gapDetected(intervalNanoseconds: 3_000_000_000)
+        )
+        #expect(accumulator.snapshot.distanceMeters == nil)
+        #expect(accumulator.snapshot.acceptedSampleCount == 2)
+        #expect(accumulator.snapshot.integratedIntervalCount == 0)
+        #expect(accumulator.snapshot.knownCoverageGapCount == 1)
+
+        #expect(
+            accumulator.record(try sample(speed: 0, uptime: 4_000_000_000))
+                == .integrated(addedMeters: 0)
+        )
+        let final = try accumulator.finalize(segmentEndUptimeNanoseconds: 4_000_000_000)
+        #expect(final.distanceMeters == 0)
+        #expect(final.coverage == .partial)
+        #expect(final.knownCoverageGapCount == 1)
     }
 
     @Test("foreign and non-authoritative callbacks cannot poison selected chronology")
