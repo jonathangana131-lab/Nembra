@@ -96,6 +96,49 @@ struct PassiveBluetoothTransportFingerprintTests {
         #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
     }
 
+    @Test("candidate strength never combines GATT topology across continuity generations")
+    func continuityGenerationsDoNotCombineCandidateStrength() throws {
+        var session = try makeSession()
+        try appendService("A201", sequence: 1, to: &session)
+        try appendCharacteristic("2B10", service: "A201", sequence: 2, to: &session)
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "GATT services invalidated")),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3,
+            receivedAtDate: .now
+        )
+        try appendService("A201", sequence: 4, to: &session)
+        try appendCharacteristic("2B11", service: "A201", sequence: 5, to: &session)
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        #expect(report.characteristicUUIDsByService["A201"] == ["2B10", "2B11"])
+        let match = try #require(report.candidateMatches.first)
+        #expect(match.family == .tuyaLegacyA201)
+        #expect(match.strength == .characteristicFamilyObserved)
+        #expect(match.observedCharacteristicUUIDs != ["2B10", "2B11"])
+    }
+
+    @Test("strongest candidate strength may come from one later continuity generation")
+    func strongestSingleContinuityGenerationWins() throws {
+        var session = try makeSession()
+        try appendService("A201", sequence: 1, to: &session)
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "GATT services invalidated")),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: .now
+        )
+        try appendService("A201", sequence: 3, to: &session)
+        try appendCharacteristic("2B10", service: "A201", sequence: 4, to: &session)
+        try appendCharacteristic("2B11", service: "A201", sequence: 5, to: &session)
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let match = try #require(report.candidateMatches.first)
+        #expect(match.family == .tuyaLegacyA201)
+        #expect(match.strength == .expectedDataPathObserved)
+        #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
+    }
+
     @Test("multiple family fingerprints remain multiple instead of forcing a winner")
     func multipleCandidates() throws {
         var session = try makeSession()
