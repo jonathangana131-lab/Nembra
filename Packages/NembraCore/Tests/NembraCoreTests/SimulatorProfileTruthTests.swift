@@ -113,6 +113,19 @@ struct SimulatorProfileTruthTests {
         #expect((await service.snapshot()).connection == .disconnected)
     }
 
+    @Test("negative synthetic speed is rejected instead of becoming stopped telemetry")
+    func negativeRideSpeedDoesNotMutateState() async {
+        let initial = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(
+            initialState: initial,
+            commandLatencyNanoseconds: 0
+        )
+
+        await service.simulateRide(speedKilometersPerHour: -4, elapsedSeconds: 30)
+
+        #expect(await service.snapshot() == initial)
+    }
+
     @Test("lock confirmation revalidates stopped speed after acknowledgement")
     func lockFailsIfVehicleStartsMovingWhilePending() async {
         let gate = SimulatorTruthCommandGate()
