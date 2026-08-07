@@ -43,7 +43,7 @@ public struct NavigationGuidanceProgressObservation: Equatable, Sendable {
               distanceRemainingOnStepMeters.isFinite,
               distanceRemainingOnStepMeters >= 0,
               distanceRemainingOnRouteMeters.isFinite,
-              distanceRemainingOnRouteMeters >= 0 else {
+              distanceRemainingOnRouteMeters >= distanceRemainingOnStepMeters else {
             throw NavigationGuidanceProgressError.invalidObservation
         }
 
@@ -147,8 +147,7 @@ public struct NavigationGuidanceProgressTracker: Sendable {
 
         let currentStep = route.steps[observation.stepIndex]
         guard observation.distanceRemainingOnStepMeters <= currentStep.distanceMeters,
-              observation.distanceRemainingOnRouteMeters <= route.distanceMeters,
-              observation.distanceRemainingOnRouteMeters >= observation.distanceRemainingOnStepMeters else {
+              observation.distanceRemainingOnRouteMeters <= route.distanceMeters else {
             throw NavigationGuidanceProgressError.invalidObservation
         }
 
