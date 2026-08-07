@@ -295,10 +295,11 @@ struct RideDistanceReconciliationTests {
         #expect(result.status == .complete)
     }
 
-    @Test("completed ride bridge requires callers to state coverage instead of inferring it")
+    @Test("completed ride bridge consumes session-bound live aggregate coverage")
     func completedRideBridge() throws {
+        let sessionID = UUID()
         let completed = try CompletedRideEvidence(
-            sessionID: UUID(),
+            sessionID: sessionID,
             beganAtDate: Date(timeIntervalSince1970: 1_700_000_000),
             confirmedAtDate: Date(timeIntervalSince1970: 1_700_000_001),
             endedAtDate: Date(timeIntervalSince1970: 1_700_000_100),
@@ -307,12 +308,37 @@ struct RideDistanceReconciliationTests {
             qualityScreenedGPSDistanceMeters: 5_000,
             continuity: .recoveredCheckpoint
         )
+        let finalized = FinalizedLiveDistanceSegment(
+            source: .scooterBluetooth,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 0,
+            segmentEndUptimeNanoseconds: 1,
+            firstAcceptedSampleUptimeNanoseconds: 0,
+            lastAcceptedSampleUptimeNanoseconds: 1,
+            distanceMeters: 5_100,
+            coverage: .partial,
+            acceptedSampleCount: 2,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 1
+        )
+        let durable = try RideLiveDistanceSegmentEvidence(
+            rideSessionID: sessionID,
+            segmentID: UUID(),
+            processSegmentSequence: 0,
+            finalizedSegment: finalized
+        )
+        let liveAggregate = try RideLiveDistanceAggregator.aggregate(
+            rideSessionID: sessionID,
+            source: .scooterBluetooth,
+            method: .trapezoidalBetweenMeasurements,
+            records: [durable]
+        )
+
         let evidence = try RideDistanceEvidence(
             completedRide: completed,
             odometerCoverage: .complete,
             gpsRouteCoverage: .partial,
-            liveIntegratedDistanceMeters: 5_100,
-            liveIntegratedCoverage: .partial,
+            liveDistanceAggregate: liveAggregate,
             transportGapOccurred: true
         )
         #expect(abs(try #require(evidence.scooterOdometerDeltaMeters) - 4_600) < 0.000_001)
