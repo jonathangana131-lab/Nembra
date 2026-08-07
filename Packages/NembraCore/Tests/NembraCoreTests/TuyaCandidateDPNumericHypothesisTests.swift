@@ -282,8 +282,8 @@ struct TuyaCandidateDPNumericHypothesisTests {
         #expect(result.evidence.first?.samples.isEmpty == true)
     }
 
-    @Test("exact parent timing provenance survives numeric evaluation")
-    func preservesTemporalProvenance() throws {
+    @Test("exact parent marker, message, and DP-offset provenance survives numeric evaluation")
+    func preservesTemporalAndByteProvenance() throws {
         let parent = try TuyaCandidateDPMarkerCorrelator.analyze(
             scope: scope(),
             markers: [try marker(105, "41.3 V")],
@@ -298,10 +298,14 @@ struct TuyaCandidateDPNumericHypothesisTests {
             policy: numericPolicy(tolerance: 0.000_001)
         )
         let sample = try #require(result.evidence.first?.samples.first)
+        #expect(sample.markerReceiptUptimeNanoseconds == 105)
         #expect(sample.observationFirstReceiptUptimeNanoseconds == 100)
         #expect(sample.observationLastReceiptUptimeNanoseconds == 110)
         #expect(sample.temporalDistanceNanoseconds == 5)
         #expect(sample.temporalRelation == .messageAfterMarker)
+        #expect(sample.headerByteOffset == 0)
+        #expect(sample.valueByteOffset == 4)
+        #expect(sample.endByteOffsetExclusive == 6)
     }
 
     @Test("duplicate and out-of-range numeric marker identities fail closed")
