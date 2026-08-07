@@ -274,7 +274,7 @@ struct DashboardSpeedInstrumentView: View {
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
-                if isRetained {
+                if isRetained, authoritativeKilometersPerHour != nil {
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                 } else if vehicle.state.connection == .connected {
                     Text(Self.liveSpeedStatusText(
