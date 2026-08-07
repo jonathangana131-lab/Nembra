@@ -4,7 +4,7 @@ import Testing
 
 struct PassiveCoreBluetoothTargetStateTests {
     @Test
-    func lateCallbacksFromRetiredA cannotMutateActiveB() throws {
+    func lateCallbacksFromRetiredACannotMutateActiveB() throws {
         let a = UUID()
         let b = UUID()
         var state = PassiveCoreBluetoothTargetState()
