@@ -9,13 +9,13 @@ Dependencies:
 
 ## Purpose
 
-This slice moves the candidate-analysis path one rung above a caller-bound structural Tuya DP parse. It can compare repeated **opaque raw DP values** with human-observed stock-app reference markers so Nembra can prioritize which candidate deserves the next physical investigation.
+This slice moves the candidate-analysis path one rung above a caller-bound structural Tuya DP parse. It compares repeated **opaque raw DP values** with human-observed stock-app reference markers so Nembra can prioritize which candidate deserves the next physical investigation.
 
 It is not a decoder and it does not assign an AOVOPRO ES80 field meaning.
 
-A report headed `Battery` means only:
+A report whose caller label is `Battery` means only:
 
-> the caller asked Nembra to compare these raw DP candidates with markers the caller labeled Battery.
+> the caller asked Nembra to compare these raw DP candidates with markers labeled Battery.
 
 It does **not** mean:
 
@@ -33,10 +33,10 @@ raw GATT value evidence
 -> legitimate caller-supplied plaintext
 -> CRC-validated candidate logical packet
 -> #238 explicit DP-length-width parse
--> caller binding back to the exact reassembled-message receipt interval
+-> caller binding back to the exact reassembled-message provenance
 -> this marker correlation
 
-The `TuyaCandidateDPMessageObservation` association is deliberately explicit. This layer does not decrypt or authenticate, so it cannot independently prove that caller-supplied plaintext came from the encrypted message. It preserves the exact #219 stream identity, continuity generation, and receipt interval so that limitation remains visible instead of being erased by a convenient correlation API.
+`TuyaCandidateDPMessageObservation` makes the caller binding explicit. This layer does not decrypt or authenticate, so it cannot independently prove that caller-supplied plaintext came from the encrypted message. It preserves #219's exact stream identity, continuity generation, first receipt, and accepted completion receipt so that limitation is not erased by a convenient correlation API.
 
 ## Hard scope boundaries
 
@@ -53,6 +53,24 @@ The analyzer also refuses to repair chronology. Message receipt intervals must b
 
 This complements PR #241's raw-GATT repeated-marker prioritization. #241 can help identify which characteristic stream repeatedly appears near stock-app markers. This slice then operates **inside one already-selected exact stream** to compare DP-shaped records. It does not duplicate or replace the raw capture/stream-ranking layer.
 
+## Timing truth
+
+A parsed DP value does not exist as accepted complete-message evidence at the first fragment receipt. It only becomes a complete candidate when #219 accepts the final fragment.
+
+Therefore marker proximity is measured against:
+
+`TuyaCandidateReassembledMessage.lastReceiptUptimeNanoseconds`
+
+—not against the whole first-to-last fragment interval and not against an invented midpoint.
+
+The full first/last receipt interval is still preserved in every marker hit as provenance. Each hit also records whether the accepted message completion occurred:
+
+- before the human marker;
+- at the same receipt time;
+- after the human marker.
+
+This prevents a marker that occurs between fragments from being treated as distance zero to a DP value that was only completed later. A symmetric caller-owned time window can still consider nearby before/after evidence, but the direction is retained rather than hidden.
+
 ## What is compared
 
 Candidate structural identity is:
@@ -63,7 +81,7 @@ Candidate structural identity is:
 
 Same numeric DP ID is therefore not silently merged across a different raw type or width. The report scope separately preserves the selected DP framing width.
 
-For every candidate and human marker, the analyzer finds the nearest candidate-message receipt interval within caller policy.
+For every candidate and human marker, the analyzer finds the nearest accepted **message-completion receipt** inside the caller's time-distance policy.
 
 A marker contributes at most **one** support hit to a candidate, no matter how many callbacks occurred nearby. This prevents a high-rate unrelated DP from winning merely because it generated more packets.
 
@@ -85,14 +103,14 @@ For accepted marker hits it records:
 - same-reference pairs whose raw DP bytes are also the same;
 - pairs where the displayed references differ;
 - different-reference pairs whose raw DP bytes also differ;
-- exact per-marker raw bytes, source offsets, observation index, receipt interval, and temporal distance.
+- exact per-marker raw bytes, source offsets, observation index, full receipt interval, completion-time distance, and before/same/after relation.
 
 No unit conversion is attempted.
 
 For example:
 
 - `41.3 V` and `41.30 V` remain different human references;
-- raw bytes representing unsigned magnitude `413` are not converted to `41.3 V`;
+- raw bytes whose generic unsigned projection is `413` are not converted to `41.3 V`;
 - a raw value changing whenever a displayed value changes is useful prioritization evidence, not proof of scale or meaning;
 - a stable raw value near repeated identical markers is useful repeatability evidence, not proof of field ownership.
 
@@ -106,7 +124,7 @@ Candidate order is deterministic research prioritization only. The comparator pr
 2. more same-reference pairs with the same raw value;
 3. more different-reference pairs with a different raw value;
 4. fewer equally-near ambiguous markers;
-5. smaller worst accepted temporal distance;
+5. smaller worst accepted completion-time distance;
 6. stable structural identity ordering.
 
 Index zero is therefore **the first candidate to inspect next**, not a decoded ES80 telemetry mapping.
@@ -118,9 +136,9 @@ Caller policy must explicitly bound:
 - maximum marker count;
 - maximum parsed-message observation count;
 - maximum candidate-record occurrence count;
-- maximum marker-to-message temporal distance.
+- maximum absolute marker-to-message-completion time distance.
 
-A zero temporal-distance policy is legitimate when a research setup requires exact interval overlap. Invalid or exceeded resource bounds fail closed.
+A zero time-distance policy is legitimate when a research setup requires exact completion/marker coincidence. Invalid or exceeded resource bounds fail closed.
 
 ## Verification
 
@@ -133,7 +151,7 @@ Coverage includes:
 - high-callback-rate de-biasing;
 - equally-near conflicting-value ambiguity;
 - exact display-string preservation;
-- marker-inside-message-interval behavior without invented midpoint timestamps;
+- completion-receipt timing and explicit before/after direction without interval look-ahead;
 - mixed stream rejection;
 - mixed continuity-generation rejection;
 - mixed one-/two-byte DP hypothesis rejection;
