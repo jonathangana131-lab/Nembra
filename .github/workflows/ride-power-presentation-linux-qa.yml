@@ -15,12 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
-      - name: Verify product parent
+          fetch-depth: 3
+      - name: Verify product ancestor and unchanged core tree
         env:
           PRODUCT_HEAD: 8059b1c7a3b7cf8b186d50c31718c2d8dab0e5b6
         run: |
-          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          git merge-base --is-ancestor "$PRODUCT_HEAD" HEAD
           git diff --exit-code "$PRODUCT_HEAD" HEAD -- \
             Packages/NembraCore/Sources/NembraCore \
             Packages/NembraCore/Tests/NembraCoreTests
