@@ -210,7 +210,20 @@ public struct NavigationRoutePlanningCoordinator: Sendable {
         return token
     }
 
-    public mutating func reset() {
+    /// Clears presentation state while preserving the token of any provider
+    /// request that was still active. The caller can cancel that provider work
+    /// after state is already invalidated; a racing callback for the returned
+    /// token is therefore rejected even if transport cancellation is delayed.
+    @discardableResult
+    public mutating func reset() -> NavigationRouteRequestToken? {
+        let activeToken: NavigationRouteRequestToken?
+        if case let .requesting(token, _) = state {
+            activeToken = token
+        } else {
+            activeToken = nil
+        }
+
         state = .idle
+        return activeToken
     }
 }

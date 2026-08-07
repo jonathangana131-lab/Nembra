@@ -20,6 +20,7 @@ public enum SpeedTelemetryProvenance: String, Codable, Sendable {
 
 public enum SpeedTelemetryValidationError: Error, Equatable, Sendable {
     case invalidSpeed
+    case invalidDate
     case invalidAccuracy
     case invalidProvenanceForSource
 }
@@ -70,6 +71,10 @@ public struct SpeedTelemetrySample: Equatable, Codable, Sendable {
     ) throws {
         guard metersPerSecond.isFinite, metersPerSecond >= 0 else {
             throw SpeedTelemetryValidationError.invalidSpeed
+        }
+        guard receivedAtDate.timeIntervalSinceReferenceDate.isFinite,
+              measurementDate.map({ $0.timeIntervalSinceReferenceDate.isFinite }) ?? true else {
+            throw SpeedTelemetryValidationError.invalidDate
         }
         if let speedAccuracyMetersPerSecond {
             guard speedAccuracyMetersPerSecond.isFinite, speedAccuracyMetersPerSecond >= 0 else {
