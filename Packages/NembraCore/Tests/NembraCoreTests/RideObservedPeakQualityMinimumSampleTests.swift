@@ -33,6 +33,33 @@ struct RideObservedPeakQualityMinimumSampleTests {
         )
     }
 
+    @Test("missing required evidence dimension wins before sample-floor diagnostics")
+    func missingDimensionPrecedesJitterSampleFloor() throws {
+        let missingRejectedFraction = try SpeedTelemetryQualityPolicy(
+            requiredSource: .scooterBluetooth,
+            minimumAcceptedSampleCount: 1,
+            maximumMeanIntervalMilliseconds: 150,
+            maximumObservedIntervalMilliseconds: 200,
+            maximumJitterStandardDeviationMilliseconds: 50,
+            maximumEmpiricalSpeedStepKilometersPerHour: 10
+        )
+        #expect(throws: RideObservedPeakQualityPolicyError.rejectedFractionRequirementRequired) {
+            try RideObservedPeakQualityPolicy(telemetry: missingRejectedFraction)
+        }
+
+        let missingJitter = try SpeedTelemetryQualityPolicy(
+            requiredSource: .scooterBluetooth,
+            minimumAcceptedSampleCount: 1,
+            maximumRejectedSampleFraction: 0,
+            maximumMeanIntervalMilliseconds: 150,
+            maximumObservedIntervalMilliseconds: 200,
+            maximumEmpiricalSpeedStepKilometersPerHour: 10
+        )
+        #expect(throws: RideObservedPeakQualityPolicyError.jitterRequirementRequired) {
+            try RideObservedPeakQualityPolicy(telemetry: missingJitter)
+        }
+    }
+
     @Test("one accepted sample cannot establish jitter evidence")
     func oneAcceptedSampleRejected() throws {
         #expect(
