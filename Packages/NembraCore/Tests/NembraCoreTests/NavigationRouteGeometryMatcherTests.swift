@@ -62,11 +62,16 @@ struct NavigationRouteGeometryMatcherTests {
         )
     }
 
-    private func matcher(maximumDistance: Double = 30, ambiguitySeparation: Double = 4) throws -> NavigationRouteGeometryMatcher {
+    private func matcher(
+        maximumDistance: Double = 30,
+        ambiguitySeparation: Double = 4,
+        withinGeometryProgressSeparation: Double = 25
+    ) throws -> NavigationRouteGeometryMatcher {
         NavigationRouteGeometryMatcher(
             policy: try NavigationRouteGeometryMatchingPolicy(
                 maximumRouteDistanceMeters: maximumDistance,
-                minimumStepAmbiguitySeparationMeters: ambiguitySeparation
+                minimumStepAmbiguitySeparationMeters: ambiguitySeparation,
+                minimumWithinGeometryProgressSeparationMeters: withinGeometryProgressSeparation
             )
         )
     }
@@ -244,7 +249,47 @@ struct NavigationRouteGeometryMatcherTests {
 
         #expect(observation.receivedAtUptimeNanoseconds == 888)
         #expect(observation.distanceFromActiveRouteMeters == match.distanceFromRouteMeters)
-        #expect(observation.isProgressAssignmentConfident == match.isProgressAssignmentConfident)
+        #expect(observation.isDeviationAssessmentConfident == match.isDeviationAssessmentConfident)
+    }
+
+    @Test("one-step self-intersection does not claim unique progress")
+    func withinStepSelfIntersectionFailsClosed() throws {
+        let nw = try coordinate(45.001, -122.001)
+        let se = try coordinate(44.999, -121.999)
+        let ne = try coordinate(45.001, -121.999)
+        let sw = try coordinate(44.999, -122.001)
+        let geometry = [nw, se, ne, sw]
+        let step = try NavigationRouteStepSnapshot(
+            geometry: geometry,
+            instructions: "Cross",
+            notice: nil,
+            distanceMeters: 600,
+            transportMode: .cycling
+        )
+        let route = try NavigationRouteSnapshot(
+            provenance: .appleMapKitCycling(),
+            name: "Crossing",
+            geometry: geometry,
+            steps: [step],
+            distanceMeters: 600,
+            expectedTravelTimeSeconds: 200,
+            hasHighways: false,
+            hasTolls: false,
+            advisoryNotices: []
+        )
+
+        let match = try matcher(
+            maximumDistance: 30,
+            ambiguitySeparation: 4,
+            withinGeometryProgressSeparation: 25
+        ).match(
+            location: screened(latitude: 45, longitude: -122),
+            route: route
+        )
+
+        #expect(match.distanceFromRouteMeters < 0.1)
+        #expect(!match.isProgressAssignmentConfident)
+        #expect(match.isDeviationAssessmentConfident)
     }
 
     @Test("invalid confidence policy is rejected")
@@ -252,13 +297,22 @@ struct NavigationRouteGeometryMatcherTests {
         #expect(throws: NavigationRouteGeometryMatchingError.invalidPolicy) {
             try NavigationRouteGeometryMatchingPolicy(
                 maximumRouteDistanceMeters: 0,
-                minimumStepAmbiguitySeparationMeters: 4
+                minimumStepAmbiguitySeparationMeters: 4,
+                minimumWithinGeometryProgressSeparationMeters: 25
             )
         }
         #expect(throws: NavigationRouteGeometryMatchingError.invalidPolicy) {
             try NavigationRouteGeometryMatchingPolicy(
                 maximumRouteDistanceMeters: 30,
-                minimumStepAmbiguitySeparationMeters: .nan
+                minimumStepAmbiguitySeparationMeters: .nan,
+                minimumWithinGeometryProgressSeparationMeters: 25
+            )
+        }
+        #expect(throws: NavigationRouteGeometryMatchingError.invalidPolicy) {
+            try NavigationRouteGeometryMatchingPolicy(
+                maximumRouteDistanceMeters: 30,
+                minimumStepAmbiguitySeparationMeters: 4,
+                minimumWithinGeometryProgressSeparationMeters: 0
             )
         }
     }
