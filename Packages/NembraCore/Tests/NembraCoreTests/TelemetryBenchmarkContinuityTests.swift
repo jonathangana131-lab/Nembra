@@ -26,7 +26,7 @@ struct TelemetryBenchmarkContinuityTests {
         #expect(collector.record(try sample(milliseconds: 0, speedKilometersPerHour: 0)) == .accepted)
         #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 1)) == .accepted)
 
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
 
         // Ten seconds of missing evidence must stay a gap rather than becoming
         // a 10 s packet interval or a cross-gap duplicate/resolution sample.
@@ -54,7 +54,7 @@ struct TelemetryBenchmarkContinuityTests {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
 
         #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 4)) == .accepted)
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
 
         #expect(
             collector.record(try sample(milliseconds: 90, speedKilometersPerHour: 5))
@@ -82,13 +82,13 @@ struct TelemetryBenchmarkContinuityTests {
     func interruptionMarksAreIdempotentUntilEvidenceResumes() throws {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
 
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
         #expect(collector.summary.knownObservationInterruptionCount == 0)
         #expect(collector.summary.observationSegmentCount == 0)
 
         #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 1)) == .accepted)
-        collector.markContinuityInterruption()
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
+        collector.markKnownObservationInterruption()
 
         var summary = collector.summary
         #expect(summary.knownObservationInterruptionCount == 1)
@@ -100,7 +100,7 @@ struct TelemetryBenchmarkContinuityTests {
         #expect(summary.knownObservationInterruptionCount == 1)
         #expect(summary.observationSegmentCount == 2)
 
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
         summary = collector.summary
         #expect(summary.knownObservationInterruptionCount == 2)
         #expect(summary.observationSegmentCount == 2)
@@ -111,7 +111,7 @@ struct TelemetryBenchmarkContinuityTests {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
 
         #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 3.6)) == .accepted)
-        collector.markContinuityInterruption()
+        collector.markKnownObservationInterruption()
 
         let overflowing = try SpeedTelemetrySample(
             source: .scooterBluetooth,
