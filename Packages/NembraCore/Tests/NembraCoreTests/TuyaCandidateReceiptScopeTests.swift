@@ -134,6 +134,58 @@ struct TuyaCandidateReceiptScopeTests {
         }
     }
 
+    @Test("a rejected first framing observation still binds receipt scope")
+    func rejectedFirstFramingStillBindsReceiptScope() throws {
+        var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
+
+        #expect(throws: TuyaCandidateOfflineAnalysisError.unexpectedPacketIndex(expected: 0, actual: 1)) {
+            try reassembler.ingest(
+                try observation(
+                    packetIndex: 1,
+                    payload: [0xFF],
+                    uptime: 100,
+                    sequence: 30,
+                    scope: "capture-session-A"
+                )
+            )
+        }
+
+        #expect(throws: TuyaCandidateOfflineAnalysisError.receiptSequenceScopeChanged(
+            expected: "capture-session-A",
+            actual: "capture-session-B"
+        )) {
+            try reassembler.ingest(
+                try observation(
+                    packetIndex: 0,
+                    payload: [0xBB],
+                    uptime: 500,
+                    sequence: 31,
+                    scope: "capture-session-B",
+                    totalLength: 1
+                )
+            )
+        }
+
+        let completion = try reassembler.ingest(
+            try observation(
+                packetIndex: 0,
+                payload: [0xAA],
+                uptime: 100,
+                sequence: 31,
+                scope: "capture-session-A",
+                totalLength: 1
+            )
+        )
+        let message = try #require({
+            if case let .complete(message) = completion { return message }
+            return nil
+        }())
+
+        #expect(message.receiptSequenceScope == "capture-session-A")
+        #expect(message.firstReceiptSequenceNumber == 31)
+        #expect(message.lastReceiptSequenceNumber == 31)
+    }
+
     @Test("a sequence scope without an immutable sequence is invalid")
     func scopeRequiresSequence() throws {
         #expect(throws: TuyaCandidateOfflineAnalysisError.receiptSequenceScopeRequiresSequence) {
