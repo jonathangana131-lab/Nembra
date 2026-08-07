@@ -69,10 +69,11 @@ public struct PassiveBluetoothCorrelationWindow: Equatable, Sendable {
 public enum PassiveBluetoothCorrelation {
     /// Builds time-local candidate windows around stock-app observations.
     ///
-    /// This convenience fails closed when imported GATT/value evidence belongs
-    /// to more than one peripheral. Stock-app markers have no peripheral field,
-    /// so choosing one device in a mixed session would fabricate attribution.
-    /// Nearby advertisement-only noise does not create this ambiguity.
+    /// This convenience fails closed when imported GATT/value/connection
+    /// evidence belongs to more than one peripheral. Stock-app markers have no
+    /// peripheral field, so choosing one device in a mixed session would
+    /// fabricate attribution. Nearby advertisement-only noise does not create
+    /// this ambiguity.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         field: String? = nil,
@@ -94,14 +95,24 @@ public enum PassiveBluetoothCorrelation {
     /// Builds correlation windows for an explicitly selected peripheral in an
     /// imported/mixed session. Only raw value evidence from that exact target is
     /// eligible; the marker itself remains a human observation, not telemetry.
+    ///
+    /// Returns `nil` when the requested identifier has no correlation-attributable
+    /// connection/GATT/value evidence in the artifact. This keeps a typo or stale
+    /// identifier distinct from an observed target that legitimately has zero
+    /// nearby candidate values. Advertisement-only observations do not establish
+    /// marker attribution for this API.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String,
         field: String? = nil,
         lookbackNanoseconds: UInt64 = 2_000_000_000,
         lookaheadNanoseconds: UInt64 = 2_000_000_000
-    ) -> [PassiveBluetoothCorrelationWindow] {
-        buildWindows(
+    ) -> [PassiveBluetoothCorrelationWindow]? {
+        guard correlationPeripheralIdentifiers(in: session).contains(peripheralIdentifier) else {
+            return nil
+        }
+
+        return buildWindows(
             in: session,
             peripheralIdentifier: peripheralIdentifier,
             field: field,
@@ -110,10 +121,10 @@ public enum PassiveBluetoothCorrelation {
         )
     }
 
-    /// Any parent-model byte-continuity break is a hard boundary. A value on the
-    /// other side of a structured disconnect/Bluetooth transition/observer
-    /// restart is never presented as a candidate for the marker, even if timing
-    /// proximity happens to be small.
+    /// Generic interruption events are global observation gaps. Structured
+    /// disconnects are scoped to the exact peripheral being analyzed so a
+    /// disconnect from unrelated imported device B cannot split target A's
+    /// otherwise-continuous correlation segment.
     private static func buildWindows(
         in session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String?,
@@ -130,7 +141,10 @@ public enum PassiveBluetoothCorrelation {
 
         for index in records.indices {
             segmentIndexByRecord[index] = currentSegment
-            if records[index].event.breaksByteContinuity {
+            if breaksContinuity(
+                records[index].event,
+                peripheralIdentifier: peripheralIdentifier
+            ) {
                 segmentEnds.append(index)
                 segmentStart = index + 1
                 currentSegment += 1
@@ -216,6 +230,8 @@ public enum PassiveBluetoothCorrelation {
 
         for record in session.records {
             switch record.event {
+            case let .connection(observation):
+                identifiers.insert(observation.peripheralIdentifier)
             case let .service(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .includedService(observation):
@@ -228,12 +244,28 @@ public enum PassiveBluetoothCorrelation {
                 identifiers.insert(observation.peripheralIdentifier)
             case let .value(observation):
                 identifiers.insert(observation.peripheralIdentifier)
-            case .advertisement, .connection, .stockAppState, .interruption:
+            case .advertisement, .stockAppState, .interruption:
                 break
             }
         }
 
         return identifiers
+    }
+
+    private static func breaksContinuity(
+        _ event: PassiveBluetoothCaptureEvent,
+        peripheralIdentifier: String?
+    ) -> Bool {
+        switch event {
+        case let .connection(observation):
+            guard observation.state == .disconnected else { return false }
+            guard let peripheralIdentifier else { return true }
+            return observation.peripheralIdentifier == peripheralIdentifier
+        case .interruption:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func signedOffsetSeconds(candidate: UInt64, marker: UInt64) -> Double {

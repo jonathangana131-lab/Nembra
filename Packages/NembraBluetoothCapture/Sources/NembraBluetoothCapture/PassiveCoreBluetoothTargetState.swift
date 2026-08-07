@@ -58,6 +58,14 @@ struct PassiveCoreBluetoothTargetState: Sendable {
         }
     }
 
+    /// Read-only retry quarantine truth for presentation/integration layers.
+    /// A retired peripheral remains unavailable until CoreBluetooth delivers a
+    /// terminal callback. Central availability changes alone are not treated as
+    /// proof that an older same-identifier callback can no longer arrive.
+    func isAwaitingTerminalCallback(for identifier: UUID) -> Bool {
+        retiredPeripheralIdentifiers.contains(identifier)
+    }
+
     mutating func beginAttempt(for identifier: UUID) throws -> Attempt {
         guard selectedTargetIdentifier == identifier else {
             throw StateError.targetNotSelected(identifier)
@@ -99,11 +107,20 @@ struct PassiveCoreBluetoothTargetState: Sendable {
         completeTerminalCallback(from: identifier)
     }
 
-    /// A central-manager reset/power transition invalidates all CoreBluetooth
-    /// connection objects, so no cancelled-attempt quarantine survives it.
+    /// CoreBluetooth becoming unavailable terminates the controller's usable
+    /// transport, but this UUID-only reducer cannot prove that every terminal
+    /// callback from the old attempt has already drained. Preserve fail-closed
+    /// same-peripheral quarantine instead of allowing a fresh attempt to inherit
+    /// an old callback. A terminal callback releases the quarantine normally.
+    ///
+    /// A future controller/object-epoch attribution layer may safely relax this
+    /// for central states that *documentedly* invalidate old CBPeripheral objects;
+    /// until then, requiring the real terminal boundary is the conservative rule.
     mutating func resetForCentralInvalidation() {
-        activeAttempt = nil
-        retiredPeripheralIdentifiers.removeAll()
+        if let activeAttempt {
+            retiredPeripheralIdentifiers.insert(activeAttempt.peripheralIdentifier)
+            self.activeAttempt = nil
+        }
         resetAcquisitionProvenance()
     }
 
