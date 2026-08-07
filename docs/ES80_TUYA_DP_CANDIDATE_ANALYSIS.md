@@ -50,7 +50,7 @@ The parser records a shape finding for known public forms. A surprising length i
 
 Current generic shape evidence retained by this candidate analyzer is:
 
-- raw: non-empty and bounded by the caller's explicit analysis resource policy; public Tuya product/transport material does not expose one universal 255-byte ceiling;
+- raw: non-empty, with **no transport-independent public maximum claimed** by this generic layer;
 - boolean: `1` byte;
 - value: `1`, `2`, or `4` bytes;
 - string: `0...255` bytes;
@@ -59,7 +59,7 @@ Current generic shape evidence retained by this candidate analyzer is:
 
 Tuya's public Bluetooth documents are not perfectly uniform on scalar width. The TuyaOS Bluetooth SDK API currently documents `DT_VALUE` as allowing `1`, `2`, or `4` bytes, while other Tuya Bluetooth pages describe VALUE as fixed at four bytes. Nembra therefore retains the broader documented `1/2/4` candidate family rather than suppressing potentially legitimate physical evidence before the ES80 protocol generation is known. The same conservative broader-family treatment is used for bitmap length where public Tuya material also varies. These are structural candidates, not an ES80 product schema.
 
-Raw length also varies across current Tuya material. Some product/Bluetooth pages describe raw as `1...255`, while current TuyaOS DP-model and data-processing documentation says raw is typically capped at 255 bytes but can reach 1,024 bytes in some supported paths. The generic analyzer therefore does **not** hard-code 255 as protocol truth. It requires raw to be non-empty and lets `TuyaCandidateDPParserPolicy.maximumValueBytes` provide the caller-owned safety ceiling. A 1,024-byte raw candidate is still only candidate evidence; it does not imply the ES80 or the selected transport supports that size.
+Raw length also varies across current Tuya material. Some product/Bluetooth pages describe raw as `1...255`, while current TuyaOS DP-model and data-processing documentation says raw is typically capped at 255 bytes but can reach 1,024 bytes in some supported paths. The generic analyzer therefore does **not** hard-code either 255 or 1,024 as protocol truth. Its `TuyaCandidateDPShapeFinding` records only the generic public minimum (`1`) and `documentedMaximumLength: nil` for RAW. Separately, `TuyaCandidateDPParserPolicy.maximumValueBytes` remains a caller-owned resource/safety ceiling. That analysis limit is never copied into the protocol-shape finding. A 1,024-byte raw candidate is still only candidate evidence; it does not imply the ES80 or the selected transport supports that size.
 
 String retains the public 255-byte maximum. A structurally complete string beyond that range is preserved when caller policy allows it but is flagged as a shape anomaly rather than discarded.
 
@@ -113,7 +113,7 @@ It does not mean:
 
 ## Verification
 
-The focused suite covers both explicit length-width hypotheses and preservation of that hypothesis in every successful parse, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, the documented one-/two-/four-byte VALUE ambiguity, raw candidates through a caller-permitted 1,024-byte case, string's separate 255-byte shape bound, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
+The focused suite covers both explicit length-width hypotheses and preservation of that hypothesis in every successful parse, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, the documented one-/two-/four-byte VALUE ambiguity, raw candidates through a caller-permitted 1,024-byte case, proof that RAW shape evidence does not inherit the caller's resource maximum, string's separate 255-byte shape bound, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
 
 A local Swift 6.2.1 warnings-as-errors mirror of the exact feature logic passes **14/14** tests in both debug and optimized release. That is supporting software evidence only; repository-native exact-head NembraCore/Xcode acceptance remains required on the final dependency composition.
 
