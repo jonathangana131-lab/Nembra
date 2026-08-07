@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Propulsion gauge recovery truth")
 struct PropulsionGaugeRecoveryTruthTests {
-    private let identity = PropulsionGaugeIdentity(vehicleID: "recovery-es80", modeKey: "sport")
+    private let identity = try! PropulsionGaugeIdentity(vehicleID: "recovery-es80", modeKey: "sport")
 
     private func policy(
         rise: UInt64 = 1_000_000_000,
@@ -19,32 +19,28 @@ struct PropulsionGaugeRecoveryTruthTests {
         )
     }
 
-    @Test("authority-bearing samples and scales reject structurally empty identity")
-    func emptyIdentityFailsClosed() {
-        let emptyVehicle = PropulsionGaugeIdentity(vehicleID: "  \n")
-        #expect(throws: PropulsionPowerSampleError.invalidIdentity) {
-            try PropulsionPowerSample.simulator(
-                identity: emptyVehicle,
-                watts: 100,
-                receivedAtUptimeNanoseconds: 1,
-                continuityGeneration: 1
-            )
+    @Test("identity construction and Codable decoding fail closed on empty keys")
+    func identityFailsClosed() throws {
+        #expect(throws: PropulsionGaugeIdentityError.invalidVehicleID) {
+            try PropulsionGaugeIdentity(vehicleID: "  \n")
+        }
+        #expect(throws: PropulsionGaugeIdentityError.invalidModeKey) {
+            try PropulsionGaugeIdentity(vehicleID: "es80", modeKey: " \t")
         }
 
-        let emptyMode = PropulsionGaugeIdentity(vehicleID: "es80", modeKey: " \t")
-        #expect(throws: PropulsionGaugeScaleError.invalidIdentity) {
-            try PropulsionGaugeScale.simulator(identity: emptyMode, ceilingWatts: 500)
+        let emptyVehicleJSON = Data(#"{"vehicleID":"  ","modeKey":"sport"}"#.utf8)
+        #expect(throws: PropulsionGaugeIdentityError.invalidVehicleID) {
+            try JSONDecoder().decode(PropulsionGaugeIdentity.self, from: emptyVehicleJSON)
         }
 
-        #expect(throws: PropulsionPowerSampleError.invalidIdentity) {
-            try PropulsionPowerSample.verifiedVehicleMeasurement(
-                identity: emptyVehicle,
-                watts: 100,
-                receiptSequenceNumber: 1,
-                receivedAtUptimeNanoseconds: 1,
-                continuityGeneration: 1
-            )
+        let emptyModeJSON = Data(#"{"vehicleID":"es80","modeKey":"  "}"#.utf8)
+        #expect(throws: PropulsionGaugeIdentityError.invalidModeKey) {
+            try JSONDecoder().decode(PropulsionGaugeIdentity.self, from: emptyModeJSON)
         }
+
+        let encoded = try JSONEncoder().encode(identity)
+        let decoded = try JSONDecoder().decode(PropulsionGaugeIdentity.self, from: encoded)
+        #expect(decoded == identity)
     }
 
     @Test("power release cannot settle slower than application")
@@ -182,7 +178,8 @@ struct PropulsionGaugeRecoveryTruthTests {
         )
 
         let scale = try PropulsionGaugeScale.observedEnvelope(calibration)
-        #expect(scale.identity == PropulsionGaugeIdentity(vehicleID: "sim-es80", modeKey: "sport"))
+        let expectedIdentity = try PropulsionGaugeIdentity(vehicleID: "sim-es80", modeKey: "sport")
+        #expect(scale.identity == expectedIdentity)
         #expect(scale.ceilingWatts == 525)
         #expect(scale.origin == .simulator)
     }
@@ -203,7 +200,8 @@ struct PropulsionGaugeRecoveryTruthTests {
         )
 
         let scale = try PropulsionGaugeScale.observedEnvelope(calibration)
-        #expect(scale.identity == PropulsionGaugeIdentity(vehicleID: "physical-es80-key", modeKey: "sport"))
+        let expectedIdentity = try PropulsionGaugeIdentity(vehicleID: "physical-es80-key", modeKey: "sport")
+        #expect(scale.identity == expectedIdentity)
         #expect(scale.ceilingWatts == 525)
         #expect(scale.origin == .verifiedObservedEnvelope)
     }
