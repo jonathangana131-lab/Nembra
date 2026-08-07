@@ -200,38 +200,23 @@ public enum RideDurationStatisticsAggregator {
         selectedWindow: PeriodWindow
     ) throws -> [RideDurationStatisticsRide] {
         // All Time intentionally preserves the original global reconciliation
-        // path and avoids adding bounded-period bookkeeping to full history.
+        // path and avoids allocating a selected-session set for the full history.
         guard selectedWindow.interval != nil else {
             return try deduplicated(rides)
         }
 
-        var recordsBySessionID: [UUID: RideDurationStatisticsRide] = [:]
-        var selectedRides: [RideDurationStatisticsRide] = []
+        let selectedSessionIDs = Set(
+            rides.lazy
+                .filter { selectedWindow.contains($0.attributedDate) }
+                .map(\.sessionID)
+        )
 
-        for ride in rides {
-            let rideIsSelected = selectedWindow.contains(ride.attributedDate)
+        guard !selectedSessionIDs.isEmpty else { return [] }
 
-            if let existing = recordsBySessionID[ride.sessionID] {
-                if existing == ride {
-                    continue
-                }
-
-                // A conflict matters to this summary if either supplied copy can
-                // belong to the selected period. Conflicts whose observed copies
-                // are all outside the period remain irrelevant to this bucket.
-                if selectedWindow.contains(existing.attributedDate) || rideIsSelected {
-                    throw RideDurationStatisticsError.sessionConflict(ride.sessionID)
-                }
-                continue
-            }
-
-            recordsBySessionID[ride.sessionID] = ride
-            if rideIsSelected {
-                selectedRides.append(ride)
-            }
+        let relevantRides = rides.filter { selectedSessionIDs.contains($0.sessionID) }
+        return try deduplicated(relevantRides).filter {
+            selectedWindow.contains($0.attributedDate)
         }
-
-        return selectedRides
     }
 
     private static func adding(
