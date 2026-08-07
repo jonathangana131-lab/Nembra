@@ -164,6 +164,6 @@ struct TuyaCandidateDPNumericHypothesisStabilityTests {
         #expect(evidence.samples.allSatisfy { $0.absoluteError.isFinite })
         #expect(mean.isFinite)
         #expect(maximum.isFinite)
-        #expect(mean == maximum)
+        #expect(abs(mean / maximum - 1) < 1e-12)
     }
 }
