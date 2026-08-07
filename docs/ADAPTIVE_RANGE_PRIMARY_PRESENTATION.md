@@ -20,16 +20,20 @@ This lane prevents integration code from flattening every non-nil range estimate
 
 `AdaptiveBatteryRangePrimaryPresentationPolicy` allows an unqualified numeric primary range only when all of these are true:
 
-1. vehicle data is live rather than retained/offline;
+1. canonical data availability derived from the supplied `VehicleState` is live rather than retained/unavailable;
 2. an adaptive estimate exists;
 3. `presentedRemainingMeters` is finite and non-negative;
 4. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
 5. estimate basis is `.learned`, not `.provisionalSeed`;
 6. confidence is `.normal` or `.high`.
 
-The policy consumes the existing `VehicleDataAvailability` classification from `VehicleDomain.swift` directly. It deliberately does not define a second live/retained/unavailable enum. This keeps range freshness on the same canonical retained-data boundary already used by Dashboard and other vehicle presentation code and removes a mapping seam where retained data could accidentally be reclassified as live.
+The **public** policy API accepts `VehicleState`, not a caller-selected `VehicleDataAvailability`. It derives `vehicleState.dataAvailability` inside NembraCore. This removes a role-selector seam where app integration could accidentally pass `.live` for retained/no-confirmed-data state, and it remains compatible with a future separate `NembraCore` module because the app caller does not need access to the internal `VehicleState.dataAvailability` helper.
 
-Future Dashboard integration should pass `vehicle.state.dataAvailability` directly to the policy. It must not recreate availability from connection state at the call site: `VehicleState.dataAvailability` already encodes the important rule that confirmed values become `.retained` whenever the vehicle is not currently connected, while a state with no confirmed vehicle values is `.unavailable`.
+The canonical vehicle-state rule remains:
+
+- no confirmed vehicle values -> `.unavailable`, even if connection happens to say connected;
+- confirmed values + connected -> `.live`;
+- confirmed values + disconnected/connecting/reconnecting -> `.retained`.
 
 The output preserves a detailed withholding reason while separately projecting into the existing `BatteryEstimatedRangeDisplay` contract.
 
@@ -37,7 +41,7 @@ The output preserves a detailed withholding reason while separately projecting i
 
 | Input state | Detailed decision | Existing primary readout |
 | --- | --- | --- |
-| learned + normal/high + authoritative SoC + live | numeric value | numeric value |
+| learned + normal/high + authoritative SoC + canonical live state | numeric value | numeric value |
 | provisional seed | learning | learning |
 | learning confidence | learning | learning |
 | low confidence | learning | learning |
@@ -45,10 +49,10 @@ The output preserves a detailed withholding reason while separately projecting i
 | retained + otherwise-valid range | unavailable until qualified | unavailable |
 | retained + no range estimate | no estimate | unavailable |
 | retained + invalid range | invalid range | unavailable |
-| vehicle data unavailable | unavailable | unavailable |
+| no confirmed vehicle data | unavailable | unavailable |
 | missing/invalid live range | unavailable | unavailable |
 
-Reason precedence is deliberate. A retained qualifier only makes sense when an otherwise-usable range actually exists; missing or malformed range is therefore classified before `.retained`. Conversely, `.unavailable` vehicle data remains a top-level blocker because no confirmed vehicle snapshot exists to support a range at all.
+Reason precedence is deliberate. A retained qualifier only makes sense when an otherwise-usable range actually exists; missing or malformed range is therefore classified before `.retained`. Conversely, unavailable canonical vehicle data remains a top-level blocker because no confirmed vehicle snapshot exists to support a range at all.
 
 When multiple range-evidence conditions coexist on a valid live estimate, stronger evidence-quality qualifiers win over weaker presentation-progress qualifiers. In particular, estimated SoC outranks provisional basis: a provisional estimate based on estimated SoC is `unavailable(.estimatedSOCRequiresQualifier)`, not merely `learning(.provisionalSeed)`. This avoids telling the user only that the model is learning while hiding the weaker battery source underneath it.
 
@@ -73,7 +77,7 @@ These are upstream trust-boundary bugs, not reasons for this lane to duplicate b
 4. only then may a `.authoritativeMeasurement` carried by the accepted adaptive-range result satisfy this policy's numeric-eligibility rule;
 5. until those seals exist, PR #83 stays draft/dependent and no Dashboard integration should interpret this policy's current numeric branch as production authority proof.
 
-A historical/queued green for the old #40 head does not close these blockers because the reviewed source itself still contains the authority-import/construction paths.
+A green Xcode/Simulator run for the old #40 head does not close these blockers because the exact green source still contains the authority-import/construction paths.
 
 ### Production module-layout caveat
 
@@ -133,6 +137,8 @@ Nembra currently has two different source-discovery realities:
 - the `Nembra.app` Xcode target manually enumerates selected NembraCore source files in `Nembra.xcodeproj/project.pbxproj` and compiles them directly into the app module.
 
 This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type, and package-module access-control probes are not automatically proof of the production app trust boundary. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), compile the real app on the exact final SHA, and re-prove authority construction under that exact module layout.
+
+The `VehicleState`-accepting public policy API deliberately avoids adding another app-visible freshness-selector dependency: both current direct-source compilation and a future linked-module architecture can call the same API while canonical availability stays derived inside the domain layer.
 
 After #40 is authority-sealed, accepted, and landed, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
 
