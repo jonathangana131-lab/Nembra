@@ -43,6 +43,7 @@ struct PropulsionGaugePresentationTests {
         try .verifiedVehicleMeasurement(
             identity: identity ?? self.identity,
             watts: watts,
+            receiptSequenceNumber: uptime,
             receivedAtUptimeNanoseconds: uptime,
             continuityGeneration: generation
         )
@@ -231,7 +232,7 @@ struct PropulsionGaugePresentationTests {
         #expect(frame.latestAcceptedWatts == 700)
     }
 
-    @Test("stale generation and replayed receipt time reject")
+    @Test("stale generation and replayed receipt sequence reject")
     func chronologyFailsClosed() throws {
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
         try model.accept(simulatorSample(watts: 100, uptime: 1_000, generation: 2))
@@ -239,7 +240,7 @@ struct PropulsionGaugePresentationTests {
         #expect(throws: PropulsionGaugeDisplayError.staleContinuityGeneration) {
             try model.accept(simulatorSample(watts: 200, uptime: 2_000, generation: 1))
         }
-        #expect(throws: PropulsionGaugeDisplayError.nonMonotonicMeasurement) {
+        #expect(throws: PropulsionGaugeDisplayError.nonIncreasingReceiptSequence) {
             try model.accept(simulatorSample(watts: 200, uptime: 1_000, generation: 2))
         }
     }
