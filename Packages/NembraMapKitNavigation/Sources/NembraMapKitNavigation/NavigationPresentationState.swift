@@ -8,6 +8,7 @@ public enum NavigationPlanningPresentation: Equatable, Sendable {
 }
 
 public struct NavigationRouteOptionPresentation: Equatable, Sendable {
+    public let selectionID: NavigationRouteSelectionID
     public let index: Int
     public let name: String
     public let distanceMeters: Double
@@ -56,21 +57,31 @@ public enum NavigationPresentationProjector {
         from experience: NavigationExperienceSnapshot
     ) -> NavigationPresentationSnapshot {
         let planning: NavigationPlanningPresentation
+        let availableToken: NavigationRouteRequestToken?
         switch experience.planningState {
         case .idle:
             planning = .idle
+            availableToken = nil
         case let .requesting(_, request):
             planning = .requesting(request)
-        case let .available(_, request, _):
+            availableToken = nil
+        case let .available(token, request, _):
             planning = .alternativesAvailable(request)
+            availableToken = token
         case let .failed(_, request, reason):
             planning = .failed(request: request, reason: reason)
+            availableToken = nil
         }
 
         let options: [NavigationRouteOptionPresentation]
-        if let selection = experience.routeSelection {
+        if let selection = experience.routeSelection,
+           let availableToken {
             options = selection.routes.enumerated().map { index, route in
                 NavigationRouteOptionPresentation(
+                    selectionID: NavigationRouteSelectionID(
+                        requestToken: availableToken,
+                        index: index
+                    ),
                     index: index,
                     name: route.name,
                     distanceMeters: route.distanceMeters,
