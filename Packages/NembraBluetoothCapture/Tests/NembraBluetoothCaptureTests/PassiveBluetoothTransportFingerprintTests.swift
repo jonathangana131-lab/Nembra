@@ -96,6 +96,49 @@ struct PassiveBluetoothTransportFingerprintTests {
         #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
     }
 
+    @Test("generic continuity break cannot combine split characteristics into a complete data path")
+    func genericBreakKeepsStrengthSegmentLocal() throws {
+        var session = try makeSession()
+        try appendService("A201", sequence: 1, to: &session)
+        try appendCharacteristic("2B10", service: "A201", sequence: 2, to: &session)
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "observer continuity reset")),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3,
+            receivedAtDate: .now
+        )
+        try appendCharacteristic("2B11", service: "A201", sequence: 4, to: &session)
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let match = try #require(report.candidateMatches.first)
+        #expect(report.characteristicUUIDsByService["A201"] == ["2B10", "2B11"])
+        #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
+        #expect(match.strength == .characteristicFamilyObserved)
+    }
+
+    @Test("structured disconnect cannot combine split characteristics into a complete data path")
+    func disconnectKeepsStrengthSegmentLocal() throws {
+        var session = try makeSession()
+        try appendService("A201", sequence: 1, to: &session)
+        try appendCharacteristic("2B10", service: "A201", sequence: 2, to: &session)
+        try session.append(
+            .connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: "test",
+                state: .disconnected
+            )),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3,
+            receivedAtDate: .now
+        )
+        try appendCharacteristic("2B11", service: "A201", sequence: 4, to: &session)
+
+        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let match = try #require(report.candidateMatches.first)
+        #expect(report.characteristicUUIDsByService["A201"] == ["2B10", "2B11"])
+        #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
+        #expect(match.strength == .characteristicFamilyObserved)
+    }
+
     @Test("multiple family fingerprints remain multiple instead of forcing a winner")
     func multipleCandidates() throws {
         var session = try makeSession()
