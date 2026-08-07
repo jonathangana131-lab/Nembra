@@ -85,11 +85,14 @@ public struct RideDurationObservationOwner: Sendable {
         guard accumulator.sessionID == sessionID else {
             throw RideDurationObservationOwnerError.sessionMismatch
         }
-        try admitMonotonic(uptime)
-
         guard var segment = activeSegment else {
+            // A rejected callback inside an explicit observation gap must not
+            // advance the chronology floor. The same timestamp may be the first
+            // legitimate boundary supplied to `resumeObservation` afterward.
             throw RideDurationObservationOwnerError.noActiveSession
         }
+        try admitMonotonic(uptime)
+
         segment.observedThroughUptimeNanoseconds = uptime
         activeSegment = segment
         try upsertActiveSegment()
