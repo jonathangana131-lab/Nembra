@@ -305,9 +305,18 @@ struct RideLocationCaptureSummary: Equatable, Sendable {
 /// later and promoted into ride distance. Both domains originate from the same
 /// screened samples but remain independently truthful after that boundary.
 actor RideLocationCaptureCoordinator {
-    /// Production lifecycle sink. Every GPS delta carries the exact ride UUID
-    /// this capture began with so the application layer can reject delayed
-    /// evidence after that ride ends or another ride becomes active.
+    /// Production lifecycle admission sink. Every screened point carries the
+    /// exact ride UUID this capture began with. Returning `false` means the ride
+    /// application has already closed that session's evidence boundary, so the
+    /// same point is excluded from route persistence as well as GPS distance.
+    /// A nil distance is the first accepted anchor point: it still requires
+    /// session admission but must not manufacture a zero-distance observation.
+    typealias EvidenceAdmissionSink = @Sendable (
+        _ sessionID: UUID,
+        _ distanceDeltaMeters: Double?,
+        _ receivedAtUptimeNanoseconds: UInt64
+    ) async -> Bool
+
     typealias DistanceSink = @Sendable (
         _ sessionID: UUID,
         _ meters: Double,
@@ -317,7 +326,7 @@ actor RideLocationCaptureCoordinator {
     private let source: any RideLocationSource
     private let routeStore: (any RideRouteStore)?
     private let routeChunkSize: Int
-    private let distanceSink: DistanceSink
+    private let evidenceAdmissionSink: EvidenceAdmissionSink
     private var qualityScreen: RideLocationQualityScreen
     private var routeRecorder: RideRouteRecorder?
 
@@ -333,7 +342,7 @@ actor RideLocationCaptureCoordinator {
         qualityPolicy: RideLocationQualityPolicy,
         routeStore: (any RideRouteStore)?,
         routeChunkSize: Int = 8,
-        sessionScopedDistanceSink: @escaping DistanceSink
+        sessionScopedEvidenceAdmissionSink: @escaping EvidenceAdmissionSink
     ) throws {
         guard routeChunkSize > 0 else {
             throw RideRouteRecorderError.invalidChunkSize
@@ -342,12 +351,36 @@ actor RideLocationCaptureCoordinator {
         self.routeStore = routeStore
         self.routeChunkSize = routeChunkSize
         self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
-        self.distanceSink = sessionScopedDistanceSink
+        self.evidenceAdmissionSink = sessionScopedEvidenceAdmissionSink
+    }
+
+    /// Compatibility initializer for existing callers that already scope each
+    /// emitted nonzero delta to a ride UUID. The wrapper admits first anchor
+    /// points and preserves the old sink behavior for accepted distance deltas.
+    init(
+        source: any RideLocationSource,
+        qualityPolicy: RideLocationQualityPolicy,
+        routeStore: (any RideRouteStore)?,
+        routeChunkSize: Int = 8,
+        sessionScopedDistanceSink: @escaping DistanceSink
+    ) throws {
+        try self.init(
+            source: source,
+            qualityPolicy: qualityPolicy,
+            routeStore: routeStore,
+            routeChunkSize: routeChunkSize,
+            sessionScopedEvidenceAdmissionSink: { sessionID, meters, uptime in
+                if let meters {
+                    await sessionScopedDistanceSink(sessionID, meters, uptime)
+                }
+                return true
+            }
+        )
     }
 
     /// Transitional/test convenience for code that only observes emitted deltas
     /// and does not route them into application ride state. Production ride
-    /// lifecycle wiring should use `sessionScopedDistanceSink` instead.
+    /// lifecycle wiring should use `sessionScopedEvidenceAdmissionSink` instead.
     init(
         source: any RideLocationSource,
         qualityPolicy: RideLocationQualityPolicy,
@@ -422,7 +455,9 @@ actor RideLocationCaptureCoordinator {
         }
 
         // Finishing the source closes its AsyncStream. Await the consumer so all
-        // already-yielded evidence is screened before finalizing the route.
+        // already-yielded events reach the same ride-admission boundary before
+        // finalizing the route. Buffered points rejected by the application are
+        // excluded from both route persistence and GPS distance deterministically.
         await source.stop()
         if let eventsTask {
             await eventsTask.value
@@ -455,12 +490,11 @@ actor RideLocationCaptureCoordinator {
     private func consume(_ event: RideLocationSourceEvent) async {
         if event.issue != nil {
             // An explicit Core Location diagnostic means continuity is no longer
-            // justified. Mark both evidence domains immediately. The recorder's
-            // gap marker is lazy: before the first point it only forces partial
-            // coverage, and after points exist it materializes a new segment only
-            // when another valid coordinate is later accepted.
+            // justified. Mark the quality screen immediately. Route topology is
+            // materialized only if a later screened point is admitted to the
+            // active ride, so a post-cutoff buffered point cannot create a route
+            // segment that the completed GPS evidence does not own.
             qualityScreen.markKnownCoverageGap()
-            await markRouteGapIfAvailable()
         }
 
         guard let sample = event.sample else { return }
@@ -469,24 +503,23 @@ actor RideLocationCaptureCoordinator {
         case .rejected:
             return
         case let .accepted(accepted):
+            guard let sessionID else { return }
+            let admitted = await evidenceAdmissionSink(
+                sessionID,
+                accepted.distanceDeltaMeters,
+                accepted.sample.receivedAtUptimeNanoseconds
+            )
+            guard admitted else { return }
+
             if accepted.startsNewRouteSegment {
-                // Repeating the marker is intentionally harmless; the route
-                // recorder collapses repeated gap notifications until a new
-                // accepted point actually exists.
                 await markRouteGapIfAvailable()
             }
 
             await appendRoutePointIfAvailable(accepted.sample)
             acceptedPointCount += 1
 
-            if let distanceDeltaMeters = accepted.distanceDeltaMeters,
-               let sessionID {
+            if let distanceDeltaMeters = accepted.distanceDeltaMeters {
                 qualityScreenedDistanceMeters += distanceDeltaMeters
-                await distanceSink(
-                    sessionID,
-                    distanceDeltaMeters,
-                    accepted.sample.receivedAtUptimeNanoseconds
-                )
             }
         }
     }
