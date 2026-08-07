@@ -120,7 +120,7 @@ struct AccelerationAttemptOwnerTests {
         )
 
         let interruptionResult = owner.interrupt(.vehicleConnectionLost, for: generation)
-        #expect(interruptionResult == .ignoredBeforeSelectedSourceEvidence(
+        #expect(interruptionResult == .ignoredWithoutEvidenceChange(
             runState: .waitingForStandstill
         ))
 
