@@ -115,23 +115,29 @@ public actor RideHistoryDurationCommitCoordinator {
 
     /// Returns duration only through a freshly validated history join.
     ///
-    /// A missing base record or missing attachment is simply unavailable. Structurally present
-    /// but mismatched evidence fails closed instead of being presented under the ride UUID.
+    /// A missing attachment is simply unavailable when its base history exists (or when neither
+    /// record exists). A duration attachment without its required base completed ride is a durable
+    /// inconsistency and fails closed instead of being hidden as ordinary unavailability.
     public func joinedRecord(
         sessionID: UUID
     ) async throws -> RideHistoryDurationJoinedRecord? {
-        guard let historyRecord = try await historyStore.record(sessionID: sessionID),
-              let durationRecord = try await durationStore.record(sessionID: sessionID) else {
-            return nil
-        }
+        let historyRecord = try await historyStore.record(sessionID: sessionID)
+        let durationRecord = try await durationStore.record(sessionID: sessionID)
 
-        do {
-            return try RideHistoryDurationJoinedRecord(
-                historyRecord: historyRecord,
-                durationRecord: durationRecord
-            )
-        } catch {
-            throw RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)
+        switch (historyRecord, durationRecord) {
+        case (nil, nil), (.some, nil):
+            return nil
+        case (nil, .some):
+            throw RideHistoryDurationCommitCoordinatorError.missingCompletedRide(sessionID)
+        case let (.some(historyRecord), .some(durationRecord)):
+            do {
+                return try RideHistoryDurationJoinedRecord(
+                    historyRecord: historyRecord,
+                    durationRecord: durationRecord
+                )
+            } catch {
+                throw RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)
+            }
         }
     }
 }
