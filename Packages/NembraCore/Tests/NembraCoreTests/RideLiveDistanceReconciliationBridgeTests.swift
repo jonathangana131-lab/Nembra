@@ -38,8 +38,8 @@ struct RideLiveDistanceReconciliationBridgeTests {
         let durable = try RideLiveDistanceSegmentEvidence(
             rideSessionID: sessionID,
             segmentID: segmentID,
-            finalizedSegment: finalized,
-            followsUnobservedInterval: false
+            processSegmentSequence: 0,
+            finalizedSegment: finalized
         )
         return try RideLiveDistanceAggregator.aggregate(
             rideSessionID: sessionID,
