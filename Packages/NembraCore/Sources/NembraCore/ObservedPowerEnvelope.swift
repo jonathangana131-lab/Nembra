@@ -100,25 +100,98 @@ public struct ObservedPowerEnvelopePolicy: Equatable, Sendable {
     }
 }
 
-/// Controls whether an already accepted authoritative physical observation is
-/// allowed to influence learned calibration. `measurementOnly` preserves the
-/// measurement for callers but cannot resize the gauge.
-///
-/// This extra gate is deliberate: low-battery or thermally limited observations
-/// must not silently redefine "full observed power" merely because their watts
-/// are otherwise valid telemetry.
+/// Controls whether an otherwise accepted observation may influence calibration.
+/// This is separate from evidence authority: a real measurement can remain
+/// `measurementOnly` when battery/thermal conditions are not suitable for scale
+/// learning.
 public enum ObservedPowerEnvelopeLearningEligibility: Equatable, Sendable {
     case measurementOnly
     case eligibleForEnvelopeLearning
 }
 
+/// Provenance of the observations used by one learner. Simulator calibration is
+/// useful for visual/runtime QA but can never masquerade as physical ES80 proof.
+public enum ObservedPowerEnvelopeEvidenceAuthority: String, Equatable, Sendable {
+    case verifiedVehicleMeasurement
+    case simulatorQA
+}
+
+/// One timestamped propulsion-power observation. External clients can construct
+/// simulator evidence; verified physical authority is package-sealed so arbitrary
+/// UI/client code cannot mint `.verifiedVehicleMeasurement` merely by choosing an
+/// enum value.
+public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
+    public let powerWatts: Double
+    public let observedAtUptimeNanoseconds: UInt64
+    public let learningEligibility: ObservedPowerEnvelopeLearningEligibility
+    public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+
+    private init(
+        powerWatts: Double,
+        observedAtUptimeNanoseconds: UInt64,
+        learningEligibility: ObservedPowerEnvelopeLearningEligibility,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) {
+        self.powerWatts = powerWatts
+        self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
+        self.learningEligibility = learningEligibility
+        self.evidenceAuthority = evidenceAuthority
+    }
+
+    public static func simulatorQA(
+        powerWatts: Double,
+        observedAtUptimeNanoseconds: UInt64,
+        learningEligibility: ObservedPowerEnvelopeLearningEligibility
+    ) -> Self {
+        Self(
+            powerWatts: powerWatts,
+            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+            learningEligibility: learningEligibility,
+            evidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    package static func verifiedVehicleMeasurement(
+        powerWatts: Double,
+        observedAtUptimeNanoseconds: UInt64,
+        learningEligibility: ObservedPowerEnvelopeLearningEligibility
+    ) -> Self {
+        Self(
+            powerWatts: powerWatts,
+            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+            learningEligibility: learningEligibility,
+            evidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#else
+    fileprivate static func verifiedVehicleMeasurement(
+        powerWatts: Double,
+        observedAtUptimeNanoseconds: UInt64,
+        learningEligibility: ObservedPowerEnvelopeLearningEligibility
+    ) -> Self {
+        Self(
+            powerWatts: powerWatts,
+            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+            learningEligibility: learningEligibility,
+            evidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#endif
+}
+
 public enum ObservedPowerEnvelopeRejection: Equatable, Sendable {
+    case evidenceAuthorityMismatch(
+        expected: ObservedPowerEnvelopeEvidenceAuthority,
+        actual: ObservedPowerEnvelopeEvidenceAuthority
+    )
     case nonIncreasingObservationTimestamp
     case invalidPowerWatts
 }
 
 public struct ObservedPowerEnvelopeCalibration: Equatable, Sendable {
     public let scope: ObservedPowerEnvelopeScope
+    public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
     /// Robust upper-envelope statistic from qualified accepted observations.
     /// This is not a certified/rated motor or controller maximum.
     public let learnedObservedCeilingWatts: Double
@@ -136,13 +209,13 @@ public enum ObservedPowerEnvelopeRecordResult: Equatable, Sendable {
     case rejected(ObservedPowerEnvelopeRejection)
 }
 
-/// Learns a stable upward-adapting presentation scale from observations that a
-/// higher layer has already qualified as authoritative physical power evidence.
+/// Learns a stable upward-adapting presentation scale from one explicitly scoped
+/// evidence authority.
 ///
 /// This type does **not** decode BLE/Tuya data, establish watts semantics, infer
 /// throttle position, or decide whether an observation is free from battery or
-/// thermal limiting. Callers must keep unverified/synthetic inputs out of the
-/// authoritative learning path and may mark accepted values `measurementOnly`.
+/// thermal limiting. Verified physical observation and learner construction are
+/// package-sealed; public clients can create only simulator-QA calibration.
 ///
 /// Automatic downward adaptation is intentionally absent at the current product
 /// evidence maturity. Once a stronger ceiling has been observed, ordinary lower
@@ -152,45 +225,77 @@ public enum ObservedPowerEnvelopeRecordResult: Equatable, Sendable {
 public struct ObservedPowerEnvelopeLearner: Sendable {
     public let scope: ObservedPowerEnvelopeScope
     public let policy: ObservedPowerEnvelopePolicy
+    public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
     private var lastObservedUptimeNanoseconds: UInt64?
     private var eligiblePowerWindow: [Double] = []
     private var calibrationStorage: ObservedPowerEnvelopeCalibration?
 
-    public init(scope: ObservedPowerEnvelopeScope, policy: ObservedPowerEnvelopePolicy) {
+    private init(
+        scope: ObservedPowerEnvelopeScope,
+        policy: ObservedPowerEnvelopePolicy,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) {
         self.scope = scope
         self.policy = policy
+        self.evidenceAuthority = evidenceAuthority
     }
+
+    public static func simulatorQA(
+        scope: ObservedPowerEnvelopeScope,
+        policy: ObservedPowerEnvelopePolicy
+    ) -> Self {
+        Self(scope: scope, policy: policy, evidenceAuthority: .simulatorQA)
+    }
+
+#if SWIFT_PACKAGE
+    package static func verifiedVehicleMeasurements(
+        scope: ObservedPowerEnvelopeScope,
+        policy: ObservedPowerEnvelopePolicy
+    ) -> Self {
+        Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
+    }
+#else
+    fileprivate static func verifiedVehicleMeasurements(
+        scope: ObservedPowerEnvelopeScope,
+        policy: ObservedPowerEnvelopePolicy
+    ) -> Self {
+        Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
+    }
+#endif
 
     public var calibration: ObservedPowerEnvelopeCalibration? {
         calibrationStorage
     }
 
     @discardableResult
-    public mutating func recordQualifiedObservation(
-        powerWatts: Double,
-        observedAtUptimeNanoseconds: UInt64,
-        learningEligibility: ObservedPowerEnvelopeLearningEligibility
-    ) -> ObservedPowerEnvelopeRecordResult {
+    public mutating func record(_ observation: ObservedPowerEnvelopeObservation) -> ObservedPowerEnvelopeRecordResult {
+        guard observation.evidenceAuthority == evidenceAuthority else {
+            return .rejected(.evidenceAuthorityMismatch(
+                expected: evidenceAuthority,
+                actual: observation.evidenceAuthority
+            ))
+        }
+
         if let lastObservedUptimeNanoseconds,
-           observedAtUptimeNanoseconds <= lastObservedUptimeNanoseconds {
+           observation.observedAtUptimeNanoseconds <= lastObservedUptimeNanoseconds {
             return .rejected(.nonIncreasingObservationTimestamp)
         }
 
-        // A fresh callback is ordering evidence even if its numeric payload later
-        // proves unusable. Advancing chronology prevents an older delayed value
-        // from entering after this rejected observation.
-        lastObservedUptimeNanoseconds = observedAtUptimeNanoseconds
+        // A fresh callback from the selected authority is ordering evidence even
+        // if its numeric payload later proves unusable. Advancing chronology
+        // prevents an older delayed value from entering after this rejection.
+        lastObservedUptimeNanoseconds = observation.observedAtUptimeNanoseconds
 
-        guard powerWatts.isFinite, powerWatts >= 0 else {
+        guard observation.powerWatts.isFinite, observation.powerWatts >= 0 else {
             return .rejected(.invalidPowerWatts)
         }
 
-        guard learningEligibility == .eligibleForEnvelopeLearning else {
+        guard observation.learningEligibility == .eligibleForEnvelopeLearning else {
             return .acceptedMeasurementOnly
         }
 
-        eligiblePowerWindow.append(powerWatts)
+        eligiblePowerWindow.append(observation.powerWatts)
         if eligiblePowerWindow.count > policy.windowCapacity {
             eligiblePowerWindow.removeFirst(eligiblePowerWindow.count - policy.windowCapacity)
         }
@@ -247,6 +352,7 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
 
         return ObservedPowerEnvelopeCalibration(
             scope: scope,
+            evidenceAuthority: evidenceAuthority,
             learnedObservedCeilingWatts: observedCeiling,
             learnedGaugeScaleWatts: scale,
             learningSampleCount: eligiblePowerWindow.count,
