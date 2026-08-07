@@ -40,6 +40,16 @@ public struct ES80PassiveCaptureResearchView: View {
             }
         }
         .navigationTitle("ES80 Capture")
+        .onChange(of: controller.connectionPhase) { previousPhase, newPhase in
+            if previousPhase != .idle, newPhase == .idle {
+                clearTargetScopedPresentation()
+            }
+        }
+        .onChange(of: controller.bluetoothState) { previousState, newState in
+            if previousState == .poweredOn, newState != .poweredOn {
+                clearTargetScopedPresentation()
+            }
+        }
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
@@ -102,10 +112,15 @@ public struct ES80PassiveCaptureResearchView: View {
                 } else {
                     Button("Cancel connection", role: .cancel) {
                         controller.cancelActiveConnection()
-                        analysis = nil
-                        exportDocument = nil
+                        clearTargetScopedPresentation()
                     }
                 }
+            }
+
+            if controller.isSelectedTargetAwaitingTerminalCallback {
+                Text("Waiting for CoreBluetooth to finish closing the previous selected-target attempt. Reconnect stays unavailable until its terminal callback arrives or Bluetooth is reset.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if controller.captureFailed {
@@ -159,8 +174,7 @@ public struct ES80PassiveCaptureResearchView: View {
                                 Button(controller.selectedTargetIdentifier == peripheral.id ? "Reconnect target" : "Select & connect") {
                                     perform {
                                         try controller.connect(to: peripheral.id)
-                                        analysis = nil
-                                        exportDocument = nil
+                                        clearTargetScopedPresentation()
                                     }
                                 }
                                 .disabled(!canStartConnection)
@@ -221,7 +235,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Only record what is actually visible in the stock app or other legitimate reference setup. Timing proximity is not a decoded DP claim.")
+            Text("Only record what is actually visible in the stock app or other legitimate reference setup. The marker timestamp is when Nembra receives your Record marker action; it does not prove when the stock app refreshed or changed, and timing proximity is not a decoded DP claim.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -311,7 +325,9 @@ public struct ES80PassiveCaptureResearchView: View {
     }
 
     private var canStartConnection: Bool {
-        if case .idle = controller.connectionPhase { return !controller.captureFailed }
+        if case .idle = controller.connectionPhase {
+            return !controller.captureFailed && !controller.isSelectedTargetAwaitingTerminalCallback
+        }
         return false
     }
 
@@ -374,6 +390,13 @@ public struct ES80PassiveCaptureResearchView: View {
         } catch {
             diagnosticMessage = error.localizedDescription
         }
+    }
+
+    private func clearTargetScopedPresentation() {
+        markerValue = ""
+        markerNote = ""
+        analysis = nil
+        exportDocument = nil
     }
 
     private func normalizedOptional(_ value: String) -> String? {
