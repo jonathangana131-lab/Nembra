@@ -4,7 +4,7 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
     case disconnected
     /// Nembra deliberately has no verified command implementation for the
     /// selected production scooter configuration yet.
-    case unsupportedConfiguration
+    case unverifiedConfiguration
     case unsupportedCapability
     case unsupportedMode(RideMode)
     case unsupportedSpeedLimitSlot(SpeedLimitSlot)
