@@ -122,11 +122,20 @@ public enum RidePowerStatisticsPresenter {
               summary.acceptedPeakPowerRideCount >= 0,
               summary.gapFreePeakPowerRideCount >= 0,
               summary.partialPeakPowerRideCount >= 0,
-              summary.unavailablePeakPowerRideCount >= 0,
-              summary.acceptedPeakPowerRideCount
-                == summary.gapFreePeakPowerRideCount + summary.partialPeakPowerRideCount,
-              summary.rideCount
-                == summary.acceptedPeakPowerRideCount + summary.unavailablePeakPowerRideCount else {
+              summary.unavailablePeakPowerRideCount >= 0 else {
+            throw RidePowerStatisticsPresentationError.invalidSummary
+        }
+
+        let acceptedCount = summary.gapFreePeakPowerRideCount.addingReportingOverflow(
+            summary.partialPeakPowerRideCount
+        )
+        let totalCount = summary.acceptedPeakPowerRideCount.addingReportingOverflow(
+            summary.unavailablePeakPowerRideCount
+        )
+        guard !acceptedCount.overflow,
+              !totalCount.overflow,
+              acceptedCount.partialValue == summary.acceptedPeakPowerRideCount,
+              totalCount.partialValue == summary.rideCount else {
             throw RidePowerStatisticsPresentationError.invalidSummary
         }
 
