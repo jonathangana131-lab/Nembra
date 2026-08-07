@@ -396,15 +396,22 @@ public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Se
             )
         }
 
-        if current.learnedGaugeScaleWatts > retained.learnedGaugeScaleWatts {
+        // A fresh learner establishes its first calibration without knowing the
+        // retained one. Reapply the exact parent policy's upward hysteresis here so
+        // process relaunch cannot bypass scale-stability rules with a tiny increase.
+        let requiredRaisedScale = retained.learnedGaugeScaleWatts
+            * (1 + expectedPolicy.upwardHysteresisFraction)
+        guard requiredRaisedScale.isFinite,
+              current.learnedGaugeScaleWatts > requiredRaisedScale else {
             return ObservedPowerEnvelopeEffectiveCalibration(
-                calibration: current,
-                origin: .currentSession
+                calibration: retained,
+                origin: .retainedCheckpoint
             )
         }
+
         return ObservedPowerEnvelopeEffectiveCalibration(
-            calibration: retained,
-            origin: .retainedCheckpoint
+            calibration: current,
+            origin: .currentSession
         )
     }
 
