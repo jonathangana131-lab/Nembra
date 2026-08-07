@@ -177,20 +177,9 @@ public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
             throw RideObservedPeakQualityPolicyError.nonAuthoritativeSource
         }
 
-        // Jitter is variation between intervals. Two accepted samples provide
-        // only one interval, whose population standard deviation is trivially
-        // zero and therefore is not meaningful jitter evidence. Requiring at
-        // least three accepted samples is a statistical shape invariant (two
-        // intervals), not a guessed ES80 cadence or quality threshold.
-        let minimumSamplesForJitterEvidence = 3
-        guard telemetry.minimumAcceptedSampleCount >= minimumSamplesForJitterEvidence else {
-            throw RideObservedPeakQualityPolicyError
-                .minimumAcceptedSampleCountInsufficientForJitter(
-                    required: minimumSamplesForJitterEvidence,
-                    actual: telemetry.minimumAcceptedSampleCount
-                )
-        }
-
+        // Report missing feature dimensions before evaluating the statistical
+        // shape of those dimensions. A caller that never requested jitter should
+        // get `jitterRequirementRequired`, not a sample-floor error for jitter.
         guard telemetry.maximumRejectedSampleFraction != nil else {
             throw RideObservedPeakQualityPolicyError.rejectedFractionRequirementRequired
         }
@@ -205,6 +194,20 @@ public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
         }
         guard telemetry.maximumEmpiricalSpeedStepKilometersPerHour != nil else {
             throw RideObservedPeakQualityPolicyError.speedResolutionRequirementRequired
+        }
+
+        // Jitter is variation between intervals. Two accepted samples provide
+        // only one interval, whose population standard deviation is trivially
+        // zero and therefore is not meaningful jitter evidence. Requiring at
+        // least three accepted samples is a statistical shape invariant (two
+        // intervals), not a guessed ES80 cadence or quality threshold.
+        let minimumSamplesForJitterEvidence = 3
+        guard telemetry.minimumAcceptedSampleCount >= minimumSamplesForJitterEvidence else {
+            throw RideObservedPeakQualityPolicyError
+                .minimumAcceptedSampleCountInsufficientForJitter(
+                    required: minimumSamplesForJitterEvidence,
+                    actual: telemetry.minimumAcceptedSampleCount
+                )
         }
 
         if requiredSource == .gps {
