@@ -6,6 +6,9 @@ public enum PassiveBluetoothCaptureValidationError: Error, Equatable, Sendable {
     case emptyBluetoothIdentifier
     case emptyStockAppField
     case emptyInterruptionReason
+    case emptyErrorDomain
+    case nonFinitePlatformEventTimestamp
+    case invalidConnectionMetadata
     case nonMonotonicSequence
     case nonMonotonicReceiptTime
     case unsupportedSchemaVersion(Int)
@@ -39,6 +42,106 @@ public enum PassiveBluetoothValueOrigin: String, CaseIterable, Codable, Sendable
     /// classification instead of guessing between the two GATT mechanisms.
     case subscriptionUpdate
     case readResponse
+}
+
+/// Stable platform-neutral error evidence. Preserve domain/code instead of a
+/// localized description so exported captures remain comparable across locale
+/// and OS versions.
+public struct PassiveBluetoothErrorObservation: Equatable, Codable, Sendable {
+    public let domain: String
+    public let code: Int
+
+    public init(domain: String, code: Int) throws {
+        guard !domain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyErrorDomain
+        }
+        self.domain = domain
+        self.code = code
+    }
+}
+
+/// Connection callbacks are evidence in their own right and must not be reduced
+/// to free-form interruption text. The record's receipt clocks still describe
+/// when Nembra received the callback; `platformEventTimestamp` is separate
+/// platform-supplied metadata, currently useful for CoreBluetooth's modern
+/// disconnect callback.
+public enum PassiveBluetoothConnectionState: String, CaseIterable, Codable, Sendable {
+    case connected
+    case failedToConnect
+    case disconnected
+}
+
+public struct PassiveBluetoothConnectionObservation: Equatable, Codable, Sendable {
+    public let peripheralIdentifier: String
+    public let state: PassiveBluetoothConnectionState
+    public let platformEventTimestamp: TimeInterval?
+    public let isReconnecting: Bool?
+    public let error: PassiveBluetoothErrorObservation?
+
+    public init(
+        peripheralIdentifier: String,
+        state: PassiveBluetoothConnectionState,
+        platformEventTimestamp: TimeInterval? = nil,
+        isReconnecting: Bool? = nil,
+        error: PassiveBluetoothErrorObservation? = nil
+    ) throws {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyPeripheralIdentifier
+        }
+        if let platformEventTimestamp, !platformEventTimestamp.isFinite {
+            throw PassiveBluetoothCaptureValidationError.nonFinitePlatformEventTimestamp
+        }
+        guard state == .disconnected || (platformEventTimestamp == nil && isReconnecting == nil) else {
+            throw PassiveBluetoothCaptureValidationError.invalidConnectionMetadata
+        }
+        guard state != .connected || error == nil else {
+            throw PassiveBluetoothCaptureValidationError.invalidConnectionMetadata
+        }
+
+        self.peripheralIdentifier = peripheralIdentifier
+        self.state = state
+        self.platformEventTimestamp = platformEventTimestamp
+        self.isReconnecting = isReconnecting
+        self.error = error
+    }
+}
+
+/// Result/state evidence for a value-update subscription callback. The optional
+/// requested state is present only when the acquisition adapter can prove which
+/// `setNotifyValue` request this callback answers. `resultingIsNotifying` is the
+/// observed characteristic state after the callback. An error is transport/
+/// subscription evidence, never a scooter command acknowledgement.
+public struct PassiveBluetoothSubscriptionObservation: Equatable, Codable, Sendable {
+    public let peripheralIdentifier: String
+    public let serviceUUID: String
+    public let characteristicUUID: String
+    public let requestedEnabled: Bool?
+    public let resultingIsNotifying: Bool
+    public let error: PassiveBluetoothErrorObservation?
+
+    public init(
+        peripheralIdentifier: String,
+        serviceUUID: String,
+        characteristicUUID: String,
+        requestedEnabled: Bool? = nil,
+        resultingIsNotifying: Bool,
+        error: PassiveBluetoothErrorObservation? = nil
+    ) throws {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyPeripheralIdentifier
+        }
+        guard !serviceUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !characteristicUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothCaptureValidationError.emptyBluetoothIdentifier
+        }
+
+        self.peripheralIdentifier = peripheralIdentifier
+        self.serviceUUID = serviceUUID
+        self.characteristicUUID = characteristicUUID
+        self.requestedEnabled = requestedEnabled
+        self.resultingIsNotifying = resultingIsNotifying
+        self.error = error
+    }
 }
 
 /// A raw advertisement snapshot. Manufacturer/service bytes are preserved as-is
@@ -266,10 +369,12 @@ public struct PassiveBluetoothCaptureInterruption: Equatable, Codable, Sendable 
 
 public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case advertisement(PassiveBluetoothAdvertisementObservation)
+    case connection(PassiveBluetoothConnectionObservation)
     case service(PassiveBluetoothServiceObservation)
     case includedService(PassiveBluetoothIncludedServiceObservation)
     case characteristic(PassiveBluetoothCharacteristicObservation)
     case descriptor(PassiveBluetoothDescriptorObservation)
+    case subscription(PassiveBluetoothSubscriptionObservation)
     case value(PassiveBluetoothValueObservation)
     case stockAppState(PassiveBluetoothStockAppObservation)
     case interruption(PassiveBluetoothCaptureInterruption)
@@ -291,6 +396,17 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
                 solicitedServiceUUIDs: observation.solicitedServiceUUIDs,
                 serviceData: observation.serviceData,
                 txPowerLevel: observation.txPowerLevel
+            )
+        case let .connection(observation):
+            let error = try observation.error.map {
+                try PassiveBluetoothErrorObservation(domain: $0.domain, code: $0.code)
+            }
+            _ = try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                state: observation.state,
+                platformEventTimestamp: observation.platformEventTimestamp,
+                isReconnecting: observation.isReconnecting,
+                error: error
             )
         case let .service(observation):
             _ = try PassiveBluetoothServiceObservation(
@@ -318,6 +434,18 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
                 serviceUUID: observation.serviceUUID,
                 characteristicUUID: observation.characteristicUUID,
                 descriptorUUID: observation.descriptorUUID
+            )
+        case let .subscription(observation):
+            let error = try observation.error.map {
+                try PassiveBluetoothErrorObservation(domain: $0.domain, code: $0.code)
+            }
+            _ = try PassiveBluetoothSubscriptionObservation(
+                peripheralIdentifier: observation.peripheralIdentifier,
+                serviceUUID: observation.serviceUUID,
+                characteristicUUID: observation.characteristicUUID,
+                requestedEnabled: observation.requestedEnabled,
+                resultingIsNotifying: observation.resultingIsNotifying,
+                error: error
             )
         case let .value(observation):
             _ = try PassiveBluetoothValueObservation(
@@ -446,10 +574,15 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
 /// Stable, versioned JSON codec for sharing capture artifacts between
 /// physical-device sessions and offline parser/tests. Sorted keys keep diffs
 /// reviewable while millisecond epoch dates preserve sub-second correlation
-/// metadata. A versioned envelope makes future migrations explicit instead of
-/// silently reinterpreting irreplaceable physical capture evidence.
+/// metadata. Schema v2 adds structured connection/subscription evidence; v1
+/// remains readable so existing raw evidence is not discarded.
 public enum PassiveBluetoothCaptureJSON {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
+    private static let supportedSchemaVersions: Set<Int> = [1, 2]
+
+    private struct VersionProbe: Decodable {
+        let schemaVersion: Int
+    }
 
     private struct Envelope: Codable {
         let schemaVersion: Int
@@ -471,10 +604,11 @@ public enum PassiveBluetoothCaptureJSON {
     public static func decode(_ data: Data) throws -> PassiveBluetoothCaptureSession {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
-        let envelope = try decoder.decode(Envelope.self, from: data)
-        guard envelope.schemaVersion == currentSchemaVersion else {
-            throw PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(envelope.schemaVersion)
+        let probe = try decoder.decode(VersionProbe.self, from: data)
+        guard supportedSchemaVersions.contains(probe.schemaVersion) else {
+            throw PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(probe.schemaVersion)
         }
+        let envelope = try decoder.decode(Envelope.self, from: data)
         return envelope.session
     }
 }
