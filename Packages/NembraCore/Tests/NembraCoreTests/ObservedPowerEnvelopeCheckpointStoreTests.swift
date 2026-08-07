@@ -93,6 +93,24 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         return try encoder.encode(envelope)
     }
 
+    private func decodeEnvelope(at url: URL) throws -> AtomicObservedPowerEnvelopeCheckpointStore.Envelope {
+        try JSONDecoder().decode(
+            AtomicObservedPowerEnvelopeCheckpointStore.Envelope.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private func physicalLookingJSON(
+        from simulator: ObservedPowerEnvelopeCalibrationCheckpoint
+    ) throws -> Data {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(simulator)) as? [String: Any]
+        )
+        object["identityAuthority"] = "verifiedVehicleIdentity"
+        object["evidenceAuthority"] = "verifiedVehicleMeasurement"
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
     @Test("two-slot journal round-trips and advances only for a qualified stronger calibration")
     func roundTripQualifiedProgression() async throws {
         let dir = try directory()
@@ -103,7 +121,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
 
         #expect(try await store.saveSimulatorQA(first) == .stored(generation: 1))
         #expect(try await store.saveSimulatorQA(stronger) == .stored(generation: 2))
-        #expect(try await store.load() == stronger)
+        #expect(try await store.loadSimulatorQA() == stronger)
         #expect(FileManager.default.fileExists(
             atPath: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotAFileName, in: dir).path
         ))
@@ -125,33 +143,36 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         #expect(try await store.saveSimulatorQA(retained) == .retainedExisting)
         #expect(try await store.saveSimulatorQA(lower) == .retainedExisting)
         #expect(try await store.saveSimulatorQA(marginal) == .retainedExisting)
-        #expect(try await store.load() == retained)
+        #expect(try await store.loadSimulatorQA() == retained)
         #expect(!FileManager.default.fileExists(
             atPath: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir).path
         ))
     }
 
-    @Test("public durable write cannot accept a decoded physical-looking checkpoint")
-    func publicWriteRejectsForgedPhysicalCheckpointOnEmptyDirectory() async throws {
+    @Test("ordinary Codable cannot mint a verified-physical checkpoint from matched authority strings")
+    func publicDecoderRejectsVerifiedAuthorityPair() throws {
+        let simulator = try checkpoint()
+        #expect(throws: ObservedPowerEnvelopeCheckpointError.authorityMismatch) {
+            try JSONDecoder().decode(
+                ObservedPowerEnvelopeCalibrationCheckpoint.self,
+                from: physicalLookingJSON(from: simulator)
+            )
+        }
+    }
+
+    @Test("public durable write rejects a genuine package checkpoint with physical authority")
+    func publicWriteRejectsVerifiedCheckpointOnEmptyDirectory() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
-        let simulator = try checkpoint()
-
-        var object = try #require(
-            JSONSerialization.jsonObject(with: JSONEncoder().encode(simulator)) as? [String: Any]
-        )
-        object["identityAuthority"] = "verifiedVehicleIdentity"
-        object["evidenceAuthority"] = "verifiedVehicleMeasurement"
-        let physicalShaped = try JSONDecoder().decode(
-            ObservedPowerEnvelopeCalibrationCheckpoint.self,
-            from: JSONSerialization.data(withJSONObject: object)
-        )
+        let (_, _, learner) = try verifiedLearner()
+        let physical = try ObservedPowerEnvelopeCalibrationCheckpoint
+            .verifiedVehicleMeasurements(from: learner)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch) {
-            try await store.saveSimulatorQA(physicalShaped)
+            try await store.saveSimulatorQA(physical)
         }
-        #expect(try await store.load() == nil)
+        #expect(try await store.loadSimulatorQA() == nil)
         #expect(!FileManager.default.fileExists(
             atPath: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotAFileName, in: dir).path
         ))
@@ -182,6 +203,10 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         #expect(restored.evidenceAuthority == .verifiedVehicleMeasurement)
         #expect(restored.learningSampleCount == 3)
         #expect(restored.upperBandSupportCount >= 2)
+
+        await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch) {
+            _ = try await store.loadSimulatorQA()
+        }
     }
 
     @Test("journal directory is bound to one exact vehicle mode")
@@ -198,7 +223,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.scopeMismatch) {
             try await store.saveSimulatorQA(try checkpoint(vehicle: "sim-es80-a", mode: "drive"))
         }
-        #expect(try await store.load() == retained)
+        #expect(try await store.loadSimulatorQA() == retained)
     }
 
     @Test("journal directory does not silently cross learning policies")
@@ -215,7 +240,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
                 policy: policy(hysteresis: 0.10)
             ))
         }
-        #expect(try await store.load() == retained)
+        #expect(try await store.loadSimulatorQA() == retained)
     }
 
     @Test("a corrupt newest slot falls back to the older known-good calibration")
@@ -231,7 +256,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let slotB = slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir)
         try Data("truncated".utf8).write(to: slotB)
 
-        #expect(try await store.load() == older)
+        #expect(try await store.loadSimulatorQA() == older)
     }
 
     @Test("one corrupt slot plus one unused slot recovers without erasing forensic evidence")
@@ -249,10 +274,10 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
 
         #expect(try Data(contentsOf: slotA) == forensic)
         #expect(FileManager.default.fileExists(atPath: slotB.path))
-        #expect(try await store.load() == recovered)
+        #expect(try await store.loadSimulatorQA() == recovered)
     }
 
-    @Test("two corrupt slots require explicit recovery instead of silent overwrite")
+    @Test("two corrupt slots require explicit recovery instead of silent save")
     func bothCorruptRequireExplicitRecovery() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -265,14 +290,19 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint) {
             try await store.saveSimulatorQA(try checkpoint())
         }
+
+        // Explicit clear is the destructive recovery operation and leaves a durable
+        // monotonic cleared state rather than deleting one corrupt file at a time.
+        try await store.clear()
+        #expect(try await store.loadSimulatorQA() == nil)
     }
 
-    @Test("unsupported journal schema is never silently overwritten")
+    @Test("unsupported journal schema is never silently overwritten by load or save")
     func unsupportedSchemaIsPreserved() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -281,14 +311,19 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedSchema(999)) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedSchema(999)) {
             try await store.saveSimulatorQA(try checkpoint())
         }
+
+        // Explicit clear may intentionally recover an unknown-format journal; if it
+        // is interrupted after phase one the survivor stays unsupported/fail-closed.
+        try await store.clear()
+        #expect(try await store.loadSimulatorQA() == nil)
     }
 
-    @Test("unknown inner calibration schema blocks fallback and overwrite")
+    @Test("unknown inner calibration schema blocks fallback and normal overwrite")
     func unsupportedCheckpointSchemaIsPreserved() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -297,8 +332,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         try await store.saveSimulatorQA(older)
 
         let futureBase = try checkpoint(watts: [600, 630, 620])
-        let futureEnvelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let futureEnvelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 2,
             checkpoint: futureBase
         )
@@ -313,7 +347,7 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         try futureData.write(to: slotB)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedCheckpointSchema(999)) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedCheckpointSchema(999)) {
             try await store.saveSimulatorQA(try checkpoint(watts: [800, 830, 820]))
@@ -327,13 +361,11 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let low = try checkpoint(watts: [400, 420, 410])
         let high = try checkpoint(watts: [600, 630, 620])
-        let a = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let a = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 7,
             checkpoint: low
         )
-        let b = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let b = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 7,
             checkpoint: high
         )
@@ -346,26 +378,28 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.conflictingGenerations) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.conflictingGenerations) {
             try await store.saveSimulatorQA(try checkpoint(watts: [800, 830, 820]))
         }
+
+        // Explicit clear resolves the conflict with a newer monotonic barrier.
+        try await store.clear()
+        #expect(try await store.loadSimulatorQA() == nil)
     }
 
-    @Test("valid journal slots must preserve monotonic hysteresis progression")
+    @Test("valid checkpoint generations must preserve monotonic hysteresis progression")
     func invalidHistoricalProgressionIsRejected() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let stronger = try checkpoint(watts: [600, 630, 620])
         let lower = try checkpoint(watts: [400, 420, 410])
-        let older = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let older = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 10,
             checkpoint: stronger
         )
-        let newer = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let newer = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 11,
             checkpoint: lower
         )
@@ -378,20 +412,19 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.invalidCalibrationProgression) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.invalidCalibrationProgression) {
             try await store.saveSimulatorQA(try checkpoint(watts: [800, 830, 820]))
         }
     }
 
-    @Test("semantically invalid inner calibration is treated as corrupt journal data")
+    @Test("semantically invalid current-schema inner calibration is corrupt journal data")
     func invalidInnerCheckpointIsCorrupt() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let valid = try checkpoint()
-        let envelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let envelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: 1,
             checkpoint: valid
         )
@@ -407,17 +440,16 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
 
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint) {
-            _ = try await store.load()
+            _ = try await store.loadSimulatorQA()
         }
     }
 
-    @Test("generation overflow fails without overwriting the retained calibration")
+    @Test("generation overflow fails without overwriting retained calibration")
     func generationOverflowIsRejected() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let retained = try checkpoint(watts: [400, 420, 410])
-        let envelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
-            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+        let envelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope.checkpoint(
             generation: UInt64.max,
             checkpoint: retained
         )
@@ -429,23 +461,104 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.generationOverflow) {
             try await store.saveSimulatorQA(try checkpoint(watts: [800, 830, 820]))
         }
+        await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.generationOverflow) {
+            try await store.clear()
+        }
         #expect(try Data(contentsOf: slotA) == original)
     }
 
-    @Test("clear removes both journal slots and explicitly releases the directory binding")
-    func clearRemovesSlotsAndBinding() async throws {
+    @Test("completed clear leaves two newer tombstones and explicitly releases binding")
+    func clearWritesMonotonicTombstonesAndRebinds() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
         try await store.saveSimulatorQA(try checkpoint(vehicle: "sim-es80-a"))
-        try await store.saveSimulatorQA(try checkpoint(vehicle: "sim-es80-a", watts: [600, 630, 620]))
+        try await store.saveSimulatorQA(
+            try checkpoint(vehicle: "sim-es80-a", watts: [600, 630, 620])
+        )
 
         try await store.clear()
-        #expect(try await store.load() == nil)
-        #expect(
-            try await store.saveSimulatorQA(try checkpoint(vehicle: "sim-es80-b"))
-                == .stored(generation: 1)
+        #expect(try await store.loadSimulatorQA() == nil)
+
+        let a = try decodeEnvelope(
+            at: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotAFileName, in: dir)
         )
-        #expect(try await store.load()?.vehicleIdentityKey == "sim-es80-b")
+        let b = try decodeEnvelope(
+            at: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir)
+        )
+        #expect(a.kind == .cleared)
+        #expect(b.kind == .cleared)
+        #expect(Set([a.generation, b.generation]) == Set([3, 4]))
+        #expect(a.checkpoint == nil)
+        #expect(b.checkpoint == nil)
+
+        let rebound = try checkpoint(vehicle: "sim-es80-b", mode: "drive")
+        #expect(try await store.saveSimulatorQA(rebound) == .stored(generation: 5))
+        #expect(try await store.loadSimulatorQA() == rebound)
+    }
+
+    @Test("crash after phase-one clear cannot resurrect when slot A was older")
+    func interruptedClearAfterOlderSlotAIsMonotonic() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        try await store.saveSimulatorQA(try checkpoint(watts: [400, 420, 410])) // A = 1
+        try await store.saveSimulatorQA(try checkpoint(watts: [600, 630, 620])) // B = 2
+
+        // Simulate process death immediately after clear phase 1 atomically replaces
+        // the older A slot with generation-3 tombstone, before B is scrubbed.
+        try encode(.cleared(generation: 3)).write(
+            to: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotAFileName, in: dir),
+            options: .atomic
+        )
+
+        let relaunched = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        #expect(try await relaunched.loadSimulatorQA() == nil)
+
+        let rebound = try checkpoint(vehicle: "sim-es80-new", mode: "drive")
+        #expect(try await relaunched.saveSimulatorQA(rebound) == .stored(generation: 4))
+        #expect(try await relaunched.loadSimulatorQA() == rebound)
+    }
+
+    @Test("crash after phase-one clear cannot resurrect when slot B was older")
+    func interruptedClearAfterOlderSlotBIsMonotonic() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        try await store.saveSimulatorQA(try checkpoint(watts: [400, 420, 410])) // A = 1
+        try await store.saveSimulatorQA(try checkpoint(watts: [600, 630, 620])) // B = 2
+        try await store.saveSimulatorQA(try checkpoint(watts: [800, 830, 820])) // A = 3
+
+        // Now B is the older slot. Simulate interruption after B becomes the
+        // generation-4 tombstone while A's pre-clear generation 3 survives.
+        try encode(.cleared(generation: 4)).write(
+            to: slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir),
+            options: .atomic
+        )
+
+        let relaunched = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        #expect(try await relaunched.loadSimulatorQA() == nil)
+
+        let rebound = try checkpoint(vehicle: "sim-es80-new-b", mode: "eco")
+        #expect(try await relaunched.saveSimulatorQA(rebound) == .stored(generation: 5))
+        #expect(try await relaunched.loadSimulatorQA() == rebound)
+    }
+
+    @Test("phase-one tombstone beside unsupported survivor stays fail-closed until clear resumes")
+    func interruptedClearWithUnsupportedSurvivorNeverFallsBack() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slotA = slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir)
+        try encode(.cleared(generation: 1)).write(to: slotA, options: .atomic)
+        try Data("{\"schemaVersion\":999}".utf8).write(to: slotB)
+
+        let relaunched = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedSchema(999)) {
+            _ = try await relaunched.loadSimulatorQA()
+        }
+
+        try await relaunched.clear()
+        #expect(try await relaunched.loadSimulatorQA() == nil)
     }
 }

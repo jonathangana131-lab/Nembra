@@ -127,6 +127,11 @@ public struct ObservedPowerEnvelopeEffectiveCalibration: Equatable, Sendable {
 /// Durable, validation-first representation of one learned observed power ceiling.
 /// Receipt chronology, rolling measurements, and display interpolation are never
 /// persisted as fresh evidence across process relaunch.
+///
+/// Public `Decodable` import is intentionally Simulator-QA only. Verified-physical
+/// disk bytes are first decoded into a non-authoritative store wire DTO and may be
+/// converted into this authority-bearing value only by the package-sealed verified
+/// persistence boundary.
 public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -195,74 +200,34 @@ public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Se
         upperBandSupportCount = calibration.upperBandSupportCount
     }
 
-    public static func simulatorQA(
-        from learner: ObservedPowerEnvelopeLearner
-    ) throws -> Self {
-        try Self(
-            learner: learner,
-            requiredScopeAuthority: .simulatorQA,
-            requiredEvidenceAuthority: .simulatorQA
-        )
-    }
-
-#if SWIFT_PACKAGE
-    package static func verifiedVehicleMeasurements(
-        from learner: ObservedPowerEnvelopeLearner
-    ) throws -> Self {
-        try Self(
-            learner: learner,
-            requiredScopeAuthority: .verifiedVehicleIdentity,
-            requiredEvidenceAuthority: .verifiedVehicleMeasurement
-        )
-    }
-#else
-    fileprivate static func verifiedVehicleMeasurements(
-        from learner: ObservedPowerEnvelopeLearner
-    ) throws -> Self {
-        try Self(
-            learner: learner,
-            requiredScopeAuthority: .verifiedVehicleIdentity,
-            requiredEvidenceAuthority: .verifiedVehicleMeasurement
-        )
-    }
-#endif
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    private init(
+        storedSchemaVersion schemaVersion: Int,
+        vehicleIdentityKey: String,
+        confirmedModeKey: String?,
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority,
+        policy: ObservedPowerEnvelopePolicyCheckpoint,
+        learnedObservedCeilingWatts: Double,
+        learningSampleCount: Int,
+        upperBandSupportCount: Int,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws {
         guard schemaVersion == Self.currentSchemaVersion else {
             throw ObservedPowerEnvelopeCheckpointError.unsupportedSchemaVersion(schemaVersion)
         }
-
-        let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
         guard !vehicleIdentityKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ObservedPowerEnvelopeCheckpointError.invalidVehicleIdentityKey
         }
-        let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
         if let confirmedModeKey,
            confirmedModeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ObservedPowerEnvelopeCheckpointError.invalidConfirmedModeKey
         }
-
-        let identityAuthorityRaw = try container.decode(String.self, forKey: .identityAuthority)
-        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityAuthorityRaw) else {
-            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
-        }
-        let evidenceAuthorityRaw = try container.decode(String.self, forKey: .evidenceAuthority)
-        guard let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: evidenceAuthorityRaw) else {
-            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
-        }
-        guard Self.authoritiesMatch(
-            identityAuthority: identityAuthority,
-            evidenceAuthority: evidenceAuthority
-        ) else {
+        guard identityAuthority == requiredScopeAuthority,
+              evidenceAuthority == requiredEvidenceAuthority else {
             throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
         }
 
-        let policy = try container.decode(ObservedPowerEnvelopePolicyCheckpoint.self, forKey: .policy)
-        let learnedObservedCeilingWatts = try container.decode(Double.self, forKey: .learnedObservedCeilingWatts)
-        let learningSampleCount = try container.decode(Int.self, forKey: .learningSampleCount)
-        let upperBandSupportCount = try container.decode(Int.self, forKey: .upperBandSupportCount)
         try Self.validateCalibrationFields(
             learnedObservedCeilingWatts: learnedObservedCeilingWatts,
             learningSampleCount: learningSampleCount,
@@ -283,6 +248,105 @@ public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Se
         self.learnedObservedCeilingWatts = learnedObservedCeilingWatts
         self.learningSampleCount = learningSampleCount
         self.upperBandSupportCount = upperBandSupportCount
+    }
+
+    public static func simulatorQA(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    package static func verifiedVehicleMeasurements(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+
+    /// Converts a non-authoritative persisted wire record into a verified checkpoint.
+    /// This is deliberately package-only: ordinary `JSONDecoder` never receives a
+    /// path that can mint verified-physical checkpoint authority.
+    package static func verifiedStoredFields(
+        schemaVersion: Int,
+        vehicleIdentityKey: String,
+        confirmedModeKey: String?,
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority,
+        policy: ObservedPowerEnvelopePolicyCheckpoint,
+        learnedObservedCeilingWatts: Double,
+        learningSampleCount: Int,
+        upperBandSupportCount: Int
+    ) throws -> Self {
+        try Self(
+            storedSchemaVersion: schemaVersion,
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority,
+            policy: policy,
+            learnedObservedCeilingWatts: learnedObservedCeilingWatts,
+            learningSampleCount: learningSampleCount,
+            upperBandSupportCount: upperBandSupportCount,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#else
+    fileprivate static func verifiedVehicleMeasurements(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#endif
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
+        let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
+
+        let identityAuthorityRaw = try container.decode(String.self, forKey: .identityAuthority)
+        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityAuthorityRaw) else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+        let evidenceAuthorityRaw = try container.decode(String.self, forKey: .evidenceAuthority)
+        guard let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: evidenceAuthorityRaw) else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+
+        let policy = try container.decode(ObservedPowerEnvelopePolicyCheckpoint.self, forKey: .policy)
+        let learnedObservedCeilingWatts = try container.decode(Double.self, forKey: .learnedObservedCeilingWatts)
+        let learningSampleCount = try container.decode(Int.self, forKey: .learningSampleCount)
+        let upperBandSupportCount = try container.decode(Int.self, forKey: .upperBandSupportCount)
+
+        // Public Codable import is a Simulator/runtime-QA facility only. A matched
+        // verified authority pair in ordinary JSON is still untrusted bytes and is
+        // rejected here; package physical persistence imports through its wire DTO.
+        self = try Self(
+            storedSchemaVersion: schemaVersion,
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority,
+            policy: policy,
+            learnedObservedCeilingWatts: learnedObservedCeilingWatts,
+            learningSampleCount: learningSampleCount,
+            upperBandSupportCount: upperBandSupportCount,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -455,19 +519,6 @@ public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Se
             calibration: ObservedPowerEnvelopeRestoredCalibration(current),
             origin: .currentSession
         )
-    }
-
-    private static func authoritiesMatch(
-        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
-        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
-    ) -> Bool {
-        switch (identityAuthority, evidenceAuthority) {
-        case (.verifiedVehicleIdentity, .verifiedVehicleMeasurement),
-             (.simulatorQA, .simulatorQA):
-            true
-        default:
-            false
-        }
     }
 
     private static func validateCalibrationFields(

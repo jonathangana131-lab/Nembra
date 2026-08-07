@@ -13,9 +13,22 @@ Persistence must not reopen that boundary just to make old state resemble freshl
 
 Therefore durable restore returns `ObservedPowerEnvelopeRestoredCalibration`, a separate read-only value containing the validated retained scope, authority, observed ceiling, derived gauge scale, and validation counts. It cannot be inserted into `ObservedPowerEnvelopeLearner` as fresh evidence or forged into the parent domain calibration through this layer.
 
-The current-session path can copy fields **out of** an already-qualified live `ObservedPowerEnvelopeCalibration` into this read-only representation; it never invokes the parent's sealed initializer.
+## Public Codable is Simulator-only
 
-## Persisted state
+`ObservedPowerEnvelopeCalibrationCheckpoint` remains Codable for Simulator/runtime QA and deterministic testing, but ordinary `JSONDecoder` is intentionally **not** a verified-physical import path.
+
+Even a syntactically valid payload with the matched strings:
+
+- `verifiedVehicleIdentity`
+- `verifiedVehicleMeasurement`
+
+is rejected by the public decoder with `authorityMismatch`.
+
+Verified physical disk bytes first decode into the journal's non-authoritative `StoredCheckpointWire`. Under SwiftPM only, that wire can be converted through the package-sealed `verifiedStoredFields(...)` boundary and then restored only after exact current physical scope + policy validation.
+
+This distinction matters: Codable bytes are data, not physical provenance.
+
+## Persisted calibration facts
 
 A checkpoint stores only validated calibration facts:
 
@@ -27,8 +40,6 @@ A checkpoint stores only validated calibration facts:
 - learning/support counts required to validate that calibration.
 
 The gauge scale is re-derived from the retained observed ceiling and exact headroom policy instead of persisting a second redundant floating-point truth.
-
-## Deliberately not persisted
 
 A checkpoint never stores:
 
@@ -43,11 +54,20 @@ A new process/session starts new observation chronology and a new learning windo
 
 ## Restore boundary
 
-Decode is fail-closed. Schema, identity strings, authority pairing, learning policy, learned ceiling, sample count, support count, and derived scale must validate.
+Decode/restore is fail-closed. Schema, identity strings, authority pairing, learning policy, learned ceiling, sample count, support count, and derived scale must validate.
 
-Restore additionally requires the caller to supply the exact current `ObservedPowerEnvelopeScope` and policy. Verified-physical snapshot/restore entry points remain package-sealed in SwiftPM and file-local in direct-source builds, matching #225's authority boundary; public clients can exercise only Simulator/runtime-QA restoration.
+Simulator restore additionally requires the exact current Simulator `ObservedPowerEnvelopeScope` and policy.
 
-The count invariants mirror #225's bounded rolling-window semantics: `learningSampleCount` is the current eligible window count and cannot exceed `windowCapacity`; `upperBandSupportCount` comes from that same window and cannot exceed the sample count.
+Verified-physical snapshot/restore/reconciliation stays package-sealed under SwiftPM and file-local outside it. The trusted journal path is:
+
+verified learner
+→ package-sealed checkpoint snapshot
+→ non-authoritative stored wire
+→ package-sealed stored-wire conversion
+→ exact current physical scope/policy restore
+→ read-only retained calibration.
+
+No public generic decoder or public durable-store method is part of that chain.
 
 ## Relaunch floor and upward hysteresis
 
@@ -75,52 +95,86 @@ Use:
 - `reconciledSimulatorQACheckpoint(with:)` for Simulator/runtime QA;
 - package-sealed `reconciledVerifiedVehicleMeasurementCheckpoint(with:)` for trusted production integration.
 
-Uncalibrated, lower/equal, or sub-hysteresis sessions return the retained checkpoint unchanged. Only a qualified increase produces a replacement. One-shot snapshot constructors are for initial checkpoint creation when no retained checkpoint exists.
+The atomic journal independently re-applies the same final durable-write floor. Equal, lower, or merely sub-hysteresis candidates return `.retainedExisting` without creating a new generation.
 
-## Crash-tolerant checkpoint journal
+## Crash-tolerant two-slot journal
 
-`AtomicObservedPowerEnvelopeCheckpointStore` is the durable file layer for one exact calibration scope/policy. It follows Nembra's accepted two-slot journal pattern instead of relying on a fragile single JSON file or high-frequency preferences write.
+`AtomicObservedPowerEnvelopeCheckpointStore` uses two atomic journal slots instead of a single fragile JSON file or high-frequency preferences write.
 
-Each save writes a schema-versioned outer envelope with a monotonic persistence generation to the older/unused slot using Foundation atomic replacement, then immediately decodes the new slot before reporting success. The other valid slot remains the fallback if the newest file later becomes truncated or corrupt.
+Each checkpoint record carries:
 
-The journal adds durable invariants above checkpoint decoding:
+- outer journal schema;
+- monotonic persistence generation;
+- record kind (`checkpoint` or `cleared`);
+- non-authoritative stored checkpoint wire when kind is `checkpoint`.
 
-- both slots corrupt -> fail closed until explicit recovery/clear;
-- unsupported **outer journal schema** -> never silently overwrite or downgrade;
-- unsupported **inner calibration-checkpoint schema** -> also fail closed, even when an older valid slot exists, so an older app cannot misclassify a future calibration format as corruption and overwrite it;
+Normal checkpoint saves write to the older/unused slot with Foundation atomic replacement and immediately read/validate the new record before reporting success.
+
+Durability behavior includes:
+
+- corrupt newest slot falls back to an older known-good recognized record;
+- both corrupt -> fail closed until explicit clear/recovery;
+- unsupported **outer journal schema** -> never silently overwrite during normal load/save;
+- unsupported **inner calibration-checkpoint schema** -> independently detected and preserved during normal load/save;
 - equal persistence generation with divergent payloads -> conflict;
-- a semantically invalid inner checkpoint with the current schema -> corrupt journal data;
+- semantically invalid current-schema inner checkpoint -> corrupt journal data;
 - generation overflow -> fail without replacing retained calibration;
-- one corrupt slot plus one unused slot -> recover into the unused slot and preserve the only forensic copy;
-- a journal directory is bound to one exact vehicle/mode identity, authority pair, and learning policy until explicitly cleared;
-- two valid generations must themselves show a legal retained-to-stronger progression.
+- one corrupt + one unused slot -> normal save uses the unused slot and preserves the sole forensic corrupt copy;
+- a live checkpoint progression is bound to exact vehicle/mode identity, authority pair, and learning policy;
+- two adjacent checkpoint generations must themselves show legal upward-hysteresis progression.
 
-The store also enforces the same upward-hysteresis floor at the final durable-write boundary. Equal, lower, or merely sub-hysteresis incoming checkpoints return `.retainedExisting` without creating a new generation. Only a same-scope/same-policy/same-authority checkpoint whose learned observed ceiling is strictly above the retained ceiling by the persisted hysteresis requirement may advance the journal.
+## Clear is a monotonic tombstone operation
 
-This means a caller bypassing the higher-level reconciliation helper still cannot silently shrink or churn the durable learned scale.
+Deleting slot A and slot B sequentially is unsafe. A process death after only one deletion can leave the surviving older checkpoint looking authoritative again after relaunch.
 
-## Durable physical authority is package-sealed end to end
+`clear()` therefore does **not** implement logical clear as sequential deletion.
 
-A decoded checkpoint is data, not proof. Because `ObservedPowerEnvelopeCalibrationCheckpoint` is Codable, ordinary code can inspect or even manufacture JSON whose enum strings *look* like verified vehicle/measurement authority. That metadata must never be enough to enter Nembra's trusted physical persistence path.
+It performs two atomic monotonic writes:
 
-The journal therefore deliberately separates its APIs:
+1. **barrier tombstone** — write generation `maxKnown + 1` to an invalid/missing slot when available, otherwise the older recognized slot;
+2. **scrub tombstone** — write generation `maxKnown + 2` to the remaining slot.
 
-- public `saveSimulatorQA(_:)` accepts only `.simulatorQA` identity + evidence authority and rejects physical-looking checkpoints before creating/writing journal state;
-- SwiftPM package-only `saveVerifiedVehicleMeasurements(from:)` accepts the package-sealed verified learner, snapshots it through the package-sealed physical checkpoint constructor, and only then writes the journal;
-- SwiftPM package-only `loadVerifiedVehicleMeasurement(expectedScope:expectedPolicy:)` performs journal decode plus exact physical scope/policy validation plus package-sealed retained-calibration restoration in one trusted operation;
-- public raw `load()` remains inspection/decode only. Returning checkpoint metadata does not reconstruct `ObservedPowerEnvelopeRestoredCalibration` or presentation-scale physical authority.
+The first tombstone is the semantic clear commit point. If the process dies immediately afterward:
 
-This closes the API hole where a generic public `save(checkpoint)` could otherwise accept a JSON-decoded physical-looking checkpoint on an empty directory and leave future trusted integration with ambiguous provenance.
+- any surviving recognized checkpoint has a lower generation, so the clear tombstone wins;
+- an unsupported-format survivor keeps normal load fail-closed rather than allowing fallback;
+- a corrupt survivor cannot manufacture a retained checkpoint.
 
-This is a compile-time product-authority boundary, not a claim of hostile-device cryptographic attestation. Production code must still own the legitimate per-scooter storage location and verified identity mapping. NembraCore does not invent a filesystem location, hash a BLE local name, or choose a physical scooter identifier.
+Phase two removes the stale checkpoint payload from the other slot by replacing it with an even newer tombstone.
 
-Calibration writes should remain infrequent and event-driven; no display clock, BLE cadence, or render frame should cause journal writes.
+This is tested in both slot parities:
+
+- A older / B newer, interrupted after A becomes the clear barrier;
+- B older / A newer, interrupted after B becomes the clear barrier.
+
+Relaunch returns cleared in both cases and a later save may explicitly rebind to a different scooter/mode without resurrecting the pre-clear calibration.
+
+Explicit `clear()` is also the destructive recovery operation for corrupt, conflicting, or unsupported journal contents. Normal load/save remain conservative; clear may intentionally overwrite unknown records, but its first durable barrier is chosen so an interruption never exposes an older recognized checkpoint as cleared-state truth.
+
+## Durable authority APIs
+
+Public store API:
+
+- `saveSimulatorQA(_:)`
+- `loadSimulatorQA()`
+- `clear()`
+
+The public store cannot durably write or read a verified-physical checkpoint.
+
+SwiftPM package-only physical API:
+
+- `saveVerifiedVehicleMeasurements(from:)` — takes the package-sealed verified learner, snapshots it, then persists the wire;
+- `loadVerifiedVehicleMeasurement(expectedScope:expectedPolicy:)` — decodes the wire, performs package-sealed verified conversion, then exact physical scope/policy restore.
+
+This is a compile-time product-authority boundary, **not hostile-device cryptographic attestation**. NembraCore does not invent a filesystem path, hash a BLE local name, choose a secret identity, or claim a stable physical scooter identifier. Production app integration must supply a legitimate directory/identity mapping once ES80 identity semantics are verified.
+
+Calibration writes should remain infrequent and event-driven. No display clock, BLE cadence, interpolation frame, or map/render refresh should cause journal writes.
 
 ## Retained calibration -> propulsion presentation
 
 Durable calibration must be usable by the gauge without reconstructing `ObservedPowerEnvelopeCalibration` and pretending retained history is fresh live evidence.
 
-`PropulsionGaugeScale.observedEnvelope(_:)` therefore also accepts:
+`PropulsionGaugeScale.observedEnvelope(_:)` accepts:
 
 - `ObservedPowerEnvelopeRestoredCalibration`; and
 - `ObservedPowerEnvelopeEffectiveCalibration` after relaunch reconciliation.
@@ -129,20 +183,16 @@ The bridge carries forward only the validated exact vehicle/mode identity, evide
 
 Simulator-restored calibration produces only a Simulator presentation scale. Under SwiftPM, a verified retained calibration can produce a verified-observed-envelope scale because the physical restore that minted that retained value is already package-sealed. In the direct-source build, the separate-file verified adaptation intentionally fails closed rather than reaching across `fileprivate` authority boundaries.
 
-This bridge closes the **NembraCore persistence -> presentation** rung only. The current app target still does not directly compile the observed-envelope/persistence/presentation stack, and no physical ES80 power source is verified, so this is not a claim that the Dashboard is already using retained calibration.
+## Product boundary
 
-## Current #225 compatibility
+This closes the **NembraCore durable calibration -> retained presentation scale** rung only.
 
-The v4 lane was cut from #225 head `d973452f6c34e9b055236aac61f8a7e29b67c10e`, the commit that sealed calibration construction. The live parent subsequently advanced to `e672494783a1b343931abe56555bb377e4373432` with chronology-only hardening:
+The current app target still does not directly compile the complete observed-envelope/persistence/presentation stack. Production wiring still needs:
 
-- a genuinely newer receipt sequence is consumed before uptime/value admission;
-- backward uptime preserves the existing monotonic uptime floor;
-- replay/delayed lower receipt identities remain rejected after a newer invalid callback;
-- tests prove that behavior.
-
-Those commits do not alter checkpoint fields, scope, policy, calibration values, or the persistence-facing API. This layer intentionally does **not** persist the live learner's consumed receipt identity or uptime floor; a new process must start new callback chronology rather than treating old ordering metadata as fresh evidence.
-
-The tests construct observations using the learner's exact scope and explicit receipt order, exercise equal uptime ticks with increasing receipt sequence, and verify restored durable state is the separate retained-calibration value rather than a newly minted live calibration.
+- a legitimate persistent directory policy;
+- stable verified per-scooter identity;
+- verified ES80 current/power source, units, scale, signedness, cadence, and provenance;
+- safe app/project integration after current high-contention owners permit it.
 
 ## Hardware status
 

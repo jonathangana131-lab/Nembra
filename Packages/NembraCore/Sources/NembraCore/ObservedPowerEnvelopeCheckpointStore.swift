@@ -19,57 +19,117 @@ public enum ObservedPowerEnvelopeCheckpointSaveResult: Equatable, Sendable {
 }
 
 public protocol ObservedPowerEnvelopeCheckpointStore: Sendable {
-    /// Public durable writes are deliberately Simulator/runtime-QA only. Verified
-    /// physical persistence stays package-sealed on the concrete store so a UI or
-    /// generic client cannot decode JSON with physical-looking enum values and
-    /// feed it into the trusted durable path.
+    /// Public durable writes are deliberately Simulator/runtime-QA only.
     @discardableResult
     func saveSimulatorQA(
         _ checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint
     ) async throws -> ObservedPowerEnvelopeCheckpointSaveResult
 
-    /// Raw load is inspection/decode only. It does not restore a calibration or
-    /// promote checkpoint metadata into verified physical presentation authority.
-    func load() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint?
+    /// Public durable reads are likewise Simulator/runtime-QA only. Verified
+    /// physical import is package-sealed on the concrete store.
+    func loadSimulatorQA() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint?
+
+    /// Logically clears retained calibration using a monotonic tombstone barrier.
     func clear() async throws
 }
 
 /// Two-slot atomic journal for one exact observed-power calibration scope/policy.
 ///
-/// The checkpoint itself owns semantic validation. This store adds crash tolerance,
-/// durable monotonicity, and a second authority boundary around writes. Public
-/// callers can durably write Simulator checkpoints only. Under SwiftPM, verified
-/// physical persistence accepts the package-sealed verified learner directly and
-/// reconstructs a retained physical calibration only through the package-sealed
-/// restore path.
+/// Disk bytes first decode into `StoredCheckpointWire`, which carries no trusted
+/// physical provenance. Simulator wire records may enter the public checkpoint
+/// decoder; verified wire records may become authority-bearing checkpoints only
+/// through the package-sealed conversion in `ObservedPowerEnvelopePersistence`.
 ///
-/// A directory becomes bound to the first valid checkpoint written there. A
-/// different vehicle/mode, authority pair, or learning policy requires an
-/// explicit clear/new directory instead of silently overwriting retained history.
-/// Qualified stronger calibrations may advance according to the exact persisted
-/// upward-hysteresis policy. Equal, lower, or sub-hysteresis candidates are a
-/// successful no-op so callers cannot accidentally shrink the learned gauge scale.
+/// `clear()` is monotonic: it atomically writes a newer clear tombstone before a
+/// second scrub tombstone replaces the surviving old slot. A crash after the first
+/// write can therefore never resurrect a pre-clear checkpoint; the newer tombstone
+/// wins, or an unsupported surviving record keeps the journal fail-closed until the
+/// explicit clear is retried.
 public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCheckpointStore {
     static let schemaVersion = 1
     static let slotAFileName = "observed-power-envelope-journal-a.json"
     static let slotBFileName = "observed-power-envelope-journal-b.json"
 
-    private struct StoreSchemaProbe: Decodable {
-        let schemaVersion: Int
+    enum RecordKind: String, Codable, Equatable, Sendable {
+        case checkpoint
+        case cleared
     }
 
-    private struct CheckpointSchemaProbe: Decodable {
-        struct Checkpoint: Decodable {
-            let schemaVersion: Int
-        }
+    struct StoredCheckpointWire: Codable, Equatable, Sendable {
+        let schemaVersion: Int
+        let vehicleIdentityKey: String
+        let confirmedModeKey: String?
+        let identityAuthority: String
+        let evidenceAuthority: String
+        let policy: ObservedPowerEnvelopePolicyCheckpoint
+        let learnedObservedCeilingWatts: Double
+        let learningSampleCount: Int
+        let upperBandSupportCount: Int
 
-        let checkpoint: Checkpoint
+        init(_ checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint) {
+            schemaVersion = checkpoint.schemaVersion
+            vehicleIdentityKey = checkpoint.vehicleIdentityKey
+            confirmedModeKey = checkpoint.confirmedModeKey
+            identityAuthority = checkpoint.identityAuthority.rawValue
+            evidenceAuthority = checkpoint.evidenceAuthority.rawValue
+            policy = checkpoint.policy
+            learnedObservedCeilingWatts = checkpoint.learnedObservedCeilingWatts
+            learningSampleCount = checkpoint.learningSampleCount
+            upperBandSupportCount = checkpoint.upperBandSupportCount
+        }
     }
 
     struct Envelope: Codable, Equatable, Sendable {
         let schemaVersion: Int
         let generation: UInt64
-        let checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint
+        let kind: RecordKind
+        let checkpoint: StoredCheckpointWire?
+
+        static func checkpoint(
+            generation: UInt64,
+            checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint
+        ) -> Self {
+            Self(
+                schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+                generation: generation,
+                kind: .checkpoint,
+                checkpoint: StoredCheckpointWire(checkpoint)
+            )
+        }
+
+        static func checkpoint(
+            generation: UInt64,
+            wire: StoredCheckpointWire
+        ) -> Self {
+            Self(
+                schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+                generation: generation,
+                kind: .checkpoint,
+                checkpoint: wire
+            )
+        }
+
+        static func cleared(generation: UInt64) -> Self {
+            Self(
+                schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+                generation: generation,
+                kind: .cleared,
+                checkpoint: nil
+            )
+        }
+    }
+
+    private struct StoreSchemaProbe: Decodable {
+        let schemaVersion: Int
+    }
+
+    private struct RecordProbe: Decodable {
+        struct Checkpoint: Decodable {
+            let schemaVersion: Int
+        }
+
+        let kind: RecordKind
+        let checkpoint: Checkpoint?
     }
 
     private enum SlotRead {
@@ -87,6 +147,15 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         var isCorrupt: Bool {
             if case .corrupt = self { return true }
             return false
+        }
+
+        var isInvalidOrMissing: Bool {
+            switch self {
+            case .missing, .corrupt, .unsupportedStoreSchema, .unsupportedCheckpointSchema:
+                true
+            case .valid:
+                false
+            }
         }
     }
 
@@ -116,11 +185,15 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         )
     }
 
+    public func loadSimulatorQA() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint? {
+        guard let wire = try newestCheckpointWire() else { return nil }
+        return try simulatorCheckpoint(from: wire)
+    }
+
 #if SWIFT_PACKAGE
     /// Trusted production persistence entry point. Taking the sealed learner rather
-    /// than an arbitrary public checkpoint prevents a caller from constructing a
-    /// verified-looking checkpoint by decoding/mutating JSON and asking the store
-    /// to bless it as durable physical calibration.
+    /// than an arbitrary public checkpoint prevents ordinary JSON import from
+    /// claiming verified physical provenance.
     @discardableResult
     package func saveVerifiedVehicleMeasurements(
         from learner: ObservedPowerEnvelopeLearner
@@ -134,13 +207,14 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         )
     }
 
-    /// Trusted physical restore performs decode + exact-scope/policy validation +
-    /// package-sealed authority restoration as one package-only operation.
+    /// Trusted physical restore performs wire decode + sealed checkpoint conversion
+    /// + exact scope/policy validation as one package-only operation.
     package func loadVerifiedVehicleMeasurement(
         expectedScope: ObservedPowerEnvelopeScope,
         expectedPolicy: ObservedPowerEnvelopePolicy
     ) async throws -> ObservedPowerEnvelopeRestoredCalibration? {
-        guard let checkpoint = try await load() else { return nil }
+        guard let wire = try newestCheckpointWire() else { return nil }
+        let checkpoint = try verifiedCheckpoint(from: wire)
         return try checkpoint.restoredVerifiedVehicleMeasurement(
             expectedScope: expectedScope,
             expectedPolicy: expectedPolicy
@@ -148,7 +222,41 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
     }
 #endif
 
-    public func load() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint? {
+    public func clear() async throws {
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+
+        let a = try readSlot(at: slotAURL)
+        let b = try readSlot(at: slotBURL)
+        let valid = [a, b].compactMap(\.envelope)
+        let highestKnownGeneration = valid.map(\.generation).max() ?? 0
+
+        // Two durable writes are required to scrub both slots. Check the complete
+        // generation budget before the first mutation so an overflow never leaves a
+        // half-advanced clear sequence merely because phase two could not be numbered.
+        guard highestKnownGeneration <= UInt64.max - 2 else {
+            throw ObservedPowerEnvelopeCheckpointStoreError.generationOverflow
+        }
+
+        let firstURL = firstClearTarget(slotA: a, slotB: b)
+        let secondURL = firstURL == slotAURL ? slotBURL : slotAURL
+
+        // Phase 1 is the semantic commit point. It targets an invalid/missing slot
+        // first when available, otherwise the older valid generation. Once this
+        // atomic tombstone lands, any surviving recognized checkpoint is older.
+        let barrier = Envelope.cleared(generation: highestKnownGeneration + 1)
+        try writeAndVerify(barrier, to: firstURL)
+
+        // Phase 2 scrubs the remaining slot with an even newer tombstone. A crash
+        // before/during this write is still logically cleared because phase 1 wins;
+        // if the survivor has an unsupported schema, normal load remains fail-closed.
+        let scrub = Envelope.cleared(generation: highestKnownGeneration + 2)
+        try writeAndVerify(scrub, to: secondURL)
+    }
+
+    private func newestCheckpointWire() throws -> StoredCheckpointWire? {
         let a = try readSlot(at: slotAURL)
         let b = try readSlot(at: slotBURL)
         try rejectUnsupportedSchema(a, b)
@@ -156,20 +264,23 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
 
         let valid = [a, b].compactMap(\.envelope)
         try validateJournalProgression(valid)
+
         if let newest = valid.max(by: { $0.generation < $1.generation }) {
-            return newest.checkpoint
+            switch newest.kind {
+            case .cleared:
+                return nil
+            case .checkpoint:
+                guard let wire = newest.checkpoint else {
+                    throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
+                }
+                return wire
+            }
         }
 
         if a.isCorrupt || b.isCorrupt {
             throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
         }
         return nil
-    }
-
-    public func clear() async throws {
-        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
-        }
     }
 
     private func saveValidated(
@@ -196,14 +307,20 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         try validateJournalProgression(valid)
 
         if valid.isEmpty, a.isCorrupt, b.isCorrupt {
-            // No trustworthy generation or calibration survives. Preserve both
-            // forensic copies until an explicit clear/recovery decision.
             throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
         }
 
         let newest = valid.max(by: { $0.generation < $1.generation })
-        if let newest {
-            switch try replacementDecision(existing: newest.checkpoint, incoming: checkpoint) {
+        if let newest, newest.kind == .checkpoint {
+            guard let wire = newest.checkpoint else {
+                throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
+            }
+            let retained = try checkpoint(
+                from: wire,
+                requiredScopeAuthority: requiredScopeAuthority,
+                requiredEvidenceAuthority: requiredEvidenceAuthority
+            )
+            switch try replacementDecision(existing: retained, incoming: checkpoint) {
             case .retainExisting:
                 return .retainedExisting
             case .storeIncoming:
@@ -216,23 +333,9 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
             throw ObservedPowerEnvelopeCheckpointStoreError.generationOverflow
         }
         let generation = highestGeneration + 1
-        let envelope = Envelope(
-            schemaVersion: Self.schemaVersion,
-            generation: generation,
-            checkpoint: checkpoint
-        )
-
+        let envelope = Envelope.checkpoint(generation: generation, checkpoint: checkpoint)
         let destination = destinationURL(slotA: a, slotB: b)
-        let data = try encoder.encode(envelope)
-        try data.write(to: destination, options: Data.WritingOptions.atomic)
-
-        // Calibration writes should be infrequent. Verify the newly written slot
-        // synchronously before reporting success; the other slot remains fallback.
-        guard case let .valid(verified) = try readSlot(at: destination),
-              verified == envelope else {
-            throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
-        }
-
+        try writeAndVerify(envelope, to: destination)
         return .stored(generation: generation)
     }
 
@@ -256,7 +359,6 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         guard requiredRaisedCeiling.isFinite else {
             throw ObservedPowerEnvelopeCheckpointStoreError.reconciliationThresholdOverflow
         }
-
         guard incoming.learnedObservedCeilingWatts > requiredRaisedCeiling else {
             return .retainExisting
         }
@@ -285,19 +387,131 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         let ordered = envelopes.sorted { $0.generation < $1.generation }
         let older = ordered[0]
         let newer = ordered[1]
-        try validateSameBinding(older.checkpoint, newer.checkpoint)
 
-        if older.checkpoint == newer.checkpoint {
+        switch (older.kind, newer.kind) {
+        case (.checkpoint, .checkpoint):
+            guard let olderWire = older.checkpoint,
+                  let newerWire = newer.checkpoint else {
+                throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
+            }
+            let olderCheckpoint = try validatedCheckpoint(from: olderWire)
+            let newerCheckpoint = try validatedCheckpoint(from: newerWire)
+            try validateSameBinding(olderCheckpoint, newerCheckpoint)
+
+            if olderCheckpoint == newerCheckpoint {
+                return
+            }
+            let requiredRaisedCeiling = olderCheckpoint.learnedObservedCeilingWatts
+                * (1 + olderCheckpoint.policy.upwardHysteresisFraction)
+            guard requiredRaisedCeiling.isFinite else {
+                throw ObservedPowerEnvelopeCheckpointStoreError.reconciliationThresholdOverflow
+            }
+            guard newerCheckpoint.learnedObservedCeilingWatts > requiredRaisedCeiling else {
+                throw ObservedPowerEnvelopeCheckpointStoreError.invalidCalibrationProgression
+            }
+
+        case (.checkpoint, .cleared),
+             (.cleared, .checkpoint),
+             (.cleared, .cleared):
+            // A newer clear releases the old binding; a newer checkpoint after a
+            // clear is a legitimate explicit rebind and starts a new progression.
             return
         }
+    }
 
-        let requiredRaisedCeiling = older.checkpoint.learnedObservedCeilingWatts
-            * (1 + older.checkpoint.policy.upwardHysteresisFraction)
-        guard requiredRaisedCeiling.isFinite else {
-            throw ObservedPowerEnvelopeCheckpointStoreError.reconciliationThresholdOverflow
+    private func simulatorCheckpoint(
+        from wire: StoredCheckpointWire
+    ) throws -> ObservedPowerEnvelopeCalibrationCheckpoint {
+        do {
+            let data = try encoder.encode(wire)
+            return try decoder.decode(
+                ObservedPowerEnvelopeCalibrationCheckpoint.self,
+                from: data
+            )
+        } catch let error as ObservedPowerEnvelopeCheckpointError {
+            throw mapCheckpointError(error)
+        } catch {
+            throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
         }
-        guard newer.checkpoint.learnedObservedCeilingWatts > requiredRaisedCeiling else {
-            throw ObservedPowerEnvelopeCheckpointStoreError.invalidCalibrationProgression
+    }
+
+#if SWIFT_PACKAGE
+    private func verifiedCheckpoint(
+        from wire: StoredCheckpointWire
+    ) throws -> ObservedPowerEnvelopeCalibrationCheckpoint {
+        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(
+            rawValue: wire.identityAuthority
+        ), let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(
+            rawValue: wire.evidenceAuthority
+        ) else {
+            throw ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch
+        }
+
+        do {
+            return try ObservedPowerEnvelopeCalibrationCheckpoint.verifiedStoredFields(
+                schemaVersion: wire.schemaVersion,
+                vehicleIdentityKey: wire.vehicleIdentityKey,
+                confirmedModeKey: wire.confirmedModeKey,
+                identityAuthority: identityAuthority,
+                evidenceAuthority: evidenceAuthority,
+                policy: wire.policy,
+                learnedObservedCeilingWatts: wire.learnedObservedCeilingWatts,
+                learningSampleCount: wire.learningSampleCount,
+                upperBandSupportCount: wire.upperBandSupportCount
+            )
+        } catch let error as ObservedPowerEnvelopeCheckpointError {
+            throw mapCheckpointError(error)
+        }
+    }
+#endif
+
+    private func validatedCheckpoint(
+        from wire: StoredCheckpointWire
+    ) throws -> ObservedPowerEnvelopeCalibrationCheckpoint {
+        if wire.identityAuthority == ObservedPowerEnvelopeScopeAuthority.simulatorQA.rawValue,
+           wire.evidenceAuthority == ObservedPowerEnvelopeEvidenceAuthority.simulatorQA.rawValue {
+            return try simulatorCheckpoint(from: wire)
+        }
+
+#if SWIFT_PACKAGE
+        if wire.identityAuthority
+                == ObservedPowerEnvelopeScopeAuthority.verifiedVehicleIdentity.rawValue,
+           wire.evidenceAuthority
+                == ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue {
+            return try verifiedCheckpoint(from: wire)
+        }
+#endif
+
+        throw ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch
+    }
+
+    private func checkpoint(
+        from wire: StoredCheckpointWire,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws -> ObservedPowerEnvelopeCalibrationCheckpoint {
+        let checkpoint = try validatedCheckpoint(from: wire)
+        guard checkpoint.identityAuthority == requiredScopeAuthority,
+              checkpoint.evidenceAuthority == requiredEvidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch
+        }
+        return checkpoint
+    }
+
+    private func mapCheckpointError(
+        _ error: ObservedPowerEnvelopeCheckpointError
+    ) -> ObservedPowerEnvelopeCheckpointStoreError {
+        switch error {
+        case .authorityMismatch:
+            .authorityMismatch
+        case .unsupportedSchemaVersion(let version):
+            .unsupportedCheckpointSchema(version)
+        case .scopeMismatch:
+            .scopeMismatch
+        case .policyMismatch:
+            .policyMismatch
+        default:
+            .corruptedCheckpoint
         }
     }
 
@@ -327,13 +541,35 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
                 return .unsupportedStoreSchema(storeProbe.schemaVersion)
             }
 
-            let checkpointProbe = try decoder.decode(CheckpointSchemaProbe.self, from: data)
-            guard checkpointProbe.checkpoint.schemaVersion
-                    == ObservedPowerEnvelopeCalibrationCheckpoint.currentSchemaVersion else {
-                return .unsupportedCheckpointSchema(checkpointProbe.checkpoint.schemaVersion)
+            let probe = try decoder.decode(RecordProbe.self, from: data)
+            if probe.kind == .checkpoint {
+                guard let checkpointProbe = probe.checkpoint else {
+                    return .corrupt
+                }
+                guard checkpointProbe.schemaVersion
+                        == ObservedPowerEnvelopeCalibrationCheckpoint.currentSchemaVersion else {
+                    return .unsupportedCheckpointSchema(checkpointProbe.schemaVersion)
+                }
+            } else if probe.checkpoint != nil {
+                return .corrupt
             }
 
-            return .valid(try decoder.decode(Envelope.self, from: data))
+            let envelope = try decoder.decode(Envelope.self, from: data)
+            switch envelope.kind {
+            case .checkpoint:
+                guard let wire = envelope.checkpoint else { return .corrupt }
+                _ = try validatedCheckpoint(from: wire)
+            case .cleared:
+                guard envelope.checkpoint == nil else { return .corrupt }
+            }
+            return .valid(envelope)
+        } catch let error as ObservedPowerEnvelopeCheckpointStoreError {
+            switch error {
+            case .unsupportedCheckpointSchema(let version):
+                return .unsupportedCheckpointSchema(version)
+            default:
+                return .corrupt
+            }
         } catch {
             return .corrupt
         }
@@ -363,22 +599,38 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
     }
 
     private func destinationURL(slotA: SlotRead, slotB: SlotRead) -> URL {
-        switch (slotA, slotB) {
-        case (.corrupt, .missing):
-            return slotBURL
-        case (.missing, .corrupt):
-            return slotAURL
-        default:
-            break
-        }
-
         switch (slotA.envelope, slotB.envelope) {
-        case (nil, _):
+        case (nil, nil):
+            if slotA.isInvalidOrMissing, slotB.isInvalidOrMissing {
+                return slotA.isCorrupt ? slotBURL : slotAURL
+            }
             return slotAURL
-        case (_, nil):
+        case (nil, .some):
+            return slotAURL
+        case (.some, nil):
             return slotBURL
         case let (.some(a), .some(b)):
             return a.generation <= b.generation ? slotAURL : slotBURL
+        }
+    }
+
+    private func firstClearTarget(slotA: SlotRead, slotB: SlotRead) -> URL {
+        if slotA.isInvalidOrMissing { return slotAURL }
+        if slotB.isInvalidOrMissing { return slotBURL }
+
+        guard let a = slotA.envelope, let b = slotB.envelope else {
+            return slotAURL
+        }
+        return a.generation <= b.generation ? slotAURL : slotBURL
+    }
+
+    private func writeAndVerify(_ envelope: Envelope, to destination: URL) throws {
+        let data = try encoder.encode(envelope)
+        try data.write(to: destination, options: Data.WritingOptions.atomic)
+
+        guard case let .valid(verified) = try readSlot(at: destination),
+              verified == envelope else {
+            throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
         }
     }
 }
