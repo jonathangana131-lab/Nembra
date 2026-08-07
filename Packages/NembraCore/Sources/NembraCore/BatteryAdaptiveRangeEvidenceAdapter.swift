@@ -97,14 +97,25 @@ struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
 }
 
 /// Result of applying one validated battery observation to the in-flight
-/// adaptive-range learning window state.
+/// adaptive-range learning-window state.
+///
+/// `candidateLearningWindow` is deliberately named as a candidate: emitting a
+/// window does not mean `AdaptiveBatteryRangeModel` has accepted it into learned
+/// history. Coverage, transport-gap, outlier, and other model gates still apply.
 public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
     /// Internal evidence-bearing action retained for module tests and pipeline
     /// implementation. External callers receive only `disposition`.
     let action: BatteryAdaptiveRangeEvidenceAction
 
     public let disposition: BatteryAdaptiveRangePipelineDisposition
-    public let learningWindow: BatteryRangeLearningWindow?
+    public let candidateLearningWindow: BatteryRangeLearningWindow?
+
+    /// Internal compatibility spelling for module tests/implementation. Keeping
+    /// this non-public prevents external callers from mistaking an assembler
+    /// candidate for model-accepted learned history.
+    var learningWindow: BatteryRangeLearningWindow? {
+        candidateLearningWindow
+    }
 
     /// Constructed only by the validated pipeline. External code may inspect a
     /// result but cannot manufacture one that appears to have passed the seam.
@@ -114,7 +125,7 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
     ) {
         self.action = action
         self.disposition = action.publicDisposition
-        self.learningWindow = learningWindow
+        self.candidateLearningWindow = learningWindow
     }
 }
 
