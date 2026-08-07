@@ -49,6 +49,12 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
 }
 
 /// Owns peak and raw telemetry-quality evidence for one immutable ride/source.
+///
+/// Live construction and operation are package-sealed until the ride lifecycle
+/// has a mechanically bound owner for this observer. A public initializer taking
+/// only a caller-selected ride UUID would reopen the same evidence-reset hole that
+/// `RidePeakSpeedEvidenceAccumulator` deliberately closes: unrelated code could
+/// create another clean observer for the same UUID and discard earlier loss.
 public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
@@ -58,7 +64,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     private var benchmarkCollector: TelemetryBenchmarkCollector
     private var foreignSourceCallbackCount = 0
 
-    public init(
+    package init(
         sessionID: UUID,
         peakPolicy: PeakSpeedPolicy,
         beginsAfterKnownObservationGap: Bool = false
@@ -75,7 +81,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     }
 
     @discardableResult
-    public mutating func record(_ sample: SpeedTelemetrySample) -> RideSpeedEvidenceRecordResult {
+    package mutating func record(_ sample: SpeedTelemetrySample) -> RideSpeedEvidenceRecordResult {
         // Benchmark first so raw source-arrival evidence is independent of a
         // peak-specific GPS accuracy gate. Both receive the exact callback.
         let benchmarkResult = benchmarkCollector.record(sample)
@@ -88,11 +94,13 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
         return RideSpeedEvidenceRecordResult(peak: peakResult, benchmark: benchmarkResult)
     }
 
-    /// Records a gap only after the caller has determined the selected speed
-    /// source itself was unavailable. This prevents an unrelated vehicle event
-    /// (for example BLE disconnect while GPS remains healthy) from destroying
-    /// otherwise valid GPS evidence.
-    public mutating func recordInterruption(_ interruption: RideSpeedEvidenceSessionInterruption) {
+    /// Records a gap only after the trusted lifecycle owner has determined the
+    /// selected speed source itself was unavailable. This prevents an unrelated
+    /// vehicle event (for example BLE disconnect while GPS remains healthy) from
+    /// destroying otherwise valid GPS evidence.
+    package mutating func recordInterruption(
+        _ interruption: RideSpeedEvidenceSessionInterruption
+    ) {
         let peakInterruption: PeakSpeedInterruption
         switch interruption {
         case .selectedSourceUnavailable:
@@ -105,7 +113,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
         benchmarkCollector.markKnownObservationInterruption()
     }
 
-    public var snapshot: RideSpeedEvidenceSessionSnapshot {
+    package var snapshot: RideSpeedEvidenceSessionSnapshot {
         RideSpeedEvidenceSessionSnapshot(
             sessionID: sessionID,
             source: source,
@@ -120,6 +128,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
 public enum RideObservedPeakQualityPolicyError: Error, Equatable, Sendable {
     case sourceRequirementRequired
     case nonAuthoritativeSource
+    case minimumAcceptedSampleCountInsufficientForJitter(required: Int, actual: Int)
     case rejectedFractionRequirementRequired
     case meanIntervalRequirementRequired
     case maximumIntervalRequirementRequired
@@ -130,9 +139,9 @@ public enum RideObservedPeakQualityPolicyError: Error, Equatable, Sendable {
 }
 
 /// Feature-level requirements for deciding whether a same-ride observed peak is
-/// strong enough to report. This type chooses no numeric thresholds; it only
-/// requires callers to provide the evidence dimensions peak reporting cannot
-/// silently ignore.
+/// strong enough to report. This type chooses no ES80-specific numeric thresholds;
+/// it only requires callers to provide the evidence dimensions peak reporting
+/// cannot silently ignore.
 public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
     public let telemetry: SpeedTelemetryQualityPolicy
 
@@ -143,6 +152,21 @@ public struct RideObservedPeakQualityPolicy: Equatable, Sendable {
         guard requiredSource != .motionAssist else {
             throw RideObservedPeakQualityPolicyError.nonAuthoritativeSource
         }
+
+        // Jitter is variation between intervals. Two accepted samples provide
+        // only one interval, whose population standard deviation is trivially
+        // zero and therefore is not meaningful jitter evidence. Requiring at
+        // least three accepted samples is a statistical shape invariant (two
+        // intervals), not a guessed ES80 cadence or quality threshold.
+        let minimumSamplesForJitterEvidence = 3
+        guard telemetry.minimumAcceptedSampleCount >= minimumSamplesForJitterEvidence else {
+            throw RideObservedPeakQualityPolicyError
+                .minimumAcceptedSampleCountInsufficientForJitter(
+                    required: minimumSamplesForJitterEvidence,
+                    actual: telemetry.minimumAcceptedSampleCount
+                )
+        }
+
         guard telemetry.maximumRejectedSampleFraction != nil else {
             throw RideObservedPeakQualityPolicyError.rejectedFractionRequirementRequired
         }
