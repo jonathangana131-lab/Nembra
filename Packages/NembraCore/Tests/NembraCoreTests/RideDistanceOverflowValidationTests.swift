@@ -39,8 +39,7 @@ struct RideDistanceOverflowValidationTests {
                 completedRide: completedRide,
                 odometerCoverage: .complete,
                 gpsRouteCoverage: .unknown,
-                liveIntegratedDistanceMeters: nil,
-                liveIntegratedCoverage: .unknown,
+                liveDistanceAggregate: nil,
                 transportGapOccurred: false
             )
         }
