@@ -71,13 +71,13 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
 
         #expect(try assembler.ingestSOC(reading(80, uptime: 1), policy: p) == nil)
-        try assembler.recordDistance(deltaMeters: 100)
+        try assembler.recordDistance(deltaMeters: 100, coverage: .complete)
         #expect(try assembler.ingestSOC(reading(79, uptime: 2), policy: p) == nil)
         #expect(assembler.latestAuthoritativeSOC?.percentage == 79)
-        try assembler.recordDistance(deltaMeters: 120)
+        try assembler.recordDistance(deltaMeters: 120, coverage: .complete)
         #expect(try assembler.ingestSOC(reading(78, uptime: 3), policy: p) == nil)
         #expect(assembler.latestAuthoritativeSOC?.percentage == 78)
-        try assembler.recordDistance(deltaMeters: 140)
+        try assembler.recordDistance(deltaMeters: 140, coverage: .complete)
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 4), policy: p)
         let window = try #require(assembled)
@@ -99,7 +99,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         let strict = try policy(minimumConsumedPercentagePoints: 4, minimumDistanceMeters: 100)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
 
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
         #expect(assembler.anchorSOC?.percentage == 80)
@@ -122,10 +122,10 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 300)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: p) == nil)
         #expect(assembler.latestAuthoritativeSOC?.receivedAtUptimeNanoseconds == 2)
-        try assembler.recordDistance(deltaMeters: 100)
+        try assembler.recordDistance(deltaMeters: 100, coverage: .complete)
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: p)
         let window = try #require(assembled)
@@ -195,7 +195,7 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         #expect(
             try assembler.ingestSOC(
                 reading(79, provenance: .estimate, uptime: 2),
@@ -234,13 +234,32 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(model.acceptedWindowCount == 0)
     }
 
+    @Test("omitted distance coverage fails closed as unknown")
+    func omittedCoverageFailsClosed() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150)
+        #expect(assembler.distanceCoverage == .unknown)
+
+        let assembled = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let window = try #require(assembled)
+        #expect(window.distanceMeters == 150)
+        #expect(window.distanceCoverage == .unknown)
+
+        var model = AdaptiveBatteryRangeModel()
+        #expect(model.ingest(window, policy: p).disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+    }
+
     @Test("transport gaps remain explicit and cannot train the model")
     func transportGapRemainsExplicit() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
         let p = try policy(minimumConsumedPercentagePoints: 3, minimumDistanceMeters: 100)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         assembler.recordTransportGap()
 
         let assembled = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
