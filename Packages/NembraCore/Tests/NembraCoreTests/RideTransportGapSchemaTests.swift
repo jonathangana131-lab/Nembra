@@ -69,6 +69,22 @@ struct RideTransportGapSchemaTests {
         generation: UInt64 = 1,
         nullingTransportKeyAt path: [String]
     ) throws -> Data {
+        try envelopeData(
+            schemaVersion: schemaVersion,
+            checkpoint: checkpoint,
+            generation: generation,
+            replacingTransportValueAt: path,
+            with: NSNull()
+        )
+    }
+
+    private func envelopeData(
+        schemaVersion: Int,
+        checkpoint: RideDurableCheckpoint,
+        generation: UInt64 = 1,
+        replacingTransportValueAt path: [String],
+        with transportValue: Any
+    ) throws -> Data {
         let envelope = AtomicRideCheckpointStore.Envelope(
             schemaVersion: schemaVersion,
             generation: generation,
@@ -79,7 +95,7 @@ struct RideTransportGapSchemaTests {
         var root = try #require(decoded as? [String: Any])
         var durable = try #require(root["checkpoint"] as? [String: Any])
         var payload = try #require(durable[path[0]] as? [String: Any])
-        payload["transportGapEvidence"] = NSNull()
+        payload["transportGapEvidence"] = transportValue
         durable[path[0]] = payload
         root["checkpoint"] = durable
         return try JSONSerialization.data(withJSONObject: root)
@@ -188,6 +204,56 @@ struct RideTransportGapSchemaTests {
         await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
             _ = try await store.load()
         }
+    }
+
+    @Test("legacy v1 in-progress injected provenance is ignored as unknown")
+    func legacyInProgressInjectedProvenanceMigratesUnknown() async throws {
+        for injectedValue: Any in [
+            RideTransportGapEvidence.noneObserved.rawValue,
+            RideTransportGapEvidence.observed.rawValue,
+            "not-a-current-provenance-value"
+        ] {
+            let dir = try directory()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let data = try envelopeData(
+                schemaVersion: AtomicRideCheckpointStore.legacySchemaVersion,
+                checkpoint: .inProgress(try checkpoint(gapEvidence: .unknown)),
+                replacingTransportValueAt: ["inProgress"],
+                with: injectedValue
+            )
+            try data.write(
+                to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+            )
+
+            let store = AtomicRideCheckpointStore(directoryURL: dir)
+            guard case let .inProgress(loaded)? = try await store.load() else {
+                Issue.record("expected migrated legacy in-progress checkpoint")
+                continue
+            }
+            #expect(loaded.transportGapEvidence == .unknown)
+        }
+    }
+
+    @Test("legacy v1 completion injected provenance is ignored as unknown")
+    func legacyCompletionInjectedProvenanceMigratesUnknown() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let data = try envelopeData(
+            schemaVersion: AtomicRideCheckpointStore.legacySchemaVersion,
+            checkpoint: .completedPendingCommit(try completed(gapEvidence: .unknown)),
+            replacingTransportValueAt: ["completedPendingCommit"],
+            with: RideTransportGapEvidence.observed.rawValue
+        )
+        try data.write(
+            to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+        )
+
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+        guard case let .completedPendingCommit(loaded)? = try await store.load() else {
+            Issue.record("expected migrated legacy completion handoff")
+            return
+        }
+        #expect(loaded.transportGapEvidence == .unknown)
     }
 
     @Test("legacy v1 completion without provenance remains recoverable as unknown")
