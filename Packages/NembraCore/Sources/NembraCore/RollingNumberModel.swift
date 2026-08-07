@@ -48,7 +48,10 @@ public struct RollingDigitSnapshot: Equatable, Sendable {
     public let digit: Int
     public let isVisible: Bool
 
-    public init(digit: Int, isVisible: Bool) {
+    /// Output evidence produced only by `RollingNumberModel`. Keeping construction
+    /// file-private prevents callers from manufacturing impossible digit states or
+    /// triggering the producer's internal invariant as a public precondition trap.
+    fileprivate init(digit: Int, isVisible: Bool) {
         precondition((0...9).contains(digit))
         self.digit = digit
         self.isVisible = isVisible
