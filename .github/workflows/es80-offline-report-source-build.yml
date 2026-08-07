@@ -1,0 +1,79 @@
+name: ES80 Offline Report Exact-Source Build
+
+on:
+  push:
+    branches:
+      - cell/es80-offline-artifact-cli/ci/chat-h8m5q
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_HEAD: fe060b8a599d29effc75abf274decae80ae72fc7
+  VALIDATION_WORKFLOW: .github/workflows/es80-offline-report-source-build.yml
+
+jobs:
+  source-build:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+
+      - name: Prove exact product parent and validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_product_head="$(git rev-parse HEAD^)"
+          printf 'Expected product head: %s\nActual product parent: %s\n' "$PRODUCT_HEAD" "$actual_product_head"
+          test "$actual_product_head" = "$PRODUCT_HEAD"
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          printf 'Validation delta:\n%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$VALIDATION_WORKFLOW"
+
+      - name: Report Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Preserve passive no-write boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic write call found in passive capture sources.' >&2
+            exit 1
+          fi
+
+      - name: Build full Bluetooth capture package
+        run: swift build --package-path Packages/NembraBluetoothCapture
+
+      - name: Build report executable product explicitly
+        run: swift build --package-path Packages/NembraBluetoothCapture --product nembra-es80-capture-report
+
+      - name: Run report command help smoke test
+        run: swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-report --help
+
+      - name: Diagnose inherited package tests without claiming acceptance
+        id: inherited_tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "$RUNNER_TEMP/nembra-bluetooth-tests.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if test "$status" -ne 0; then
+            echo 'Full package tests are diagnostic only on this dependency head; product acceptance remains blocked on the active passive-capture recovery.'
+          fi
+          exit 0
+
+      - name: State validation scope
+        shell: bash
+        run: |
+          echo "Exact product source build/help smoke: required by this mirror."
+          echo "Inherited package-test exit status: ${{ steps.inherited_tests.outputs.status }}"
+          echo 'A successful job is source/executable build evidence only, not full package acceptance and not physical ES80 verification.'
