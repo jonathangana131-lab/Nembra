@@ -12,7 +12,7 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         protocolFamily: "unknown-2025-es80"
     )
     private let revision = "ae0f2a20a6aecec02d972b9a66f75864d97796e9"
-    private let target = "11111111-2222-3333-4444-555555555555"
+    private let target = "11111111-2222-3333-4444-ABCDEFABCDEF"
 
     @Test("SHA-256 helper uses the standard lowercase artifact digest")
     func sha256DigestIsStandard() {
@@ -33,10 +33,7 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         let compactJSON = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
         let createdAt = Date(timeIntervalSince1970: 1_700_000_500)
 
-        let sidecar = try makeSidecar(
-            captureJSON: prettyJSON,
-            createdAt: createdAt
-        )
+        let sidecar = try makeSidecar(captureJSON: prettyJSON, createdAt: createdAt)
 
         #expect(sidecar.schemaVersion == 1)
         #expect(sidecar.sourceArtifact.byteCount == prettyJSON.count)
@@ -91,17 +88,18 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         }
     }
 
-    @Test("selected target matching is exact and exposes available attributable identities")
+    @Test("selected target matching is opaque and exact")
     func targetIdentityIsOpaqueAndExact() throws {
-        let session = try makeSessionWithConnection()
-        let captureJSON = try PassiveBluetoothCaptureJSON.encode(session)
+        let captureJSON = try PassiveBluetoothCaptureJSON.encode(makeSessionWithConnection())
+        let differentlyCased = target.lowercased()
 
+        #expect(differentlyCased != target)
         #expect(throws: PassiveBluetoothCaptureArtifactProvenanceError
-            .selectedPeripheralNotAttributable(requested: "\(target.lowercased())", available: [target])) {
+            .selectedPeripheralNotAttributable(requested: differentlyCased, available: [target])) {
             try PassiveBluetoothCaptureArtifactProvenanceBuilder.make(
                 captureJSON: captureJSON,
                 nembraSourceRevision: revision,
-                selectedPeripheralIdentifier: target.lowercased(),
+                selectedPeripheralIdentifier: differentlyCased,
                 physicalCorrelationNote: "physical power-cycle correlation",
                 researchSetupNote: "stationary, charger disconnected"
             )
@@ -140,7 +138,7 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         }
     }
 
-    @Test("required physical-correlation and setup notes cannot be blank")
+    @Test("required operator notes cannot be blank")
     func requiredOperatorNotesCannotBeBlank() throws {
         let captureJSON = try PassiveBluetoothCaptureJSON.encode(makeSessionWithConnection())
 
@@ -164,7 +162,7 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         }
     }
 
-    @Test("optional build and acquisition-failure fields reject blank pseudo-provenance")
+    @Test("optional metadata must be meaningful when present")
     func optionalMetadataMustBeMeaningfulWhenPresent() throws {
         let captureJSON = try PassiveBluetoothCaptureJSON.encode(makeSessionWithConnection())
 
@@ -205,8 +203,7 @@ struct PassiveBluetoothCaptureArtifactProvenanceTests {
         let captureJSON = try PassiveBluetoothCaptureJSON.encode(makeSessionWithConnection())
         let original = try makeSidecar(
             captureJSON: captureJSON,
-            acquisitionFailureNote: "discarded after acquisition entered fail-closed state",
-            createdAt: Date(timeIntervalSince1970: 1_700_000_500)
+            acquisitionFailureNote: "discarded after acquisition entered fail-closed state"
         )
         let json = try original.jsonData()
         let decoded = try PassiveBluetoothCaptureArtifactProvenance.decodeJSON(json)
