@@ -40,6 +40,23 @@ struct SimulatorProfileTruthTests {
         #expect(!identity.protocolFamily.contains("Tuya"))
     }
 
+    @Test("cancelled connection attempt never manufactures connected state")
+    func cancelledConnectionReturnsToDisconnected() async {
+        let service = SimulatedScooterService(commandLatencyNanoseconds: 0)
+        let task = Task {
+            withUnsafeCurrentTask { currentTask in
+                currentTask?.cancel()
+            }
+            await service.connect()
+        }
+
+        await task.value
+        let state = await service.snapshot()
+
+        #expect(state.connection == .disconnected)
+        #expect(state.connectionIssue == nil)
+    }
+
     @Test("lock confirmation requires valid stopped speed evidence")
     func lockFailsClosedWithoutValidStoppedSpeed() async {
         let invalidSpeeds: [Double?] = [nil, .nan, .infinity, -.infinity, -0.1, 0.5, 18]
