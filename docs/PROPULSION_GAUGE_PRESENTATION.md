@@ -13,35 +13,53 @@ The gauge is **propulsion / power**, not throttle. Measured electrical output do
 Accepted samples carry:
 - exact vehicle/mode presentation identity;
 - nonnegative finite watts;
+- source-owned receipt sequence/order;
 - receive uptime;
 - continuity generation;
 - authority (`verifiedVehicleMeasurement` or explicit `simulator`).
 
-Render frames may move at display refresh rate toward the latest accepted sample. They never become persisted telemetry, peak evidence, battery/range evidence, ride evidence, protocol claims, or calibration observations.
+Verified samples require the real source-owned receipt sequence. Simulator may omit one only as an explicit synthetic-QA convenience, in which case its Simulator-owned uptime is reused as synthetic ordering metadata. Production code must never invent or subdivide nanoseconds merely to order two accepted callbacks.
 
-The display model uses a retargetable critically damped step response. Rise and fall settling windows are separately injected so release can be at least as responsive as application. Those windows are presentation tuning only; they do not assert BLE cadence or physical scooter response.
+Chronology follows the same truth shape as Nembra's passive capture and canonical observed-power envelope: receipt sequence must strictly increase, while uptime may stay equal across consecutive callbacks. Backwards uptime still fails closed. A newer receipt identity is consumed before secondary uptime/continuity validation, so a malformed newer callback cannot later be rewritten and a delayed lower sequence cannot re-enter.
+
+Render frames may move at display refresh rate toward the latest accepted sample. They never become persisted telemetry, peak evidence, battery/range evidence, ride evidence, protocol claims, or calibration observations. If a caller requests a frame before the newest accepted sample's receipt uptime, the presentation fails closed with `invalidRenderClock` instead of silently moving the requested clock forward and backdating evidence.
+
+The display model uses a retargetable critically damped step response. Rise and fall settling windows are separately injected, and construction requires fall settling to be no slower than rise settling. Zero/zero remains an intentional Reduce Motion snap path. Those windows are presentation tuning only; they do not assert BLE cadence or physical scooter response.
+
+## Identity boundary
+
+`PropulsionGaugeIdentity` is a presentation key, not proof of physical scooter identity. Authority-bearing sample and scale factories require a non-empty/non-whitespace vehicle key, and any supplied mode key must also be non-empty/non-whitespace. This prevents placeholder identities from collapsing otherwise separate vehicle/mode evidence domains.
+
+The code still does not decide what the ES80's verified identity key should be. That remains a separate physical/session-identity responsibility.
 
 ## Gaps, stale data, and disconnects
 
 The gauge never extrapolates beyond the latest accepted target.
 
-A new continuity generation snaps to the new accepted observation instead of drawing motion through the unknown interval. If the latest sample ages beyond the injected live window, the model preserves the exact accepted watts as **retained** data but removes the active normalized gauge. Explicit unavailability removes the live numeric display entirely while retaining the last accepted observation internally. Disconnect is never converted into measured zero.
+A new continuity generation or authority change snaps to the new accepted observation instead of drawing motion through an unknown or cross-authority interval. The accepted peak resets on that discontinuity, so Simulator history cannot contaminate verified presentation and verified history cannot contaminate Simulator QA.
+
+If the latest sample ages beyond the injected live window, the model preserves the exact accepted watts as **retained** data but removes the active normalized gauge. Explicit unavailability removes the live numeric display entirely while retaining the last accepted observation internally. Disconnect is never converted into measured zero.
 
 ## Peak marker
 
 The short visual peak-hold marker is derived only from accepted samples. Render-interpolated values cannot create or raise a peak. The hold duration is a presentation readability policy, not evidence persistence.
 
-## Scale consumption, not scale learning
+## Canonical observed-envelope consumption
 
-This lane does **not** learn the observed full-power envelope. That capability is owned by the separate `observed-power-envelope` worker/PR and remains independent from render-clock behavior.
+This lane does **not** learn a second observed full-power envelope. The canonical `ObservedPowerEnvelope` capability is now merged on main and owns repeated-evidence learning, measurement-only versus learning eligibility, upward adaptation, and the learned observed gauge scale.
 
-`PropulsionGaugeScale` is only the small presentation adapter consumed by the display model:
+`PropulsionGaugeScale` is only the presentation capability consumed by the display model:
 - Simulator can construct an explicit Simulator scale for visual/runtime QA.
-- A verified observed-envelope scale can only be constructed through a package-sealed adapter entry point.
-- Every scale carries exact vehicle/mode identity.
+- `PropulsionGaugeScale.observedEnvelope(_:)` maps a canonical `ObservedPowerEnvelopeCalibration` into gauge presentation.
+- Verified scope + verified measurement authority map through the sealed verified scale factory.
+- Simulator scope + Simulator evidence remain Simulator authority.
+- Any mixed scope/evidence authority fails closed and cannot be upgraded by presentation.
+- Every scale carries the exact vehicle/mode identity from its calibration scope.
 - The display refuses cross-identity normalization.
 - The display refuses a Simulator scale for verified measurements and refuses a verified-envelope scale for Simulator measurements.
 - The scale is presentation-only and never rewrites raw measured watts.
+
+The raw verified-scale factory remains package-sealed under SwiftPM and file-private in Nembra's direct-source app build. The canonical calibration object is the authority token; ordinary app/UI code does not regain a module-wide factory for minting physical scale authority.
 
 A verified observed-envelope scale is still **not** a certified/rated motor or controller maximum and must not be labeled as such. It is also not throttle position.
 
@@ -53,9 +71,9 @@ Finite accepted observations remain finite through render interpolation, includi
 
 This slice is currently NembraCore/package-only. It intentionally does not modify `DashboardView.swift` or `Nembra.xcodeproj/project.pbxproj` while those high-contention product surfaces are owned by other active workers.
 
-The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, and continuity. After that, the verified power observation path and the separately qualified observed-envelope calibration can feed this render model before Dashboard integration.
+The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, continuity, and source receipt order. After that, the verified power observation path plus canonical observed-envelope calibration can feed this render model before Dashboard integration.
 
-Simulator may use `PropulsionPowerSample.simulator` plus `PropulsionGaugeScale.simulator` for visual/runtime QA, but those values remain explicitly synthetic.
+Simulator may use `PropulsionPowerSample.simulator` plus a Simulator envelope/scale for visual/runtime QA, but those values remain explicitly synthetic.
 
 ## Hardware truth boundary
 
