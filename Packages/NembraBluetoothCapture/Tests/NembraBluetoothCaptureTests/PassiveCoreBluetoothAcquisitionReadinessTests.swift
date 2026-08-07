@@ -42,6 +42,54 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
+    func acquisitionRequiresSelectedTargetLifecycle() {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.noTarget)
+        ) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .noTarget)
+        #expect(readiness.generation == 0)
+    }
+
+    @Test
+    func terminalAttemptRequiresNewConnectionAttemptBeforeAcquisition() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.finishWithoutGattAcquisition()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.terminalWithoutGattAcquisition)
+        ) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.generation == 0)
+
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == 1)
+    }
+
+    @Test
+    func readyGenerationMayBeginQuiescentReacquisition() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let first = try readiness.beginOperation()
+        #expect(readiness.completeOperation(first))
+        #expect(readiness.phase == .ready)
+        let firstGeneration = readiness.generation
+
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == firstGeneration + 1)
+    }
+
+    @Test
     func staleOperationCannotCompleteAfterLegitimateConnectionBoundary() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
