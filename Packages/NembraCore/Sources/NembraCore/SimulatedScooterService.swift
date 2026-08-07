@@ -321,13 +321,9 @@ public actor SimulatedScooterService: ScooterService {
         guard profile.capabilities.supportsLock else { throw ScooterCommandError.unsupportedCapability }
         let generation = try beginCommand()
         defer { finishCommand() }
-        guard let speedKilometersPerHour = state.speedKilometersPerHour,
-              speedKilometersPerHour.isFinite,
-              speedKilometersPerHour >= 0,
-              speedKilometersPerHour < 0.5 else {
-            throw ScooterCommandError.commandRejected
-        }
+        try ensureKnownStoppedSpeed()
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
+        try ensureKnownStoppedSpeed()
         state.isLocked = locked
         publish()
     }
@@ -486,6 +482,15 @@ public actor SimulatedScooterService: ScooterService {
 
     private func ensureConnected() throws {
         guard state.connection == .connected else { throw ScooterCommandError.disconnected }
+    }
+
+    private func ensureKnownStoppedSpeed() throws {
+        guard let speedKilometersPerHour = state.speedKilometersPerHour,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              speedKilometersPerHour < 0.5 else {
+            throw ScooterCommandError.commandRejected
+        }
     }
 
     private func acknowledgeLatency(expectedConnectionGeneration: UInt64) async throws {
