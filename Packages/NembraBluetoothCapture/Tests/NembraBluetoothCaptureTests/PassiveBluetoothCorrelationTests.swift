@@ -115,6 +115,84 @@ struct PassiveBluetoothCorrelationTests {
         #expect(window.candidates.map(\.characteristicUUID) == ["NEW"])
     }
 
+    @Test("unscoped imported correlation fails closed on mixed peripheral GATT evidence")
+    func mixedPeripheralEvidenceFailsClosed() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 2_900_000_000,
+            characteristic: "A-VALUE",
+            payload: [0x01],
+            peripheralIdentifier: "target-a"
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "Battery",
+                displayedValue: "73%"
+            )),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 3,
+            uptime: 3_050_000_000,
+            characteristic: "B-VALUE",
+            payload: [0x02],
+            peripheralIdentifier: "unrelated-b"
+        )
+
+        let windows = PassiveBluetoothCorrelation.windows(
+            in: session,
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(windows.isEmpty)
+    }
+
+    @Test("explicit target correlation filters mixed imported evidence")
+    func explicitTargetFiltersMixedPeripheralEvidence() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 2_900_000_000,
+            characteristic: "A-VALUE",
+            payload: [0x01],
+            peripheralIdentifier: "target-a"
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "Battery",
+                displayedValue: "73%"
+            )),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 3,
+            uptime: 3_050_000_000,
+            characteristic: "B-VALUE",
+            payload: [0x02],
+            peripheralIdentifier: "unrelated-b"
+        )
+
+        let window = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: "target-a",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        ).first)
+
+        #expect(window.candidates.map(\.peripheralIdentifier) == ["target-a"])
+        #expect(window.candidates.map(\.characteristicUUID) == ["A-VALUE"])
+    }
+
     @Test("overflow-safe lookahead still includes later values")
     func uptimeOverflowSafety() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
@@ -169,11 +247,12 @@ struct PassiveBluetoothCorrelationTests {
         sequence: UInt64,
         uptime: UInt64,
         characteristic: String,
-        payload: [UInt8]
+        payload: [UInt8],
+        peripheralIdentifier: String = "physical-es80-placeholder"
     ) throws {
         try session.append(
             .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: "physical-es80-placeholder",
+                peripheralIdentifier: peripheralIdentifier,
                 serviceUUID: "TEST",
                 characteristicUUID: characteristic,
                 origin: .subscriptionUpdate,
