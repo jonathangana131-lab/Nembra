@@ -96,6 +96,8 @@ Each evaluable sample preserves:
 - absolute display-space error;
 - whether that error is inside caller-supplied tolerance.
 
+The report retains the complete validated caller-supplied numeric-reference set in canonical marker-index order, including references that later become unused, ambiguous, or shared-observation exclusions for the selected candidate. This means a rejected value does not disappear merely because it did not become positive numeric evidence.
+
 The report also retains the exact caller-owned `absoluteTolerance` that produced every `isWithinTolerance` flag. This keeps the derived boolean auditable after the policy object leaves scope and allows downstream tooling to distinguish equal-threshold comparisons from reports produced under different thresholds instead of treating incomparable booleans as equivalent evidence.
 
 Per-hypothesis summaries expose descriptive counts and error statistics only. They are not protocol confidence scores.
@@ -147,6 +149,7 @@ The child suite covers:
 - proof that display text never creates numeric references;
 - raw/non-scalar and malformed-boolean non-coercion;
 - explicit unused references where the candidate has no hit;
+- canonical retention of caller reference values even when one is excluded from evidence;
 - preservation of parent conflicting-nearest ambiguity;
 - preservation of parent shared-observation rejection;
 - preservation of exact marker receipt, first/last observation receipt, temporal distance/direction, and DP byte offsets;
