@@ -129,14 +129,17 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 ///
 /// Decoding is a durable-restoration boundary. If decoded evidence already contains a segment,
 /// that segment is sealed: it may be replayed idempotently/stale, but it cannot be extended and
-/// the next inserted segment must use a different process-generation identity. This prevents a
-/// caller from accidentally stretching old process-local monotonic evidence across relaunch.
+/// the next inserted segment must use a different process-generation identity. If decoded
+/// evidence is still empty, the first later segment must acknowledge an initial unobserved
+/// interval. Both rules prevent a caller from stretching process-local monotonic truth across
+/// relaunch merely because a checkpoint happened before useful elapsed-time evidence existed.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beginsAfterUnobservedInterval: Bool
     private var observationSegments: [RideSessionDurationObservedSegment]
     private var totalObservedDurationNanoseconds: UInt64
     private var requiresFreshProcessGeneration: Bool
+    private var requiresInitialRecoveryGap: Bool
 
     public init(
         sessionID: UUID,
@@ -147,6 +150,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         self.observationSegments = []
         self.totalObservedDurationNanoseconds = 0
         self.requiresFreshProcessGeneration = false
+        self.requiresInitialRecoveryGap = false
     }
 
     public var snapshot: RideSessionDurationEvidenceSnapshot {
@@ -231,7 +235,8 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         }
 
         if expectedSequence == 0 {
-            guard segment.followsUnobservedInterval == beginsAfterUnobservedInterval else {
+            let requiresGap = beginsAfterUnobservedInterval || requiresInitialRecoveryGap
+            guard segment.followsUnobservedInterval == requiresGap else {
                 throw RideSessionDurationEvidenceError.invalidGapClassification
             }
         } else {
@@ -263,6 +268,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         observationSegments.append(segment)
         totalObservedDurationNanoseconds = newTotal
         requiresFreshProcessGeneration = false
+        requiresInitialRecoveryGap = false
         return .inserted
     }
 
@@ -305,6 +311,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
                 try upsert(segment)
             }
             requiresFreshProcessGeneration = !decodedSegments.isEmpty
+            requiresInitialRecoveryGap = decodedSegments.isEmpty
         } catch {
             throw DecodingError.dataCorrupted(
                 .init(
