@@ -151,6 +151,18 @@ struct TuyaCandidateDPElectricalCoherenceTests {
         )
     }
 
+    private func contexts(
+        voltage: String = "capture-A",
+        current: String? = nil,
+        power: String? = nil
+    ) throws -> TuyaCandidateDPElectricalEvidenceContextBindings {
+        try TuyaCandidateDPElectricalEvidenceContextBindings(
+            voltage: TuyaCandidateDPElectricalEvidenceContextIdentity(identifier: voltage),
+            current: TuyaCandidateDPElectricalEvidenceContextIdentity(identifier: current ?? voltage),
+            power: TuyaCandidateDPElectricalEvidenceContextIdentity(identifier: power ?? voltage)
+        )
+    }
+
     private func coherencePolicy(
         span: UInt64 = 30,
         absolute: Double = 0.000_001,
@@ -210,10 +222,12 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0), try anchor(1)],
             policy: coherencePolicy()
         )
 
+        #expect(result.scope.evidenceContextIdentity.identifier == "capture-A")
         #expect(result.scope.voltageFieldLabel == "Voltage")
         #expect(result.scope.currentFieldLabel == "Current")
         #expect(result.scope.powerFieldLabel == "Power")
@@ -242,28 +256,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("stock reference coherence does not rescue a candidate transform that misses its own anchors")
     func candidateMismatchRemainsVisible() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[20]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[20]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3
         )
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -273,6 +275,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy()
         )
@@ -287,28 +290,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("relative tolerance is explicit caller policy rather than an ES80 default")
     func relativeToleranceIsExplicit() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(420)],
-            numericValues: [42],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [uint16(420)],
+            numericValues: [42], scale: 0.1, candidateID: 3
         )
 
         let strict = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -318,6 +309,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy(absolute: 0, relative: 0)
         )
@@ -330,6 +322,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy(absolute: 0, relative: 0.025)
         )
@@ -344,28 +337,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("explicit negative transforms remain signed; evaluator never invents regen or absolute current")
     func explicitSignedTransformIsPreserved() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(400)],
-            numericValues: [40],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(400)],
+            numericValues: [40], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [-1],
-            scale: -0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [-1], scale: -0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(400)],
-            numericValues: [-40],
-            scale: -0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [uint16(400)],
+            numericValues: [-40], scale: -0.1, candidateID: 3
         )
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -375,6 +356,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy()
         )
@@ -384,31 +366,49 @@ struct TuyaCandidateDPElectricalCoherenceTests {
         #expect(evaluation.supportsJointHypothesis)
     }
 
+    @Test("capture context mismatch fails closed before incomparable uptime values are combined")
+    func captureContextMismatchFailsClosed() throws {
+        let voltage = try numericReport(
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
+        )
+        let current = try numericReport(
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
+        )
+        let power = try numericReport(
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3
+        )
+
+        #expect(throws: TuyaCandidateDPElectricalCoherenceError.evidenceContextMismatch(role: .current)) {
+            try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
+                voltageReport: voltage,
+                voltageHypothesisIdentifier: "selected",
+                currentReport: current,
+                currentHypothesisIdentifier: "selected",
+                powerReport: power,
+                powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(current: "capture-B"),
+                anchors: [try anchor(0)],
+                policy: coherencePolicy()
+            )
+        }
+    }
+
     @Test("too-wide marker and candidate timing span is rejected instead of treated as simultaneous")
     func rejectsWideEvidenceSpan() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [200],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [200], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [110],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [110], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3
         )
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -418,6 +418,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy(span: 30)
         )
@@ -432,28 +433,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("missing numeric evidence is retained as an explicit role-specific rejection")
     func missingSampleIsNotDropped() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [nil],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [nil], scale: 0.1, candidateID: 3
         )
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -463,6 +452,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy()
         )
@@ -477,29 +467,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("stream, continuity generation, and framing width may never be mixed across roles")
     func scopeMismatchFailsClosed() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3
         )
         let wrongStreamCurrent = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2,
-            characteristic: "D"
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2, characteristic: "D"
         )
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.streamIdentityMismatch(role: .current)) {
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -509,19 +486,15 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [try anchor(0)],
                 policy: coherencePolicy()
             )
         }
 
         let wrongGenerationCurrent = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2,
-            generation: 8
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2, generation: 8
         )
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.continuityGenerationMismatch(role: .current)) {
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -531,27 +504,19 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [try anchor(0)],
                 policy: coherencePolicy()
             )
         }
 
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let wrongWidthPower = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3,
-            width: .oneByte
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3, width: .oneByte
         )
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.dataLengthWidthMismatch(role: .power)) {
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -561,6 +526,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: wrongWidthPower,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [try anchor(0)],
                 policy: coherencePolicy()
             )
@@ -570,28 +536,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("hypothesis selection is exact and duplicate identifiers stay ambiguous")
     func hypothesisIdentityFailsClosed() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[10]],
+            numericValues: [1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3,
+            field: "Power", markerTimes: [120], rawValues: [uint16(410)],
+            numericValues: [41], scale: 0.1, candidateID: 3,
             duplicateSelectedHypothesis: true
         )
 
@@ -603,6 +557,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [try anchor(0)],
                 policy: coherencePolicy()
             )
@@ -615,6 +570,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [try anchor(0)],
                 policy: coherencePolicy()
             )
@@ -624,28 +580,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("anchor reuse cannot manufacture repeated support")
     func duplicateAndReusedAnchorsFailClosed() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100, 200],
-            rawValues: [uint16(410), uint16(400)],
-            numericValues: [41, 40],
-            scale: 0.1,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100, 200], rawValues: [uint16(410), uint16(400)],
+            numericValues: [41, 40], scale: 0.1, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110, 210],
-            rawValues: [[10], [10]],
-            numericValues: [1, 1],
-            scale: 0.1,
-            candidateID: 2
+            field: "Current", markerTimes: [110, 210], rawValues: [[10], [10]],
+            numericValues: [1, 1], scale: 0.1, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120, 220],
-            rawValues: [uint16(410), uint16(400)],
-            numericValues: [41, 40],
-            scale: 0.1,
-            candidateID: 3
+            field: "Power", markerTimes: [120, 220], rawValues: [uint16(410), uint16(400)],
+            numericValues: [41, 40], scale: 0.1, candidateID: 3
         )
         let duplicate = try anchor(0)
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.duplicateAnchor(anchorIndex: 1, previousAnchorIndex: 0)) {
@@ -656,6 +600,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [duplicate, duplicate],
                 policy: coherencePolicy(span: 200)
             )
@@ -679,6 +624,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 currentHypothesisIdentifier: "selected",
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
+                evidenceContexts: contexts(),
                 anchors: [first, second],
                 policy: coherencePolicy(span: 200)
             )
@@ -688,28 +634,16 @@ struct TuyaCandidateDPElectricalCoherenceTests {
     @Test("nonfinite relationship math is rejected rather than accepted by infinite tolerance")
     func nonFiniteRelationshipFailsClosed() throws {
         let voltage = try numericReport(
-            field: "Voltage",
-            markerTimes: [100],
-            rawValues: [[1]],
-            numericValues: [1e308],
-            scale: 1e308,
-            candidateID: 1
+            field: "Voltage", markerTimes: [100], rawValues: [[1]],
+            numericValues: [1e308], scale: 1e308, candidateID: 1
         )
         let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[1]],
-            numericValues: [1e308],
-            scale: 1e308,
-            candidateID: 2
+            field: "Current", markerTimes: [110], rawValues: [[1]],
+            numericValues: [1e308], scale: 1e308, candidateID: 2
         )
         let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [[1]],
-            numericValues: [1],
-            scale: 1,
-            candidateID: 3
+            field: "Power", markerTimes: [120], rawValues: [[1]],
+            numericValues: [1], scale: 1, candidateID: 3
         )
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -719,6 +653,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             currentHypothesisIdentifier: "selected",
             powerReport: power,
             powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
             anchors: [try anchor(0)],
             policy: coherencePolicy(absolute: 0, relative: 0)
         )
@@ -726,8 +661,46 @@ struct TuyaCandidateDPElectricalCoherenceTests {
         #expect(result.rejectedAnchors.first?.reason == .nonFiniteReferenceRelationship)
     }
 
-    @Test("policy and marker bounds are explicit and fail closed")
-    func validatesPolicyAndMarkerBounds() throws {
+    @Test("aggregate errors stay finite when repeated extreme finite anchors would overflow a raw sum")
+    func aggregateMeansStayFinite() throws {
+        let voltage = try numericReport(
+            field: "Voltage", markerTimes: [100, 200], rawValues: [[1], [1]],
+            numericValues: [1e154, 1e154], scale: 1e154, candidateID: 1,
+            numericTolerance: 0
+        )
+        let current = try numericReport(
+            field: "Current", markerTimes: [110, 210], rawValues: [[1], [1]],
+            numericValues: [1e154, 1e154], scale: 1e154, candidateID: 2,
+            numericTolerance: 0
+        )
+        let power = try numericReport(
+            field: "Power", markerTimes: [120, 220], rawValues: [[1], [1]],
+            numericValues: [1, 1], scale: 1, candidateID: 3,
+            numericTolerance: 0
+        )
+
+        let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
+            voltageReport: voltage,
+            voltageHypothesisIdentifier: "selected",
+            currentReport: current,
+            currentHypothesisIdentifier: "selected",
+            powerReport: power,
+            powerHypothesisIdentifier: "selected",
+            evidenceContexts: contexts(),
+            anchors: [try anchor(0), try anchor(1)],
+            policy: coherencePolicy(span: 30, absolute: 1e308)
+        )
+        #expect(result.evaluations.count == 2)
+        #expect(result.meanReferenceAbsolutePowerError?.isFinite == true)
+        #expect(result.meanCandidateAbsolutePowerError?.isFinite == true)
+        #expect(result.maximumCandidateAbsolutePowerError?.isFinite == true)
+    }
+
+    @Test("policy, capture context, and marker bounds are explicit and fail closed")
+    func validatesPolicyContextAndMarkerBounds() throws {
+        #expect(throws: TuyaCandidateDPElectricalCoherenceError.emptyEvidenceContextIdentifier) {
+            try TuyaCandidateDPElectricalEvidenceContextIdentity(identifier: "   ")
+        }
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.invalidMarkerIndex(role: .voltage, index: -1)) {
             try TuyaCandidateDPElectricalAnchor(
                 voltageMarkerIndex: -1,
