@@ -10,6 +10,56 @@ public struct RideSpeedEvidenceRecordResult: Equatable, Sendable {
     }
 }
 
+/// Constant-memory accounting of every peak-pipeline rejection observed by one
+/// ride-owned speed-evidence session.
+///
+/// `RidePeakSpeedEvidence` can exist only after at least one peak sample is
+/// accepted. Keeping this summary separately preserves why an all-rejected
+/// session produced no peak at all without storing an unbounded event log.
+public struct RideSpeedEvidencePeakRejectionSummary: Equatable, Sendable {
+    public let nonAuthoritativeSampleCount: Int
+    public let sourceMismatchSampleCount: Int
+    public let nonIncreasingTimestampCount: Int
+    public let nonFiniteDerivedSpeedCount: Int
+    public let speedAccuracyUnavailableCount: Int
+    public let speedAccuracyExceededCount: Int
+
+    public var totalRejectedSampleCount: Int {
+        nonAuthoritativeSampleCount
+            + sourceMismatchSampleCount
+            + nonIncreasingTimestampCount
+            + nonFiniteDerivedSpeedCount
+            + speedAccuracyUnavailableCount
+            + speedAccuracyExceededCount
+    }
+
+    /// Matches the selected-source quality-rejection categories counted by
+    /// `PeakSpeedEvidence.qualityRejectedSampleCount` after a peak exists.
+    /// Foreign/non-authoritative traffic remains separate provenance.
+    public var selectedSourceQualityRejectedSampleCount: Int {
+        nonIncreasingTimestampCount
+            + nonFiniteDerivedSpeedCount
+            + speedAccuracyUnavailableCount
+            + speedAccuracyExceededCount
+    }
+
+    fileprivate init(
+        nonAuthoritativeSampleCount: Int,
+        sourceMismatchSampleCount: Int,
+        nonIncreasingTimestampCount: Int,
+        nonFiniteDerivedSpeedCount: Int,
+        speedAccuracyUnavailableCount: Int,
+        speedAccuracyExceededCount: Int
+    ) {
+        self.nonAuthoritativeSampleCount = nonAuthoritativeSampleCount
+        self.sourceMismatchSampleCount = sourceMismatchSampleCount
+        self.nonIncreasingTimestampCount = nonIncreasingTimestampCount
+        self.nonFiniteDerivedSpeedCount = nonFiniteDerivedSpeedCount
+        self.speedAccuracyUnavailableCount = speedAccuracyUnavailableCount
+        self.speedAccuracyExceededCount = speedAccuracyExceededCount
+    }
+}
+
 /// A gap in the selected speed-evidence source, not an arbitrary ride/vehicle event.
 ///
 /// This intentionally omits `vehicleConnectionLost`: a scooter disconnect is a
@@ -28,6 +78,7 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
     /// Callbacks from any source other than this session's selected source are
     /// source-switch/mixing evidence and independently block peak reporting.
     public let foreignSourceCallbackCount: Int
+    public let peakRejections: RideSpeedEvidencePeakRejectionSummary
     public let peakEvidence: RidePeakSpeedEvidence?
     public let telemetryBenchmark: TelemetryBenchmarkSummary
 
@@ -36,6 +87,7 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
         source: SpeedTelemetrySource,
         beganAfterKnownObservationGap: Bool,
         foreignSourceCallbackCount: Int,
+        peakRejections: RideSpeedEvidencePeakRejectionSummary,
         peakEvidence: RidePeakSpeedEvidence?,
         telemetryBenchmark: TelemetryBenchmarkSummary
     ) {
@@ -43,6 +95,7 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
         self.source = source
         self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
         self.foreignSourceCallbackCount = foreignSourceCallbackCount
+        self.peakRejections = peakRejections
         self.peakEvidence = peakEvidence
         self.telemetryBenchmark = telemetryBenchmark
     }
@@ -62,6 +115,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
 
     private var peakAccumulator: RidePeakSpeedEvidenceAccumulator
     private var benchmarkCollector: TelemetryBenchmarkCollector
+    private var peakRejectionAccumulator = RideSpeedEvidencePeakRejectionAccumulator()
     private var foreignSourceCallbackCount = 0
     /// One logical source outage can produce repeated lifecycle callbacks. Keep
     /// the outage pending until accepted selected-source benchmark evidence
@@ -91,6 +145,10 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
         // peak-specific GPS accuracy gate. Both receive the exact callback.
         let benchmarkResult = benchmarkCollector.record(sample)
         let peakResult = peakAccumulator.record(sample)
+
+        if case let .rejected(rejection) = peakResult {
+            peakRejectionAccumulator.record(rejection)
+        }
 
         switch benchmarkResult {
         case .accepted:
@@ -143,6 +201,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
             source: source,
             beganAfterKnownObservationGap: beganAfterKnownObservationGap,
             foreignSourceCallbackCount: foreignSourceCallbackCount,
+            peakRejections: peakRejectionAccumulator.summary,
             peakEvidence: peakAccumulator.evidence,
             telemetryBenchmark: benchmarkCollector.summary
         )
@@ -238,15 +297,17 @@ public enum RideObservedPeakReadinessFailure: Equatable, Sendable {
 ///
 /// `isReady` means the retained benchmark satisfied the retained caller-supplied
 /// policy and the peak-specific truth checks below. Keeping the session topology,
-/// policy, and raw benchmark prevents a later consumer from seeing only an
-/// untraceable boolean/assessment after failed-session provenance or thresholds
-/// have been lost. This type is intentionally not Codable and does not claim
-/// those thresholds have been physically validated for AOVOPRO ES80.
+/// peak-rejection summary, policy, and raw benchmark prevents a later consumer
+/// from seeing only an untraceable boolean/assessment after failed-session
+/// provenance or thresholds have been lost. This type is intentionally not
+/// Codable and does not claim those thresholds have been physically validated
+/// for AOVOPRO ES80.
 public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let beganAfterKnownObservationGap: Bool
     public let foreignSourceCallbackCount: Int
+    public let peakRejections: RideSpeedEvidencePeakRejectionSummary
     public let peakEvidence: RidePeakSpeedEvidence?
     public let telemetryBenchmark: TelemetryBenchmarkSummary
     public let policy: RideObservedPeakQualityPolicy
@@ -260,6 +321,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
         source: SpeedTelemetrySource,
         beganAfterKnownObservationGap: Bool,
         foreignSourceCallbackCount: Int,
+        peakRejections: RideSpeedEvidencePeakRejectionSummary,
         peakEvidence: RidePeakSpeedEvidence?,
         telemetryBenchmark: TelemetryBenchmarkSummary,
         policy: RideObservedPeakQualityPolicy,
@@ -270,6 +332,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
         self.source = source
         self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
         self.foreignSourceCallbackCount = foreignSourceCallbackCount
+        self.peakRejections = peakRejections
         self.peakEvidence = peakEvidence
         self.telemetryBenchmark = telemetryBenchmark
         self.policy = policy
@@ -329,11 +392,49 @@ public extension RideSpeedEvidenceSessionSnapshot {
             source: source,
             beganAfterKnownObservationGap: beganAfterKnownObservationGap,
             foreignSourceCallbackCount: foreignSourceCallbackCount,
+            peakRejections: peakRejections,
             peakEvidence: peakEvidence,
             telemetryBenchmark: telemetryBenchmark,
             policy: policy,
             telemetryQuality: telemetryQuality,
             failures: failures
+        )
+    }
+}
+
+private struct RideSpeedEvidencePeakRejectionAccumulator: Sendable {
+    private var nonAuthoritativeSampleCount = 0
+    private var sourceMismatchSampleCount = 0
+    private var nonIncreasingTimestampCount = 0
+    private var nonFiniteDerivedSpeedCount = 0
+    private var speedAccuracyUnavailableCount = 0
+    private var speedAccuracyExceededCount = 0
+
+    mutating func record(_ rejection: PeakSpeedRecordRejection) {
+        switch rejection {
+        case .nonAuthoritativeSample:
+            nonAuthoritativeSampleCount += 1
+        case .sourceMismatch:
+            sourceMismatchSampleCount += 1
+        case .nonIncreasingTimestamp:
+            nonIncreasingTimestampCount += 1
+        case .nonFiniteDerivedSpeed:
+            nonFiniteDerivedSpeedCount += 1
+        case .speedAccuracyUnavailable:
+            speedAccuracyUnavailableCount += 1
+        case .speedAccuracyExceeded:
+            speedAccuracyExceededCount += 1
+        }
+    }
+
+    var summary: RideSpeedEvidencePeakRejectionSummary {
+        RideSpeedEvidencePeakRejectionSummary(
+            nonAuthoritativeSampleCount: nonAuthoritativeSampleCount,
+            sourceMismatchSampleCount: sourceMismatchSampleCount,
+            nonIncreasingTimestampCount: nonIncreasingTimestampCount,
+            nonFiniteDerivedSpeedCount: nonFiniteDerivedSpeedCount,
+            speedAccuracyUnavailableCount: speedAccuracyUnavailableCount,
+            speedAccuracyExceededCount: speedAccuracyExceededCount
         )
     }
 }
