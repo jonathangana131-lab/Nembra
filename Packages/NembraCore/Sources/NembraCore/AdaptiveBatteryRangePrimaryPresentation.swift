@@ -69,15 +69,15 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
         estimate: AdaptiveBatteryRangeEstimate?,
         dataAvailability: VehicleDataAvailability
     ) -> AdaptiveRangePrimaryPresentationDecision {
-        switch dataAvailability {
-        case .unavailable:
+        // If there is no confirmed vehicle data at all, any attached range is stale or
+        // otherwise detached from a legitimate vehicle snapshot. Availability wins.
+        if dataAvailability == .unavailable {
             return .unavailable(.vehicleDataUnavailable)
-        case .retained:
-            return .unavailable(.retainedVehicleDataRequiresQualifier)
-        case .live:
-            break
         }
 
+        // Retained status only explains why an otherwise-usable range is withheld.
+        // Do not claim a value merely needs a "last known" qualifier when there is no
+        // estimate to qualify or its presentation number is malformed.
         guard let estimate else {
             return .unavailable(.noEstimate)
         }
@@ -85,6 +85,10 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
         guard estimate.presentedRemainingMeters.isFinite,
               estimate.presentedRemainingMeters >= 0 else {
             return .unavailable(.invalidPresentedRange)
+        }
+
+        if dataAvailability == .retained {
+            return .unavailable(.retainedVehicleDataRequiresQualifier)
         }
 
         // Estimated SoC is a stronger truth qualifier than whether the range model is
