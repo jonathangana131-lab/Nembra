@@ -347,10 +347,11 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
             let probe = try decoder.decode(SchemaProbe.self, from: data)
             switch probe.schemaVersion {
             case Self.schemaVersion:
-                // Current schema must explicitly carry the field. The nested
-                // models remain tolerant so legacy history/checkpoint payloads
-                // can decode, but a v2 journal that loses this field is corrupt
-                // rather than being silently reclassified as legacy unknown.
+                // Current schema must explicitly carry a non-null valid field.
+                // The nested models remain tolerant so legacy history/checkpoint
+                // payloads can decode, but a v2 journal with missing, null, or
+                // malformed provenance is corrupt rather than being silently
+                // reclassified as legacy unknown.
                 guard currentEnvelopeCarriesTransportGapEvidence(data) else {
                     return .corrupt
                 }
@@ -391,17 +392,24 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
             guard let value = checkpoint["inProgress"] as? [String: Any] else {
                 return false
             }
-            return value["transportGapEvidence"] != nil
+            return carriesValidTransportGapEvidence(value)
 
         case "completedPendingCommit":
             guard let value = checkpoint["completedPendingCommit"] as? [String: Any] else {
                 return false
             }
-            return value["transportGapEvidence"] != nil
+            return carriesValidTransportGapEvidence(value)
 
         default:
             return false
         }
+    }
+
+    private func carriesValidTransportGapEvidence(_ value: [String: Any]) -> Bool {
+        guard let rawValue = value["transportGapEvidence"] as? String else {
+            return false
+        }
+        return RideTransportGapEvidence(rawValue: rawValue) != nil
     }
 
     private func rejectUnsupportedSchema(_ slots: SlotRead...) throws {
