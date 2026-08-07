@@ -12,7 +12,9 @@ Nembra now has an explicit app launch path for the existing `ES80PassiveCaptureR
 
 This is research tooling, not production scooter control. The normal app launch remains the default and starts the existing `AppRuntime` exactly as before. The research launch deliberately does **not** start that runtime.
 
-In Debug builds, either of these selects the passive capture shell:
+For normal physical use in Xcode, select the shared **Nembra ES80 Research** scheme and Run. That scheme builds the existing `Nembra.app` in Debug and supplies `--es80-passive-capture`; it does not create a second app or target.
+
+The Debug app also accepts either selector directly when automation needs it:
 
 - launch argument: `--es80-passive-capture`
 - environment: `NEMBRA_ES80_PASSIVE_CAPTURE=1`
@@ -64,8 +66,8 @@ The UI test does not tap **Start scan**, connect to a peripheral, manufacture Co
 
 Use the parent runbook's smallest first action; do not jump directly to field decoding:
 
-1. install the accepted Debug build on the iPhone 12 / iOS 27 target;
-2. launch Nembra with `--es80-passive-capture`;
+1. install/run the accepted Debug build on the iPhone 12 / iOS 27 target by selecting the shared **Nembra ES80 Research** scheme;
+2. verify the app opens the **ES80 Capture** research surface and still displays **Passive evidence only**;
 3. keep the ES80 powered on, stationary, charger state noted, and do not enable any unknown command path;
 4. tap **Start scan** with duplicate-advertisement capture off;
 5. physically correlate the likely scooter candidate, then explicitly choose **Select & connect** for that candidate;
