@@ -19,7 +19,7 @@ struct PassiveBluetoothStockAppMarkerReceiptTests {
             note: "Operator submitted while observing the stock app"
         )
         let receiptUptime: UInt64 = 8_765_432_100
-        let receiptDate = Date(timeIntervalSince1970: 1_786_123_456.789)
+        let receiptDate = Date(timeIntervalSince1970: 1_786_123_456)
 
         var session = try PassiveBluetoothCaptureSession(
             vehicleIdentity: es80,
