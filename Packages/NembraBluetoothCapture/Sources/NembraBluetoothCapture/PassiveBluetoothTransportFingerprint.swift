@@ -10,16 +10,8 @@ public enum PassiveBluetoothTransportCandidateFamily: String, CaseIterable, Send
 }
 
 public enum PassiveBluetoothTransportCandidateStrength: Int, Comparable, Sendable {
-    /// Candidate service appeared in an advertisement/service-data key or GATT
-    /// discovery, but expected characteristic-family evidence is absent.
     case serviceObserved = 1
-
-    /// Candidate service plus at least one characteristic from the researched
-    /// family appeared in discovered GATT evidence.
     case characteristicFamilyObserved = 2
-
-    /// Candidate service plus both primary data-path characteristics researched
-    /// for that family appeared. This is still not target protocol proof.
     case expectedDataPathObserved = 3
 
     public static func < (
@@ -113,9 +105,6 @@ public enum PassiveBluetoothTransportFingerprint {
         )
     ]
 
-    /// Produces one report per physically observed CoreBluetooth peripheral so
-    /// advertisements from unrelated nearby devices can never contaminate a
-    /// selected scooter's candidate transport fingerprint.
     public static func analyzeAll(
         _ session: PassiveBluetoothCaptureSession
     ) -> [PassiveBluetoothTransportFingerprintReport] {
@@ -124,17 +113,11 @@ public enum PassiveBluetoothTransportFingerprint {
             .map { analyze(session, peripheralIdentifier: $0) }
     }
 
-    /// Summarizes raw advertisement/GATT identifiers for exactly one peripheral
-    /// without decoding payloads or choosing a single candidate-family winner.
-    /// Multiple candidate families can match and an empty match list is valid.
-    /// Connection lifecycle alone establishes no GATT topology. A subscription
-    /// record may establish only the exact service/characteristic path it names.
-    ///
-    /// The report's identifier sets are descriptive "ever observed" evidence.
-    /// Candidate strength is stricter: one continuity segment must contain the
-    /// evidence required for that strength. Evidence separated by a disconnect,
-    /// service invalidation, or other continuity break is never synthesized into
-    /// a stronger topology that was not observed together.
+    /// Aggregate identifier sets are descriptive ever-observed evidence. Match
+    /// strength must come from one uninterrupted continuity segment for this
+    /// exact peripheral. Structured disconnects from unrelated imported devices
+    /// do not fragment the selected peripheral; generic interruptions remain a
+    /// global observation gap because they carry no peripheral identity.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
@@ -144,7 +127,10 @@ public enum PassiveBluetoothTransportFingerprint {
         var segments: [EvidenceAccumulator] = []
 
         for record in session.records {
-            if record.event.breaksByteContinuity {
+            if breaksContinuity(
+                record.event,
+                peripheralIdentifier: peripheralIdentifier
+            ) {
                 if !currentSegment.isEmpty {
                     segments.append(currentSegment)
                 }
@@ -214,8 +200,6 @@ public enum PassiveBluetoothTransportFingerprint {
 
         case let .descriptor(observation)
             where observation.peripheralIdentifier == peripheralIdentifier:
-            // Descriptor evidence confirms the parent GATT path existed even
-            // if a partial/imported capture lacks a separate service record.
             let service = normalize(observation.serviceUUID)
             evidence.services.insert(service)
             evidence.characteristicsByService[service, default: []]
@@ -223,8 +207,6 @@ public enum PassiveBluetoothTransportFingerprint {
 
         case let .subscription(observation)
             where observation.peripheralIdentifier == peripheralIdentifier:
-            // Subscription-state evidence names one exact observed GATT path.
-            // It does not say anything about application protocol meaning.
             let service = normalize(observation.serviceUUID)
             evidence.services.insert(service)
             evidence.characteristicsByService[service, default: []]
@@ -232,7 +214,6 @@ public enum PassiveBluetoothTransportFingerprint {
 
         case let .value(observation)
             where observation.peripheralIdentifier == peripheralIdentifier:
-            // Same rule for partial captures containing value evidence.
             let service = normalize(observation.serviceUUID)
             evidence.services.insert(service)
             evidence.characteristicsByService[service, default: []]
@@ -284,6 +265,21 @@ public enum PassiveBluetoothTransportFingerprint {
             observedServiceUUIDs: [definition.serviceUUID],
             observedCharacteristicUUIDs: matchingCharacteristics
         )
+    }
+
+    private static func breaksContinuity(
+        _ event: PassiveBluetoothCaptureEvent,
+        peripheralIdentifier: String
+    ) -> Bool {
+        switch event {
+        case let .connection(observation):
+            return observation.state == .disconnected
+                && observation.peripheralIdentifier == peripheralIdentifier
+        case .interruption:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func observedPeripheralIdentifiers(
