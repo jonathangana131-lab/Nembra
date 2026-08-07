@@ -74,12 +74,9 @@ struct DashboardModePersonality: Equatable {
 /// Truth state for controls that are safe to expose only after Nembra has
 /// explicit evidence that the connected vehicle is stopped.
 ///
-/// A missing, negative, or non-finite speed is not zero. The legacy
-/// `VehicleState` does not yet carry field-specific speed freshness, so this
-/// resolver deliberately makes only the strongest claim the current app model
-/// can support: a connected, finite, nonnegative speed may prove stopped or
-/// moving; absent/invalid speed remains unavailable. A future field-specific
-/// speed authority can tighten this input without changing the UI semantics.
+/// A missing, negative, or non-finite speed is not zero. The speed passed here
+/// has already been screened by the control gate's connection-continuity model;
+/// this resolver only classifies evidence and never manufactures it.
 enum DashboardStoppedControlAvailability: Equatable {
     case notConnected
     case speedUnavailable
@@ -98,6 +95,85 @@ enum DashboardStoppedControlAvailability: Equatable {
         }
 
         return speedKilometersPerHour < 0.5 ? .confirmedStopped : .moving
+    }
+}
+
+/// A low-frequency truth gate around the right-rail controls.
+///
+/// It deliberately owns a second raw-speed subscription instead of promoting
+/// the 60 Hz rendered speed readout into command/UI evidence. `SpeedInstrumentModel`
+/// is reused only for its accepted raw measurement and connection-continuity
+/// semantics; interpolation remains disabled here and no TimelineView is created.
+/// This keeps high-frequency visual state isolated while ensuring a connection
+/// gap invalidates cached stop evidence until a fresh authoritative speed sample
+/// arrives. A gap that happened before this surface existed still requires the
+/// deeper app/domain speed-currentness bridge tracked outside this view.
+private struct DashboardStoppedControlsGate<StoppedControls: View>: View {
+    @Environment(VehicleStore.self) private var vehicle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var speedEvidenceModel = SpeedInstrumentModel()
+
+    let stoppedControls: StoppedControls
+
+    var body: some View {
+        Group {
+            switch availability {
+            case .confirmedStopped:
+                stoppedControls
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            case .moving:
+                Text("Controls available when stopped")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("dashboard.controls-moving-message")
+            case .speedUnavailable:
+                Text("Controls unavailable until live speed is known")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
+            case .notConnected:
+                EmptyView()
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.20),
+            value: availability
+        )
+        .task {
+            speedEvidenceModel.setConnectionContinuityActive(vehicle.state.connection == .connected)
+            let stream = await vehicle.speedTelemetryUpdates()
+            speedEvidenceModel.start(stream: stream)
+        }
+        .onChange(of: vehicle.state.connection, initial: true) { _, connection in
+            speedEvidenceModel.setConnectionContinuityActive(connection == .connected)
+        }
+        .onDisappear {
+            speedEvidenceModel.stop()
+        }
+    }
+
+    private var availability: DashboardStoppedControlAvailability {
+        DashboardStoppedControlAvailability.resolved(
+            connection: vehicle.state.connection,
+            speedKilometersPerHour: acceptedSpeedKilometersPerHour
+        )
+    }
+
+    private var acceptedSpeedKilometersPerHour: Double? {
+        if let measured = DashboardSpeedInstrumentView.validatedKilometersPerHour(
+            speedEvidenceModel.latestMeasuredKilometersPerHour
+        ) {
+            return measured
+        }
+
+        return DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: vehicle.state.speedKilometersPerHour,
+            isRetained: vehicle.state.dataAvailability == .retained,
+            isConnected: vehicle.state.connection == .connected,
+            permitsLiveConfirmedFallback: speedEvidenceModel.permitsLiveConfirmedFallback
+        )
     }
 }
 
@@ -202,37 +278,14 @@ struct DashboardView: View {
         }
     }
 
-    @ViewBuilder
     private func contextRail(personality: DashboardModePersonality) -> some View {
         VStack(alignment: .trailing, spacing: 14) {
             modeReadout(personality: personality)
 
             Spacer(minLength: 0)
 
-            switch stoppedControlAvailability {
-            case .confirmedStopped:
-                stoppedControls
-                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            case .moving:
-                Text("Controls available when stopped")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("dashboard.controls-moving-message")
-            case .speedUnavailable:
-                Text("Controls unavailable until live speed is known")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
-            case .notConnected:
-                EmptyView()
-            }
+            DashboardStoppedControlsGate(stoppedControls: stoppedControls)
         }
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.20),
-            value: stoppedControlAvailability
-        )
     }
 
     private func modeReadout(personality: DashboardModePersonality) -> some View {
@@ -365,13 +418,6 @@ struct DashboardView: View {
         Binding(
             get: { vehicle.lastErrorMessage != nil },
             set: { if !$0 { vehicle.lastErrorMessage = nil } }
-        )
-    }
-
-    private var stoppedControlAvailability: DashboardStoppedControlAvailability {
-        DashboardStoppedControlAvailability.resolved(
-            connection: vehicle.state.connection,
-            speedKilometersPerHour: vehicle.state.speedKilometersPerHour
         )
     }
 
