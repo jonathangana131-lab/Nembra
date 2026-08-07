@@ -226,6 +226,30 @@ struct AccelerationEvidenceSessionTests {
         #expect(result.timingEvidenceSampleCount == 4)
     }
 
+    @Test("green stream statistics cannot hide a shallow retained timing trace")
+    func timingTraceMustMeetQualitySampleDepth() throws {
+        var session = AccelerationEvidenceSession(policy: try policy())
+        for evidence in try [
+            sample(metersPerSecond: 0, uptimeNanoseconds: 1_000_000_000),
+            sample(metersPerSecond: 0.1, uptimeNanoseconds: 1_100_000_000),
+            sample(metersPerSecond: 0.2, uptimeNanoseconds: 1_200_000_000),
+            sample(metersPerSecond: 10, uptimeNanoseconds: 1_400_000_000)
+        ] {
+            _ = session.record(evidence)
+        }
+
+        let readiness = session.snapshot.readiness()
+        let result = try #require(readiness.result)
+
+        #expect(readiness.telemetryQuality.isQualified)
+        #expect(result.timingEvidenceSampleCount == 2)
+        #expect(!readiness.isReady)
+        #expect(readiness.failures.contains(.insufficientTimingEvidenceSamples(
+            required: 4,
+            actual: 2
+        )))
+    }
+
     @Test("foreign providers coexist without contaminating the selected-source benchmark")
     func foreignSourceIsIgnoredBeforeBothEvidenceConsumers() throws {
         var session = AccelerationEvidenceSession(policy: try policy())
