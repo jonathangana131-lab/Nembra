@@ -193,13 +193,13 @@ struct TuyaCandidateDPAnalysisTests {
         let rawEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(1, 0x00, []), policy: policy())
         #expect(
             rawEmpty.records[0].shapeFinding
-                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...256, actualLength: 0)
+                == .unexpectedVariableKnownTypeLength(.raw, minimumLength: 1, documentedMaximumLength: nil, actualLength: 0)
         )
 
         let stringEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(2, 0x03, []), policy: policy())
         #expect(
             stringEmpty.records[0].shapeFinding
-                == .variableLengthKnownType(.string, allowedLengthRange: 0...255)
+                == .variableLengthKnownType(.string, minimumLength: 0, documentedMaximumLength: 255)
         )
 
         let raw256 = try TuyaCandidateDPPayloadParser.parse(
@@ -208,7 +208,7 @@ struct TuyaCandidateDPAnalysisTests {
         )
         #expect(
             raw256.records[0].shapeFinding
-                == .variableLengthKnownType(.raw, allowedLengthRange: 1...300)
+                == .variableLengthKnownType(.raw, minimumLength: 1, documentedMaximumLength: nil)
         )
         #expect(raw256.records[0].valueBytes.count == 256)
 
@@ -218,7 +218,7 @@ struct TuyaCandidateDPAnalysisTests {
         )
         #expect(
             raw1024.records[0].shapeFinding
-                == .variableLengthKnownType(.raw, allowedLengthRange: 1...1_024)
+                == .variableLengthKnownType(.raw, minimumLength: 1, documentedMaximumLength: nil)
         )
         #expect(raw1024.records[0].valueBytes.count == 1_024)
 
@@ -228,7 +228,7 @@ struct TuyaCandidateDPAnalysisTests {
         )
         #expect(
             oversizedString.records[0].shapeFinding
-                == .unexpectedVariableKnownTypeLength(.string, allowedLengthRange: 0...255, actualLength: 256)
+                == .unexpectedVariableKnownTypeLength(.string, minimumLength: 0, documentedMaximumLength: 255, actualLength: 256)
         )
     }
 
