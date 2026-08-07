@@ -14,7 +14,7 @@ struct UnverifiedScooterServiceTests {
         #expect(state.rideMode == nil)
     }
 
-    @Test("connect cannot fabricate success or fresh vehicle evidence before Bluetooth identity is verified")
+    @Test("connect preserves the existing unavailable state timestamp")
     func connectStaysBlocked() async {
         let service = UnverifiedScooterService()
         let before = await service.snapshot()
@@ -27,7 +27,7 @@ struct UnverifiedScooterServiceTests {
         #expect(after.connectionIssue == .unsupportedConfiguration)
     }
 
-    @Test("disconnect remains an idempotent local republish without fresh vehicle evidence")
+    @Test("disconnect preserves the existing unavailable state timestamp")
     func disconnectPreservesState() async {
         let service = UnverifiedScooterService()
         let before = await service.snapshot()
