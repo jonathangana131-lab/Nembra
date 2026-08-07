@@ -283,6 +283,37 @@ final class NembraAppTests: XCTestCase {
         XCTAssertFalse(model.isAnimationActive)
     }
 
+    @MainActor
+    func testDashboardSpeedDisplayRejectsMalformedValuesInsteadOfManufacturingZero() throws {
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: nil, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -0.01, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: .nan, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: .infinity, usesMetric: true))
+        XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -.infinity, usesMetric: true))
+
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -0.0, usesMetric: true)),
+            0,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: 10, usesMetric: false)),
+            6.213_71,
+            accuracy: 0.000_1
+        )
+    }
+
+    @MainActor
+    func testDashboardReadyStatusRequiresKnownFiniteNonnegativeSpeed() {
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: nil), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: -0.01), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: .nan), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: .infinity), "NO LIVE SPEED")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0), "READY")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0.49), "READY")
+        XCTAssertEqual(DashboardSpeedInstrumentView.liveSpeedStatusText(kilometersPerHour: 0.5), "RIDING")
+    }
+
     private func speedSample(
         kilometersPerHour: Double,
         uptimeNanoseconds: UInt64
