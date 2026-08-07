@@ -62,10 +62,10 @@ public enum AccelerationAttemptInterruptionResult: Equatable, Sendable {
         actual: AccelerationAttemptGeneration
     )
     case ignoredAfterTerminalEvidence
-    /// A real lifecycle/connection event was delivered, but the selected speed
-    /// source had not contributed any observation yet, so the underlying evidence
-    /// session intentionally has nothing to invalidate or continuity-break.
-    case ignoredBeforeSelectedSourceEvidence(runState: AccelerationRunState)
+    /// A real lifecycle/connection event was delivered, but the underlying
+    /// evidence snapshot remained exactly unchanged. The owner reports only that
+    /// observable fact instead of guessing a private lower-layer reason.
+    case ignoredWithoutEvidenceChange(runState: AccelerationRunState)
     case applied(runState: AccelerationRunState)
 }
 
@@ -180,9 +180,8 @@ public struct AccelerationAttemptOwner: Sendable {
 
     /// Maps a real connection/lifecycle/operator interruption onto exactly one
     /// attempt generation. Stale interruption callbacks are ignored rather than
-    /// terminating a newer attempt. A non-cancellation interruption before any
-    /// selected-source observation is surfaced as an explicit evidence no-op;
-    /// callers are never told evidence changed when the underlying session did not.
+    /// terminating a newer attempt. If the lower evidence session does not change,
+    /// the owner reports that exact no-op rather than inventing a reason or effect.
     @discardableResult
     public mutating func interrupt(
         _ interruption: AccelerationRunInterruption,
@@ -208,7 +207,7 @@ public struct AccelerationAttemptOwner: Sendable {
         current = attempt
 
         guard snapshotAfter != snapshotBefore else {
-            return .ignoredBeforeSelectedSourceEvidence(runState: runState)
+            return .ignoredWithoutEvidenceChange(runState: runState)
         }
         return .applied(runState: runState)
     }
