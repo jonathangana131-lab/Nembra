@@ -31,12 +31,30 @@ struct UnverifiedScooterServiceTests {
         #expect(await iterator.next() == nil)
     }
 
-    @Test("commands remain unavailable while hardware protocol is unverified")
-    func commandsStayUnavailable() async {
+    @Test("commands report unverified configuration without mutating vehicle state")
+    func commandsStayUnavailableForTruthfulReason() async {
         let service = UnverifiedScooterService()
-        await #expect(throws: ScooterCommandError.disconnected) {
+        let before = await service.snapshot()
+
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setHeadlight(true)
         }
-        #expect((await service.snapshot()).isHeadlightOn == nil)
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
+            try await service.setLocked(true)
+        }
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
+            try await service.setCruise(true)
+        }
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
+            try await service.setRideMode(.sport)
+        }
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
+            try await service.setStartMode(.zeroStart)
+        }
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
+            try await service.setSpeedLimit(kilometersPerHour: 20, slot: .limit1)
+        }
+
+        #expect(await service.snapshot() == before)
     }
 }
