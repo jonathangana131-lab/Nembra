@@ -15,6 +15,19 @@ struct SpeedEvidenceLiveTruthIdentityTests {
         }
     }
 
+    private func expectFailure(
+        _ expected: SpeedEvidenceLiveTruthRejection,
+        _ result: Result<Void, SpeedEvidenceLiveTruthRejection>,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        switch result {
+        case .success:
+            Issue.record("Expected failure \(expected)", sourceLocation: sourceLocation)
+        case let .failure(actual):
+            #expect(actual == expected, sourceLocation: sourceLocation)
+        }
+    }
+
     @Test("fresh owners cannot mint equal tokens from identical public counters")
     func freshOwnersHaveDistinctOpaqueIdentity() throws {
         var first = SpeedEvidenceLiveTruth()
@@ -74,11 +87,10 @@ struct SpeedEvidenceLiveTruthIdentityTests {
             receivedAtDate: Date(timeIntervalSince1970: 1_700_000_000)
         )
 
-        let rejected = recreated.accept(
-            delayedSample,
-            attributedTo: predecessorToken
+        expectFailure(
+            .continuityTokenMismatch,
+            recreated.accept(delayedSample, attributedTo: predecessorToken)
         )
-        #expect(rejected == .failure(.continuityTokenMismatch))
         #expect(recreated.availability == .unavailable)
 
         expectSuccess(recreated.accept(delayedSample, attributedTo: recreatedToken))
