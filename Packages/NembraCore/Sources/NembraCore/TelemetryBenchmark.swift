@@ -3,6 +3,11 @@ import Foundation
 public enum TelemetryBenchmarkRejection: Equatable, Sendable {
     case sourceMismatch
     case nonMonotonicTimestamp
+    /// The raw SI sample was finite, but a unit conversion required by this
+    /// benchmark overflowed. The packet is not allowed to poison resolution
+    /// statistics with infinity/NaN, and no arbitrary scooter speed cap is
+    /// invented to make it fit.
+    case nonFiniteDerivedSpeed
 }
 
 public enum TelemetryBenchmarkRecordResult: Equatable, Sendable {
@@ -67,6 +72,17 @@ public struct TelemetryBenchmarkCollector: Sendable {
             return .rejected(.nonMonotonicTimestamp)
         }
 
+        // `SpeedTelemetrySample` correctly stores SI speed and only requires the
+        // raw meters/second value to be finite. This benchmark additionally uses
+        // km/h for empirical resolution, so validate that derived representation
+        // before mutating any accepted-sample state. A rejected overflow behaves
+        // like missing benchmark evidence: the next valid packet spans the gap.
+        let speedKPH = sample.kilometersPerHour
+        guard speedKPH.isFinite, speedKPH >= 0 else {
+            rejectedSampleCount += 1
+            return .rejected(.nonFiniteDerivedSpeed)
+        }
+
         if firstUptimeNanoseconds == nil {
             firstUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         }
@@ -76,7 +92,6 @@ public struct TelemetryBenchmarkCollector: Sendable {
             intervalMoments.record(Double(intervalNanoseconds) / 1_000_000)
         }
 
-        let speedKPH = sample.kilometersPerHour
         if let previousSpeedKilometersPerHour {
             let delta = abs(speedKPH - previousSpeedKilometersPerHour)
             if delta <= 1e-9 {
