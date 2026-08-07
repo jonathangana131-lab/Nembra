@@ -8,8 +8,8 @@ import SwiftUI
 ///
 /// This view deliberately does not create a second evidence model. Selecting
 /// Start Capture invokes the controller's real target-session/connect boundary;
-/// Finish Capture freezes the controller's authoritative export while the phone
-/// is safely stopped, then ends the CoreBluetooth connection.
+/// Finish Capture prepares the controller's versioned export while the phone is
+/// safely stopped, then ends the CoreBluetooth connection.
 @MainActor
 struct ES80CaptureShellView: View {
     private enum Phase: Equatable {
@@ -20,6 +20,7 @@ struct ES80CaptureShellView: View {
         case connecting
         case preparingEvidence
         case capturing
+        case disconnectedCaptureReady
         case finishing
         case finished
         case failed(String)
@@ -288,7 +289,24 @@ struct ES80CaptureShellView: View {
                 Task { await finishCapture() }
             }
 
-            Text("Finish only after you are safely stopped. The export is frozen before Nembra ends the selected connection.")
+            Text("Finish only after you are safely stopped. The export is prepared before Nembra ends the selected connection.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+        case .disconnectedCaptureReady:
+            statePanel(
+                eyebrow: "CONNECTION ENDED",
+                title: "Evidence retained — finish when safely stopped",
+                message: "The selected target disconnected after finite setup had completed. Nembra retains that disconnect in this session. Do not reconnect inside this capture if you want a clean evidence boundary.",
+                symbol: "link"
+            )
+
+            primaryButton("Finish Capture", systemImage: "stop.circle") {
+                Task { await finishCapture() }
+            }
+
+            Text("If you are moving, ignore the phone. Return here and finish only after you are safely stopped.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -296,8 +314,8 @@ struct ES80CaptureShellView: View {
         case .finishing:
             statePanel(
                 eyebrow: "FINALIZING",
-                title: "Freezing the capture file",
-                message: "Nembra is preparing one immutable JSON artifact from the selected target session. Keep the app open until the share sheet appears.",
+                title: "Preparing the capture file",
+                message: "Nembra is preparing one versioned JSON artifact from the selected target session. Keep the app open until the share sheet appears.",
                 symbol: "doc.badge.clock"
             )
             ProgressView()
@@ -602,6 +620,9 @@ struct ES80CaptureShellView: View {
         case .connected:
             return controller.hasCompleteTargetEvidence ? .capturing : .preparingEvidence
         case .idle:
+            if controller.hasTargetSession, controller.hasCompleteTargetEvidence {
+                return .disconnectedCaptureReady
+            }
             if controller.isScanning {
                 return selectedCandidateIdentifier == nil ? .scanning : .candidateSelected
             }
@@ -618,7 +639,9 @@ struct ES80CaptureShellView: View {
     }
 
     private var canShowAdvancedConsole: Bool {
-        guard exportDocument == nil, !controller.isScanning else { return false }
+        guard exportDocument == nil,
+              !controller.isScanning,
+              !controller.hasCompleteTargetEvidence else { return false }
         if case .idle = controller.connectionPhase { return true }
         return false
     }
@@ -632,7 +655,8 @@ struct ES80CaptureShellView: View {
         case .connecting: "Connecting"
         case .preparingEvidence: "Verifying passive session"
         case .capturing: "Capture active"
-        case .finishing: "Freezing evidence"
+        case .disconnectedCaptureReady: "Connection ended — evidence retained"
+        case .finishing: "Preparing evidence"
         case .finished: "Capture complete"
         case .failed: "Capture failed closed"
         }
@@ -644,7 +668,7 @@ struct ES80CaptureShellView: View {
             .green
         case .failed:
             .red
-        case .bluetoothUnavailable, .connecting, .preparingEvidence, .finishing:
+        case .bluetoothUnavailable, .connecting, .preparingEvidence, .disconnectedCaptureReady, .finishing:
             .orange
         case .ready, .scanning, .candidateSelected:
             .white.opacity(0.72)
@@ -676,7 +700,7 @@ struct ES80CaptureShellView: View {
             "es80.capture.scan"
         case .candidateSelected:
             "es80.capture.start"
-        case .capturing:
+        case .capturing, .disconnectedCaptureReady:
             "es80.capture.finish"
         case .finished:
             "es80.capture.share"
