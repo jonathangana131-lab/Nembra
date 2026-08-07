@@ -1,16 +1,37 @@
 import Foundation
 
-/// App/session-owned generation for speed-evidence continuity.
+/// App/session-owned generation for speed-evidence connection continuity.
 ///
 /// This is not a scooter protocol identifier and does not prove a physical BLE
-/// session. A production adapter advances it whenever its accepted connection
-/// continuity changes so delayed evidence from an older app connection cannot be
-/// promoted into the current speed truth.
+/// session. A production source adapter advances it whenever its accepted
+/// connection continuity changes so delayed evidence from an older connection
+/// cannot be promoted into current speed truth.
 public struct SpeedEvidenceConnectionGeneration: RawRepresentable, Equatable, Hashable, Sendable {
     public let rawValue: UInt64
 
     public init(rawValue: UInt64) {
         self.rawValue = rawValue
+    }
+}
+
+/// Opaque source-attribution token for one uninterrupted speed-observation
+/// segment inside one app connection generation.
+///
+/// Tokens are issued only by `SpeedEvidenceLiveTruth`. A source adapter should
+/// retain the token that is current at the callback boundary and carry that exact
+/// token with any asynchronously delivered sample. After an explicit evidence
+/// gap, a new token is issued; queued callbacks carrying the previous token can
+/// no longer resurrect pre-gap evidence.
+public struct SpeedEvidenceContinuityToken: Equatable, Hashable, Sendable {
+    public let connectionGeneration: SpeedEvidenceConnectionGeneration
+    public let segmentSequence: UInt64
+
+    fileprivate init(
+        connectionGeneration: SpeedEvidenceConnectionGeneration,
+        segmentSequence: UInt64
+    ) {
+        self.connectionGeneration = connectionGeneration
+        self.segmentSequence = segmentSequence
     }
 }
 
@@ -44,21 +65,27 @@ public enum SpeedEvidenceLiveTruthRejection: Error, Equatable, Sendable {
     case staleConnectionGeneration
     case noActiveConnection
     case connectionGenerationMismatch
+    case noActiveEvidenceContinuity
+    case continuityTokenMismatch
+    case continuitySegmentExhausted
     case nonAuthoritativeSample
     case nonMonotonicReceipt
 }
 
 /// Pure state machine that separates a cached `VehicleState` speed number from
-/// speed evidence that is current for the active connection continuity.
+/// speed evidence that is current for the active connection and field-observation
+/// continuity.
 ///
 /// The model deliberately contains no guessed ES80 cadence or freshness timeout.
-/// A caller may mark an explicit evidence gap when its verified/injected policy
-/// says continuity was lost. Reconnect itself always demotes prior evidence to
-/// retained until a new accepted absolute sample arrives in the new generation.
+/// A caller may mark an explicit evidence gap only when it has legitimate source
+/// or lifecycle evidence that speed observation continuity was lost. Connection
+/// changes and explicit field gaps both demote prior evidence to retained until a
+/// newly source-attributed absolute measurement arrives.
 public struct SpeedEvidenceLiveTruth: Equatable, Sendable {
     public private(set) var availability: SpeedEvidenceAvailability = .unavailable
     public private(set) var activeConnectionGeneration: SpeedEvidenceConnectionGeneration?
     public private(set) var latestConnectionGeneration: SpeedEvidenceConnectionGeneration?
+    public private(set) var activeContinuityToken: SpeedEvidenceContinuityToken?
 
     private var lastAcceptedReceiptUptimeNanoseconds: UInt64?
 
@@ -66,10 +93,11 @@ public struct SpeedEvidenceLiveTruth: Equatable, Sendable {
 
     /// Starts or reasserts a connected app-session generation.
     ///
-    /// Reasserting the current generation is idempotent. A strictly newer
-    /// generation creates a continuity boundary and demotes any prior live sample
-    /// to retained. Older generations fail closed so late connection callbacks
-    /// cannot resurrect old speed authority.
+    /// Reasserting the current active generation is idempotent and preserves the
+    /// current field-continuity token. A strictly newer generation creates a new
+    /// field-continuity segment and demotes any prior live sample to retained.
+    /// Older generations fail closed so late connection callbacks cannot
+    /// resurrect old speed authority.
     @discardableResult
     public mutating func beginConnectedGeneration(
         _ generation: SpeedEvidenceConnectionGeneration
@@ -86,18 +114,26 @@ public struct SpeedEvidenceLiveTruth: Equatable, Sendable {
                 guard activeConnectionGeneration == generation else {
                     return .failure(.staleConnectionGeneration)
                 }
+                guard activeContinuityToken != nil else {
+                    return .failure(.noActiveEvidenceContinuity)
+                }
                 return .success(())
             }
         }
 
         latestConnectionGeneration = generation
         activeConnectionGeneration = generation
+        activeContinuityToken = SpeedEvidenceContinuityToken(
+            connectionGeneration: generation,
+            segmentSequence: 1
+        )
         demoteToRetained()
         return .success(())
     }
 
     /// Ends the active connection generation without manufacturing a zero-speed
-    /// sample. The last accepted sample remains retained when one exists.
+    /// sample. The last accepted sample remains retained when one exists, and all
+    /// source tokens from the ended generation become unusable.
     @discardableResult
     public mutating func endConnectedGeneration(
         _ generation: SpeedEvidenceConnectionGeneration
@@ -113,45 +149,71 @@ public struct SpeedEvidenceLiveTruth: Equatable, Sendable {
         }
 
         self.activeConnectionGeneration = nil
+        activeContinuityToken = nil
         demoteToRetained()
         return .success(())
     }
 
-    /// Marks field-specific observation continuity as interrupted while the
-    /// transport may remain connected. This is the explicit hook for a caller's
-    /// verified/injected freshness or telemetry-gap policy; the model itself does
-    /// not invent a timeout.
+    /// Marks one explicit field-observation gap and rotates the source token.
+    ///
+    /// The caller must supply the token that was current at the boundary where
+    /// the gap was established. This prevents a delayed/stale gap callback from
+    /// demoting a newer segment. Samples already attributed to the old token may
+    /// still be delivered later, but `accept` will reject them mechanically.
+    ///
+    /// This operation does not guess a timeout and does not synthesize a receipt
+    /// timestamp. The source/lifecycle layer owns the evidence that a real gap
+    /// occurred; this type only preserves that boundary.
     @discardableResult
     public mutating func markEvidenceGap(
-        in generation: SpeedEvidenceConnectionGeneration
+        after continuityToken: SpeedEvidenceContinuityToken
     ) -> Result<Void, SpeedEvidenceLiveTruthRejection> {
-        guard let activeConnectionGeneration else {
+        guard activeConnectionGeneration != nil else {
             return .failure(.noActiveConnection)
         }
-        guard activeConnectionGeneration == generation else {
-            return .failure(.connectionGenerationMismatch)
+        guard let activeContinuityToken else {
+            return .failure(.noActiveEvidenceContinuity)
+        }
+        guard continuityToken == activeContinuityToken else {
+            return .failure(.continuityTokenMismatch)
         }
 
+        guard activeContinuityToken.segmentSequence < UInt64.max else {
+            // A real gap has still been observed. Retire live authority even
+            // though no further segment can be represented in this generation.
+            demoteToRetained()
+            self.activeContinuityToken = nil
+            return .failure(.continuitySegmentExhausted)
+        }
+
+        self.activeContinuityToken = SpeedEvidenceContinuityToken(
+            connectionGeneration: activeContinuityToken.connectionGeneration,
+            segmentSequence: activeContinuityToken.segmentSequence + 1
+        )
         demoteToRetained()
         return .success(())
     }
 
-    /// Accepts one current absolute speed measurement for the active generation.
+    /// Accepts one current absolute speed measurement attributed at the source
+    /// callback boundary to an exact connection + field-continuity token.
     ///
-    /// The generation is supplied separately from the sample because the existing
-    /// raw `SpeedTelemetrySample` intentionally models measurement provenance, not
-    /// app connection continuity. This prevents a delayed pre-reconnect sample
-    /// from becoming live merely because transport is currently connected.
+    /// The opaque token is intentionally stronger than reading "whatever
+    /// connection is current now" in a later asynchronous consumer. A delayed
+    /// pre-reconnect or pre-gap callback retains its old token and therefore
+    /// cannot become live after continuity advances.
     @discardableResult
     public mutating func accept(
         _ sample: SpeedTelemetrySample,
-        in generation: SpeedEvidenceConnectionGeneration
+        attributedTo continuityToken: SpeedEvidenceContinuityToken
     ) -> Result<Void, SpeedEvidenceLiveTruthRejection> {
-        guard let activeConnectionGeneration else {
+        guard activeConnectionGeneration != nil else {
             return .failure(.noActiveConnection)
         }
-        guard activeConnectionGeneration == generation else {
-            return .failure(.connectionGenerationMismatch)
+        guard let activeContinuityToken else {
+            return .failure(.noActiveEvidenceContinuity)
+        }
+        guard continuityToken == activeContinuityToken else {
+            return .failure(.continuityTokenMismatch)
         }
         guard sample.isAuthoritativeMeasurement else {
             return .failure(.nonAuthoritativeSample)
