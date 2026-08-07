@@ -25,8 +25,8 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
 public actor SimulatedScooterService: ScooterService {
     public nonisolated let profile: VehicleProfile
 
-    /// Representative values from the verified three-slot schema. These are
-    /// simulation fixtures, not a claim that a slot corresponds to a ride mode.
+    /// Synthetic QA values that exercise all three limiter slots without
+    /// attributing their ranges or mode relationship to any physical scooter.
     private static let representativeSpeedLimits: [SpeedLimitSlot: Int] = [
         .limit1: 12,
         .limit2: 18,
@@ -200,7 +200,7 @@ public actor SimulatedScooterService: ScooterService {
     private let commandAcknowledgementGate: (@Sendable () async throws -> Void)?
 
     public init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandLatencyNanoseconds: UInt64 = 120_000_000
     ) {
@@ -214,7 +214,7 @@ public actor SimulatedScooterService: ScooterService {
     /// on scheduler-sensitive wall-clock sleeps. Kept internal so production
     /// callers continue to use the real simulated latency contract above.
     init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandAcknowledgementGate: @escaping @Sendable () async throws -> Void
     ) {
