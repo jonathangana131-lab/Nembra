@@ -65,6 +65,49 @@ struct PassiveCoreBluetoothAcquisitionOperationLedgerTests {
         }
         #expect(ledger.isPending(oldOperation))
         #expect(ledger.pendingOperationCount == 1)
+
+        try ledger.complete(oldOperation)
+        #expect(ledger.isReady)
+        #expect(ledger.pendingOperationCount == 0)
+    }
+
+    @Test
+    func rejectedSourcePhaseLeavesLedgerUnchanged() throws {
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.noTarget)
+        ) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.phase == .noTarget)
+        #expect(ledger.pendingOperationCount == 0)
+        #expect(!ledger.isPending(.services))
+
+        ledger.beginTargetSession()
+        ledger.finishWithoutGattAcquisition()
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.terminalWithoutGattAcquisition)
+        ) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.phase == .terminalWithoutGattAcquisition)
+        #expect(ledger.pendingOperationCount == 0)
+        #expect(!ledger.isPending(.services))
+    }
+
+    @Test
+    func completedLedgerMayStartQuiescentReacquisition() throws {
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+        ledger.beginTargetSession()
+        try ledger.beginAcquisition()
+        try ledger.complete(.services)
+        #expect(ledger.isReady)
+
+        try ledger.beginAcquisition()
+        #expect(ledger.phase == .acquiring)
+        #expect(ledger.isPending(.services))
+        #expect(ledger.pendingOperationCount == 1)
     }
 
     @Test
