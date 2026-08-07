@@ -1,10 +1,5 @@
 import Foundation
 
-/// Fail-closed validation for offline correlation between caller-bound Tuya DP
-/// candidates and human-observed stock-app reference markers.
-///
-/// Correlation is research prioritization only. None of these errors or outputs
-/// establish an AOVOPRO ES80 DP meaning, unit, scale, signedness, or cadence.
 public enum TuyaCandidateDPMarkerCorrelationError: Error, Equatable, Sendable {
     case emptyFieldLabel
     case emptyDisplayedReference
@@ -22,12 +17,9 @@ public enum TuyaCandidateDPMarkerCorrelationError: Error, Equatable, Sendable {
     case nonMonotonicMarkerChronology(previousIndex: Int, currentIndex: Int)
 }
 
-/// Exact research scope for one DP-correlation pass.
-///
-/// A pass is deliberately limited to one exact GATT value stream, one caller-
-/// supplied byte-continuity generation, and one explicit Tuya DP length-width
-/// hypothesis. A caller must start another pass rather than mixing these
-/// boundaries until they happen to produce a stronger-looking result.
+/// One deliberately narrow correlation scope. Mixing streams, continuity
+/// generations, or DP length-width hypotheses fails closed instead of improving
+/// a candidate by combining incompatible evidence.
 public struct TuyaCandidateDPMarkerCorrelationScope: Equatable, Sendable {
     public let fieldLabel: String
     public let streamIdentity: TuyaCandidateValueStreamIdentity
@@ -50,10 +42,9 @@ public struct TuyaCandidateDPMarkerCorrelationScope: Equatable, Sendable {
     }
 }
 
-/// One human-observed stock-app value/reference inserted into the same monotonic
-/// capture timeline. The text is intentionally preserved exactly as supplied.
-/// `"41.3 V"` and `"41.30 V"` are therefore distinct reference anchors; this
-/// layer does not normalize units, precision, locale, or formatting.
+/// Human-observed stock-app reference placed on the same monotonic capture clock.
+/// The displayed text is preserved exactly. No unit, locale, precision, or scale
+/// normalization occurs in this layer.
 public struct TuyaCandidateDPStockAppMarker: Equatable, Sendable {
     public let receiptUptimeNanoseconds: UInt64
     public let displayedReference: String
@@ -67,11 +58,9 @@ public struct TuyaCandidateDPStockAppMarker: Equatable, Sendable {
     }
 }
 
-/// Caller-owned analysis/resource bounds. These are not ES80 defaults.
+/// Caller-owned resource and timing bounds. These values are analysis policy,
+/// never AOVOPRO ES80 protocol defaults.
 public struct TuyaCandidateDPMarkerCorrelationPolicy: Equatable, Sendable {
-    /// Maximum monotonic-time distance from a marker to the nearest point of a
-    /// candidate message's accepted receipt interval. Zero is a valid exact-only
-    /// policy.
     public let maximumMarkerDistanceNanoseconds: UInt64
     public let maximumMarkerCount: Int
     public let maximumObservationCount: Int
@@ -99,14 +88,13 @@ public struct TuyaCandidateDPMarkerCorrelationPolicy: Equatable, Sendable {
     }
 }
 
-/// One parsed DP payload explicitly associated by the caller with the exact
-/// reassembled-message evidence from which its legitimate plaintext was derived.
+/// A #238 structural DP parse caller-bound to the exact #219 reassembled-message
+/// provenance from which legitimate plaintext was derived.
 ///
-/// This association is intentionally transparent: Nembra does not decrypt or
-/// authenticate here, and this type cannot prove that caller-supplied plaintext
-/// came from the encrypted bytes. It only preserves the reassembled message's
-/// exact stream, continuity generation, and receipt interval alongside #238's
-/// structural DP parse for subsequent offline correlation.
+/// This association is explicit rather than magical: this layer performs no
+/// decryption/authentication and cannot prove caller-supplied plaintext belongs
+/// to the encrypted message. It preserves the source/timing boundary so later
+/// correlation does not erase it.
 public struct TuyaCandidateDPMessageObservation: Equatable, Sendable {
     public let streamIdentity: TuyaCandidateValueStreamIdentity
     public let continuityGeneration: UInt64
@@ -118,32 +106,31 @@ public struct TuyaCandidateDPMessageObservation: Equatable, Sendable {
         reassembledMessage: TuyaCandidateReassembledMessage,
         parsedPayload: TuyaCandidateDPPayload
     ) {
-        self.streamIdentity = reassembledMessage.streamIdentity
-        self.continuityGeneration = reassembledMessage.continuityGeneration
-        self.firstReceiptUptimeNanoseconds = reassembledMessage.firstReceiptUptimeNanoseconds
-        self.lastReceiptUptimeNanoseconds = reassembledMessage.lastReceiptUptimeNanoseconds
-        self.payload = parsedPayload
+        streamIdentity = reassembledMessage.streamIdentity
+        continuityGeneration = reassembledMessage.continuityGeneration
+        firstReceiptUptimeNanoseconds = reassembledMessage.firstReceiptUptimeNanoseconds
+        lastReceiptUptimeNanoseconds = reassembledMessage.lastReceiptUptimeNanoseconds
+        payload = parsedPayload
     }
 }
 
-/// Structural identity used for repeatability comparison. Same numeric DP ID is
-/// not silently merged across a different raw type or declared width.
+/// Same numeric DP ID is not merged across a different raw type or declared
+/// value width. The report's scope separately preserves the DP framing width.
 public struct TuyaCandidateDPCorrelationCandidate: Equatable, Sendable {
     public let identifier: UInt8
     public let rawType: UInt8
     public let knownType: TuyaCandidateDPKnownType?
     public let declaredValueLength: Int
 
-    fileprivate init(identifier: UInt8, rawType: UInt8, declaredValueLength: Int) {
-        self.identifier = identifier
-        self.rawType = rawType
-        self.knownType = TuyaCandidateDPKnownType(rawValue: rawType)
-        self.declaredValueLength = declaredValueLength
+    fileprivate init(key: CandidateKey) {
+        identifier = key.identifier
+        rawType = key.rawType
+        knownType = TuyaCandidateDPKnownType(rawValue: key.rawType)
+        declaredValueLength = key.declaredValueLength
     }
 }
 
-/// Exact accepted nearest-match evidence for one stock-app marker. Raw DP bytes
-/// are preserved; no engineering unit or numeric scale is assigned here.
+/// One unambiguous nearest raw-value match for one stock-app marker.
 public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
     public let markerIndex: Int
     public let markerReceiptUptimeNanoseconds: UInt64
@@ -164,25 +151,22 @@ public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
         temporalDistanceNanoseconds: UInt64
     ) {
         self.markerIndex = markerIndex
-        self.markerReceiptUptimeNanoseconds = marker.receiptUptimeNanoseconds
-        self.displayedReference = marker.displayedReference
-        self.observationIndex = occurrence.observationIndex
-        self.observationFirstReceiptUptimeNanoseconds = occurrence.firstReceiptUptimeNanoseconds
-        self.observationLastReceiptUptimeNanoseconds = occurrence.lastReceiptUptimeNanoseconds
+        markerReceiptUptimeNanoseconds = marker.receiptUptimeNanoseconds
+        displayedReference = marker.displayedReference
+        observationIndex = occurrence.observationIndex
+        observationFirstReceiptUptimeNanoseconds = occurrence.firstReceiptUptimeNanoseconds
+        observationLastReceiptUptimeNanoseconds = occurrence.lastReceiptUptimeNanoseconds
         self.temporalDistanceNanoseconds = temporalDistanceNanoseconds
-        self.headerByteOffset = occurrence.headerByteOffset
-        self.valueByteOffset = occurrence.valueByteOffset
-        self.endByteOffsetExclusive = occurrence.endByteOffsetExclusive
-        self.valueBytes = occurrence.valueBytes
+        headerByteOffset = occurrence.headerByteOffset
+        valueByteOffset = occurrence.valueByteOffset
+        endByteOffsetExclusive = occurrence.endByteOffsetExclusive
+        valueBytes = occurrence.valueBytes
     }
 }
 
-/// Repeatability evidence for one structural DP candidate.
-///
-/// Pair counts compare exact stock-app reference strings with exact raw DP value
-/// bytes. They are intentionally not a confidence score and never prove the
-/// candidate carries the named field. For example, a coincidentally changing DP
-/// can score well and still be unrelated to battery/voltage/current/power.
+/// Equality-pattern evidence only. Pair counts compare exact displayed reference
+/// strings against exact raw DP bytes; they are not a confidence score and never
+/// prove that this candidate carries the named stock-app field.
 public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let matchedMarkerCount: Int
@@ -201,10 +185,10 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
         ambiguousNearestMarkerIndices: [Int],
         hits: [TuyaCandidateDPMarkerHit]
     ) {
-        var sameReferencePairCount: UInt64 = 0
-        var sameReferenceSameRawValuePairCount: UInt64 = 0
-        var differentReferencePairCount: UInt64 = 0
-        var differentReferenceDifferentRawValuePairCount: UInt64 = 0
+        var sameReferencePairs: UInt64 = 0
+        var sameReferenceSameRawPairs: UInt64 = 0
+        var differentReferencePairs: UInt64 = 0
+        var differentReferenceDifferentRawPairs: UInt64 = 0
 
         if hits.count > 1 {
             for firstIndex in 0..<(hits.count - 1) {
@@ -212,14 +196,14 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
                     let first = hits[firstIndex]
                     let second = hits[secondIndex]
                     if first.displayedReference == second.displayedReference {
-                        sameReferencePairCount += 1
+                        sameReferencePairs += 1
                         if first.valueBytes == second.valueBytes {
-                            sameReferenceSameRawValuePairCount += 1
+                            sameReferenceSameRawPairs += 1
                         }
                     } else {
-                        differentReferencePairCount += 1
+                        differentReferencePairs += 1
                         if first.valueBytes != second.valueBytes {
-                            differentReferenceDifferentRawValuePairCount += 1
+                            differentReferenceDifferentRawPairs += 1
                         }
                     }
                 }
@@ -227,21 +211,21 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
         }
 
         self.candidate = candidate
-        self.matchedMarkerCount = hits.count
+        matchedMarkerCount = hits.count
         self.ambiguousNearestMarkerIndices = ambiguousNearestMarkerIndices
-        self.distinctDisplayedReferenceCount = Set(hits.map(\.displayedReference)).count
-        self.distinctRawValueCount = Set(hits.map { Data($0.valueBytes) }).count
-        self.sameReferencePairCount = sameReferencePairCount
-        self.sameReferenceSameRawValuePairCount = sameReferenceSameRawValuePairCount
-        self.differentReferencePairCount = differentReferencePairCount
-        self.differentReferenceDifferentRawValuePairCount = differentReferenceDifferentRawValuePairCount
-        self.maximumTemporalDistanceNanoseconds = hits.map(\.temporalDistanceNanoseconds).max()
+        distinctDisplayedReferenceCount = Set(hits.map(\.displayedReference)).count
+        distinctRawValueCount = Set(hits.map { Data($0.valueBytes) }).count
+        sameReferencePairCount = sameReferencePairs
+        sameReferenceSameRawValuePairCount = sameReferenceSameRawPairs
+        differentReferencePairCount = differentReferencePairs
+        differentReferenceDifferentRawValuePairCount = differentReferenceDifferentRawPairs
+        maximumTemporalDistanceNanoseconds = hits.map(\.temporalDistanceNanoseconds).max()
         self.hits = hits
     }
 }
 
-/// Deterministically ranked correlation report for one exact research scope.
-/// Rank is prioritization evidence only; index zero is not a decoded ES80 field.
+/// Deterministically ranked research-prioritization evidence. Candidate order is
+/// useful for deciding what to inspect next; it is never a decoded-field claim.
 public struct TuyaCandidateDPMarkerCorrelationReport: Equatable, Sendable {
     public let scope: TuyaCandidateDPMarkerCorrelationScope
     public let markerCount: Int
@@ -265,14 +249,9 @@ public struct TuyaCandidateDPMarkerCorrelationReport: Equatable, Sendable {
 }
 
 public enum TuyaCandidateDPMarkerCorrelator {
-    /// Correlates exact-reference stock-app markers against DP records observed in
-    /// one already-selected stream/continuity/length-width scope.
-    ///
-    /// For each marker/candidate pair, at most one support hit is counted. If two
-    /// equally-near candidate occurrences disagree in raw bytes, that marker is
-    /// recorded as ambiguous instead of choosing the value that best fits the
-    /// desired stock-app field. High callback rate therefore cannot manufacture
-    /// extra marker support.
+    /// A high-rate candidate receives at most one support hit per human marker.
+    /// Equally-near occurrences that disagree in raw bytes are marked ambiguous
+    /// rather than choosing whichever value best matches a desired hypothesis.
     public static func analyze(
         scope: TuyaCandidateDPMarkerCorrelationScope,
         markers: [TuyaCandidateDPStockAppMarker],
@@ -290,8 +269,8 @@ public enum TuyaCandidateDPMarkerCorrelator {
             )
         }
 
-        try validateMarkerChronology(markers)
-        try validateObservationChronologyAndScope(observations, scope: scope)
+        try validateMarkers(markers)
+        try validateObservations(observations, scope: scope)
 
         var occurrenceCount = 0
         var occurrencesByCandidate: [CandidateKey: [CandidateOccurrence]] = [:]
@@ -304,88 +283,67 @@ public enum TuyaCandidateDPMarkerCorrelator {
                         maximum: policy.maximumCandidateOccurrenceCount
                     )
                 }
-
-                let key = CandidateKey(record: record)
-                occurrencesByCandidate[key, default: []].append(
-                    CandidateOccurrence(
-                        observationIndex: observationIndex,
-                        firstReceiptUptimeNanoseconds: observation.firstReceiptUptimeNanoseconds,
-                        lastReceiptUptimeNanoseconds: observation.lastReceiptUptimeNanoseconds,
-                        headerByteOffset: record.headerByteOffset,
-                        valueByteOffset: record.valueByteOffset,
-                        endByteOffsetExclusive: record.endByteOffsetExclusive,
-                        valueBytes: record.valueBytes
-                    )
+                occurrencesByCandidate[CandidateKey(record: record), default: []].append(
+                    CandidateOccurrence(observationIndex: observationIndex, observation: observation, record: record)
                 )
             }
         }
 
-        var candidateEvidence: [TuyaCandidateDPMarkerCandidateEvidence] = []
-        candidateEvidence.reserveCapacity(occurrencesByCandidate.count)
+        var evidence: [TuyaCandidateDPMarkerCandidateEvidence] = []
+        evidence.reserveCapacity(occurrencesByCandidate.count)
 
         for (key, occurrences) in occurrencesByCandidate {
             var hits: [TuyaCandidateDPMarkerHit] = []
-            var ambiguousMarkerIndices: [Int] = []
+            var ambiguousIndices: [Int] = []
 
             for (markerIndex, marker) in markers.enumerated() {
                 let nearest = nearestOccurrences(
-                    to: marker.receiptUptimeNanoseconds,
+                    markerUptimeNanoseconds: marker.receiptUptimeNanoseconds,
                     occurrences: occurrences,
                     maximumDistanceNanoseconds: policy.maximumMarkerDistanceNanoseconds
                 )
-                guard let minimumDistance = nearest.minimumDistanceNanoseconds,
-                      !nearest.occurrences.isEmpty else {
+                guard let distance = nearest.minimumDistanceNanoseconds,
+                      let first = nearest.occurrences.first else {
                     continue
                 }
 
-                let firstValue = nearest.occurrences[0].valueBytes
-                if nearest.occurrences.dropFirst().contains(where: { $0.valueBytes != firstValue }) {
-                    ambiguousMarkerIndices.append(markerIndex)
+                if nearest.occurrences.dropFirst().contains(where: { $0.valueBytes != first.valueBytes }) {
+                    ambiguousIndices.append(markerIndex)
                     continue
                 }
 
-                let selected = nearest.occurrences.min(by: deterministicOccurrenceOrder)!
+                let selected = nearest.occurrences.min(by: deterministicOccurrenceOrder) ?? first
                 hits.append(
                     TuyaCandidateDPMarkerHit(
                         markerIndex: markerIndex,
                         marker: marker,
                         occurrence: selected,
-                        temporalDistanceNanoseconds: minimumDistance
+                        temporalDistanceNanoseconds: distance
                     )
                 )
             }
 
-            guard !hits.isEmpty || !ambiguousMarkerIndices.isEmpty else {
-                continue
-            }
-
-            candidateEvidence.append(
+            guard !hits.isEmpty || !ambiguousIndices.isEmpty else { continue }
+            evidence.append(
                 TuyaCandidateDPMarkerCandidateEvidence(
-                    candidate: TuyaCandidateDPCorrelationCandidate(
-                        identifier: key.identifier,
-                        rawType: key.rawType,
-                        declaredValueLength: key.declaredValueLength
-                    ),
-                    ambiguousNearestMarkerIndices: ambiguousMarkerIndices,
+                    candidate: TuyaCandidateDPCorrelationCandidate(key: key),
+                    ambiguousNearestMarkerIndices: ambiguousIndices,
                     hits: hits
                 )
             )
         }
 
-        candidateEvidence.sort(by: evidenceRanksBefore)
-
+        evidence.sort(by: evidenceRanksBefore)
         return TuyaCandidateDPMarkerCorrelationReport(
             scope: scope,
             markerCount: markers.count,
             observationCount: observations.count,
             candidateOccurrenceCount: occurrenceCount,
-            candidates: candidateEvidence
+            candidates: evidence
         )
     }
 
-    private static func validateMarkerChronology(
-        _ markers: [TuyaCandidateDPStockAppMarker]
-    ) throws {
+    private static func validateMarkers(_ markers: [TuyaCandidateDPStockAppMarker]) throws {
         guard markers.count > 1 else { return }
         for currentIndex in 1..<markers.count {
             let previousIndex = currentIndex - 1
@@ -399,13 +357,12 @@ public enum TuyaCandidateDPMarkerCorrelator {
         }
     }
 
-    private static func validateObservationChronologyAndScope(
+    private static func validateObservations(
         _ observations: [TuyaCandidateDPMessageObservation],
         scope: TuyaCandidateDPMarkerCorrelationScope
     ) throws {
         for (index, observation) in observations.enumerated() {
-            guard observation.firstReceiptUptimeNanoseconds
-                    <= observation.lastReceiptUptimeNanoseconds else {
+            guard observation.firstReceiptUptimeNanoseconds <= observation.lastReceiptUptimeNanoseconds else {
                 throw TuyaCandidateDPMarkerCorrelationError.invalidObservationReceiptInterval(index: index)
             }
             guard observation.streamIdentity == scope.streamIdentity else {
@@ -417,7 +374,6 @@ public enum TuyaCandidateDPMarkerCorrelator {
             guard observation.payload.dataLengthWidth == scope.dataLengthWidth else {
                 throw TuyaCandidateDPMarkerCorrelationError.observationLengthWidthMismatch(index: index)
             }
-
             if index > 0 {
                 let previousIndex = index - 1
                 guard observation.firstReceiptUptimeNanoseconds
@@ -432,7 +388,7 @@ public enum TuyaCandidateDPMarkerCorrelator {
     }
 
     private static func nearestOccurrences(
-        to markerUptimeNanoseconds: UInt64,
+        markerUptimeNanoseconds: UInt64,
         occurrences: [CandidateOccurrence],
         maximumDistanceNanoseconds: UInt64
     ) -> NearestOccurrences {
@@ -442,101 +398,35 @@ public enum TuyaCandidateDPMarkerCorrelator {
         for occurrence in occurrences {
             let distance = temporalDistance(
                 markerUptimeNanoseconds,
-                toClosedIntervalFrom: occurrence.firstReceiptUptimeNanoseconds,
-                through: occurrence.lastReceiptUptimeNanoseconds
+                intervalStart: occurrence.firstReceiptUptimeNanoseconds,
+                intervalEnd: occurrence.lastReceiptUptimeNanoseconds
             )
             guard distance <= maximumDistanceNanoseconds else { continue }
 
-            if let minimumDistance {
-                if distance < minimumDistance {
-                    nearest = [occurrence]
-                    // Shadowing keeps the branch concise but cannot mutate the
-                    // outer binding. Reassign explicitly below.
-                    return replacingNearestIfNeeded(
-                        markerUptimeNanoseconds: markerUptimeNanoseconds,
-                        occurrences: occurrences,
-                        maximumDistanceNanoseconds: maximumDistanceNanoseconds
-                    )
-                } else if distance == minimumDistance {
-                    nearest.append(occurrence)
-                }
-            } else {
+            if minimumDistance == nil || distance < minimumDistance! {
                 minimumDistance = distance
                 nearest = [occurrence]
+            } else if distance == minimumDistance {
+                nearest.append(occurrence)
             }
         }
-
-        return NearestOccurrences(
-            minimumDistanceNanoseconds: minimumDistance,
-            occurrences: nearest
-        )
-    }
-
-    /// Separate implementation avoids subtle optional-shadow mutation mistakes
-    /// while keeping nearest-match selection deterministic and allocation-bounded.
-    private static func replacingNearestIfNeeded(
-        markerUptimeNanoseconds: UInt64,
-        occurrences: [CandidateOccurrence],
-        maximumDistanceNanoseconds: UInt64
-    ) -> NearestOccurrences {
-        var bestDistance: UInt64?
-        var bestOccurrences: [CandidateOccurrence] = []
-
-        for occurrence in occurrences {
-            let distance = temporalDistance(
-                markerUptimeNanoseconds,
-                toClosedIntervalFrom: occurrence.firstReceiptUptimeNanoseconds,
-                through: occurrence.lastReceiptUptimeNanoseconds
-            )
-            guard distance <= maximumDistanceNanoseconds else { continue }
-
-            switch bestDistance {
-            case nil:
-                bestDistance = distance
-                bestOccurrences = [occurrence]
-            case let current? where distance < current:
-                bestDistance = distance
-                bestOccurrences = [occurrence]
-            case let current? where distance == current:
-                bestOccurrences.append(occurrence)
-            default:
-                break
-            }
-        }
-
-        return NearestOccurrences(
-            minimumDistanceNanoseconds: bestDistance,
-            occurrences: bestOccurrences
-        )
+        return NearestOccurrences(minimumDistanceNanoseconds: minimumDistance, occurrences: nearest)
     }
 
     private static func temporalDistance(
         _ marker: UInt64,
-        toClosedIntervalFrom first: UInt64,
-        through last: UInt64
+        intervalStart: UInt64,
+        intervalEnd: UInt64
     ) -> UInt64 {
-        if marker < first {
-            return first - marker
-        }
-        if marker > last {
-            return marker - last
-        }
+        if marker < intervalStart { return intervalStart - marker }
+        if marker > intervalEnd { return marker - intervalEnd }
         return 0
     }
 
-    private static func deterministicOccurrenceOrder(
-        _ lhs: CandidateOccurrence,
-        _ rhs: CandidateOccurrence
-    ) -> Bool {
-        if lhs.observationIndex != rhs.observationIndex {
-            return lhs.observationIndex < rhs.observationIndex
-        }
-        if lhs.headerByteOffset != rhs.headerByteOffset {
-            return lhs.headerByteOffset < rhs.headerByteOffset
-        }
-        if lhs.valueByteOffset != rhs.valueByteOffset {
-            return lhs.valueByteOffset < rhs.valueByteOffset
-        }
+    private static func deterministicOccurrenceOrder(_ lhs: CandidateOccurrence, _ rhs: CandidateOccurrence) -> Bool {
+        if lhs.observationIndex != rhs.observationIndex { return lhs.observationIndex < rhs.observationIndex }
+        if lhs.headerByteOffset != rhs.headerByteOffset { return lhs.headerByteOffset < rhs.headerByteOffset }
+        if lhs.valueByteOffset != rhs.valueByteOffset { return lhs.valueByteOffset < rhs.valueByteOffset }
         return lhs.endByteOffsetExclusive < rhs.endByteOffsetExclusive
     }
 
@@ -556,18 +446,12 @@ public enum TuyaCandidateDPMarkerCorrelator {
         if lhs.ambiguousNearestMarkerIndices.count != rhs.ambiguousNearestMarkerIndices.count {
             return lhs.ambiguousNearestMarkerIndices.count < rhs.ambiguousNearestMarkerIndices.count
         }
-
         switch (lhs.maximumTemporalDistanceNanoseconds, rhs.maximumTemporalDistanceNanoseconds) {
-        case let (left?, right?) where left != right:
-            return left < right
-        case (_?, nil):
-            return true
-        case (nil, _?):
-            return false
-        default:
-            break
+        case let (left?, right?) where left != right: return left < right
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: break
         }
-
         if lhs.candidate.identifier != rhs.candidate.identifier {
             return lhs.candidate.identifier < rhs.candidate.identifier
         }
@@ -584,9 +468,9 @@ private struct CandidateKey: Hashable {
     let declaredValueLength: Int
 
     init(record: TuyaCandidateDPRecord) {
-        self.identifier = record.identifier
-        self.rawType = record.rawType
-        self.declaredValueLength = record.declaredValueLength
+        identifier = record.identifier
+        rawType = record.rawType
+        declaredValueLength = record.declaredValueLength
     }
 }
 
@@ -598,6 +482,20 @@ private struct CandidateOccurrence: Equatable, Sendable {
     let valueByteOffset: Int
     let endByteOffsetExclusive: Int
     let valueBytes: [UInt8]
+
+    init(
+        observationIndex: Int,
+        observation: TuyaCandidateDPMessageObservation,
+        record: TuyaCandidateDPRecord
+    ) {
+        self.observationIndex = observationIndex
+        firstReceiptUptimeNanoseconds = observation.firstReceiptUptimeNanoseconds
+        lastReceiptUptimeNanoseconds = observation.lastReceiptUptimeNanoseconds
+        headerByteOffset = record.headerByteOffset
+        valueByteOffset = record.valueByteOffset
+        endByteOffsetExclusive = record.endByteOffsetExclusive
+        valueBytes = record.valueBytes
+    }
 }
 
 private struct NearestOccurrences {
