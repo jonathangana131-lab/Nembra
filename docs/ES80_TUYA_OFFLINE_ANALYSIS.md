@@ -55,6 +55,16 @@ One `TuyaCandidateFragmentReassembler` permanently binds to the first stream ide
 
 That means a disconnect, interrupted acquisition, target change, or other evidence gap cannot silently splice bytes into one candidate message. The capture layer remains authoritative for deciding when continuity is broken.
 
+`TuyaCandidateTranscriptAnalyzer` adds a batch layer for an already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. It emits explicit events for:
+
+- completed candidate messages;
+- a candidate rejected by the framing contract, including its first, last accepted, and failing observation indices;
+- an incomplete candidate terminated by stream-identity and/or continuity-generation change;
+- an incomplete candidate still open when the transcript ends;
+- an unexpected analyzer failure, which stops analysis rather than silently discarding evidence.
+
+The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, or joins data across a known gap. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
+
 ## Resource safety without invented hardware limits
 
 The caller must inject:
@@ -72,32 +82,36 @@ Those are analysis resource limits only. There are intentionally no hard-coded E
 
 This separation keeps the evidence ladder explicit:
 
-`raw capture -> same-stream/same-generation candidate fragments -> candidate encrypted envelope -> legitimate external decryption (future, credential-safe) -> candidate logical packet + CRC -> only then product-specific DP correlation research`
+`raw capture -> ordered same-stream/same-generation transcript -> candidate fragments -> candidate encrypted envelope -> legitimate external decryption (future, credential-safe) -> candidate logical packet + CRC -> only then product-specific DP correlation research`
 
 A failure at any stage is useful falsifying evidence and should not be massaged until it parses.
 
 ## Acceptance evidence in this slice
 
-The repository test file exercises:
+The repository tests exercise:
 
 - one- and multi-byte candidate varints;
-- truncated/overlong varint rejection;
+- truncated/overlong varint rejection with caller-cursor rollback;
 - multi-fragment reconstruction;
 - exact stream and continuity-generation isolation;
 - strict monotonic receipt ordering;
 - missing/out-of-order fragment rejection with atomic recovery;
 - injected message/fragment resource bounds;
-- declared-length overrun and post-completion rejection;
+- declared-length overrun, clean retry after rejected first fragment, and post-completion rejection;
 - encrypted envelope minimum/alignment rules;
 - logical big-endian header extraction without semantic interpretation;
 - CRC corruption rejection;
 - exact-vs-zero-padded plaintext policy separation;
-- non-zero padding rejection.
+- non-zero padding rejection;
+- automatic rollover across multiple complete candidate messages in one transcript;
+- explicit preservation of continuity-boundary truncation;
+- whole-candidate rejection followed by clean packet-zero recovery;
+- explicit end-of-transcript truncation evidence.
 
-Supplemental local Swift 6.2.1 validation passed all focused tests in debug and release with warnings treated as errors. Repository/exact-head CI remains the acceptance source for the integrated branch.
+Supplemental local Swift 6.2.1 validation passed **17/17 focused tests across two suites** in both debug and release with warnings treated as errors. That is supporting evidence only. Repository/exact-head CI remains the acceptance source for the integrated branch.
 
 ## Physical next step
 
-This tooling does not replace the active passive-capture work. Once a physical ES80 capture supplies immutable raw notification bytes with exact GATT identity and continuity generations, offline analysis can feed those values into this candidate recognizer.
+This tooling does not replace the active passive-capture work. Once a physical ES80 capture supplies immutable raw notification bytes with exact GATT identity and continuity generations, offline analysis can feed those values into the transcript analyzer and candidate recognizer without manual hex selection.
 
 A structural match raises a transport hypothesis only. Production battery/current/power fields remain blocked until repeatable physical correlation proves each field's raw source, scale, units, signedness, cadence, and provenance.
