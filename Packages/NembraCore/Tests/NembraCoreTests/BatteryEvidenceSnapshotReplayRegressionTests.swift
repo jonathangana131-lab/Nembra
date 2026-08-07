@@ -56,6 +56,37 @@ struct BatteryEvidenceSnapshotReplayRegressionTests {
         #expect(accumulator.currentSnapshot[.stateOfChargePercent] == boundary)
     }
 
+    @Test("boundary replay keeps lower continuous evidence rejected")
+    func oldBoundaryReplayPreservesOrderingEnforcement() throws {
+        var accumulator = BatteryEvidenceSnapshotAccumulator()
+        let boundary = try observation(
+            field: .stateOfChargePercent,
+            uptime: 4,
+            numericValue: 54,
+            continuity: .afterUnobservedInterval
+        )
+
+        try accumulator.ingest(boundary)
+        try accumulator.ingest(
+            try observation(field: .currentAmps, uptime: 5, numericValue: 3.0)
+        )
+        try accumulator.ingest(boundary)
+        let beforeRejectedEvidence = accumulator
+
+        var captured: BatteryEvidenceSnapshotError?
+        do {
+            try accumulator.ingest(
+                try observation(field: .voltageVolts, uptime: 4, numericValue: 39.6)
+            )
+        } catch let error as BatteryEvidenceSnapshotError {
+            captured = error
+        }
+
+        #expect(captured == .stream(.nonMonotonicUptime))
+        #expect(accumulator == beforeRejectedEvidence)
+        #expect(accumulator.lastAcceptedUptimeNanoseconds == 5)
+    }
+
     @Test("replaying old ordinary evidence is also globally idempotent")
     func oldContinuousReplayIsFullyIdempotent() throws {
         var accumulator = BatteryEvidenceSnapshotAccumulator()
@@ -74,6 +105,36 @@ struct BatteryEvidenceSnapshotReplayRegressionTests {
         try accumulator.ingest(soc)
 
         #expect(accumulator == beforeReplay)
+        #expect(accumulator.lastAcceptedUptimeNanoseconds == 11)
+    }
+
+    @Test("ordinary replay keeps lower continuous evidence rejected")
+    func oldContinuousReplayPreservesOrderingEnforcement() throws {
+        var accumulator = BatteryEvidenceSnapshotAccumulator()
+        let soc = try observation(
+            field: .stateOfChargePercent,
+            uptime: 10,
+            numericValue: 70
+        )
+
+        try accumulator.ingest(soc)
+        try accumulator.ingest(
+            try observation(field: .voltageVolts, uptime: 11, numericValue: 40.0)
+        )
+        try accumulator.ingest(soc)
+        let beforeRejectedEvidence = accumulator
+
+        var captured: BatteryEvidenceSnapshotError?
+        do {
+            try accumulator.ingest(
+                try observation(field: .currentAmps, uptime: 10, numericValue: 2.5)
+            )
+        } catch let error as BatteryEvidenceSnapshotError {
+            captured = error
+        }
+
+        #expect(captured == .stream(.nonMonotonicUptime))
+        #expect(accumulator == beforeRejectedEvidence)
         #expect(accumulator.lastAcceptedUptimeNanoseconds == 11)
     }
 }
