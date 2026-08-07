@@ -41,6 +41,14 @@ Checked boundaries:
 - Adjacent PR #33 explicitly leaves `RollingSpeedValueView` and `RollingNumberModel` untouched, so no current same-path integration collision was found.
 - Current battery-primary-readout PR #57 does not reference `RollingNumberModel`; it explicitly defers final integer battery-roll animation, so #95 does not create a hidden immediate parent/API dependency there.
 
+### Public API compatibility
+
+Exact base `60d8ecc...` and #95 source were compared directly, and the focused PR patch was re-read. Every pre-existing public declaration remains source-signature compatible. The only new public symbol is:
+
+`public func snapshot(scaledValue: UInt64) throws -> RollingNumberSnapshot`
+
+`RollingNumberError`, layout/snapshot/transition types, `RollingNumberModel.init(layout:)`, `snapshot(for:)`, and both `transition` overloads keep their existing public signatures. The rest of the source delta is implementation and documentation. This is an additive API change, not a replacement or wire-format migration.
+
 ## Independent supplemental verification
 
 A standalone Swift 6.2.1 mirror of the exact rolling-number algorithm passed **1,238,191 property checks** covering:
