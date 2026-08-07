@@ -109,15 +109,17 @@ public struct TuyaCandidateDPRecord: Equatable, Sendable {
         }
     }
 
-    /// Generic unsigned big-endian magnitude for fixed-size public Tuya scalar
-    /// shapes. This deliberately does not claim signedness, unit, scale, or ES80
-    /// field meaning. Raw/string DPs are never converted here.
+    /// Generic unsigned big-endian magnitude for documented fixed-size Tuya
+    /// scalar shapes. This deliberately does not claim signedness, unit, scale,
+    /// or ES80 field meaning. Raw/string DPs are never converted here.
     public var candidateUnsignedBigEndianMagnitude: UInt32? {
         switch knownType {
         case .boolean:
             guard valueBytes.count == 1, valueBytes[0] <= 1 else { return nil }
         case .value:
-            guard valueBytes.count == 4 else { return nil }
+            // Tuya's public Bluetooth material is not uniform: some pages use
+            // fixed 4-byte VALUE, while the Bluetooth SDK API allows 1/2/4.
+            guard [1, 2, 4].contains(valueBytes.count) else { return nil }
         case .enumeration:
             guard valueBytes.count == 1 else { return nil }
         case .bitmap:
@@ -271,7 +273,9 @@ public enum TuyaCandidateDPPayloadParser {
         case .boolean, .enumeration:
             return fixedLengthFinding(for: knownType, allowed: [1], actual: length)
         case .value:
-            return fixedLengthFinding(for: knownType, allowed: [4], actual: length)
+            // Preserve the broader currently documented Bluetooth SDK family.
+            // Accepting these lengths is not a claim that ES80 uses any of them.
+            return fixedLengthFinding(for: knownType, allowed: [1, 2, 4], actual: length)
         case .bitmap:
             // Public Tuya documents are not perfectly uniform here; 1/2/4-byte
             // bitmap shapes are retained as the broader documented family.
