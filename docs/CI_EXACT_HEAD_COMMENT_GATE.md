@@ -11,7 +11,7 @@ Nembra needs Xcode 27 / iPhone 12 Simulator acceptance tied to an immutable pull
 - automatic acceptance requests from same-repository non-draft PR lifecycle events, admitted by a **trusted default-branch workflow**;
 - an explicit trusted `/xcode27` PR conversation command.
 
-The workflow resolves the current PR on a GitHub-hosted runner before any PR code can reach `xcode-27`.
+The workflow resolves the current PR on a GitHub-hosted runner before any PR code can reach `xcode-27`, then revalidates the frozen candidate again on the self-hosted runner **before checkout**.
 
 ## Why automatic admission uses `pull_request_target`
 
@@ -26,7 +26,7 @@ A same-repository check written **inside a fork-controlled `pull_request` workfl
 
 Nembra therefore uses `pull_request_target` for automatic PR admission so the resolver and `runs-on: xcode-27` decision originate from trusted default-branch workflow bytes.
 
-`pull_request_target` is a privileged event and must be treated accordingly. This workflow keeps explicit read-only token permissions and executes no PR code on the hosted resolver. It does **not** check out a fork head. The self-hosted checkout is reachable only after the trusted resolver verifies the live head repository is exactly `jonathangana131-lab/Nembra`.
+`pull_request_target` is a privileged event and must be treated accordingly. This workflow keeps explicit read-only token permissions and executes no PR code on the hosted resolver. It does **not** check out a fork head. The self-hosted job is reachable only after the trusted resolver verifies the live head repository is exactly `jonathangana131-lab/Nembra`, and its first step revalidates the live candidate before any PR checkout.
 
 GitHub also warns generally against exposing self-hosted runners to public-repository fork code. Runner-group workflow restrictions/ephemeral isolation remain valuable defense in depth, but the repository workflow must fail closed even when those external settings are unknown.
 
@@ -34,7 +34,8 @@ Reference guidance:
 
 - GitHub Docs: `Securely using pull_request_target`;
 - GitHub Docs: `Secure use reference`;
-- GitHub Docs: `Managing access to self-hosted runners using groups`.
+- GitHub Docs: `Managing access to self-hosted runners using groups`;
+- GitHub Docs: `Control the concurrency of workflows and jobs`.
 
 ## Automatic acceptance usage
 
@@ -52,8 +53,8 @@ The intended worker rhythm is:
 3. refresh `main`, ownership, dependencies, and overlap;
 4. mark a coherent same-repository PR ready for review;
 5. let the exact-head gate exercise that current acceptance candidate;
-6. if the PR changes while it remains ready, a current `synchronize` event may supersede the older valid gate for that PR;
-7. merge only when the required successful Simulator job corresponds to the final unchanged acceptance head.
+6. if the PR changes while it remains ready, the new SHA receives a distinct candidate gate rather than relying on ordering between old/new jobs;
+7. merge only when the required successful checkout/QA steps correspond to the final unchanged acceptance head.
 
 Draft PR checkpoint churn does not intentionally consume the self-hosted acceptance gate.
 
@@ -69,38 +70,55 @@ This mattered during the 2026-08-06 GitHub Actions incident. PR #50 provided a c
 
 Decoded resolver logs from run `31129569763` show the pre-fix automatic path directly assigned `context.payload.pull_request` and output its head SHA without live-fetching the PR.
 
-The resolver now live-fetches the PR through the GitHub API for every accepted trigger.
+The gate now has **two** freshness boundaries.
 
-For an automatic `pull_request_target` event, the self-hosted job is allowed only when all of these remain true at resolver time:
+### 1. Hosted resolver freshness
+
+The GitHub-hosted resolver live-fetches the PR for every accepted trigger.
+
+For an automatic `pull_request_target` event, the candidate is admitted only when all of these remain true at resolver time:
 
 - the live PR is open;
 - the live PR is not draft;
 - the live head repository is Nembra itself;
 - the event payload `head.sha` exactly equals the live PR's current `head.sha`.
 
-If the payload head is stale, the resolver records a notice and returns `should_run=false`. The self-hosted Simulator job never starts for that stale event.
+If the payload head is already stale, the resolver records a notice and returns `should_run=false`; no self-hosted job is created for that event.
 
-This guard is intentionally before the per-PR Simulator concurrency group. A delayed obsolete event therefore cannot enter the Xcode job merely because it was valid when GitHub originally emitted it.
+### 2. Self-hosted pre-checkout freshness
 
-The guard does **not** claim a PR can never change after resolver time. The resolver freezes one immutable SHA. Workers still compare the completed Simulator job SHA with the final PR SHA immediately before acceptance/merge; any later head change invalidates older proof.
+Resolver output is still only a point-in-time snapshot. A PR can advance **after** a once-valid resolver finishes but **before** its dependent self-hosted job begins.
 
-## Filtered workflow success is not acceptance
+The first step on `xcode-27` therefore live-fetches the PR again using trusted workflow code before checkout. It requires:
 
-GitHub reports a job skipped by a job-level `if` as successful/skipped rather than as a failing required check. Therefore an intentionally filtered stale/draft/closed/fork event may leave the overall workflow run with a successful conclusion even though no PR software ran on `xcode-27`.
+- the live head repository is still Nembra;
+- the live `head.sha` still equals the frozen candidate SHA;
+- for automatic gates, the live PR is still open and non-draft.
 
-**Overall workflow conclusion is not the acceptance signal.**
+If that second check fails, every checkout/build/test/capture step is skipped. No PR code is checked out or executed by that stale job.
+
+This second boundary is required because GitHub concurrency ordering is not guaranteed by workflow dispatch order. A once-valid old resolver cannot be assumed to reach concurrency before a newer head.
+
+The guard still does **not** claim a PR can never change after the self-hosted preflight. The candidate remains an immutable SHA and final acceptance always compares the completed evidence with the final unchanged PR head. If the live PR advances after preflight, the old job cannot cancel the new head because concurrency is SHA-scoped, and its eventual result is stale/non-acceptance evidence.
+
+## Filtered workflow/job success is not acceptance
+
+GitHub can report skipped conditional steps/jobs as successful/skipped rather than failing required checks. With the second freshness boundary, a stale candidate may also start `simulator-qa`, complete only its trusted preflight, skip checkout/QA, and leave that job green.
+
+**Neither top-level workflow success nor `simulator-qa: success` by itself is the acceptance signal.**
 
 Exact-head acceptance requires all of the following:
 
-- the `Build, test, and capture exact PR head` (`simulator-qa`) job actually ran;
-- that Simulator job concluded `success`, not `skipped`, `cancelled`, or absent;
-- its immutable checkout/verification exercised the candidate PR SHA;
+- the self-hosted live revalidation allowed the candidate to proceed;
+- `Checkout immutable PR head` actually ran and succeeded;
+- `Verify immutable PR head` actually ran and proved expected SHA == actual checkout SHA;
+- required project/package/Simulator QA steps actually ran and succeeded;
 - the candidate SHA is still the unchanged final PR head at acceptance time;
 - required logs/artifacts were produced and inspected according to the lane's acceptance needs.
 
-A resolver-only success or a workflow run whose Simulator job was filtered is **diagnostic/non-acceptance evidence**, even if GitHub renders the workflow run itself green.
+A resolver-only success, a hosted-filtered workflow, or a self-hosted preflight-only success is **diagnostic/non-acceptance evidence**, even if GitHub renders the workflow/job green.
 
-Automation that gates merges must inspect the Simulator job/exact-head evidence, not only the top-level workflow conclusion.
+Automation that gates merges must inspect the exact checkout/QA step evidence, not only workflow/job conclusion.
 
 ## Bootstrap/backlog caveat
 
@@ -108,7 +126,7 @@ Workflow changes do not retroactively rewrite already-created workflow runs. A d
 
 During rollout, old backlog events must therefore be classified by their actual resolver workflow bytes/logs or equivalent run/ref evidence. A pre-fix delayed event that still trusts `context.payload.pull_request` is historical backlog, not evidence that the new default-branch guard regressed.
 
-Post-bootstrap stale-event proof must show the trusted resolver version containing the live PR fetch and freshness check before drawing conclusions about the new guard.
+Post-bootstrap stale-event proof must show the trusted default-branch resolver/preflight version containing both live freshness checks before drawing conclusions about the new guard.
 
 ## Optional trusted `/xcode27` command
 
@@ -120,9 +138,9 @@ On a Nembra pull request, an owner/member/collaborator may add this exact PR con
 
 The workflow-level filter requires the exact body and trusted GitHub author association. `issue_comment` evaluates the workflow definition from the default branch, so this admission path does not trust PR-proposed workflow bytes.
 
-The resolver then live-fetches the PR and freezes its **current** head. This manual path deliberately remains distinct from automatic ready-PR gating: it does not inherit the automatic event's non-draft freshness rule merely because both paths share the same Xcode job.
+The resolver live-fetches the PR and freezes its **current** head. This manual path deliberately remains distinct from automatic ready-PR gating: it does not inherit the automatic event's non-draft requirement.
 
-The same-repository check still applies before self-hosted execution, so a fork head cannot reach `xcode-27` through the command path.
+The same-repository check still applies before self-hosted execution. The self-hosted pre-checkout freshness step also requires the frozen SHA to remain the current same-repository head; for manual gates it does not require the PR to remain non-draft/open.
 
 Historical note: early during the 2026-08-06 Actions incident, connector-created comments appeared to produce no run at the immediate observation point. Later backlog recovery showed delayed `issue_comment` workflow delivery. That incident evidence should not be generalized into a permanent claim that connector-created comments never trigger Actions.
 
@@ -132,18 +150,20 @@ For a valid request the trusted workflow:
 
 1. live-fetches the PR on GitHub-hosted `ubuntu-latest`;
 2. verifies the current head repository equals Nembra;
-3. for automatic PR events, rejects stale payload heads or a live draft/closed PR before self-hosted execution;
-4. freezes the live current `head.sha`;
-5. allows the Xcode job only when `same_repo=true` and `should_run=true`;
-6. checks out that immutable same-repository SHA on `xcode-27`;
-7. prints expected and actual `git rev-parse HEAD`;
-8. fails if those SHAs differ;
-9. validates the Xcode project and reference graph;
-10. runs NembraCore tests;
-11. runs the Xcode 27 / iPhone 12 Simulator build-test-capture script;
-12. uploads Simulator screenshots/log artifacts even on a later gate failure.
+3. for automatic PR events, rejects stale payload heads or a live draft/closed PR;
+4. freezes the live current `head.sha` and trigger class;
+5. creates a self-hosted candidate job only when hosted admission passed;
+6. scopes concurrency to PR number **and frozen SHA**;
+7. live-fetches/revalidates the PR again on `xcode-27` before checkout;
+8. if stale at that point, skips all PR checkout/QA work;
+9. otherwise checks out the immutable same-repository SHA;
+10. prints expected and actual `git rev-parse HEAD` and fails if they differ;
+11. validates the Xcode project and reference graph;
+12. runs NembraCore tests;
+13. runs the Xcode 27 / iPhone 12 Simulator build-test-capture script;
+14. uploads Simulator screenshots/log artifacts for candidates that actually proceeded through QA.
 
-A **successful Simulator job** proves only the exact software commit it exercised. A successful resolver-only/filtered workflow run proves no PR-code acceptance.
+Only a candidate whose live preflight, immutable checkout/verification, and required QA steps actually succeeded can become acceptance evidence.
 
 ## Security boundary
 
@@ -152,32 +172,36 @@ The self-hosted runner must never execute arbitrary fork code or fork-controlled
 The workflow therefore keeps these boundaries:
 
 - automatic PR admission uses `pull_request_target`, so the workflow definition comes from trusted default `main`, not the PR merge commit;
-- resolver executes on GitHub-hosted `ubuntu-latest` and checks out no PR code;
+- the first resolver executes on GitHub-hosted `ubuntu-latest` and checks out no PR code;
 - workflow token permissions are explicitly read-only (`contents: read`, `pull-requests: read`);
-- the live head repository must equal `jonathangana131-lab/Nembra`;
+- the live head repository must equal `jonathangana131-lab/Nembra` before the self-hosted job can be admitted;
 - fork heads fail closed before the Xcode job;
 - automatic events additionally require live open/non-draft state plus payload-head/live-head equality;
-- self-hosted checkout uses the resolver's immutable same-repository SHA, never a mutable branch name;
+- the first self-hosted step is trusted live metadata revalidation and runs before PR checkout;
+- self-hosted checkout uses the frozen immutable same-repository SHA, never a mutable branch name;
+- all PR-code execution steps are conditional on the second live freshness result;
 - trusted command filtering occurs before resolver execution;
 - no secret-bearing step is added to the PR-code execution path.
 
-Changing this workflow's trigger, same-repository guard, resolver placement, token permissions, checkout ref, or self-hosted admission `if` is security-sensitive Class-A work and requires explicit CI ownership/review.
+Changing this workflow's trigger, same-repository guard, resolver placement, token permissions, concurrency key, pre-checkout revalidation, checkout ref, or self-hosted admission conditions is security-sensitive Class-A work and requires explicit CI ownership/review.
 
 ## Concurrency
 
-Simulator concurrency remains scoped by resolved PR number:
+Simulator concurrency is scoped by **resolved PR number plus frozen candidate SHA**:
 
-`nembra-xcode27-pr-command-<PR_NUMBER>`
+`nembra-xcode27-pr-command-<PR_NUMBER>-<HEAD_SHA>`
 
 with `cancel-in-progress: true`.
 
-That remains intentional after the stale-event guard:
+This deliberately changes the old PR-only cancellation model.
 
-- a newer **valid** gate for the same PR may supersede its older valid in-progress gate;
-- a stale automatic event is filtered before it enters the Simulator job and therefore cannot cancel via that group;
-- unrelated PRs do not cancel each other.
+- duplicate gates for the **same exact SHA** may supersede one another;
+- different SHAs for the same PR cannot cancel each other, so a late old job cannot cancel a newer head merely because it reached concurrency later;
+- if an old once-valid head reaches a runner after the PR advanced, the self-hosted pre-checkout revalidation filters it without checking out PR code;
+- if a head becomes stale after preflight, it may finish as stale diagnostic work, but it cannot cancel a different newer SHA and cannot become final acceptance because the final PR SHA comparison fails;
+- unrelated PRs remain isolated as before.
 
-Changing the concurrency key to SHA would preserve stale work rather than enforcing the desired "newer valid acceptance candidate wins" contract, so the stale-event fix is deliberately implemented in resolver freshness rather than by weakening per-PR cancellation.
+GitHub does not guarantee concurrency ordering by workflow dispatch time, so correctness must not depend on "newer event arrives last" assumptions.
 
 ## Relationship to the scheduled fallback
 
