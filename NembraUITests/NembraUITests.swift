@@ -51,6 +51,30 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(controls.exists)
         controls.tap()
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        assertMinimumTouchTarget(app.buttons["vehicle-controls.mode.drive"], named: "Vehicle Controls Drive mode")
+        keepScreenshot(named: "Vehicle Controls Connected")
+    }
+
+    @MainActor
+    func testVehicleControlsUnavailableVisualTruth() {
+        let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 3))
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 2))
+
+        let drive = app.buttons["vehicle-controls.mode.drive"]
+        if drive.waitForExistence(timeout: 1) {
+            XCTAssertFalse(drive.isEnabled, "Vehicle mode controls must stay unavailable while the scooter is not connected.")
+        }
+
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable")
     }
 
     @MainActor
