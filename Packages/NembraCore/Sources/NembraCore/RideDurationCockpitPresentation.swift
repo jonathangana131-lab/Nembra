@@ -24,7 +24,7 @@ public struct RideDurationCockpitValue: Equatable, Sendable {
     public let observationSegmentCount: Int
     public let role: RideDurationCockpitDisplayRole
 
-    private init(
+    fileprivate init(
         sessionID: UUID,
         observedDurationNanoseconds: UInt64,
         observationSegmentCount: Int,
