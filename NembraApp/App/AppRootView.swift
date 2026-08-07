@@ -284,6 +284,7 @@ private struct RideHistoryRowView: View {
 
 private struct RideHistoryDetailView: View {
     @Environment(RideRoutePresentationStore.self) private var routes
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var recordingDetailsExpanded = false
 
     let record: RideHistoryRecord
@@ -317,20 +318,40 @@ private struct RideHistoryDetailView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.primary)
 
-            HStack(spacing: 10) {
-                Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                if record.evidence.continuity == .recoveredCheckpoint {
-                    Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            rideTimeAndRecovery
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var rideTimeAndRecovery: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                rideTime
+                recoveredBadge
+            }
+        } else {
+            HStack(spacing: 10) {
+                rideTime
+                recoveredBadge
+            }
+        }
+    }
+
+    private var rideTime: some View {
+        Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
+            .font(.body.monospacedDigit())
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var recoveredBadge: some View {
+        if record.evidence.continuity == .recoveredCheckpoint {
+            Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder
@@ -348,11 +369,12 @@ private struct RideHistoryDetailView: View {
                     Text(routeCoverageLabel(geometry.coverage))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 7)
                         .background(
                             Color(uiColor: .systemBackground),
-                            in: Capsule()
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
                         .padding(14)
                 }
@@ -562,33 +584,37 @@ private struct RideHistoryDetailView: View {
         }
     }
 
+    @ViewBuilder
     private func metricRow(
         title: String,
         subtitle: String,
         value: String,
         systemImage: String
     ) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26)
-                .accessibilityHidden(true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 14) {
+                        metricIcon(systemImage)
+                        metricText(title: title, subtitle: subtitle)
+                    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.leading)
+                }
+            } else {
+                HStack(spacing: 14) {
+                    metricIcon(systemImage)
+                    metricText(title: title, subtitle: subtitle)
+                    Spacer(minLength: 12)
+                    Text(value)
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                }
             }
-
-            Spacer(minLength: 12)
-
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .multilineTextAlignment(.trailing)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)
@@ -597,29 +623,74 @@ private struct RideHistoryDetailView: View {
         .accessibilityValue(value)
     }
 
-    private func timelineRow(title: String, date: Date) -> some View {
-        HStack(spacing: 12) {
+    private func metricIcon(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 26)
+            .accessibilityHidden(true)
+    }
+
+    private func metricText(title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.subheadline.weight(.medium))
-            Spacer(minLength: 12)
-            Text(timestamp(date))
-                .font(.subheadline.monospacedDigit())
+                .font(.subheadline.weight(.semibold))
+            Text(subtitle)
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private func timelineRow(title: String, date: Date) -> some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                    Text(timestamp(date))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                    Spacer(minLength: 12)
+                    Text(timestamp(date))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
     }
 
+    @ViewBuilder
     private func recordingDetailRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
-            Text(value)
-                .font(.subheadline.weight(.medium))
-                .multilineTextAlignment(.trailing)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(.subheadline.weight(.medium))
+                        .multilineTextAlignment(.leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Text(value)
+                        .font(.subheadline.weight(.medium))
+                        .multilineTextAlignment(.trailing)
+                }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 13)
