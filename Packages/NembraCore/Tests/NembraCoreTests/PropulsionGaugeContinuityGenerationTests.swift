@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Propulsion gauge continuity generations")
 struct PropulsionGaugeContinuityGenerationTests {
-    private let identity = PropulsionGaugeIdentity(vehicleID: "continuity-es80", modeKey: "sport")
+    private let identity = try! PropulsionGaugeIdentity(vehicleID: "continuity-es80", modeKey: "sport")
 
     private func policy() throws -> PropulsionGaugeMotionPolicy {
         try PropulsionGaugeMotionPolicy(
