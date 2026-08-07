@@ -63,7 +63,7 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         }
     }
 
-    @Test("marking an unobserved interval immediately makes retained range evidence stale")
+    @Test("marking an unobserved interval immediately blocks retained SoC recomputation")
     func continuityGapInvalidatesRetainedAnchor() throws {
         let epoch = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
         let observation = try verifiedSOC(
@@ -78,10 +78,22 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             observation: observation,
             acceptedBy: validator
         )
+        let model = AdaptiveBatteryRangeModel()
+        let policy = try provisionalPolicy()
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: anchor,
+            acceptedBy: validator,
+            policy: policy
+        ) != nil)
 
         validator.markUnobservedInterval()
 
         #expect(anchor.isCurrent(in: validator) == false)
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: anchor,
+            acceptedBy: validator,
+            policy: policy
+        ) == nil)
         #expect(throws: AdaptiveBatteryRangeLiveTruthError.observationNotCurrentlyAccepted) {
             _ = try AcceptedBatterySOCAnchor.current(
                 observation: observation,
@@ -122,9 +134,22 @@ struct AdaptiveBatteryRangeLiveTruthTests {
 
         #expect(oldAnchor.isCurrent(in: validator) == false)
         #expect(newAnchor.isCurrent(in: validator))
+
+        let model = AdaptiveBatteryRangeModel()
+        let policy = try provisionalPolicy()
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: oldAnchor,
+            acceptedBy: validator,
+            policy: policy
+        ) == nil)
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: newAnchor,
+            acceptedBy: validator,
+            policy: policy
+        ) != nil)
     }
 
-    @Test("live derived range carries source receipt and goes stale on newer battery receipt")
+    @Test("live derived range carries source receipt and cannot be refreshed from superseded SoC")
     func liveEstimateCarriesReceiptFreshness() throws {
         let epoch = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
         let firstObservation = try verifiedSOC(
@@ -140,23 +165,14 @@ struct AdaptiveBatteryRangeLiveTruthTests {
             acceptedBy: validator
         )
 
-        let policy = try AdaptiveBatteryRangePolicy(
-            minimumConsumedPercentagePoints: 5,
-            minimumDistanceMeters: 100,
-            recentWindowCapacity: 4,
-            recentWeight: 0.5,
-            outlierLowerEfficiencyRatio: 0.5,
-            outlierUpperEfficiencyRatio: 2,
-            estimateDeadbandFraction: 0,
-            estimateSmoothingFactor: 1,
-            provisionalEfficiencyMetersPerPercentagePoint: 120,
-            lowConfidenceConsumedPercentagePoints: 10,
-            normalConfidenceConsumedPercentagePoints: 20,
-            highConfidenceConsumedPercentagePoints: 40
-        )
+        let policy = try provisionalPolicy(efficiency: 120)
         let model = AdaptiveBatteryRangeModel()
         let liveEstimate = try #require(
-            model.estimateRemainingRange(atAcceptedSOC: anchor, policy: policy)
+            model.estimateRemainingRange(
+                atAcceptedSOC: anchor,
+                acceptedBy: validator,
+                policy: policy
+            )
         )
 
         #expect(liveEstimate.estimate.rawRemainingMeters == 6_000)
@@ -173,6 +189,26 @@ struct AdaptiveBatteryRangeLiveTruthTests {
         try validator.accept(secondObservation)
 
         #expect(liveEstimate.isCurrent(in: validator) == false)
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: anchor,
+            acceptedBy: validator,
+            policy: policy
+        ) == nil)
+    }
+
+    @Test("generic estimated path refuses an authoritative package fixture")
+    func genericEstimatedPathRejectsAuthoritativeReading() throws {
+        let authoritative = try BatterySOCReading(
+            percentage: 50,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: 1
+        )
+        let model = AdaptiveBatteryRangeModel()
+
+        #expect(model.estimateRemainingRange(
+            atEstimatedSOC: authoritative,
+            policy: try provisionalPolicy()
+        ) == nil)
     }
 
     @Test("verified non-SoC telemetry cannot project to range SoC")
@@ -198,6 +234,23 @@ struct AdaptiveBatteryRangeLiveTruthTests {
                 acceptedBy: validator
             )
         }
+    }
+
+    private func provisionalPolicy(efficiency: Double = 100) throws -> AdaptiveBatteryRangePolicy {
+        try AdaptiveBatteryRangePolicy(
+            minimumConsumedPercentagePoints: 5,
+            minimumDistanceMeters: 100,
+            recentWindowCapacity: 4,
+            recentWeight: 0.5,
+            outlierLowerEfficiencyRatio: 0.5,
+            outlierUpperEfficiencyRatio: 2,
+            estimateDeadbandFraction: 0,
+            estimateSmoothingFactor: 1,
+            provisionalEfficiencyMetersPerPercentagePoint: efficiency,
+            lowConfidenceConsumedPercentagePoints: 10,
+            normalConfidenceConsumedPercentagePoints: 20,
+            highConfidenceConsumedPercentagePoints: 40
+        )
     }
 
     private func verifiedSOC(
