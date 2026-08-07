@@ -31,6 +31,7 @@ struct NembraES80CaptureReportCommand {
         case missingOptionValue(String)
         case invalidPositiveInteger(option: String, value: String)
         case emptyPeripheralIdentifier
+        case forceOutputRequiresOutput
 
         var description: String {
             switch self {
@@ -44,6 +45,8 @@ struct NembraES80CaptureReportCommand {
                 "\(option) requires a positive integer, got: \(value)"
             case .emptyPeripheralIdentifier:
                 "--peripheral requires a non-empty exact peripheral identifier"
+            case .forceOutputRequiresOutput:
+                "--force-output is valid only together with --output or -o"
             }
         }
     }
@@ -92,10 +95,17 @@ struct NembraES80CaptureReportCommand {
                 outputURL: outputURL,
                 allowReplacingExistingOutput: options.forceOutput
             )
+
+            let summary = artifactReport.analysis.outcomeSummary
             writeStderr(
                 "wrote framing-candidate report for " +
                 "\(artifactReport.analysis.capture.peripheralIdentifier) to \(outputURL.path) " +
-                "(source sha256 \(artifactReport.sourceArtifact.sha256))"
+                "(source sha256 \(artifactReport.sourceArtifact.sha256))\n" +
+                "candidate outcomes: completed=\(summary.completedCandidateCount) " +
+                "rejected=\(summary.rejectedCandidateCount) " +
+                "incomplete=\(summary.incompleteCandidateCount) " +
+                "unexpected_failures=\(summary.unexpectedAnalyzerFailureCount) " +
+                "streams=\(summary.streamCount) fragments=\(summary.fragmentCount)"
             )
         } else {
             FileHandle.standardOutput.write(reportData)
@@ -117,8 +127,7 @@ struct NembraES80CaptureReportCommand {
             let argument = arguments[index]
             switch argument {
             case "--output", "-o":
-                let value = try nextValue(arguments, index: &index, option: argument)
-                outputPath = value
+                outputPath = try nextValue(arguments, index: &index, option: argument)
 
             case "--peripheral":
                 let value = try nextValue(arguments, index: &index, option: argument)
@@ -154,6 +163,9 @@ struct NembraES80CaptureReportCommand {
         guard let inputPath else {
             throw CommandError.missingInput
         }
+        guard !forceOutput || outputPath != nil else {
+            throw CommandError.forceOutputRequiresOutput
+        }
 
         return Options(
             inputURL: URL(fileURLWithPath: inputPath),
@@ -172,7 +184,8 @@ struct NembraES80CaptureReportCommand {
         option: String
     ) throws -> String {
         let valueIndex = index + 1
-        guard arguments.indices.contains(valueIndex) else {
+        guard arguments.indices.contains(valueIndex),
+              !arguments[valueIndex].hasPrefix("-") else {
             throw CommandError.missingOptionValue(option)
         }
         index = valueIndex
@@ -204,9 +217,10 @@ struct NembraES80CaptureReportCommand {
       --peripheral <id>          Exact captured peripheral identifier. Omit only
                                  when target-attributable evidence names one unique peripheral.
       --output, -o <report.json> Write report to a file. Existing files are protected
-                                 by default; publication is non-replacing.
-      --force-output             Replace an existing derived report. This never permits
-                                 the output path to equal the raw capture input path.
+                                 by default; publication is non-replacing. File-output
+                                 runs also print candidate outcome counts to stderr.
+      --force-output             Replace an existing derived report. Requires --output
+                                 and never permits replacing the raw capture input path.
       --max-message-bytes <n>    Offline analysis ceiling (default: 65536).
       --max-fragments <n>        Offline analysis ceiling (default: 256).
       --compact                  Emit compact sorted-key JSON.
@@ -217,6 +231,10 @@ struct NembraES80CaptureReportCommand {
       lowercase SHA-256 digest so analysis can be traced back to the precise JSON
       bytes that were decoded. The digest identifies the artifact; it does not
       authenticate the scooter, recorder, or person who produced the capture.
+
+    Outcome counts:
+      completed/rejected/incomplete values describe bounded framing-candidate
+      analyzer outcomes only. A completed candidate is not a verified ES80 message.
 
     Evidence preservation:
       The command refuses to overwrite its source capture even with --force-output.
