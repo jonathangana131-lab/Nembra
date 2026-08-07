@@ -59,8 +59,9 @@ The raw unsigned magnitude remains present beside every transformed comparison. 
 For one requested marker field, the selected snapshots must retain:
 
 1. unique marker sequence identities;
-2. one exact source-stream identity;
-3. one fixed DP length-width hypothesis for the entire report.
+2. unique `(continuity generation, candidate sequence)` identities, so one callback cannot be reused as repeated independent evidence;
+3. one exact source-stream identity;
+4. one fixed DP length-width hypothesis for the entire report.
 
 The analyzer never switches one-byte vs two-byte DP framing per marker just because one interpretation fits better.
 
@@ -82,7 +83,7 @@ For every marker/key pair:
 - non-finite transform/error math is counted as transformation failure;
 - raw magnitude, marker/candidate sequence identity, and continuity generation remain visible for every evaluable comparison.
 
-A marker contributes at most once to one key/hypothesis result.
+A marker contributes at most once to one key/hypothesis result, and one exact callback cannot be reused to manufacture support from multiple markers in the same field report.
 
 ## Ranking
 
@@ -114,7 +115,7 @@ A later integration bridge may combine the two only after it can preserve exact 
 4. the bridge constructs a marker snapshot without changing marker/candidate identity;
 5. this analyzer compares repeated raw scalar candidates under explicit hypotheses.
 
-Failure at any upstream step is evidence; tooling must not mutate bytes, switch streams, cross continuity gaps, or try alternate interpretations until something numerically matches.
+Failure at any upstream step is evidence; tooling must not mutate bytes, switch streams, cross continuity gaps, reuse one callback as multiple independent observations, or try alternate interpretations until something numerically matches.
 
 ## Truth and safety boundary
 
@@ -142,10 +143,10 @@ No output from this analyzer is production telemetry authority. Production read-
 
 An isolated Swift 6.2.1 mirror of the exact split implementation passes with warnings-as-errors:
 
-- debug: **11/11 tests green across 2 suites**;
-- optimized release: **11/11 tests green across 2 suites**.
+- debug: **12/12 tests green across 2 suites**;
+- optimized release: **12/12 tests green across 2 suites**.
 
-Focused coverage includes repeated exact-value matching, explicit caller-supplied decimal scaling, raw-magnitude preservation, continuity-generation retention, ambiguous duplicate candidates, malformed scalar projection, missing candidate coverage, mixed-source rejection, mixed-framing rejection, duplicate-marker rejection, finite-input/resource-policy validation, and no-match field isolation.
+Focused coverage includes repeated exact-value matching, explicit caller-supplied decimal scaling, raw-magnitude preservation, continuity-generation retention, ambiguous duplicate candidates, malformed scalar projection, missing candidate coverage, mixed-source rejection, mixed-framing rejection, duplicate-marker rejection, reused-candidate-callback rejection, finite-input/resource-policy validation, and no-match field isolation.
 
 This is supporting software evidence only. Repository-native NembraCore/Xcode validation on the final dependency composition is still required before integration.
 
