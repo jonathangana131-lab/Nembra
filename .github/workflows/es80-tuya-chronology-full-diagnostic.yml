@@ -1,0 +1,41 @@
+name: ES80 Tuya Chronology Full Diagnostic
+
+on:
+  push:
+    branches:
+      - qa/es80-tuya-chronology-full-diagnostic/chat-k8p3v-3388d48
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable product mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD=3388d48f6e9e1e6d1fdccb56cf13d1d0b2a6b006
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          changed="$(git diff --name-only "$PRODUCT_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/es80-tuya-chronology-full-diagnostic.yml"
+
+      - name: Run full NembraCore suite with captured evidence
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/nembra-full.log
+          status=${PIPESTATUS[0]}
+          {
+            echo '## Full NembraCore Swift test tail'
+            echo '```text'
+            tail -n 260 /tmp/nembra-full.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
