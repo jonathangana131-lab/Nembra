@@ -21,16 +21,27 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertTrue(light.label.contains("Off"))
         light.tap()
-        XCTAssertTrue(waitForLabelFragment("On", element: light))
+        let confirmedLightOn = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Light", "On")
+        ).firstMatch
+        XCTAssertTrue(
+            confirmedLightOn.waitForExistence(timeout: 3),
+            "The light control must expose the scooter-confirmed On state after acknowledgement."
+        )
 
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
         drive.tap()
 
-        let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
-        XCTAssertTrue(confirmedDriveMetric.waitForExistence(timeout: 3))
+        let confirmedDriveMetric = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier == %@ AND value == %@",
+                "home.metric.mode",
+                "Drive"
+            )
+        ).firstMatch
         XCTAssertTrue(
-            waitForValue("Drive", element: confirmedDriveMetric),
+            confirmedDriveMetric.waitForExistence(timeout: 3),
             "The status metric must expose the scooter-confirmed Drive mode, not merely a tapped segment."
         )
 
@@ -89,6 +100,130 @@ final class NembraUITests: XCTestCase {
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
         keepScreenshot(named: "Dashboard Riding Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardBatteryReadoutToggleFailsClosedWithoutRangeEstimate() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+        assertMinimumTouchTarget(battery, named: "Dashboard battery")
+
+        // AppStorage deliberately remembers this user-facing preference across
+        // launches. Normalize the starting presentation without assuming test
+        // execution order, then prove range mode fails closed when no estimate
+        // has been supplied by the app integration.
+        if (battery.value as? String) == "Estimated range unavailable" {
+            battery.tap()
+            XCTAssertTrue(waitForValue("92 percent", element: battery))
+        } else {
+            XCTAssertTrue(waitForValue("92 percent", element: battery))
+        }
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable", element: battery),
+            "Range mode must not synthesize a mileage estimate from battery percentage."
+        )
+        keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape")
+
+        // Prove the user-facing choice is actually durable, not merely local
+        // SwiftUI state. Relaunching the same installed app must preserve range
+        // mode through AppStorage.
+        app.terminate()
+        app.launch()
+        let relaunchedBattery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(relaunchedBattery.waitForExistence(timeout: 4))
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable", element: relaunchedBattery),
+            "The stored battery/range presentation preference must survive app relaunch."
+        )
+
+        // Restore the stable percentage preference for following UI tests.
+        relaunchedBattery.tap()
+        XCTAssertTrue(waitForValue("92 percent", element: relaunchedBattery))
+    }
+
+    @MainActor
+    func testLandscapeDashboardRetainedBatteryIsAnnouncedAsLastKnown() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+
+        // The unavailable-scooter fixture intentionally retains the last
+        // confirmed 71% vehicle state. Presentation preference is persistent,
+        // so normalize to percentage before validating stale-data wording.
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
+            battery.tap()
+        }
+        XCTAssertTrue(
+            waitForValue("71 percent, last known vehicle data", element: battery),
+            "Retained battery charge must never be announced as live telemetry."
+        )
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data",
+                element: battery
+            ),
+            "Range mode must preserve retained-battery provenance while remaining unavailable."
+        )
+
+        // Restore percentage for deterministic following tests.
+        battery.tap()
+        XCTAssertTrue(waitForValue("71 percent, last known vehicle data", element: battery))
+    }
+
+    @MainActor
+    func testLandscapeDashboardBatteryControlDisablesWithoutDisplaySOC() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+        XCTAssertFalse(
+            battery.isEnabled,
+            "With no legitimate display SoC, the readout must not offer a meaningless percentage/range toggle."
+        )
+
+        let value = battery.value as? String
+        XCTAssertTrue(
+            value == "Unavailable" || value == "Estimated range unavailable",
+            "A no-SoC state must remain explicitly unavailable regardless of the persisted presentation preference."
+        )
+        keepScreenshot(named: "Dashboard Battery Unavailable Landscape")
+    }
+
+    @MainActor
+    func testLandscapeDashboardLowBatteryWarningRemainsAccessibleInBothModes() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "low-battery", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
+            battery.tap()
+        }
+        XCTAssertTrue(
+            waitForValue("14 percent, low battery", element: battery),
+            "The red low-battery treatment must have an equivalent accessible warning."
+        )
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForValue("Estimated range unavailable, low battery", element: battery),
+            "Range mode must retain the low-battery warning even when range itself is unavailable."
+        )
+        keepScreenshot(named: "Dashboard Low Battery Range Unavailable Landscape")
+
+        battery.tap()
+        XCTAssertTrue(waitForValue("14 percent, low battery", element: battery))
     }
 
     @MainActor
