@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`AccelerationRunEvaluator` records measurement-bounded 0-to-target observation evidence. `AccelerationEvidenceSession` closes the next truth gap: a completed timing result and the telemetry-quality evidence used to qualify it must come from the same selected-source callback stream and the same attempt window.
+`AccelerationRunEvaluator` records measurement-bounded 0-to-target observation evidence. `AccelerationEvidenceSession` closes the next truth gap: a completed timing result and the telemetry-quality evidence used to qualify it must come from the same selected-source attempt and, for final reporting, the same retained launch-to-target timing trace.
 
 This is a software evidence layer. It does not make a speed source physically authoritative for AOVOPRO ES80 and it does not turn packet-receipt time into exact scooter threshold-crossing time.
 
@@ -35,9 +35,20 @@ For GPS, policy additionally requires:
 
 These are evidence-shape requirements, not claims that any particular threshold is correct for real ES80 acceleration testing.
 
-## Same-attempt ownership
+## Same-attempt and same-trace ownership
 
-For a selected-source callback, the session records the callback in `TelemetryBenchmarkCollector` and then passes the exact same sample to `AccelerationRunEvaluator`.
+Every selected-source callback first enters an attempt-wide `TelemetryBenchmarkCollector` and then the exact same sample is passed to `AccelerationRunEvaluator`. The attempt-wide summary is diagnostic only because it can include packets the final timing trace does not retain.
+
+A second constant-memory benchmark tracks only timing evidence retained by the evaluator:
+
+- the first accepted stationary observation creates the candidate trace;
+- each newer accepted stationary observation replaces the old anchor and resets the candidate benchmark;
+- moving samples enter the trace only when they pass the timing accuracy policy and the evaluator remains valid;
+- GPS samples rejected by the timing accuracy gate cannot contribute cadence, latency, or resolution evidence to the final run;
+- superseded stationary anchors cannot contribute quality evidence to the final run;
+- the final collector freezes when the evaluator completes.
+
+This avoids retaining an unbounded raw sample array while still preventing pre-launch or timing-rejected packets from making a completed run look higher quality than the measurements actually used for timing.
 
 The session becomes immutable when:
 
@@ -55,20 +66,23 @@ A known interruption after selected-source evidence begins freezes the attempt i
 
 1. the run completed rather than remaining incomplete or invalidated;
 2. the completed result source matches the selected source;
-3. the run's retained timing-evidence sample count meets the telemetry policy's minimum accepted-sample depth;
-4. no selected-source callback was rejected by the benchmark;
-5. no known observation interruption broke the attempt;
-6. the same-attempt telemetry benchmark satisfies the caller-supplied quality policy.
+3. an exact retained timing-trace benchmark exists;
+4. the run's retained timing-evidence sample count meets the telemetry policy's minimum accepted-sample depth;
+5. no retained timing sample is rejected by the trace benchmark;
+6. no known observation interruption broke the attempt;
+7. the retained timing-trace benchmark satisfies the caller-supplied quality policy.
 
-The retained timing-sample requirement is important. Repeated stationary packets or GPS packets rejected by timing accuracy policy can make raw stream statistics look deep while the final launch-to-target trace still contains only two accepted measurements. Such a run is not reporting-ready.
+The retained timing-sample requirement is important. Repeated stationary packets or GPS packets rejected by timing accuracy policy can make attempt-wide stream statistics look deep while the final launch-to-target trace still contains only two accepted measurements. Such a run is not reporting-ready.
 
-A raw finite SI speed can also overflow the benchmark's required km/h representation. If that sample completes the timing evaluator while the benchmark rejects it, readiness fails closed rather than presenting the run.
+Likewise, a poor-accuracy GPS packet may appear to provide a fine empirical speed-resolution step in the raw attempt stream. If the timing evaluator rejects that packet, it is excluded from final trace quality and cannot make the run reportable.
+
+A raw finite SI speed can also overflow the benchmark's required km/h representation. If that retained sample completes the timing evaluator while the trace benchmark rejects it, readiness fails closed rather than presenting the run.
 
 ## Truth boundary
 
 A ready software result still means only:
 
-- the selected source and evidence shape met the caller's policy;
+- the selected source and retained evidence shape met the caller's policy;
 - the reported elapsed value remains `receiveObservationUptime` evidence;
 - launch and target fields remain observation windows;
 - display interpolation is not measurement evidence.
