@@ -161,23 +161,23 @@ struct SpeedTelemetryQualityTests {
         ])
     }
 
-    @Test("non-finite derived speed resolution fails closed")
+    @Test("overflowing derived speed stays rejected and cannot become resolution evidence")
     func nonFiniteDerivedSpeedResolutionFailsClosed() throws {
         let overflowingMetersPerSecond = Double.greatestFiniteMagnitude / 2
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
-        collector.record(try sample(
-            metersPerSecond: overflowingMetersPerSecond,
+
+        #expect(collector.record(try sample(
+            metersPerSecond: 1,
             milliseconds: 0
-        ))
-        collector.record(try sample(
+        )) == .accepted)
+        #expect(collector.record(try sample(
             metersPerSecond: overflowingMetersPerSecond,
             milliseconds: 100
-        ))
+        )) == .rejected(.nonFiniteDerivedSpeed))
 
-        #expect(collector.summary.acceptedSampleCount == 2)
-        #expect(
-            collector.summary.empiricalMinimumNonzeroSpeedStepKilometersPerHour?.isNaN == true
-        )
+        #expect(collector.summary.acceptedSampleCount == 1)
+        #expect(collector.summary.rejectedSampleCount == 1)
+        #expect(collector.summary.empiricalMinimumNonzeroSpeedStepKilometersPerHour == nil)
 
         let assessment = collector.summary.qualityAssessment(
             using: try SpeedTelemetryQualityPolicy(
