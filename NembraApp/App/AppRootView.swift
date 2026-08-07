@@ -377,6 +377,7 @@ private struct RideHistoryDetailView: View {
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                         )
                         .padding(14)
+                        .accessibilityHidden(true)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
             } else {
