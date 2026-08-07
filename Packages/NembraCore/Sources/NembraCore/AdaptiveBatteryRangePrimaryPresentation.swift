@@ -44,20 +44,22 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// - based on learned history rather than a provisional cold-start seed;
 /// - normal/high confidence rather than learning/low confidence;
 /// - calculated from authoritative SoC rather than estimated SoC;
-/// - associated with `.live` `VehicleDataAvailability` rather than retained/offline data; and
+/// - backed by a `VehicleState` whose canonical `dataAvailability` is `.live`; and
 /// - finite and non-negative after the adaptive model's own presentation smoothing.
 ///
-/// This type deliberately consumes the existing vehicle-domain availability enum
-/// rather than defining a parallel live/retained/unavailable classification. That
-/// keeps range freshness tied to the same retained-data truth boundary already used
-/// by the rest of Nembra. App integration should pass `VehicleState.dataAvailability`
-/// directly rather than deriving freshness again from connection state.
+/// The public API intentionally accepts the canonical `VehicleState` rather than a
+/// caller-supplied `VehicleDataAvailability`. Freshness is derived inside NembraCore,
+/// so a Dashboard integration cannot accidentally pass `.live` for retained/no-data
+/// state through this presentation API. This also keeps the API valid if the app later
+/// links NembraCore as a separate module, because `VehicleState.dataAvailability` does
+/// not need to be exposed to the app caller.
 ///
 /// This type is deliberately only a presentation policy. It does not establish that
 /// an upstream `.authoritativeMeasurement` claim is itself trustworthy. Production
-/// integration must consume an adaptive-range parent whose authoritative SoC
-/// construction/import boundary has been sealed by the accepted battery/range truth
-/// pipeline before this policy's numeric decision can be treated as production truth.
+/// integration must consume an adaptive-range parent whose authoritative SoC and
+/// derived-estimate construction/import boundaries have been sealed by the accepted
+/// battery/range truth pipeline before this policy's numeric decision can be treated
+/// as production truth.
 ///
 /// States that may become displayable later with an explicit qualifier remain
 /// withheld here until such a qualifier exists. This prevents UI integration from
@@ -66,6 +68,16 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
     public init() {}
 
     public func resolve(
+        estimate: AdaptiveBatteryRangeEstimate?,
+        vehicleState: VehicleState
+    ) -> AdaptiveRangePrimaryPresentationDecision {
+        resolve(
+            estimate: estimate,
+            dataAvailability: vehicleState.dataAvailability
+        )
+    }
+
+    private func resolve(
         estimate: AdaptiveBatteryRangeEstimate?,
         dataAvailability: VehicleDataAvailability
     ) -> AdaptiveRangePrimaryPresentationDecision {
