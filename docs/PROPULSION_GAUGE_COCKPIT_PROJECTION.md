@@ -6,13 +6,13 @@ The canonical propulsion gauge intentionally separates accepted power measuremen
 
 `PropulsionGaugeCockpitProjection` closes that seam without changing telemetry authority, learned-envelope policy, BLE/Tuya behavior, or the Dashboard layout.
 
-It is a presentation handoff above the accepted gauge and accessibility models:
+It is a presentation handoff above the accepted gauge model:
 
 **accepted measurement -> typed cockpit numeric truth**
 
 **display frame -> render-only band position / accepted-peak marker**
 
-The projection deliberately exposes no `displayWatts` property.
+The projection deliberately exposes no `displayWatts` property. It also evaluates the canonical gauge frame only once per cockpit snapshot, avoiding duplicate interpolation work on a future 60 Hz render path.
 
 ## Numeric truth
 
@@ -53,7 +53,9 @@ The projection returns no live band fraction when evidence is retained/unavailab
 
 ## Accepted scale position
 
-`acceptedObservedScaleFraction` is separate from the animated band. It is derived from the newest accepted measurement and the same vehicle/mode/authority-compatible presentation scale already admitted by `PropulsionGaugeAccessibilitySnapshot`.
+`acceptedObservedScaleFraction` is separate from the animated band. It is derived from the newest accepted measurement only after the same canonical `PropulsionGaugeFrame` has admitted the supplied presentation scale for the exact vehicle/mode identity and measurement authority.
+
+The cockpit layer does not reimplement those identity/authority matching rules. A non-nil `frame.scaleOrigin` is the admission result from the canonical gauge model; the accepted fraction then uses the accepted watts rather than `displayWatts`.
 
 This is the value used for near-observed-ceiling semantics. Interpolated band position and held peak position are never allowed to promote the wording state.
 
