@@ -11,7 +11,7 @@ The gauge is **propulsion / power**, not throttle. Measured electrical output do
 `PropulsionPowerSample` is an accepted observation. `PropulsionGaugeFrame` is a render-only frame.
 
 Accepted samples carry:
-- exact vehicle/mode calibration identity;
+- exact vehicle/mode presentation identity;
 - nonnegative finite watts;
 - receive uptime;
 - continuity generation;
@@ -31,33 +31,31 @@ A new continuity generation snaps to the new accepted observation instead of dra
 
 The short visual peak-hold marker is derived only from accepted samples. Render-interpolated values cannot create or raise a peak. The hold duration is a presentation readability policy, not evidence persistence.
 
-## Learned observed power ceiling
+## Scale consumption, not scale learning
 
-`LearnedObservedPowerEnvelope` may eventually give the instrument a stable visual full-power region after a production adapter has verified a real positive power field.
+This lane does **not** learn the observed full-power envelope. That capability is owned by the separate `observed-power-envelope` worker/PR and remains independent from render-clock behavior.
 
-The learned ceiling:
-- accepts only package-sealed `verifiedVehicleMeasurement` observations;
-- is bound to exact vehicle identity and optional confirmed mode key;
-- emits a scale that carries that same vehicle/mode identity, so another scooter or mode cannot consume it accidentally;
-- ignores zero when building its positive upper envelope while still advancing evidence chronology;
-- uses a bounded rolling window and caller-injected upper percentile;
-- requires repeated positive observations before a scale exists;
-- supports restrained visual headroom;
-- adapts upward when stronger repeated evidence appears;
-- uses hysteresis plus deliberately slower downward adaptation;
-- cannot be created from Simulator samples.
+`PropulsionGaugeScale` is only the small presentation adapter consumed by the display model:
+- Simulator can construct an explicit Simulator scale for visual/runtime QA.
+- A verified observed-envelope scale can only be constructed through a package-sealed adapter entry point.
+- Every scale carries exact vehicle/mode identity.
+- The display refuses cross-identity normalization.
+- The display refuses a Simulator scale for verified measurements and refuses a verified-envelope scale for Simulator measurements.
+- The scale is presentation-only and never rewrites raw measured watts.
 
-It is a **learned observed visual ceiling**, not a certified/rated motor or controller maximum. Production UI must not label it as rated power or full throttle.
+A verified observed-envelope scale is still **not** a certified/rated motor or controller maximum and must not be labeled as such. It is also not throttle position.
 
-A Simulator scale is a separate explicit authority and is identity-bound too. The display model refuses to combine a Simulator scale with verified vehicle observations, a learned physical scale with Simulator observations, or any scale whose vehicle/mode identity differs from the active gauge identity.
+## Numeric robustness
+
+Finite accepted observations remain finite through render interpolation, including adversarial extreme values. Normalized fractions clamp for presentation even if an intermediate raw division would overflow. Any unexpected non-finite render result fails closed to a real accepted endpoint rather than being exposed as fabricated telemetry.
 
 ## Current product integration status
 
 This slice is currently NembraCore/package-only. It intentionally does not modify `DashboardView.swift` or `Nembra.xcodeproj/project.pbxproj` while those high-contention product surfaces are owned by other active workers.
 
-The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, and continuity. Only then should the app wire verified power samples into this model and integrate the resulting render-only frames into the flagship Dashboard.
+The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, and continuity. After that, the verified power observation path and the separately qualified observed-envelope calibration can feed this render model before Dashboard integration.
 
-Simulator may use `PropulsionPowerSample.simulator` plus `PropulsionGaugeScale.simulator` for visual/runtime QA, but those values must remain explicitly synthetic and must never train `LearnedObservedPowerEnvelope`.
+Simulator may use `PropulsionPowerSample.simulator` plus `PropulsionGaugeScale.simulator` for visual/runtime QA, but those values remain explicitly synthetic.
 
 ## Hardware truth boundary
 
