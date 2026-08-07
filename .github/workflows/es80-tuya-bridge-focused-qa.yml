@@ -1,0 +1,71 @@
+name: ES80 Tuya Capture Bridge Focused QA
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-capture/ci/tuya-bridge-chat-n7q4p'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-tuya-bridge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Test capture-to-Tuya bridge exact source
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify immutable checkout
+        env:
+          EXPECTED_PRODUCT_PARENT: b4e12d2dcde207c77a013d92845caa8958c9425b
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          actual_parent="$(git rev-parse HEAD^)"
+          echo "workflow_head=$GITHUB_SHA"
+          echo "actual_head=$actual_sha"
+          echo "expected_product_parent=$EXPECTED_PRODUCT_PARENT"
+          echo "actual_product_parent=$actual_parent"
+          test "$actual_sha" = "$GITHUB_SHA"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_PARENT"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive adapter against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture tooling must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraCore analyzer dependency
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore
+
+      - name: Test NembraBluetoothCapture bridge
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build NembraBluetoothCapture for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
