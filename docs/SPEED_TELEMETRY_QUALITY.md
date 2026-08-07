@@ -1,7 +1,8 @@
 # Speed telemetry quality gate
 
 Date: 2026-08-06
-Worker: `chat-p7w3k`
+Original worker: `chat-p7w3k`
+Recovery worker: `chat-b6q2y` (Swarm OS v7 epoch 2)
 Lane: `telemetry-quality-gate`
 Primary hardware-validation target: **AOVOPRO ES80**
 
@@ -107,7 +108,11 @@ Deterministic repository tests cover:
 - measured latency and empirical resolution independently exceeding policy;
 - unconstrained policy remaining qualified without unrequested metrics.
 
-The revised focused Swift 6.2.1 package, using the same collector/summary behavior and quality API, passed **11/11 tests**. Repository-wide NembraCore/Xcode 27 QA is still required before merge.
+The pre-v7 worker reported a focused Swift 6.2.1 harness passing **11/11 tests** on the predecessor slice. That is supporting evidence, not final repository acceptance. The later exact-head Xcode 27 run `31131216556` on predecessor head `8aa9d328b80f5b783ab91f2468877c2de583009a` passed immutable checkout/project validation but failed during `Validate core package`; the preserved GitHub annotations expose only exit code 1, so the exact historical failing assertion is not claimed.
+
+During v7 recovery, source review independently proved that one inherited test compared a Foundation `Date`-derived 50 ms latency using exact `== 50`. Swift 6.2.1 evaluates that construction at approximately `49.999952316` ms, so the test now uses the same tight `0.001 ms` tolerance pattern already present in `TelemetryBenchmarkTests`. That is test hardening only and does not change production quality-policy semantics.
+
+Repository-wide NembraCore/Xcode 27 QA on the exact final recovery SHA is still required before merge.
 
 ## Hardware validation still required
 
