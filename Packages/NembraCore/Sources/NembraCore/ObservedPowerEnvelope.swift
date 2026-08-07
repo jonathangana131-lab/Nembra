@@ -273,6 +273,46 @@ public struct ObservedPowerEnvelopeCalibration: Equatable, Sendable {
     public let learnedGaugeScaleWatts: Double
     public let learningSampleCount: Int
     public let upperBandSupportCount: Int
+
+#if SWIFT_PACKAGE
+    /// Package-owned construction keeps validated learner/persistence code able to
+    /// restore calibration without exposing a public forgery surface.
+    package init(
+        scope: ObservedPowerEnvelopeScope,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority,
+        learnedObservedCeilingWatts: Double,
+        learnedGaugeScaleWatts: Double,
+        learningSampleCount: Int,
+        upperBandSupportCount: Int
+    ) {
+        self.scope = scope
+        self.evidenceAuthority = evidenceAuthority
+        self.learnedObservedCeilingWatts = learnedObservedCeilingWatts
+        self.learnedGaugeScaleWatts = learnedGaugeScaleWatts
+        self.learningSampleCount = learningSampleCount
+        self.upperBandSupportCount = upperBandSupportCount
+    }
+#else
+    /// Nembra's app target directly compiles selected Core files. Keep calibration
+    /// minting file-local there so unrelated same-module UI/app code cannot forge
+    /// a verified observed ceiling. Direct-source persistence integration must add
+    /// an explicit trusted bridge rather than regaining module-wide construction.
+    fileprivate init(
+        scope: ObservedPowerEnvelopeScope,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority,
+        learnedObservedCeilingWatts: Double,
+        learnedGaugeScaleWatts: Double,
+        learningSampleCount: Int,
+        upperBandSupportCount: Int
+    ) {
+        self.scope = scope
+        self.evidenceAuthority = evidenceAuthority
+        self.learnedObservedCeilingWatts = learnedObservedCeilingWatts
+        self.learnedGaugeScaleWatts = learnedGaugeScaleWatts
+        self.learningSampleCount = learningSampleCount
+        self.upperBandSupportCount = upperBandSupportCount
+    }
+#endif
 }
 
 public enum ObservedPowerEnvelopeRecordResult: Equatable, Sendable {
