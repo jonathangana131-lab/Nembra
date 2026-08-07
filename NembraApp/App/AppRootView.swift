@@ -520,7 +520,7 @@ private struct RideHistoryDetailView: View {
 
                     if let geometry = routes.geometry(sessionID: record.sessionID) {
                         Divider().padding(.leading, 20)
-                        recordingDetailRow("Route coverage", value: routeCoverageLabel(geometry.coverage))
+                        recordingDetailRow("Map evidence", value: routeCoverageLabel(geometry.coverage))
                         Divider().padding(.leading, 20)
                         recordingDetailRow("Recorded points", value: "\(geometry.pointCount)")
 
@@ -640,11 +640,11 @@ private struct RideHistoryDetailView: View {
     private func routeCoverageLabel(_ coverage: RideDistanceCoverage) -> String {
         switch coverage {
         case .complete:
-            "Complete recording"
+            "Route coverage complete"
         case .partial:
-            "Partial recording"
+            "Route coverage partial"
         case .unknown:
-            "Coverage unknown"
+            "Route coverage unknown"
         }
     }
 
