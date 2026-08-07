@@ -109,6 +109,8 @@ Keep current factual intent. Exact final copy can be polished during implementat
 | scooterUnavailable | Scooter not found | powered-on / nearby retry guidance | Reconnect |
 | unsupportedConfiguration | Scooter software not recognized | controls intentionally unavailable until verified | none |
 
+For connecting/reconnecting, the identity status is the single authoritative visible/accessible title. The recovery portion supplies supporting copy plus a decorative spinner; it must not repeat the same state title again.
+
 If product copy changes, tests should assert semantics/identifiers rather than brittle punctuation unless wording itself is a safety contract.
 
 ## Retained-data relationship
@@ -132,7 +134,9 @@ Expected reading order:
 Requirements:
 
 - do not announce a colored dot as a separate unlabeled element;
-- progress affordance uses the same semantic state text rather than a generic `progress` label;
+- connecting/reconnecting use the identity status as the one authoritative progress-state title;
+- the progress spinner is decorative / accessibility-hidden because the state is already expressed truthfully in text;
+- the progress recovery row exposes supporting copy only, avoiding duplicate `Connecting` / `Reconnecting` semantics;
 - reconnect/settings actions keep explicit labels;
 - unknown lock state is omitted, not announced as unlocked;
 - Dynamic Type must allow the supporting message to wrap naturally;
@@ -145,9 +149,11 @@ The independent production Dynamic Type audit identified two horizontal squeeze 
 The status-field implementation therefore uses `dynamicTypeSize.isAccessibilitySize` only for those two owned compositions:
 
 - identity + known lock state switch from a horizontal layout to a leading vertical layout at accessibility text sizes;
-- recovery icon + full issue copy + contextual action switch from a horizontal layout to a leading vertical layout at accessibility text sizes;
+- recovery icon + copy + contextual action switch from a horizontal layout to a leading vertical layout at accessibility text sizes;
 - default text sizes retain the original horizontal geometry;
 - recovery controls remain explicit 44×44 pt targets.
+
+A later independent correctness review also proved that the prior progress presentation repeated `Connecting` / `Reconnecting` in the header, recovery title, and spinner accessibility label. The implementation now keeps the header status authoritative, omits the duplicate progress recovery title, and hides the spinner from accessibility while preserving its visual progress affordance.
 
 This is deliberately **not** a claim that all of Home is Dynamic Type-complete. The separate audit flags pre-existing Battery/Trip/Mode columns, fixed-height action controls, and ride-mode geometry outside this focused status-field slice. Those must be addressed by a later Home accessibility packet rather than silently expanding this PR.
 
@@ -207,6 +213,7 @@ Visual acceptance questions:
 - Is retained data still unmistakably last-known?
 - Are recovery actions obvious and at least 44 pt without becoming dominant cards?
 - Does the status field reduce repeated rounded-container hierarchy rather than adding another layer?
+- Do connecting/reconnecting avoid repeating their status title while still communicating progress clearly?
 - Does the screen remain truthful when battery/range is unavailable or unverified?
 
 ## Truth / hardware boundary
