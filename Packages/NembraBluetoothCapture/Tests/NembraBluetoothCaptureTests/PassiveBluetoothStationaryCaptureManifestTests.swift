@@ -30,6 +30,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         )
 
         #expect(manifest.schemaVersion == 1)
+        #expect(manifest.experimentKind == .stationaryBaseline)
         #expect(manifest.nembraBuildCommitSHA == commit.lowercased())
         #expect(manifest.sourceArtifact.captureSessionID == sessionID)
         #expect(manifest.sourceArtifact.selectedPeripheralIdentifier == target)
