@@ -32,6 +32,7 @@ jobs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       same_repo: ${{ steps.pr.outputs.same_repo }}
       should_run: ${{ steps.pr.outputs.should_run }}
+      automatic: ${{ steps.pr.outputs.automatic }}
 
     steps:
       - name: Resolve immutable PR head
@@ -39,7 +40,8 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const pullNumber = context.eventName === 'pull_request_target'
+            const automatic = context.eventName === 'pull_request_target'
+            const pullNumber = automatic
               ? context.payload.pull_request.number
               : context.issue.number
 
@@ -53,7 +55,7 @@ jobs:
             const sameRepo = livePr.head.repo?.full_name === repository
             let shouldRun = sameRepo
 
-            if (context.eventName === 'pull_request_target') {
+            if (automatic) {
               const eventHeadSha = context.payload.pull_request.head.sha
               const stillCurrent = eventHeadSha === livePr.head.sha
               const liveAcceptanceReady = livePr.state === 'open' && livePr.draft === false
@@ -72,24 +74,61 @@ jobs:
             core.setOutput('pr_number', String(livePr.number))
             core.setOutput('same_repo', String(sameRepo))
             core.setOutput('should_run', String(shouldRun))
+            core.setOutput('automatic', String(automatic))
 
   simulator-qa:
     name: Build, test, and capture exact PR head
     needs: resolve
     if: needs.resolve.outputs.same_repo == 'true' && needs.resolve.outputs.should_run == 'true'
     concurrency:
-      group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}
+      group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
       cancel-in-progress: true
     runs-on: xcode-27
     timeout-minutes: 30
 
     steps:
+      - name: Revalidate live PR head before checkout
+        id: live
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          AUTOMATIC: ${{ needs.resolve.outputs.automatic }}
+        with:
+          script: |
+            const { data: livePr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            const sameRepo = livePr.head.repo?.full_name === repository
+            const stillCurrent = livePr.head.sha === process.env.EXPECTED_HEAD_SHA
+            const automatic = process.env.AUTOMATIC === 'true'
+            const liveAcceptanceReady = livePr.state === 'open' && livePr.draft === false
+            const shouldRun = sameRepo && stillCurrent && (!automatic || liveAcceptanceReady)
+
+            if (!stillCurrent) {
+              core.notice(`Skipping queued stale head ${process.env.EXPECTED_HEAD_SHA}; live PR #${livePr.number} head is ${livePr.head.sha}.`)
+            }
+            if (automatic && !liveAcceptanceReady) {
+              core.notice(`Skipping queued automatic gate for live PR #${livePr.number}: state=${livePr.state}, draft=${livePr.draft}.`)
+            }
+            if (!sameRepo) {
+              core.notice(`Skipping queued gate because live PR #${livePr.number} is not a same-repository head.`)
+            }
+
+            core.setOutput('should_run', String(shouldRun))
+
       - name: Checkout immutable PR head
+        if: steps.live.outputs.should_run == 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.head_sha }}
 
       - name: Verify immutable PR head
+        if: steps.live.outputs.should_run == 'true'
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
@@ -98,20 +137,23 @@ jobs:
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
       - name: Validate project structure
+        if: steps.live.outputs.should_run == 'true'
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
           bash -n scripts/ci/xcode27_simulator_capture.sh
 
       - name: Validate core package
+        if: steps.live.outputs.should_run == 'true'
         working-directory: Packages/NembraCore
         run: swift test
 
       - name: Build, test, and capture Simulator states
+        if: steps.live.outputs.should_run == 'true'
         run: scripts/ci/xcode27_simulator_capture.sh
 
       - name: Upload Simulator screenshots and logs
-        if: always()
+        if: always() && steps.live.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: nembra-xcode27-pr-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
