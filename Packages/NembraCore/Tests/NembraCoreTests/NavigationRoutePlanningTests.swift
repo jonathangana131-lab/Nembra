@@ -268,17 +268,32 @@ struct NavigationRoutePlanningTests {
         #expect(afterCancellation == nil)
     }
 
-    @Test("reset clears presentation state without making old callbacks current")
-    func resetRejectsOldCallbacks() throws {
+    @Test("reset returns active provider token and rejects old callbacks")
+    func resetReturnsActiveProviderToken() throws {
         var coordinator = NavigationRoutePlanningCoordinator()
         let start = try coordinator.begin(request())
 
-        coordinator.reset()
+        let providerTokenToCancel = coordinator.reset()
 
+        #expect(providerTokenToCancel == start.token)
         #expect(coordinator.state == .idle)
         let staleAccepted = coordinator.complete(token: start.token, routes: [try route()])
         #expect(staleAccepted == false)
         #expect(coordinator.fail(token: start.token, reason: .unknown) == false)
+    }
+
+    @Test("reset without active provider work returns no cancellation token")
+    func resetWithoutActiveRequestReturnsNil() throws {
+        var coordinator = NavigationRoutePlanningCoordinator()
+
+        #expect(coordinator.reset() == nil)
+
+        let request = try request()
+        let start = try coordinator.begin(request)
+        #expect(coordinator.complete(token: start.token, routes: [try route()]))
+
+        #expect(coordinator.reset() == nil)
+        #expect(coordinator.state == .idle)
     }
 
     @Test("request sequence exhaustion fails atomically")
