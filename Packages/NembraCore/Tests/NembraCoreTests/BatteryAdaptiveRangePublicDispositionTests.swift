@@ -26,12 +26,13 @@ struct BatteryAdaptiveRangePublicDispositionTests {
     private func observation(
         _ percentage: Double,
         role: BatteryEvidenceRole,
+        uptime: UInt64 = 1,
         continuity: BatteryEvidenceContinuity = .continuous
     ) throws -> BatteryEvidenceObservation {
         try BatteryEvidenceObservation(
             value: BatterySemanticValue.stateOfChargePercent(percentage),
             role: role,
-            receivedAtUptimeNanoseconds: 1,
+            receivedAtUptimeNanoseconds: uptime,
             receivedAtDate: Date(timeIntervalSince1970: 1_000),
             continuity: continuity
         )
@@ -80,5 +81,36 @@ struct BatteryAdaptiveRangePublicDispositionTests {
         )
         #expect(resetAndAccepted.disposition == .continuityResetAndAuthoritativeSOCAccepted)
         #expect(resetAndAccepted.candidateLearningWindow == nil)
+    }
+
+    @Test("emitted public window remains a candidate until the adaptive model explicitly accepts it")
+    func emittedWindowIsOnlyACandidate() throws {
+        let p = try policy()
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, role: .verifiedVehicleMeasurement, uptime: 1),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+
+        let result = try pipeline.acceptBatteryObservation(
+            observation(77, role: .verifiedVehicleMeasurement, uptime: 2),
+            policy: p
+        )
+        let candidate = try #require(result.candidateLearningWindow)
+
+        #expect(result.disposition == .authoritativeSOCAccepted)
+        #expect(candidate.startSOC.percentage == 80)
+        #expect(candidate.endSOC.percentage == 77)
+        #expect(candidate.distanceMeters == 300)
+        #expect(model.acceptedWindowCount == 0)
+        #expect(model.hasLearnedEfficiency == false)
+
+        let ingest = model.ingest(candidate, policy: p)
+        #expect(ingest.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(model.hasLearnedEfficiency)
     }
 }
