@@ -71,6 +71,36 @@ struct DashboardModePersonality: Equatable {
     }
 }
 
+/// Truth state for controls that are safe to expose only after Nembra has
+/// explicit evidence that the connected vehicle is stopped.
+///
+/// A missing, negative, or non-finite speed is not zero. The legacy
+/// `VehicleState` does not yet carry field-specific speed freshness, so this
+/// resolver deliberately makes only the strongest claim the current app model
+/// can support: a connected, finite, nonnegative speed may prove stopped or
+/// moving; absent/invalid speed remains unavailable. A future field-specific
+/// speed authority can tighten this input without changing the UI semantics.
+enum DashboardStoppedControlAvailability: Equatable {
+    case notConnected
+    case speedUnavailable
+    case confirmedStopped
+    case moving
+
+    static func resolved(
+        connection: VehicleConnectionState,
+        speedKilometersPerHour: Double?
+    ) -> DashboardStoppedControlAvailability {
+        guard connection == .connected else { return .notConnected }
+        guard let speedKilometersPerHour,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0 else {
+            return .speedUnavailable
+        }
+
+        return speedKilometersPerHour < 0.5 ? .confirmedStopped : .moving
+    }
+}
+
 /// The dedicated landscape riding surface.
 ///
 /// Phase 11 keeps the accepted Phase 10 speed instrumentation and makes confirmed
@@ -172,26 +202,36 @@ struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
     private func contextRail(personality: DashboardModePersonality) -> some View {
         VStack(alignment: .trailing, spacing: 14) {
             modeReadout(personality: personality)
 
             Spacer(minLength: 0)
 
-            if shouldShowStoppedControls {
+            switch stoppedControlAvailability {
+            case .confirmedStopped:
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else if isVehicleMoving {
+            case .moving:
                 Text("Controls available when stopped")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.trailing)
                     .accessibilityIdentifier("dashboard.controls-moving-message")
+            case .speedUnavailable:
+                Text("Controls unavailable until live speed is known")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
+            case .notConnected:
+                EmptyView()
             }
         }
         .animation(
             reduceMotion ? nil : .snappy(duration: 0.20),
-            value: shouldShowStoppedControls
+            value: stoppedControlAvailability
         )
     }
 
@@ -328,12 +368,11 @@ struct DashboardView: View {
         )
     }
 
-    private var shouldShowStoppedControls: Bool {
-        vehicle.state.connection == .connected && !isVehicleMoving
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    private var stoppedControlAvailability: DashboardStoppedControlAvailability {
+        DashboardStoppedControlAvailability.resolved(
+            connection: vehicle.state.connection,
+            speedKilometersPerHour: vehicle.state.speedKilometersPerHour
+        )
     }
 
     private var supportedModes: [RideMode] {
