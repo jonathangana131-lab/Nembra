@@ -341,10 +341,11 @@ capture_dynamic_type_matrix() {
 
   {
     echo "initial=$original_content_size"
-    echo "requested=accessibility-medium,accessibility-extra-large,accessibility-extra-extra-extra-large"
+    echo "requested=extra-extra-extra-large,accessibility-medium,accessibility-extra-large,accessibility-extra-extra-extra-large"
   } > "$ARTIFACTS_DIR/logs/dynamic-type-state.txt"
 
   for category in \
+    extra-extra-extra-large \
     accessibility-medium \
     accessibility-extra-large \
     accessibility-extra-extra-extra-large
@@ -356,7 +357,8 @@ capture_dynamic_type_matrix() {
     fi
 
     capture_state connected-stopped light "content-size-${category}"
-    if [[ "$category" != "accessibility-medium" ]]; then
+    if [[ "$category" == "accessibility-extra-large" || \
+          "$category" == "accessibility-extra-extra-extra-large" ]]; then
       capture_state reconnecting light "content-size-${category}"
     fi
     if [[ "$category" == "accessibility-extra-extra-extra-large" ]]; then
