@@ -1,4 +1,4 @@
-name: App Icon Source Semantic Check
+name: App Icon Source Repair
 
 on:
   push:
@@ -6,15 +6,32 @@ on:
       - parallel/utility-app-icon-source-check/chat-n4x7p
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  TARGET_BRANCH: parallel/product-identity-app-icon/chat-n4x7p
+  EXPECTED_TARGET_HEAD: e6c4d3311e6d9df67f90c5a256cfdad1e47c79a8
 
 jobs:
-  verify-pixels:
+  regenerate-corrupt-assets:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out exact utility head
+      - name: Check out the exact owned product branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 1
+
+      - name: Fail closed if product head moved
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_TARGET_HEAD" || {
+            echo "Product head moved: expected $EXPECTED_TARGET_HEAD, found $actual" >&2
+            exit 1
+          }
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -24,61 +41,82 @@ jobs:
       - name: Install pinned Pillow
         run: python -m pip install --disable-pip-version-check Pillow==12.2.0
 
-      - name: Compare checked-in icon pixels with generator output
+      - name: Regenerate PNGs from the checked-in source
         shell: bash
         run: |
+          set -euo pipefail
+          python scripts/generate_nembra_app_icon.py
+          python scripts/generate_nembra_app_icon.py --check
+
           python - <<'PY'
-          from __future__ import annotations
-
-          import hashlib
-          import importlib.util
           from pathlib import Path
+          from PIL import Image
 
-          from PIL import Image, ImageChops
+          root = Path('NembraApp/Resources/Assets.xcassets/AppIcon.appiconset')
+          expected = {
+              'NembraAppIcon-default.png': ('RGB', False),
+              'NembraAppIcon-dark.png': ('RGBA', True),
+              'NembraAppIcon-tinted.png': ('L', False),
+          }
 
-          generator_path = Path('scripts/generate_nembra_app_icon.py')
-          spec = importlib.util.spec_from_file_location('nembra_icon_generator', generator_path)
-          if spec is None or spec.loader is None:
-              raise SystemExit('Could not load icon generator.')
-          generator = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(generator)
-
-          icon_dir = Path('NembraApp/Resources/Assets.xcassets/AppIcon.appiconset')
-
-          def git_blob_sha(data: bytes) -> str:
-              header = f'blob {len(data)}\0'.encode()
-              return hashlib.sha1(header + data).hexdigest()
-
-          for filename, variant in generator.VARIANTS.items():
-              checked_path = icon_dir / filename
-              if not checked_path.is_file():
-                  raise SystemExit(f'Missing checked-in icon: {checked_path}')
-
-              with Image.open(checked_path) as checked:
-                  checked.load()
-                  expected = generator.render(variant)
-
-                  if checked.mode != expected.mode:
-                      raise SystemExit(
-                          f'{filename}: mode mismatch: checked-in={checked.mode}, expected={expected.mode}'
+          for filename, (mode, needs_transparency) in expected.items():
+              path = root / filename
+              with Image.open(path) as image:
+                  image.load()
+                  assert image.size == (1024, 1024), (filename, image.size)
+                  assert image.mode == mode, (filename, image.mode)
+                  if needs_transparency:
+                      alpha_min, alpha_max = image.getchannel('A').getextrema()
+                      assert alpha_min == 0 and alpha_max == 255, (
+                          filename,
+                          alpha_min,
+                          alpha_max,
                       )
-                  if checked.size != expected.size:
-                      raise SystemExit(
-                          f'{filename}: size mismatch: checked-in={checked.size}, expected={expected.size}'
-                      )
-                  if checked.tobytes() != expected.tobytes():
-                      difference = ImageChops.difference(checked, expected)
-                      bbox = difference.getbbox()
-                      raise SystemExit(f'{filename}: pixel mismatch; differing bounds={bbox}')
-
-              checked_bytes = checked_path.read_bytes()
-              generated_bytes = generator.encoded_png_bytes(variant)
-              print(
-                  f'{filename}: PIXELS MATCH; '
-                  f'checked_blob={git_blob_sha(checked_bytes)}; '
-                  f'generated_blob={git_blob_sha(generated_bytes)}; '
-                  f'checked_bytes={len(checked_bytes)}; generated_bytes={len(generated_bytes)}'
-              )
-
-          print('All checked-in Nembra app-icon pixels match the maintainable generator source.')
+              print(f'{filename}: decodes as 1024x1024 {mode}')
           PY
+
+      - name: Prove the repair is asset-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          test -n "$changed" || {
+            echo 'Expected corrupt PNG repair to change at least one asset.' >&2
+            exit 1
+          }
+
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev '^NembraApp/Resources/Assets\.xcassets/AppIcon\.appiconset/NembraAppIcon-(default|dark|tinted)\.png$' || true)"
+          test -z "$unexpected" || {
+            echo 'Unexpected changed paths:' >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          }
+
+          printf '%s\n' "$changed"
+          git diff --check
+
+      - name: Commit and push without rewriting concurrent work
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          test "$remote_head" = "$EXPECTED_TARGET_HEAD" || {
+            echo "Remote product head moved before repair: $remote_head" >&2
+            exit 1
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-default.png \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-dark.png \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-tinted.png
+          git diff --cached --check
+          git commit -m '[product-identity] Regenerate app icons from source'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "Repaired product head: $(git rev-parse HEAD)"
+          git hash-object \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-default.png \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-dark.png \
+            NembraApp/Resources/Assets.xcassets/AppIcon.appiconset/NembraAppIcon-tinted.png
