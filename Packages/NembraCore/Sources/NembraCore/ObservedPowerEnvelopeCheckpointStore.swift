@@ -19,21 +19,29 @@ public enum ObservedPowerEnvelopeCheckpointSaveResult: Equatable, Sendable {
 }
 
 public protocol ObservedPowerEnvelopeCheckpointStore: Sendable {
+    /// Public durable writes are deliberately Simulator/runtime-QA only. Verified
+    /// physical persistence stays package-sealed on the concrete store so a UI or
+    /// generic client cannot decode JSON with physical-looking enum values and
+    /// feed it into the trusted durable path.
     @discardableResult
-    func save(
+    func saveSimulatorQA(
         _ checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint
     ) async throws -> ObservedPowerEnvelopeCheckpointSaveResult
 
+    /// Raw load is inspection/decode only. It does not restore a calibration or
+    /// promote checkpoint metadata into verified physical presentation authority.
     func load() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint?
     func clear() async throws
 }
 
 /// Two-slot atomic journal for one exact observed-power calibration scope/policy.
 ///
-/// The checkpoint itself owns semantic validation and physical-vs-Simulator
-/// authority. This store adds crash tolerance and durable monotonicity only:
-/// it never reconstructs live telemetry, receipt chronology, rolling samples, or
-/// display frames.
+/// The checkpoint itself owns semantic validation. This store adds crash tolerance,
+/// durable monotonicity, and a second authority boundary around writes. Public
+/// callers can durably write Simulator checkpoints only. Under SwiftPM, verified
+/// physical persistence accepts the package-sealed verified learner directly and
+/// reconstructs a retained physical calibration only through the package-sealed
+/// restore path.
 ///
 /// A directory becomes bound to the first valid checkpoint written there. A
 /// different vehicle/mode, authority pair, or learning policy requires an
@@ -98,9 +106,82 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
     }
 
     @discardableResult
-    public func save(
+    public func saveSimulatorQA(
         _ checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint
     ) async throws -> ObservedPowerEnvelopeCheckpointSaveResult {
+        try saveValidated(
+            checkpoint,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    /// Trusted production persistence entry point. Taking the sealed learner rather
+    /// than an arbitrary public checkpoint prevents a caller from constructing a
+    /// verified-looking checkpoint by decoding/mutating JSON and asking the store
+    /// to bless it as durable physical calibration.
+    @discardableResult
+    package func saveVerifiedVehicleMeasurements(
+        from learner: ObservedPowerEnvelopeLearner
+    ) async throws -> ObservedPowerEnvelopeCheckpointSaveResult {
+        let checkpoint = try ObservedPowerEnvelopeCalibrationCheckpoint
+            .verifiedVehicleMeasurements(from: learner)
+        return try saveValidated(
+            checkpoint,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+
+    /// Trusted physical restore performs decode + exact-scope/policy validation +
+    /// package-sealed authority restoration as one package-only operation.
+    package func loadVerifiedVehicleMeasurement(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy
+    ) async throws -> ObservedPowerEnvelopeRestoredCalibration? {
+        guard let checkpoint = try await load() else { return nil }
+        return try checkpoint.restoredVerifiedVehicleMeasurement(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy
+        )
+    }
+#endif
+
+    public func load() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint? {
+        let a = try readSlot(at: slotAURL)
+        let b = try readSlot(at: slotBURL)
+        try rejectUnsupportedSchema(a, b)
+        try rejectConflictingGenerations(a, b)
+
+        let valid = [a, b].compactMap(\.envelope)
+        try validateJournalProgression(valid)
+        if let newest = valid.max(by: { $0.generation < $1.generation }) {
+            return newest.checkpoint
+        }
+
+        if a.isCorrupt || b.isCorrupt {
+            throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
+        }
+        return nil
+    }
+
+    public func clear() async throws {
+        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+    }
+
+    private func saveValidated(
+        _ checkpoint: ObservedPowerEnvelopeCalibrationCheckpoint,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws -> ObservedPowerEnvelopeCheckpointSaveResult {
+        guard checkpoint.identityAuthority == requiredScopeAuthority,
+              checkpoint.evidenceAuthority == requiredEvidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointStoreError.authorityMismatch
+        }
+
         try fileManager.createDirectory(
             at: directoryURL,
             withIntermediateDirectories: true
@@ -153,30 +234,6 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         }
 
         return .stored(generation: generation)
-    }
-
-    public func load() async throws -> ObservedPowerEnvelopeCalibrationCheckpoint? {
-        let a = try readSlot(at: slotAURL)
-        let b = try readSlot(at: slotBURL)
-        try rejectUnsupportedSchema(a, b)
-        try rejectConflictingGenerations(a, b)
-
-        let valid = [a, b].compactMap(\.envelope)
-        try validateJournalProgression(valid)
-        if let newest = valid.max(by: { $0.generation < $1.generation }) {
-            return newest.checkpoint
-        }
-
-        if a.isCorrupt || b.isCorrupt {
-            throw ObservedPowerEnvelopeCheckpointStoreError.corruptedCheckpoint
-        }
-        return nil
-    }
-
-    public func clear() async throws {
-        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
-        }
     }
 
     private enum ReplacementDecision {

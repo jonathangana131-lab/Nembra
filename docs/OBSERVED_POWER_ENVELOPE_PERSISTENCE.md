@@ -45,7 +45,7 @@ A new process/session starts new observation chronology and a new learning windo
 
 Decode is fail-closed. Schema, identity strings, authority pairing, learning policy, learned ceiling, sample count, support count, and derived scale must validate.
 
-Restore additionally requires the caller to supply the exact current `ObservedPowerEnvelopeScope` and policy. Verified-physical snapshot/restore entry points remain package-sealed in SwiftPM and file-local in direct-source builds, matching #225's authority boundary; public clients can exercise only Simulator/runtime-QA persistence.
+Restore additionally requires the caller to supply the exact current `ObservedPowerEnvelopeScope` and policy. Verified-physical snapshot/restore entry points remain package-sealed in SwiftPM and file-local in direct-source builds, matching #225's authority boundary; public clients can exercise only Simulator/runtime-QA restoration.
 
 The count invariants mirror #225's bounded rolling-window semantics: `learningSampleCount` is the current eligible window count and cannot exceed `windowCapacity`; `upperBandSupportCount` comes from that same window and cannot exceed the sample count.
 
@@ -97,9 +97,22 @@ The journal adds durable invariants above checkpoint decoding:
 
 The store also enforces the same upward-hysteresis floor at the final durable-write boundary. Equal, lower, or merely sub-hysteresis incoming checkpoints return `.retainedExisting` without creating a new generation. Only a same-scope/same-policy/same-authority checkpoint whose learned observed ceiling is strictly above the retained ceiling by the persisted hysteresis requirement may advance the journal.
 
-This means a caller bypassing the higher-level reconciliation helper still cannot silently shrink or churn the durable learned scale. It does **not** make an arbitrary checkpoint physically authoritative: verified restore and verified presentation remain sealed by the domain/package boundaries above.
+This means a caller bypassing the higher-level reconciliation helper still cannot silently shrink or churn the durable learned scale.
 
-The store takes a caller-provided directory. NembraCore does not invent a filesystem location, hash a BLE local name, or choose a physical scooter identifier. Production app wiring must supply a legitimate storage location only after a stable non-secret per-scooter identity/storage policy is established. A separate directory (or explicit clear) is required when intentionally changing scope/policy.
+## Durable physical authority is package-sealed end to end
+
+A decoded checkpoint is data, not proof. Because `ObservedPowerEnvelopeCalibrationCheckpoint` is Codable, ordinary code can inspect or even manufacture JSON whose enum strings *look* like verified vehicle/measurement authority. That metadata must never be enough to enter Nembra's trusted physical persistence path.
+
+The journal therefore deliberately separates its APIs:
+
+- public `saveSimulatorQA(_:)` accepts only `.simulatorQA` identity + evidence authority and rejects physical-looking checkpoints before creating/writing journal state;
+- SwiftPM package-only `saveVerifiedVehicleMeasurements(from:)` accepts the package-sealed verified learner, snapshots it through the package-sealed physical checkpoint constructor, and only then writes the journal;
+- SwiftPM package-only `loadVerifiedVehicleMeasurement(expectedScope:expectedPolicy:)` performs journal decode plus exact physical scope/policy validation plus package-sealed retained-calibration restoration in one trusted operation;
+- public raw `load()` remains inspection/decode only. Returning checkpoint metadata does not reconstruct `ObservedPowerEnvelopeRestoredCalibration` or presentation-scale physical authority.
+
+This closes the API hole where a generic public `save(checkpoint)` could otherwise accept a JSON-decoded physical-looking checkpoint on an empty directory and leave future trusted integration with ambiguous provenance.
+
+This is a compile-time product-authority boundary, not a claim of hostile-device cryptographic attestation. Production code must still own the legitimate per-scooter storage location and verified identity mapping. NembraCore does not invent a filesystem location, hash a BLE local name, or choose a physical scooter identifier.
 
 Calibration writes should remain infrequent and event-driven; no display clock, BLE cadence, or render frame should cause journal writes.
 
@@ -133,4 +146,4 @@ The tests construct observations using the learner's exact scope and explicit re
 
 ## Hardware status
 
-**NOT VERIFIED ON PHYSICAL AOVOPRO ES80.** No physical ES80 power/current field, DP, characteristic, scale, cadence, throttle signal, regen semantic, battery/thermal condition, or actual full-power ceiling is claimed by this persistence work.
+**NOT VERIFIED ON PHYSICAL AOVOPRO ES80.** No physical ES80 power/current field, DP, characteristic, scale, cadence, throttle signal, regen semantic, battery/thermal condition, stable physical persistence identity, or actual full-power ceiling is claimed by this persistence work.
