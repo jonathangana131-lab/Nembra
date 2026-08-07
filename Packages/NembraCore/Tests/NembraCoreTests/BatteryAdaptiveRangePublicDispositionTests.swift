@@ -16,7 +16,6 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             estimateSmoothingFactor: 0.25,
             provisionalEfficiencyMetersPerPercentagePoint: nil,
             lowSOCCautionThresholdPercent: nil,
-            lowSOCEfficiencyMultiplier: nil,
             lowConfidenceConsumedPercentagePoints: 10,
             normalConfidenceConsumedPercentagePoints: 30,
             highConfidenceConsumedPercentagePoints: 60
@@ -81,6 +80,38 @@ struct BatteryAdaptiveRangePublicDispositionTests {
         )
         #expect(resetAndIngested.disposition == .continuityResetAndAuthoritativeSOCIngested)
         #expect(resetAndIngested.candidateLearningWindow == nil)
+    }
+
+    @Test("public result equality cannot reveal hidden authoritative payload")
+    func equalityUsesOnlyPublicState() throws {
+        let p = try policy()
+        var firstPipeline = BatteryAdaptiveRangeLearningPipeline()
+        var secondPipeline = BatteryAdaptiveRangeLearningPipeline()
+        var ignoredPipeline = BatteryAdaptiveRangeLearningPipeline()
+
+        let first = try firstPipeline.acceptBatteryObservation(
+            observation(80, role: .verifiedVehicleMeasurement),
+            policy: p
+        )
+        let second = try secondPipeline.acceptBatteryObservation(
+            observation(79, role: .verifiedVehicleMeasurement),
+            policy: p
+        )
+        let ignored = try ignoredPipeline.acceptBatteryObservation(
+            observation(80, role: .stockAppCorrelationAnchor),
+            policy: p
+        )
+
+        #expect(first.disposition == .authoritativeSOCIngested)
+        #expect(second.disposition == .authoritativeSOCIngested)
+        #expect(first.candidateLearningWindow == nil)
+        #expect(second.candidateLearningWindow == nil)
+
+        // The hidden internal actions carry different authoritative SoC values,
+        // but external equality may observe only the public disposition/window.
+        #expect(first.action != second.action)
+        #expect(first == second)
+        #expect(first != ignored)
     }
 
     @Test("emitted public window remains a candidate until the adaptive model explicitly accepts it")
