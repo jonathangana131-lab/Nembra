@@ -161,6 +161,32 @@ struct SpeedTelemetryQualityTests {
         ])
     }
 
+    @Test("non-finite derived speed resolution fails closed")
+    func nonFiniteDerivedSpeedResolutionFailsClosed() throws {
+        let overflowingMetersPerSecond = Double.greatestFiniteMagnitude / 2
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+        collector.record(try sample(
+            metersPerSecond: overflowingMetersPerSecond,
+            milliseconds: 0
+        ))
+        collector.record(try sample(
+            metersPerSecond: overflowingMetersPerSecond,
+            milliseconds: 100
+        ))
+
+        #expect(collector.summary.acceptedSampleCount == 2)
+        #expect(
+            collector.summary.empiricalMinimumNonzeroSpeedStepKilometersPerHour?.isNaN == true
+        )
+
+        let assessment = collector.summary.qualityAssessment(
+            using: try SpeedTelemetryQualityPolicy(
+                maximumEmpiricalSpeedStepKilometersPerHour: 1
+            )
+        )
+        #expect(assessment.failures == [.missingSpeedResolutionEvidence])
+    }
+
     @Test("latency requirement can demand representative timestamp coverage")
     func sparseLatencyCoverageFailsEvenWhenObservedMeanLooksGood() throws {
         var collector = TelemetryBenchmarkCollector(source: .gps)
