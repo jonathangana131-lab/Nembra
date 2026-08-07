@@ -9,6 +9,21 @@ struct RidePeakSpeedEvidenceTests {
     private let otherSessionID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     private let epoch = Date(timeIntervalSinceReferenceDate: 10_000)
 
+    private struct StoredFixture: Codable {
+        var sessionID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        var rideContinuity: RideSessionContinuity = .uninterruptedProcess
+        var beganAfterKnownObservationGap = false
+        var source: SpeedTelemetrySource = .scooterBluetooth
+        var metersPerSecond = 5.0
+        var speedAccuracyMetersPerSecond: Double?
+        var maximumAllowedSpeedAccuracyMetersPerSecond: Double?
+        var acceptedSampleCount = 1
+        var qualityRejectedSampleCount = 0
+        var knownInterruptionCount = 0
+        var observationContinuity: PeakSpeedObservationContinuity =
+            .noRecordedSelectedSourceEvidenceLoss
+    }
+
     private func completedRide(
         sessionID: UUID? = nil,
         continuity: RideSessionContinuity = .uninterruptedProcess
@@ -64,6 +79,10 @@ struct RidePeakSpeedEvidenceTests {
         return try #require(accumulator.evidence)
     }
 
+    private func encoded(_ fixture: StoredFixture) throws -> Data {
+        try JSONEncoder().encode(fixture)
+    }
+
     @Test("ride accumulator binds accepted peak to immutable session and policy")
     func accumulatorBindsSessionAndPolicy() throws {
         let policy = try PeakSpeedPolicy(
@@ -85,6 +104,7 @@ struct RidePeakSpeedEvidenceTests {
         let bound = try #require(accumulator.evidence)
         #expect(bound.sessionID == sessionID)
         #expect(bound.policy == policy)
+        #expect(bound.beganAfterKnownObservationGap == false)
         #expect(bound.peakEvidence.peak.metersPerSecond == 6)
         #expect(bound.peakEvidence.continuity == .noRecordedSelectedSourceEvidenceLoss)
     }
@@ -97,30 +117,29 @@ struct RidePeakSpeedEvidenceTests {
             policy: policy
         )
 
-        #expect(
-            accumulator.record(try sample(
-                source: .gps,
-                metersPerSecond: 20,
-                uptime: 500,
-                accuracy: 0.2
-            )) == .rejected(.sourceMismatch)
+        let foreign = try sample(
+            source: .gps,
+            metersPerSecond: 20,
+            uptime: 500,
+            accuracy: 0.2
         )
+        #expect(accumulator.record(foreign) == .rejected(.sourceMismatch))
         #expect(accumulator.evidence == nil)
 
-        #expect(
-            accumulator.record(try sample(
-                source: .scooterBluetooth,
-                metersPerSecond: 4,
-                uptime: 100
-            )) != .rejected(.nonIncreasingTimestamp)
+        let selected = try sample(
+            source: .scooterBluetooth,
+            metersPerSecond: 4,
+            uptime: 100
         )
+        #expect(accumulator.record(selected) != .rejected(.nonIncreasingTimestamp))
         #expect(accumulator.evidence?.peakEvidence.peak.metersPerSecond == 4)
     }
 
-    @Test("known gap before first peak remains bound to later ride evidence")
-    func initialKnownGapRemainsPartial() throws {
+    @Test("known initial gap remains distinct from later generic interruptions")
+    func initialKnownGapRemainsBound() throws {
         let bound = try ridePeak(beginsAfterKnownObservationGap: true)
 
+        #expect(bound.beganAfterKnownObservationGap)
         #expect(bound.peakEvidence.knownInterruptionCount == 1)
         #expect(bound.peakEvidence.continuity == .partialSelectedSourceEvidence)
     }
@@ -139,7 +158,7 @@ struct RidePeakSpeedEvidenceTests {
     }
 
     @Test("recovered ride cannot claim gap-free process-local peak observation")
-    func recoveredRideRequiresRecordedPeakGap() throws {
+    func recoveredRideRequiresRecordedInitialGap() throws {
         let recoveredRide = try completedRide(continuity: .recoveredCheckpoint)
         let gapFreePeak = try ridePeak()
 
@@ -151,7 +170,7 @@ struct RidePeakSpeedEvidenceTests {
         }
     }
 
-    @Test("recovered ride retains a truthful observed peak after explicit known gap")
+    @Test("recovered ride retains observed peak after explicit initial gap")
     func recoveredRideWithRecordedGapAccepted() throws {
         let recoveredRide = try completedRide(continuity: .recoveredCheckpoint)
         let peak = try ridePeak(beginsAfterKnownObservationGap: true)
@@ -163,6 +182,7 @@ struct RidePeakSpeedEvidenceTests {
 
         #expect(durable.sessionID == sessionID)
         #expect(durable.rideContinuity == .recoveredCheckpoint)
+        #expect(durable.beganAfterKnownObservationGap)
         #expect(durable.metersPerSecond == 5)
         #expect(durable.kilometersPerHour == 18)
         #expect(durable.knownInterruptionCount == 1)
@@ -201,6 +221,7 @@ struct RidePeakSpeedEvidenceTests {
         #expect(object["receivedAtDate"] == nil)
         #expect(object["measurementDate"] == nil)
         #expect(object["metersPerSecond"] != nil)
+        #expect(object["beganAfterKnownObservationGap"] != nil)
     }
 
     @Test("durable round trip preserves ride-bound peak evidence")
@@ -225,137 +246,101 @@ struct RidePeakSpeedEvidenceTests {
     }
 
     @Test("decoded motion-assist source cannot masquerade as durable observed peak")
-    func decodedMotionAssistRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "uninterruptedProcess",
-              "source": "motionAssist",
-              "metersPerSecond": 5,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 0,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "noRecordedSelectedSourceEvidenceLoss"
-            }
-            """.utf8
-        )
+    func decodedMotionAssistRejected() throws {
+        var fixture = StoredFixture()
+        fixture.source = .motionAssist
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
     @Test("decoded accuracy ceiling requires matching measured accuracy")
-    func decodedAccuracyPolicyWithoutMeasurementRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "uninterruptedProcess",
-              "source": "gps",
-              "metersPerSecond": 5,
-              "maximumAllowedSpeedAccuracyMetersPerSecond": 0.8,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 0,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "noRecordedSelectedSourceEvidenceLoss"
-            }
-            """.utf8
-        )
+    func decodedAccuracyPolicyWithoutMeasurementRejected() throws {
+        var fixture = StoredFixture()
+        fixture.source = .gps
+        fixture.maximumAllowedSpeedAccuracyMetersPerSecond = 0.8
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
-    @Test("decoded peak accuracy cannot exceed the persisted acceptance ceiling")
-    func decodedAccuracyAbovePolicyRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "uninterruptedProcess",
-              "source": "gps",
-              "metersPerSecond": 5,
-              "speedAccuracyMetersPerSecond": 1.2,
-              "maximumAllowedSpeedAccuracyMetersPerSecond": 0.8,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 0,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "noRecordedSelectedSourceEvidenceLoss"
-            }
-            """.utf8
-        )
+    @Test("decoded peak accuracy cannot exceed persisted acceptance ceiling")
+    func decodedAccuracyAbovePolicyRejected() throws {
+        var fixture = StoredFixture()
+        fixture.source = .gps
+        fixture.speedAccuracyMetersPerSecond = 1.2
+        fixture.maximumAllowedSpeedAccuracyMetersPerSecond = 0.8
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
-    @Test("decoded no-loss continuity cannot hide recorded rejection or interruption")
-    func decodedNoLossWithLossCountersRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "uninterruptedProcess",
-              "source": "scooterBluetooth",
-              "metersPerSecond": 5,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 1,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "noRecordedSelectedSourceEvidenceLoss"
-            }
-            """.utf8
-        )
+    @Test("decoded no-loss continuity cannot hide recorded evidence loss")
+    func decodedNoLossWithLossCountersRejected() throws {
+        var fixture = StoredFixture()
+        fixture.qualityRejectedSampleCount = 1
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
     @Test("decoded partial continuity requires a recorded evidence-loss cause")
-    func decodedPartialWithoutLossCountersRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "uninterruptedProcess",
-              "source": "scooterBluetooth",
-              "metersPerSecond": 5,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 0,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "partialSelectedSourceEvidence"
-            }
-            """.utf8
-        )
+    func decodedPartialWithoutLossCountersRejected() throws {
+        var fixture = StoredFixture()
+        fixture.observationContinuity = .partialSelectedSourceEvidence
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
-    @Test("decoded recovered ride cannot claim no recorded selected-source loss")
-    func decodedRecoveredNoLossRejected() {
-        let data = Data(
-            """
-            {
-              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "rideContinuity": "recoveredCheckpoint",
-              "source": "scooterBluetooth",
-              "metersPerSecond": 5,
-              "acceptedSampleCount": 1,
-              "qualityRejectedSampleCount": 0,
-              "knownInterruptionCount": 0,
-              "observationContinuity": "noRecordedSelectedSourceEvidenceLoss"
-            }
-            """.utf8
-        )
+    @Test("decoded initial-gap provenance requires an interruption")
+    func decodedInitialGapWithoutInterruptionRejected() throws {
+        var fixture = StoredFixture()
+        fixture.beganAfterKnownObservationGap = true
+        fixture.observationContinuity = .partialSelectedSourceEvidence
+        fixture.qualityRejectedSampleCount = 1
 
         #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(CompletedRidePeakSpeedEvidence.self, from: data)
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
+        }
+    }
+
+    @Test("decoded recovered ride requires explicit initial-gap provenance")
+    func decodedRecoveredWithoutInitialGapRejected() throws {
+        var fixture = StoredFixture()
+        fixture.rideContinuity = .recoveredCheckpoint
+        fixture.observationContinuity = .partialSelectedSourceEvidence
+        fixture.knownInterruptionCount = 1
+        fixture.beganAfterKnownObservationGap = false
+
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                CompletedRidePeakSpeedEvidence.self,
+                from: encoded(fixture)
+            )
         }
     }
 
