@@ -133,6 +133,10 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 /// evidence is still empty, the first later segment must acknowledge an initial unobserved
 /// interval. Both rules prevent a caller from stretching process-local monotonic truth across
 /// relaunch merely because a checkpoint happened before useful elapsed-time evidence existed.
+///
+/// Fresh construction is package-scoped so an external feature cannot discard partial/recovered
+/// evidence and mint a clean accumulator for the same public UUID. A future app-facing creator
+/// must be owned by the ride lifecycle that can prove one accumulator authority per session.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beginsAfterUnobservedInterval: Bool
@@ -141,7 +145,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     private var requiresFreshProcessGeneration: Bool
     private var requiresInitialRecoveryGap: Bool
 
-    public init(
+    package init(
         sessionID: UUID,
         beginsAfterUnobservedInterval: Bool = false
     ) {
