@@ -47,7 +47,7 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             policy: p
         )
         #expect(ignored.disposition == .ignored)
-        #expect(ignored.learningWindow == nil)
+        #expect(ignored.candidateLearningWindow == nil)
 
         var acceptedPipeline = BatteryAdaptiveRangeLearningPipeline()
         let accepted = try acceptedPipeline.acceptBatteryObservation(
@@ -55,7 +55,7 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             policy: p
         )
         #expect(accepted.disposition == .authoritativeSOCAccepted)
-        #expect(accepted.learningWindow == nil)
+        #expect(accepted.candidateLearningWindow == nil)
 
         var resetPipeline = BatteryAdaptiveRangeLearningPipeline()
         let reset = try resetPipeline.acceptBatteryObservation(
@@ -67,7 +67,7 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             policy: p
         )
         #expect(reset.disposition == .continuityReset)
-        #expect(reset.learningWindow == nil)
+        #expect(reset.candidateLearningWindow == nil)
 
         var resetAndAcceptedPipeline = BatteryAdaptiveRangeLearningPipeline()
         let resetAndAccepted = try resetAndAcceptedPipeline.acceptBatteryObservation(
@@ -79,6 +79,6 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             policy: p
         )
         #expect(resetAndAccepted.disposition == .continuityResetAndAuthoritativeSOCAccepted)
-        #expect(resetAndAccepted.learningWindow == nil)
+        #expect(resetAndAccepted.candidateLearningWindow == nil)
     }
 }
