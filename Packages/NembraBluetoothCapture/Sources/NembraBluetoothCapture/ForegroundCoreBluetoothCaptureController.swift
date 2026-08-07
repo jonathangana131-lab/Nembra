@@ -38,6 +38,26 @@ struct PassiveCoreBluetoothArtifactReadBarrier: Equatable, Sendable {
     }
 }
 
+/// Identity for one finite GATT acquisition watchdog. The watchdog may fire only
+/// if the selected peripheral, durable target session, and acquisition generation
+/// still match the context that armed it. This prevents an old timer from
+/// terminating a later reconnect or topology reacquisition.
+struct PassiveCoreBluetoothAcquisitionWatchdogContext: Equatable, Sendable {
+    let peripheralIdentifier: UUID
+    let targetSessionGeneration: UInt64
+    let acquisitionGeneration: UInt64
+
+    func matches(
+        peripheralIdentifier: UUID?,
+        targetSessionGeneration: UInt64,
+        acquisitionGeneration: UInt64
+    ) -> Bool {
+        self.peripheralIdentifier == peripheralIdentifier
+            && self.targetSessionGeneration == targetSessionGeneration
+            && self.acquisitionGeneration == acquisitionGeneration
+    }
+}
+
 /// A user-initiated, foreground-only CoreBluetooth acquisition controller for
 /// physical protocol research.
 ///
@@ -99,6 +119,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case peripheralNotConnectable(UUID)
         case connectionAlreadyActive
         case invalidConnectionTimeout
+        case invalidAcquisitionProgressTimeout
         case targetNotSelected
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
@@ -174,6 +195,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private let vehicleIdentity: VehicleIdentity
     private let initialSessionID: UUID
     private let firstSessionStartedAtOverride: Date?
+    private let acquisitionProgressTimeoutNanoseconds: UInt64
     private var hasUsedInitialSessionIdentity = false
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
@@ -189,6 +211,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var latestAdvertisementByIdentifier: [UUID: CandidateAdvertisement] = [:]
     private var activePeripheral: CBPeripheral?
     private var connectionTimeoutTask: Task<Void, Never>?
+    private var acquisitionWatchdogTask: Task<Void, Never>?
     private var discoveredIncludedServiceObjectIDs: Set<ObjectIdentifier> = []
     private var discoveredCharacteristicServiceObjectIDs: Set<ObjectIdentifier> = []
     private var hasObservedInitialCentralState = false
@@ -216,11 +239,17 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         vehicleIdentity: VehicleIdentity,
         sessionID: UUID = UUID(),
         startedAt: Date? = nil,
+        acquisitionProgressTimeout: TimeInterval = PassiveCoreBluetoothAcquisitionPolicy.defaultAcquisitionProgressTimeout,
         centralManagerOptions: [String: Any]? = nil
     ) throws {
+        guard let acquisitionProgressTimeoutNanoseconds =
+                PassiveCoreBluetoothAcquisitionPolicy.acquisitionProgressTimeoutNanoseconds(acquisitionProgressTimeout) else {
+            throw ControllerError.invalidAcquisitionProgressTimeout
+        }
         self.vehicleIdentity = vehicleIdentity
         initialSessionID = sessionID
         firstSessionStartedAtOverride = startedAt
+        self.acquisitionProgressTimeoutNanoseconds = acquisitionProgressTimeoutNanoseconds
         super.init()
         centralManager = CBCentralManager(
             delegate: self,
@@ -232,6 +261,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     deinit {
         connectionTimeoutTask?.cancel()
+        acquisitionWatchdogTask?.cancel()
         eventDrainTask?.cancel()
     }
 
@@ -503,9 +533,47 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
+    private func refreshAcquisitionWatchdog() {
+        cancelAcquisitionWatchdog()
+        guard acquisitionLedger.phase == .acquiring,
+              let peripheral = activePeripheral else { return }
+
+        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
+            peripheralIdentifier: peripheral.identifier,
+            targetSessionGeneration: targetSessionGeneration,
+            acquisitionGeneration: acquisitionLedger.readiness.generation
+        )
+        let timeoutNanoseconds = acquisitionProgressTimeoutNanoseconds
+
+        acquisitionWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            guard !Task.isCancelled,
+                  let self,
+                  context.matches(
+                    peripheralIdentifier: self.activePeripheral?.identifier,
+                    targetSessionGeneration: self.targetSessionGeneration,
+                    acquisitionGeneration: self.acquisitionLedger.readiness.generation
+                  ),
+                  self.acquisitionLedger.phase == .acquiring,
+                  self.targetState.acceptsActiveCallback(from: context.peripheralIdentifier) else { return }
+
+            self.acquisitionWatchdogTask = nil
+            let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
+            self.lastDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
+            self.enqueueInterruption("finite GATT acquisition progress timed out")
+            self.cancelActiveConnection()
+        }
+    }
+
+    private func cancelAcquisitionWatchdog() {
+        acquisitionWatchdogTask?.cancel()
+        acquisitionWatchdogTask = nil
+    }
+
     private func beginDiscovery(on peripheral: CBPeripheral) throws {
         clearAcquisitionObjects()
         try acquisitionLedger.beginAcquisition()
+        refreshAcquisitionWatchdog()
         peripheral.discoverServices(nil)
     }
 
@@ -767,6 +835,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     private func clearAcquisitionObjects() {
+        cancelAcquisitionWatchdog()
         targetState.resetAcquisitionProvenance()
         gattIdentityRegistry.reset()
         discoveredIncludedServiceObjectIDs.removeAll()
@@ -1067,6 +1136,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                 childOperations.append(contentsOf: operations)
             }
             try acquisitionLedger.complete(.services, starting: childOperations)
+            refreshAcquisitionWatchdog()
         } catch {
             failCapture(error)
             return
@@ -1116,6 +1186,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                 .includedServices(ObjectIdentifier(service)),
                 starting: childOperations
             )
+            refreshAcquisitionWatchdog()
         } catch {
             failCapture(error)
             return
@@ -1166,6 +1237,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                 .characteristics(ObjectIdentifier(service)),
                 starting: childOperations
             )
+            refreshAcquisitionWatchdog()
         } catch {
             failCapture(error)
             return
@@ -1220,6 +1292,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                 )
             }
             try acquisitionLedger.complete(.descriptors(ObjectIdentifier(characteristic)))
+            refreshAcquisitionWatchdog()
         } catch {
             failCapture(error)
         }
@@ -1303,6 +1376,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                 } else {
                     try acquisitionLedger.complete(readOperation)
                 }
+                refreshAcquisitionWatchdog()
             }
         } catch {
             failCapture(error)
@@ -1367,6 +1441,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
             }
             do {
                 try acquisitionLedger.complete(operation)
+                refreshAcquisitionWatchdog()
             } catch {
                 failCapture(error)
             }
