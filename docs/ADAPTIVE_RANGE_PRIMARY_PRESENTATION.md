@@ -42,11 +42,15 @@ The output preserves a detailed withholding reason while separately projecting i
 | learning confidence | learning | learning |
 | low confidence | learning | learning |
 | estimated SoC | unavailable until qualified | unavailable |
-| retained vehicle data | unavailable until qualified | unavailable |
+| retained + otherwise-valid range | unavailable until qualified | unavailable |
+| retained + no range estimate | no estimate | unavailable |
+| retained + invalid range | invalid range | unavailable |
 | vehicle data unavailable | unavailable | unavailable |
-| missing/invalid range | unavailable | unavailable |
+| missing/invalid live range | unavailable | unavailable |
 
-When multiple withholding conditions coexist, stronger evidence-quality qualifiers win over weaker presentation-progress qualifiers. In particular, estimated SoC now outranks provisional basis: a provisional estimate based on estimated SoC is `unavailable(.estimatedSOCRequiresQualifier)`, not merely `learning(.provisionalSeed)`. This avoids telling the user only that the model is learning while hiding the weaker battery source underneath it.
+Reason precedence is deliberate. A retained qualifier only makes sense when an otherwise-usable range actually exists; missing or malformed range is therefore classified before `.retained`. Conversely, `.unavailable` vehicle data remains a top-level blocker because no confirmed vehicle snapshot exists to support a range at all.
+
+When multiple range-evidence conditions coexist on a valid live estimate, stronger evidence-quality qualifiers win over weaker presentation-progress qualifiers. In particular, estimated SoC outranks provisional basis: a provisional estimate based on estimated SoC is `unavailable(.estimatedSOCRequiresQualifier)`, not merely `learning(.provisionalSeed)`. This avoids telling the user only that the model is learning while hiding the weaker battery source underneath it.
 
 This is deliberately conservative. A future detailed battery surface may choose to present provisional, retained, estimated-SoC, or low-confidence values with explicit labels. That richer UX must not weaken the truth classification of the underlying evidence.
 
