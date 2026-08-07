@@ -13,12 +13,28 @@ struct RollingSpeedValueView: View {
         return try? RollingNumberModel(layout: layout)
     }()
 
+    /// The compact non-rolling fallback can faithfully lay out three integer
+    /// digits. This is a presentation capacity, not a physical scooter-speed
+    /// limit; values requiring more space fail closed rather than being clamped.
+    private static let maximumFallbackDisplayInteger = 999.0
+
     /// Rendering must not turn malformed speed evidence into a believable
     /// stopped state. Negative and non-finite values remain unavailable, while
     /// signed zero is normalized only for stable presentation.
     private var validatedRenderValue: Double? {
         guard let value, value.isFinite, value >= 0 else { return nil }
         return value == 0 ? 0 : value
+    }
+
+    /// Keep fallback rounding identical to `RollingNumberModel` so the handoff
+    /// at the two-digit rolling capacity is deterministic. Formatting an already
+    /// bounded integer prevents extreme finite `Double` values from expanding
+    /// into unbounded cockpit text.
+    private var boundedFallbackText: String? {
+        guard let value = validatedRenderValue else { return nil }
+        let roundedValue = value.rounded(.toNearestOrAwayFromZero)
+        guard roundedValue <= Self.maximumFallbackDisplayInteger else { return nil }
+        return String(format: "%.0f", locale: Locale.current, roundedValue)
     }
 
     var body: some View {
@@ -43,11 +59,13 @@ struct RollingSpeedValueView: View {
                     reduceMotion ? nil : .linear(duration: 0.08),
                     value: snapshot.scaledValue
                 )
-            } else {
-                Text(String(format: "%.0f", locale: Locale.current, value))
+            } else if let fallbackText = boundedFallbackText {
+                Text(fallbackText)
                     .contentTransition(
                         reduceMotion ? .identity : .numericText(value: value)
                     )
+            } else {
+                Text("—")
             }
         } else {
             Text("—")
