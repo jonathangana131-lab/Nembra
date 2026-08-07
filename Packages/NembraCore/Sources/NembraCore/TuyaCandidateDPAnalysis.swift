@@ -43,11 +43,19 @@ public enum TuyaCandidateDPKnownType: UInt8, Equatable, Sendable {
 /// discarded until it happens to fit a preferred interpretation.
 public enum TuyaCandidateDPShapeFinding: Equatable, Sendable {
     case unknownType(rawType: UInt8)
-    case variableLengthKnownType(TuyaCandidateDPKnownType)
+    case variableLengthKnownType(
+        TuyaCandidateDPKnownType,
+        allowedLengthRange: ClosedRange<Int>
+    )
     case fixedLengthKnownType(TuyaCandidateDPKnownType, allowedLengths: [Int])
     case unexpectedKnownTypeLength(
         TuyaCandidateDPKnownType,
         allowedLengths: [Int],
+        actualLength: Int
+    )
+    case unexpectedVariableKnownTypeLength(
+        TuyaCandidateDPKnownType,
+        allowedLengthRange: ClosedRange<Int>,
         actualLength: Int
     )
 }
@@ -231,28 +239,48 @@ public enum TuyaCandidateDPPayloadParser {
             return .unknownType(rawType: rawType)
         }
 
-        let allowed: [Int]?
         switch knownType {
-        case .raw, .string:
-            allowed = nil
+        case .raw:
+            let allowed = 1...255
+            guard allowed.contains(length) else {
+                return .unexpectedVariableKnownTypeLength(
+                    knownType,
+                    allowedLengthRange: allowed,
+                    actualLength: length
+                )
+            }
+            return .variableLengthKnownType(knownType, allowedLengthRange: allowed)
+        case .string:
+            let allowed = 0...255
+            guard allowed.contains(length) else {
+                return .unexpectedVariableKnownTypeLength(
+                    knownType,
+                    allowedLengthRange: allowed,
+                    actualLength: length
+                )
+            }
+            return .variableLengthKnownType(knownType, allowedLengthRange: allowed)
         case .boolean, .enumeration:
-            allowed = [1]
+            return fixedLengthFinding(for: knownType, allowed: [1], actual: length)
         case .value:
-            allowed = [4]
+            return fixedLengthFinding(for: knownType, allowed: [4], actual: length)
         case .bitmap:
             // Public Tuya documents are not perfectly uniform here; 1/2/4-byte
             // bitmap shapes are retained as the broader documented family.
-            allowed = [1, 2, 4]
+            return fixedLengthFinding(for: knownType, allowed: [1, 2, 4], actual: length)
         }
+    }
 
-        guard let allowed else {
-            return .variableLengthKnownType(knownType)
-        }
-        guard allowed.contains(length) else {
+    private static func fixedLengthFinding(
+        for knownType: TuyaCandidateDPKnownType,
+        allowed: [Int],
+        actual: Int
+    ) -> TuyaCandidateDPShapeFinding {
+        guard allowed.contains(actual) else {
             return .unexpectedKnownTypeLength(
                 knownType,
                 allowedLengths: allowed,
-                actualLength: length
+                actualLength: actual
             )
         }
         return .fixedLengthKnownType(knownType, allowedLengths: allowed)
