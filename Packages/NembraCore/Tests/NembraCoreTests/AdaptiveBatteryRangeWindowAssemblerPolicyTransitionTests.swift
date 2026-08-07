@@ -40,7 +40,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         let loose = try policy(minimumConsumedPercentagePoints: 3)
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: strict)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
 
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
         #expect(assembler.anchorSOC?.percentage == 80)
@@ -71,7 +71,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         )
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: strict)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
 
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
         #expect(assembler.anchorSOC?.percentage == 80)
@@ -104,14 +104,14 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         )
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
 
         #expect(try assembler.ingestSOC(reading(77, uptime: 2), policy: strict) == nil)
         #expect(assembler.anchorSOC?.percentage == 80)
         #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(assembler.accumulatedDistanceMeters == 200)
 
-        try assembler.recordDistance(deltaMeters: 100)
+        try assembler.recordDistance(deltaMeters: 100, coverage: .complete)
         let assembled = try assembler.ingestSOC(reading(77, uptime: 3), policy: strict)
         let window = try #require(assembled)
 
@@ -139,7 +139,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         )
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
         let looseCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: loose)
         let looseWindow = try #require(looseCandidate)
 
@@ -149,7 +149,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(assembler.accumulatedDistanceMeters == 0)
 
-        try assembler.recordDistance(deltaMeters: 200)
+        try assembler.recordDistance(deltaMeters: 200, coverage: .complete)
         let strictCandidate = try assembler.ingestSOC(reading(73, uptime: 3), policy: strict)
         let strictWindow = try #require(strictCandidate)
         #expect(strictWindow.startSOC.percentage == 77)
@@ -174,7 +174,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         )
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         let looseCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: loose)
         let looseWindow = try #require(looseCandidate)
 
@@ -184,7 +184,7 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
         #expect(assembler.accumulatedDistanceMeters == 0)
 
-        try assembler.recordDistance(deltaMeters: 300)
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
         let strictCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: strict)
         let strictWindow = try #require(strictCandidate)
         #expect(strictWindow.startSOC.percentage == 77)
