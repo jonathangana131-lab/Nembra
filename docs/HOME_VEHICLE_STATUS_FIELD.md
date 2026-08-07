@@ -138,6 +138,19 @@ Requirements:
 - Dynamic Type must allow the supporting message to wrap naturally;
 - Reduce Motion must not remove state information.
 
+### Implemented accessibility-size recomposition
+
+The independent production Dynamic Type audit identified two horizontal squeeze risks inside this slice: vehicle identity competing with the lock capsule, and recovery prose competing with the trailing action.
+
+The status-field implementation therefore uses `dynamicTypeSize.isAccessibilitySize` only for those two owned compositions:
+
+- identity + known lock state switch from a horizontal layout to a leading vertical layout at accessibility text sizes;
+- recovery icon + full issue copy + contextual action switch from a horizontal layout to a leading vertical layout at accessibility text sizes;
+- default text sizes retain the original horizontal geometry;
+- recovery controls remain explicit 44×44 pt targets.
+
+This is deliberately **not** a claim that all of Home is Dynamic Type-complete. The separate audit flags pre-existing Battery/Trip/Mode columns, fixed-height action controls, and ride-mode geometry outside this focused status-field slice. Those must be addressed by a later Home accessibility packet rather than silently expanding this PR.
+
 ## Motion / haptics
 
 Motion is secondary to truth.
