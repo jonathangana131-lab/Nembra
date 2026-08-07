@@ -102,13 +102,22 @@ public enum RideDurationStatisticsAggregator {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> RideDurationStatisticsSummary {
-        guard referenceDate.timeIntervalSinceReferenceDate.isFinite,
-              isRepresentable(referenceDate, in: calendar) else {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else {
+            throw RideDurationStatisticsError.invalidReferenceDate
+        }
+
+        // All Time is intentionally independent of wall-clock calendar
+        // representability. Calendar attribution only exists for bounded period
+        // buckets; observed monotonic duration remains valid evidence even when a
+        // finite wall-clock date cannot be represented by Foundation Calendar.
+        if period != .allTime,
+           !isRepresentable(referenceDate, in: calendar) {
             throw RideDurationStatisticsError.invalidReferenceDate
         }
 
         let uniqueRides = try deduplicated(rides)
-        guard uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+        if period != .allTime,
+           !uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) {
             throw RideDurationStatisticsError.invalidRide
         }
 
