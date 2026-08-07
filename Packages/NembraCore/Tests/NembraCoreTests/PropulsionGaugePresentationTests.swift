@@ -58,23 +58,13 @@ struct PropulsionGaugePresentationTests {
         )
     }
 
-    private func envelopePolicy(
-        minimum: Int = 10,
-        capacity: Int = 10,
-        percentile: Double = 0.8,
-        headroom: Double = 0,
-        upwardHysteresis: Double = 0.05,
-        downwardHysteresis: Double = 0.2,
-        downwardAdaptation: Double = 0.1
-    ) throws -> LearnedObservedPowerEnvelopePolicy {
-        try LearnedObservedPowerEnvelopePolicy(
-            minimumPositiveSampleCount: minimum,
-            windowCapacity: capacity,
-            upperPercentile: percentile,
-            visualHeadroomFraction: headroom,
-            upwardHysteresisFraction: upwardHysteresis,
-            downwardHysteresisFraction: downwardHysteresis,
-            downwardAdaptationFraction: downwardAdaptation
+    private func verifiedScale(
+        ceilingWatts: Double,
+        identity: PropulsionGaugeIdentity? = nil
+    ) throws -> PropulsionGaugeScale {
+        try .verifiedObservedEnvelope(
+            identity: identity ?? self.identity,
+            ceilingWatts: ceilingWatts
         )
     }
 
@@ -251,14 +241,14 @@ struct PropulsionGaugePresentationTests {
 
     @Test("scale authority cannot cross simulator and verified evidence")
     func scaleAuthorityDoesNotCrossEvidenceDomains() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy(minimum: 2, capacity: 2, percentile: 1))
-        try envelope.observe(verifiedSample(watts: 400, uptime: 1_000))
-        try envelope.observe(verifiedSample(watts: 500, uptime: 2_000))
-        let learnedScale = try #require(envelope.currentScale)
+        let verifiedEnvelopeScale = try verifiedScale(ceilingWatts: 500)
 
         var simulatorModel = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
         try simulatorModel.accept(simulatorSample(watts: 250, uptime: 1_000))
-        let simulatorWithLearnedScale = simulatorModel.frame(atUptimeNanoseconds: 1_000, scale: learnedScale)
+        let simulatorWithVerifiedScale = simulatorModel.frame(
+            atUptimeNanoseconds: 1_000,
+            scale: verifiedEnvelopeScale
+        )
 
         var verifiedModel = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
         try verifiedModel.accept(verifiedSample(watts: 250, uptime: 1_000))
@@ -267,10 +257,26 @@ struct PropulsionGaugePresentationTests {
             scale: try simulatorScale(ceilingWatts: 500)
         )
 
-        #expect(simulatorWithLearnedScale.normalizedPropulsion == nil)
-        #expect(simulatorWithLearnedScale.scaleOrigin == nil)
+        #expect(simulatorWithVerifiedScale.normalizedPropulsion == nil)
+        #expect(simulatorWithVerifiedScale.scaleOrigin == nil)
         #expect(verifiedWithSimulatorScale.normalizedPropulsion == nil)
         #expect(verifiedWithSimulatorScale.scaleOrigin == nil)
+    }
+
+    @Test("verified envelope scale normalizes only verified measurement presentation")
+    func verifiedEnvelopeScaleMatchesVerifiedMeasurement() throws {
+        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        try model.accept(verifiedSample(watts: 250, uptime: 1_000))
+
+        let frame = model.frame(
+            atUptimeNanoseconds: 1_000,
+            scale: try verifiedScale(ceilingWatts: 500)
+        )
+
+        #expect(frame.normalizedPropulsion == 0.5)
+        #expect(frame.acceptedPeakNormalized == 0.5)
+        #expect(frame.scaleOrigin == .verifiedObservedEnvelope)
+        #expect(frame.latestAcceptedWatts == 250)
     }
 
     @Test("visual scale cannot cross vehicle identity even within one authority domain")
@@ -288,109 +294,13 @@ struct PropulsionGaugePresentationTests {
         #expect(frame.scaleOrigin == nil)
     }
 
-    @Test("learned observed scale preserves the vehicle and mode identity that trained it")
-    func learnedScalePreservesCalibrationIdentity() throws {
+    @Test("verified envelope scale preserves exact vehicle and mode identity")
+    func verifiedScalePreservesCalibrationIdentity() throws {
         let sportIdentity = PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "confirmed-sport")
-        var envelope = LearnedObservedPowerEnvelope(
-            identity: sportIdentity,
-            policy: try envelopePolicy(minimum: 2, capacity: 2, percentile: 1)
-        )
-        try envelope.observe(verifiedSample(watts: 400, uptime: 1_000, identity: sportIdentity))
-        try envelope.observe(verifiedSample(watts: 500, uptime: 2_000, identity: sportIdentity))
-
-        let scale = try #require(envelope.currentScale)
+        let scale = try verifiedScale(ceilingWatts: 500, identity: sportIdentity)
 
         #expect(scale.identity == sportIdentity)
         #expect(scale.ceilingWatts == 500)
-        #expect(scale.origin == .learnedObservedPowerCeiling)
-    }
-
-    @Test("learned observed ceiling rejects simulator evidence")
-    func envelopeRejectsSimulatorEvidence() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy())
-
-        #expect(throws: LearnedObservedPowerEnvelopeError.nonVerifiedEvidence) {
-            try envelope.observe(simulatorSample(watts: 500, uptime: 1_000))
-        }
-        #expect(envelope.currentScale == nil)
-        #expect(envelope.acceptedObservationCount == 0)
-    }
-
-    @Test("zero output advances verified chronology without pretending to be upper-envelope evidence")
-    func zeroDoesNotPolluteUpperEnvelope() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy(minimum: 2, capacity: 4, percentile: 1))
-
-        try envelope.observe(verifiedSample(watts: 0, uptime: 1_000))
-        try envelope.observe(verifiedSample(watts: 400, uptime: 2_000))
-        #expect(envelope.currentScale == nil)
-        #expect(envelope.acceptedObservationCount == 2)
-        #expect(envelope.positiveObservationCount == 1)
-
-        #expect(throws: LearnedObservedPowerEnvelopeError.nonMonotonicMeasurement) {
-            try envelope.observe(verifiedSample(watts: 500, uptime: 1_500))
-        }
-
-        try envelope.observe(verifiedSample(watts: 500, uptime: 3_000))
-        #expect(envelope.currentLearnedCeilingWatts == 500)
-    }
-
-    @Test("one isolated spike does not redefine a percentile learned ceiling")
-    func isolatedSpikeIsRobustlyIgnored() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy())
-
-        for index in 0..<9 {
-            try envelope.observe(verifiedSample(watts: 100, uptime: UInt64(index + 1) * 1_000))
-        }
-        try envelope.observe(verifiedSample(watts: 1_000, uptime: 10_000))
-
-        #expect(envelope.currentLearnedCeilingWatts == 100)
-    }
-
-    @Test("repeated stronger verified evidence adapts the ceiling upward")
-    func repeatedStrongEvidenceRaisesCeiling() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy())
-
-        for index in 0..<10 {
-            try envelope.observe(verifiedSample(watts: 100, uptime: UInt64(index + 1) * 1_000))
-        }
-        #expect(envelope.currentLearnedCeilingWatts == 100)
-
-        for index in 0..<4 {
-            try envelope.observe(verifiedSample(watts: 500, uptime: UInt64(index + 11) * 1_000))
-        }
-
-        #expect(envelope.currentLearnedCeilingWatts == 500)
-        #expect(envelope.currentScale?.origin == .learnedObservedPowerCeiling)
-    }
-
-    @Test("downward adaptation is deliberately slower than upward adaptation")
-    func downwardAdaptationIsSlow() throws {
-        var envelope = LearnedObservedPowerEnvelope(identity: identity, policy: try envelopePolicy())
-
-        for index in 0..<10 {
-            try envelope.observe(verifiedSample(watts: 500, uptime: UInt64(index + 1) * 1_000))
-        }
-        #expect(envelope.currentLearnedCeilingWatts == 500)
-
-        for index in 0..<10 {
-            try envelope.observe(verifiedSample(watts: 100, uptime: UInt64(index + 11) * 1_000))
-        }
-
-        let lowered = try #require(envelope.currentLearnedCeilingWatts)
-        #expect(lowered < 500)
-        #expect(lowered > 100)
-    }
-
-    @Test("learned ceiling is bound to exact vehicle and mode identity")
-    func envelopeIsIdentityBound() throws {
-        let ecoIdentity = PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "eco")
-        let sportIdentity = PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "sport")
-        var envelope = LearnedObservedPowerEnvelope(identity: ecoIdentity, policy: try envelopePolicy(minimum: 1, capacity: 1, percentile: 1))
-        let foreign = try verifiedSample(watts: 500, uptime: 1_000, identity: sportIdentity)
-
-        #expect(throws: LearnedObservedPowerEnvelopeError.identityMismatch) {
-            try envelope.observe(foreign)
-        }
-        #expect(envelope.currentScale == nil)
+        #expect(scale.origin == .verifiedObservedEnvelope)
     }
 }
