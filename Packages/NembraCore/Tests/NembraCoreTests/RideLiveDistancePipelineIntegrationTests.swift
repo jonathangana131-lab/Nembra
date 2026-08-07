@@ -46,8 +46,8 @@ struct RideLiveDistancePipelineIntegrationTests {
         let durable = try RideLiveDistanceSegmentEvidence(
             rideSessionID: rideID,
             segmentID: segmentID,
-            finalizedSegment: finalized,
-            followsUnobservedInterval: false
+            processSegmentSequence: 0,
+            finalizedSegment: finalized
         )
         let aggregate = try RideLiveDistanceAggregator.aggregate(
             rideSessionID: rideID,
@@ -60,5 +60,6 @@ struct RideLiveDistancePipelineIntegrationTests {
         #expect(aggregate.coverage == .complete)
         #expect(aggregate.uniqueSegmentCount == 1)
         #expect(aggregate.knownCoverageGapCount == 0)
+        #expect(aggregate.unobservedIntervalCount == 0)
     }
 }
