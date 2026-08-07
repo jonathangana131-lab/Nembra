@@ -217,8 +217,14 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
                let maximum = plausibilityPolicy.maximumFullChargeEquivalentMeters {
                 let metersPerPercentagePoint = window.distanceMeters / consumed
                 let fullChargeEquivalentMeters = metersPerPercentagePoint * 100
-                guard fullChargeEquivalentMeters.isFinite,
-                      fullChargeEquivalentMeters <= maximum else {
+                guard fullChargeEquivalentMeters.isFinite else {
+                    return BatteryRangeLearningResult(
+                        disposition: .rejected(.numericalOverflow),
+                        sample: nil,
+                        confidence: model.confidence(using: policy)
+                    )
+                }
+                guard fullChargeEquivalentMeters <= maximum else {
                     return BatteryRangeLearningResult(
                         disposition: .rejected(.efficiencyOutlier),
                         sample: nil,
