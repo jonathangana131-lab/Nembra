@@ -78,32 +78,9 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         self.transportGapOccurred = transportGapOccurred
     }
 
-    /// Bridges completed ride evidence without inventing coverage. Callers must
-    /// supply coverage classifications from the ODO/location/integration layers.
-    public init(
-        completedRide: CompletedRideEvidence,
-        odometerCoverage: RideDistanceCoverage,
-        gpsRouteCoverage: RideDistanceCoverage,
-        liveIntegratedDistanceMeters: Double?,
-        liveIntegratedCoverage: RideDistanceCoverage,
-        transportGapOccurred: Bool
-    ) throws {
-        try self.init(
-            startingOdometerKilometers: completedRide.startingOdometerKilometers,
-            endingOdometerKilometers: completedRide.endingOdometerKilometers,
-            odometerCoverage: odometerCoverage,
-            gpsRouteDistanceMeters: completedRide.qualityScreenedGPSDistanceMeters,
-            gpsRouteCoverage: gpsRouteCoverage,
-            liveIntegratedDistanceMeters: liveIntegratedDistanceMeters,
-            liveIntegratedCoverage: liveIntegratedCoverage,
-            transportGapOccurred: transportGapOccurred
-        )
-    }
-
-    /// Bridges the durable ride-level live-distance aggregate only when its
-    /// session identity matches the completed ride. This mechanically prevents
-    /// valid integrated evidence from ride A being paired with ride B merely
-    /// because both scalar distance/coverage values are individually valid.
+    /// Bridges completed ride evidence with durable live-distance evidence only
+    /// when both values belong to the same ride session. A missing aggregate
+    /// remains unavailable rather than becoming fake zero distance.
     public init(
         completedRide: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
@@ -111,29 +88,21 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         liveDistanceAggregate: RideLiveDistanceAggregate?,
         transportGapOccurred: Bool
     ) throws {
-        if let liveDistanceAggregate {
-            guard liveDistanceAggregate.rideSessionID == completedRide.sessionID else {
-                throw RideDistanceReconciliationError.invalidEvidence
-            }
-
-            try self.init(
-                completedRide: completedRide,
-                odometerCoverage: odometerCoverage,
-                gpsRouteCoverage: gpsRouteCoverage,
-                liveIntegratedDistanceMeters: liveDistanceAggregate.distanceMeters,
-                liveIntegratedCoverage: liveDistanceAggregate.coverage,
-                transportGapOccurred: transportGapOccurred
-            )
-        } else {
-            try self.init(
-                completedRide: completedRide,
-                odometerCoverage: odometerCoverage,
-                gpsRouteCoverage: gpsRouteCoverage,
-                liveIntegratedDistanceMeters: nil,
-                liveIntegratedCoverage: .unknown,
-                transportGapOccurred: transportGapOccurred
-            )
+        if let liveDistanceAggregate,
+           liveDistanceAggregate.rideSessionID != completedRide.sessionID {
+            throw RideDistanceReconciliationError.invalidEvidence
         }
+
+        try self.init(
+            startingOdometerKilometers: completedRide.startingOdometerKilometers,
+            endingOdometerKilometers: completedRide.endingOdometerKilometers,
+            odometerCoverage: odometerCoverage,
+            gpsRouteDistanceMeters: completedRide.qualityScreenedGPSDistanceMeters,
+            gpsRouteCoverage: gpsRouteCoverage,
+            liveIntegratedDistanceMeters: liveDistanceAggregate?.distanceMeters,
+            liveIntegratedCoverage: liveDistanceAggregate?.coverage ?? .unknown,
+            transportGapOccurred: transportGapOccurred
+        )
     }
 
     public var scooterOdometerDeltaMeters: Double? {
