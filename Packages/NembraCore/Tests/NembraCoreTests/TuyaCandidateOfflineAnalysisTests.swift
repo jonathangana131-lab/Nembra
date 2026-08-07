@@ -86,6 +86,12 @@ struct TuyaCandidateOfflineAnalysisTests {
 
     @Test("malformed and overflowing varints fail closed")
     func rejectsBadVarints() {
+        var negativeCursor = -1
+        #expect(throws: TuyaCandidateOfflineAnalysisError.malformedVarint) {
+            try TuyaCandidateFragmentReassembler.decodeCandidateVarint([0x00], cursor: &negativeCursor)
+        }
+        #expect(negativeCursor == -1)
+
         var truncatedCursor = 0
         #expect(throws: TuyaCandidateOfflineAnalysisError.malformedVarint) {
             try TuyaCandidateFragmentReassembler.decodeCandidateVarint([0x80], cursor: &truncatedCursor)
