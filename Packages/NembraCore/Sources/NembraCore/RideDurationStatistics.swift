@@ -110,13 +110,15 @@ public enum RideDurationStatisticsAggregator {
             throw RideDurationStatisticsError.invalidReferenceDate
         }
 
-        let uniqueRides = try deduplicated(rides)
         let selectedWindow = try periodWindow(
             for: period,
             referenceDate: referenceDate,
             calendar: calendar
         )
-        let periodRides = uniqueRides.filter { selectedWindow.contains($0.attributedDate) }
+        let periodRides = try selectedAndDeduplicated(
+            rides,
+            selectedWindow: selectedWindow
+        )
 
         // Calendar representability is relevant only after period selection.
         // A finite but calendar-unrepresentable historical date outside the
@@ -185,6 +187,29 @@ public enum RideDurationStatisticsAggregator {
         func contains(_ date: Date) -> Bool {
             guard let interval else { return true }
             return date >= interval.start && date < interval.end
+        }
+    }
+
+    /// Select period membership before allowing unrelated historical conflicts
+    /// to invalidate the requested summary. Once any copy of a session is a
+    /// period candidate, however, every supplied copy of that session remains
+    /// relevant to identity reconciliation: disagreement can make membership or
+    /// duration ambiguous and therefore still fails closed.
+    private static func selectedAndDeduplicated(
+        _ rides: [RideDurationStatisticsRide],
+        selectedWindow: PeriodWindow
+    ) throws -> [RideDurationStatisticsRide] {
+        let selectedSessionIDs = Set(
+            rides.lazy
+                .filter { selectedWindow.contains($0.attributedDate) }
+                .map(\.sessionID)
+        )
+
+        guard !selectedSessionIDs.isEmpty else { return [] }
+
+        let relevantRides = rides.filter { selectedSessionIDs.contains($0.sessionID) }
+        return try deduplicated(relevantRides).filter {
+            selectedWindow.contains($0.attributedDate)
         }
     }
 
