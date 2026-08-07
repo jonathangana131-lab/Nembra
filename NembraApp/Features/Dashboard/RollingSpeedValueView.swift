@@ -1,4 +1,3 @@
-import Foundation
 import SwiftUI
 
 /// Presentation-only rolling speed digits. The value passed here may be a
@@ -27,14 +26,14 @@ struct RollingSpeedValueView: View {
     }
 
     /// Keep fallback rounding identical to `RollingNumberModel` so the handoff
-    /// at the two-digit rolling capacity is deterministic. Formatting an already
-    /// bounded integer prevents extreme finite `Double` values from expanding
-    /// into unbounded cockpit text.
+    /// at the two-digit rolling capacity is deterministic. Conversion happens
+    /// only after the rounded value is proven representable, so extreme finite
+    /// `Double` values can never expand into unbounded cockpit text.
     private var boundedFallbackText: String? {
         guard let value = validatedRenderValue else { return nil }
         let roundedValue = value.rounded(.toNearestOrAwayFromZero)
         guard roundedValue <= Self.maximumFallbackDisplayInteger else { return nil }
-        return String(format: "%.0f", locale: Locale.current, roundedValue)
+        return String(Int(roundedValue))
     }
 
     var body: some View {
