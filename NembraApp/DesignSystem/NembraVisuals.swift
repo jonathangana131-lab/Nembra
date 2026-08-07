@@ -11,8 +11,26 @@ enum NembraMetrics {
 }
 
 struct NembraGlassButtonStyle: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
+        if reduceTransparency {
+            content
+                .background(
+                    Color(uiColor: .secondarySystemBackground),
+                    in: RoundedRectangle(
+                        cornerRadius: NembraMetrics.controlRadius,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: NembraMetrics.controlRadius,
+                        style: .continuous
+                    )
+                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                }
+        } else if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NembraMetrics.controlRadius))
         } else {
