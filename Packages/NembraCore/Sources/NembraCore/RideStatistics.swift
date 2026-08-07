@@ -179,11 +179,6 @@ public enum RideStatisticsAggregator {
             throw RideStatisticsError.invalidReferenceDate
         }
 
-        let uniqueRides = try deduplicated(rides)
-        guard uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
-            throw RideStatisticsError.invalidRide
-        }
-
         // Period boundaries depend only on the caller-supplied reference date
         // and Calendar. Resolve them once rather than asking Foundation to
         // rebuild the same day/week/month/year interval for every stored ride.
@@ -194,8 +189,19 @@ public enum RideStatisticsAggregator {
             referenceDate: referenceDate,
             calendar: calendar
         )
-        let periodRides = uniqueRides.filter { ride in
-            selectedWindow.contains(ride.attributedDate)
+        let periodRides = try selectedAndDeduplicated(
+            rides,
+            selectedWindow: selectedWindow
+        )
+
+        // Historical records outside a finite requested period are irrelevant to
+        // that period's arithmetic. Once any copy of a session falls inside the
+        // requested period, however, every supplied copy of that session remains
+        // relevant because conflicting identity/date/distance evidence could make
+        // membership ambiguous. All-time intentionally retains whole-history
+        // validation and conflict detection.
+        guard periodRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+            throw RideStatisticsError.invalidRide
         }
 
         var excludedDistanceRideCount = 0
@@ -348,6 +354,37 @@ public enum RideStatisticsAggregator {
             return true
         }
         return candidateSessionKey < currentSessionKey
+    }
+
+    /// Select period membership before allowing unrelated historical conflicts to
+    /// invalidate a finite requested summary. If any copy of a session is a period
+    /// candidate, all supplied copies of that session are reconciled together so a
+    /// conflicting duplicate cannot move the session across the period boundary or
+    /// silently replace its distance evidence.
+    private static func selectedAndDeduplicated(
+        _ rides: [RideStatisticsRide],
+        selectedWindow: PeriodWindow
+    ) throws -> [RideStatisticsRide] {
+        guard selectedWindow.interval != nil else {
+            return try deduplicated(rides)
+        }
+
+        let selectedSessionIDs = Set(
+            rides.lazy
+                .filter { selectedWindow.contains($0.attributedDate) }
+                .map(\.sessionID)
+        )
+
+        guard !selectedSessionIDs.isEmpty else {
+            return []
+        }
+
+        let relevantRides = rides.filter {
+            selectedSessionIDs.contains($0.sessionID)
+        }
+        return try deduplicated(relevantRides).filter {
+            selectedWindow.contains($0.attributedDate)
+        }
     }
 
     private static func deduplicated(
