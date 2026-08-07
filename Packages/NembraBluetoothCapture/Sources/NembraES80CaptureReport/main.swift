@@ -22,6 +22,7 @@ struct NembraES80CaptureReportCommand {
         let maximumMessageBytes: Int
         let maximumFragmentCount: Int
         let prettyPrinted: Bool
+        let forceOutput: Bool
     }
 
     private enum CommandError: Error, CustomStringConvertible {
@@ -64,7 +65,7 @@ struct NembraES80CaptureReportCommand {
     }
 
     private static func run(_ options: Options) throws {
-        let artifactData = try Data(contentsOf: options.inputURL)
+        let artifactData = try Data(contentsOf: options.inputURL, options: [.mappedIfSafe])
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
             maximumEncryptedMessageBytes: options.maximumMessageBytes,
             maximumFragmentCount: options.maximumFragmentCount
@@ -77,7 +78,15 @@ struct NembraES80CaptureReportCommand {
         let reportData = try artifactReport.jsonData(prettyPrinted: options.prettyPrinted)
 
         if let outputURL = options.outputURL {
-            try reportData.write(to: outputURL, options: .atomic)
+            try PassiveBluetoothCaptureArtifactOutputPolicy.validate(
+                inputURL: options.inputURL,
+                outputURL: outputURL,
+                allowReplacingExistingOutput: options.forceOutput
+            )
+            let writeOptions: Data.WritingOptions = options.forceOutput
+                ? [.atomic]
+                : [.atomic, .withoutOverwriting]
+            try reportData.write(to: outputURL, options: writeOptions)
             writeStderr(
                 "wrote framing-candidate report for " +
                 "\(artifactReport.analysis.capture.peripheralIdentifier) to \(outputURL.path) " +
@@ -96,6 +105,7 @@ struct NembraES80CaptureReportCommand {
         var maximumMessageBytes = defaultMaximumMessageBytes
         var maximumFragmentCount = defaultMaximumFragmentCount
         var prettyPrinted = true
+        var forceOutput = false
         var index = 0
 
         while index < arguments.count {
@@ -124,6 +134,9 @@ struct NembraES80CaptureReportCommand {
             case "--compact":
                 prettyPrinted = false
 
+            case "--force-output":
+                forceOutput = true
+
             default:
                 if argument.hasPrefix("-") || inputPath != nil {
                     throw CommandError.unexpectedArgument(argument)
@@ -143,7 +156,8 @@ struct NembraES80CaptureReportCommand {
             peripheralIdentifier: peripheralIdentifier,
             maximumMessageBytes: maximumMessageBytes,
             maximumFragmentCount: maximumFragmentCount,
-            prettyPrinted: prettyPrinted
+            prettyPrinted: prettyPrinted,
+            forceOutput: forceOutput
         )
     }
 
@@ -185,6 +199,9 @@ struct NembraES80CaptureReportCommand {
       --peripheral <id>          Exact captured peripheral identifier. Omit only
                                  when target-attributable evidence names one unique peripheral.
       --output, -o <report.json> Write report atomically to a file instead of stdout.
+                                 Existing files are protected by default.
+      --force-output             Replace an existing derived report. This never permits
+                                 the output path to equal the raw capture input path.
       --max-message-bytes <n>    Offline analysis ceiling (default: 65536).
       --max-fragments <n>        Offline analysis ceiling (default: 256).
       --compact                  Emit compact sorted-key JSON.
@@ -195,6 +212,10 @@ struct NembraES80CaptureReportCommand {
       lowercase SHA-256 digest so analysis can be traced back to the precise JSON
       bytes that were decoded. The digest identifies the artifact; it does not
       authenticate the scooter, recorder, or person who produced the capture.
+
+    Evidence preservation:
+      The command refuses to overwrite its source capture even with --force-output.
+      Existing derived reports are also protected unless --force-output is explicit.
 
     Truth boundary:
       The output is PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY. It does not
