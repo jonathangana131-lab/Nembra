@@ -44,6 +44,7 @@ public struct SpeedDisplayInterpolator: Sendable {
     private var transitionDurationNanoseconds: UInt64 = 0
     private var latestMeasurementSource: SpeedTelemetrySource = .scooterBluetooth
     private var latestMeasurementUptimeNanoseconds: UInt64 = 0
+    private var latestAuthoritativeObservationUptimeNanoseconds: UInt64?
 
     public init() {}
 
@@ -57,10 +58,16 @@ public struct SpeedDisplayInterpolator: Sendable {
         guard sample.isAuthoritativeMeasurement else {
             throw SpeedDisplayInterpolationError.nonAuthoritativeInput
         }
-        if hasMeasurement,
-           sample.receivedAtUptimeNanoseconds <= latestMeasurementUptimeNanoseconds {
+        if let latestAuthoritativeObservationUptimeNanoseconds,
+           sample.receivedAtUptimeNanoseconds <= latestAuthoritativeObservationUptimeNanoseconds {
             throw SpeedDisplayInterpolationError.nonMonotonicMeasurement
         }
+
+        // Ordering is evidence about callback chronology, not about whether a
+        // value is numerically renderable. Advance this watermark for every
+        // fresh authoritative observation so a rejected display value cannot
+        // later make an older callback look new.
+        latestAuthoritativeObservationUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
         // `SpeedTelemetrySample` validates the raw m/s value, but multiplying a
         // very large finite value by 3.6 can overflow the derived km/h display
