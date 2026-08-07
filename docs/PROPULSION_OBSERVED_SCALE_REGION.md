@@ -31,22 +31,33 @@ The focused regressions include a model with long animation settling time and a 
 - `normal`: accepted power is below the selected presentation threshold;
 - `nearObservedScaleEdge`: accepted power is at or above the threshold on a compatible presentation scale.
 
+The enum region is intentionally authority-agnostic so Simulator QA can exercise the same visual state. It is **not** by itself permission to display verified physical wording.
+
 ## Threshold policy
 
 `PropulsionObservedScaleRegionPolicy` requires a finite `nearEdgeFraction` in `(0, 1]`. NembraCore deliberately provides no production default because selecting when subtle cockpit emphasis begins is product policy, not scooter truth.
 
 The fraction is against the compatible **presentation scale**, which may include learned observed-envelope headroom. It is not a percentage of rated motor power, controller capacity, throttle travel, or any certified physical maximum.
 
-## Product wording
+## Product wording authority
 
-A future production cockpit may use the verified form of this state for restrained wording such as **Near observed max** only when the underlying accepted measurement and observed scale both carry legitimate verified authority.
+The snapshot exposes two deliberately different conveniences:
+- `isSimulatorNearObservedScaleEdge`: Simulator-QA classification for exercising the visual region;
+- `permitsVerifiedNearObservedMaximumWording`: the production wording gate.
 
-Do not derive or display **Full throttle**, **100% throttle**, **rated max**, or equivalent language from this state.
+`permitsVerifiedNearObservedMaximumWording` can become true only when all of the following are simultaneously true:
+1. the region is current and near the observed-scale edge;
+2. the accepted measurement authority is `.verifiedVehicleMeasurement`;
+3. the compatible presentation scale origin is `.verifiedObservedEnvelope`.
+
+A future production cockpit may use that verified gate for restrained wording such as **Near observed max**. SwiftUI must not reconstruct or weaken this authority test from `isNearObservedScaleEdge` alone.
+
+Even the verified wording gate does **not** mean throttle position, rated/certified motor or controller maximum, or a perfect continuous-time physical maximum. Do not derive or display **Full throttle**, **100% throttle**, **rated max**, or equivalent language from this state.
 
 ## Parallel composition
 
 This recovered lane is intentionally disjoint from active propulsion-cockpit PR #319 after that worker narrowed its scope:
-- this slice owns accepted-power observed-scale-region semantics;
+- this slice owns accepted-power observed-scale-region semantics and verified wording eligibility;
 - #319 owns accepted numeric readout versus render-only band/peak projection.
 
 A later app integration may compose both without reimplementing either policy in SwiftUI.
