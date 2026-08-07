@@ -28,10 +28,10 @@ struct PassiveBluetoothTransportFingerprintPeripheralContinuityTests {
             to: &session
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(
             session,
             peripheralIdentifier: "target-a"
-        )
+        ))
         let match = try #require(report.candidateMatches.first)
 
         #expect(match.family == .tuyaLegacyA201)
@@ -56,10 +56,10 @@ struct PassiveBluetoothTransportFingerprintPeripheralContinuityTests {
             to: &session
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(
             session,
             peripheralIdentifier: "target-a"
-        )
+        ))
         let match = try #require(report.candidateMatches.first)
 
         #expect(match.family == .tuyaLegacyA201)
