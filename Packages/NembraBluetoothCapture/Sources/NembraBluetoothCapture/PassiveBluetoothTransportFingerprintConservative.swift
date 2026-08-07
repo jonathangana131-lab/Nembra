@@ -15,14 +15,22 @@ public extension PassiveBluetoothTransportFingerprint {
     ) -> PassiveBluetoothTransportFingerprintReport {
         let identifiers = gattEvidencePeripheralIdentifiers(in: session)
         guard identifiers.count == 1, let identifier = identifiers.first else {
-            return PassiveBluetoothTransportFingerprintReport(
-                peripheralIdentifier: "",
-                observedServiceUUIDs: [],
-                characteristicUUIDsByService: [:],
-                candidateMatches: []
-            )
+            return emptyReport()
         }
-        return analyze(session, peripheralIdentifier: identifier)
+
+        // `identifier` was derived from typed GATT evidence in this same artifact,
+        // so explicit analysis must be present. Keep this convenience nonoptional
+        // while still failing closed if the invariant is ever violated.
+        return analyze(session, peripheralIdentifier: identifier) ?? emptyReport()
+    }
+
+    private static func emptyReport() -> PassiveBluetoothTransportFingerprintReport {
+        PassiveBluetoothTransportFingerprintReport(
+            peripheralIdentifier: "",
+            observedServiceUUIDs: [],
+            characteristicUUIDsByService: [:],
+            candidateMatches: []
+        )
     }
 
     private static func gattEvidencePeripheralIdentifiers(
