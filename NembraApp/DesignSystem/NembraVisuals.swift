@@ -12,6 +12,28 @@ enum NembraMetrics {
 
 struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    private var boundaryOpacity: Double {
+        colorSchemeContrast == .increased ? 0.36 : 0.16
+    }
+
+    private var boundaryLineWidth: CGFloat {
+        colorSchemeContrast == .increased ? 1.5 : 1
+    }
+
+    @ViewBuilder
+    private var increasedContrastBoundary: some View {
+        if colorSchemeContrast == .increased {
+            RoundedRectangle(
+                cornerRadius: NembraMetrics.controlRadius,
+                style: .continuous
+            )
+            .strokeBorder(Color.primary.opacity(boundaryOpacity), lineWidth: boundaryLineWidth)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
 
     func body(content: Content) -> some View {
         if reduceTransparency {
@@ -28,16 +50,28 @@ struct NembraGlassButtonStyle: ViewModifier {
                         cornerRadius: NembraMetrics.controlRadius,
                         style: .continuous
                     )
-                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(boundaryOpacity), lineWidth: boundaryLineWidth)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
         } else if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NembraMetrics.controlRadius))
+                .overlay {
+                    increasedContrastBoundary
+                }
         } else {
             content
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous))
+                .background(
+                    .thinMaterial,
+                    in: RoundedRectangle(
+                        cornerRadius: NembraMetrics.controlRadius,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    increasedContrastBoundary
+                }
         }
     }
 }
