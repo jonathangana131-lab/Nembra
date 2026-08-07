@@ -113,6 +113,7 @@ struct NavigationDestinationSearchStateTests {
         let secondRequest = try request(query: "coffee")
         let first = try coordinator.begin(firstRequest)
         let second = try coordinator.begin(secondRequest)
+
         let oldCandidate = try candidate(title: "Old")
         let currentCandidate = try candidate(title: "Current")
         let staleApplied = coordinator.complete(token: first.token, candidates: [oldCandidate])
