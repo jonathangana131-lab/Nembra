@@ -31,22 +31,22 @@ struct RideLiveDistanceAggregationTests {
 
     private func evidence(
         segmentID: UUID,
+        processSegmentSequence: UInt64,
         source: SpeedTelemetrySource = .scooterBluetooth,
         distanceMeters: Double?,
         coverage: RideDistanceCoverage,
-        knownGapCount: Int = 0,
-        followsUnobservedInterval: Bool = false
+        knownGapCount: Int = 0
     ) throws -> RideLiveDistanceSegmentEvidence {
         try RideLiveDistanceSegmentEvidence(
             rideSessionID: rideID,
             segmentID: segmentID,
+            processSegmentSequence: processSegmentSequence,
             finalizedSegment: finalizedSegment(
                 source: source,
                 distanceMeters: distanceMeters,
                 coverage: coverage,
                 knownGapCount: knownGapCount
-            ),
-            followsUnobservedInterval: followsUnobservedInterval
+            )
         )
     }
 
@@ -62,47 +62,46 @@ struct RideLiveDistanceAggregationTests {
         )
     }
 
-    @Test("complete segments sum without comparing process-local uptime")
-    func completeSegmentsAggregate() throws {
-        let first = try evidence(
+    @Test("one complete process segment remains complete")
+    func oneCompleteSegmentRemainsComplete() throws {
+        let record = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 12.5,
             coverage: .complete
         )
-        let second = try evidence(
-            segmentID: secondSegmentID,
-            distanceMeters: 7.5,
-            coverage: .complete
-        )
 
-        let result = try aggregate([second, first])
+        let result = try aggregate([record])
 
-        #expect(result.distanceMeters == 20)
+        #expect(result.distanceMeters == 12.5)
         #expect(result.coverage == .complete)
-        #expect(result.uniqueSegmentCount == 2)
-        #expect(result.distanceEvidenceSegmentCount == 2)
+        #expect(result.uniqueSegmentCount == 1)
+        #expect(result.distanceEvidenceSegmentCount == 1)
         #expect(result.knownCoverageGapCount == 0)
         #expect(result.unobservedIntervalCount == 0)
     }
 
-    @Test("recovery boundary preserves known distance while making coverage partial")
-    func recoveryBoundaryIsPartial() throws {
+    @Test("new process segment automatically preserves an unobserved recovery interval")
+    func processRecoveryBoundaryIsStructural() throws {
         let first = try evidence(
             segmentID: firstSegmentID,
-            distanceMeters: 12,
+            processSegmentSequence: 0,
+            distanceMeters: 12.5,
             coverage: .complete
         )
         let recovered = try evidence(
             segmentID: secondSegmentID,
-            distanceMeters: 8,
-            coverage: .complete,
-            followsUnobservedInterval: true
+            processSegmentSequence: 1,
+            distanceMeters: 7.5,
+            coverage: .complete
         )
 
-        let result = try aggregate([first, recovered])
+        let result = try aggregate([recovered, first])
 
         #expect(result.distanceMeters == 20)
         #expect(result.coverage == .partial)
+        #expect(result.uniqueSegmentCount == 2)
+        #expect(result.distanceEvidenceSegmentCount == 2)
         #expect(result.knownCoverageGapCount == 1)
         #expect(result.unobservedIntervalCount == 1)
     }
@@ -111,6 +110,7 @@ struct RideLiveDistanceAggregationTests {
     func duplicateReplayIsIdempotent() throws {
         let record = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 14,
             coverage: .complete
         )
@@ -120,17 +120,20 @@ struct RideLiveDistanceAggregationTests {
         #expect(result.distanceMeters == 14)
         #expect(result.uniqueSegmentCount == 1)
         #expect(result.duplicateRecordCount == 2)
+        #expect(result.unobservedIntervalCount == 0)
     }
 
     @Test("same segment identity with different evidence fails closed")
     func conflictingDuplicateFailsClosed() throws {
         let first = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 14,
             coverage: .complete
         )
         let conflicting = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 15,
             coverage: .complete
         )
@@ -140,15 +143,56 @@ struct RideLiveDistanceAggregationTests {
         }
     }
 
-    @Test("unknown segment cannot silently disappear from otherwise complete coverage")
+    @Test("different segment identities cannot claim the same process sequence")
+    func duplicateProcessSequenceFailsClosed() throws {
+        let first = try evidence(
+            segmentID: firstSegmentID,
+            processSegmentSequence: 0,
+            distanceMeters: 14,
+            coverage: .complete
+        )
+        let conflicting = try evidence(
+            segmentID: secondSegmentID,
+            processSegmentSequence: 0,
+            distanceMeters: 15,
+            coverage: .complete
+        )
+
+        #expect(throws: RideLiveDistanceAggregationError.conflictingProcessSegmentSequence(0)) {
+            _ = try aggregate([first, conflicting])
+        }
+    }
+
+    @Test("missing earlier process segment fails closed instead of inventing ride chronology")
+    func nonContiguousProcessSequenceFailsClosed() throws {
+        let recoveredOnly = try evidence(
+            segmentID: secondSegmentID,
+            processSegmentSequence: 1,
+            distanceMeters: 8,
+            coverage: .complete
+        )
+
+        #expect(
+            throws: RideLiveDistanceAggregationError.nonContiguousProcessSegmentSequence(
+                expected: 0,
+                actual: 1
+            )
+        ) {
+            _ = try aggregate([recoveredOnly])
+        }
+    }
+
+    @Test("unknown segment cannot silently disappear from otherwise known ride distance")
     func unknownSegmentDegradesCoverage() throws {
         let complete = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 9,
             coverage: .complete
         )
         let unknown = try evidence(
             segmentID: secondSegmentID,
+            processSegmentSequence: 1,
             distanceMeters: nil,
             coverage: .unknown,
             knownGapCount: 2
@@ -159,13 +203,15 @@ struct RideLiveDistanceAggregationTests {
         #expect(result.distanceMeters == 9)
         #expect(result.coverage == .partial)
         #expect(result.distanceEvidenceSegmentCount == 1)
-        #expect(result.knownCoverageGapCount == 2)
+        #expect(result.knownCoverageGapCount == 3)
+        #expect(result.unobservedIntervalCount == 1)
     }
 
     @Test("no integrated segment remains unavailable instead of fake zero")
     func noDistanceEvidenceRemainsUnknown() throws {
         let unknown = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: nil,
             coverage: .unknown,
             knownGapCount: 1
@@ -183,6 +229,7 @@ struct RideLiveDistanceAggregationTests {
     func zeroDistanceIsNotUnavailable() throws {
         let stopped = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 0,
             coverage: .complete
         )
@@ -199,19 +246,20 @@ struct RideLiveDistanceAggregationTests {
         let otherRide = try RideLiveDistanceSegmentEvidence(
             rideSessionID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             finalizedSegment: finalizedSegment(
                 distanceMeters: 4,
                 coverage: .complete,
                 knownGapCount: 0
-            ),
-            followsUnobservedInterval: false
+            )
         )
         #expect(throws: RideLiveDistanceAggregationError.mismatchedRideSession) {
             _ = try aggregate([otherRide])
         }
 
         let gps = try evidence(
-            segmentID: secondSegmentID,
+            segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             source: .gps,
             distanceMeters: 4,
             coverage: .complete
@@ -229,11 +277,13 @@ struct RideLiveDistanceAggregationTests {
         let largeDistance = Double.greatestFiniteMagnitude * 0.75
         let first = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: largeDistance,
             coverage: .complete
         )
         let second = try evidence(
             segmentID: secondSegmentID,
+            processSegmentSequence: 1,
             distanceMeters: largeDistance,
             coverage: .complete
         )
@@ -243,20 +293,21 @@ struct RideLiveDistanceAggregationTests {
         }
     }
 
-    @Test("durable segment Codable round trip keeps identity and truth fields")
+    @Test("durable segment Codable round trip keeps identity sequence and truth fields")
     func durableSegmentRoundTrip() throws {
         let original = try evidence(
             segmentID: firstSegmentID,
+            processSegmentSequence: 0,
             distanceMeters: 5.25,
             coverage: .partial,
-            knownGapCount: 2,
-            followsUnobservedInterval: true
+            knownGapCount: 2
         )
 
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(RideLiveDistanceSegmentEvidence.self, from: data)
 
         #expect(decoded == original)
+        #expect(decoded.processSegmentSequence == 0)
     }
 
     @Test("decoded durable evidence must satisfy finalized-segment invariants")
@@ -265,12 +316,12 @@ struct RideLiveDistanceAggregationTests {
         {
           "rideSessionID": "11111111-1111-1111-1111-111111111111",
           "segmentID": "22222222-2222-2222-2222-222222222222",
+          "processSegmentSequence": 0,
           "source": "scooterBluetooth",
           "method": "trapezoidalBetweenMeasurements",
           "distanceMeters": 10,
           "coverage": "unknown",
-          "knownCoverageGapCount": 0,
-          "followsUnobservedInterval": false
+          "knownCoverageGapCount": 0
         }
         """.data(using: .utf8)!
 
