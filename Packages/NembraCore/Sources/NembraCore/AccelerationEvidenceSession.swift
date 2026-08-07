@@ -95,25 +95,18 @@ public enum AccelerationEvidenceSessionRecordResult: Equatable, Sendable {
     case ignoredForeignSource(expected: SpeedTelemetrySource, actual: SpeedTelemetrySource)
     /// A completed, invalidated, or continuity-broken session is immutable.
     case ignoredAfterTerminalEvidence
-    /// The attempt benchmark saw the selected-source callback before the timing
-    /// evaluator consumed that exact sample. Final reporting quality comes from
-    /// the separately maintained retained timing-trace benchmark.
-    case processed(benchmark: TelemetryBenchmarkRecordResult, runState: AccelerationRunState)
+    /// The selected-source callback has been offered to the timing evaluator and
+    /// the retained-trace quality collector has been updated when appropriate.
+    case processed(runState: AccelerationRunState)
 }
 
 public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
     public let policy: AccelerationEvidenceSessionPolicy
     public let runState: AccelerationRunState
 
-    /// Diagnostic quality summary for every selected-source callback observed by
-    /// this attempt before it became terminal. It can include superseded
-    /// stationary anchors or timing-quality-rejected packets and is therefore not
-    /// the reporting authority for a completed result.
-    public let attemptStreamBenchmark: TelemetryBenchmarkSummary
-
     /// Quality summary containing only the final stationary anchor plus timing
     /// samples the evaluator accepted after launch. It is available only when a
-    /// run completes and is the reporting authority for telemetry quality.
+    /// run completes and is the sole telemetry-quality authority for reporting.
     public let timingTraceBenchmark: TelemetryBenchmarkSummary?
 
     public let ignoredForeignSourceCallbackCount: Int
@@ -123,7 +116,6 @@ public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
     fileprivate init(
         policy: AccelerationEvidenceSessionPolicy,
         runState: AccelerationRunState,
-        attemptStreamBenchmark: TelemetryBenchmarkSummary,
         timingTraceBenchmark: TelemetryBenchmarkSummary?,
         ignoredForeignSourceCallbackCount: Int,
         knownObservationInterruptionCount: Int,
@@ -131,7 +123,6 @@ public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
     ) {
         self.policy = policy
         self.runState = runState
-        self.attemptStreamBenchmark = attemptStreamBenchmark
         self.timingTraceBenchmark = timingTraceBenchmark
         self.ignoredForeignSourceCallbackCount = ignoredForeignSourceCallbackCount
         self.knownObservationInterruptionCount = knownObservationInterruptionCount
@@ -142,17 +133,16 @@ public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
 /// Owns the measurement clock and quality evidence for exactly one in-memory
 /// acceleration observation attempt.
 ///
-/// The exact selected-source callback is sent to `TelemetryBenchmarkCollector`
-/// and `AccelerationRunEvaluator` in the same call. A second constant-memory
-/// collector tracks only the evaluator's current retained timing trace: it resets
-/// when a newer accepted stationary anchor supersedes the old anchor, skips
-/// timing-quality-rejected packets, and freezes when the evaluator becomes
-/// terminal. Post-run traffic therefore cannot make an earlier result look better.
+/// A constant-memory collector tracks only the evaluator's current retained
+/// timing trace: it resets when a newer accepted stationary anchor supersedes the
+/// old anchor, skips timing-quality-rejected packets, and freezes when the
+/// evaluator becomes terminal. No broader attempt-wide benchmark is exposed from
+/// this API, so product reporting cannot accidentally qualify a run with packets
+/// that were not retained as acceleration timing evidence.
 public struct AccelerationEvidenceSession: Sendable {
     public let policy: AccelerationEvidenceSessionPolicy
 
     private var evaluator: AccelerationRunEvaluator
-    private var attemptBenchmark: TelemetryBenchmarkCollector
     private var timingTraceBenchmarkCollector: TelemetryBenchmarkCollector?
     private var hasSelectedSourceObservation = false
     private var ignoredForeignSourceCallbackCount = 0
@@ -162,7 +152,6 @@ public struct AccelerationEvidenceSession: Sendable {
     public init(policy: AccelerationEvidenceSessionPolicy) {
         self.policy = policy
         self.evaluator = AccelerationRunEvaluator(policy: policy.run)
-        self.attemptBenchmark = TelemetryBenchmarkCollector(source: policy.source)
     }
 
     public var state: AccelerationRunState {
@@ -182,7 +171,6 @@ public struct AccelerationEvidenceSession: Sendable {
         }
 
         hasSelectedSourceObservation = true
-        let benchmarkResult = attemptBenchmark.record(sample)
         let stateBefore = evaluator.state
         evaluator.accept(sample)
         updateTimingTrace(
@@ -190,7 +178,7 @@ public struct AccelerationEvidenceSession: Sendable {
             stateBefore: stateBefore,
             stateAfter: evaluator.state
         )
-        return .processed(benchmark: benchmarkResult, runState: evaluator.state)
+        return .processed(runState: evaluator.state)
     }
 
     /// Records a known interruption in the run's evidence path.
@@ -198,7 +186,7 @@ public struct AccelerationEvidenceSession: Sendable {
     /// If selected-source evidence already exists, the session is permanently
     /// continuity-broken even when the underlying evaluator is still waiting for
     /// a valid standstill anchor. A new attempt must be created rather than
-    /// stitching quality statistics across missing observation time.
+    /// stitching evidence across missing observation time.
     public mutating func interrupt(_ interruption: AccelerationRunInterruption) {
         guard !isTerminalEvidence else { return }
 
@@ -222,7 +210,6 @@ public struct AccelerationEvidenceSession: Sendable {
         return AccelerationEvidenceSessionSnapshot(
             policy: policy,
             runState: evaluator.state,
-            attemptStreamBenchmark: attemptBenchmark.summary,
             timingTraceBenchmark: traceBenchmark,
             ignoredForeignSourceCallbackCount: ignoredForeignSourceCallbackCount,
             knownObservationInterruptionCount: knownObservationInterruptionCount,
@@ -319,14 +306,15 @@ public enum AccelerationEvidenceReadinessFailure: Equatable, Sendable {
 /// not make display interpolation into evidence.
 public struct AccelerationEvidenceReadiness: Equatable, Sendable {
     public let result: AccelerationRunResult?
-    public let telemetryQuality: SpeedTelemetryQualityAssessment
+    /// Present only when a completed run has an exact retained-trace benchmark.
+    public let telemetryQuality: SpeedTelemetryQualityAssessment?
     public let failures: [AccelerationEvidenceReadinessFailure]
 
     public var isReady: Bool { failures.isEmpty }
 
     fileprivate init(
         result: AccelerationRunResult?,
-        telemetryQuality: SpeedTelemetryQualityAssessment,
+        telemetryQuality: SpeedTelemetryQualityAssessment?,
         failures: [AccelerationEvidenceReadinessFailure]
     ) {
         self.result = result
@@ -337,10 +325,9 @@ public struct AccelerationEvidenceReadiness: Equatable, Sendable {
 
 public extension AccelerationEvidenceSessionSnapshot {
     func readiness() -> AccelerationEvidenceReadiness {
-        let qualityBenchmark = timingTraceBenchmark ?? attemptStreamBenchmark
-        let telemetryQuality = qualityBenchmark.qualityAssessment(using: policy.telemetry)
         var failures: [AccelerationEvidenceReadinessFailure] = []
         var result: AccelerationRunResult?
+        var telemetryQuality: SpeedTelemetryQualityAssessment?
 
         switch runState {
         case let .completed(completed):
@@ -351,7 +338,18 @@ public extension AccelerationEvidenceSessionSnapshot {
                     actual: completed.source
                 ))
             }
-            if timingTraceBenchmark == nil {
+            if let timingTraceBenchmark {
+                let assessment = timingTraceBenchmark.qualityAssessment(using: policy.telemetry)
+                telemetryQuality = assessment
+                if timingTraceBenchmark.rejectedSampleCount > 0 {
+                    failures.append(.selectedSourceBenchmarkRejectedSamples(
+                        count: timingTraceBenchmark.rejectedSampleCount
+                    ))
+                }
+                if !assessment.isQualified {
+                    failures.append(.telemetryQualityFailed(assessment.failures))
+                }
+            } else {
                 failures.append(.timingTraceBenchmarkUnavailable)
             }
             if completed.timingEvidenceSampleCount < policy.telemetry.minimumAcceptedSampleCount {
@@ -360,25 +358,18 @@ public extension AccelerationEvidenceSessionSnapshot {
                     actual: completed.timingEvidenceSampleCount
                 ))
             }
+
         case let .invalidated(reason):
             failures.append(.runInvalidated(reason))
+
         case .waitingForStandstill, .armed, .running:
             failures.append(.runIncomplete)
         }
 
-        if let timingTraceBenchmark,
-           timingTraceBenchmark.rejectedSampleCount > 0 {
-            failures.append(.selectedSourceBenchmarkRejectedSamples(
-                count: timingTraceBenchmark.rejectedSampleCount
-            ))
-        }
         if knownObservationInterruptionCount > 0 || continuityWasBroken {
             failures.append(.knownObservationInterruption(
                 count: max(knownObservationInterruptionCount, 1)
             ))
-        }
-        if !telemetryQuality.isQualified {
-            failures.append(.telemetryQualityFailed(telemetryQuality.failures))
         }
 
         return AccelerationEvidenceReadiness(
