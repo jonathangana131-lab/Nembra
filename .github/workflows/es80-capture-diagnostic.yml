@@ -1,0 +1,38 @@
+name: ES80 Capture Diagnostic
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-capture/ci/chat-f6q2n-diagnose-*'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify immutable checkout
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Run package tests and annotate failure
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee /tmp/nembra-swift-test.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            summary="$(grep -E '(^|[^A-Za-z])(error:|fatal error:)|Test .* failed|failed:' /tmp/nembra-swift-test.log | tail -n 50 || true)"
+            if [ -z "$summary" ]; then
+              summary="$(tail -n 80 /tmp/nembra-swift-test.log)"
+            fi
+            summary="${summary//'%'/'%25'}"
+            summary="${summary//$'\r'/'%0D'}"
+            summary="${summary//$'\n'/'%0A'}"
+            echo "::error title=Swift package diagnostic::$summary"
+            exit "$status"
+          fi
