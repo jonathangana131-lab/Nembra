@@ -74,6 +74,39 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
         #expect(model.acceptedWindowCount == 0)
     }
 
+    @Test("non-finite full-charge equivalent stays numerical overflow rather than plausibility outlier")
+    func plausibilityOverflowRetainsNumericalClassification() throws {
+        let epoch = UUID(uuidString: "78787878-7878-7878-7878-787878787879")!
+        var stream = AcceptedBatterySOCStream()
+        let start = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        let end = try #require(stream.accept(
+            try verifiedSOC(percent: 70, epoch: epoch, sequence: 2, uptime: 2_000)
+        ))
+        let window = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: .greatestFiniteMagnitude,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: start,
+            endSOC: end
+        )
+        let plausibility = try AcceptedAdaptiveRangePlausibilityPolicy(
+            maximumFullChargeEquivalentMeters: 20_000
+        )
+        var model = AcceptedAdaptiveBatteryRangeModel()
+
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: plausibility
+        )
+
+        #expect(result.disposition == .rejected(.numericalOverflow))
+        #expect(model.hasLearnedEfficiency == false)
+        #expect(model.acceptedWindowCount == 0)
+    }
+
     @Test("plausibility ceiling accepts an otherwise-valid window exactly at its bound")
     func firstWindowPlausibilityCeilingAcceptsBoundary() throws {
         let epoch = UUID(uuidString: "79797979-7979-7979-7979-797979797979")!
