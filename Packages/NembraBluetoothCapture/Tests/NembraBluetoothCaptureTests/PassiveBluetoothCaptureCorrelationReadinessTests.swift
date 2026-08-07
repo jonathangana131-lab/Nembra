@@ -42,6 +42,36 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.targetValueObservationCount == 0)
     }
 
+    @Test("nonblank target identity is matched exactly instead of normalized")
+    func targetIdentityRemainsOpaque() throws {
+        var session = try makeSession()
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "VALUE",
+            payload: [0xAA],
+            sequence: 1,
+            uptime: 1_000,
+            to: &session
+        )
+        try appendMarker(
+            field: "Battery",
+            displayedValue: "73%",
+            sequence: 2,
+            uptime: 1_100,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: " target-a "
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.peripheralIdentifier == " target-a ")
+        #expect(report.targetValueObservationCount == 0)
+        #expect(report.supportedMarkerCount == 0)
+    }
+
     @Test("attributable target with no stock-app markers is not ready")
     func noMarkers() throws {
         var session = try makeSession()
@@ -119,7 +149,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
 
         let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
             session,
-            peripheralIdentifier: "  target-a  ",
+            peripheralIdentifier: "target-a",
             lookbackNanoseconds: 500_000_000,
             lookaheadNanoseconds: 500_000_000
         )

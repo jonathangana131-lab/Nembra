@@ -91,23 +91,24 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
         lookbackNanoseconds: UInt64 = 2_000_000_000,
         lookaheadNanoseconds: UInt64 = 2_000_000_000
     ) -> PassiveBluetoothCaptureCorrelationReadinessReport {
-        let normalizedPeripheralIdentifier = peripheralIdentifier
+        let isBlankPeripheralIdentifier = peripheralIdentifier
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
         let sessionSummary = summarizeSession(
             session,
-            peripheralIdentifier: normalizedPeripheralIdentifier
+            peripheralIdentifier: peripheralIdentifier
         )
 
-        guard !normalizedPeripheralIdentifier.isEmpty,
+        guard !isBlankPeripheralIdentifier,
               let windows = PassiveBluetoothCorrelation.windows(
                 in: session,
-                peripheralIdentifier: normalizedPeripheralIdentifier,
+                peripheralIdentifier: peripheralIdentifier,
                 lookbackNanoseconds: lookbackNanoseconds,
                 lookaheadNanoseconds: lookaheadNanoseconds
               ) else {
             return makeReport(
                 disposition: .invalidPeripheralScope,
-                peripheralIdentifier: normalizedPeripheralIdentifier,
+                peripheralIdentifier: peripheralIdentifier,
                 session: session,
                 sessionSummary: sessionSummary,
                 supportedMarkerCount: 0
@@ -133,7 +134,7 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
 
         return makeReport(
             disposition: disposition,
-            peripheralIdentifier: normalizedPeripheralIdentifier,
+            peripheralIdentifier: peripheralIdentifier,
             session: session,
             sessionSummary: sessionSummary,
             supportedMarkerCount: supportedMarkerCount
