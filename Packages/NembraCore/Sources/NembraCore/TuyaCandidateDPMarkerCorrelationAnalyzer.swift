@@ -41,6 +41,7 @@ public enum TuyaCandidateDPMarkerCorrelation {
         }
 
         try validateUniqueMarkers(selected)
+        try validateUniqueCandidateSnapshots(selected)
         try validateSingleStream(selected)
         try validateSingleLengthWidth(selected)
 
@@ -79,6 +80,29 @@ public enum TuyaCandidateDPMarkerCorrelation {
             guard seen.insert(snapshot.markerSequenceNumber).inserted else {
                 throw TuyaCandidateDPMarkerCorrelationError.duplicateMarkerSequenceNumber(
                     snapshot.markerSequenceNumber
+                )
+            }
+        }
+    }
+
+    private struct CandidateSnapshotIdentity: Hashable {
+        let continuityGeneration: UInt64
+        let candidateSequenceNumber: UInt64
+    }
+
+    private static func validateUniqueCandidateSnapshots(
+        _ snapshots: [TuyaCandidateDPMarkerSnapshot]
+    ) throws {
+        var seen: Set<CandidateSnapshotIdentity> = []
+        for snapshot in snapshots {
+            let identity = CandidateSnapshotIdentity(
+                continuityGeneration: snapshot.continuityGeneration,
+                candidateSequenceNumber: snapshot.candidateSequenceNumber
+            )
+            guard seen.insert(identity).inserted else {
+                throw TuyaCandidateDPMarkerCorrelationError.duplicateCandidateSnapshotIdentity(
+                    continuityGeneration: identity.continuityGeneration,
+                    candidateSequenceNumber: identity.candidateSequenceNumber
                 )
             }
         }
