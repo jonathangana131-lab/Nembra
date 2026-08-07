@@ -39,8 +39,8 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
         durationEvidence: CompletedRideDurationEvidence,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
-        try self.initValidated(
-            completedRide: completedRide,
+        try self.init(
+            validating: completedRide,
             durationEvidence: durationEvidence,
             calendarAttribution: calendarAttribution
         )
@@ -54,8 +54,8 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
         durationEvidence: CompletedRideDurationEvidence,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
-        try self.initValidated(
-            completedRide: completedRide,
+        try self.init(
+            validating: completedRide,
             durationEvidence: durationEvidence,
             calendarAttribution: calendarAttribution
         )
@@ -68,15 +68,15 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
         historyDurationRecord record: RideHistoryDurationJoinedRecord,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
-        try self.initValidated(
-            completedRide: record.historyRecord.evidence,
+        try self.init(
+            validating: record.historyRecord.evidence,
             durationEvidence: record.durationRecord.evidence,
             calendarAttribution: calendarAttribution
         )
     }
 
-    private initValidated(
-        completedRide: CompletedRideEvidence,
+    private init(
+        validating completedRide: CompletedRideEvidence,
         durationEvidence: CompletedRideDurationEvidence,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
