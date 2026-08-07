@@ -46,6 +46,7 @@ public enum TuyaCandidateTranscriptAnalyzer {
         var boundContinuityGeneration: UInt64?
         var startObservationIndex: Int?
         var lastAcceptedObservationIndex: Int?
+        var lastSeenReceiptUptimeNanoseconds: UInt64?
 
         for (index, observation) in observations.enumerated() {
             if let currentStreamIdentity = boundStreamIdentity,
@@ -81,6 +82,31 @@ public enum TuyaCandidateTranscriptAnalyzer {
                     )
                 }
             }
+
+            // Receipt uptime is process-local transcript ordering evidence, not
+            // candidate-local framing state. Preserve the newest observation seen
+            // even when its bytes are rejected so a later delayed observation cannot
+            // become a fresh candidate merely because the reassembler was reset.
+            if let lastSeenReceiptUptimeNanoseconds,
+               observation.receiptUptimeNanoseconds <= lastSeenReceiptUptimeNanoseconds {
+                events.append(
+                    .rejectedCandidate(
+                        startObservationIndex: startObservationIndex ?? index,
+                        lastAcceptedObservationIndex: lastAcceptedObservationIndex,
+                        failingObservationIndex: index,
+                        error: .nonMonotonicReceiptUptime
+                    )
+                )
+                reassembler = nil
+                resetState(
+                    streamIdentity: &boundStreamIdentity,
+                    continuityGeneration: &boundContinuityGeneration,
+                    startObservationIndex: &startObservationIndex,
+                    lastAcceptedObservationIndex: &lastAcceptedObservationIndex
+                )
+                continue
+            }
+            lastSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
 
             if reassembler == nil {
                 reassembler = TuyaCandidateFragmentReassembler(policy: policy)

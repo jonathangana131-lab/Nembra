@@ -55,7 +55,11 @@ One `TuyaCandidateFragmentReassembler` permanently binds to the first stream ide
 
 That means a disconnect, interrupted acquisition, target change, or other evidence gap cannot silently splice bytes into one candidate message. The capture layer remains authoritative for deciding when continuity is broken.
 
-`TuyaCandidateTranscriptAnalyzer` adds a batch layer for an already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. It emits explicit events for:
+`TuyaCandidateTranscriptAnalyzer` adds a batch layer for one already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. Receipt uptime remains a transcript-wide ordering clock: candidate completion, framing rejection, stream changes, and continuity-generation changes do **not** reset chronology. Every observation that advances that clock remains seen even if its candidate bytes are later rejected, so a delayed older observation cannot become a fresh candidate merely because framing state was reset. Equal or decreasing receipt uptime therefore fails closed across candidate boundaries as well as within one candidate.
+
+A continuity generation is a byte-continuity boundary, not permission to rewind the transcript receipt clock. Higher-level adapters that cannot guarantee one comparable monotonic clock domain must split their evidence into separate transcripts rather than concatenate unrelated uptime domains.
+
+The transcript analyzer emits explicit events for:
 
 - completed candidate messages;
 - a candidate rejected by the framing contract, including its first, last accepted, and failing observation indices;
@@ -63,7 +67,9 @@ That means a disconnect, interrupted acquisition, target change, or other eviden
 - an incomplete candidate still open when the transcript ends;
 - an unexpected analyzer failure, which stops analysis rather than silently discarding evidence.
 
-The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, or joins data across a known gap. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
+If an incomplete candidate reaches a stream/continuity boundary and the first observation beyond that boundary also rewinds receipt uptime, both facts remain visible: the incomplete-boundary event is emitted first, then the rewound observation is rejected. A later genuinely newer packet-zero observation may recover normally.
+
+The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, reorders observations, rewinds receipt chronology, or joins data across a known gap. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
 
 ## Resource safety without invented hardware limits
 
@@ -106,9 +112,12 @@ The repository tests exercise:
 - automatic rollover across multiple complete candidate messages in one transcript;
 - explicit preservation of continuity-boundary truncation;
 - whole-candidate rejection followed by clean packet-zero recovery;
-- explicit end-of-transcript truncation evidence.
+- explicit end-of-transcript truncation evidence;
+- transcript-wide receipt-rewind rejection after a completed candidate;
+- seen-chronology preservation across a newer framing rejection followed by a delayed older observation;
+- explicit boundary preservation when the first observation in a new continuity generation rewinds receipt uptime, followed by recovery on genuinely newer evidence.
 
-Supplemental local Swift 6.2.1 validation passed **17/17 focused tests across two suites** in both debug and release with warnings treated as errors. That is supporting evidence only. Repository/exact-head CI remains the acceptance source for the integrated branch.
+The original framing slice had supplemental local Swift 6.2.1 validation across its focused suites. Repository/exact-head CI remains the acceptance source for integrated chronology hardening; queued, skipped, stale-head, or ancestor runs are not accepted as proof.
 
 ## Physical next step
 
