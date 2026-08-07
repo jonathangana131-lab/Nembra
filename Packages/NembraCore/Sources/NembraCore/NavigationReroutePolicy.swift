@@ -8,25 +8,30 @@ public enum NavigationReroutePolicyError: Error, Equatable, Sendable {
 /// evidence is strong enough to request a new provider route.
 ///
 /// There is intentionally no production default. Real iPhone/ES80 outdoor traces
-/// must justify the deviation corridor, sustained-duration window, and cooldown.
-/// The domain requires both multiple accepted samples and elapsed deviation time
-/// so one noisy coordinate or an unrealistically dense callback burst cannot reroute.
+/// must justify the deviation corridor, sustained-duration window, maximum
+/// accepted-observation gap, and cooldown. The domain requires multiple accepted
+/// samples, elapsed deviation time, and bounded spacing between those samples so
+/// one noisy coordinate, an unrealistically dense callback burst, or a long
+/// interval with no evidence cannot request a reroute.
 public struct NavigationReroutePolicy: Equatable, Sendable {
     public let minimumDeviationDistanceMeters: Double
     public let requiredConsecutiveAcceptedSamples: Int
     public let minimumConsecutiveDeviationDurationNanoseconds: UInt64
+    public let maximumAcceptedObservationGapNanoseconds: UInt64
     public let rerouteCooldownNanoseconds: UInt64
 
     public init(
         minimumDeviationDistanceMeters: Double,
         requiredConsecutiveAcceptedSamples: Int,
         minimumConsecutiveDeviationDurationNanoseconds: UInt64,
+        maximumAcceptedObservationGapNanoseconds: UInt64,
         rerouteCooldownNanoseconds: UInt64
     ) throws {
         guard minimumDeviationDistanceMeters.isFinite,
               minimumDeviationDistanceMeters > 0,
               requiredConsecutiveAcceptedSamples >= 2,
               minimumConsecutiveDeviationDurationNanoseconds > 0,
+              maximumAcceptedObservationGapNanoseconds > 0,
               rerouteCooldownNanoseconds > 0 else {
             throw NavigationReroutePolicyError.invalidPolicy
         }
@@ -34,6 +39,7 @@ public struct NavigationReroutePolicy: Equatable, Sendable {
         self.minimumDeviationDistanceMeters = minimumDeviationDistanceMeters
         self.requiredConsecutiveAcceptedSamples = requiredConsecutiveAcceptedSamples
         self.minimumConsecutiveDeviationDurationNanoseconds = minimumConsecutiveDeviationDurationNanoseconds
+        self.maximumAcceptedObservationGapNanoseconds = maximumAcceptedObservationGapNanoseconds
         self.rerouteCooldownNanoseconds = rerouteCooldownNanoseconds
     }
 }
@@ -76,7 +82,9 @@ public enum NavigationRerouteDecision: Equatable, Sendable {
 ///
 /// This type never computes route geometry, never accepts raw Core Location
 /// callbacks, never mutates ride distance, and never makes a route legal/safe.
-/// The caller must explicitly reset evidence at known location continuity gaps.
+/// Explicit known continuity gaps reset evidence immediately. In addition, the
+/// caller-supplied maximum accepted-observation gap prevents silent periods from
+/// being counted as if off-route evidence had been continuously observed.
 public struct NavigationRerouteEvaluator: Sendable {
     private let policy: NavigationReroutePolicy
     public private(set) var consecutiveDeviationSamples: Int = 0
@@ -95,6 +103,20 @@ public struct NavigationRerouteEvaluator: Sendable {
         if let lastAcceptedObservationUptimeNanoseconds,
            observation.receivedAtUptimeNanoseconds <= lastAcceptedObservationUptimeNanoseconds {
             throw NavigationReroutePolicyError.nonMonotonicObservation
+        }
+
+        // A deviation run is evidence-contiguous only while accepted callbacks
+        // remain within the caller's explicit gap bound. A longer silent interval
+        // is missing evidence, not proof that the rider stayed off route. Keep the
+        // process chronology and reroute cooldown, but make the current sample the
+        // first possible member of a fresh deviation run.
+        if consecutiveDeviationSamples > 0,
+           let lastAcceptedObservationUptimeNanoseconds {
+            let acceptedObservationGap =
+                observation.receivedAtUptimeNanoseconds - lastAcceptedObservationUptimeNanoseconds
+            if acceptedObservationGap > policy.maximumAcceptedObservationGapNanoseconds {
+                resetDeviationRun()
+            }
         }
 
         // From this point the observation is accepted transactionally as the next

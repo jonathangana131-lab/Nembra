@@ -133,6 +133,7 @@ struct NavigationRouteRemainingCoherenceTests {
                 minimumDeviationDistanceMeters: 20,
                 requiredConsecutiveAcceptedSamples: 2,
                 minimumConsecutiveDeviationDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 1_000,
                 rerouteCooldownNanoseconds: 1
             )
         )
