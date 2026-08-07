@@ -33,11 +33,29 @@ The focused regressions include a model with long animation settling time and a 
 
 The enum region is intentionally authority-agnostic so Simulator QA can exercise the same visual state. It is **not** by itself permission to display verified physical wording.
 
-## Threshold policy
+## Generic visual-region threshold policy
 
-`PropulsionObservedScaleRegionPolicy` requires a finite `nearEdgeFraction` in `(0, 1]`. NembraCore deliberately provides no production default because selecting when subtle cockpit emphasis begins is product policy, not scooter truth.
+`PropulsionObservedScaleRegionPolicy` requires a finite `nearEdgeFraction` in `(0, 1]`. NembraCore deliberately provides no production default because selecting when subtle cockpit emphasis begins is product presentation policy, not scooter truth.
+
+This generic threshold may also be intentionally loose in Simulator QA or visual experimentation. For example, a caller may choose `0.01` to exercise the near-edge visual state across a broad synthetic range. That flexibility is useful, but it means the generic threshold can never be the sole authority for language such as **Near observed max**.
 
 The fraction is against the compatible **presentation scale**, which may include learned observed-envelope headroom. It is not a percentage of rated motor power, controller capacity, throttle travel, or any certified physical maximum.
+
+## Product-owned verified wording policy
+
+Verified near-observed-maximum language has a separate source-owned semantic boundary: `PropulsionVerifiedNearObservedMaximumWordingPolicy.product`.
+
+The current product wording floor is `0.90` of a compatible learned observed-envelope presentation scale. Its initializer is private, so ordinary callers cannot weaken the wording gate by passing an arbitrary low fraction. Changing this language boundary therefore requires an explicit Nembra source change and review rather than a visual configuration tweak.
+
+This `0.90` boundary is deliberately **not** an AOVOPRO ES80 hardware claim. It does not mean 90% throttle, 90% rated motor/controller output, a certified full-power threshold, or 90% of a perfect physical maximum. It is only a conservative product-language boundary on Nembra's learned observed **presentation scale**.
+
+The generic visual region and verified wording policy are intentionally intersected:
+- the generic region decides whether the current presentation is considered near-edge for visual semantics;
+- the product-owned wording floor independently prevents a loose generic region from weakening language integrity.
+
+Therefore a generic `nearEdgeFraction = 0.01` may legitimately produce `.nearObservedScaleEdge` at 1% for visual QA, while `permitsVerifiedNearObservedMaximumWording` remains false until accepted evidence is at least the product-owned wording floor and all verified-authority requirements are also satisfied.
+
+A stricter generic visual threshold remains conservative: if the visual region is still `.normal`, verified wording remains unavailable even when the accepted fraction has crossed the product wording floor.
 
 ## Product wording authority
 
@@ -46,11 +64,14 @@ The snapshot exposes two deliberately different conveniences:
 - `permitsVerifiedNearObservedMaximumWording`: the production wording gate.
 
 `permitsVerifiedNearObservedMaximumWording` can become true only when all of the following are simultaneously true:
-1. the region is current and near the observed-scale edge;
-2. the accepted measurement authority is `.verifiedVehicleMeasurement`;
-3. the compatible presentation scale origin is `.verifiedObservedEnvelope`.
+1. the configurable observed-scale region is current and `.nearObservedScaleEdge`;
+2. the accepted observed-scale fraction is finite, valid, and at or above `PropulsionVerifiedNearObservedMaximumWordingPolicy.product.minimumObservedScaleFraction`;
+3. the accepted measurement authority is `.verifiedVehicleMeasurement`;
+4. the compatible presentation scale origin is `.verifiedObservedEnvelope`.
 
-A future production cockpit may use that verified gate for restrained wording such as **Near observed max**. SwiftUI must not reconstruct or weaken this authority test from `isNearObservedScaleEdge` alone.
+A caller-selected generic visual threshold cannot weaken item 2. A future production cockpit may use this verified gate for restrained wording such as **Near observed max**. SwiftUI must not reconstruct or weaken this authority test from `isNearObservedScaleEdge` alone.
+
+Simulator evidence cannot satisfy the verified wording gate even at the visual scale edge because Simulator measurement and scale origins remain explicitly Simulator-only.
 
 Even the verified wording gate does **not** mean throttle position, rated/certified motor or controller maximum, or a perfect continuous-time physical maximum. Do not derive or display **Full throttle**, **100% throttle**, **rated max**, or equivalent language from this state.
 
