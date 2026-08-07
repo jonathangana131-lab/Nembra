@@ -46,6 +46,10 @@ final class VehicleStore {
     private let service: any ScooterService
 
     var state: VehicleState
+    /// Field-specific currentness supplied by the source when that source owns a
+    /// trustworthy acquisition-boundary continuity model. Cached VehicleState
+    /// speed never promotes this value by itself.
+    private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
     var pendingCommands: Set<PendingCommand> = []
     var pendingRideMode: RideMode?
     var pendingCruiseValue: Bool?
@@ -57,7 +61,24 @@ final class VehicleStore {
         pendingCommands.contains { $0 != .connect }
     }
 
+    /// Simulator-only qualified current speed. This is intentionally stricter
+    /// than generic `isAuthoritativeMeasurement`: both the synthetic profile and
+    /// synthetic source identity must agree before UI QA can treat the value as
+    /// live evidence. Physical/unverified profiles remain fail-closed until a
+    /// real stopped-control source/quality policy is verified.
+    var simulatorQualifiedLiveSpeedKilometersPerHour: Double? {
+        guard profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceAvailability,
+              sample.source == .simulatorQA else {
+            return nil
+        }
+        let speed = sample.kilometersPerHour
+        guard speed.isFinite, speed >= 0 else { return nil }
+        return speed
+    }
+
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var speedEvidenceTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private let shouldAutoConnectOnStart: Bool
 
@@ -90,6 +111,7 @@ final class VehicleStore {
 
     deinit {
         updatesTask?.cancel()
+        speedEvidenceTask?.cancel()
     }
 
     func start() async {
@@ -102,6 +124,19 @@ final class VehicleStore {
                 guard let self, !Task.isCancelled else { break }
                 self.state = state
             }
+        }
+
+        if let speedEvidenceProvider = service as? any SpeedEvidenceProvider {
+            speedEvidenceAvailability = await speedEvidenceProvider.speedEvidenceSnapshot()
+            speedEvidenceTask = Task { [weak self, speedEvidenceProvider] in
+                let stream = await speedEvidenceProvider.speedEvidenceUpdates()
+                for await availability in stream {
+                    guard let self, !Task.isCancelled else { break }
+                    self.speedEvidenceAvailability = availability
+                }
+            }
+        } else {
+            speedEvidenceAvailability = .unavailable
         }
 
         if shouldAutoConnectOnStart {
