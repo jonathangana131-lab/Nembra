@@ -54,7 +54,7 @@ The current capture path is foreground research software. This first experiment 
 1. Open **Nembra Capture** and keep it foregrounded.
 2. Start one broad foreground scan with advertisement-cadence duplication left at its normal/off setting.
 3. Observe the candidate list. Use legitimate physical correlation to choose the likely scooter; do not select by local name alone.
-4. Record the candidate's displayed short identifier in the experiment provenance/manifest, but classify it as an **observed CoreBluetooth candidate identifier**, not permanent scooter identity.
+4. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
 5. Select that exact candidate and start the target-scoped capture.
 6. Keep the scooter stationary while Nembra performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
 7. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, or becomes ambiguous, stop. Preserve the failed artifact only as failure evidence; do not use it to claim a service/field is absent.
@@ -69,7 +69,7 @@ Keep together:
 
 - exact versioned capture JSON bytes;
 - exact Nembra Git commit/build identity;
-- selected observed CoreBluetooth peripheral identifier;
+- full selected observed CoreBluetooth peripheral identifier from authoritative capture evidence/tooling, never a guessed expansion of a UI prefix;
 - capture start/end context;
 - explicit state: `stationary`, `charger disconnected`, `foreground`, `screen remained on`;
 - any generated stationary-capture manifest/sidecar;
