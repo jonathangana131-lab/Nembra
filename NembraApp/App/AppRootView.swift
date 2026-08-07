@@ -284,62 +284,25 @@ private struct RideHistoryRowView: View {
 
 private struct RideHistoryDetailView: View {
     @Environment(RideRoutePresentationStore.self) private var routes
+    @State private var recordingDetailsExpanded = false
+
     let record: RideHistoryRecord
 
     var body: some View {
-        List {
-            Section("Ride timeline") {
-                LabeledContent("Started") {
-                    Text(timestamp(record.evidence.beganAtDate))
-                }
-                LabeledContent("Confirmed") {
-                    Text(timestamp(record.evidence.confirmedAtDate))
-                }
-                LabeledContent("Ended") {
-                    Text(timestamp(record.evidence.endedAtDate))
-                }
-                LabeledContent("Continuity") {
-                    Text(record.evidence.continuity == .recoveredCheckpoint
-                         ? "Recovered after relaunch"
-                         : "Uninterrupted process")
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: NembraMetrics.section) {
+                rideHero
+                routeSurface
+                recordedDistanceSection
+                timelineSection
+                recordingDetailsSection
             }
-
-            Section {
-                if let odometerDeltaKilometers {
-                    LabeledContent("Scooter odometer delta") {
-                        Text(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))
-                            .monospacedDigit()
-                    }
-                    .accessibilityIdentifier("rides.evidence.odometer")
-                }
-
-                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-                    LabeledContent("GPS distance evidence") {
-                        Text(
-                            VehicleDisplayFormatting.distance(
-                                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-                            )
-                        )
-                        .monospacedDigit()
-                    }
-                    .accessibilityIdentifier("rides.evidence.gps")
-                }
-
-                if odometerDeltaKilometers == nil,
-                   record.evidence.qualityScreenedGPSDistanceMeters == 0 {
-                    Text("No distance evidence was durably recorded for this ride.")
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Distance evidence")
-            } footer: {
-                Text("Nembra keeps independent sources separate until coverage can be reconciled. Neither value is silently promoted into a final ride distance.")
-            }
-
-            routeSection
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .safeAreaPadding(.bottom, 44)
         }
-        .navigationTitle("Ride Details")
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("Ride")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .accessibilityIdentifier("rides.detail")
@@ -348,88 +311,338 @@ private struct RideHistoryDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private var routeSection: some View {
-        Section("Route") {
-            if let geometry = routes.geometry(sessionID: record.sessionID) {
-                if geometry.hasDrawablePath {
-                    RideRouteMapView(geometry: geometry)
-                        .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .accessibilityIdentifier("rides.route-map")
-                } else {
-                    Label("Route points recorded", systemImage: "mappin.and.ellipse")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Nembra stored real coordinates, but this ride does not contain enough continuous points to draw a path.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("rides.route-points-only")
-                }
+    private var rideHero: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(record.evidence.endedAtDate.formatted(date: .complete, time: .omitted))
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.primary)
 
-                LabeledContent("Coverage") {
+            HStack(spacing: 10) {
+                Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+
+                if record.evidence.continuity == .recoveredCheckpoint {
+                    Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var routeSurface: some View {
+        if let geometry = routes.geometry(sessionID: record.sessionID) {
+            if geometry.hasDrawablePath {
+                ZStack(alignment: .bottomLeading) {
+                    RideRouteMapView(geometry: geometry)
+                        .frame(height: 268)
+                        .accessibilityIdentifier("rides.route-map")
+
                     Text(routeCoverageLabel(geometry.coverage))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(
+                            Color(uiColor: .systemBackground),
+                            in: Capsule()
+                        )
+                        .padding(14)
                 }
-                LabeledContent("Recorded points") {
-                    Text("\(geometry.pointCount)")
-                        .monospacedDigit()
-                }
-                if geometry.knownGapCount > 0 {
-                    LabeledContent("Known route gaps") {
-                        Text("\(geometry.knownGapCount)")
-                            .monospacedDigit()
-                    }
-                }
+                .clipShape(RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
             } else {
-                switch routes.status(sessionID: record.sessionID) {
-                case .idle, .loading:
-                    ProgressView("Loading route…")
-                        .accessibilityIdentifier("rides.route-loading")
-                case .unavailable:
-                    if let message = routes.errorMessage(sessionID: record.sessionID) {
-                        routeErrorContent(message)
-                    } else {
-                        routeUnavailableContent
-                    }
-                case .failed:
-                    routeErrorContent(
-                        routes.errorMessage(sessionID: record.sessionID)
-                            ?? "Stored route geometry could not be verified safely."
-                    )
-                case .ready:
-                    routeUnavailableContent
+                routeStateSurface(
+                    title: "Route points saved",
+                    systemImage: "mappin.and.ellipse",
+                    message: "This ride has recorded locations, but not enough continuous points to draw a route.",
+                    identifier: "rides.route-points-only"
+                )
+            }
+        } else {
+            switch routes.status(sessionID: record.sessionID) {
+            case .idle, .loading:
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading route…")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, minHeight: 126, alignment: .center)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+                )
+                .accessibilityIdentifier("rides.route-loading")
+            case .unavailable:
+                if routes.errorMessage(sessionID: record.sessionID) != nil {
+                    routeErrorSurface
+                } else {
+                    routeUnavailableSurface
+                }
+            case .failed:
+                routeErrorSurface
+            case .ready:
+                routeUnavailableSurface
             }
         }
     }
 
-    private var routeUnavailableContent: some View {
-        Group {
-            Label("No route geometry recorded", systemImage: "map")
-                .font(.subheadline.weight(.semibold))
-            Text("A map appears only when Nembra has durably stored real quality-screened route points. This record contains no coordinates to draw truthfully.")
-                .font(.footnote)
+    private var routeUnavailableSurface: some View {
+        routeStateSurface(
+            title: "No route recorded",
+            systemImage: "map",
+            message: "A map appears only when real route points were saved for this ride.",
+            identifier: "rides.route-unavailable"
+        )
+    }
+
+    private var routeErrorSurface: some View {
+        routeStateSurface(
+            title: "Route unavailable",
+            systemImage: "exclamationmark.triangle",
+            message: "The saved route could not be opened safely.",
+            identifier: "rides.route-error"
+        )
+    }
+
+    private func routeStateSurface(
+        title: String,
+        systemImage: String,
+        message: String,
+        identifier: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("rides.route-unavailable")
+                .frame(width: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.headline)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var recordedDistanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Recorded distance")
+
+            VStack(spacing: 0) {
+                if let odometerDeltaKilometers {
+                    metricRow(
+                        title: "Scooter",
+                        subtitle: "Odometer change",
+                        value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers),
+                        systemImage: "scooter"
+                    )
+                    .accessibilityIdentifier("rides.evidence.odometer")
+                }
+
+                if odometerDeltaKilometers != nil,
+                   record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                    Divider().padding(.leading, 54)
+                }
+
+                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                    metricRow(
+                        title: "GPS",
+                        subtitle: "Quality-screened route distance",
+                        value: VehicleDisplayFormatting.distance(
+                            kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+                        ),
+                        systemImage: "location.fill"
+                    )
+                    .accessibilityIdentifier("rides.evidence.gps")
+                }
+
+                if odometerDeltaKilometers == nil,
+                   record.evidence.qualityScreenedGPSDistanceMeters == 0 {
+                    HStack(spacing: 12) {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(.secondary)
+                        Text("No distance was recorded for this ride.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(18)
+                }
+            }
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
+            )
         }
     }
 
-    private func routeErrorContent(_ message: String) -> some View {
-        Group {
-            Label("Route storage unavailable", systemImage: "exclamationmark.triangle")
-                .font(.subheadline.weight(.semibold))
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("rides.route-error")
+    private var timelineSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Ride window")
+
+            VStack(spacing: 0) {
+                timelineRow(title: "Started", date: record.evidence.beganAtDate)
+                Divider().padding(.leading, 20)
+                timelineRow(title: "Ended", date: record.evidence.endedAtDate)
+            }
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
+            )
         }
+    }
+
+    private var recordingDetailsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DisclosureGroup(isExpanded: $recordingDetailsExpanded) {
+                VStack(spacing: 0) {
+                    recordingDetailRow("Ride confirmation", value: timestamp(record.evidence.confirmedAtDate))
+                    Divider().padding(.leading, 20)
+                    recordingDetailRow("Continuity", value: continuityDetailLabel)
+
+                    if let geometry = routes.geometry(sessionID: record.sessionID) {
+                        Divider().padding(.leading, 20)
+                        recordingDetailRow("Route coverage", value: routeCoverageLabel(geometry.coverage))
+                        Divider().padding(.leading, 20)
+                        recordingDetailRow("Recorded points", value: "\(geometry.pointCount)")
+
+                        if geometry.knownGapCount > 0 {
+                            Divider().padding(.leading, 20)
+                            recordingDetailRow("Known route gaps", value: "\(geometry.knownGapCount)")
+                        }
+                    }
+
+                    Text("Scooter and GPS distances remain separate measurements unless a future reconciliation layer can prove they describe the same complete ride coverage.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
+                        .padding(.bottom, 18)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    Text("Recording details")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
+            .tint(.secondary)
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
+            )
+        }
+    }
+
+    private func metricRow(
+        title: String,
+        subtitle: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 15)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(subtitle)")
+        .accessibilityValue(value)
+    }
+
+    private func timelineRow(title: String, date: Date) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+            Spacer(minLength: 12)
+            Text(timestamp(date))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+    }
+
+    private func recordingDetailRow(_ title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 13)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.caption.weight(.semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var continuityDetailLabel: String {
+        record.evidence.continuity == .recoveredCheckpoint
+            ? "Recovered after relaunch"
+            : "Continuous app session"
     }
 
     private func routeCoverageLabel(_ coverage: RideDistanceCoverage) -> String {
         switch coverage {
         case .complete:
-            "Complete recorded coverage"
+            "Complete recording"
         case .partial:
-            "Partial recorded coverage"
+            "Partial recording"
         case .unknown:
             "Coverage unknown"
         }
@@ -437,7 +650,8 @@ private struct RideHistoryDetailView: View {
 
     private var odometerDeltaKilometers: Double? {
         guard let start = record.evidence.startingOdometerKilometers,
-              let end = record.evidence.endingOdometerKilometers else {
+              let end = record.evidence.endingOdometerKilometers,
+              end >= start else {
             return nil
         }
         return end - start
