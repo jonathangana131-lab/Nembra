@@ -4,80 +4,88 @@ import Testing
 
 struct PassiveCoreBluetoothAcquisitionWatchdogContextTests {
     private let peripheral = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+    private let otherPeripheral = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
 
-    @Test
-    func exactAcquisitionIdentityMatches() {
-        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
-            peripheralIdentifier: peripheral,
-            targetSessionGeneration: 4,
-            acquisitionGeneration: 9
-        )
-
-        #expect(
-            context.matches(
-                peripheralIdentifier: peripheral,
-                targetSessionGeneration: 4,
-                acquisitionGeneration: 9
-            )
+    private func context(
+        peripheralIdentifier: UUID? = nil,
+        targetSessionGeneration: UInt64 = 4,
+        acquisitionGeneration: UInt64 = 9
+    ) -> PassiveCoreBluetoothAcquisitionWatchdogContext {
+        PassiveCoreBluetoothAcquisitionWatchdogContext(
+            peripheralIdentifier: peripheralIdentifier ?? peripheral,
+            targetSessionGeneration: targetSessionGeneration,
+            acquisitionGeneration: acquisitionGeneration
         )
     }
 
     @Test
-    func laterAcquisitionGenerationRejectsStaleWatchdog() {
-        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
-            peripheralIdentifier: peripheral,
-            targetSessionGeneration: 4,
-            acquisitionGeneration: 9
-        )
+    func exactActiveTicketCanExpire() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let current = context()
+        let ticket = try state.arm(for: current)
 
-        #expect(
-            !context.matches(
-                peripheralIdentifier: peripheral,
-                targetSessionGeneration: 4,
-                acquisitionGeneration: 10
-            )
-        )
+        #expect(state.isArmed)
+        #expect(state.activeTicket == ticket)
+        #expect(state.acceptsExpiry(ticket, currentContext: current))
     }
 
     @Test
-    func laterTargetSessionRejectsStaleWatchdog() {
-        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
-            peripheralIdentifier: peripheral,
-            targetSessionGeneration: 4,
-            acquisitionGeneration: 9
-        )
+    func acquisitionProgressRearmRejectsOldDeadlineEvenWithinSameGeneration() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let current = context()
+        let first = try state.arm(for: current)
+        let rearmed = try state.arm(for: current)
 
-        #expect(
-            !context.matches(
-                peripheralIdentifier: peripheral,
-                targetSessionGeneration: 5,
-                acquisitionGeneration: 9
-            )
-        )
+        #expect(first.revision != rearmed.revision)
+        #expect(!state.acceptsExpiry(first, currentContext: current))
+        #expect(state.acceptsExpiry(rearmed, currentContext: current))
     }
 
     @Test
-    func differentOrMissingPeripheralRejectsStaleWatchdog() {
-        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
-            peripheralIdentifier: peripheral,
-            targetSessionGeneration: 4,
-            acquisitionGeneration: 9
-        )
-        let other = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    func readinessCancellationMakesLaterNotificationSilenceHarmless() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let current = context()
+        let ticket = try state.arm(for: current)
 
-        #expect(
-            !context.matches(
-                peripheralIdentifier: other,
-                targetSessionGeneration: 4,
-                acquisitionGeneration: 9
-            )
-        )
-        #expect(
-            !context.matches(
-                peripheralIdentifier: nil,
-                targetSessionGeneration: 4,
-                acquisitionGeneration: 9
-            )
-        )
+        state.cancel()
+
+        #expect(!state.isArmed)
+        #expect(state.activeTicket == nil)
+        #expect(!state.acceptsExpiry(ticket, currentContext: current))
+    }
+
+    @Test
+    func newerAcquisitionGenerationRejectsStaleTicket() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let oldContext = context(acquisitionGeneration: 9)
+        let oldTicket = try state.arm(for: oldContext)
+        let newerContext = context(acquisitionGeneration: 10)
+        let newerTicket = try state.arm(for: newerContext)
+
+        #expect(!state.acceptsExpiry(oldTicket, currentContext: newerContext))
+        #expect(state.acceptsExpiry(newerTicket, currentContext: newerContext))
+    }
+
+    @Test
+    func newerTargetSessionRejectsStaleTicket() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let oldContext = context(targetSessionGeneration: 4)
+        let oldTicket = try state.arm(for: oldContext)
+        let newerContext = context(targetSessionGeneration: 5)
+        let newerTicket = try state.arm(for: newerContext)
+
+        #expect(!state.acceptsExpiry(oldTicket, currentContext: newerContext))
+        #expect(state.acceptsExpiry(newerTicket, currentContext: newerContext))
+    }
+
+    @Test
+    func differentOrMissingPeripheralRejectsExpiry() throws {
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let current = context()
+        let ticket = try state.arm(for: current)
+        let different = context(peripheralIdentifier: otherPeripheral)
+
+        #expect(!state.acceptsExpiry(ticket, currentContext: different))
+        #expect(!state.acceptsExpiry(ticket, currentContext: nil))
     }
 }
