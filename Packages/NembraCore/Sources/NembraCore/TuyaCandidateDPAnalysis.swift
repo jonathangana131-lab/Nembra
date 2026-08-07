@@ -45,7 +45,8 @@ public enum TuyaCandidateDPShapeFinding: Equatable, Sendable {
     case unknownType(rawType: UInt8)
     case variableLengthKnownType(
         TuyaCandidateDPKnownType,
-        allowedLengthRange: ClosedRange<Int>
+        minimumLength: Int,
+        documentedMaximumLength: Int?
     )
     case fixedLengthKnownType(TuyaCandidateDPKnownType, allowedLengths: [Int])
     case unexpectedKnownTypeLength(
@@ -55,7 +56,8 @@ public enum TuyaCandidateDPShapeFinding: Equatable, Sendable {
     )
     case unexpectedVariableKnownTypeLength(
         TuyaCandidateDPKnownType,
-        allowedLengthRange: ClosedRange<Int>,
+        minimumLength: Int,
+        documentedMaximumLength: Int?,
         actualLength: Int
     )
 }
@@ -221,8 +223,7 @@ public enum TuyaCandidateDPPayloadParser {
                     shapeFinding: shapeFinding(
                         for: knownType,
                         rawType: rawType,
-                        length: declaredLength,
-                        maximumValueBytes: policy.maximumValueBytes
+                        length: declaredLength
                     )
                 )
             )
@@ -248,8 +249,7 @@ public enum TuyaCandidateDPPayloadParser {
     private static func shapeFinding(
         for knownType: TuyaCandidateDPKnownType?,
         rawType: UInt8,
-        length: Int,
-        maximumValueBytes: Int
+        length: Int
     ) -> TuyaCandidateDPShapeFinding {
         guard let knownType else {
             return .unknownType(rawType: rawType)
@@ -257,28 +257,22 @@ public enum TuyaCandidateDPPayloadParser {
 
         switch knownType {
         case .raw:
-            // Current public Tuya material permits product/transport-specific raw
-            // maxima beyond 255 bytes. At this generic layer, only non-empty raw
-            // plus the caller's explicit resource ceiling is safe to assert.
-            let allowed = 1...maximumValueBytes
-            guard allowed.contains(length) else {
-                return .unexpectedVariableKnownTypeLength(
-                    knownType,
-                    allowedLengthRange: allowed,
-                    actualLength: length
-                )
-            }
-            return .variableLengthKnownType(knownType, allowedLengthRange: allowed)
+            // Public Tuya material does not expose one transport-independent RAW
+            // maximum. Keep protocol-shape evidence distinct from the caller's
+            // separate resource ceiling: only non-empty RAW is generic here.
+            return variableLengthFinding(
+                for: knownType,
+                minimum: 1,
+                documentedMaximum: nil,
+                actual: length
+            )
         case .string:
-            let allowed = 0...255
-            guard allowed.contains(length) else {
-                return .unexpectedVariableKnownTypeLength(
-                    knownType,
-                    allowedLengthRange: allowed,
-                    actualLength: length
-                )
-            }
-            return .variableLengthKnownType(knownType, allowedLengthRange: allowed)
+            return variableLengthFinding(
+                for: knownType,
+                minimum: 0,
+                documentedMaximum: 255,
+                actual: length
+            )
         case .boolean, .enumeration:
             return fixedLengthFinding(for: knownType, allowed: [1], actual: length)
         case .value:
@@ -290,6 +284,29 @@ public enum TuyaCandidateDPPayloadParser {
             // bitmap shapes are retained as the broader documented family.
             return fixedLengthFinding(for: knownType, allowed: [1, 2, 4], actual: length)
         }
+    }
+
+    private static func variableLengthFinding(
+        for knownType: TuyaCandidateDPKnownType,
+        minimum: Int,
+        documentedMaximum: Int?,
+        actual: Int
+    ) -> TuyaCandidateDPShapeFinding {
+        let belowMinimum = actual < minimum
+        let aboveDocumentedMaximum = documentedMaximum.map { actual > $0 } ?? false
+        guard !belowMinimum, !aboveDocumentedMaximum else {
+            return .unexpectedVariableKnownTypeLength(
+                knownType,
+                minimumLength: minimum,
+                documentedMaximumLength: documentedMaximum,
+                actualLength: actual
+            )
+        }
+        return .variableLengthKnownType(
+            knownType,
+            minimumLength: minimum,
+            documentedMaximumLength: documentedMaximum
+        )
     }
 
     private static func fixedLengthFinding(
