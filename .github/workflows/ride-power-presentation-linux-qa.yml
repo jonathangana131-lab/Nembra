@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 4
+          fetch-depth: 0
       - name: Verify product ancestor and unchanged core tree
         env:
           PRODUCT_HEAD: 8059b1c7a3b7cf8b186d50c31718c2d8dab0e5b6
