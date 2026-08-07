@@ -90,6 +90,7 @@ struct TuyaCandidateOfflineAnalysisTests {
         #expect(throws: TuyaCandidateOfflineAnalysisError.malformedVarint) {
             try TuyaCandidateFragmentReassembler.decodeCandidateVarint([0x80], cursor: &truncatedCursor)
         }
+        #expect(truncatedCursor == 0)
 
         var overflowCursor = 0
         #expect(throws: TuyaCandidateOfflineAnalysisError.varintOverflow) {
@@ -98,6 +99,7 @@ struct TuyaCandidateOfflineAnalysisTests {
                 cursor: &overflowCursor
             )
         }
+        #expect(overflowCursor == 0)
     }
 
     @Test("multi-fragment reconstruction preserves stream, generation, timing, and version evidence")
@@ -196,6 +198,12 @@ struct TuyaCandidateOfflineAnalysisTests {
         var overrun = TuyaCandidateFragmentReassembler(policy: policy)
         #expect(throws: TuyaCandidateOfflineAnalysisError.assembledLengthExceeded(declared: 2, actual: 3)) {
             try overrun.ingest(try observation([1, 2, 3], index: 0, uptime: 1, totalLength: 2))
+        }
+        let recovered = try overrun.ingest(try observation([1, 2], index: 0, uptime: 2, totalLength: 2))
+        if case let .complete(message) = recovered {
+            #expect(message.encryptedBytes == [1, 2])
+        } else {
+            Issue.record("Expected atomic recovery after rejected first fragment")
         }
 
         var complete = TuyaCandidateFragmentReassembler(policy: policy)
