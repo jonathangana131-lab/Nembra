@@ -76,6 +76,33 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testReconnectDoesNotPromoteCachedBatteryToLive() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 3))
+        let reconnect = app.buttons["Reconnect scooter"]
+        XCTAssertTrue(reconnect.exists)
+        reconnect.tap()
+        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))
+
+        XCUIDevice.shared.orientation = .landscapeRight
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let battery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 4))
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
+            battery.tap()
+        }
+        XCTAssertTrue(
+            waitForValue("71 percent, last known vehicle data", element: battery),
+            "Reconnect must not promote cached 71% charge into live battery truth before field-specific current evidence exists."
+        )
+        keepScreenshot(named: "Dashboard Reconnected Cached Battery Landscape")
+    }
+
+    @MainActor
     func testPermissionDeniedOffersSettingsInsteadOfFakeReconnect() {
         let app = launch(scenario: "permission-denied", orientation: .portrait)
         XCTAssertTrue(app.staticTexts["Bluetooth access is off"].waitForExistence(timeout: 3))
