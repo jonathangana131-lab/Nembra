@@ -38,21 +38,31 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// a rejected newer callback from reopening chronology for delayed older callbacks.
     private(set) var lastSeenReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
-    private var lastSeenUptimeNanoseconds: UInt64?
+    /// Exact immutable metadata belonging to `lastSeenReceiptIdentity`. Keep this separate
+    /// from `seenUptimeFloorNanoseconds`: a rejected callback with backward uptime still has
+    /// one exact receipt timestamp, but it must never lower the floor enforced on later
+    /// callbacks.
+    private var lastSeenReceiptUptimeNanoseconds: UInt64?
     private var lastSeenReceiptContinuity: BatteryEvidenceContinuity?
+
+    /// Greatest monotonic uptime accepted as raw callback chronology in this acquisition
+    /// epoch. A callback that arrives below this floor is consumed by receipt sequence but
+    /// cannot lower the floor for a later callback.
+    private var seenUptimeFloorNanoseconds: UInt64?
 
     public init() {
         lastAcceptedReceiptIdentity = nil
         lastAcceptedUptimeNanoseconds = nil
         requiresContinuityBoundary = false
         lastSeenReceiptIdentity = nil
-        lastSeenUptimeNanoseconds = nil
+        lastSeenReceiptUptimeNanoseconds = nil
         lastSeenReceiptContinuity = nil
+        seenUptimeFloorNanoseconds = nil
     }
 
     /// Records that battery evidence continuity is no longer known.
     ///
-    /// The prior accepted receipt/uptime baseline and the raw-callback watermark are
+    /// The prior accepted receipt/uptime baseline and the raw-callback watermarks are
     /// intentionally retained. The first post-gap observation must come from a genuinely
     /// newer receipt and explicitly carry the boundary. This prevents an already-seen or
     /// delayed pre-gap receipt from reopening the stream merely because its uptime happens
@@ -80,7 +90,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             }
 
             if receiptIdentity.sequenceNumber == lastSeenReceiptIdentity.sequenceNumber {
-                guard observation.receivedAtUptimeNanoseconds == lastSeenUptimeNanoseconds,
+                guard observation.receivedAtUptimeNanoseconds == lastSeenReceiptUptimeNanoseconds,
                       observation.continuity == lastSeenReceiptContinuity else {
                     throw BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata
                 }
@@ -100,28 +110,22 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             }
         }
 
-        let previousSeenUptimeNanoseconds = lastSeenUptimeNanoseconds
-
-        // The receipt identity is trusted callback-order evidence even if later metadata or
-        // continuity checks reject its semantic observation. Consume the callback watermark
-        // first so delayed lower-sequence evidence can never become fresh afterward.
+        // The receipt identity and its exact metadata are trusted callback-order facts even
+        // if later uptime/continuity admission rejects the semantic observation. Consume the
+        // sequence watermark first so delayed lower-sequence evidence can never become fresh.
         lastSeenReceiptIdentity = receiptIdentity
-        lastSeenUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        lastSeenReceiptUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
         lastSeenReceiptContinuity = observation.continuity
 
-        // Uptime is also immutable callback metadata. Compare against both the immediately
-        // prior seen callback and the last accepted evidence baseline. The latter can be
-        // stronger when a previously seen callback was itself rejected for moving uptime
-        // backwards; the former prevents a later callback from moving behind a newer seen
-        // callback that failed only a semantic/continuity admission check.
-        if let previousSeenUptimeNanoseconds,
-           observation.receivedAtUptimeNanoseconds < previousSeenUptimeNanoseconds {
+        // The monotonic uptime floor represents all prior same-epoch callbacks whose uptime
+        // did not already violate chronology, including observations later rejected only for
+        // semantic continuity. A backward callback is still consumed by sequence identity,
+        // but cannot lower this floor and thereby make an older uptime acceptable later.
+        if let seenUptimeFloorNanoseconds,
+           observation.receivedAtUptimeNanoseconds < seenUptimeFloorNanoseconds {
             throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
         }
-        if let lastAcceptedUptimeNanoseconds,
-           observation.receivedAtUptimeNanoseconds < lastAcceptedUptimeNanoseconds {
-            throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
-        }
+        seenUptimeFloorNanoseconds = observation.receivedAtUptimeNanoseconds
 
         if let lastAcceptedReceiptIdentity {
             // Defensive consistency: accepted and seen identities should remain in one epoch.
