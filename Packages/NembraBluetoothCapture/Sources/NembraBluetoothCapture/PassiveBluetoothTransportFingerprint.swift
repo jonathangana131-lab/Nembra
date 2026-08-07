@@ -118,6 +118,8 @@ public enum PassiveBluetoothTransportFingerprint {
     /// Summarizes raw advertisement/GATT identifiers for exactly one peripheral
     /// without decoding payloads or choosing a single candidate-family winner.
     /// Multiple candidate families can match and an empty match list is valid.
+    /// Connection lifecycle alone establishes no GATT topology. A subscription
+    /// record may establish only the exact service/characteristic path it names.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
@@ -154,6 +156,15 @@ public enum PassiveBluetoothTransportFingerprint {
                 where observation.peripheralIdentifier == peripheralIdentifier:
                 // Descriptor evidence confirms the parent GATT path existed even
                 // if a partial/imported capture lacks a separate service record.
+                let service = normalize(observation.serviceUUID)
+                services.insert(service)
+                characteristicsByService[service, default: []]
+                    .insert(normalize(observation.characteristicUUID))
+
+            case let .subscription(observation)
+                where observation.peripheralIdentifier == peripheralIdentifier:
+                // Subscription-state evidence names one exact observed GATT path.
+                // It does not say anything about application protocol meaning.
                 let service = normalize(observation.serviceUUID)
                 services.insert(service)
                 characteristicsByService[service, default: []]
@@ -216,6 +227,8 @@ public enum PassiveBluetoothTransportFingerprint {
             switch record.event {
             case let .advertisement(observation):
                 identifiers.insert(observation.peripheralIdentifier)
+            case let .connection(observation):
+                identifiers.insert(observation.peripheralIdentifier)
             case let .service(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .includedService(observation):
@@ -223,6 +236,8 @@ public enum PassiveBluetoothTransportFingerprint {
             case let .characteristic(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .descriptor(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .subscription(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .value(observation):
                 identifiers.insert(observation.peripheralIdentifier)
