@@ -50,13 +50,13 @@ struct BatteryAdaptiveRangePublicDispositionTests {
         #expect(ignored.disposition == .ignored)
         #expect(ignored.candidateLearningWindow == nil)
 
-        var acceptedPipeline = BatteryAdaptiveRangeLearningPipeline()
-        let accepted = try acceptedPipeline.acceptBatteryObservation(
+        var ingestedPipeline = BatteryAdaptiveRangeLearningPipeline()
+        let ingested = try ingestedPipeline.acceptBatteryObservation(
             observation(80, role: .verifiedVehicleMeasurement),
             policy: p
         )
-        #expect(accepted.disposition == .authoritativeSOCAccepted)
-        #expect(accepted.candidateLearningWindow == nil)
+        #expect(ingested.disposition == .authoritativeSOCIngested)
+        #expect(ingested.candidateLearningWindow == nil)
 
         var resetPipeline = BatteryAdaptiveRangeLearningPipeline()
         let reset = try resetPipeline.acceptBatteryObservation(
@@ -70,8 +70,8 @@ struct BatteryAdaptiveRangePublicDispositionTests {
         #expect(reset.disposition == .continuityReset)
         #expect(reset.candidateLearningWindow == nil)
 
-        var resetAndAcceptedPipeline = BatteryAdaptiveRangeLearningPipeline()
-        let resetAndAccepted = try resetAndAcceptedPipeline.acceptBatteryObservation(
+        var resetAndIngestedPipeline = BatteryAdaptiveRangeLearningPipeline()
+        let resetAndIngested = try resetAndIngestedPipeline.acceptBatteryObservation(
             observation(
                 80,
                 role: .verifiedVehicleMeasurement,
@@ -79,8 +79,8 @@ struct BatteryAdaptiveRangePublicDispositionTests {
             ),
             policy: p
         )
-        #expect(resetAndAccepted.disposition == .continuityResetAndAuthoritativeSOCAccepted)
-        #expect(resetAndAccepted.candidateLearningWindow == nil)
+        #expect(resetAndIngested.disposition == .continuityResetAndAuthoritativeSOCIngested)
+        #expect(resetAndIngested.candidateLearningWindow == nil)
     }
 
     @Test("emitted public window remains a candidate until the adaptive model explicitly accepts it")
@@ -101,7 +101,7 @@ struct BatteryAdaptiveRangePublicDispositionTests {
         )
         let candidate = try #require(result.candidateLearningWindow)
 
-        #expect(result.disposition == .authoritativeSOCAccepted)
+        #expect(result.disposition == .authoritativeSOCIngested)
         #expect(candidate.startSOC.percentage == 80)
         #expect(candidate.endSOC.percentage == 77)
         #expect(candidate.distanceMeters == 300)
