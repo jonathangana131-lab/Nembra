@@ -61,7 +61,7 @@ public struct PropulsionPowerSample: Equatable, Sendable {
         )
     }
 
-    #if SWIFT_PACKAGE
+#if SWIFT_PACKAGE
     package static func verifiedVehicleMeasurement(
         identity: PropulsionGaugeIdentity,
         watts: Double,
@@ -76,7 +76,7 @@ public struct PropulsionPowerSample: Equatable, Sendable {
             authority: .verifiedVehicleMeasurement
         )
     }
-    #else
+#else
     fileprivate static func verifiedVehicleMeasurement(
         identity: PropulsionGaugeIdentity,
         watts: Double,
@@ -91,7 +91,7 @@ public struct PropulsionPowerSample: Equatable, Sendable {
             authority: .verifiedVehicleMeasurement
         )
     }
-    #endif
+#endif
 
     private static func validated(
         identity: PropulsionGaugeIdentity,
@@ -115,8 +115,8 @@ public struct PropulsionPowerSample: Equatable, Sendable {
 }
 
 public enum PropulsionGaugeScaleOrigin: String, Equatable, Sendable {
-    /// A visual ceiling learned only from repeated verified vehicle observations.
-    case learnedObservedPowerCeiling
+    /// Presentation scale produced by a separately qualified verified observed-power envelope.
+    case verifiedObservedEnvelope
     /// Explicitly synthetic scale for Simulator/runtime visual QA.
     case simulator
 }
@@ -125,8 +125,8 @@ public enum PropulsionGaugeScaleError: Error, Equatable, Sendable {
     case invalidCeiling
 }
 
-/// Presentation scale only. A learned observed ceiling is not a rated/certified motor or controller maximum.
-/// Every scale is bound to the same vehicle/mode identity as the observations that produced or exercise it.
+/// Presentation scale only. It does not learn a ceiling and never asserts a rated/certified hardware maximum.
+/// Every scale is bound to the same vehicle/mode identity as the observations it is allowed to normalize.
 public struct PropulsionGaugeScale: Equatable, Sendable {
     public let identity: PropulsionGaugeIdentity
     public let ceilingWatts: Double
@@ -146,21 +146,44 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
         identity: PropulsionGaugeIdentity,
         ceilingWatts: Double
     ) throws -> Self {
+        try validated(identity: identity, ceilingWatts: ceilingWatts, origin: .simulator)
+    }
+
+#if SWIFT_PACKAGE
+    /// Adapter entry point for a separately qualified verified observed-power envelope.
+    /// Package sealing prevents generic UI/client code from minting physical scale authority.
+    package static func verifiedObservedEnvelope(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double
+    ) throws -> Self {
+        try validated(
+            identity: identity,
+            ceilingWatts: ceilingWatts,
+            origin: .verifiedObservedEnvelope
+        )
+    }
+#else
+    fileprivate static func verifiedObservedEnvelope(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double
+    ) throws -> Self {
+        try validated(
+            identity: identity,
+            ceilingWatts: ceilingWatts,
+            origin: .verifiedObservedEnvelope
+        )
+    }
+#endif
+
+    private static func validated(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double,
+        origin: PropulsionGaugeScaleOrigin
+    ) throws -> Self {
         guard ceilingWatts.isFinite, ceilingWatts > 0 else {
             throw PropulsionGaugeScaleError.invalidCeiling
         }
-        return Self(identity: identity, ceilingWatts: ceilingWatts, origin: .simulator)
-    }
-
-    fileprivate static func learnedObserved(
-        identity: PropulsionGaugeIdentity,
-        ceilingWatts: Double
-    ) -> Self {
-        Self(
-            identity: identity,
-            ceilingWatts: ceilingWatts,
-            origin: .learnedObservedPowerCeiling
-        )
+        return Self(identity: identity, ceilingWatts: ceilingWatts, origin: origin)
     }
 }
 
@@ -298,8 +321,6 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         transitionTargetWatts = sample.watts
         transitionStartUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
-        // Compare the finite endpoints directly. Subtracting extreme finite values can overflow even though
-        // both observations themselves are valid, and render math must never manufacture infinity/NaN.
         let hasVisualDistance = transitionTargetWatts != transitionAnchorWatts
         if sharesContinuity, hasVisualDistance {
             transitionSettlingDurationNanoseconds = transitionTargetWatts >= transitionAnchorWatts
@@ -390,7 +411,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             guard candidate.identity == identity else { return nil }
 
             switch (candidate.origin, latestAuthority) {
-            case (.learnedObservedPowerCeiling, .verifiedVehicleMeasurement),
+            case (.verifiedObservedEnvelope, .verifiedVehicleMeasurement),
                  (.simulator, .simulator):
                 return candidate
             default:
@@ -455,188 +476,13 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             return transitionTargetWatts
         }
 
-        // This is a convex combination of two nonnegative finite observations. Unlike
-        // `anchor + (target - anchor) * progress`, it never forms an overflowing endpoint delta.
         let visualWatts = transitionAnchorWatts * (1 - progress)
             + transitionTargetWatts * progress
         if visualWatts.isFinite {
             return visualWatts
         }
 
-        // Floating-point rounding should not overflow a convex combination, but fail closed to a real
-        // accepted endpoint rather than ever exposing a fabricated non-finite render value.
+        // Fail closed to real accepted endpoints rather than ever exposing a fabricated non-finite frame.
         return progress < 0.5 ? transitionAnchorWatts : transitionTargetWatts
-    }
-}
-
-public enum LearnedObservedPowerEnvelopePolicyError: Error, Equatable, Sendable {
-    case invalidMinimumPositiveSampleCount
-    case invalidWindowCapacity
-    case invalidUpperPercentile
-    case invalidVisualHeadroomFraction
-    case invalidUpwardHysteresisFraction
-    case invalidDownwardHysteresisFraction
-    case invalidDownwardAdaptationFraction
-}
-
-/// Visual calibration policy only. None of these values assert a physical ES80 rating or controller limit.
-public struct LearnedObservedPowerEnvelopePolicy: Equatable, Sendable {
-    public let minimumPositiveSampleCount: Int
-    public let windowCapacity: Int
-    public let upperPercentile: Double
-    public let visualHeadroomFraction: Double
-    public let upwardHysteresisFraction: Double
-    public let downwardHysteresisFraction: Double
-    public let downwardAdaptationFraction: Double
-
-    public init(
-        minimumPositiveSampleCount: Int,
-        windowCapacity: Int,
-        upperPercentile: Double,
-        visualHeadroomFraction: Double,
-        upwardHysteresisFraction: Double,
-        downwardHysteresisFraction: Double,
-        downwardAdaptationFraction: Double
-    ) throws {
-        guard minimumPositiveSampleCount > 0 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidMinimumPositiveSampleCount
-        }
-        guard windowCapacity >= minimumPositiveSampleCount else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidWindowCapacity
-        }
-        guard upperPercentile.isFinite, upperPercentile > 0, upperPercentile <= 1 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidUpperPercentile
-        }
-        guard visualHeadroomFraction.isFinite, visualHeadroomFraction >= 0 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidVisualHeadroomFraction
-        }
-        guard upwardHysteresisFraction.isFinite, upwardHysteresisFraction >= 0 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidUpwardHysteresisFraction
-        }
-        guard downwardHysteresisFraction.isFinite,
-              downwardHysteresisFraction >= 0,
-              downwardHysteresisFraction <= 1 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidDownwardHysteresisFraction
-        }
-        guard downwardAdaptationFraction.isFinite,
-              downwardAdaptationFraction > 0,
-              downwardAdaptationFraction <= 1 else {
-            throw LearnedObservedPowerEnvelopePolicyError.invalidDownwardAdaptationFraction
-        }
-
-        self.minimumPositiveSampleCount = minimumPositiveSampleCount
-        self.windowCapacity = windowCapacity
-        self.upperPercentile = upperPercentile
-        self.visualHeadroomFraction = visualHeadroomFraction
-        self.upwardHysteresisFraction = upwardHysteresisFraction
-        self.downwardHysteresisFraction = downwardHysteresisFraction
-        self.downwardAdaptationFraction = downwardAdaptationFraction
-    }
-}
-
-public enum LearnedObservedPowerEnvelopeError: Error, Equatable, Sendable {
-    case identityMismatch
-    case nonVerifiedEvidence
-    case nonMonotonicMeasurement
-    case staleContinuityGeneration
-}
-
-/// Learns a stable *observed* visual full-power region from repeated verified positive power samples.
-///
-/// This is not a rated motor/controller maximum. A single spike cannot become the learned ceiling unless
-/// the caller deliberately configures a percentile/window policy that permits it. Downward adaptation is
-/// explicitly slower than upward adaptation so the cockpit scale does not resize constantly.
-public struct LearnedObservedPowerEnvelope: Sendable {
-    public let identity: PropulsionGaugeIdentity
-    public let policy: LearnedObservedPowerEnvelopePolicy
-
-    private var recentPositiveWatts: [Double] = []
-    private var hasObservation = false
-    private var latestObservationUptimeNanoseconds: UInt64 = 0
-    private var latestContinuityGeneration: UInt64 = 0
-    private var learnedCeilingWatts: Double?
-
-    public private(set) var acceptedObservationCount: Int = 0
-
-    public init(identity: PropulsionGaugeIdentity, policy: LearnedObservedPowerEnvelopePolicy) {
-        self.identity = identity
-        self.policy = policy
-    }
-
-    public var currentScale: PropulsionGaugeScale? {
-        learnedCeilingWatts.map {
-            .learnedObserved(identity: identity, ceilingWatts: $0)
-        }
-    }
-
-    public var currentLearnedCeilingWatts: Double? {
-        learnedCeilingWatts
-    }
-
-    public var positiveObservationCount: Int {
-        recentPositiveWatts.count
-    }
-
-    public mutating func observe(_ sample: PropulsionPowerSample) throws {
-        guard sample.identity == identity else {
-            throw LearnedObservedPowerEnvelopeError.identityMismatch
-        }
-        guard sample.authority == .verifiedVehicleMeasurement else {
-            throw LearnedObservedPowerEnvelopeError.nonVerifiedEvidence
-        }
-
-        if hasObservation {
-            guard sample.continuityGeneration >= latestContinuityGeneration else {
-                throw LearnedObservedPowerEnvelopeError.staleContinuityGeneration
-            }
-            guard sample.receivedAtUptimeNanoseconds > latestObservationUptimeNanoseconds else {
-                throw LearnedObservedPowerEnvelopeError.nonMonotonicMeasurement
-            }
-        }
-
-        hasObservation = true
-        latestObservationUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
-        latestContinuityGeneration = sample.continuityGeneration
-        acceptedObservationCount += 1
-
-        guard sample.watts > 0 else {
-            return
-        }
-
-        recentPositiveWatts.append(sample.watts)
-        if recentPositiveWatts.count > policy.windowCapacity {
-            recentPositiveWatts.removeFirst(recentPositiveWatts.count - policy.windowCapacity)
-        }
-
-        guard recentPositiveWatts.count >= policy.minimumPositiveSampleCount else {
-            return
-        }
-
-        let sorted = recentPositiveWatts.sorted()
-        let rawRank = Int(ceil(policy.upperPercentile * Double(sorted.count))) - 1
-        let rank = min(sorted.count - 1, max(0, rawRank))
-        let percentileWatts = sorted[rank]
-        let candidate = percentileWatts * (1 + policy.visualHeadroomFraction)
-        guard candidate.isFinite, candidate > 0 else {
-            return
-        }
-
-        guard let existing = learnedCeilingWatts else {
-            learnedCeilingWatts = candidate
-            return
-        }
-
-        if candidate > existing * (1 + policy.upwardHysteresisFraction) {
-            learnedCeilingWatts = candidate
-            return
-        }
-
-        if candidate < existing * (1 - policy.downwardHysteresisFraction) {
-            let adapted = existing * (1 - policy.downwardAdaptationFraction)
-                + candidate * policy.downwardAdaptationFraction
-            if adapted.isFinite, adapted > 0 {
-                learnedCeilingWatts = adapted
-            }
-        }
     }
 }
