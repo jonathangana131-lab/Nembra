@@ -228,8 +228,8 @@ struct RideCheckpointCoordinatorTests {
         #expect(await store.clearCount == 1)
     }
 
-    @Test("failed durable ride-start write leaves engine unchanged and the same observation retryable")
-    func rideStartSaveFailureIsTransactional() async throws {
+    @Test("failed durable ride-start write latches mutation closed until fresh restore")
+    func rideStartSaveFailureFailsClosed() async throws {
         let store = RecordingRideCheckpointStore()
         await store.failNextSave()
         let coordinator = try coordinator(store: store)
@@ -239,22 +239,26 @@ struct RideCheckpointCoordinatorTests {
             _ = try await coordinator.ingest(start)
         }
         #expect(await coordinator.currentPhase() == .idle)
+        #expect(await store.savedValues.isEmpty)
 
-        let retry = try await coordinator.ingest(start)
-        guard case .active = retry.phase else {
-            Issue.record("same observation must remain retryable after failed save")
-            return
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await coordinator.ingest(start)
         }
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await coordinator.ingest(observation(2_000, speedKPH: 8, odometer: 100.1))
+        }
+        #expect(await store.savedValues.isEmpty)
     }
 
-    @Test("failed completion handoff leaves ending state retryable instead of losing the ride")
-    func completionSaveFailureIsTransactional() async throws {
+    @Test("failed completion handoff latches pre-terminal engine against later mutation")
+    func completionSaveFailureFailsClosed() async throws {
         let store = RecordingRideCheckpointStore()
         let coordinator = try coordinator(store: store, cadenceInterval: 1_000_000)
         _ = try await coordinator.ingest(observation(1_000, speedKPH: 8, odometer: 100))
         _ = try await coordinator.ingest(observation(1_500, speedKPH: 8, odometer: 100.1))
         _ = try await coordinator.ingest(observation(2_000, speedKPH: 0, odometer: 100.1))
         let endingPhase = await coordinator.currentPhase()
+        let durableBeforeFailure = await store.value
         await store.failNextSave()
         let finalStop = try observation(7_000, speedKPH: 0, odometer: 100.1)
 
@@ -263,13 +267,15 @@ struct RideCheckpointCoordinatorTests {
         }
         #expect(await coordinator.currentPhase() == endingPhase)
         #expect(await coordinator.pendingCompletedRideEvidence() == nil)
+        #expect(await store.value == durableBeforeFailure)
 
-        let retry = try await coordinator.ingest(finalStop)
-        guard case let .rideEnded(evidence) = retry.events.first else {
-            Issue.record("completion should succeed when the exact observation is retried")
-            return
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await coordinator.ingest(finalStop)
         }
-        #expect(await store.value == .completedPendingCommit(evidence))
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await coordinator.ingest(observation(8_000, speedKPH: 8, odometer: 100.2))
+        }
+        #expect(await store.value == durableBeforeFailure)
     }
 
     @Test("failed completion acknowledgement keeps the pending handoff blocked until journal clear succeeds")

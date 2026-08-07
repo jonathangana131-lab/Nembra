@@ -21,20 +21,23 @@ A recovered old `endingCandidate` timer is not resumed. Stop confirmation begins
 
 ## Journal design
 
-`AtomicRideCheckpointStore` uses two alternating JSON slots with monotonically increasing generations. A save writes the older or unused slot using Foundation atomic replacement and immediately decodes the new file before reporting success. The previous known-good slot remains available as fallback.
+`AtomicRideCheckpointStore` uses two alternating JSON slots with monotonically increasing generations. A save writes the older or unused slot using Foundation atomic replacement and immediately decodes the new file before reporting success. When both active slots are readable, the previous generation remains a known-good fallback.
+
+An unreadable active slot is different from a readable older generation: its generation, ride session, and checkpoint kind cannot be proven. A read I/O failure and malformed bytes are therefore both treated as ambiguous journal authority. Nembra fails closed rather than promoting or overwriting the readable sibling.
 
 The journal:
 
-- loads the newest valid generation,
-- falls back when the newest slot is corrupt,
-- preserves a lone corrupt file and writes the unused slot instead of destroying forensic evidence,
+- loads the newest generation only when every present active slot is readable and supported,
+- fails closed on any `corrupt + valid` or `corrupt + missing` active-journal state instead of guessing which bytes are authoritative,
+- preserves unreadable forensic bytes and refuses to write a new peer while authority is ambiguous,
 - refuses to overwrite when both slots are corrupt,
 - rejects divergent payloads with the same generation,
 - rejects unsupported schema versions instead of silently downgrading them,
 - rejects generation overflow,
-- validates active and completed evidence again while decoding.
+- validates active and completed evidence again while decoding,
+- clears fully readable journals from older/equivalent fallback to newest authority so interruption cannot expose an older ride after completion acknowledgement.
 
-This protects against ordinary process interruption and partial/corrupt checkpoint files. It does **not** claim stronger power-loss durability than the filesystem/Foundation atomic-write semantics provide.
+This intentionally trades single-slot corruption liveness for restart safety in the current schema. Recovering from an ambiguous unreadable slot requires a future explicit recovery/authority protocol; the app must not silently resume a ride from the readable peer. The journal does **not** claim stronger power-loss durability than the filesystem/Foundation atomic-write semantics provide.
 
 ## Coordinator transaction rules
 
@@ -44,28 +47,31 @@ This protects against ordinary process interruption and partial/corrupt checkpoi
 - Stable active observations checkpoint only at an injected cadence; Nembra does not write to disk for every telemetry frame.
 - The cadence has no production default until iPhone write cost and recovery requirements are measured.
 - Required persistence writes occur before the coordinator accepts the corresponding in-memory transition.
-- If a required save fails, the old engine state remains intact so the exact observation can be retried.
+- A required save error can have an indeterminate filesystem outcome. The coordinator keeps its prior in-memory engine state but latches ride mutation unavailable for that coordinator instance; later or already-queued observations cannot create a newer checkpoint from stale memory. A fresh `restoring(...)` pass is required to reconcile durable authority before ride mutation resumes.
+- The first failing save still surfaces its underlying error. Later ingestion on the faulted coordinator fails with `checkpointPersistenceUnavailable` before staging or calling the store.
+- The persistence-fault guard is checked after the FIFO mutation permit is acquired so a waiter that queued while the first save was suspended cannot slip through after that save faults.
 - When a ride ends, `completedPendingCommit` is written before the coordinator accepts the completed state.
 - While a completed ride is pending, new ride ingestion is blocked so the recovery journal cannot be overwritten.
 - The journal is cleared only after the completed-ride ledger durably commits and reads back the same session evidence.
-- If history commit/readback or journal clearing fails, the pending completion remains blocked and retryable.
+- If history commit/readback or journal clearing fails, the pending completion remains blocked and retryable; a clear failure is not treated as the same condition as an indeterminate checkpoint save.
 
 That final pending state closes the crash window between “ride detector emitted completion” and “history database actually owns this ride.”
 
-## Phase 12 application ownership
+## Application ownership
 
-Phase 12 connects this existing journal to real app lifetime through root-owned `RideApplicationStore` rather than a SwiftUI view.
+The app connects this journal to application lifetime through root-owned `RideApplicationStore` rather than a SwiftUI view.
 
 - `AppRuntime` owns one shared scooter service, `VehicleStore`, and `RideApplicationStore`.
 - process relaunch restores the same durable ride UUID conservatively, then requires fresh evidence before resuming active state.
+- corrupt/ambiguous checkpoint restore fails before live ride evidence streams are admitted; the app must expose persistence unavailable rather than silently resuming a fallback.
 - the state and raw-speed service streams are registered before ride-store startup returns, so the first new packet cannot race past the subscriber.
 - only fresh authoritative raw-speed packets can populate `RideObservation.speedSample`; cached vehicle-state speed and control acknowledgements are never replayed as measurements.
 - independent reconnect state/speed stream ordering is handled by retaining at most the newest unconsumed authoritative packet while state is connecting/reconnecting, consuming it once when confirmed connected state catches up, clearing it on disconnect, and still enforcing ride-engine freshness.
-- explicit Simulator QA has proven the active → process terminate → relaunch → recovered same-session path. This is application-path evidence, not physical MAXSHOT background validation.
+- existing Simulator QA is application-path evidence only. It does not verify physical AOVOPRO ES80 telemetry, outdoor GPS quality, or iPhone background behavior that has not been measured on hardware.
 
 ## Completed history ledger
 
-A concrete local SwiftData `RideHistoryStore` now implements the already-defined history contract.
+A concrete local SwiftData `RideHistoryStore` implements the completed-history contract.
 
 - it stores the exact validated `RideHistoryRecord` payload with a unique session UUID;
 - equivalent duplicate commits are idempotent success;
@@ -74,18 +80,22 @@ A concrete local SwiftData `RideHistoryStore` now implements the already-defined
 - a stored payload whose session UUID disagrees with its indexed row is treated as corruption;
 - Simulator recovery/history storage is namespaced away from future production data.
 
-Phase 12 Xcode 27/iOS 27 Simulator tests prove durable reopen, idempotency/conflict behavior, same-session recovery, completion handoff, journal clear only after history ownership, and process relaunch continuity.
+Simulator/software proof remains separate from physical ES80 field proof.
 
 ## Still pending
 
 This is not the whole ride-storage product. Still pending:
 
-- persistent route-point/chunk storage and route-gap metadata,
+- explicit product recovery/repair UX for an ambiguous unreadable checkpoint journal,
+- deterministic injected read/write I/O fault coverage for “bytes changed, verification failed” boundaries beyond the coordinator-level fail-closed latch,
+- persistent route-point/chunk storage and route-gap metadata where not already accepted by the active Ride cell,
 - connection timeline persistence,
 - crash-safe **ride-level** aggregation of multiple process-local live-distance segments,
-- precise ODO coverage classification from real MAXSHOT reads/reconnects,
+- precise ODO coverage classification from real AOVOPRO ES80 reads/reconnects,
 - production distance-reconciliation policy calibration,
 - statistics/day/week/month queries and finished ride-history UI over the real ledger,
-- background Core Bluetooth and Core Location lifecycle wiring,
+- background Core Bluetooth and Core Location lifecycle wiring/acceptance within actual iOS constraints,
 - production checkpoint cadence calibration on physical iPhone hardware,
-- real MAXSHOT hardware validation.
+- real AOVOPRO ES80 hardware validation.
+
+MAXSHOT V1S Pro hardware validation remains deferred/unverified; reusable generic vehicle architecture is preserved.

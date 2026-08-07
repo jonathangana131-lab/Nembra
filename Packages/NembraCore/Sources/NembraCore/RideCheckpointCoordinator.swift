@@ -4,6 +4,44 @@ public enum RideCheckpointCoordinatorError: Error, Equatable, Sendable {
     case invalidCadence
     case completedRideAwaitingCommit(UUID)
     case noMatchingPendingCompletion
+    case checkpointPersistenceUnavailable
+}
+
+/// Durable provenance describing what Nembra can truthfully say about scooter
+/// transport continuity during one confirmed ride.
+///
+/// This is intentionally tri-state. It records observed non-connected vehicle
+/// transport states and known observation-coverage loss; it never claims that
+/// Bluetooth was continuously healthy merely because no gap state was received.
+public enum RideTransportGapEvidence: String, Codable, Equatable, Sendable {
+    /// Nembra cannot classify the whole ride's transport-gap history because
+    /// required provenance is legacy/missing or a known process interval was
+    /// not observed.
+    case unknown
+
+    /// Among vehicle transport states Nembra actually received for this
+    /// uninterrupted current-process ride, every post-confirmation state was
+    /// `.connected`; no `.disconnected`, `.connecting`, or `.reconnecting` state
+    /// was observed. This does not assert packet cadence or complete Bluetooth
+    /// notification/state-observation coverage.
+    case noneObserved
+
+    /// At least one post-confirmation vehicle transport state was observed while
+    /// it was not `.connected` (`.disconnected`, `.connecting`, or
+    /// `.reconnecting`). Once observed, this evidence is never downgraded.
+    case observed
+
+    /// Process recovery itself is not a vehicle transport-state observation.
+    /// However, an unobserved process interval means a previous `noneObserved`
+    /// classification can no longer cover the whole ride. Direct evidence stays.
+    var afterProcessRecovery: RideTransportGapEvidence {
+        switch self {
+        case .observed:
+            return .observed
+        case .noneObserved, .unknown:
+            return .unknown
+        }
+    }
 }
 
 /// Controls how often a confirmed ride refreshes its durable recovery journal.
@@ -34,6 +72,22 @@ public actor RideCheckpointCoordinator {
     private var lastSuccessfulCheckpointUptimeNanoseconds: UInt64?
     private var pendingCompletedRide: CompletedRideEvidence?
 
+    /// A required checkpoint-save error can be indeterminate: bytes may have
+    /// changed even though the caller observed an error. Once that happens this
+    /// coordinator instance stops accepting ride mutations until a fresh restore
+    /// reconciles durable journal authority. This prevents a later observation
+    /// from writing a newer checkpoint from stale in-memory engine state.
+    private var checkpointPersistenceFaulted = false
+
+    /// Actors are reentrant at `await`. Checkpoint writes therefore need an
+    /// explicit transaction permit so a second ingest cannot stage from the old
+    /// engine while the first ingest is waiting for durable storage. The permit
+    /// is handed directly to the next FIFO waiter and remains held across the
+    /// external store await; read-only actor methods may still observe the last
+    /// fully committed state while a write transaction is pending.
+    private var mutationInFlight = false
+    private var mutationWaiters: [CheckedContinuation<Void, Never>] = []
+
     public init(
         engine: RideEngine,
         store: any RideCheckpointStore,
@@ -59,7 +113,7 @@ public actor RideCheckpointCoordinator {
     }
 
     /// Reconstructs the coordinator from the newest durable journal generation.
-    /// In-progress rides are re-anchored to the new process uptime and return as
+    /// In-progress rides are re-anchored to fresh observation uptime and return as
     /// temporarily disconnected. A completed-pending record blocks new ride input
     /// until the history layer durably commits it and acknowledges the handoff.
     public static func restoring(
@@ -107,17 +161,37 @@ public actor RideCheckpointCoordinator {
     }
 
     public func ingest(_ observation: RideObservation) async throws -> RideEngineUpdate {
+        await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
+        // This guard deliberately runs after permit acquisition. A second ingest
+        // may already be queued while the first caller is suspended in store.save;
+        // if that save faults, the resumed waiter must observe the newly latched
+        // persistence failure before staging from the old engine.
+        guard !checkpointPersistenceFaulted else {
+            throw RideCheckpointCoordinatorError.checkpointPersistenceUnavailable
+        }
+
         if let pendingCompletedRide {
             throw RideCheckpointCoordinatorError.completedRideAwaitingCommit(pendingCompletedRide.sessionID)
         }
 
-        // Work on a copy. If a required durable write fails, the in-memory engine
-        // remains at its prior state and the same observation can be retried.
+        // Work on a copy. The in-memory engine is committed only after every
+        // required durable save succeeds. If a save fails, this coordinator is
+        // latched persistence-unavailable because the filesystem outcome may be
+        // indeterminate; a fresh restore is required before ride mutation resumes.
+        // Snapshot the prior durable transport classification before mutation so
+        // newly direct gap evidence can force a write even when the ride phase is
+        // already `temporarilyDisconnected` after process recovery.
+        let priorTransportGapEvidence = try engine.recoveryCheckpoint(
+            checkpointedAtDate: observation.receivedAtDate
+        )?.transportGapEvidence
+
         var nextEngine = engine
         let update = try nextEngine.ingest(observation)
 
         if let completed = update.completedRideEvidence {
-            try await store.save(.completedPendingCommit(completed))
+            try await saveRequiredCheckpoint(.completedPendingCommit(completed))
             engine = nextEngine
             pendingCompletedRide = completed
             lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
@@ -126,9 +200,18 @@ public actor RideCheckpointCoordinator {
 
         if let checkpoint = try nextEngine.recoveryCheckpoint(
             checkpointedAtDate: observation.receivedAtDate
-        ), shouldPersistInProgress(update: update, observation: observation) {
-            try await store.save(.inProgress(checkpoint))
-            lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        ) {
+            let transportGapEvidenceBecameObserved = priorTransportGapEvidence != .observed
+                && checkpoint.transportGapEvidence == .observed
+
+            if shouldPersistInProgress(
+                update: update,
+                observation: observation,
+                transportGapEvidenceBecameObserved: transportGapEvidenceBecameObserved
+            ) {
+                try await saveRequiredCheckpoint(.inProgress(checkpoint))
+                lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+            }
         }
 
         engine = nextEngine
@@ -143,10 +226,20 @@ public actor RideCheckpointCoordinator {
         pendingCompletedRide
     }
 
+    /// Package-internal observability for deterministic transaction tests. This
+    /// is not product state and does not expose or mutate queued observations.
+    func queuedMutationCountForTesting() -> Int {
+        mutationWaiters.count
+    }
+
     /// Called only after the completed-ride ledger has durably committed the same
     /// session. Clearing first would reopen the exact crash-loss window this layer
-    /// exists to close.
+    /// exists to close. This mutation shares the same transaction permit as ingest
+    /// so a newly arriving observation cannot race the journal clear.
     public func acknowledgeCompletedRideCommitted(sessionID: UUID) async throws {
+        await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
         guard pendingCompletedRide?.sessionID == sessionID else {
             throw RideCheckpointCoordinatorError.noMatchingPendingCompletion
         }
@@ -155,11 +248,21 @@ public actor RideCheckpointCoordinator {
         lastSuccessfulCheckpointUptimeNanoseconds = nil
     }
 
+    private func saveRequiredCheckpoint(_ checkpoint: RideDurableCheckpoint) async throws {
+        do {
+            try await store.save(checkpoint)
+        } catch {
+            checkpointPersistenceFaulted = true
+            throw error
+        }
+    }
+
     private func shouldPersistInProgress(
         update: RideEngineUpdate,
-        observation: RideObservation
+        observation: RideObservation,
+        transportGapEvidenceBecameObserved: Bool
     ) -> Bool {
-        if update.events.containsConfirmedRideTransition {
+        if transportGapEvidenceBecameObserved || update.events.containsConfirmedRideTransition {
             return true
         }
         guard let lastSuccessfulCheckpointUptimeNanoseconds else {
@@ -167,6 +270,29 @@ public actor RideCheckpointCoordinator {
         }
         return observation.receivedAtUptimeNanoseconds - lastSuccessfulCheckpointUptimeNanoseconds
             >= cadence.minimumIntervalNanoseconds
+    }
+
+    private func acquireMutationPermit() async {
+        guard mutationInFlight else {
+            mutationInFlight = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            mutationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseMutationPermit() {
+        guard !mutationWaiters.isEmpty else {
+            mutationInFlight = false
+            return
+        }
+
+        let next = mutationWaiters.removeFirst()
+        // Keep `mutationInFlight` true: ownership transfers directly to the
+        // resumed waiter rather than opening a race window for a later caller.
+        next.resume()
     }
 }
 

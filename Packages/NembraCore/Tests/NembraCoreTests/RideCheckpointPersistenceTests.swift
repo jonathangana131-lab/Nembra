@@ -101,24 +101,42 @@ struct RideCheckpointPersistenceTests {
         #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent(AtomicRideCheckpointStore.slotBFileName).path))
     }
 
-    @Test("a corrupt newest slot falls back to the older known-good checkpoint")
-    func corruptNewestFallsBack() async throws {
-        let dir = try directory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let store = AtomicRideCheckpointStore(directoryURL: dir)
-        let older = try checkpoint(latestODO: 100.2)
-        let newer = try checkpoint(latestODO: 100.9)
-        try await store.save(.inProgress(older))
-        try await store.save(.inProgress(newer))
+    @Test("one corrupt active slot never promotes or overwrites its readable peer")
+    func corruptAndReadableFailClosedForBothPhysicalSlots() async throws {
+        for corruptFileName in [
+            AtomicRideCheckpointStore.slotAFileName,
+            AtomicRideCheckpointStore.slotBFileName,
+        ] {
+            let dir = try directory()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let store = AtomicRideCheckpointStore(directoryURL: dir)
+            let older = try checkpoint(latestODO: 100.2)
+            let newer = try checkpoint(latestODO: 100.9)
+            try await store.save(.inProgress(older))
+            try await store.save(.inProgress(newer))
 
-        let slotB = dir.appendingPathComponent(AtomicRideCheckpointStore.slotBFileName)
-        try Data("truncated".utf8).write(to: slotB)
+            let slotA = dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+            let slotB = dir.appendingPathComponent(AtomicRideCheckpointStore.slotBFileName)
+            let corruptURL = dir.appendingPathComponent(corruptFileName)
+            let readableURL = corruptFileName == AtomicRideCheckpointStore.slotAFileName ? slotB : slotA
+            let readableBytes = try Data(contentsOf: readableURL)
+            let forensic = Data("truncated".utf8)
+            try forensic.write(to: corruptURL)
 
-        #expect(try await store.load() == .inProgress(older))
+            await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+                _ = try await store.load()
+            }
+            await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+                try await store.save(.inProgress(try checkpoint(latestODO: 101.1)))
+            }
+
+            #expect(try Data(contentsOf: corruptURL) == forensic)
+            #expect(try Data(contentsOf: readableURL) == readableBytes)
+        }
     }
 
-    @Test("one corrupt slot plus one unused slot recovers without erasing forensic evidence")
-    func corruptPlusMissingRecoversIntoUnusedSlot() async throws {
+    @Test("one corrupt slot plus one unused slot fails closed without manufacturing authority")
+    func corruptPlusMissingFailsClosed() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let slotA = dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
@@ -127,12 +145,15 @@ struct RideCheckpointPersistenceTests {
         try forensic.write(to: slotA)
 
         let store = AtomicRideCheckpointStore(directoryURL: dir)
-        let recovered = try checkpoint(latestODO: 101.1)
-        try await store.save(.inProgress(recovered))
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            _ = try await store.load()
+        }
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            try await store.save(.inProgress(try checkpoint(latestODO: 101.1)))
+        }
 
         #expect(try Data(contentsOf: slotA) == forensic)
-        #expect(FileManager.default.fileExists(atPath: slotB.path))
-        #expect(try await store.load() == .inProgress(recovered))
+        #expect(!FileManager.default.fileExists(atPath: slotB.path))
     }
 
     @Test("two corrupt slots require explicit recovery instead of silent overwrite")
