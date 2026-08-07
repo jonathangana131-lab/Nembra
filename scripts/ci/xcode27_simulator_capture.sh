@@ -92,6 +92,27 @@ read_simctl_ui_setting() {
   xcrun simctl ui "$UDID" "$setting" 2>/dev/null | tr -d '\r' | tail -n 1
 }
 
+set_simctl_ui_setting_verified() {
+  local setting="$1"
+  local requested="$2"
+  local log_path="$3"
+  local observed
+
+  if ! simctl_ui_supports "$setting"; then
+    printf 'setting=%s\nrequested=%s\nresult=unadvertised\n' "$setting" "$requested" > "$log_path"
+    return 1
+  fi
+
+  if ! xcrun simctl ui "$UDID" "$setting" "$requested" > "$log_path" 2>&1; then
+    printf 'setting=%s\nrequested=%s\nresult=setter-failed\n' "$setting" "$requested" >> "$log_path"
+    return 1
+  fi
+
+  observed="$(read_simctl_ui_setting "$setting" || true)"
+  printf 'setting=%s\nrequested=%s\nobserved=%s\n' "$setting" "$requested" "${observed:-<empty>}" >> "$log_path"
+  [[ "$observed" == "$requested" ]]
+}
+
 record_simctl_ui_state() {
   local output_path="$1"
   {
@@ -182,7 +203,16 @@ capture_state() {
   fi
 
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
+  if [[ -n "$variant" ]]; then
+    if ! set_simctl_ui_setting_verified appearance "$appearance" \
+      "$ARTIFACTS_DIR/logs/simctl-appearance-${artifact_key}.log"; then
+      echo "Could not verify ${appearance} appearance for accessibility capture ${artifact_key}." >&2
+      exit 8
+    fi
+  else
+    xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
+  fi
+
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
