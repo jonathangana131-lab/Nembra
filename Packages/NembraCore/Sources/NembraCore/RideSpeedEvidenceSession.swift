@@ -226,6 +226,7 @@ public enum RideObservedPeakReadinessFailure: Equatable, Sendable {
     case selectedSourceMismatch(peak: SpeedTelemetrySource, benchmark: SpeedTelemetrySource)
     case foreignSourceTraffic(callbackCount: Int)
     case partialPeakObservation
+    case insufficientJitterIntervalEvidence(required: Int, actual: Int)
     case gpsPeakAccuracyPolicyUnavailable
     case telemetryQualityFailed([SpeedTelemetryQualityFailure])
 }
@@ -281,6 +282,17 @@ public extension RideSpeedEvidenceSessionSnapshot {
             }
         } else {
             failures.append(.peakUnavailable)
+        }
+
+        // The wrapper requires a jitter ceiling, so the ride must actually
+        // contain at least two observed intra-segment timing intervals. Three
+        // accepted samples alone are not enough if a known gap splits them 2+1.
+        let minimumIntervalsForJitterEvidence = 2
+        if telemetryBenchmark.intervalCount < minimumIntervalsForJitterEvidence {
+            failures.append(.insufficientJitterIntervalEvidence(
+                required: minimumIntervalsForJitterEvidence,
+                actual: telemetryBenchmark.intervalCount
+            ))
         }
 
         if foreignSourceCallbackCount > 0 {
