@@ -49,7 +49,7 @@ public enum PassiveBluetoothStationaryCaptureChargerState: String, Codable, Send
 /// interruption. Add new cases only when Nembra legitimately supports a different
 /// lifecycle for physical capture.
 public enum PassiveBluetoothStationaryCaptureExecutionContext: String, Codable, Sendable {
-    case foregroundScreenOn
+    case foregroundUnlockedScreenOn
 }
 
 public struct PassiveBluetoothStationaryCaptureSetup: Equatable, Codable, Sendable {
