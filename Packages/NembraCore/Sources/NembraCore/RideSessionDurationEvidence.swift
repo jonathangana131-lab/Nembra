@@ -266,6 +266,18 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         return .inserted
     }
 
+    /// Equality compares durable ride evidence only. Process-local continuation authority is
+    /// intentionally excluded because serialization seals it and it is not persisted evidence.
+    public static func == (
+        lhs: RideSessionDurationEvidenceAccumulator,
+        rhs: RideSessionDurationEvidenceAccumulator
+    ) -> Bool {
+        lhs.sessionID == rhs.sessionID &&
+            lhs.beginsAfterUnobservedInterval == rhs.beginsAfterUnobservedInterval &&
+            lhs.observationSegments == rhs.observationSegments &&
+            lhs.totalObservedDurationNanoseconds == rhs.totalObservedDurationNanoseconds
+    }
+
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case beginsAfterUnobservedInterval
