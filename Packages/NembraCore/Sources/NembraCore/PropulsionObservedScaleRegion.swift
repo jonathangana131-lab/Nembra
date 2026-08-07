@@ -8,7 +8,9 @@ public enum PropulsionObservedScaleRegionPolicyError: Error, Equatable, Sendable
 /// sits near the edge of a compatible learned observed-power gauge scale.
 ///
 /// This threshold is a presentation choice only. It does not define full throttle,
-/// rated power, motor load, or a physical maximum.
+/// rated power, motor load, or a physical maximum. It may be deliberately loose
+/// for Simulator QA or visual experimentation and therefore is never sufficient
+/// by itself to authorize wording that implies proximity to an observed maximum.
 public struct PropulsionObservedScaleRegionPolicy: Equatable, Sendable {
     public let nearEdgeFraction: Double
 
@@ -19,6 +21,26 @@ public struct PropulsionObservedScaleRegionPolicy: Equatable, Sendable {
             throw PropulsionObservedScaleRegionPolicyError.invalidNearEdgeFraction
         }
         self.nearEdgeFraction = nearEdgeFraction
+    }
+}
+
+/// Product-owned language policy for verified wording such as "Near observed max".
+///
+/// This intentionally cannot be constructed with an arbitrary caller-supplied
+/// fraction. Changing the wording boundary requires an explicit Nembra source
+/// change/review rather than silently weakening semantic language through a
+/// generic visual-region configuration.
+///
+/// The fraction is relative to a compatible learned *presentation* scale. It is
+/// not an AOVOPRO ES80 physical threshold, rated/certified power percentage,
+/// throttle position, motor load, or proof of a perfect continuous-time maximum.
+public struct PropulsionVerifiedNearObservedMaximumWordingPolicy: Equatable, Sendable {
+    public static let product = Self(minimumObservedScaleFraction: 0.9)
+
+    public let minimumObservedScaleFraction: Double
+
+    private init(minimumObservedScaleFraction: Double) {
+        self.minimumObservedScaleFraction = minimumObservedScaleFraction
     }
 }
 
@@ -55,15 +77,29 @@ public struct PropulsionObservedScaleRegionSnapshot: Equatable, Sendable {
     }
 
     /// The only convenience intended to gate production wording such as
-    /// "Near observed max". It requires the semantic region, a current accepted
-    /// verified-vehicle power measurement, and a compatible verified observed-
-    /// envelope presentation scale. It still does not mean throttle position,
-    /// rated/certified maximum, or a perfect continuous-time physical maximum.
+    /// "Near observed max". It requires the configurable semantic visual region,
+    /// a current accepted verified-vehicle power measurement, a compatible
+    /// verified observed-envelope presentation scale, and the independent
+    /// product-owned wording floor.
+    ///
+    /// The separate wording floor prevents a caller from choosing an arbitrarily
+    /// low visual threshold (for example `0.01`) and thereby making 1% of the
+    /// learned presentation scale eligible for near-maximum language. It still
+    /// does not mean throttle position, rated/certified maximum, or a perfect
+    /// continuous-time physical maximum.
     public var permitsVerifiedNearObservedMaximumWording: Bool {
-        region == .nearObservedScaleEdge
-            && availability == .live
-            && latestAuthority == .verifiedVehicleMeasurement
-            && scaleOrigin == .verifiedObservedEnvelope
+        guard region == .nearObservedScaleEdge,
+              availability == .live,
+              latestAuthority == .verifiedVehicleMeasurement,
+              scaleOrigin == .verifiedObservedEnvelope,
+              let acceptedFraction = acceptedObservedScaleFraction,
+              acceptedFraction.isFinite,
+              acceptedFraction >= 0,
+              acceptedFraction <= 1,
+              acceptedFraction >= PropulsionVerifiedNearObservedMaximumWordingPolicy.product.minimumObservedScaleFraction else {
+            return false
+        }
+        return true
     }
 
     /// Explicit Simulator-QA classification so visual tests can exercise the
