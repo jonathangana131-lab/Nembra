@@ -21,6 +21,7 @@ Current Tuya documentation consistently describes a DP as:
 
 Relevant Tuya documentation:
 
+- https://developer.tuya.com/en/docs/iot-device-dev/API-BLE?id=Karuly74nihjx
 - https://developer.tuya.com/en/docs/iot-device-dev/bluetooth_software_map_bt_dp_data?id=Kcmeae40r8zdq
 - https://developer.tuya.com/en/docs/iot/application-development?id=Kbe6embsa0wtu
 - https://developer.tuya.com/en/docs/mcu-standard-protocol/Bluetooth-LE-Intergation-Base-Function?id=Kd3q32tjfcufw
@@ -49,12 +50,12 @@ Current generic shape evidence retained by this candidate analyzer is:
 
 - raw: `1...255` bytes;
 - boolean: `1` byte;
-- value: `4` bytes;
+- value: `1`, `2`, or `4` bytes;
 - string: `0...255` bytes;
 - enum: `1` byte;
 - bitmap: `1`, `2`, or `4` bytes.
 
-For bitmap length, Nembra preserves the broader public-family `1/2/4`-byte shape because current Tuya documents are not perfectly uniform across product/protocol material. This is intentionally a structural candidate, not a product schema.
+Tuya's public Bluetooth documents are not perfectly uniform on scalar width. The TuyaOS Bluetooth SDK API currently documents `DT_VALUE` as allowing `1`, `2`, or `4` bytes, while other Tuya Bluetooth pages describe VALUE as fixed at four bytes. Nembra therefore retains the broader documented `1/2/4` candidate family rather than suppressing potentially legitimate physical evidence before the ES80 protocol generation is known. The same conservative broader-family treatment is used for bitmap length where public Tuya material also varies. These are structural candidates, not an ES80 product schema.
 
 Out-of-family raw/string lengths are still retained byte-for-byte when the caller's resource policy permits them; the finding says only that the shape is surprising under this public candidate family. This keeps protocol falsification possible instead of turning a mismatch into discarded evidence.
 
@@ -69,6 +70,8 @@ Out-of-family raw/string lengths are still retained byte-for-byte when the calle
 - it does not assign a DP ID to an ES80 feature.
 
 For example, raw magnitude `413` must not silently become `41.3 V`. That transformation would need an explicit hypothesis and repeatable physical correlation first.
+
+A one-, two-, or four-byte VALUE candidate can be projected to its generic unsigned big-endian magnitude only to make later correlation reproducible. That projection does not mean Tuya's logical value is unsigned in the ES80, and it never supplies a unit or decimal scale.
 
 A boolean is projected only when its single byte is exactly `0` or `1`. Other bytes stay unavailable rather than being coerced to true.
 
@@ -106,7 +109,7 @@ It does not mean:
 
 ## Verification
 
-The focused suite covers both explicit length-width hypotheses and preservation of that hypothesis in every successful parse, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
+The focused suite covers both explicit length-width hypotheses and preservation of that hypothesis in every successful parse, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, the documented one-/two-/four-byte VALUE ambiguity, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
 
 A local Swift 6.2.1 warnings-as-errors mirror of the exact feature logic passes **14/14** tests in both debug and optimized release. That is supporting software evidence only; repository-native exact-head NembraCore/Xcode acceptance remains required on the final dependency composition.
 
