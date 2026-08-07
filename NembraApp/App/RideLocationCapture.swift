@@ -47,10 +47,6 @@ protocol RideLocationSource: Sendable {
 /// ride fixture. It deliberately emits ordinary raw `RideLocationSample` values
 /// into the same source boundary as Core Location; no coordinate is written
 /// directly to route persistence and no GPS distance is injected by the fixture.
-///
-/// Receipt uptime and wall-clock dates are sampled at actual delivery time. The
-/// scripted path exists only to exercise software semantics and is not a claim
-/// about AOVOPRO ES80 motion, outdoor GPS quality, or production cadence.
 actor SimulatorRideLocationSource: RideLocationSource {
     private struct Coordinate: Sendable {
         let latitude: Double
@@ -159,12 +155,6 @@ actor SimulatorRideLocationSource: RideLocationSource {
 }
 
 /// Foreground Core Location adapter for a scooter ride.
-///
-/// Apple explicitly includes scooters in `.otherNavigation`. Nembra starts this
-/// source only when a ride-lifecycle coordinator asks for location evidence; it
-/// does not run high-accuracy location continuously at ordinary app launch.
-/// Background continuation is deliberately not claimed here: that requires the
-/// separate SwiftUI lifecycle/background-session gate and physical-device QA.
 actor CoreLocationRideLocationSource: RideLocationSource {
     private var continuation: AsyncStream<RideLocationSourceEvent>.Continuation?
     private var updatesTask: Task<Void, Never>?
@@ -172,9 +162,6 @@ actor CoreLocationRideLocationSource: RideLocationSource {
     private var activeGeneration: UUID?
 
     func events() -> AsyncStream<RideLocationSourceEvent> {
-        // Replacing a consumer invalidates any older producer generation first.
-        // This protects reuse across rides even if an old Core Location task is
-        // still unwinding from cancellation when the next stream is created.
         activeGeneration = nil
         updatesTask?.cancel()
         updatesTask = nil
@@ -189,10 +176,6 @@ actor CoreLocationRideLocationSource: RideLocationSource {
     func start() {
         guard updatesTask == nil else { return }
 
-        // Holding the service session states the authorization goal explicitly
-        // for the lifetime of this ride-location source. The project already has
-        // NSLocationWhenInUseUsageDescription; this call is made only from a
-        // user-visible ride/location flow, never as a surprise at cold launch.
         let generation = UUID()
         activeGeneration = generation
         serviceSession = CLServiceSession(authorization: .whenInUse)
@@ -202,8 +185,6 @@ actor CoreLocationRideLocationSource: RideLocationSource {
     }
 
     func stop() {
-        // Invalidate before cancellation so an old task cannot report into a new
-        // stream if Core Location completes asynchronously after stop returns.
         activeGeneration = nil
         updatesTask?.cancel()
         updatesTask = nil
@@ -294,30 +275,33 @@ struct RideLocationCaptureSummary: Equatable, Sendable {
     let routePersistenceFailed: Bool
 }
 
-/// One ride-scoped bridge from phone-location transport into two intentionally
-/// separate evidence domains:
-///
-/// 1. accepted coordinates -> immutable route chunks for later MapKit display
-/// 2. adjacent accepted coordinate distance -> RideEngine GPS-distance evidence
-///
-/// Route persistence failure is additive and does not discard a valid screened
-/// GPS-distance delta. Conversely, a rendered/persisted route is never measured
-/// later and promoted into ride distance. Both domains originate from the same
-/// screened samples but remain independently truthful after that boundary.
+/// One ride-scoped bridge from phone-location transport into independent route
+/// geometry and GPS-distance evidence domains.
 actor RideLocationCaptureCoordinator {
-    /// Production lifecycle sink. Every GPS delta carries the exact ride UUID
-    /// this capture began with so the application layer can reject delayed
-    /// evidence after that ride ends or another ride becomes active.
+    /// Legacy sink retained for tests and callers that only consume deltas. It
+    /// cannot express whether the authoritative ride session accepted a sample.
     typealias DistanceSink = @Sendable (
         _ sessionID: UUID,
         _ meters: Double,
         _ receivedAtUptimeNanoseconds: UInt64
     ) async -> Void
 
+    /// Authoritative session handoff for a screened location sample. The caller
+    /// decides whether the exact ride UUID is still accepting evidence and, when
+    /// a distance delta exists, owns ingesting that delta into RideEngine before
+    /// returning true. Route persistence happens only after this returns true.
+    /// This gives route geometry and completed GPS evidence one deterministic
+    /// ride-completion cutoff without reopening `CompletedRideEvidence`.
+    typealias SessionEvidenceSink = @Sendable (
+        _ sessionID: UUID,
+        _ distanceDeltaMeters: Double?,
+        _ receivedAtUptimeNanoseconds: UInt64
+    ) async -> Bool
+
     private let source: any RideLocationSource
     private let routeStore: (any RideRouteStore)?
     private let routeChunkSize: Int
-    private let distanceSink: DistanceSink
+    private let sessionEvidenceSink: SessionEvidenceSink
     private var qualityScreen: RideLocationQualityScreen
     private var routeRecorder: RideRouteRecorder?
 
@@ -328,12 +312,15 @@ actor RideLocationCaptureCoordinator {
     private var qualityScreenedDistanceMeters = 0.0
     private var routePersistenceFailed = false
 
+    /// Production/root lifecycle initializer. A screened sample is not allowed to
+    /// mutate route geometry unless the authoritative ride session first accepts
+    /// the same sample/delta through this callback.
     init(
         source: any RideLocationSource,
         qualityPolicy: RideLocationQualityPolicy,
         routeStore: (any RideRouteStore)?,
         routeChunkSize: Int = 8,
-        sessionScopedDistanceSink: @escaping DistanceSink
+        sessionScopedEvidenceSink: @escaping SessionEvidenceSink
     ) throws {
         guard routeChunkSize > 0 else {
             throw RideRouteRecorderError.invalidChunkSize
@@ -342,12 +329,40 @@ actor RideLocationCaptureCoordinator {
         self.routeStore = routeStore
         self.routeChunkSize = routeChunkSize
         self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
-        self.distanceSink = sessionScopedDistanceSink
+        self.sessionEvidenceSink = sessionScopedEvidenceSink
+    }
+
+    /// Compatibility initializer for existing tests/callers. It preserves the
+    /// previous delta callback behavior and accepts every screened point. Root
+    /// production wiring should migrate to `sessionScopedEvidenceSink` so a late
+    /// sample can be rejected before route persistence.
+    init(
+        source: any RideLocationSource,
+        qualityPolicy: RideLocationQualityPolicy,
+        routeStore: (any RideRouteStore)?,
+        routeChunkSize: Int = 8,
+        sessionScopedDistanceSink: @escaping DistanceSink
+    ) throws {
+        try self.init(
+            source: source,
+            qualityPolicy: qualityPolicy,
+            routeStore: routeStore,
+            routeChunkSize: routeChunkSize,
+            sessionScopedEvidenceSink: { sessionID, distanceDeltaMeters, uptime in
+                if let distanceDeltaMeters {
+                    await sessionScopedDistanceSink(
+                        sessionID,
+                        distanceDeltaMeters,
+                        uptime
+                    )
+                }
+                return true
+            }
+        )
     }
 
     /// Transitional/test convenience for code that only observes emitted deltas
-    /// and does not route them into application ride state. Production ride
-    /// lifecycle wiring should use `sessionScopedDistanceSink` instead.
+    /// and does not route them into application ride state.
     init(
         source: any RideLocationSource,
         qualityPolicy: RideLocationQualityPolicy,
@@ -397,9 +412,6 @@ actor RideLocationCaptureCoordinator {
                 )
                 routeRecorder = recorder
             } catch {
-                // Location/distance evidence remains useful even if the additive
-                // route store cannot begin. Do not turn a map-storage failure
-                // into loss of the ride engine's independent GPS evidence.
                 routeRecorder = nil
                 routePersistenceFailed = true
             }
@@ -421,8 +433,6 @@ actor RideLocationCaptureCoordinator {
             throw RideLocationCaptureError.noActiveCapture
         }
 
-        // Finishing the source closes its AsyncStream. Await the consumer so all
-        // already-yielded evidence is screened before finalizing the route.
         await source.stop()
         if let eventsTask {
             await eventsTask.value
@@ -454,11 +464,6 @@ actor RideLocationCaptureCoordinator {
 
     private func consume(_ event: RideLocationSourceEvent) async {
         if event.issue != nil {
-            // An explicit Core Location diagnostic means continuity is no longer
-            // justified. Mark both evidence domains immediately. The recorder's
-            // gap marker is lazy: before the first point it only forces partial
-            // coverage, and after points exist it materializes a new segment only
-            // when another valid coordinate is later accepted.
             qualityScreen.markKnownCoverageGap()
             await markRouteGapIfAvailable()
         }
@@ -469,24 +474,28 @@ actor RideLocationCaptureCoordinator {
         case .rejected:
             return
         case let .accepted(accepted):
+            guard let sessionID else { return }
+
+            // The ride-session handoff is the cutoff authority. In particular,
+            // when AppRuntime is draining an already-yielded callback after
+            // `rideEnded`, RideApplicationStore can reject it here. A rejection
+            // means neither route geometry nor GPS-distance accounting advances.
+            let acceptedBySession = await sessionEvidenceSink(
+                sessionID,
+                accepted.distanceDeltaMeters,
+                accepted.sample.receivedAtUptimeNanoseconds
+            )
+            guard acceptedBySession else { return }
+
             if accepted.startsNewRouteSegment {
-                // Repeating the marker is intentionally harmless; the route
-                // recorder collapses repeated gap notifications until a new
-                // accepted point actually exists.
                 await markRouteGapIfAvailable()
             }
 
             await appendRoutePointIfAvailable(accepted.sample)
             acceptedPointCount += 1
 
-            if let distanceDeltaMeters = accepted.distanceDeltaMeters,
-               let sessionID {
+            if let distanceDeltaMeters = accepted.distanceDeltaMeters {
                 qualityScreenedDistanceMeters += distanceDeltaMeters
-                await distanceSink(
-                    sessionID,
-                    distanceDeltaMeters,
-                    accepted.sample.receivedAtUptimeNanoseconds
-                )
             }
         }
     }
@@ -532,12 +541,6 @@ actor RideLocationCaptureCoordinator {
 /// Finalizes durable route chunks that survived a process stop after RideEngine
 /// wrote `completedPendingCommit` but before the ride-scoped recorder could
 /// commit its manifest.
-///
-/// Recovery is deliberately conservative: surviving chunks prove that Nembra
-/// recorded geometry, but a process boundary means full coverage can no longer
-/// be claimed. A recovered draft therefore receives `.partial` coverage. No
-/// coordinate is invented, reordered, joined across an unknown gap, or measured
-/// later to manufacture GPS ride distance.
 struct RideRouteDraftFinalizer: Sendable {
     enum FinalizationError: Error, Equatable, Sendable {
         case durableVerificationFailed(UUID)
@@ -568,9 +571,6 @@ struct RideRouteDraftFinalizer: Sendable {
             knownGapCount: max(0, segmentIndices.count - 1)
         )
 
-        // Reuse the accepted geometry validator before making a recovered
-        // manifest durable. It rejects mismatched sessions, non-contiguous
-        // segments/chunks, bad sequence ordering, and count mismatches.
         _ = try RideRouteGeometry(manifest: manifest, chunks: chunks)
         _ = try await routeStore.commit(manifest)
 
