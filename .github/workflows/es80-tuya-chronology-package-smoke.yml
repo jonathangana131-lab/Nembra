@@ -1,0 +1,34 @@
+name: ES80 Tuya Chronology Package Smoke
+
+on:
+  push:
+    branches:
+      - qa/es80-tuya-chronology/chat-k8p3v-3388d48
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD=3388d48f6e9e1e6d1fdccb56cf13d1d0b2a6b006
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          changed="$(git diff --name-only "$PRODUCT_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/es80-tuya-chronology-package-smoke.yml"
+          echo "QA mirror contains exactly one workflow-only commit above $PRODUCT_HEAD"
+
+      - name: Report Swift toolchain
+        run: swift --version
+
+      - name: Test NembraCore with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
