@@ -14,7 +14,7 @@ struct RideHistoryDurationAttachmentTests {
             self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.sessionID, $0) })
         }
 
-        func commit(_ record: RideHistoryRecord) throws -> RideHistoryCommitResult {
+        func commit(_ record: RideHistoryRecord) async throws -> RideHistoryCommitResult {
             if let existing = records[record.sessionID] {
                 guard existing == record else {
                     throw RideHistoryStoreError.sessionConflict(record.sessionID)
@@ -25,7 +25,7 @@ struct RideHistoryDurationAttachmentTests {
             return .inserted
         }
 
-        func record(sessionID: UUID) -> RideHistoryRecord? {
+        func record(sessionID: UUID) async throws -> RideHistoryRecord? {
             records[sessionID]
         }
     }
@@ -40,7 +40,7 @@ struct RideHistoryDurationAttachmentTests {
 
         func commit(
             _ record: RideHistoryDurationRecord
-        ) throws -> RideHistoryDurationCommitResult {
+        ) async throws -> RideHistoryDurationCommitResult {
             if let existing = records[record.sessionID] {
                 guard existing == record else {
                     throw RideHistoryDurationStoreError.sessionConflict(record.sessionID)
@@ -51,7 +51,7 @@ struct RideHistoryDurationAttachmentTests {
             return .inserted
         }
 
-        func record(sessionID: UUID) -> RideHistoryDurationRecord? {
+        func record(sessionID: UUID) async throws -> RideHistoryDurationRecord? {
             guard !suppressReads else { return nil }
             return records[sessionID]
         }
@@ -119,11 +119,10 @@ struct RideHistoryDurationAttachmentTests {
             durationStore: InMemoryDurationStore()
         )
 
-        do {
+        await #expect(
+            throws: RideHistoryDurationCommitCoordinatorError.missingCompletedRide(sessionID)
+        ) {
             _ = try await coordinator.commit(durationEvidence)
-            Issue.record("Expected missing completed ride to reject duration attachment")
-        } catch let error as RideHistoryDurationCommitCoordinatorError {
-            #expect(error == .missingCompletedRide(sessionID))
         }
     }
 
@@ -144,11 +143,10 @@ struct RideHistoryDurationAttachmentTests {
             durationStore: InMemoryDurationStore()
         )
 
-        do {
+        await #expect(
+            throws: RideHistoryDurationCommitCoordinatorError.completedRideMismatch(sessionID)
+        ) {
             _ = try await coordinator.commit(recoveredDuration)
-            Issue.record("Expected continuity-mismatched duration to fail")
-        } catch let error as RideHistoryDurationCommitCoordinatorError {
-            #expect(error == .completedRideMismatch(sessionID))
         }
     }
 
@@ -166,13 +164,12 @@ struct RideHistoryDurationAttachmentTests {
             duration(completedRide: ride, nanoseconds: 120_000_000_000)
         )
 
-        do {
+        await #expect(
+            throws: RideHistoryDurationStoreError.sessionConflict(sessionID)
+        ) {
             _ = try await coordinator.commit(
                 duration(completedRide: ride, nanoseconds: 121_000_000_000)
             )
-            Issue.record("Expected conflicting immutable duration to fail")
-        } catch let error as RideHistoryDurationStoreError {
-            #expect(error == .sessionConflict(sessionID))
         }
     }
 
@@ -186,11 +183,10 @@ struct RideHistoryDurationAttachmentTests {
             durationStore: InMemoryDurationStore(suppressReads: true)
         )
 
-        do {
+        await #expect(
+            throws: RideHistoryDurationCommitCoordinatorError.durableVerificationFailed(sessionID)
+        ) {
             _ = try await coordinator.commit(duration(completedRide: ride))
-            Issue.record("Expected missing durable read-back to fail")
-        } catch let error as RideHistoryDurationCommitCoordinatorError {
-            #expect(error == .durableVerificationFailed(sessionID))
         }
     }
 
