@@ -75,6 +75,9 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let beganAfterKnownObservationGap: Bool
+    /// Deduplicated selected-source observation gaps known to this ride observer,
+    /// including an initial known gap before any accepted peak/benchmark sample.
+    public let knownSelectedSourceInterruptionCount: Int
     /// Callbacks from any source other than this session's selected source are
     /// source-switch/mixing evidence and independently block peak reporting.
     public let foreignSourceCallbackCount: Int
@@ -86,6 +89,7 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
         sessionID: UUID,
         source: SpeedTelemetrySource,
         beganAfterKnownObservationGap: Bool,
+        knownSelectedSourceInterruptionCount: Int,
         foreignSourceCallbackCount: Int,
         peakRejections: RideSpeedEvidencePeakRejectionSummary,
         peakEvidence: RidePeakSpeedEvidence?,
@@ -94,6 +98,7 @@ public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
         self.sessionID = sessionID
         self.source = source
         self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+        self.knownSelectedSourceInterruptionCount = knownSelectedSourceInterruptionCount
         self.foreignSourceCallbackCount = foreignSourceCallbackCount
         self.peakRejections = peakRejections
         self.peakEvidence = peakEvidence
@@ -116,6 +121,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     private var peakAccumulator: RidePeakSpeedEvidenceAccumulator
     private var benchmarkCollector: TelemetryBenchmarkCollector
     private var peakRejectionAccumulator = RideSpeedEvidencePeakRejectionAccumulator()
+    private var knownSelectedSourceInterruptionCount: Int
     private var foreignSourceCallbackCount = 0
     /// One logical source outage can produce repeated lifecycle callbacks. Keep
     /// the outage pending until accepted selected-source benchmark evidence
@@ -136,6 +142,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
             beginsAfterKnownObservationGap: beginsAfterKnownObservationGap
         )
         self.benchmarkCollector = TelemetryBenchmarkCollector(source: peakPolicy.source)
+        self.knownSelectedSourceInterruptionCount = beginsAfterKnownObservationGap ? 1 : 0
         self.selectedSourceInterruptionPending = beginsAfterKnownObservationGap
     }
 
@@ -182,6 +189,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     ) {
         guard !selectedSourceInterruptionPending else { return }
         selectedSourceInterruptionPending = true
+        knownSelectedSourceInterruptionCount += 1
 
         let peakInterruption: PeakSpeedInterruption
         switch interruption {
@@ -200,6 +208,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
             sessionID: sessionID,
             source: source,
             beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            knownSelectedSourceInterruptionCount: knownSelectedSourceInterruptionCount,
             foreignSourceCallbackCount: foreignSourceCallbackCount,
             peakRejections: peakRejectionAccumulator.summary,
             peakEvidence: peakAccumulator.evidence,
@@ -306,6 +315,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let beganAfterKnownObservationGap: Bool
+    public let knownSelectedSourceInterruptionCount: Int
     public let foreignSourceCallbackCount: Int
     public let peakRejections: RideSpeedEvidencePeakRejectionSummary
     public let peakEvidence: RidePeakSpeedEvidence?
@@ -320,6 +330,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
         sessionID: UUID,
         source: SpeedTelemetrySource,
         beganAfterKnownObservationGap: Bool,
+        knownSelectedSourceInterruptionCount: Int,
         foreignSourceCallbackCount: Int,
         peakRejections: RideSpeedEvidencePeakRejectionSummary,
         peakEvidence: RidePeakSpeedEvidence?,
@@ -331,6 +342,7 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
         self.sessionID = sessionID
         self.source = source
         self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+        self.knownSelectedSourceInterruptionCount = knownSelectedSourceInterruptionCount
         self.foreignSourceCallbackCount = foreignSourceCallbackCount
         self.peakRejections = peakRejections
         self.peakEvidence = peakEvidence
@@ -391,6 +403,7 @@ public extension RideSpeedEvidenceSessionSnapshot {
             sessionID: sessionID,
             source: source,
             beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            knownSelectedSourceInterruptionCount: knownSelectedSourceInterruptionCount,
             foreignSourceCallbackCount: foreignSourceCallbackCount,
             peakRejections: peakRejections,
             peakEvidence: peakEvidence,
