@@ -50,7 +50,8 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// This type deliberately consumes the existing vehicle-domain availability enum
 /// rather than defining a parallel live/retained/unavailable classification. That
 /// keeps range freshness tied to the same retained-data truth boundary already used
-/// by the rest of Nembra.
+/// by the rest of Nembra. App integration should pass `VehicleState.dataAvailability`
+/// directly rather than deriving freshness again from connection state.
 ///
 /// This type is deliberately only a presentation policy. It does not establish that
 /// an upstream `.authoritativeMeasurement` claim is itself trustworthy. Production
@@ -66,9 +67,9 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
 
     public func resolve(
         estimate: AdaptiveBatteryRangeEstimate?,
-        vehicleAvailability: VehicleDataAvailability
+        dataAvailability: VehicleDataAvailability
     ) -> AdaptiveRangePrimaryPresentationDecision {
-        switch vehicleAvailability {
+        switch dataAvailability {
         case .unavailable:
             return .unavailable(.vehicleDataUnavailable)
         case .retained:
