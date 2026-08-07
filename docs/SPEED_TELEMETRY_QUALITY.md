@@ -56,9 +56,9 @@ Examples:
 - a one-sample benchmark cannot satisfy a requested interval requirement and reports `missingIntervalEvidence`;
 - BLE data without a source measurement timestamp cannot satisfy a positive requested latency-coverage or mean-latency requirement and reports `missingDeliveryLatencyEvidence`;
 - a trace with no observed nonzero speed change cannot satisfy a requested resolution bound and reports `missingSpeedResolutionEvidence`;
-- a non-finite derived empirical speed step is not accepted as resolution evidence and also reports `missingSpeedResolutionEvidence`.
+- a finite raw SI speed whose required km/h conversion overflows is rejected by `TelemetryBenchmarkCollector`, so it cannot become accepted cadence or resolution evidence.
 
-That last boundary matters even though `SpeedTelemetrySample` accepts only finite raw meters-per-second values. A finite public input can still overflow the derived `metersPerSecond * 3.6` conversion. If two accepted overflowed values produce `abs(infinity - infinity)`, the collector can observe `NaN` as its empirical step. The quality gate therefore validates that requested resolution evidence is finite and nonnegative before comparing it with the caller's threshold. `NaN` and infinity must never qualify merely because ordinary comparisons with them do not behave like valid measured evidence.
+That last boundary matters even though `SpeedTelemetrySample` accepts only finite raw meters-per-second values. A finite public input can still overflow the derived `metersPerSecond * 3.6` conversion. The benchmark now validates that derived km/h value before mutating accepted-sample state and rejects the packet as `nonFiniteDerivedSpeed`; the next valid packet spans the missing-evidence gap rather than inheriting a poisoned `infinity`/`NaN` anchor. The quality gate still validates any requested resolution evidence as finite and nonnegative before comparing it with the caller's threshold, so missing or malformed evidence remains fail-closed at both boundaries.
 
 The quality gate never substitutes zero, advertised specifications, a different source, a display estimate, or a non-finite derived value for missing trustworthy evidence.
 
@@ -105,7 +105,7 @@ Deterministic repository tests cover:
 - source mismatch and rejected-sample fraction as separate failures;
 - simultaneous mean/worst-interval/jitter failures;
 - simultaneous missing latency and speed-resolution evidence;
-- public-valid finite speed inputs whose km/h conversion overflows, proving non-finite derived resolution evidence fails closed;
+- public-valid finite speed inputs whose km/h conversion overflows, proving the benchmark rejects the derived overflow transactionally and the quality layer treats resulting absent resolution evidence as missing rather than guessed;
 - sparse latency timestamps failing requested representative coverage even when observed mean latency looks good;
 - zero latency samples reporting both missing evidence and unmet positive requested coverage;
 - zero minimum latency coverage imposing no hidden timestamp requirement;
@@ -116,7 +116,7 @@ The pre-v7 worker reported a focused Swift 6.2.1 harness passing **11/11 tests**
 
 During v7 recovery, source review independently proved that one inherited test compared a Foundation `Date`-derived 50 ms latency using exact `== 50`. Swift 6.2.1 evaluates that construction at approximately `49.999952316` ms, so the test now uses the same tight `0.001 ms` tolerance pattern already present in `TelemetryBenchmarkTests`. That is test hardening only and does not change production quality-policy semantics.
 
-A later independent v7 review found a separate fail-open edge in requested resolution evidence: finite raw speed values can overflow the km/h conversion, and two overflowed accepted values can yield `NaN` as the collector's empirical speed step. Because `NaN > maximum` is false, the pre-fix assessment could incorrectly qualify that requested resolution bound. Recovery now treats any non-finite or negative empirical step as missing resolution evidence and covers the public-constructor overflow path deterministically. This adds no guessed hardware maximum and does not alter the upstream raw sample acceptance contract.
+A later independent v7 review found a separate fail-open edge in requested resolution evidence: finite raw speed values can overflow the km/h conversion, and two overflowed accepted values could yield `NaN` as the collector's empirical speed step. Because `NaN > maximum` is false, the pre-fix assessment could incorrectly qualify that requested resolution bound. The v7 quality recovery therefore made non-finite resolution evidence fail closed. The later benchmark hardening in #186 moved the primary defense upstream as well: a non-finite derived km/h value is now rejected before it can mutate accepted benchmark state. The current regression test verifies those two boundaries compose correctly instead of preserving the historical NaN-producing behavior.
 
 Repository-wide NembraCore/Xcode 27 QA on the exact final recovery SHA is still required before merge.
 
