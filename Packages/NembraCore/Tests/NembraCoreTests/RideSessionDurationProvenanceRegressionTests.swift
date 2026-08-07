@@ -61,6 +61,45 @@ struct RideSessionDurationProvenanceRegressionTests {
         #expect(accumulator.snapshot.hasUnobservedInterval)
     }
 
+    @Test("empty durable restore cannot later claim complete initial coverage")
+    func emptyDurableRestoreRequiresInitialGap() throws {
+        let accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
+        let data = try JSONEncoder().encode(accumulator)
+        var restored = try JSONDecoder().decode(
+            RideSessionDurationEvidenceAccumulator.self,
+            from: data
+        )
+
+        #expect(restored == accumulator)
+        #expect(restored.snapshot.coverage == .unknown)
+        #expect(throws: RideSessionDurationEvidenceError.invalidGapClassification) {
+            try restored.upsert(
+                segment(
+                    segmentID: firstSegmentID,
+                    processID: firstProcessID,
+                    sequence: 0,
+                    through: 300,
+                    followsGap: false
+                )
+            )
+        }
+
+        let result = try restored.upsert(
+            segment(
+                segmentID: firstSegmentID,
+                processID: firstProcessID,
+                sequence: 0,
+                through: 300,
+                followsGap: true
+            )
+        )
+
+        #expect(result == .inserted)
+        #expect(restored.snapshot.observedDurationNanoseconds == 200)
+        #expect(restored.snapshot.coverage == .partial)
+        #expect(restored.snapshot.hasUnobservedInterval)
+    }
+
     @Test("a sealed earlier segment cannot grow after a later observation segment begins")
     func sealedSegmentCannotExtend() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
