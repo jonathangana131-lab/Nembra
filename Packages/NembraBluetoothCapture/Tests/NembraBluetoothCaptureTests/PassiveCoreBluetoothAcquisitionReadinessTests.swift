@@ -139,6 +139,27 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
+    func incompleteFiniteAcquisitionCanRecoverOnlyInANewGeneration() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        _ = try readiness.beginOperation()
+        let incompleteGeneration = readiness.generation
+
+        readiness.finishWithoutGattAcquisition()
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.isIncomplete)
+        #expect(!readiness.isReady)
+        #expect(readiness.pendingOperationCount == 0)
+
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == incompleteGeneration + 1)
+    }
+
+    @Test
     func parentOperationTransitionsAtomicallyToChildOperations() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
