@@ -60,7 +60,7 @@ enum RideApplicationSessionEvent: Equatable, Sendable {
 @MainActor
 @Observable
 final class RideApplicationStore {
-    typealias RideCompletionBarrier = @MainActor @Sendable (_ sessionID: UUID) async -> Void
+    typealias RideCompletionBarrier = @MainActor @Sendable (_ sessionID: UUID) async throws -> Void
 
     private let service: any ScooterService
     private let configuration: RideApplicationConfiguration?
@@ -159,10 +159,9 @@ final class RideApplicationStore {
     }
 
     /// Installs an application/root-owned barrier for additive ride-scoped work
-    /// that must be finalized before the completed ride is committed/published.
-    /// Production currently leaves this nil until a legitimate location policy
-    /// and lifecycle are enabled; the Simulator QA runtime uses it for route
-    /// manifest finalization only.
+    /// that must be durably reconciled before the completed ride is committed.
+    /// A throwing barrier intentionally leaves `completedPendingCommit` intact so
+    /// a later in-process observation or launch can retry without losing history.
     func setRideCompletionBarrier(_ barrier: RideCompletionBarrier?) {
         rideCompletionBarrier = barrier
     }
@@ -201,7 +200,11 @@ final class RideApplicationStore {
             lastObservationUptimeNanoseconds = recoveredAtUptimeNanoseconds
 
             if await restored.pendingCompletedRideEvidence() != nil {
-                try await commitPendingRide(using: restored, historyStore: historyStore)
+                try await commitPendingRide(
+                    using: restored,
+                    historyStore: historyStore,
+                    runCompletionBarrier: true
+                )
             }
 
             updatePublishedState(from: await restored.currentPhase())
@@ -390,14 +393,19 @@ final class RideApplicationStore {
                 return evidence.sessionID
             }.first
 
-            // Keep the durable session identity valid until additive ride-scoped
-            // capture has flushed/finalized. This prevents a completed-history UI
-            // refresh from racing ahead of its route manifest. While the barrier
-            // drains, new location admissions are closed fail-safe: RideEngine
-            // has already declared this ride ended at this point.
+            // Keep the durable session identity valid while the completion
+            // barrier drains. New location admissions close immediately after
+            // RideEngine has declared this ride ended, but the published UUID is
+            // not released until route outcome/repair truth is durable.
             if let completedSessionID {
                 isFinalizingCompletedRide = true
-                await rideCompletionBarrier?(completedSessionID)
+                do {
+                    try await rideCompletionBarrier?(completedSessionID)
+                } catch {
+                    isFinalizingCompletedRide = false
+                    fail(error, persistence: true)
+                    return false
+                }
             }
 
             updatePublishedState(from: update.phase)
@@ -405,7 +413,11 @@ final class RideApplicationStore {
 
             if let completedSessionID {
                 setStatus(.saving)
-                try await commitPendingRide(using: coordinator, historyStore: historyStore)
+                try await commitPendingRide(
+                    using: coordinator,
+                    historyStore: historyStore,
+                    runCompletionBarrier: false
+                )
                 if lastCompletedSessionID != completedSessionID {
                     lastCompletedSessionID = completedSessionID
                 }
@@ -413,12 +425,18 @@ final class RideApplicationStore {
             }
             return true
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
-            isFinalizingCompletedRide = false
             do {
+                isFinalizingCompletedRide = true
                 setStatus(.saving)
-                try await commitPendingRide(using: coordinator, historyStore: historyStore)
+                try await commitPendingRide(
+                    using: coordinator,
+                    historyStore: historyStore,
+                    runCompletionBarrier: true
+                )
+                isFinalizingCompletedRide = false
                 updatePublishedState(from: await coordinator.currentPhase())
             } catch {
+                isFinalizingCompletedRide = false
                 fail(error, persistence: true)
             }
             // The observation that hit completedRideAwaitingCommit was not
@@ -434,10 +452,15 @@ final class RideApplicationStore {
 
     private func commitPendingRide(
         using coordinator: RideCheckpointCoordinator,
-        historyStore: any RideHistoryStore
+        historyStore: any RideHistoryStore,
+        runCompletionBarrier: Bool
     ) async throws {
         setStatus(.saving)
         let pendingID = await coordinator.pendingCompletedRideEvidence()?.sessionID
+        if runCompletionBarrier, let pendingID {
+            try await rideCompletionBarrier?(pendingID)
+        }
+
         let commitCoordinator = RideHistoryCommitCoordinator(
             recoveryCoordinator: coordinator,
             historyStore: historyStore
