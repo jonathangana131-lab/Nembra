@@ -17,6 +17,11 @@ struct RideDurationStatisticsPeriodIsolationTests {
         calendar().date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
     }
 
+    private func calendarUnrepresentableFiniteDate() -> Date {
+        // Far beyond ICU calendar conversion range while still a finite Date.
+        Date(timeIntervalSinceReferenceDate: 1_000_000_000_000_000)
+    }
+
     private func statisticsRide(
         at date: Date,
         durationNanoseconds: UInt64
@@ -51,7 +56,7 @@ struct RideDurationStatisticsPeriodIsolationTests {
     func unrelatedUnrepresentableHistoryDoesNotPoisonSelectedPeriod() throws {
         let reference = date(2026, 8, 7)
         let currentRide = try statisticsRide(at: reference, durationNanoseconds: 20)
-        let extremeDate = Date(timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude)
+        let extremeDate = calendarUnrepresentableFiniteDate()
 
         #expect(extremeDate.timeIntervalSinceReferenceDate.isFinite)
         #expect(calendar().dateInterval(of: .day, for: extremeDate)?.contains(extremeDate) != true)
@@ -75,9 +80,8 @@ struct RideDurationStatisticsPeriodIsolationTests {
     @Test("calendar-unrepresentable history still fails closed when selected")
     func selectedUnrepresentableHistoryFailsClosed() throws {
         let reference = date(2026, 8, 7)
-        let extremeDate = Date(timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude)
         let malformedForCalendar = try statisticsRide(
-            at: extremeDate,
+            at: calendarUnrepresentableFiniteDate(),
             durationNanoseconds: 10
         )
 
@@ -97,9 +101,7 @@ struct RideDurationStatisticsPeriodIsolationTests {
             at: date(2026, 8, 7),
             durationNanoseconds: 30
         )
-        let extremeReference = Date(
-            timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude
-        )
+        let extremeReference = calendarUnrepresentableFiniteDate()
 
         #expect(extremeReference.timeIntervalSinceReferenceDate.isFinite)
         #expect(calendar().dateInterval(of: .day, for: extremeReference)?.contains(extremeReference) != true)
@@ -118,15 +120,11 @@ struct RideDurationStatisticsPeriodIsolationTests {
 
     @Test("calendar-bounded periods still reject an unrepresentable reference date")
     func calendarBoundedPeriodRejectsUnrepresentableReference() throws {
-        let extremeReference = Date(
-            timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude
-        )
-
         #expect(throws: RideDurationStatisticsError.invalidReferenceDate) {
             _ = try RideDurationStatisticsAggregator.summarize(
                 period: .today,
                 rides: [],
-                referenceDate: extremeReference,
+                referenceDate: calendarUnrepresentableFiniteDate(),
                 calendar: calendar()
             )
         }
