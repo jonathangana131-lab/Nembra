@@ -40,6 +40,14 @@ enum RideApplicationStatus: Equatable, Sendable {
     case failed
 }
 
+/// Root-lifetime session boundary for subsystems that must follow the exact ride
+/// identity rather than a SwiftUI screen. Disconnect/ending phases deliberately
+/// retain the same session and therefore do not manufacture stop/start events.
+enum RideApplicationSessionEvent: Equatable, Sendable {
+    case becameActive(UUID)
+    case ended(UUID)
+}
+
 /// Root-owned application bridge from scooter evidence into the already-tested
 /// ride engine, crash-recovery journal, and completed-history handoff.
 ///
@@ -52,6 +60,8 @@ enum RideApplicationStatus: Equatable, Sendable {
 @MainActor
 @Observable
 final class RideApplicationStore {
+    typealias RideCompletionBarrier = @MainActor @Sendable (_ sessionID: UUID) async -> Void
+
     private let service: any ScooterService
     private let configuration: RideApplicationConfiguration?
     private let checkpointStore: (any RideCheckpointStore)?
@@ -67,6 +77,9 @@ final class RideApplicationStore {
     @ObservationIgnored private var coordinator: RideCheckpointCoordinator?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     @ObservationIgnored private var speedTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionEventContinuation: AsyncStream<RideApplicationSessionEvent>.Continuation?
+    @ObservationIgnored private var rideCompletionBarrier: RideCompletionBarrier?
+    @ObservationIgnored private var isFinalizingCompletedRide = false
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var latestVehicleState: VehicleState
     @ObservationIgnored private var pendingAuthoritativeSpeedSample: SpeedTelemetrySample?
@@ -93,6 +106,7 @@ final class RideApplicationStore {
     deinit {
         stateTask?.cancel()
         speedTask?.cancel()
+        sessionEventContinuation?.finish()
     }
 
     var shouldPresentStatus: Bool {
@@ -128,6 +142,29 @@ final class RideApplicationStore {
         case .failed:
             "Ride tracking needs attention"
         }
+    }
+
+    /// One root-level lifecycle stream. Replacing the consumer closes the older
+    /// stream; AppRuntime is the intended owner. If a ride was restored before
+    /// the consumer attaches, its current UUID is replayed once so location
+    /// capture can join the durable session without polling published state.
+    func rideSessionEvents() -> AsyncStream<RideApplicationSessionEvent> {
+        sessionEventContinuation?.finish()
+        let pair = AsyncStream<RideApplicationSessionEvent>.makeStream()
+        sessionEventContinuation = pair.continuation
+        if let activeSessionID {
+            pair.continuation.yield(.becameActive(activeSessionID))
+        }
+        return pair.stream
+    }
+
+    /// Installs an application/root-owned barrier for additive ride-scoped work
+    /// that must be finalized before the completed ride is committed/published.
+    /// Production currently leaves this nil until a legitimate location policy
+    /// and lifecycle are enabled; the Simulator QA runtime uses it for route
+    /// manifest finalization only.
+    func setRideCompletionBarrier(_ barrier: RideCompletionBarrier?) {
+        rideCompletionBarrier = barrier
     }
 
     func start() async {
@@ -180,6 +217,10 @@ final class RideApplicationStore {
         stateTask = nil
         speedTask = nil
         pendingAuthoritativeSpeedSample = nil
+        sessionEventContinuation?.finish()
+        sessionEventContinuation = nil
+        rideCompletionBarrier = nil
+        isFinalizingCompletedRide = false
     }
 
     /// Candidate-level/internal entry for already screened GPS evidence. This is
@@ -205,7 +246,12 @@ final class RideApplicationStore {
         receivedAtUptimeNanoseconds: UInt64,
         for sessionID: UUID
     ) async {
-        guard activeSessionID == sessionID else { return }
+        // `activeSessionID` remains intentionally published until the root
+        // completion barrier has flushed route persistence. Once RideEngine has
+        // already emitted `rideEnded`, however, a buffered GPS callback must not
+        // re-enter the pending-completed coordinator and commit history early.
+        guard !isFinalizingCompletedRide,
+              activeSessionID == sessionID else { return }
         await ingestQualityScreenedGPSDistanceDelta(
             meters,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
@@ -318,24 +364,34 @@ final class RideApplicationStore {
                 motionIndicatesMovement: false
             )
             let update = try await coordinator.ingest(observation)
-            updatePublishedState(from: update.phase)
+            let completedSessionID = update.events.compactMap { event -> UUID? in
+                guard case let .rideEnded(evidence) = event else { return nil }
+                return evidence.sessionID
+            }.first
 
-            if update.events.contains(where: { event in
-                if case .rideEnded = event { return true }
-                return false
-            }) {
+            // Keep the durable session identity valid until additive ride-scoped
+            // capture has flushed/finalized. This prevents a completed-history UI
+            // refresh from racing ahead of its route manifest. While the barrier
+            // drains, new session-scoped GPS engine input is closed fail-safe:
+            // RideEngine has already declared this ride ended at this point.
+            if let completedSessionID {
+                isFinalizingCompletedRide = true
+                await rideCompletionBarrier?(completedSessionID)
+            }
+
+            updatePublishedState(from: update.phase)
+            isFinalizingCompletedRide = false
+
+            if let completedSessionID {
                 setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
-                let completedSessionID = update.events.compactMap { event -> UUID? in
-                    guard case let .rideEnded(evidence) = event else { return nil }
-                    return evidence.sessionID
-                }.first
                 if lastCompletedSessionID != completedSessionID {
                     lastCompletedSessionID = completedSessionID
                 }
                 updatePublishedState(from: await coordinator.currentPhase())
             }
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
+            isFinalizingCompletedRide = false
             do {
                 setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
@@ -344,6 +400,7 @@ final class RideApplicationStore {
                 fail(error, persistence: true)
             }
         } catch {
+            isFinalizingCompletedRide = false
             fail(error, persistence: false)
         }
     }
@@ -400,8 +457,15 @@ final class RideApplicationStore {
         sessionID newSessionID: UUID?,
         continuity newContinuity: RideSessionContinuity?
     ) {
-        if activeSessionID != newSessionID {
+        let previousSessionID = activeSessionID
+        if previousSessionID != newSessionID {
+            if let previousSessionID {
+                sessionEventContinuation?.yield(.ended(previousSessionID))
+            }
             activeSessionID = newSessionID
+            if let newSessionID {
+                sessionEventContinuation?.yield(.becameActive(newSessionID))
+            }
         }
         if continuity != newContinuity {
             continuity = newContinuity
