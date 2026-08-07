@@ -13,12 +13,16 @@ public enum TelemetryBenchmarkRecordResult: Equatable, Sendable {
 /// Compact diagnostics for one telemetry source. This summarizes packet/sample
 /// behavior without storing display-interpolated frames as if they were sensor
 /// measurements.
+///
+/// Observation-segment/interruption counts reflect only explicit continuity
+/// markers supplied to the collector. They do not prove that physical sampling
+/// was continuous between otherwise accepted packets.
 public struct TelemetryBenchmarkSummary: Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let acceptedSampleCount: Int
     public let rejectedSampleCount: Int
-    public let continuitySegmentCount: Int
-    public let continuityInterruptionCount: Int
+    public let observationSegmentCount: Int
+    public let knownObservationInterruptionCount: Int
     public let intervalCount: Int
     public let observedDurationSeconds: Double
     public let effectiveSampleRateHertz: Double?
@@ -47,9 +51,9 @@ public struct TelemetryBenchmarkCollector: Sendable {
     private var lastAcceptedUptimeNanoseconds: UInt64?
     private var previousContinuousUptimeNanoseconds: UInt64?
     private var previousContinuousSpeedKilometersPerHour: Double?
-    private var continuitySegmentCount = 0
-    private var continuityInterruptionCount = 0
-    private var continuityInterruptionPending = false
+    private var observationSegmentCount = 0
+    private var knownObservationInterruptionCount = 0
+    private var observationInterruptionPending = false
     private var observedDurationNanoseconds: UInt64 = 0
     private var duplicateSpeedValueCount = 0
     private var minimumNonzeroSpeedStepKilometersPerHour: Double?
@@ -63,16 +67,16 @@ public struct TelemetryBenchmarkCollector: Sendable {
     /// Marks a known break in observation continuity, such as a disconnect,
     /// subscription interruption, or other source-lifecycle gap.
     ///
-    /// The next accepted sample begins a new benchmark segment. No interval or
+    /// The next accepted sample begins a new observation segment. No interval or
     /// speed-step comparison is fabricated across the missing evidence. The
     /// last accepted uptime remains the chronology anchor, so a delayed stale
     /// callback cannot become fresh merely because continuity was interrupted.
     /// Repeated marks before new accepted evidence are idempotent.
     public mutating func markContinuityInterruption() {
-        guard acceptedSampleCount > 0, !continuityInterruptionPending else { return }
+        guard acceptedSampleCount > 0, !observationInterruptionPending else { return }
 
-        continuityInterruptionCount += 1
-        continuityInterruptionPending = true
+        knownObservationInterruptionCount += 1
+        observationInterruptionPending = true
         previousContinuousUptimeNanoseconds = nil
         previousContinuousSpeedKilometersPerHour = nil
     }
@@ -90,9 +94,9 @@ public struct TelemetryBenchmarkCollector: Sendable {
             return .rejected(.nonMonotonicTimestamp)
         }
 
-        if acceptedSampleCount == 0 || continuityInterruptionPending {
-            continuitySegmentCount += 1
-            continuityInterruptionPending = false
+        if acceptedSampleCount == 0 || observationInterruptionPending {
+            observationSegmentCount += 1
+            observationInterruptionPending = false
         }
 
         if let previousContinuousUptimeNanoseconds {
@@ -136,8 +140,8 @@ public struct TelemetryBenchmarkCollector: Sendable {
             source: source,
             acceptedSampleCount: acceptedSampleCount,
             rejectedSampleCount: rejectedSampleCount,
-            continuitySegmentCount: continuitySegmentCount,
-            continuityInterruptionCount: continuityInterruptionCount,
+            observationSegmentCount: observationSegmentCount,
+            knownObservationInterruptionCount: knownObservationInterruptionCount,
             intervalCount: intervalMoments.count,
             observedDurationSeconds: durationSeconds,
             effectiveSampleRateHertz: rate,
