@@ -19,6 +19,8 @@ The attachment never subtracts `beganAtDate`, `confirmedAtDate`, or `endedAtDate
 
 The joined type is intentionally not `Codable`. Persistence stores the two independently valid records, then revalidates their relationship every time they are joined. A matching UUID with mismatched continuity therefore fails closed instead of silently becoming ride history.
 
+A completed base ride without a duration attachment is ordinary duration unavailability. If an attachment exists without its required base history record, the coordinator treats that as a durable inconsistency and fails closed rather than hiding the orphan as normal unavailability.
+
 ## Commit order and durability
 
 `RideHistoryDurationCommitCoordinator` requires the base completed ride to already exist. It then:
