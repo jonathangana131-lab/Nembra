@@ -249,10 +249,13 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             throw NavigationArrivalEvidenceError.observationStateMismatch
 
         case let .unavailable(token, route, reason):
+            // The guidance reducer owns why accepted evidence became unavailable.
+            // A raw observation may itself be unconfident, or it may be confident
+            // but fail a higher-level invariant such as backward-step regression.
+            // Arrival must honor the accepted ambiguous state in either case.
             guard token == observation.selectionToken,
                   route == selectedRoute,
-                  reason == .ambiguousProgress,
-                  !observation.isProgressAssignmentConfident else {
+                  reason == .ambiguousProgress else {
                 throw NavigationArrivalEvidenceError.observationStateMismatch
             }
             return false
