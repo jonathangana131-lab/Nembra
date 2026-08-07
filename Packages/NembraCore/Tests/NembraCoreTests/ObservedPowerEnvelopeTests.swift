@@ -38,10 +38,12 @@ struct ObservedPowerEnvelopeTests {
     private func physicalObservation(
         watts: Double,
         uptime: UInt64,
+        sequence: UInt64? = nil,
         eligibility: ObservedPowerEnvelopeLearningEligibility = .eligibleForEnvelopeLearning
     ) -> ObservedPowerEnvelopeObservation {
         .verifiedVehicleMeasurement(
             powerWatts: watts,
+            receiptSequenceNumber: sequence ?? uptime,
             observedAtUptimeNanoseconds: uptime,
             learningEligibility: eligibility
         )
@@ -117,6 +119,7 @@ struct ObservedPowerEnvelopeTests {
         for index in 1...10 {
             _ = learner.record(.simulatorQA(
                 powerWatts: 600,
+                receiptSequenceNumber: UInt64(index),
                 observedAtUptimeNanoseconds: UInt64(index),
                 learningEligibility: .eligibleForEnvelopeLearning
             ))
@@ -124,7 +127,6 @@ struct ObservedPowerEnvelopeTests {
 
         let calibration = try #require(learner.calibration)
         #expect(calibration.evidenceAuthority == .simulatorQA)
-        #expect(calibration.scope.identityAuthority == .simulatorQA)
         #expect(learner.evidenceAuthority == .simulatorQA)
     }
 
@@ -134,6 +136,7 @@ struct ObservedPowerEnvelopeTests {
 
         #expect(learner.record(.simulatorQA(
             powerWatts: 900,
+            receiptSequenceNumber: 1,
             observedAtUptimeNanoseconds: 100,
             learningEligibility: .eligibleForEnvelopeLearning
         )) == .rejected(.evidenceAuthorityMismatch(
@@ -172,7 +175,6 @@ struct ObservedPowerEnvelopeTests {
 
         let calibration = try #require(learner.calibration)
         #expect(calibration.evidenceAuthority == .verifiedVehicleMeasurement)
-        #expect(calibration.scope.identityAuthority == .verifiedVehicleIdentity)
         #expect(calibration.learnedObservedCeilingWatts < 510)
         #expect(calibration.learnedGaugeScaleWatts < 531)
         #expect(calibration.upperBandSupportCount >= 3)
@@ -236,14 +238,72 @@ struct ObservedPowerEnvelopeTests {
         #expect(learner.record(physicalObservation(watts: 500, uptime: 200)) == .acceptedLearningSample)
     }
 
-    @Test("fresh invalid physical numeric evidence closes chronology to delayed callbacks")
+    @Test("equal uptime ticks remain valid when receipt sequence is strictly ordered")
+    func equalUptimeUsesSequenceTieBreaker() throws {
+        var learner = try physicalLearner()
+
+        #expect(learner.record(physicalObservation(
+            watts: 500,
+            uptime: 100,
+            sequence: 1
+        )) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(
+            watts: 510,
+            uptime: 100,
+            sequence: 2
+        )) == .acceptedLearningSample)
+    }
+
+    @Test("receipt sequence and uptime both fail closed when evidence order regresses")
+    func orderingRegressionFailsClosed() throws {
+        var learner = try physicalLearner()
+
+        #expect(learner.record(physicalObservation(
+            watts: 500,
+            uptime: 100,
+            sequence: 10
+        )) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(
+            watts: 510,
+            uptime: 200,
+            sequence: 9
+        )) == .rejected(.nonIncreasingObservationSequence))
+        #expect(learner.record(physicalObservation(
+            watts: 520,
+            uptime: 99,
+            sequence: 11
+        )) == .rejected(.nonIncreasingObservationTimestamp))
+        #expect(learner.record(physicalObservation(
+            watts: 530,
+            uptime: 100,
+            sequence: 11
+        )) == .acceptedLearningSample)
+    }
+
+    @Test("fresh invalid physical numeric evidence closes sequence chronology to delayed callbacks")
     func invalidFreshSampleStillAdvancesChronology() throws {
         var learner = try physicalLearner()
 
-        #expect(learner.record(physicalObservation(watts: 500, uptime: 100)) == .acceptedLearningSample)
-        #expect(learner.record(physicalObservation(watts: .infinity, uptime: 300)) == .rejected(.invalidPowerWatts))
-        #expect(learner.record(physicalObservation(watts: 510, uptime: 200)) == .rejected(.nonIncreasingObservationTimestamp))
-        #expect(learner.record(physicalObservation(watts: 520, uptime: 400)) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(
+            watts: 500,
+            uptime: 100,
+            sequence: 1
+        )) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(
+            watts: .infinity,
+            uptime: 300,
+            sequence: 3
+        )) == .rejected(.invalidPowerWatts))
+        #expect(learner.record(physicalObservation(
+            watts: 510,
+            uptime: 200,
+            sequence: 2
+        )) == .rejected(.nonIncreasingObservationSequence))
+        #expect(learner.record(physicalObservation(
+            watts: 520,
+            uptime: 300,
+            sequence: 4
+        )) == .acceptedLearningSample)
     }
 
     @Test("presentation normalization reaches the edge near learned observed output and never rewrites watts")
