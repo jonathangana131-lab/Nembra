@@ -26,18 +26,26 @@ enum VehicleDisplayFormatting {
             : normalizedKilometersPerHour * 0.621_371
         guard value.isFinite, value >= 0 else { return "—" }
 
-        // `%f` is bounded only after the converted value is known to fit the
-        // compact speed presentation. Account for decimal rounding so 999.5 at
-        // zero decimals (or the equivalent boundary at higher precision) cannot
-        // format as a four-digit `1000` after passing the guard.
+        // Keep textual speed rounding identical to the rolling cockpit digits.
+        // Foundation `%f` uses ties-to-even on half steps, while the cockpit's
+        // accepted presentation rule is nearest-away-from-zero. Round explicitly
+        // before formatting so Home/status/VoiceOver cannot disagree with the
+        // visible speed at values such as 22.5 -> 23.
         let decimalScale = pow(10.0, Double(decimals))
-        let halfRoundingStep = 0.5 / decimalScale
-        guard value < maximumSpeedDisplayMagnitude - halfRoundingStep else {
+        let roundedValue = (value * decimalScale)
+            .rounded(.toNearestOrAwayFromZero) / decimalScale
+
+        // Bound the already-rounded value rather than clamping it. This also
+        // prevents a value such as 999.5 at zero decimals from becoming a
+        // four-digit `1000` string after passing the representability gate.
+        guard roundedValue.isFinite,
+              roundedValue >= 0,
+              roundedValue < maximumSpeedDisplayMagnitude else {
             return "—"
         }
 
         let unit = usesMetric ? "km/h" : "mph"
-        return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
+        return String(format: "%.*f %@", locale: Locale.current, decimals, roundedValue, unit)
     }
 
     static func speed(kilometersPerHour: Int?) -> String {
