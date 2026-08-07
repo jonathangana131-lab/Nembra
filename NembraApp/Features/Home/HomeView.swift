@@ -138,6 +138,7 @@ struct HomeView: View {
                         title: "Battery",
                         value: batteryText,
                         icon: batteryIcon,
+                        accessibilityValue: batteryAccessibilityValue,
                         accessibilityIdentifier: "home.metric.battery",
                         valueStyle: batteryValueStyle
                     )
@@ -163,6 +164,7 @@ struct HomeView: View {
                         title: "Battery",
                         value: batteryText,
                         icon: batteryIcon,
+                        accessibilityValue: batteryAccessibilityValue,
                         accessibilityIdentifier: "home.metric.battery",
                         valueStyle: batteryValueStyle
                     )
@@ -211,6 +213,7 @@ struct HomeView: View {
         value: String,
         icon: String,
         accessibilityTitle: String? = nil,
+        accessibilityValue: String? = nil,
         accessibilityIdentifier: String,
         valueStyle: Color = .primary
     ) -> some View {
@@ -230,7 +233,7 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle ?? title)
-        .accessibilityValue(value)
+        .accessibilityValue(accessibilityValue ?? value)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
@@ -668,6 +671,11 @@ struct HomeView: View {
     private var batteryText: String {
         guard let value = vehicle.state.batteryPercent else { return "—" }
         return "\(value)%"
+    }
+
+    private var batteryAccessibilityValue: String {
+        guard let value = vehicle.state.batteryPercent else { return "Unavailable" }
+        return value <= 15 ? "\(value) percent, low battery" : "\(value) percent"
     }
 
     private var tripDistanceText: String {
