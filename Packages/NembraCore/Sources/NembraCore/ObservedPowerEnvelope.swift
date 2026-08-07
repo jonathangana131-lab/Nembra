@@ -166,6 +166,9 @@ public enum ObservedPowerEnvelopeEvidenceAuthority: String, Equatable, Sendable 
 /// UI/client code cannot mint `.verifiedVehicleMeasurement` merely by choosing an
 /// enum value.
 public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
+    /// Exact vehicle/mode calibration scope this evidence belongs to. The learner
+    /// rejects mismatches before touching chronology or its learning window.
+    public let scope: ObservedPowerEnvelopeScope
     public let powerWatts: Double
     /// Strict source-owned callback/sample order. This is the total-order
     /// tiebreaker when multiple accepted observations share one uptime clock tick.
@@ -177,12 +180,14 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
     public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
     private init(
+        scope: ObservedPowerEnvelopeScope,
         powerWatts: Double,
         receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility,
         evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
     ) {
+        self.scope = scope
         self.powerWatts = powerWatts
         self.receiptSequenceNumber = receiptSequenceNumber
         self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
@@ -191,12 +196,14 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
     }
 
     public static func simulatorQA(
+        scope: ObservedPowerEnvelopeScope,
         powerWatts: Double,
         receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
+            scope: scope,
             powerWatts: powerWatts,
             receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
@@ -207,12 +214,14 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
 
 #if SWIFT_PACKAGE
     package static func verifiedVehicleMeasurement(
+        scope: ObservedPowerEnvelopeScope,
         powerWatts: Double,
         receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
+            scope: scope,
             powerWatts: powerWatts,
             receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
@@ -222,12 +231,14 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
     }
 #else
     fileprivate static func verifiedVehicleMeasurement(
+        scope: ObservedPowerEnvelopeScope,
         powerWatts: Double,
         receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
+            scope: scope,
             powerWatts: powerWatts,
             receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
@@ -239,6 +250,10 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
 }
 
 public enum ObservedPowerEnvelopeRejection: Equatable, Sendable {
+    case scopeMismatch(
+        expected: ObservedPowerEnvelopeScope,
+        actual: ObservedPowerEnvelopeScope
+    )
     case evidenceAuthorityMismatch(
         expected: ObservedPowerEnvelopeEvidenceAuthority,
         actual: ObservedPowerEnvelopeEvidenceAuthority
@@ -355,6 +370,9 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
 
     @discardableResult
     public mutating func record(_ observation: ObservedPowerEnvelopeObservation) -> ObservedPowerEnvelopeRecordResult {
+        guard observation.scope == scope else {
+            return .rejected(.scopeMismatch(expected: scope, actual: observation.scope))
+        }
         guard observation.evidenceAuthority == evidenceAuthority else {
             return .rejected(.evidenceAuthorityMismatch(
                 expected: evidenceAuthority,
