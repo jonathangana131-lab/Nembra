@@ -23,8 +23,8 @@ This lane prevents integration code from flattening every non-nil range estimate
 1. vehicle data is live rather than retained/offline;
 2. an adaptive estimate exists;
 3. `presentedRemainingMeters` is finite and non-negative;
-4. estimate basis is `.learned`, not `.provisionalSeed`;
-5. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
+4. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
+5. estimate basis is `.learned`, not `.provisionalSeed`;
 6. confidence is `.normal` or `.high`.
 
 The output preserves a detailed withholding reason while separately projecting into the existing `BatteryEstimatedRangeDisplay` contract.
@@ -42,7 +42,24 @@ The output preserves a detailed withholding reason while separately projecting i
 | vehicle data unavailable | unavailable | unavailable |
 | missing/invalid range | unavailable | unavailable |
 
+When multiple withholding conditions coexist, stronger evidence-quality qualifiers win over weaker presentation-progress qualifiers. In particular, estimated SoC now outranks provisional basis: a provisional estimate based on estimated SoC is `unavailable(.estimatedSOCRequiresQualifier)`, not merely `learning(.provisionalSeed)`. This avoids telling the user only that the model is learning while hiding the weaker battery source underneath it.
+
 This is deliberately conservative. A future detailed battery surface may choose to present provisional, retained, estimated-SoC, or low-confidence values with explicit labels. That richer UX must not weaken the truth classification of the underlying evidence.
+
+## Upstream authority blocker
+
+This presentation policy does **not** itself prove that an upstream `.authoritativeMeasurement` claim is trustworthy.
+
+Current live review of parent PR #40 found that `BatterySOCReading` still exposes a public initializer that accepts public `.authoritativeMeasurement`, while the type is also generally `Codable`. External production code can therefore manufacture/import an adaptive-range SoC reading that claims authority without passing through the sealed battery-evidence path in #34/#38.
+
+That is an upstream parent trust-boundary bug, not a reason for this lane to duplicate battery-evidence validation. This lane therefore treats the following as a hard production dependency:
+
+1. the accepted descendant of #40 must seal authoritative `BatterySOCReading` construction/import;
+2. #38 (or its accepted successor) must remain the trusted battery-evidence → adaptive-range integration seam;
+3. only then may a `.authoritativeMeasurement` carried by the accepted adaptive-range result satisfy this policy's numeric-eligibility rule;
+4. until that parent seal exists, PR #83 stays draft/dependent and no Dashboard integration should interpret this policy's current numeric branch as production authority proof.
+
+A historical/queued green for the old #40 head does not close this blocker because the reviewed source itself still contains the public-authority bypass.
 
 ## Why `presentedRemainingMeters`
 
@@ -89,7 +106,7 @@ Nembra currently has two different source-discovery realities:
 
 This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), then compile the real app on the exact final SHA.
 
-After #40 is accepted, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
+After #40 is authority-sealed, accepted, and landed, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
 
 ## Hardware boundary
 
