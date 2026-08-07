@@ -109,4 +109,47 @@ struct TuyaCandidatePrebindStreamTests {
             Issue.record("Expected selected continuity generation to remain recoverable")
         }
     }
+
+    @Test("a malformed first legacy observation still binds the exact stream")
+    func malformedFirstLegacyObservationStillBindsExactStream() throws {
+        var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
+        let selectedStream = try identity("L")
+        let malformedFirst = try TuyaCandidateFragmentObservation(
+            streamIdentity: selectedStream,
+            continuityGeneration: 3,
+            receiptUptimeNanoseconds: 100,
+            bytes: [0x01, 0xFF]
+        )
+
+        #expect(throws: TuyaCandidateOfflineAnalysisError.unexpectedPacketIndex(expected: 0, actual: 1)) {
+            try reassembler.ingest(malformedFirst)
+        }
+
+        let foreignStream = try TuyaCandidateFragmentObservation(
+            streamIdentity: identity("X"),
+            continuityGeneration: 3,
+            receiptUptimeNanoseconds: 500,
+            bytes: [0x00, 0x01, 0x20, 0xBB]
+        )
+        #expect(throws: TuyaCandidateOfflineAnalysisError.streamChanged) {
+            try reassembler.ingest(foreignStream)
+        }
+
+        let selectedRecovery = try TuyaCandidateFragmentObservation(
+            streamIdentity: selectedStream,
+            continuityGeneration: 3,
+            receiptUptimeNanoseconds: 101,
+            bytes: [0x00, 0x01, 0x20, 0xAA]
+        )
+        let completion = try reassembler.ingest(selectedRecovery)
+        let message = try #require({
+            if case let .complete(message) = completion { return message }
+            return nil
+        }())
+
+        #expect(message.streamIdentity == selectedStream)
+        #expect(message.receiptSequenceScope == nil)
+        #expect(message.firstReceiptSequenceNumber == nil)
+        #expect(message.lastReceiptSequenceNumber == nil)
+    }
 }
