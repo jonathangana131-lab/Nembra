@@ -403,12 +403,17 @@ public enum PropulsionGaugeFrameOrigin: String, Equatable, Sendable {
 /// Render-only gauge state. `displayWatts` and normalized fractions must never enter telemetry evidence,
 /// ride statistics, persistence, peak evidence, battery learning, or protocol claims.
 public struct PropulsionGaugeFrame: Equatable, Sendable {
+    /// Exact vehicle/mode identity of the display model that produced this frame.
+    public let identity: PropulsionGaugeIdentity
     public let availability: PropulsionGaugeAvailability
     public let origin: PropulsionGaugeFrameOrigin
     public let displayWatts: Double?
     public let latestAcceptedWatts: Double?
     public let latestAcceptedReceiptSequenceNumber: UInt64?
     public let latestAcceptedUptimeNanoseconds: UInt64?
+    /// Source continuity/clock generation of the latest accepted measurement.
+    /// Receipt sequence and uptime may legitimately restart in a newer generation.
+    public let latestAcceptedContinuityGeneration: UInt64?
     public let latestAuthority: PropulsionPowerSampleAuthority?
     public let normalizedPropulsion: Double?
     public let acceptedPeakNormalized: Double?
@@ -620,12 +625,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     ) -> PropulsionGaugeFrame {
         guard hasMeasurement else {
             return PropulsionGaugeFrame(
+                identity: identity,
                 availability: .unavailable,
                 origin: .unavailable,
                 displayWatts: nil,
                 latestAcceptedWatts: nil,
                 latestAcceptedReceiptSequenceNumber: nil,
                 latestAcceptedUptimeNanoseconds: nil,
+                latestAcceptedContinuityGeneration: nil,
                 latestAuthority: nil,
                 normalizedPropulsion: nil,
                 acceptedPeakNormalized: nil,
@@ -635,12 +642,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
 
         if now < latestAcceptedUptimeNanoseconds {
             return PropulsionGaugeFrame(
+                identity: identity,
                 availability: .unavailable,
                 origin: .invalidRenderClock,
                 displayWatts: nil,
                 latestAcceptedWatts: nil,
                 latestAcceptedReceiptSequenceNumber: nil,
                 latestAcceptedUptimeNanoseconds: nil,
+                latestAcceptedContinuityGeneration: nil,
                 latestAuthority: nil,
                 normalizedPropulsion: nil,
                 acceptedPeakNormalized: nil,
@@ -650,12 +659,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
 
         if explicitlyUnavailable {
             return PropulsionGaugeFrame(
+                identity: identity,
                 availability: .unavailable,
                 origin: .unavailable,
                 displayWatts: nil,
                 latestAcceptedWatts: latestAcceptedWatts,
                 latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
                 latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
+                latestAcceptedContinuityGeneration: latestContinuityGeneration,
                 latestAuthority: latestAuthority,
                 normalizedPropulsion: nil,
                 acceptedPeakNormalized: nil,
@@ -666,12 +677,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         let age = now - latestAcceptedUptimeNanoseconds
         if age > freshnessPolicy.staleAfterNanoseconds {
             return PropulsionGaugeFrame(
+                identity: identity,
                 availability: .retained,
                 origin: .retainedAcceptedMeasurement,
                 displayWatts: latestAcceptedWatts,
                 latestAcceptedWatts: latestAcceptedWatts,
                 latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
                 latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
+                latestAcceptedContinuityGeneration: latestContinuityGeneration,
                 latestAuthority: latestAuthority,
                 normalizedPropulsion: nil,
                 acceptedPeakNormalized: nil,
@@ -712,12 +725,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         }
 
         return PropulsionGaugeFrame(
+            identity: identity,
             availability: .live,
             origin: isAtAcceptedMeasurement ? .acceptedMeasurement : .visuallyInterpolated,
             displayWatts: displayWatts,
             latestAcceptedWatts: latestAcceptedWatts,
             latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
             latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
+            latestAcceptedContinuityGeneration: latestContinuityGeneration,
             latestAuthority: latestAuthority,
             normalizedPropulsion: normalized,
             acceptedPeakNormalized: acceptedPeakNormalized,
