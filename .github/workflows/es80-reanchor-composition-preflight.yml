@@ -1,0 +1,43 @@
+name: ES80 Reanchor Composition Preflight
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-reanchor/ci/chat-t8n4q-composition-preflight-*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Test passive capture composed onto current main
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify immutable checkout
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Guard passive adapter against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture adapter must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+      - name: Test current-main NembraCore
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore
+      - name: Test composed NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
