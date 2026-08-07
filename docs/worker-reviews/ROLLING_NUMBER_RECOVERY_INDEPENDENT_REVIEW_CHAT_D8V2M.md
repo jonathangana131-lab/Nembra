@@ -5,7 +5,7 @@ WORKER_ID: `chat-d8v2m`
 ROLE: REVIEW / HARDENING  
 LANE_ID: `rolling-number-recovery-independent-review-d8v2m`  
 EPOCH: 1  
-STATE: active read-only review; GitHub issue/review comment creation is temporarily secondary-rate-limited  
+STATE: active read-only review; normal GitHub control/PR text publication restored  
 
 ## Coordination boundary
 
@@ -15,7 +15,12 @@ This worker owns **no product/source/test/workflow path** in PR #95. Incumbent `
 - `Packages/NembraCore/Tests/NembraCoreTests/RollingNumberPerformanceHardeningTests.swift`
 - `docs/ROLLING_NUMBER_PERFORMANCE.md`
 
-This file is a worker-specific Class-C durable checkpoint on the isolated lease branch only. It is not a substitute for the v7 control-issue message bus; the normal control claim/review should be posted when GitHub comment creation accepts writes again.
+The earlier secondary content-creation rate limit has cleared. Normal v7 publication is now durable:
+
+- control issue #79 claim / recovery registration: comment `5210969319`
+- PR #95 independent acceptance review: comment `5210975045`
+
+This worker-specific Class-C file remains a recovery-friendly detailed evidence checkpoint, not a replacement for the control issue.
 
 ## Review target / isolation
 
@@ -62,11 +67,10 @@ A standalone Swift 6.2.1 mirror of the exact rolling-number algorithm passed **1
 
 A second old-vs-new Swift 6.2.1 boundary harness passed **294 / 294 comparisons with zero behavior differences** across:
 
-- `.5` scaled rounding thresholds plus adjacent `nextDown` / `nextUp` values;
+- scaled rounding thresholds plus adjacent floating-point values;
 - exact and adjacent capacity values;
 - zero / negative-zero / tiny positive and negative inputs;
-- negative values;
-- positive/negative infinity and NaN;
+- negative and invalid numeric values;
 - representative 15-slot and fractional layouts.
 
 ### Directional host performance probe
@@ -86,7 +90,7 @@ This is directional host evidence only. It supports the source-level allocation/
 Exact-final-head workflow run `31136468286` targets `e675fb995...`.
 
 - trusted same-repo resolver job `92736839496`: success
-- Xcode 27 build/test/capture job `92736860915`: queued at latest meaningful inspection
+- Xcode 27 build/test/capture job `92736860915`: queued at the last meaningful inspection
 
 Another lane's Xcode retry was observed canceled before receiving a self-hosted runner, so shared scheduler/concurrency churn exists; this does not turn #95 green or red.
 
@@ -100,7 +104,7 @@ Software presentation/performance review only. No physical AOVOPRO ES80 behavior
 
 ## Next packet
 
-1. re-scan control issue / PR #95 for owner or reviewer movement;
-2. inspect exact Xcode job after meaningful runner-state change, not by busy-polling;
-3. retry normal v7 control-issue claim and PR review publication when GitHub content creation is no longer rate-limited;
+1. inspect exact Xcode job after meaningful runner-state change, not by busy-polling;
+2. refresh current main / #95 owner movement;
+3. if the frozen candidate becomes terminal, hand the fresh-main reconciliation requirement to incumbent with exact evidence;
 4. do not mutate PR #95 source or branch.
