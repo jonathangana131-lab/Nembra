@@ -80,6 +80,15 @@ It does not modify:
 - battery evidence-chain files;
 - app bootstrap/persistence/global project memory.
 
+### App-target source visibility gate
+
+Nembra currently has two different source-discovery realities:
+
+- the Swift package auto-discovers files under `Packages/NembraCore/Sources/NembraCore` and package tests therefore see this policy automatically;
+- the `Nembra.app` Xcode target manually enumerates selected NembraCore source files in `Nembra.xcodeproj/project.pbxproj`.
+
+This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), then compile the real app on the exact final SHA.
+
 After #40 is accepted, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
 
 ## Hardware boundary
