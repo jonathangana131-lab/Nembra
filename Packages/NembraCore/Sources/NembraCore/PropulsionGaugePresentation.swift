@@ -298,7 +298,9 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         transitionTargetWatts = sample.watts
         transitionStartUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
-        let hasVisualDistance = abs(transitionTargetWatts - transitionAnchorWatts) > 1e-9
+        // Compare the finite endpoints directly. Subtracting extreme finite values can overflow even though
+        // both observations themselves are valid, and render math must never manufacture infinity/NaN.
+        let hasVisualDistance = transitionTargetWatts != transitionAnchorWatts
         if sharesContinuity, hasVisualDistance {
             transitionSettlingDurationNanoseconds = transitionTargetWatts >= transitionAnchorWatts
                 ? policy.riseSettlingDurationNanoseconds
@@ -382,7 +384,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         let displayWatts = liveMotionValue(atUptimeNanoseconds: effectiveNow)
         let isAtAcceptedMeasurement = transitionSettlingDurationNanoseconds == 0
             || effectiveNow - transitionStartUptimeNanoseconds >= transitionSettlingDurationNanoseconds
-            || abs(displayWatts - latestAcceptedWatts) <= 1e-9
+            || displayWatts == latestAcceptedWatts
 
         let compatibleScale = scale.flatMap { candidate -> PropulsionGaugeScale? in
             guard candidate.identity == identity else { return nil }
@@ -443,8 +445,27 @@ public struct PropulsionGaugeDisplayModel: Sendable {
 
         // omega = 8 / settling window leaves <0.31% zero-velocity step error before the exact target snap.
         let omega = 8 / settlingSeconds
-        let progress = 1 - (1 + omega * elapsedSeconds) * exp(-omega * elapsedSeconds)
-        return transitionAnchorWatts + (transitionTargetWatts - transitionAnchorWatts) * progress
+        let rawProgress = 1 - (1 + omega * elapsedSeconds) * exp(-omega * elapsedSeconds)
+        let progress = min(1, max(0, rawProgress))
+
+        if progress <= 0 {
+            return transitionAnchorWatts
+        }
+        if progress >= 1 {
+            return transitionTargetWatts
+        }
+
+        // This is a convex combination of two nonnegative finite observations. Unlike
+        // `anchor + (target - anchor) * progress`, it never forms an overflowing endpoint delta.
+        let visualWatts = transitionAnchorWatts * (1 - progress)
+            + transitionTargetWatts * progress
+        if visualWatts.isFinite {
+            return visualWatts
+        }
+
+        // Floating-point rounding should not overflow a convex combination, but fail closed to a real
+        // accepted endpoint rather than ever exposing a fabricated non-finite render value.
+        return progress < 0.5 ? transitionAnchorWatts : transitionTargetWatts
     }
 }
 
@@ -492,7 +513,9 @@ public struct LearnedObservedPowerEnvelopePolicy: Equatable, Sendable {
         guard upwardHysteresisFraction.isFinite, upwardHysteresisFraction >= 0 else {
             throw LearnedObservedPowerEnvelopePolicyError.invalidUpwardHysteresisFraction
         }
-        guard downwardHysteresisFraction.isFinite, downwardHysteresisFraction >= 0 else {
+        guard downwardHysteresisFraction.isFinite,
+              downwardHysteresisFraction >= 0,
+              downwardHysteresisFraction <= 1 else {
             throw LearnedObservedPowerEnvelopePolicyError.invalidDownwardHysteresisFraction
         }
         guard downwardAdaptationFraction.isFinite,
@@ -609,7 +632,11 @@ public struct LearnedObservedPowerEnvelope: Sendable {
         }
 
         if candidate < existing * (1 - policy.downwardHysteresisFraction) {
-            learnedCeilingWatts = existing + (candidate - existing) * policy.downwardAdaptationFraction
+            let adapted = existing * (1 - policy.downwardAdaptationFraction)
+                + candidate * policy.downwardAdaptationFraction
+            if adapted.isFinite, adapted > 0 {
+                learnedCeilingWatts = adapted
+            }
         }
     }
 }
