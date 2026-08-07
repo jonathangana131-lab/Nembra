@@ -24,7 +24,7 @@ private actor TransactionTestCheckpointStore: RideCheckpointStore {
     }
 }
 
-private actor OverlapDetectingCheckpointStore: RideCheckpointStore {
+private actor BlockingCheckpointStore: RideCheckpointStore {
     private(set) var value: RideDurableCheckpoint?
     private(set) var saveCount = 0
     private(set) var maximumConcurrentSaves = 0
@@ -32,6 +32,7 @@ private actor OverlapDetectingCheckpointStore: RideCheckpointStore {
     private var activeSaves = 0
     private var firstSaveStarted = false
     private var firstSaveWaiters: [CheckedContinuation<Void, Never>] = []
+    private var firstSaveRelease: CheckedContinuation<Void, Never>?
 
     func save(_ checkpoint: RideDurableCheckpoint) async throws {
         activeSaves += 1
@@ -45,14 +46,9 @@ private actor OverlapDetectingCheckpointStore: RideCheckpointStore {
             for waiter in waiters {
                 waiter.resume()
             }
-
-            // Keep the first durable write suspended long enough for a competing
-            // ingest task to reach the coordinator. Before the coordinator's
-            // transaction permit existed, that second ingest re-entered the
-            // actor, staged from the old engine, and entered this store as a
-            // concurrent save. With serialization it cannot reach the store
-            // until this first save and engine commit finish.
-            try await Task.sleep(for: .milliseconds(75))
+            await withCheckedContinuation { continuation in
+                firstSaveRelease = continuation
+            }
         }
 
         value = checkpoint
@@ -75,16 +71,24 @@ private actor OverlapDetectingCheckpointStore: RideCheckpointStore {
             firstSaveWaiters.append(continuation)
         }
     }
+
+    func releaseFirstSave() {
+        let continuation = firstSaveRelease
+        firstSaveRelease = nil
+        continuation?.resume()
+    }
 }
 
-private enum SuspendedSaveFailure: Error, Equatable {
-    case injected
+private enum TransactionInjectedFailure: Error, Equatable {
+    case suspendedSave
+    case writeThenThrow
 }
 
 private actor SuspendedFailingCheckpointStore: RideCheckpointStore {
     private(set) var saveCount = 0
     private var firstSaveStarted = false
     private var firstSaveWaiters: [CheckedContinuation<Void, Never>] = []
+    private var firstSaveRelease: CheckedContinuation<Void, Never>?
 
     func save(_ checkpoint: RideDurableCheckpoint) async throws {
         _ = checkpoint
@@ -96,10 +100,10 @@ private actor SuspendedFailingCheckpointStore: RideCheckpointStore {
             for waiter in waiters {
                 waiter.resume()
             }
-            // Give a competing coordinator ingest time to enqueue behind the
-            // mutation permit while this required durable save is suspended.
-            try await Task.sleep(for: .milliseconds(75))
-            throw SuspendedSaveFailure.injected
+            await withCheckedContinuation { continuation in
+                firstSaveRelease = continuation
+            }
+            throw TransactionInjectedFailure.suspendedSave
         }
         Issue.record("a queued ingest reached the store after persistence fault")
     }
@@ -117,6 +121,39 @@ private actor SuspendedFailingCheckpointStore: RideCheckpointStore {
         await withCheckedContinuation { continuation in
             firstSaveWaiters.append(continuation)
         }
+    }
+
+    func failFirstSaveNow() {
+        let continuation = firstSaveRelease
+        firstSaveRelease = nil
+        continuation?.resume()
+    }
+}
+
+private actor WriteThenThrowCheckpointStore: RideCheckpointStore {
+    private(set) var value: RideDurableCheckpoint?
+    private(set) var saveCount = 0
+    private var shouldThrowAfterNextWrite = false
+
+    func save(_ checkpoint: RideDurableCheckpoint) async throws {
+        value = checkpoint
+        saveCount += 1
+        if shouldThrowAfterNextWrite {
+            shouldThrowAfterNextWrite = false
+            throw TransactionInjectedFailure.writeThenThrow
+        }
+    }
+
+    func load() async throws -> RideDurableCheckpoint? {
+        value
+    }
+
+    func clear() async throws {
+        value = nil
+    }
+
+    func throwAfterNextWrite() {
+        shouldThrowAfterNextWrite = true
     }
 }
 
@@ -184,6 +221,18 @@ struct RideCheckpointCoordinatorTransactionTests {
         )
     }
 
+    private func waitUntilOneMutationIsQueued(
+        on coordinator: RideCheckpointCoordinator
+    ) async -> Bool {
+        for _ in 0..<100_000 {
+            if await coordinator.queuedMutationCountForTesting() == 1 {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
     @Test("fresh post-recovery direct gap evidence checkpoints immediately and survives another recovery")
     func recoveredDirectGapEvidenceIsImmediatelyDurable() async throws {
         let sessionID = fixedSessionID
@@ -201,10 +250,6 @@ struct RideCheckpointCoordinatorTransactionTests {
                 makeSessionID: { sessionID }
             )
 
-            // Recovery already places the engine in temporarilyDisconnected, so
-            // this reconnecting observation changes provenance without producing
-            // another phase-transition event. Direct evidence must still bypass
-            // the long periodic cadence and reach the durable journal now.
             _ = try await firstRecovery.ingest(
                 observation(
                     firstRecoveryUptime + 1,
@@ -220,9 +265,6 @@ struct RideCheckpointCoordinatorTransactionTests {
             #expect(afterFreshGap.transportGapEvidence == .observed)
             #expect(await store.saveCount == 1)
 
-            // Model a second process loss immediately after that one observation.
-            // The new coordinator must reconstruct the direct observation as
-            // durable evidence rather than degrading it back to unknown.
             let secondRecoveryUptime: UInt64 = 60_000_000_000
             let secondRecovery = try await RideCheckpointCoordinator.restoring(
                 policy: try policy(),
@@ -249,10 +291,10 @@ struct RideCheckpointCoordinatorTransactionTests {
         }
     }
 
-    @Test("overlapping ingests cannot stage from stale engine state while a checkpoint save is suspended")
+    @Test("overlapping ingests serialize after the second mutation is observably queued")
     func overlappingIngestsSerializeAcrossStoreAwait() async throws {
         let sessionID = fixedSessionID
-        let store = OverlapDetectingCheckpointStore()
+        let store = BlockingCheckpointStore()
         let coordinator = RideCheckpointCoordinator(
             engine: RideEngine(policy: try policy(), makeSessionID: { sessionID }),
             store: store,
@@ -269,19 +311,18 @@ struct RideCheckpointCoordinatorTransactionTests {
         let secondTask = Task {
             try await coordinator.ingest(secondObservation)
         }
+        let queued = await waitUntilOneMutationIsQueued(on: coordinator)
+        #expect(queued)
+        #expect(await store.saveCount == 1)
+        #expect(await store.maximumConcurrentSaves == 1)
 
+        await store.releaseFirstSave()
         _ = try await firstTask.value
         _ = try await secondTask.value
 
-        // Without an explicit coordinator transaction permit, the actor can
-        // re-enter during the first store.save await. The second ingest then
-        // stages from the old idle engine and enters a second save concurrently.
         #expect(await store.maximumConcurrentSaves == 1)
         #expect(await store.saveCount == 1)
 
-        // Both observations must nevertheless have committed in order. If the
-        // first staged engine overwrote the second after its delayed save, this
-        // older timestamp would be accepted instead of rejected.
         await #expect(throws: RideEngineError.nonMonotonicObservation) {
             _ = try await coordinator.ingest(
                 observation(1_500, speedKPH: 8, odometer: 100.05)
@@ -289,7 +330,7 @@ struct RideCheckpointCoordinatorTransactionTests {
         }
     }
 
-    @Test("queued ingest observes a checkpoint-save fault before staging or saving")
+    @Test("queued ingest observes a save fault only after it is confirmed waiting behind the permit")
     func queuedIngestFailsClosedAfterSuspendedSaveError() async throws {
         let sessionID = fixedSessionID
         let store = SuspendedFailingCheckpointStore()
@@ -309,8 +350,12 @@ struct RideCheckpointCoordinatorTransactionTests {
         let secondTask = Task {
             try await coordinator.ingest(secondObservation)
         }
+        let queued = await waitUntilOneMutationIsQueued(on: coordinator)
+        #expect(queued)
+        #expect(await store.saveCount == 1)
 
-        await #expect(throws: SuspendedSaveFailure.injected) {
+        await store.failFirstSaveNow()
+        await #expect(throws: TransactionInjectedFailure.suspendedSave) {
             _ = try await firstTask.value
         }
         await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
@@ -319,5 +364,58 @@ struct RideCheckpointCoordinatorTransactionTests {
 
         #expect(await store.saveCount == 1)
         #expect(await coordinator.currentPhase() == .idle)
+    }
+
+    @Test("terminal write that physically lands before throwing is reconciled only by fresh restore")
+    func terminalWriteThenThrowCannotBeSupersededInProcess() async throws {
+        let sessionID = fixedSessionID
+        let store = WriteThenThrowCheckpointStore()
+        let coordinator = RideCheckpointCoordinator(
+            engine: RideEngine(policy: try policy(), makeSessionID: { sessionID }),
+            store: store,
+            cadence: try cadence()
+        )
+
+        _ = try await coordinator.ingest(observation(1_000, speedKPH: 8, odometer: 100))
+        _ = try await coordinator.ingest(observation(1_500, speedKPH: 8, odometer: 100.1))
+        _ = try await coordinator.ingest(observation(2_000, speedKPH: 0, odometer: 100.1))
+        let preTerminalPhase = await coordinator.currentPhase()
+        await store.throwAfterNextWrite()
+
+        await #expect(throws: TransactionInjectedFailure.writeThenThrow) {
+            _ = try await coordinator.ingest(
+                observation(7_000, speedKPH: 0, odometer: 100.1)
+            )
+        }
+
+        #expect(await coordinator.currentPhase() == preTerminalPhase)
+        #expect(await coordinator.pendingCompletedRideEvidence() == nil)
+        guard case let .completedPendingCommit(writtenCompletion)? = await store.value else {
+            Issue.record("terminal bytes must have landed before the injected error")
+            return
+        }
+
+        await #expect(throws: RideCheckpointCoordinatorError.checkpointPersistenceUnavailable) {
+            _ = try await coordinator.ingest(
+                observation(8_000, speedKPH: 8, odometer: 100.2)
+            )
+        }
+        #expect(await store.value == .completedPendingCommit(writtenCompletion))
+
+        let restored = try await RideCheckpointCoordinator.restoring(
+            policy: try policy(),
+            store: store,
+            cadence: try cadence(),
+            recoveredAtUptimeNanoseconds: 50_000,
+            recoveredAtDate: epoch.addingTimeInterval(50),
+            makeSessionID: { sessionID }
+        )
+        #expect(await restored.pendingCompletedRideEvidence() == writtenCompletion)
+        #expect(await restored.currentPhase() == .idle)
+        await #expect(throws: RideCheckpointCoordinatorError.completedRideAwaitingCommit(sessionID)) {
+            _ = try await restored.ingest(
+                observation(51_000, speedKPH: 8, odometer: 100.3)
+            )
+        }
     }
 }
