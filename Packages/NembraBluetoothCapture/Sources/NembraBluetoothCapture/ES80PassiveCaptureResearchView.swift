@@ -40,16 +40,6 @@ public struct ES80PassiveCaptureResearchView: View {
             }
         }
         .navigationTitle("ES80 Capture")
-        .onChange(of: controller.connectionPhase) { previousPhase, newPhase in
-            if previousPhase != .idle, newPhase == .idle {
-                clearTargetScopedPresentation()
-            }
-        }
-        .onChange(of: controller.bluetoothState) { previousState, newState in
-            if previousState == .poweredOn, newState != .poweredOn {
-                clearTargetScopedPresentation()
-            }
-        }
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
