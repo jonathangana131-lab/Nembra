@@ -22,6 +22,20 @@ If the stationary-capture manifest/sidecar capability lands first, use it and pr
 
 A green Simulator/package run is software evidence only. It does not satisfy this physical run gate by itself.
 
+## Exact research app/build
+
+Use the accepted product-facing capture integration, not the normal Nembra runtime:
+
+1. Check out the exact accepted Git commit that will be recorded in experiment provenance.
+2. Open the existing Nembra Xcode project in Xcode 27.
+3. Select the shared **Nembra ES80 Research** scheme.
+4. Run the existing `Nembra.app` Debug build on the iPhone 12 used for the experiment.
+5. Confirm the app opens the dedicated **Nembra Capture** surface and visibly shows its passive-evidence-only boundary before scanning.
+
+That shared research scheme selects the dedicated Debug launch mode (`--es80-passive-capture`). The same mode may be selected by the Debug-only `NEMBRA_ES80_PASSIVE_CAPTURE=1` environment selector for automation. Release builds ignore those selectors and launch the normal product runtime, so a Release launch is not this experiment's capture tool.
+
+Do not start the normal `AppRuntime`/vehicle-control surface alongside this research capture.
+
 ## Safety boundary
 
 For this experiment:
@@ -45,13 +59,13 @@ The current capture path is foreground research software. This first experiment 
 2. Power the scooter on normally.
 3. Leave the charger disconnected.
 4. Keep the scooter untouched for about 30 seconds before opening the capture flow so transient power-on behavior can settle.
-5. Use the accepted Nembra Capture build on the iPhone 12.
+5. Use the exact accepted Debug research build identified above on the iPhone 12.
 6. Keep only the physical target scooter intentionally under test. Nearby BLE devices may remain present; they are candidates only.
 7. If a second device is available, it may display the legitimate stock app **for reference only**. Do not require a second device for this first fingerprint capture, and do not claim Nembra is sniffing the stock app's private session.
 
 ## Exact capture procedure
 
-1. Open **Nembra Capture** and keep it foregrounded.
+1. Open **Nembra Capture** through the accepted **Nembra ES80 Research** Debug launch and keep it foregrounded.
 2. Start one broad foreground scan with advertisement-cadence duplication left at its normal/off setting.
 3. Observe the candidate list. Use legitimate physical correlation to choose the likely scooter; do not select by local name alone.
 4. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
