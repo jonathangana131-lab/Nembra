@@ -147,7 +147,7 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
         }
     }
 
-    @Test("accepted wrapper estimates only from receipt-bound SoC and preserves freshness")
+    @Test("accepted wrapper estimates only while receipt-bound SoC is current")
     func acceptedWrapperProducesReceiptBoundEstimate() throws {
         let epoch = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
         var validator = BatteryEvidenceStreamValidator()
@@ -155,8 +155,13 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
         try validator.accept(observation)
         let soc = try AcceptedBatterySOCAnchor.current(observation: observation, acceptedBy: validator)
         let model = AcceptedAdaptiveBatteryRangeModel()
+        let rangePolicy = try policy(provisional: 100)
         let live = try #require(
-            model.estimateRemainingRange(atAcceptedSOC: soc, policy: try policy(provisional: 100))
+            model.estimateRemainingRange(
+                atAcceptedSOC: soc,
+                acceptedBy: validator,
+                policy: rangePolicy
+            )
         )
 
         #expect(live.estimate.rawRemainingMeters == 5_000)
@@ -164,6 +169,11 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
 
         validator.markUnobservedInterval()
         #expect(live.isCurrent(in: validator) == false)
+        #expect(model.estimateRemainingRange(
+            atAcceptedSOC: soc,
+            acceptedBy: validator,
+            policy: rangePolicy
+        ) == nil)
     }
 
     private func policy(provisional: Double? = nil) throws -> AdaptiveBatteryRangePolicy {
