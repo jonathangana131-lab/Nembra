@@ -4,17 +4,13 @@ import UIKit
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
                 vehicleHeader
-
-                if vehicle.state.connection != .connected {
-                    connectionRecovery
-                }
-
                 statusPanel
                 controlsSection
 
@@ -71,35 +67,60 @@ struct HomeView: View {
     }
 
     private var vehicleHeader: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(vehicle.profile.identity.displayName)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.primary)
+        let needsAttention = vehicle.state.connection != .connected
+        let identityLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 16))
 
-                Label {
-                    Text(vehicleStatusText)
-                } icon: {
-                    Circle()
-                        .fill(connectionIndicatorColor)
-                        .frame(width: 7, height: 7)
+        return VStack(alignment: .leading, spacing: needsAttention ? 12 : 0) {
+            identityLayout {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(vehicle.profile.identity.displayName)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+
+                    Label {
+                        Text(vehicleStatusText)
+                    } icon: {
+                        Circle()
+                            .fill(connectionIndicatorColor)
+                            .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
                 }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 12)
+                }
+
+                if let isLocked = vehicle.state.isLocked {
+                    Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isLocked ? .primary : .secondary)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.055), in: Capsule())
+                }
             }
+            .accessibilityElement(children: .combine)
 
-            Spacer(minLength: 12)
-
-            if let isLocked = vehicle.state.isLocked {
-                Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isLocked ? .primary : .secondary)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 8)
-                    .background(Color.primary.opacity(0.055), in: Capsule())
+            if needsAttention {
+                connectionRecovery
             }
         }
-        .accessibilityElement(children: .combine)
+        .padding(needsAttention ? 14 : 0)
+        .background {
+            if needsAttention {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(connectionAttentionTint.opacity(0.18))
+                    }
+            }
+        }
     }
 
     private var statusPanel: some View {
@@ -384,29 +405,43 @@ struct HomeView: View {
 
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
+        let recoveryLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
 
-        return HStack(spacing: 12) {
+        return recoveryLayout {
             Image(systemName: presentation.icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 28)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(connectionAttentionTint)
+                .frame(width: 32, height: 32)
+                .background(connectionAttentionTint.opacity(0.12), in: Circle())
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(presentation.title)
-                    .font(.subheadline.weight(.semibold))
+                switch presentation.action {
+                case .progress:
+                    EmptyView()
+                case .reconnect, .settings, .none:
+                    Text(presentation.title)
+                        .font(.subheadline.weight(.semibold))
+                }
+
                 Text(presentation.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer(minLength: 8)
+            }
 
             switch presentation.action {
             case .progress:
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel(presentation.title)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
             case .reconnect:
                 Button {
                     Task { await vehicle.connect() }
@@ -418,6 +453,7 @@ struct HomeView: View {
                             .fontWeight(.semibold)
                     }
                 }
+                .frame(width: 44, height: 44)
                 .buttonStyle(.glass)
                 .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
                 .accessibilityLabel("Reconnect scooter")
@@ -429,17 +465,13 @@ struct HomeView: View {
                     Image(systemName: "gear")
                         .fontWeight(.semibold)
                 }
+                .frame(width: 44, height: 44)
                 .buttonStyle(.glass)
                 .accessibilityLabel("Open Nembra settings")
             case .none:
                 EmptyView()
             }
         }
-        .padding(14)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
     }
 
     private enum ConnectionRecoveryAction {
@@ -519,6 +551,26 @@ struct HomeView: View {
                 icon: "checkmark.circle",
                 action: .none
             )
+        }
+    }
+
+    private var connectionAttentionTint: Color {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPoweredOff:
+                return .secondary
+            case .bluetoothPermissionDenied, .scooterUnavailable, .unsupportedConfiguration:
+                return .orange
+            }
+        }
+
+        switch vehicle.state.connection {
+        case .connecting, .reconnecting:
+            return .blue
+        case .disconnected:
+            return .secondary
+        case .connected:
+            return .green
         }
     }
 
