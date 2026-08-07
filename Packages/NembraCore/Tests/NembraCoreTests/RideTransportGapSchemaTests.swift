@@ -101,6 +101,25 @@ struct RideTransportGapSchemaTests {
         return try JSONSerialization.data(withJSONObject: root)
     }
 
+    private func envelopeDataWithDuplicateTransportKeys(
+        checkpoint: RideDurableCheckpoint,
+        firstJSONValue: String,
+        secondJSONValue: String
+    ) throws -> Data {
+        let envelope = AtomicRideCheckpointStore.Envelope(
+            schemaVersion: AtomicRideCheckpointStore.schemaVersion,
+            generation: 1,
+            checkpoint: checkpoint
+        )
+        let encoded = try JSONEncoder().encode(envelope)
+        var json = try #require(String(data: encoded, encoding: .utf8))
+        let marker = "\"transportGapEvidence\":\"observed\""
+        let range = try #require(json.range(of: marker))
+        let duplicate = "\"transportGapEvidence\":\(firstJSONValue),\"transportGapEvidence\":\(secondJSONValue)"
+        json.replaceSubrange(range, with: duplicate)
+        return Data(json.utf8)
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("nembra-gap-schema-hardening-\(UUID().uuidString)")
@@ -195,6 +214,66 @@ struct RideTransportGapSchemaTests {
             schemaVersion: AtomicRideCheckpointStore.schemaVersion,
             checkpoint: .completedPendingCommit(try completed(gapEvidence: .observed)),
             nullingTransportKeyAt: ["completedPendingCommit"]
+        )
+        try data.write(
+            to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+        )
+
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            _ = try await store.load()
+        }
+    }
+
+    @Test("current v2 non-string and unknown provenance are corrupt")
+    func currentMalformedProvenanceIsCorrupt() async throws {
+        for malformedValue: Any in [42, "not-a-current-provenance-value"] {
+            let dir = try directory()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let data = try envelopeData(
+                schemaVersion: AtomicRideCheckpointStore.schemaVersion,
+                checkpoint: .inProgress(try checkpoint(gapEvidence: .observed)),
+                replacingTransportValueAt: ["inProgress"],
+                with: malformedValue
+            )
+            try data.write(
+                to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+            )
+
+            let store = AtomicRideCheckpointStore(directoryURL: dir)
+            await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+                _ = try await store.load()
+            }
+        }
+    }
+
+    @Test("current v2 in-progress duplicate null then valid provenance is corrupt")
+    func currentInProgressDuplicateNullThenValidIsCorrupt() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let data = try envelopeDataWithDuplicateTransportKeys(
+            checkpoint: .inProgress(try checkpoint(gapEvidence: .observed)),
+            firstJSONValue: "null",
+            secondJSONValue: "\"observed\""
+        )
+        try data.write(
+            to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
+        )
+
+        let store = AtomicRideCheckpointStore(directoryURL: dir)
+        await #expect(throws: RideCheckpointError.corruptedCheckpoint) {
+            _ = try await store.load()
+        }
+    }
+
+    @Test("current v2 completion duplicate null then valid provenance is corrupt")
+    func currentCompletionDuplicateNullThenValidIsCorrupt() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let data = try envelopeDataWithDuplicateTransportKeys(
+            checkpoint: .completedPendingCommit(try completed(gapEvidence: .observed)),
+            firstJSONValue: "null",
+            secondJSONValue: "\"observed\""
         )
         try data.write(
             to: dir.appendingPathComponent(AtomicRideCheckpointStore.slotAFileName)
