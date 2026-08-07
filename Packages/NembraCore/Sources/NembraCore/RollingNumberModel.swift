@@ -66,6 +66,19 @@ public struct RollingNumberSnapshot: Equatable, Sendable {
     public let layout: RollingNumberLayout
     public let digits: [RollingDigitSnapshot]
 
+    /// Model output only. An explicit file-private initializer prevents the
+    /// direct-app build from gaining a synthesized same-module construction seam.
+    fileprivate init(
+        scaledValue: UInt64,
+        layout: RollingNumberLayout,
+        digits: [RollingDigitSnapshot]
+    ) {
+        precondition(digits.count == layout.totalDigitSlots)
+        self.scaledValue = scaledValue
+        self.layout = layout
+        self.digits = digits
+    }
+
     public var integerDigits: ArraySlice<RollingDigitSnapshot> {
         digits.prefix(layout.integerDigits)
     }
@@ -85,6 +98,28 @@ public struct RollingDigitTransition: Equatable, Sendable {
     public let startsVisible: Bool
     public let endsVisible: Bool
 
+    /// Transition facts are emitted only by `RollingNumberModel`; app/UI code
+    /// consumes them read-only instead of fabricating inconsistent slot plans.
+    fileprivate init(
+        slotIndex: Int,
+        fromDigit: Int,
+        toDigit: Int,
+        direction: RollingDigitDirection,
+        rollSteps: Int,
+        visibilityChange: RollingDigitVisibilityChange,
+        startsVisible: Bool,
+        endsVisible: Bool
+    ) {
+        self.slotIndex = slotIndex
+        self.fromDigit = fromDigit
+        self.toDigit = toDigit
+        self.direction = direction
+        self.rollSteps = rollSteps
+        self.visibilityChange = visibilityChange
+        self.startsVisible = startsVisible
+        self.endsVisible = endsVisible
+    }
+
     public var changesDigit: Bool {
         fromDigit != toDigit
     }
@@ -98,6 +133,20 @@ public struct RollingNumberTransitionPlan: Equatable, Sendable {
     public let to: RollingNumberSnapshot
     public let direction: RollingDigitDirection
     public let slots: [RollingDigitTransition]
+
+    /// Complete plans are model outputs; keeping construction in this file
+    /// prevents direct-app consumers from minting inconsistent presentation facts.
+    fileprivate init(
+        from: RollingNumberSnapshot,
+        to: RollingNumberSnapshot,
+        direction: RollingDigitDirection,
+        slots: [RollingDigitTransition]
+    ) {
+        self.from = from
+        self.to = to
+        self.direction = direction
+        self.slots = slots
+    }
 
     public var isStationary: Bool {
         direction == .stationary
