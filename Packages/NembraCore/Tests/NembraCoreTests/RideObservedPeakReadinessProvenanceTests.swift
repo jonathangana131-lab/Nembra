@@ -9,15 +9,18 @@ struct RideObservedPeakReadinessProvenanceTests {
     private let epoch = Date(timeIntervalSinceReferenceDate: 10_000)
 
     private func sample(
+        source: SpeedTelemetrySource = .scooterBluetooth,
         metersPerSecond: Double,
-        uptime: UInt64
+        uptime: UInt64,
+        speedAccuracy: Double? = nil
     ) throws -> SpeedTelemetrySample {
         try SpeedTelemetrySample(
-            source: .scooterBluetooth,
+            source: source,
             provenance: .absoluteMeasurement,
             metersPerSecond: metersPerSecond,
             receivedAtUptimeNanoseconds: uptime,
-            receivedAtDate: epoch
+            receivedAtDate: epoch,
+            speedAccuracyMetersPerSecond: speedAccuracy
         )
     }
 
@@ -26,7 +29,7 @@ struct RideObservedPeakReadinessProvenanceTests {
             telemetry: SpeedTelemetryQualityPolicy(
                 requiredSource: .scooterBluetooth,
                 minimumAcceptedSampleCount: 3,
-                maximumRejectedSampleFraction: 0,
+                maximumRejectedSampleFraction: 0.5,
                 maximumMeanIntervalMilliseconds: 150,
                 maximumObservedIntervalMilliseconds: 200,
                 maximumJitterStandardDeviationMilliseconds: 50,
@@ -52,10 +55,51 @@ struct RideObservedPeakReadinessProvenanceTests {
         #expect(readiness.isReady)
         #expect(readiness.sessionID == snapshot.sessionID)
         #expect(readiness.source == snapshot.source)
+        #expect(!readiness.beganAfterKnownObservationGap)
+        #expect(readiness.foreignSourceCallbackCount == 0)
         #expect(readiness.peakEvidence == snapshot.peakEvidence)
         #expect(readiness.telemetryBenchmark == snapshot.telemetryBenchmark)
         #expect(readiness.policy == qualityPolicy)
         #expect(readiness.telemetryQuality.source == .scooterBluetooth)
         #expect(readiness.telemetryQuality.isQualified)
+    }
+
+    @Test("failed readiness retains initial-gap and foreign-source provenance even without a peak")
+    func failedDecisionDoesNotDropSessionTopologyWhenPeakIsUnavailable() throws {
+        var session = RideSpeedEvidenceSessionAccumulator(
+            sessionID: sessionID,
+            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth),
+            beginsAfterKnownObservationGap: true
+        )
+
+        // Foreign GPS evidence cannot establish a scooter-BLE peak. Keep it as
+        // source-mixing provenance even though no selected-source peak exists.
+        _ = session.record(try sample(
+            source: .gps,
+            metersPerSecond: 8,
+            uptime: 100_000_000,
+            speedAccuracy: 0.2
+        ))
+
+        let snapshot = session.snapshot
+        let qualityPolicy = try policy()
+        let readiness = snapshot.observedPeakReadiness(using: qualityPolicy)
+
+        #expect(snapshot.peakEvidence == nil)
+        #expect(snapshot.beganAfterKnownObservationGap)
+        #expect(snapshot.foreignSourceCallbackCount == 1)
+        #expect(!readiness.isReady)
+        #expect(readiness.sessionID == snapshot.sessionID)
+        #expect(readiness.source == snapshot.source)
+        #expect(readiness.beganAfterKnownObservationGap)
+        #expect(readiness.foreignSourceCallbackCount == 1)
+        #expect(readiness.peakEvidence == nil)
+        #expect(readiness.telemetryBenchmark == snapshot.telemetryBenchmark)
+        #expect(readiness.policy == qualityPolicy)
+        #expect(readiness.failures.contains(.peakUnavailable))
+        #expect(readiness.failures.contains(.foreignSourceTraffic(callbackCount: 1)))
+        #expect(readiness.failures.contains(
+            .insufficientJitterIntervalEvidence(required: 2, actual: 0)
+        ))
     }
 }
