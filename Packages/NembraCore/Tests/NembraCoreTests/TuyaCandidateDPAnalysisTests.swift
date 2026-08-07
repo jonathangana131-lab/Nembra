@@ -32,6 +32,7 @@ struct TuyaCandidateDPAnalysisTests {
             + dp2(10, 0x05, [0x12, 0x34])
 
         let payload = try TuyaCandidateDPPayloadParser.parse(bytes, policy: policy())
+        #expect(payload.dataLengthWidth == .twoByteBigEndian)
         #expect(payload.sourceByteCount == bytes.count)
         #expect(payload.records.map(\.identifier) == [6, 7, 8, 9, 10])
         #expect(payload.records.map(\.knownType) == [.boolean, .value, .string, .enumeration, .bitmap])
@@ -46,6 +47,7 @@ struct TuyaCandidateDPAnalysisTests {
     func parsesOneByteLengthFamilyExplicitly() throws {
         let bytes = dp1(1, 0x02, [0, 0, 0, 100]) + dp1(2, 0x04, [5])
         let payload = try TuyaCandidateDPPayloadParser.parse(bytes, policy: policy(width: .oneByte))
+        #expect(payload.dataLengthWidth == .oneByte)
         #expect(payload.records.count == 2)
         #expect(payload.records[0].candidateUnsignedBigEndianMagnitude == 100)
         #expect(payload.records[1].candidateUnsignedBigEndianMagnitude == 5)
@@ -58,6 +60,7 @@ struct TuyaCandidateDPAnalysisTests {
     @Test("empty candidate data stays empty rather than inventing a field")
     func emptyPayloadIsEmpty() throws {
         let payload = try TuyaCandidateDPPayloadParser.parse([], policy: policy())
+        #expect(payload.dataLengthWidth == .twoByteBigEndian)
         #expect(payload.sourceByteCount == 0)
         #expect(payload.records.isEmpty)
     }
@@ -155,6 +158,7 @@ struct TuyaCandidateDPAnalysisTests {
             paddingByteCount: 0
         )
         let payload = try TuyaCandidateDPPayloadParser.parseData(of: packet, policy: policy())
+        #expect(payload.dataLengthWidth == .twoByteBigEndian)
         #expect(payload.records.count == 1)
         #expect(payload.records[0].identifier == 17)
         #expect(payload.records[0].candidateUnsignedBigEndianMagnitude == 73)
@@ -216,6 +220,7 @@ struct TuyaCandidateDPAnalysisTests {
                 let bytes = (0..<length).map { _ in nextByte() }
                 do {
                     let parsed = try TuyaCandidateDPPayloadParser.parse(bytes, policy: parserPolicy)
+                    #expect(parsed.dataLengthWidth == parserPolicy.dataLengthWidth)
                     #expect(parsed.sourceByteCount == bytes.count)
                     #expect(parsed.records.count <= parserPolicy.maximumDatapointCount)
                     #expect(parsed.records.allSatisfy {
