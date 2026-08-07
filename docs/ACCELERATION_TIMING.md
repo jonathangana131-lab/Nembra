@@ -21,15 +21,16 @@ The current evaluator therefore produces **receive-observation evidence**, not a
 
 ## Evidence model
 
-The evaluator consumes `SpeedTelemetrySample` and accepts only evidence that can legitimately act as an authoritative absolute speed measurement for this slice.
+The evaluator consumes `SpeedTelemetrySample` and accepts only evidence that still satisfies the public `SpeedTelemetrySample` validation contract.
 
 - visual/interpolated Dashboard frames never enter the evaluator;
-- `motionAssist` short-horizon estimates cannot arm or advance a trace;
+- before using an incoming value, the evaluator reconstructs a `SpeedTelemetrySample` from all of its fields through the public throwing initializer; values that violate speed, accuracy, or source/provenance invariants are ignored;
+- this is defense in depth for persistence/import boundaries that may deserialize a struct without invoking its validating initializer;
+- `motionAssist` short-horizon estimates cannot arm or advance a trace because they are non-authoritative; an impossible `.motionAssist + .absoluteMeasurement` value also fails constructor revalidation;
 - `requiredSource: .motionAssist` is rejected at policy construction;
-- the evaluator independently rejects `.motionAssist` regardless of decoded provenance as defense in depth, so a malformed imported sample cannot become timing evidence even if it crosses a permissive persistence/import boundary;
-- when this recovery finding was identified, the upstream synthesized `Codable` boundary could deserialize an impossible source/provenance pair without invoking the validating initializer; upstream PR #99 separately owns revalidation of decoded `SpeedTelemetrySample` values through that initializer;
-- the acceleration regression is intentionally compatible with both safe states: a hardened decoder may reject the malformed pair before the evaluator sees it, while an older permissive decoder must still be contained by the evaluator's `.motionAssist` guard;
-- this defense does not claim the normal live telemetry path emits malformed samples, and the evaluator guard remains safe redundancy after upstream decoding is hardened;
+- when this recovery finding was identified, the upstream synthesized `Codable` boundary could deserialize invalid values without invoking the validating initializer; upstream PR #99 separately owns revalidation of decoded `SpeedTelemetrySample` values through that initializer;
+- acceleration regressions are intentionally compatible with both safe states: a hardened decoder may reject malformed values before the evaluator sees them, while an older permissive decoder must still be contained by evaluator-side revalidation;
+- evaluator-side revalidation remains safe redundancy after upstream decoding is hardened and automatically follows the existing public validation contract instead of maintaining a divergent copy of those rules;
 - a configured authoritative source can be required explicitly;
 - if no source is required, the first usable authoritative source becomes locked for that trace and a later source change invalidates it;
 - optional speed-accuracy gating is available for sources such as GPS;
@@ -75,15 +76,17 @@ Once a source is locked—or when policy explicitly requires one source—the ev
 
 ### Observed-source ordering
 
-Every authoritative callback from the locked/required source advances `lastObservedUptimeNanoseconds` before optional accuracy screening. A low-quality GPS sample is still a real callback with chronology.
+Every structurally valid authoritative callback from the locked/required source advances `lastObservedUptimeNanoseconds` before optional accuracy-policy screening. A valid but low-accuracy GPS sample is still a real callback with chronology.
 
-If a GPS sample at uptime 300 fails the accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the trace invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
+If a GPS sample at uptime 300 fails the configured accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the trace invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
+
+Malformed imported values that fail the base `SpeedTelemetrySample` constructor contract are not treated as legitimate source observations at all. They cannot choose a source, move chronology, create a stationary anchor, or improve cadence evidence.
 
 When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose or poison the future trace source.
 
 ### Accepted timing evidence
 
-`lastAcceptedUptimeNanoseconds` advances only when a measurement passes the source/accuracy gates and is usable by the state machine.
+`lastAcceptedUptimeNanoseconds` advances only when a measurement passes structural/source/accuracy gates and is usable by the state machine.
 
 The optional `maximumSampleIntervalNanoseconds` is evidence-critical only when the latest stationary anchor transitions to movement and while a trace is already moving. Long idle time while the scooter remains stationary does not weaken a future attempt: a newer accepted stationary sample simply replaces the older launch anchor.
 
@@ -91,7 +94,7 @@ Therefore:
 
 - stationary observation at 1 s, another stationary observation at 10 s, then movement observed at 11 s can remain valid with a `[10 s, 11 s]` launch **observation** window even under a 1.5 s gap ceiling;
 - stationary observation at 10 s followed by first movement observation at 12 s fails that same 1.5 s ceiling;
-- a rejected GPS callback between accepted measurements does **not** reset the usable-measurement gap timer.
+- a structurally valid but accuracy-rejected GPS callback between accepted measurements does **not** reset the usable-measurement gap timer.
 
 This separation lets chronology stay truthful without pretending rejected data improves timing quality or that a parked scooter needs continuous high-rate measurements before an attempt begins.
 
@@ -164,6 +167,8 @@ An active trace fails closed when evidence continuity is no longer trustworthy:
 - the scooter returns to stationary after launch observation;
 - initial rolling start.
 
+Malformed imported samples are ignored before they can become timing evidence; they do not manufacture an invalidation reason that could be mistaken for a real ride event.
+
 `reset()` discards the old trace and requires a fresh stationary anchor.
 
 ## Explicit non-goals
@@ -190,7 +195,7 @@ This slice does **not**:
 
 ## Deterministic software verification
 
-The focused test matrix contains **21 deterministic tests across 2 suites** covering:
+The focused test matrix contains **23 deterministic tests across 2 suites** covering:
 
 - rolling-start rejection;
 - explicit receive-observation timing basis;
@@ -201,7 +206,9 @@ The focused test matrix contains **21 deterministic tests across 2 suites** cove
 - retained timing-evidence count excluding superseded stationary anchors;
 - sparse immediate target observation;
 - ordinary motion-estimate rejection;
-- malformed `.motionAssist + .absoluteMeasurement` evidence rejected either by a hardened imported-sample decoder or, on an older permissive boundary, by the evaluator's defense-in-depth guard;
+- malformed `.motionAssist + .absoluteMeasurement` evidence rejected either by a hardened imported-sample decoder or, on an older permissive boundary, by evaluator revalidation;
+- malformed negative imported speed rejected at decoder or evaluator revalidation;
+- malformed negative imported speed accuracy rejected at decoder or evaluator revalidation even when no optional accuracy ceiling is configured;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
 - impossible `.motionAssist` authoritative required-source policy rejection;
