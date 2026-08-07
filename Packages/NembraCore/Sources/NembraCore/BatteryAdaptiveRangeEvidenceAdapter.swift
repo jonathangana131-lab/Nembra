@@ -1,14 +1,38 @@
 /// One truth-preserving action produced when normalized battery evidence is
 /// considered for the adaptive percentage-based range domain.
 ///
-/// The adapter is intentionally action-oriented so a caller cannot accidentally
-/// discard a known continuity break merely because the first resumed battery
-/// field is non-SoC or carries a non-authoritative truth role.
-public enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
+/// This type is intentionally module-internal. It carries an authoritative SoC
+/// reading only after the sealed battery-evidence boundary has accepted that
+/// observation, so external callers must never be able to manufacture one and
+/// present it as pipeline-validated evidence.
+enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
     case ignore
     case resetContinuity
     case ingestSOC(BatterySOCReading)
     case resetContinuityAndIngestSOC(BatterySOCReading)
+
+    var publicDisposition: BatteryAdaptiveRangePipelineDisposition {
+        switch self {
+        case .ignore:
+            return .ignored
+        case .resetContinuity:
+            return .continuityReset
+        case .ingestSOC:
+            return .authoritativeSOCAccepted
+        case .resetContinuityAndIngestSOC:
+            return .continuityResetAndAuthoritativeSOCAccepted
+        }
+    }
+}
+
+/// Payload-free public classification of what one validated pipeline transition
+/// did. This is safe to expose because it cannot carry or manufacture an
+/// authoritative SoC reading.
+public enum BatteryAdaptiveRangePipelineDisposition: Equatable, Sendable {
+    case ignored
+    case continuityReset
+    case authoritativeSOCAccepted
+    case continuityResetAndAuthoritativeSOCAccepted
 }
 
 /// Pure semantic helper used by the stateful bridge.
@@ -75,7 +99,11 @@ struct BatteryAdaptiveRangeEvidenceBridge: Equatable, Sendable {
 /// Result of applying one validated battery observation to the in-flight
 /// adaptive-range learning window state.
 public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
-    public let action: BatteryAdaptiveRangeEvidenceAction
+    /// Internal evidence-bearing action retained for module tests and pipeline
+    /// implementation. External callers receive only `disposition`.
+    let action: BatteryAdaptiveRangeEvidenceAction
+
+    public let disposition: BatteryAdaptiveRangePipelineDisposition
     public let learningWindow: BatteryRangeLearningWindow?
 
     /// Constructed only by the validated pipeline. External code may inspect a
@@ -85,6 +113,7 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
         learningWindow: BatteryRangeLearningWindow?
     ) {
         self.action = action
+        self.disposition = action.publicDisposition
         self.learningWindow = learningWindow
     }
 }
