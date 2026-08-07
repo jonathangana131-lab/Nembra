@@ -105,9 +105,9 @@ public enum CompletedRidePeakPowerEvidenceError: Error, Equatable, Sendable {
 ///
 /// This value is intentionally **not Decodable**. Arbitrary durable bytes must
 /// first decode into `CompletedRidePeakPowerCheckpoint`, which is only a validated
-/// persisted representation. Converting a checkpoint back into verified-vehicle
-/// evidence requires an exact package-owned verified scope and package-sealed
-/// restore method; ordinary public decoding can never mint physical authority.
+/// persisted representation. Generic decoding never grants verified physical
+/// restore authority. A verified restore additionally requires the package-sealed
+/// `TrustedCompletedRidePeakPowerCheckpoint` persistence boundary.
 ///
 /// Process-local receipt sequence and uptime are deliberately stripped before
 /// persistence. They are ordering evidence inside one acquisition process, and
@@ -301,8 +301,9 @@ public struct CompletedRidePeakPowerEvidence: Equatable, Sendable {
 /// A decoded checkpoint is **not** trusted vehicle evidence. It may retain raw
 /// authority labels for validation/correlation, but those labels do not acquire
 /// domain authority by surviving Codable. Public clients can restore only
-/// Simulator-QA evidence. Restoring verified-vehicle evidence is package-sealed
-/// and requires an independently trusted exact verified scope.
+/// Simulator-QA evidence. The package-level compatibility restore below also
+/// fails closed for this inert wire type; verified restore requires
+/// `TrustedCompletedRidePeakPowerCheckpoint`.
 public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -506,32 +507,25 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     }
 
     #if SWIFT_PACKAGE
+    /// Compatibility guard for package code that still holds a generic decoded
+    /// checkpoint. Verified physical evidence can never be restored from this
+    /// public Codable value, even when all decoded labels match a trusted scope.
     package func restoredVerifiedVehicleMeasurement(
-        completedRide: CompletedRideEvidence,
-        expectedScope: ObservedPowerEnvelopeScope
+        completedRide _: CompletedRideEvidence,
+        expectedScope _: ObservedPowerEnvelopeScope
     ) throws -> CompletedRidePeakPowerEvidence {
-        try restoredEvidence(
-            completedRide: completedRide,
-            expectedScope: expectedScope,
-            requiredScopeAuthority: .verifiedVehicleIdentity,
-            requiredEvidenceAuthority: .verifiedVehicleMeasurement
-        )
+        throw CompletedRidePeakPowerEvidenceError.authorityMismatch
     }
     #else
     fileprivate func restoredVerifiedVehicleMeasurement(
-        completedRide: CompletedRideEvidence,
-        expectedScope: ObservedPowerEnvelopeScope
+        completedRide _: CompletedRideEvidence,
+        expectedScope _: ObservedPowerEnvelopeScope
     ) throws -> CompletedRidePeakPowerEvidence {
-        try restoredEvidence(
-            completedRide: completedRide,
-            expectedScope: expectedScope,
-            requiredScopeAuthority: .verifiedVehicleIdentity,
-            requiredEvidenceAuthority: .verifiedVehicleMeasurement
-        )
+        throw CompletedRidePeakPowerEvidenceError.authorityMismatch
     }
     #endif
 
-    private func restoredEvidence(
+    fileprivate func restoredEvidence(
         completedRide: CompletedRideEvidence,
         expectedScope: ObservedPowerEnvelopeScope,
         requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
@@ -570,3 +564,46 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         )
     }
 }
+
+#if SWIFT_PACKAGE
+/// Package-sealed verified persistence boundary for completed-ride peak power.
+///
+/// This wrapper is intentionally Encodable but not Decodable. Ordinary clients
+/// can decode only the inert `CompletedRidePeakPowerCheckpoint`; package-owned
+/// persistence must explicitly opt into `decodeVerifiedVehicleMeasurement(from:)`
+/// before verified evidence can be restored. This is a software authority fence,
+/// not physical-device attestation.
+package struct TrustedCompletedRidePeakPowerCheckpoint: Encodable, Equatable, Sendable {
+    private let checkpoint: CompletedRidePeakPowerCheckpoint
+
+    package static func decodeVerifiedVehicleMeasurement(
+        from data: Data
+    ) throws -> Self {
+        let checkpoint = try JSONDecoder().decode(
+            CompletedRidePeakPowerCheckpoint.self,
+            from: data
+        )
+        guard checkpoint.identityAuthority == .verifiedVehicleIdentity,
+              checkpoint.evidenceAuthority == .verifiedVehicleMeasurement else {
+            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
+        }
+        return Self(checkpoint: checkpoint)
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        try checkpoint.encode(to: encoder)
+    }
+
+    package func restoredVerifiedVehicleMeasurement(
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope
+    ) throws -> CompletedRidePeakPowerEvidence {
+        try checkpoint.restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+}
+#endif
