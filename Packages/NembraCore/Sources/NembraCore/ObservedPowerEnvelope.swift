@@ -167,17 +167,24 @@ public enum ObservedPowerEnvelopeEvidenceAuthority: String, Equatable, Sendable 
 /// enum value.
 public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
     public let powerWatts: Double
+    /// Strict source-owned callback/sample order. This is the total-order
+    /// tiebreaker when multiple accepted observations share one uptime clock tick.
+    public let receiptSequenceNumber: UInt64
+    /// Monotonic receipt metadata. Equal values are valid when sequence order is
+    /// still strict; callers must never synthesize nanoseconds to force ordering.
     public let observedAtUptimeNanoseconds: UInt64
     public let learningEligibility: ObservedPowerEnvelopeLearningEligibility
     public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
     private init(
         powerWatts: Double,
+        receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility,
         evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
     ) {
         self.powerWatts = powerWatts
+        self.receiptSequenceNumber = receiptSequenceNumber
         self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
         self.learningEligibility = learningEligibility
         self.evidenceAuthority = evidenceAuthority
@@ -185,11 +192,13 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
 
     public static func simulatorQA(
         powerWatts: Double,
+        receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
             powerWatts: powerWatts,
+            receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
             learningEligibility: learningEligibility,
             evidenceAuthority: .simulatorQA
@@ -199,11 +208,13 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
 #if SWIFT_PACKAGE
     package static func verifiedVehicleMeasurement(
         powerWatts: Double,
+        receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
             powerWatts: powerWatts,
+            receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
             learningEligibility: learningEligibility,
             evidenceAuthority: .verifiedVehicleMeasurement
@@ -212,11 +223,13 @@ public struct ObservedPowerEnvelopeObservation: Equatable, Sendable {
 #else
     fileprivate static func verifiedVehicleMeasurement(
         powerWatts: Double,
+        receiptSequenceNumber: UInt64,
         observedAtUptimeNanoseconds: UInt64,
         learningEligibility: ObservedPowerEnvelopeLearningEligibility
     ) -> Self {
         Self(
             powerWatts: powerWatts,
+            receiptSequenceNumber: receiptSequenceNumber,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
             learningEligibility: learningEligibility,
             evidenceAuthority: .verifiedVehicleMeasurement
@@ -230,6 +243,7 @@ public enum ObservedPowerEnvelopeRejection: Equatable, Sendable {
         expected: ObservedPowerEnvelopeEvidenceAuthority,
         actual: ObservedPowerEnvelopeEvidenceAuthority
     )
+    case nonIncreasingObservationSequence
     case nonIncreasingObservationTimestamp
     case invalidPowerWatts
 }
@@ -279,6 +293,7 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
     public let policy: ObservedPowerEnvelopePolicy
     public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
+    private var lastReceiptSequenceNumber: UInt64?
     private var lastObservedUptimeNanoseconds: UInt64?
     private var eligiblePowerWindow: [Double] = []
     private var calibrationStorage: ObservedPowerEnvelopeCalibration?
@@ -347,14 +362,21 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
             ))
         }
 
+        if let lastReceiptSequenceNumber,
+           observation.receiptSequenceNumber <= lastReceiptSequenceNumber {
+            return .rejected(.nonIncreasingObservationSequence)
+        }
         if let lastObservedUptimeNanoseconds,
-           observation.observedAtUptimeNanoseconds <= lastObservedUptimeNanoseconds {
+           observation.observedAtUptimeNanoseconds < lastObservedUptimeNanoseconds {
             return .rejected(.nonIncreasingObservationTimestamp)
         }
 
         // A fresh callback from the selected authority is ordering evidence even
-        // if its numeric payload later proves unusable. Advancing chronology
-        // prevents an older delayed value from entering after this rejection.
+        // if its numeric payload later proves unusable. Sequence provides the
+        // strict total order; uptime is allowed to tie but never move backward.
+        // Advancing both prevents an older delayed value from entering after a
+        // fresh invalid numeric observation.
+        lastReceiptSequenceNumber = observation.receiptSequenceNumber
         lastObservedUptimeNanoseconds = observation.observedAtUptimeNanoseconds
 
         guard observation.powerWatts.isFinite else {
