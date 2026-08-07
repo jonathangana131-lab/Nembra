@@ -8,6 +8,7 @@ public enum AdaptiveRangePrimaryPresentationReason: Equatable, Sendable {
     case retainedVehicleDataRequiresQualifier
     case noEstimate
     case invalidPresentedRange
+    case invalidEstimateStructure
     case provisionalSeed
     case estimatedSOCRequiresQualifier
     case learningConfidence
@@ -41,6 +42,7 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// Conservative policy for the current unqualified primary range number.
 ///
 /// A numeric value is eligible only when it is:
+/// - structurally valid under the adaptive-range parent's own derived-range invariants;
 /// - based on learned history rather than a provisional cold-start seed;
 /// - normal/high confidence rather than learning/low confidence;
 /// - calculated from authoritative SoC rather than estimated SoC;
@@ -54,16 +56,17 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// links NembraCore as a separate module, because `VehicleState.dataAvailability` does
 /// not need to be exposed to the app caller.
 ///
+/// Structural validation is repeated here as defense in depth because the current app
+/// build graph can compile NembraCore sources directly into the app module. Generic
+/// Codable validation upstream is necessary but cannot protect against a same-module
+/// caller manually constructing a malformed estimate in memory.
+///
 /// This type is deliberately only a presentation policy. It does not establish that
 /// an upstream `.authoritativeMeasurement` claim is itself trustworthy. Production
-/// integration must consume an adaptive-range parent whose authoritative SoC and
-/// derived-estimate construction/import boundaries have been sealed by the accepted
-/// battery/range truth pipeline before this policy's numeric decision can be treated
-/// as production truth.
-///
-/// States that may become displayable later with an explicit qualifier remain
-/// withheld here until such a qualifier exists. This prevents UI integration from
-/// silently flattening stronger provenance/confidence semantics into one number.
+/// integration must consume an adaptive-range parent whose authoritative SoC,
+/// learning-window, distance/classification, and derived-estimate authority boundaries
+/// have been sealed by the accepted battery/range truth pipeline before this policy's
+/// numeric decision can be treated as production truth.
 public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable {
     public init() {}
 
@@ -99,6 +102,10 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
             return .unavailable(.invalidPresentedRange)
         }
 
+        guard isStructurallyValid(estimate) else {
+            return .unavailable(.invalidEstimateStructure)
+        }
+
         if dataAvailability == .retained {
             return .unavailable(.retainedVehicleDataRequiresQualifier)
         }
@@ -122,5 +129,22 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
         case .normal, .high:
             return .valueMeters(estimate.presentedRemainingMeters)
         }
+    }
+
+    /// Mirrors the policy-independent structural guards already enforced by the
+    /// parent's Codable restore boundary. Do not add a cap on
+    /// `presentedRemainingMeters`: valid smoothing may temporarily lag a changed
+    /// efficiency and exceed the current full-charge-equivalent range.
+    private func isStructurallyValid(_ estimate: AdaptiveBatteryRangeEstimate) -> Bool {
+        let fullChargeRange = estimate.metersPerPercentagePoint * 100
+        let tolerance = max(1, abs(fullChargeRange)) * 1e-12
+
+        return estimate.rawRemainingMeters.isFinite
+            && estimate.rawRemainingMeters >= 0
+            && estimate.metersPerPercentagePoint.isFinite
+            && estimate.metersPerPercentagePoint > 0
+            && fullChargeRange.isFinite
+            && estimate.rawRemainingMeters <= fullChargeRange + tolerance
+            && (estimate.basis != .provisionalSeed || estimate.confidence == .learning)
     }
 }
