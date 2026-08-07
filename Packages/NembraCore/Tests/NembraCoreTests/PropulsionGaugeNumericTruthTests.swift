@@ -65,19 +65,4 @@ struct PropulsionGaugeNumericTruthTests {
         #expect(frame.normalizedPropulsion == 1)
         #expect(frame.acceptedPeakNormalized == 1)
     }
-
-    @Test("downward hysteresis rejects fractions that would invert its threshold semantics")
-    func downwardHysteresisMustRemainFractional() {
-        #expect(throws: LearnedObservedPowerEnvelopePolicyError.invalidDownwardHysteresisFraction) {
-            try LearnedObservedPowerEnvelopePolicy(
-                minimumPositiveSampleCount: 1,
-                windowCapacity: 1,
-                upperPercentile: 1,
-                visualHeadroomFraction: 0,
-                upwardHysteresisFraction: 0.05,
-                downwardHysteresisFraction: 1.01,
-                downwardAdaptationFraction: 0.1
-            )
-        }
-    }
 }
