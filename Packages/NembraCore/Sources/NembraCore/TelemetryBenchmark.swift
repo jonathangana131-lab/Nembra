@@ -3,6 +3,7 @@ import Foundation
 public enum TelemetryBenchmarkRejection: Equatable, Sendable {
     case sourceMismatch
     case nonMonotonicTimestamp
+    case nonFiniteSpeedConversion
 }
 
 public enum TelemetryBenchmarkRecordResult: Equatable, Sendable {
@@ -67,6 +68,16 @@ public struct TelemetryBenchmarkCollector: Sendable {
             return .rejected(.nonMonotonicTimestamp)
         }
 
+        // `SpeedTelemetrySample` guarantees that its stored m/s value is finite,
+        // but multiplying a very large finite Double by the km/h conversion
+        // factor can still overflow. Benchmark diagnostics must never accept an
+        // infinite derived speed or let `inf - inf` become NaN resolution evidence.
+        let speedKPH = sample.kilometersPerHour
+        guard speedKPH.isFinite else {
+            rejectedSampleCount += 1
+            return .rejected(.nonFiniteSpeedConversion)
+        }
+
         if firstUptimeNanoseconds == nil {
             firstUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         }
@@ -76,7 +87,6 @@ public struct TelemetryBenchmarkCollector: Sendable {
             intervalMoments.record(Double(intervalNanoseconds) / 1_000_000)
         }
 
-        let speedKPH = sample.kilometersPerHour
         if let previousSpeedKilometersPerHour {
             let delta = abs(speedKPH - previousSpeedKilometersPerHour)
             if delta <= 1e-9 {
