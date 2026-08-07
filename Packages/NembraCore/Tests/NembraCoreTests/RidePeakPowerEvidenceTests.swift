@@ -333,9 +333,8 @@ struct RidePeakPowerEvidenceTests {
         #expect(restored == original)
     }
 
-    @Test("generic decoded verified checkpoint cannot elevate arbitrary measurement content")
+    @Test("public decoded verified checkpoint rejects arbitrary measurement content")
     func genericDecodedVerifiedCheckpointCannotUsePackageRestore() throws {
-        let ride = try completedRide()
         let scope = try physicalScope(mode: "sport")
         var fixture = StoredFixture()
         fixture.vehicleIdentityKey = scope.vehicleIdentityKey
@@ -343,12 +342,20 @@ struct RidePeakPowerEvidenceTests {
         fixture.identityAuthority = ObservedPowerEnvelopeScopeAuthority.verifiedVehicleIdentity.rawValue
         fixture.evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue
         fixture.powerWatts = 999
-        let genericDecoded = try decodedCheckpoint(fixture)
 
-        #expect(throws: CompletedRidePeakPowerEvidenceError.untrustedCheckpointOrigin) {
-            try genericDecoded.restoredVerifiedVehicleMeasurement(
-                completedRide: ride,
-                expectedScope: scope
+        #expect(throws: DecodingError.self) {
+            try decodedCheckpoint(fixture)
+        }
+    }
+
+    @Test("trusted verified persistence decode refuses simulator authority")
+    func trustedVerifiedPersistenceDecodeRejectsSimulatorAuthority() throws {
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.simulatorQA(
+            from: completedPeak()
+        )
+        #expect(throws: CompletedRidePeakPowerEvidenceError.authorityMismatch) {
+            try CompletedRidePeakPowerCheckpoint.trustedVerifiedPersistenceDecode(
+                from: JSONEncoder().encode(checkpoint)
             )
         }
     }
@@ -359,13 +366,9 @@ struct RidePeakPowerEvidenceTests {
         fixture.vehicleIdentityKey = "forged-physical-id"
         fixture.identityAuthority = ObservedPowerEnvelopeScopeAuthority.verifiedVehicleIdentity.rawValue
         fixture.evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue
-        let checkpoint = try decodedCheckpoint(fixture)
 
-        #expect(throws: CompletedRidePeakPowerEvidenceError.authorityMismatch) {
-            try checkpoint.restoredSimulatorQA(
-                completedRide: completedRide(),
-                expectedScope: simulatorScope()
-            )
+        #expect(throws: DecodingError.self) {
+            try decodedCheckpoint(fixture)
         }
     }
 
