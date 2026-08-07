@@ -163,7 +163,8 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 
     /// Relevant target continuity breaks in each capture. Generic interruption
     /// events are global; structured disconnects count only for the resolved
-    /// target when one exists, otherwise they fail closed as potentially relevant.
+    /// GATT target when one exists, otherwise they fail closed as potentially
+    /// relevant.
     public let baselineContinuityBreakCount: Int
     public let comparisonContinuityBreakCount: Int
     public let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
@@ -225,15 +226,17 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// between arbitrary pre/post-gap segments across independent captures.
 ///
 /// The report also exposes whether both sessions conservatively resolved to the
-/// same CoreBluetooth peripheral identifier. That identifier is process/system
-/// evidence only; it is not promoted to a permanent physical scooter identity.
+/// same CoreBluetooth peripheral identifier from typed GATT-path evidence. That
+/// identifier is process/system evidence only; it is not promoted to a permanent
+/// physical scooter identity. Advertisement-only and connection-only neighbors
+/// never make an otherwise attributable GATT capture ambiguous.
 public enum PassiveBluetoothCaptureComparison {
     public static func compare(
         baseline: PassiveBluetoothCaptureSession,
         comparison: PassiveBluetoothCaptureSession
     ) -> PassiveBluetoothCaptureComparisonReport {
-        let baselineIdentifier = resolvedPeripheralIdentifier(in: baseline)
-        let comparisonIdentifier = resolvedPeripheralIdentifier(in: comparison)
+        let baselineIdentifier = resolvedGATTPeripheralIdentifier(in: baseline)
+        let comparisonIdentifier = resolvedGATTPeripheralIdentifier(in: comparison)
         let baselineContinuityBreakCount = continuityBreakCount(
             in: baseline,
             peripheralIdentifier: baselineIdentifier
@@ -449,14 +452,16 @@ public enum PassiveBluetoothCaptureComparison {
         }
     }
 
-    private static func resolvedPeripheralIdentifier(
+    /// Mirrors the package's conservative unscoped transport identity rule:
+    /// only typed GATT-path evidence can establish the comparison target.
+    /// Advertisement-only and connection-only nearby devices are not promoted
+    /// into target identity.
+    private static func resolvedGATTPeripheralIdentifier(
         in session: PassiveBluetoothCaptureSession
     ) -> String? {
         var identifiers: Set<String> = []
         for record in session.records {
             switch record.event {
-            case let .connection(observation):
-                identifiers.insert(observation.peripheralIdentifier)
             case let .service(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .includedService(observation):
@@ -469,7 +474,7 @@ public enum PassiveBluetoothCaptureComparison {
                 identifiers.insert(observation.peripheralIdentifier)
             case let .value(observation):
                 identifiers.insert(observation.peripheralIdentifier)
-            case .advertisement, .stockAppState, .interruption:
+            case .advertisement, .connection, .stockAppState, .interruption:
                 continue
             }
         }
@@ -509,23 +514,23 @@ public enum PassiveBluetoothCaptureComparison {
         for record in session.records {
             switch record.event {
             case let .service(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.serviceUUID)
+                services.insert(normalize(observation.serviceUUID))
 
             case let .includedService(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.parentServiceUUID)
-                services.insert(observation.includedServiceUUID)
+                services.insert(normalize(observation.parentServiceUUID))
+                services.insert(normalize(observation.includedServiceUUID))
 
             case let .characteristic(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.serviceUUID)
+                services.insert(normalize(observation.serviceUUID))
 
             case let .descriptor(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.serviceUUID)
+                services.insert(normalize(observation.serviceUUID))
 
             case let .subscription(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.serviceUUID)
+                services.insert(normalize(observation.serviceUUID))
 
             case let .value(observation) where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(observation.serviceUUID)
+                services.insert(normalize(observation.serviceUUID))
 
             default:
                 continue
@@ -533,6 +538,10 @@ public enum PassiveBluetoothCaptureComparison {
         }
 
         return services
+    }
+
+    private static func normalize(_ identifier: String) -> String {
+        identifier.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     private static func relationship(
