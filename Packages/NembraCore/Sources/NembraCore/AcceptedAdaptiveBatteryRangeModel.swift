@@ -5,6 +5,40 @@ public enum AcceptedAdaptiveRangeValidationError: Error, Equatable, Sendable {
     case invalidReceiptOrder
     case acquisitionEpochChanged
     case missingContinuitySegmentIdentity
+    case invalidPlausibilityPolicy
+}
+
+/// Optional production plausibility screen for learned range windows.
+///
+/// This is deliberately separate from `AdaptiveBatteryRangePolicy` because it is a truth gate,
+/// not a presentation/tuning default. Nembra does not currently know a verified ES80 full-charge
+/// range ceiling. Production integration must therefore choose explicitly between:
+/// - `deferredUntilVerifiedEvidence`, which makes no physical ceiling claim; or
+/// - a finite positive maximum supplied only after a higher layer has legitimate evidence for a
+///   conservative plausibility bound.
+///
+/// The bound is a rejection threshold for corrupted/discontinuous learning evidence. It is not
+/// the scooter's rated range, learned typical range, advertised range, or a number to display.
+public struct AcceptedAdaptiveRangePlausibilityPolicy: Equatable, Sendable {
+    public let maximumFullChargeEquivalentMeters: Double?
+
+    private init(maximumFullChargeEquivalentMeters: Double?) {
+        self.maximumFullChargeEquivalentMeters = maximumFullChargeEquivalentMeters
+    }
+
+    /// Explicitly leaves the absolute first-window ceiling unavailable until evidence exists.
+    public static let deferredUntilVerifiedEvidence = Self(
+        maximumFullChargeEquivalentMeters: nil
+    )
+
+    /// Creates an evidence-backed absolute plausibility ceiling.
+    public init(maximumFullChargeEquivalentMeters: Double) throws {
+        guard maximumFullChargeEquivalentMeters.isFinite,
+              maximumFullChargeEquivalentMeters > 0 else {
+            throw AcceptedAdaptiveRangeValidationError.invalidPlausibilityPolicy
+        }
+        self.maximumFullChargeEquivalentMeters = maximumFullChargeEquivalentMeters
+    }
 }
 
 /// A receipt-bound range-learning window whose trusted construction is unavailable to ordinary
@@ -139,10 +173,16 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
 #if SWIFT_PACKAGE
     /// Trusted package integration is the only mutation path into accepted learned history.
     /// The sealed anchors are converted to raw algorithm inputs only inside this boundary.
+    ///
+    /// The absolute plausibility policy is required explicitly. With no verified ES80 ceiling,
+    /// callers pass `.deferredUntilVerifiedEvidence`; they must not invent a number just to make
+    /// this guard active. Once legitimate evidence provides a conservative maximum, the screen
+    /// rejects even the first otherwise-valid extreme window before it can poison the baseline.
     @discardableResult
     package mutating func ingest(
         _ window: AcceptedBatteryRangeLearningWindow,
-        policy: AdaptiveBatteryRangePolicy
+        policy: AdaptiveBatteryRangePolicy,
+        plausibilityPolicy: AcceptedAdaptiveRangePlausibilityPolicy
     ) -> BatteryRangeLearningResult {
         guard let start = try? BatterySOCReading(
             percentage: window.startSOC.percentage,
@@ -166,6 +206,26 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
                 sample: nil,
                 confidence: model.confidence(using: policy)
             )
+        }
+
+        if window.distanceCoverage == .complete,
+           window.transportGapOccurred == false {
+            let consumed = window.startSOC.percentage - window.endSOC.percentage
+            if consumed > 0,
+               consumed >= policy.minimumConsumedPercentagePoints,
+               window.distanceMeters >= policy.minimumDistanceMeters,
+               let maximum = plausibilityPolicy.maximumFullChargeEquivalentMeters {
+                let metersPerPercentagePoint = window.distanceMeters / consumed
+                let fullChargeEquivalentMeters = metersPerPercentagePoint * 100
+                guard fullChargeEquivalentMeters.isFinite,
+                      fullChargeEquivalentMeters <= maximum else {
+                    return BatteryRangeLearningResult(
+                        disposition: .rejected(.efficiencyOutlier),
+                        sample: nil,
+                        confidence: model.confidence(using: policy)
+                    )
+                }
+            }
         }
 
         return model.ingest(rawWindow, policy: policy)
