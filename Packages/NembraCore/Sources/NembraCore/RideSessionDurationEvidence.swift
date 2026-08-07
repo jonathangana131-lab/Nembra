@@ -1,33 +1,35 @@
 import Foundation
 
 public enum RideSessionDurationEvidenceError: Error, Equatable, Sendable {
-    case invalidProcessSegment
+    case invalidObservationSegment
     case sessionMismatch
-    case conflictingProcessGeneration
-    case processGenerationReused
+    case conflictingSegmentIdentity
+    case segmentIdentityReused
     case unexpectedSequence
-    case missingRecoveryGap
+    case invalidGapClassification
     case sequenceExhausted
     case durationOverflow
 }
 
 /// Coverage of the elapsed-time evidence Nembra actually observed for a ride session.
 ///
-/// `partial` means at least one process interruption separated two observed monotonic
-/// segments. The missing interval is never reconstructed from wall-clock timestamps.
+/// `partial` means at least one interval between two observation segments was not observed.
+/// The missing interval is never reconstructed from wall-clock timestamps.
 public enum RideSessionDurationCoverage: String, Codable, Equatable, Sendable {
     case unknown
     case complete
     case partial
 }
 
-/// Durable projection of one process-local monotonic observation interval.
+/// Durable projection of one contiguous process-local monotonic observation interval.
 ///
-/// Uptime values themselves are deliberately not persisted because they are meaningful
-/// only inside their originating process/boot epoch. Only their checked difference is
-/// durable. A new process generation must be represented by a new sequence entry.
-public struct RideSessionDurationProcessSegment: Codable, Equatable, Sendable {
+/// Raw uptime values are deliberately not persisted because they are meaningful only inside
+/// their originating process/boot epoch. Only their checked difference is durable. A session
+/// may have more than one segment in the same process when app suspension or another explicit
+/// evidence interruption creates an unobserved interval.
+public struct RideSessionDurationObservedSegment: Codable, Equatable, Sendable {
     public let sessionID: UUID
+    public let segmentID: UUID
     public let processGenerationID: UUID
     public let sequenceNumber: UInt64
     public let observedDurationNanoseconds: UInt64
@@ -35,6 +37,7 @@ public struct RideSessionDurationProcessSegment: Codable, Equatable, Sendable {
 
     public init(
         sessionID: UUID,
+        segmentID: UUID,
         processGenerationID: UUID,
         sequenceNumber: UInt64,
         observedFromUptimeNanoseconds: UInt64,
@@ -42,10 +45,11 @@ public struct RideSessionDurationProcessSegment: Codable, Equatable, Sendable {
         followsUnobservedInterval: Bool
     ) throws {
         guard observedThroughUptimeNanoseconds >= observedFromUptimeNanoseconds else {
-            throw RideSessionDurationEvidenceError.invalidProcessSegment
+            throw RideSessionDurationEvidenceError.invalidObservationSegment
         }
 
         self.sessionID = sessionID
+        self.segmentID = segmentID
         self.processGenerationID = processGenerationID
         self.sequenceNumber = sequenceNumber
         self.observedDurationNanoseconds =
@@ -55,6 +59,7 @@ public struct RideSessionDurationProcessSegment: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
+        case segmentID
         case processGenerationID
         case sequenceNumber
         case observedDurationNanoseconds
@@ -64,6 +69,7 @@ public struct RideSessionDurationProcessSegment: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        self.segmentID = try container.decode(UUID.self, forKey: .segmentID)
         self.processGenerationID = try container.decode(UUID.self, forKey: .processGenerationID)
         self.sequenceNumber = try container.decode(UInt64.self, forKey: .sequenceNumber)
         self.observedDurationNanoseconds = try container.decode(
@@ -83,7 +89,7 @@ public struct RideSessionDurationEvidenceSnapshot: Equatable, Sendable {
     /// zero-duration segment remains `.some(0)` and is distinct from unavailable.
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
-    public let processSegmentCount: Int
+    public let observationSegmentCount: Int
 
     public var hasUnobservedInterval: Bool {
         coverage == .partial
@@ -97,32 +103,33 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
     case staleReplayIgnored
 }
 
-/// Crash-safe ride-session elapsed-time evidence assembled from process-local monotonic
-/// segments. It never uses `Date` subtraction to fill process gaps.
+/// Crash-safe ride-session elapsed-time evidence assembled from contiguous process-local
+/// monotonic observation segments. It never uses `Date` subtraction to fill evidence gaps.
 ///
-/// A caller may checkpoint the current process generation repeatedly. Replaying the same
-/// generation with a longer duration extends that segment by only the new delta; an older
-/// checkpoint is ignored. A different process generation must use the next sequence number
-/// and explicitly declare the recovery gap.
+/// A caller may checkpoint one observation segment repeatedly. Replaying that segment with
+/// a longer observed duration extends it by only the new delta; an older checkpoint is
+/// ignored. A new segment must use the next sequence number and explicitly acknowledge the
+/// unobserved interval separating it from the previous segment. Its process generation may
+/// be the same (for an in-process suspension/interruption) or different (for relaunch).
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
-    private var processSegments: [RideSessionDurationProcessSegment]
+    private var observationSegments: [RideSessionDurationObservedSegment]
     private var totalObservedDurationNanoseconds: UInt64
 
     public init(sessionID: UUID) {
         self.sessionID = sessionID
-        self.processSegments = []
+        self.observationSegments = []
         self.totalObservedDurationNanoseconds = 0
     }
 
     public var snapshot: RideSessionDurationEvidenceSnapshot {
-        let duration: UInt64? = processSegments.isEmpty
+        let duration: UInt64? = observationSegments.isEmpty
             ? nil
             : totalObservedDurationNanoseconds
         let coverage: RideSessionDurationCoverage
-        if processSegments.isEmpty {
+        if observationSegments.isEmpty {
             coverage = .unknown
-        } else if processSegments.contains(where: \.followsUnobservedInterval) {
+        } else if observationSegments.contains(where: { $0.followsUnobservedInterval }) {
             coverage = .partial
         } else {
             coverage = .complete
@@ -132,25 +139,26 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             sessionID: sessionID,
             observedDurationNanoseconds: duration,
             coverage: coverage,
-            processSegmentCount: processSegments.count
+            observationSegmentCount: observationSegments.count
         )
     }
 
     @discardableResult
     public mutating func upsert(
-        _ segment: RideSessionDurationProcessSegment
+        _ segment: RideSessionDurationObservedSegment
     ) throws -> RideSessionDurationUpsertResult {
         guard segment.sessionID == sessionID else {
             throw RideSessionDurationEvidenceError.sessionMismatch
         }
 
-        if let existingIndex = processSegments.firstIndex(
+        if let existingIndex = observationSegments.firstIndex(
             where: { $0.sequenceNumber == segment.sequenceNumber }
         ) {
-            let existing = processSegments[existingIndex]
-            guard existing.processGenerationID == segment.processGenerationID,
+            let existing = observationSegments[existingIndex]
+            guard existing.segmentID == segment.segmentID,
+                  existing.processGenerationID == segment.processGenerationID,
                   existing.followsUnobservedInterval == segment.followsUnobservedInterval else {
-                throw RideSessionDurationEvidenceError.conflictingProcessGeneration
+                throw RideSessionDurationEvidenceError.conflictingSegmentIdentity
             }
 
             if segment.observedDurationNanoseconds == existing.observedDurationNanoseconds {
@@ -167,19 +175,17 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
                 throw RideSessionDurationEvidenceError.durationOverflow
             }
 
-            processSegments[existingIndex] = segment
+            observationSegments[existingIndex] = segment
             totalObservedDurationNanoseconds = newTotal
             return .extended(additionalNanoseconds: additional)
         }
 
-        guard !processSegments.contains(
-            where: { $0.processGenerationID == segment.processGenerationID }
-        ) else {
-            throw RideSessionDurationEvidenceError.processGenerationReused
+        guard !observationSegments.contains(where: { $0.segmentID == segment.segmentID }) else {
+            throw RideSessionDurationEvidenceError.segmentIdentityReused
         }
 
         let expectedSequence: UInt64
-        if let lastSequence = processSegments.last?.sequenceNumber {
+        if let lastSequence = observationSegments.last?.sequenceNumber {
             let (next, overflow) = lastSequence.addingReportingOverflow(1)
             guard !overflow else {
                 throw RideSessionDurationEvidenceError.sequenceExhausted
@@ -192,13 +198,14 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         guard segment.sequenceNumber == expectedSequence else {
             throw RideSessionDurationEvidenceError.unexpectedSequence
         }
+
         if expectedSequence == 0 {
             guard !segment.followsUnobservedInterval else {
-                throw RideSessionDurationEvidenceError.missingRecoveryGap
+                throw RideSessionDurationEvidenceError.invalidGapClassification
             }
         } else {
             guard segment.followsUnobservedInterval else {
-                throw RideSessionDurationEvidenceError.missingRecoveryGap
+                throw RideSessionDurationEvidenceError.invalidGapClassification
             }
         }
 
@@ -208,22 +215,22 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             throw RideSessionDurationEvidenceError.durationOverflow
         }
 
-        processSegments.append(segment)
+        observationSegments.append(segment)
         totalObservedDurationNanoseconds = newTotal
         return .inserted
     }
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
-        case processSegments
+        case observationSegments
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedSessionID = try container.decode(UUID.self, forKey: .sessionID)
         let decodedSegments = try container.decode(
-            [RideSessionDurationProcessSegment].self,
-            forKey: .processSegments
+            [RideSessionDurationObservedSegment].self,
+            forKey: .observationSegments
         )
 
         self.init(sessionID: decodedSessionID)
@@ -244,6 +251,6 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(sessionID, forKey: .sessionID)
-        try container.encode(processSegments, forKey: .processSegments)
+        try container.encode(observationSegments, forKey: .observationSegments)
     }
 }
