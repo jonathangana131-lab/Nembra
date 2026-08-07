@@ -31,6 +31,8 @@ The caller supplies:
 
 There are no ES80 defaults for timing, scale, signedness, or tolerance. Field-label strings are preserved but never parsed to infer meaning.
 
+Each #280 report also carries the exact caller-owned numeric `absoluteTolerance` that produced its samples' `isWithinTolerance` flags. This layer retains that threshold separately for voltage, current, and power because those three display spaces may legitimately use different tolerances. It does not force them equal or reinterpret them as physical accuracy.
+
 ## Capture / monotonic-clock boundary
 
 The three reports contain monotonic receipt uptimes. Those numbers are meaningful for cross-field timing only when all three reports come from the same retained capture/analysis clock context. Equal GATT identity and continuity generation alone do not prove that two independently created captures share a comparable uptime origin.
@@ -56,7 +58,7 @@ Each accepted anchor evaluates two relationships separately:
 1. **stock-reference relationship** — independently entered numeric stock-app values must themselves be coherent enough for the chosen timing/tolerance policy;
 2. **candidate relationship** — the transformed raw DP candidate values must also be coherent.
 
-Joint support additionally requires all three #280 candidate samples to individually match their own caller-supplied numeric anchors.
+Joint support additionally requires all three #280 candidate samples to individually match their own caller-supplied numeric anchors under their retained per-report numeric tolerances.
 
 So one accidental `V × I ≈ P` result cannot hide that a selected transform failed its original stock-app value, and asynchronous/incoherent stock-app anchors cannot silently become positive candidate evidence.
 
@@ -100,6 +102,7 @@ The report preserves:
 - exact field labels;
 - each selected raw DP candidate identity;
 - each selected numeric transform;
+- each role's exact parent numeric absolute tolerance;
 - full #280 samples including raw bytes and timing provenance;
 - reference-side and candidate-side predicted power/error/tolerance;
 - whether each of the three numeric hypotheses matched its own stock anchor;
@@ -118,6 +121,7 @@ This layer does **not**:
 - claim any candidate is voltage/current/power;
 - prove the caller supplied the correct capture-context identity;
 - establish units, scale, signedness, cadence, freshness, or source authority;
+- reinterpret a parent numeric tolerance as sensor accuracy or protocol confidence;
 - infer battery energy, Wh, Wh/mi, torque, throttle, or regen;
 - authorize Bluetooth writes or vehicle commands;
 - replace repeated physical capture and correlation.
