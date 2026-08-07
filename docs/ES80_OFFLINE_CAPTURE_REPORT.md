@@ -34,6 +34,23 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
 
 `--compact` emits sorted-key compact JSON for automation.
 
+## Evidence-preserving output behavior
+
+The command will **never** permit its derived report to replace the raw capture input, including when the output reaches the same file through a symlink alias. `--force-output` cannot override this rule.
+
+Existing derived report files are also protected by default. To intentionally replace an existing report, use:
+
+```sh
+swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-report \
+  /path/to/capture.json \
+  --output /path/to/existing-framing-report.json \
+  --force-output
+```
+
+Without `--force-output`, the final Foundation write also uses `withoutOverwriting` in addition to the preflight path check so a newly appearing file cannot be silently replaced between validation and the atomic write.
+
+These protections are about preserving research evidence and prior derived artifacts. They are not physical-device safety claims.
+
 ## Exact source-artifact binding
 
 The command hashes the **exact input JSON bytes before analysis** and wraps the framing report with:
