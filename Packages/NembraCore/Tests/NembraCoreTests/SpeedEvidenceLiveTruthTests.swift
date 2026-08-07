@@ -44,14 +44,17 @@ struct SpeedEvidenceLiveTruthTests {
     }
 
     @Test("a connected generation starts without inventing current speed")
-    func connectedGenerationStartsUnavailable() {
+    func connectedGenerationStartsUnavailable() throws {
         var truth = SpeedEvidenceLiveTruth()
         let generation = SpeedEvidenceConnectionGeneration(rawValue: 1)
 
         expectSuccess(truth.beginConnectedGeneration(generation))
+        let token = try #require(truth.activeContinuityToken)
 
         #expect(truth.activeConnectionGeneration == generation)
         #expect(truth.latestConnectionGeneration == generation)
+        #expect(token.connectionGeneration == generation)
+        #expect(token.segmentSequence == 1)
         #expect(truth.availability == .unavailable)
         #expect(truth.availability.currentAuthoritativeSample == nil)
     }
@@ -66,7 +69,8 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(generation))
-        expectSuccess(truth.accept(measured, in: generation))
+        let token = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(measured, attributedTo: token))
 
         #expect(truth.availability == .live(measured))
         #expect(truth.availability.currentAuthoritativeSample == measured)
@@ -83,16 +87,18 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(generation))
-        expectSuccess(truth.accept(measured, in: generation))
+        let token = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(measured, attributedTo: token))
         expectSuccess(truth.endConnectedGeneration(generation))
 
         #expect(truth.activeConnectionGeneration == nil)
+        #expect(truth.activeContinuityToken == nil)
         #expect(truth.availability == .retained(measured))
         #expect(truth.availability.currentAuthoritativeSample == nil)
         #expect(truth.availability.lastAcceptedSample == measured)
     }
 
-    @Test("reconnect cannot promote retained zero before a fresh sample")
+    @Test("reconnect cannot promote retained zero before a fresh source-attributed sample")
     func reconnectRequiresFreshSpeedEvidence() throws {
         var truth = SpeedEvidenceLiveTruth()
         let first = SpeedEvidenceConnectionGeneration(rawValue: 1)
@@ -107,14 +113,18 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(first))
-        expectSuccess(truth.accept(stoppedBeforeDisconnect, in: first))
+        let firstToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(stoppedBeforeDisconnect, attributedTo: firstToken))
         expectSuccess(truth.endConnectedGeneration(first))
         expectSuccess(truth.beginConnectedGeneration(second))
+        let secondToken = try #require(truth.activeContinuityToken)
 
         #expect(truth.availability == .retained(stoppedBeforeDisconnect))
         #expect(truth.availability.currentAuthoritativeSample == nil)
+        #expect(secondToken.connectionGeneration == second)
+        #expect(secondToken != firstToken)
 
-        expectSuccess(truth.accept(stoppedAfterReconnect, in: second))
+        expectSuccess(truth.accept(stoppedAfterReconnect, attributedTo: secondToken))
         #expect(truth.availability == .live(stoppedAfterReconnect))
     }
 
@@ -133,19 +143,20 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(first))
-        expectSuccess(truth.accept(firstSample, in: first))
+        let firstToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(firstSample, attributedTo: firstToken))
         expectSuccess(truth.endConnectedGeneration(first))
         expectSuccess(truth.beginConnectedGeneration(second))
 
         expectFailure(
-            .connectionGenerationMismatch,
-            truth.accept(delayedOldSample, in: first)
+            .continuityTokenMismatch,
+            truth.accept(delayedOldSample, attributedTo: firstToken)
         )
         #expect(truth.availability == .retained(firstSample))
     }
 
-    @Test("explicit evidence gap demotes live speed until a newer sample arrives")
-    func evidenceGapRequiresNewSample() throws {
+    @Test("explicit evidence gap rotates source attribution before live speed can resume")
+    func evidenceGapRequiresNewSourceToken() throws {
         var truth = SpeedEvidenceLiveTruth()
         let generation = SpeedEvidenceConnectionGeneration(rawValue: 4)
         let beforeGap = try sample(
@@ -158,14 +169,82 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(generation))
-        expectSuccess(truth.accept(beforeGap, in: generation))
-        expectSuccess(truth.markEvidenceGap(in: generation))
+        let beforeGapToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(beforeGap, attributedTo: beforeGapToken))
+        expectSuccess(truth.markEvidenceGap(after: beforeGapToken))
+        let afterGapToken = try #require(truth.activeContinuityToken)
 
+        #expect(afterGapToken.connectionGeneration == generation)
+        #expect(afterGapToken.segmentSequence == beforeGapToken.segmentSequence + 1)
         #expect(truth.availability == .retained(beforeGap))
         #expect(truth.availability.currentAuthoritativeSample == nil)
 
-        expectSuccess(truth.accept(afterGap, in: generation))
+        expectSuccess(truth.accept(afterGap, attributedTo: afterGapToken))
         #expect(truth.availability == .live(afterGap))
+    }
+
+    @Test("queued pre-gap sample cannot resurrect live state after explicit gap")
+    func queuedPreGapSampleIsRejected() throws {
+        var truth = SpeedEvidenceLiveTruth()
+        let generation = SpeedEvidenceConnectionGeneration(rawValue: 7)
+        let acceptedBeforeGap = try sample(
+            kilometersPerHour: 10,
+            uptimeNanoseconds: 100
+        )
+        let queuedBeforeGap = try sample(
+            kilometersPerHour: 0,
+            uptimeNanoseconds: 150
+        )
+        let acceptedAfterGap = try sample(
+            kilometersPerHour: 9,
+            uptimeNanoseconds: 250
+        )
+
+        expectSuccess(truth.beginConnectedGeneration(generation))
+        let preGapToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(acceptedBeforeGap, attributedTo: preGapToken))
+
+        // `queuedBeforeGap` was source-attributed before this boundary but is
+        // deliberately delivered only after the gap has rotated the token.
+        expectSuccess(truth.markEvidenceGap(after: preGapToken))
+        let postGapToken = try #require(truth.activeContinuityToken)
+
+        expectFailure(
+            .continuityTokenMismatch,
+            truth.accept(queuedBeforeGap, attributedTo: preGapToken)
+        )
+        #expect(truth.availability == .retained(acceptedBeforeGap))
+
+        expectSuccess(truth.accept(acceptedAfterGap, attributedTo: postGapToken))
+        #expect(truth.availability == .live(acceptedAfterGap))
+    }
+
+    @Test("stale gap callback cannot demote a newer continuity segment")
+    func staleGapCallbackCannotDemoteNewerSegment() throws {
+        var truth = SpeedEvidenceLiveTruth()
+        let generation = SpeedEvidenceConnectionGeneration(rawValue: 9)
+        let first = try sample(
+            kilometersPerHour: 4,
+            uptimeNanoseconds: 100
+        )
+        let newer = try sample(
+            kilometersPerHour: 6,
+            uptimeNanoseconds: 250
+        )
+
+        expectSuccess(truth.beginConnectedGeneration(generation))
+        let firstToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(first, attributedTo: firstToken))
+        expectSuccess(truth.markEvidenceGap(after: firstToken))
+        let newerToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(newer, attributedTo: newerToken))
+
+        expectFailure(
+            .continuityTokenMismatch,
+            truth.markEvidenceGap(after: firstToken)
+        )
+        #expect(truth.activeContinuityToken == newerToken)
+        #expect(truth.availability == .live(newer))
     }
 
     @Test("motion-assist estimate never becomes current authoritative speed")
@@ -180,9 +259,10 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(generation))
+        let token = try #require(truth.activeContinuityToken)
         expectFailure(
             .nonAuthoritativeSample,
-            truth.accept(estimate, in: generation)
+            truth.accept(estimate, attributedTo: token)
         )
         #expect(truth.availability == .unavailable)
     }
@@ -210,15 +290,17 @@ struct SpeedEvidenceLiveTruthTests {
         )
 
         expectSuccess(truth.beginConnectedGeneration(first))
-        expectSuccess(truth.accept(initial, in: first))
+        let firstToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.accept(initial, attributedTo: firstToken))
         expectSuccess(truth.endConnectedGeneration(first))
         expectSuccess(truth.beginConnectedGeneration(second))
+        let secondToken = try #require(truth.activeContinuityToken)
 
-        expectFailure(.nonMonotonicReceipt, truth.accept(older, in: second))
-        expectFailure(.nonMonotonicReceipt, truth.accept(equal, in: second))
+        expectFailure(.nonMonotonicReceipt, truth.accept(older, attributedTo: secondToken))
+        expectFailure(.nonMonotonicReceipt, truth.accept(equal, attributedTo: secondToken))
         #expect(truth.availability == .retained(initial))
 
-        expectSuccess(truth.accept(newer, in: second))
+        expectSuccess(truth.accept(newer, attributedTo: secondToken))
         #expect(truth.availability == .live(newer))
     }
 
@@ -239,10 +321,11 @@ struct SpeedEvidenceLiveTruthTests {
         )
         #expect(truth.latestConnectionGeneration == second)
         #expect(truth.activeConnectionGeneration == nil)
+        #expect(truth.activeContinuityToken == nil)
     }
 
-    @Test("generation zero is invalid and same active generation is idempotent")
-    func generationValidationAndIdempotency() {
+    @Test("generation zero is invalid and same active generation preserves its current token")
+    func generationValidationAndIdempotency() throws {
         var truth = SpeedEvidenceLiveTruth()
         let invalid = SpeedEvidenceConnectionGeneration(rawValue: 0)
         let generation = SpeedEvidenceConnectionGeneration(rawValue: 3)
@@ -252,11 +335,13 @@ struct SpeedEvidenceLiveTruthTests {
             truth.beginConnectedGeneration(invalid)
         )
         expectSuccess(truth.beginConnectedGeneration(generation))
+        let initialToken = try #require(truth.activeContinuityToken)
         expectSuccess(truth.beginConnectedGeneration(generation))
         #expect(truth.activeConnectionGeneration == generation)
+        #expect(truth.activeContinuityToken == initialToken)
     }
 
-    @Test("samples without an active connection cannot become live")
+    @Test("ended connection rejects samples, gaps, and duplicate end without reviving authority")
     func noActiveConnectionFailsClosed() throws {
         var truth = SpeedEvidenceLiveTruth()
         let generation = SpeedEvidenceConnectionGeneration(rawValue: 1)
@@ -265,9 +350,22 @@ struct SpeedEvidenceLiveTruthTests {
             uptimeNanoseconds: 100
         )
 
-        expectFailure(.noActiveConnection, truth.accept(measured, in: generation))
-        expectFailure(.noActiveConnection, truth.markEvidenceGap(in: generation))
-        expectFailure(.noActiveConnection, truth.endConnectedGeneration(generation))
+        expectSuccess(truth.beginConnectedGeneration(generation))
+        let endedToken = try #require(truth.activeContinuityToken)
+        expectSuccess(truth.endConnectedGeneration(generation))
+
+        expectFailure(
+            .noActiveConnection,
+            truth.accept(measured, attributedTo: endedToken)
+        )
+        expectFailure(
+            .noActiveConnection,
+            truth.markEvidenceGap(after: endedToken)
+        )
+        expectFailure(
+            .noActiveConnection,
+            truth.endConnectedGeneration(generation)
+        )
         #expect(truth.availability == .unavailable)
     }
 }
