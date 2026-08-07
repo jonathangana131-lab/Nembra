@@ -30,9 +30,6 @@ struct NembraES80CaptureReportCommand {
         case missingOptionValue(String)
         case invalidPositiveInteger(option: String, value: String)
         case emptyPeripheralIdentifier
-        case noAttributablePeripheral
-        case ambiguousPeripherals([String])
-        case requestedPeripheralNotPresent(requested: String, available: [String])
 
         var description: String {
             switch self {
@@ -46,12 +43,6 @@ struct NembraES80CaptureReportCommand {
                 "\(option) requires a positive integer, got: \(value)"
             case .emptyPeripheralIdentifier:
                 "--peripheral requires a non-empty exact peripheral identifier"
-            case .noAttributablePeripheral:
-                "capture contains no target-attributable connection/GATT/value peripheral evidence"
-            case let .ambiguousPeripherals(identifiers):
-                "capture contains multiple attributable peripherals; pass --peripheral with one exact identifier: \(identifiers.joined(separator: ", "))"
-            case let .requestedPeripheralNotPresent(requested, available):
-                "requested peripheral \(requested) is not present in target-attributable capture evidence; available: \(available.joined(separator: ", "))"
             }
         }
     }
@@ -74,56 +65,27 @@ struct NembraES80CaptureReportCommand {
 
     private static func run(_ options: Options) throws {
         let artifactData = try Data(contentsOf: options.inputURL)
-        let session = try PassiveBluetoothCaptureJSON.decode(artifactData)
-        let attributablePeripherals = PassiveBluetoothTuyaCaptureReportBuilder
-            .attributablePeripheralIdentifiers(in: session)
-        let selectedPeripheral = try selectPeripheral(
-            requested: options.peripheralIdentifier,
-            available: attributablePeripherals
-        )
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
             maximumEncryptedMessageBytes: options.maximumMessageBytes,
             maximumFragmentCount: options.maximumFragmentCount
         )
-        let report = try PassiveBluetoothTuyaCaptureReportBuilder.make(
-            session: session,
-            peripheralIdentifier: selectedPeripheral,
+        let artifactReport = try PassiveBluetoothTuyaCaptureArtifactReportBuilder.make(
+            captureJSON: artifactData,
+            peripheralIdentifier: options.peripheralIdentifier,
             policy: policy
         )
-        let reportData = try report.jsonData(prettyPrinted: options.prettyPrinted)
+        let reportData = try artifactReport.jsonData(prettyPrinted: options.prettyPrinted)
 
         if let outputURL = options.outputURL {
             try reportData.write(to: outputURL, options: .atomic)
             writeStderr(
-                "wrote framing-candidate report for \(selectedPeripheral) to \(outputURL.path)"
+                "wrote framing-candidate report for " +
+                "\(artifactReport.analysis.capture.peripheralIdentifier) to \(outputURL.path) " +
+                "(source sha256 \(artifactReport.sourceArtifact.sha256))"
             )
         } else {
             FileHandle.standardOutput.write(reportData)
             FileHandle.standardOutput.write(Data("\n".utf8))
-        }
-    }
-
-    private static func selectPeripheral(
-        requested: String?,
-        available: [String]
-    ) throws -> String {
-        if let requested {
-            guard available.contains(requested) else {
-                throw CommandError.requestedPeripheralNotPresent(
-                    requested: requested,
-                    available: available
-                )
-            }
-            return requested
-        }
-
-        switch available.count {
-        case 0:
-            throw CommandError.noAttributablePeripheral
-        case 1:
-            return available[0]
-        default:
-            throw CommandError.ambiguousPeripherals(available)
         }
     }
 
@@ -149,7 +111,7 @@ struct NembraES80CaptureReportCommand {
                 guard !trimmed.isEmpty else {
                     throw CommandError.emptyPeripheralIdentifier
                 }
-                peripheralIdentifier = value
+                peripheralIdentifier = trimmed
 
             case "--max-message-bytes":
                 let value = try nextValue(arguments, index: &index, option: argument)
@@ -177,7 +139,7 @@ struct NembraES80CaptureReportCommand {
 
         return Options(
             inputURL: URL(fileURLWithPath: inputPath),
-            outputURL: outputPath.map(URL.init(fileURLWithPath:)),
+            outputURL: outputPath.map { URL(fileURLWithPath: $0) },
             peripheralIdentifier: peripheralIdentifier,
             maximumMessageBytes: maximumMessageBytes,
             maximumFragmentCount: maximumFragmentCount,
@@ -227,6 +189,12 @@ struct NembraES80CaptureReportCommand {
       --max-fragments <n>        Offline analysis ceiling (default: 256).
       --compact                  Emit compact sorted-key JSON.
       --help, -h                 Show this help.
+
+    Provenance:
+      Every report includes the exact source capture artifact byte count and
+      lowercase SHA-256 digest so analysis can be traced back to the precise JSON
+      bytes that were decoded. The digest identifies the artifact; it does not
+      authenticate the scooter, recorder, or person who produced the capture.
 
     Truth boundary:
       The output is PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY. It does not
