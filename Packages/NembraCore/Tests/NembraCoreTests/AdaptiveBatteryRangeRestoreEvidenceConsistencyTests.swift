@@ -32,10 +32,11 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
         startPercentage: Double,
         endPercentage: Double,
         startUptime: UInt64,
-        endUptime: UInt64
+        endUptime: UInt64,
+        distanceMeters: Double = 1_000
     ) throws -> BatteryRangeLearningWindow {
         try BatteryRangeLearningWindow(
-            distanceMeters: 1_000,
+            distanceMeters: distanceMeters,
             distanceCoverage: .complete,
             transportGapOccurred: false,
             startSOC: reading(startPercentage, uptime: startUptime),
@@ -89,14 +90,29 @@ struct AdaptiveBatteryRangeRestoreEvidenceConsistencyTests {
         }
     }
 
-    @Test("restore accepts the normalized upper bound for one window")
+    @Test("live-produced one-window 100-point upper bound round-trips")
     func oneWindowHundredPointUpperBoundIsValid() throws {
-        var object = try singleWindowModelJSON()
-        object["historicalConsumedPercentagePoints"] = 100.0
-        let data = try JSONSerialization.data(withJSONObject: object)
+        var model = AdaptiveBatteryRangeModel()
+        let result = model.ingest(
+            try window(
+                startPercentage: 100,
+                endPercentage: 0,
+                startUptime: 1,
+                endUptime: 2,
+                distanceMeters: 1_000
+            ),
+            policy: try policy()
+        )
 
-        let decoded = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
-        #expect(decoded.historicalConsumedPercentagePoints == 100)
-        #expect(decoded.acceptedWindowCount == 1)
+        #expect(result.disposition == .accepted)
+        #expect(model.historicalConsumedPercentagePoints == 100)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(model.recentSamples.first?.consumedPercentagePoints == 100)
+
+        let decoded = try JSONDecoder().decode(
+            AdaptiveBatteryRangeModel.self,
+            from: JSONEncoder().encode(model)
+        )
+        #expect(decoded == model)
     }
 }
