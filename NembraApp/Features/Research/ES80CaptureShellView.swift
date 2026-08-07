@@ -3,6 +3,7 @@ import Foundation
 import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// A product-facing shell around the passive ES80 research controller.
@@ -68,9 +69,11 @@ struct ES80CaptureShellView: View {
     let controller: ForegroundCoreBluetoothCaptureController
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedCandidateIdentifier: UUID?
     @State private var diagnosticMessage: String?
+    @State private var lifecycleFailureMessage: String?
     @State private var exportDocument: PassiveCaptureJSONDocument?
     @State private var preparedSummary: PreparedCaptureSummary?
     @State private var isExporting = false
@@ -121,6 +124,18 @@ struct ES80CaptureShellView: View {
             case let .failure(error):
                 diagnosticMessage = "The capture is still prepared, but export did not finish: \(error.localizedDescription)"
             }
+        }
+        .onAppear {
+            synchronizeIdleTimer(for: phase)
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: phase) { _, newPhase in
+            synchronizeIdleTimer(for: newPhase)
+        }
+        .onChange(of: scenePhase) { _, newScenePhase in
+            handleScenePhaseChange(newScenePhase)
         }
         .onChange(of: controller.discoveredPeripherals.map(\.id)) { _, identifiers in
             guard let selectedCandidateIdentifier,
@@ -190,7 +205,7 @@ struct ES80CaptureShellView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Set up while stationary. Once capture is active, put the phone away and do not interact with it while riding. Nembra does not send application characteristic writes from this tool.")
+                Text("Set up while stationary. During live capture, keep Nembra open in the foreground with the screen awake and set the phone down safely. Do not switch apps or lock the screen; this first research path intentionally does not claim background capture continuity.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -229,7 +244,7 @@ struct ES80CaptureShellView: View {
                 title: controller.discoveredPeripherals.isEmpty ? "Looking for nearby devices" : "Choose the candidate you physically identified",
                 message: controller.discoveredPeripherals.isEmpty
                     ? "No candidate is selected automatically. Keep the scooter stationary and nearby."
-                    : "Use physical correlation before choosing. Local names and signal strength remain candidate evidence only.",
+                    : "Use physical correlation before choosing. Local names, candidate identifiers, and signal strength remain candidate evidence only.",
                 symbol: "dot.radiowaves.left.and.right"
             )
 
@@ -264,7 +279,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "CONNECTING",
                 title: "Opening the passive session",
-                message: "Nembra is connecting only to the candidate you selected. Keep the scooter stationary until setup completes.",
+                message: "Nembra is connecting only to the candidate you selected. Keep the scooter stationary and keep Nembra foregrounded until setup completes.",
                 symbol: "link"
             )
             ProgressView()
@@ -281,7 +296,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "VERIFYING SESSION",
                 title: "Preparing trustworthy capture",
-                message: "Service discovery plus permitted reads and subscriptions must finish without ambiguity before the capture can be exported.",
+                message: "Service discovery plus permitted reads and subscriptions must finish without ambiguity before the capture can be exported. Keep Nembra foregrounded and the screen awake.",
                 symbol: "checkmark.shield"
             )
             ProgressView()
@@ -293,10 +308,10 @@ struct ES80CaptureShellView: View {
             captureActivePanel
 
             primaryButton("Finish Capture", systemImage: "stop.circle") {
-                Task { await finishCapture() }
+                requestFinishCapture()
             }
 
-            Text("Finish only after you are safely stopped. The export is prepared before Nembra ends the selected connection.")
+            Text("Finish only after you are safely stopped. Finalization is one-shot and prepares the export before Nembra ends the selected connection.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -310,7 +325,7 @@ struct ES80CaptureShellView: View {
             )
 
             primaryButton("Finish Capture", systemImage: "stop.circle") {
-                Task { await finishCapture() }
+                requestFinishCapture()
             }
 
             Text("If you are moving, ignore the phone. Return here and finish only after you are safely stopped.")
@@ -402,7 +417,7 @@ struct ES80CaptureShellView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
 
-                Text(String(peripheral.id.uuidString.prefix(8)))
+                Text(shortCandidateIdentifier(peripheral))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
@@ -453,7 +468,7 @@ struct ES80CaptureShellView: View {
                         .font(.caption.monospaced().weight(.bold))
                         .foregroundStyle(.green)
 
-                    Text("Put the phone away.")
+                    Text("Keep Nembra open. Set the phone down safely.")
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
                 }
@@ -461,7 +476,7 @@ struct ES80CaptureShellView: View {
 
             Divider().overlay(.white.opacity(0.12))
 
-            Text("Nembra is retaining passive events from the explicitly selected target. Do not touch or look at the phone while riding. Return here only after you are safely stopped.")
+            Text("Nembra is retaining passive events from the explicitly selected target. Keep this research app in the foreground with the screen awake; do not lock the screen or switch apps during live capture. Return to the controls only after you are safely stopped.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -469,7 +484,7 @@ struct ES80CaptureShellView: View {
         .padding(18)
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Capture active. Put the phone away while riding and finish only when safely stopped.")
+        .accessibilityLabel("Capture active. Keep Nembra in the foreground with the screen awake, set the phone down safely, and finish only when safely stopped.")
     }
 
     private func preparedCaptureSummaryPanel(_ summary: PreparedCaptureSummary) -> some View {
@@ -580,7 +595,7 @@ struct ES80CaptureShellView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 54)
-                .foregroundStyle(disabled ? .secondary : .black)
+                .foregroundStyle(disabled ? Color.secondary : Color.black)
                 .background(
                     disabled ? .white.opacity(0.08) : .white,
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -608,6 +623,9 @@ struct ES80CaptureShellView: View {
     }
 
     private var phase: Phase {
+        if let lifecycleFailureMessage {
+            return .failed(lifecycleFailureMessage)
+        }
         if controller.captureFailed {
             return .failed(controller.lastDiagnostic ?? "The passive acquisition controller rejected this session.")
         }
@@ -649,10 +667,21 @@ struct ES80CaptureShellView: View {
 
     private var canShowAdvancedConsole: Bool {
         guard exportDocument == nil,
+              lifecycleFailureMessage == nil,
               !controller.isScanning,
               !controller.hasCompleteTargetEvidence else { return false }
         if case .idle = controller.connectionPhase { return true }
         return false
+    }
+
+    private var liveCaptureRequiresForeground: Bool {
+        guard controller.hasTargetSession, exportDocument == nil else { return false }
+        switch controller.connectionPhase {
+        case .connecting, .connected:
+            return true
+        case .idle:
+            return false
+        }
     }
 
     private var statusTitle: String {
@@ -663,7 +692,7 @@ struct ES80CaptureShellView: View {
         case .candidateSelected: "Candidate selected"
         case .connecting: "Connecting"
         case .preparingEvidence: "Verifying passive session"
-        case .capturing: "Capture active"
+        case .capturing: "Capture active — foreground only"
         case .disconnectedCaptureReady: "Connection ended — evidence retained"
         case .finishing: "Preparing evidence"
         case .finished: "Capture complete"
@@ -742,7 +771,10 @@ struct ES80CaptureShellView: View {
         }
     }
 
-    private func finishCapture() async {
+    private func requestFinishCapture() {
+        guard !isPreparingExport,
+              exportDocument == nil,
+              lifecycleFailureMessage == nil else { return }
         guard controller.hasCompleteTargetEvidence else {
             diagnosticMessage = "Capture is not yet complete enough to export."
             return
@@ -750,17 +782,50 @@ struct ES80CaptureShellView: View {
 
         isPreparingExport = true
         diagnosticMessage = nil
+        Task { await finishCaptureAfterAdmission() }
+    }
+
+    private func finishCaptureAfterAdmission() async {
+        defer { isPreparingExport = false }
+
         do {
             let data = try await controller.encodedCaptureJSON(prettyPrinted: true)
+            guard lifecycleFailureMessage == nil else { return }
+
             let finalizedSession = try PassiveBluetoothCaptureJSON.decode(data)
+            guard lifecycleFailureMessage == nil else { return }
+
             preparedSummary = PreparedCaptureSummary(session: finalizedSession)
             exportDocument = PassiveCaptureJSONDocument(data: data)
             controller.cancelActiveConnection()
             isExporting = true
         } catch {
+            guard lifecycleFailureMessage == nil, exportDocument == nil else { return }
             diagnosticMessage = "Capture could not be finalized: \(error.localizedDescription)"
         }
-        isPreparingExport = false
+    }
+
+    private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
+        guard newScenePhase != .active, liveCaptureRequiresForeground else { return }
+        invalidateLiveCaptureForLifecycleChange()
+    }
+
+    private func invalidateLiveCaptureForLifecycleChange() {
+        guard lifecycleFailureMessage == nil else { return }
+
+        lifecycleFailureMessage = "Nembra left the active foreground while live Bluetooth evidence was being captured. This foreground-only research session is not exportable because suspension or resume-time callback delivery could hide an observation gap. Relaunch Nembra Capture and repeat the experiment with the app foregrounded and the screen awake."
+        diagnosticMessage = nil
+        controller.cancelActiveConnection()
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func synchronizeIdleTimer(for phase: Phase) {
+        switch phase {
+        case .connecting, .preparingEvidence, .capturing:
+            UIApplication.shared.isIdleTimerDisabled = true
+        default:
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 
     private func candidateName(
@@ -772,12 +837,18 @@ struct ES80CaptureShellView: View {
         return localName
     }
 
+    private func shortCandidateIdentifier(
+        _ peripheral: ForegroundCoreBluetoothCaptureController.DiscoveredPeripheral
+    ) -> String {
+        String(peripheral.id.uuidString.prefix(8))
+    }
+
     private func candidateAccessibilityLabel(
         _ peripheral: ForegroundCoreBluetoothCaptureController.DiscoveredPeripheral,
         selected: Bool
     ) -> String {
         let connection = peripheral.isConnectable == false ? "not connectable" : "candidate"
         let selection = selected ? ", selected" : ""
-        return "\(candidateName(peripheral)), \(peripheral.rssiDescription), \(connection)\(selection)."
+        return "\(candidateName(peripheral)), candidate ID \(shortCandidateIdentifier(peripheral)), \(peripheral.rssiDescription), \(connection)\(selection)."
     }
 }
