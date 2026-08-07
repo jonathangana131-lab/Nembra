@@ -39,6 +39,9 @@ jobs:
             const repository = `${context.repo.owner}/${context.repo.repo}`
             const statusContext = process.env.STATUS_CONTEXT
             const stalePendingMs = 2 * 60 * 60 * 1000
+            const hasPriorityMarker = body => (body || '')
+              .split(/\r?\n/)
+              .some(line => line.trim() === 'XCODE27_SCHEDULE_PRIORITY: true')
 
             const { data: repositoryInfo } = await github.rest.repos.get({
               owner: context.repo.owner,
@@ -95,8 +98,8 @@ jobs:
             }
 
             eligible.sort((a, b) => {
-              const aPriority = (a.body || '').includes('XCODE27_SCHEDULE_PRIORITY: true') ? 1 : 0
-              const bPriority = (b.body || '').includes('XCODE27_SCHEDULE_PRIORITY: true') ? 1 : 0
+              const aPriority = hasPriorityMarker(a.body) ? 1 : 0
+              const bPriority = hasPriorityMarker(b.body) ? 1 : 0
               if (aPriority !== bPriority) return bPriority - aPriority
               return Date.parse(a.updated_at) - Date.parse(b.updated_at)
             })
