@@ -358,11 +358,13 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
                 return .valid(try decoder.decode(Envelope.self, from: data))
 
             case Self.legacySchemaVersion:
-                // Current nested decoders deliberately map the missing v1
-                // transport field to `.unknown`. Normalize the envelope itself
-                // to v2 in memory so semantically identical v1/v2 slots at the
-                // same generation do not conflict merely because of version.
-                let legacy = try decoder.decode(Envelope.self, from: data)
+                // Schema v1 predates transport provenance. Strip any injected
+                // current-era transport key before using today's tolerant nested
+                // decoders so legacy data can never self-assert a v2 claim.
+                guard let legacyData = legacyEnvelopeDataIgnoringTransportGapEvidence(data) else {
+                    return .corrupt
+                }
+                let legacy = try decoder.decode(Envelope.self, from: legacyData)
                 return .valid(
                     Envelope(
                         schemaVersion: Self.schemaVersion,
@@ -377,6 +379,37 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         } catch {
             return .corrupt
         }
+    }
+
+    private func legacyEnvelopeDataIgnoringTransportGapEvidence(_ data: Data) -> Data? {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              var root = object as? [String: Any],
+              var checkpoint = root["checkpoint"] as? [String: Any],
+              let kind = checkpoint["kind"] as? String else {
+            return nil
+        }
+
+        switch kind {
+        case "inProgress":
+            guard var value = checkpoint["inProgress"] as? [String: Any] else {
+                return nil
+            }
+            value.removeValue(forKey: "transportGapEvidence")
+            checkpoint["inProgress"] = value
+
+        case "completedPendingCommit":
+            guard var value = checkpoint["completedPendingCommit"] as? [String: Any] else {
+                return nil
+            }
+            value.removeValue(forKey: "transportGapEvidence")
+            checkpoint["completedPendingCommit"] = value
+
+        default:
+            return nil
+        }
+
+        root["checkpoint"] = checkpoint
+        return try? JSONSerialization.data(withJSONObject: root)
     }
 
     private func currentEnvelopeCarriesTransportGapEvidence(_ data: Data) -> Bool {
