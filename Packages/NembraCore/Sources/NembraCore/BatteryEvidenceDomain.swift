@@ -189,11 +189,12 @@ package enum BatteryEvidenceReceiptSequencerError: Error, Equatable, Sendable {
 
 /// Small synchronous sequencer intended to be owned by one serialized acquisition boundary.
 ///
-/// Receipt identity must be minted before work fans out asynchronously. This is therefore a
-/// value type rather than an actor: the trusted callback owner mutates it synchronously on
-/// its already-serialized callback path, then shares the immutable identity with all sibling
-/// semantic fields derived from that callback.
-package struct BatteryEvidenceReceiptSequencer: Sendable {
+/// Receipt identity must be minted before work fans out asynchronously. This is a reference
+/// type deliberately: copying a mutable value sequencer could fork the counter and mint two
+/// identical `(epoch, sequence)` receipts. Aliasing this object instead shares one counter.
+/// The trusted acquisition owner must call it only from its already-serialized callback path;
+/// immutable receipt identities, not the sequencer, are what cross into async normalization.
+package final class BatteryEvidenceReceiptSequencer {
     package let acquisitionEpoch: UUID
     private var nextSequenceNumber: UInt64
 
@@ -205,7 +206,7 @@ package struct BatteryEvidenceReceiptSequencer: Sendable {
         self.nextSequenceNumber = startingSequenceNumber
     }
 
-    package mutating func nextReceiptIdentity() throws -> BatteryEvidenceReceiptIdentity {
+    package func nextReceiptIdentity() throws -> BatteryEvidenceReceiptIdentity {
         guard nextSequenceNumber != UInt64.max else {
             throw BatteryEvidenceReceiptSequencerError.sequenceExhausted
         }
