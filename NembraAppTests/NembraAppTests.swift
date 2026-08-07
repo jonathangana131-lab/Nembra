@@ -156,6 +156,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(frame.kilometersPerHour, 18.4, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .confirmedVehicleState)
         XCTAssertNil(frame.latestMeasuredKilometersPerHour)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertEqual(model.measurementRevision, 0)
     }
 
@@ -171,6 +172,7 @@ final class NembraAppTests: XCTestCase {
         ))
         XCTAssertEqual(frame.kilometersPerHour, 20, accuracy: 0.000_1)
         XCTAssertEqual(frame.origin, .measuredTelemetry)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 20, accuracy: 0.000_1)
         XCTAssertFalse(model.isAnimationActive)
     }
 
@@ -197,6 +199,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(midpoint.kilometersPerHour, 15, accuracy: 0.000_1)
         XCTAssertEqual(midpoint.latestMeasuredKilometersPerHour, 20)
         XCTAssertEqual(midpoint.origin, .visuallyInterpolated)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 20, accuracy: 0.000_1)
 
         let settled = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 1_400_000_000,
@@ -240,6 +243,7 @@ final class NembraAppTests: XCTestCase {
         model.configureInterpolationPolicy(.simulatorQA)
         model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
 
         model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 1_900_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
@@ -253,6 +257,7 @@ final class NembraAppTests: XCTestCase {
         )
         model.accept(estimate)
         XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
 
         let frame = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 2_500_000_000,
