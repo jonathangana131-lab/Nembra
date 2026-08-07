@@ -1,9 +1,11 @@
 public enum NavigationArrivalEvidenceError: Error, Equatable, Sendable {
     case invalidPolicy
+    case selectionIdentityMismatch
     case observationWithoutSelectedRoute
     case observationForFutureSelection
     case observationStateMismatch
     case nonMonotonicObservation
+    case observationCountExhausted
 }
 
 /// Explicit thresholds for declaring that guidance evidence is near enough to
@@ -78,8 +80,8 @@ public enum NavigationArrivalObservationResult: Equatable, Sendable {
 
 /// Fail-closed reducer for destination-arrival evidence.
 ///
-/// The caller must first pass the exact token returned by
-/// `NavigationGuidanceProgressTracker.select(route:)` to `select(token:)`.
+/// The caller must first pass the exact token and route from
+/// `NavigationGuidanceProgressTracker.select(route:)` to `select(token:route:)`.
 /// Accepted guidance observations can then be projected through
 /// `observeAccepted(_:resultingGuidanceState:)`. This explicit selection step is
 /// what prevents a late callback from an old route generation from advancing
@@ -89,40 +91,50 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
 
     private let policy: NavigationArrivalEvidencePolicy
     private var selectedToken: NavigationGuidanceSelectionToken?
+    private var selectedRoute: NavigationRouteSnapshot?
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
 
     public init(policy: NavigationArrivalEvidencePolicy) {
         self.policy = policy
     }
 
-    /// Returns `false` for a superseded selection token. Repeating the current
-    /// token is idempotent and does not erase candidate/arrival evidence.
+    /// Returns `false` for a superseded selection token. Repeating the exact
+    /// current token+route is idempotent and does not erase candidate/arrival
+    /// evidence. Reusing the token for different route facts fails closed.
     @discardableResult
-    public mutating func select(token: NavigationGuidanceSelectionToken) -> Bool {
+    public mutating func select(
+        token: NavigationGuidanceSelectionToken,
+        route: NavigationRouteSnapshot
+    ) throws -> Bool {
         if let selectedToken {
             if token.sequence < selectedToken.sequence {
                 return false
             }
             if token == selectedToken {
+                guard selectedRoute == route else {
+                    throw NavigationArrivalEvidenceError.selectionIdentityMismatch
+                }
                 return true
             }
         }
 
         selectedToken = token
+        selectedRoute = route
         lastAcceptedObservationUptimeNanoseconds = nil
         state = .awaitingEvidence(token: token)
         return true
     }
 
     /// Consumes an observation only after the guidance tracker accepted it.
-    /// The resulting guidance state is cross-checked against the observation so
-    /// stale or mismatched state cannot accidentally become arrival evidence.
+    /// The resulting guidance state is cross-checked against the observation and
+    /// exact selected route so stale or mismatched state cannot become arrival
+    /// evidence.
     @discardableResult
     public mutating func observeAccepted(
         _ observation: NavigationGuidanceProgressObservation,
         resultingGuidanceState: NavigationGuidanceProgressState
     ) throws -> NavigationArrivalObservationResult {
-        guard let selectedToken else {
+        guard let selectedToken, let selectedRoute else {
             throw NavigationArrivalEvidenceError.observationWithoutSelectedRoute
         }
 
@@ -135,7 +147,8 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
 
         let qualification = try qualification(
             for: observation,
-            resultingGuidanceState: resultingGuidanceState
+            resultingGuidanceState: resultingGuidanceState,
+            selectedRoute: selectedRoute
         )
 
         if let lastAcceptedObservationUptimeNanoseconds,
@@ -157,13 +170,18 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         let candidate: NavigationArrivalCandidateEvidence
         switch state {
         case let .candidate(existing):
+            let (nextCount, overflow) = existing.qualifyingObservationCount
+                .addingReportingOverflow(1)
+            guard !overflow else {
+                throw NavigationArrivalEvidenceError.observationCountExhausted
+            }
             candidate = NavigationArrivalCandidateEvidence(
                 selectionToken: selectedToken,
                 firstQualifyingObservationUptimeNanoseconds:
                     existing.firstQualifyingObservationUptimeNanoseconds,
                 latestQualifyingObservationUptimeNanoseconds:
                     observation.receivedAtUptimeNanoseconds,
-                qualifyingObservationCount: existing.qualifyingObservationCount + 1
+                qualifyingObservationCount: nextCount
             )
 
         case .idle, .awaitingEvidence, .arrived:
@@ -214,20 +232,23 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
 
     public mutating func clearSelection() {
         selectedToken = nil
+        selectedRoute = nil
         lastAcceptedObservationUptimeNanoseconds = nil
         state = .idle
     }
 
     private func qualification(
         for observation: NavigationGuidanceProgressObservation,
-        resultingGuidanceState: NavigationGuidanceProgressState
+        resultingGuidanceState: NavigationGuidanceProgressState,
+        selectedRoute: NavigationRouteSnapshot
     ) throws -> Bool {
         switch resultingGuidanceState {
         case .idle:
             throw NavigationArrivalEvidenceError.observationStateMismatch
 
-        case let .unavailable(token, _, reason):
+        case let .unavailable(token, route, reason):
             guard token == observation.selectionToken,
+                  route == selectedRoute,
                   reason == .ambiguousProgress,
                   !observation.isProgressAssignmentConfident else {
                 throw NavigationArrivalEvidenceError.observationStateMismatch
@@ -236,6 +257,7 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
 
         case let .active(token, route, progress):
             guard token == observation.selectionToken,
+                  route == selectedRoute,
                   observation.isProgressAssignmentConfident,
                   progress.currentStepIndex == observation.stepIndex,
                   progress.distanceRemainingOnStepMeters ==
