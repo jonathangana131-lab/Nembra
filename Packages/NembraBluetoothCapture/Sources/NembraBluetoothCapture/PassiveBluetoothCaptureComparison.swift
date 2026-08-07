@@ -3,11 +3,13 @@ import NembraCore
 
 /// Whether two controlled captures can support direct raw-difference metrics.
 ///
-/// A known observation gap in either relevant target timeline makes the direct
-/// state-to-state comparison unavailable because Nembra has no truthful key for
-/// aligning arbitrary continuity segments across independent captures.
+/// Direct state-to-state metrics are available only when both captures resolve
+/// to the same observed GATT target and the relevant target timelines contain
+/// no known observation gap. Identity ambiguity and continuity ambiguity are
+/// distinct so downstream tooling can explain why Nembra withheld a score.
 public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable, Sendable {
     case comparable
+    case identityAmbiguous
     case continuityAmbiguous
 }
 
@@ -122,10 +124,10 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
         self.lastPayloadChanged = lastPayloadChanged
     }
 
-    /// A descriptive sorting hint only when the captures form one uninterrupted
-    /// comparison timeline each. `nil` means Nembra deliberately withheld a
-    /// cross-capture score because a known continuity break makes segment
-    /// correspondence ambiguous.
+    /// A descriptive sorting hint only when the captures resolve to the same
+    /// observed GATT target and each relevant timeline is uninterrupted. `nil`
+    /// means Nembra deliberately withheld a cross-capture score because target
+    /// attribution or continuity is ambiguous.
     public var rawDifferenceScore: Int? {
         guard differenceAvailability == .comparable,
               let baselineOnlyPayloadCount,
@@ -174,8 +176,9 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let baselineServices: Set<String>
     public let comparisonServices: Set<String>
 
-    /// Direct topology deltas are available only for uninterrupted controlled
-    /// captures. `nil` means continuity ambiguity, not an empty delta.
+    /// Direct topology deltas are available only for captures with the same
+    /// observed GATT identity and uninterrupted evidence. `nil` means the
+    /// comparison is not attributable enough for a direct topology delta.
     public let addedServices: Set<String>?
     public let removedServices: Set<String>?
     public let sharedServices: Set<String>?
@@ -220,10 +223,10 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// `stationary/rested` vs `after a short ride`. The comparison is intentionally
 /// byte/statistics based. It never declares a stream to be voltage/current/etc.
 ///
-/// Direct payload/topology difference metrics are fail-closed when either
-/// relevant target timeline contains a known continuity break. Nembra preserves
-/// the descriptive per-capture evidence but does not invent correspondence
-/// between arbitrary pre/post-gap segments across independent captures.
+/// Direct payload/topology difference metrics are fail-closed unless both
+/// captures resolve to the same observed GATT peripheral and both relevant
+/// target timelines remain uninterrupted. Nembra preserves descriptive
+/// per-capture evidence but does not invent target or segment correspondence.
 ///
 /// The report also exposes whether both sessions conservatively resolved to the
 /// same CoreBluetooth peripheral identifier from typed GATT-path evidence. That
@@ -237,6 +240,10 @@ public enum PassiveBluetoothCaptureComparison {
     ) -> PassiveBluetoothCaptureComparisonReport {
         let baselineIdentifier = resolvedGATTPeripheralIdentifier(in: baseline)
         let comparisonIdentifier = resolvedGATTPeripheralIdentifier(in: comparison)
+        let peripheralRelationship = relationship(
+            baseline: baselineIdentifier,
+            comparison: comparisonIdentifier
+        )
         let baselineContinuityBreakCount = continuityBreakCount(
             in: baseline,
             peripheralIdentifier: baselineIdentifier
@@ -245,10 +252,15 @@ public enum PassiveBluetoothCaptureComparison {
             in: comparison,
             peripheralIdentifier: comparisonIdentifier
         )
-        let differenceAvailability: PassiveBluetoothControlledComparisonAvailability =
-            baselineContinuityBreakCount == 0 && comparisonContinuityBreakCount == 0
-                ? .comparable
-                : .continuityAmbiguous
+
+        let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
+        if peripheralRelationship != .sameObservedIdentifier {
+            differenceAvailability = .identityAmbiguous
+        } else if baselineContinuityBreakCount == 0 && comparisonContinuityBreakCount == 0 {
+            differenceAvailability = .comparable
+        } else {
+            differenceAvailability = .continuityAmbiguous
+        }
 
         let baselineStreams = valueStreamSnapshots(in: baseline)
         let comparisonStreams = valueStreamSnapshots(in: comparison)
@@ -310,10 +322,7 @@ public enum PassiveBluetoothCaptureComparison {
             comparisonRecordCount: comparison.records.count,
             baselinePeripheralIdentifier: baselineIdentifier,
             comparisonPeripheralIdentifier: comparisonIdentifier,
-            peripheralRelationship: relationship(
-                baseline: baselineIdentifier,
-                comparison: comparisonIdentifier
-            ),
+            peripheralRelationship: peripheralRelationship,
             baselineContinuityBreakCount: baselineContinuityBreakCount,
             comparisonContinuityBreakCount: comparisonContinuityBreakCount,
             differenceAvailability: differenceAvailability,
