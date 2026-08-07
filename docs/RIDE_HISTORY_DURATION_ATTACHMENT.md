@@ -17,7 +17,7 @@ The attachment never subtracts `beganAtDate`, `confirmedAtDate`, or `endedAtDate
 
 `RideHistoryDurationJoinedRecord` is a runtime-only validated join. It requires the attachment's session identity and recorded ride continuity to match the exact `RideHistoryRecord` before a consumer may present or aggregate duration.
 
-The joined type is intentionally not `Codable`, and its initializer is package-scoped. Persistence stores the two independently valid records, then the core coordinator revalidates their relationship when loading them. App code may consume a joined record returned by that coordinator but cannot directly manufacture one from arbitrary matching records. A matching UUID with mismatched continuity therefore fails closed instead of silently becoming ride history.
+The joined type is intentionally not `Codable`, and construction is sealed in both build compositions: SwiftPM exposes only a `package` initializer for trusted NembraCore tests/adapters, while Nembra.app's current direct-source composition gets a `fileprivate` initializer. Persistence stores the two independently valid records, then the core coordinator revalidates their relationship when loading them. App code may consume a joined record returned by that coordinator but cannot directly manufacture one from arbitrary matching records. A matching UUID with mismatched continuity therefore fails closed instead of silently becoming ride history.
 
 A completed base ride without a duration attachment is ordinary duration unavailability. If an attachment exists without its required base history record, the coordinator treats that as a durable inconsistency and fails closed rather than hiding the orphan as normal unavailability.
 
@@ -47,6 +47,10 @@ The bridge preserves the existing statistics semantics exactly:
 - the caller must still explicitly choose `.rideBegan` or `.rideEnded` calendar attribution for rides that cross a bucket boundary.
 
 This makes the durable history join usable by the existing duration-statistics domain without reopening a raw-record construction path.
+
+## App-target visibility boundary
+
+The current iOS target manually compiles selected NembraCore source files rather than linking the full Swift package product. These new duration files remain package/domain-only until a Class-A integration owner deliberately adds their complete source dependency closure to the app target. Package acceptance therefore proves the core layer, not current production-app visibility. The dual-mode initializer seal above is designed so future direct-source wiring does not weaken the trust boundary or fail merely because `package` access is unavailable outside SwiftPM.
 
 ## Parallel ownership boundary
 
