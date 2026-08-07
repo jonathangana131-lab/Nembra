@@ -18,21 +18,22 @@ enum BatteryAdaptiveRangeEvidenceAction: Equatable, Sendable {
         case .resetContinuity:
             return .continuityReset
         case .ingestSOC:
-            return .authoritativeSOCAccepted
+            return .authoritativeSOCIngested
         case .resetContinuityAndIngestSOC:
-            return .continuityResetAndAuthoritativeSOCAccepted
+            return .continuityResetAndAuthoritativeSOCIngested
         }
     }
 }
 
 /// Payload-free public classification of what one validated pipeline transition
 /// did. This is safe to expose because it cannot carry or manufacture an
-/// authoritative SoC reading.
+/// authoritative SoC reading. "Ingested" means accepted into the ephemeral
+/// evidence/window pipeline; it does not imply acceptance into learned history.
 public enum BatteryAdaptiveRangePipelineDisposition: Equatable, Sendable {
     case ignored
     case continuityReset
-    case authoritativeSOCAccepted
-    case continuityResetAndAuthoritativeSOCAccepted
+    case authoritativeSOCIngested
+    case continuityResetAndAuthoritativeSOCIngested
 }
 
 /// Pure semantic helper used by the stateful bridge.
