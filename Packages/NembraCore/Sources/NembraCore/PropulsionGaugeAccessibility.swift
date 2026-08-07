@@ -4,6 +4,9 @@
 /// Assistive technologies should announce the newest accepted measurement, not a
 /// transient render frame between measurements.
 public struct PropulsionGaugeAccessibilitySnapshot: Equatable, Sendable {
+    /// Exact vehicle / confirmed-mode scope of the source display model. Keeping this on the detached
+    /// projection prevents accepted provenance from being silently associated with another session.
+    public let identity: PropulsionGaugeIdentity
     public let availability: PropulsionGaugeAvailability
     public let latestAcceptedWatts: Double?
     public let latestAcceptedReceiptSequenceNumber: UInt64?
@@ -21,6 +24,7 @@ public struct PropulsionGaugeAccessibilitySnapshot: Equatable, Sendable {
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
 
     fileprivate init(
+        identity: PropulsionGaugeIdentity,
         availability: PropulsionGaugeAvailability,
         latestAcceptedWatts: Double?,
         latestAcceptedReceiptSequenceNumber: UInt64?,
@@ -29,6 +33,7 @@ public struct PropulsionGaugeAccessibilitySnapshot: Equatable, Sendable {
         acceptedObservedScaleFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
+        self.identity = identity
         self.availability = availability
         self.latestAcceptedWatts = latestAcceptedWatts
         self.latestAcceptedReceiptSequenceNumber = latestAcceptedReceiptSequenceNumber
@@ -63,6 +68,7 @@ public extension PropulsionGaugeDisplayModel {
               let scaleOrigin = frame.scaleOrigin,
               compatibleScale.origin == scaleOrigin else {
             return PropulsionGaugeAccessibilitySnapshot(
+                identity: identity,
                 availability: frame.availability,
                 latestAcceptedWatts: frame.latestAcceptedWatts,
                 latestAcceptedReceiptSequenceNumber: frame.latestAcceptedReceiptSequenceNumber,
@@ -79,6 +85,7 @@ public extension PropulsionGaugeDisplayModel {
         )
 
         return PropulsionGaugeAccessibilitySnapshot(
+            identity: identity,
             availability: frame.availability,
             latestAcceptedWatts: latestAcceptedWatts,
             latestAcceptedReceiptSequenceNumber: frame.latestAcceptedReceiptSequenceNumber,
