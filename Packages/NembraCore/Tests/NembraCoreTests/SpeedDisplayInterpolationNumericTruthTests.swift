@@ -120,4 +120,45 @@ struct SpeedDisplayInterpolationNumericTruthTests {
             interpolator.frame(atUptimeNanoseconds: 2_100) == before
         )
     }
+
+    @Test("fresh rejected overflow still blocks replay of an older valid callback")
+    func rejectedOverflowAdvancesObservationChronology() throws {
+        var interpolator = SpeedDisplayInterpolator()
+        let firstValid = try sample(
+            metersPerSecond: 10 / 3.6,
+            uptimeNanoseconds: 1_000
+        )
+        try interpolator.accept(firstValid, transitionDurationNanoseconds: 0)
+        let before = try #require(
+            interpolator.frame(atUptimeNanoseconds: 1_000)
+        )
+
+        let overflowing = try sample(
+            metersPerSecond: Double.greatestFiniteMagnitude,
+            uptimeNanoseconds: 2_000
+        )
+        #expect(throws: SpeedDisplayInterpolationError.nonFiniteDisplaySpeed) {
+            try interpolator.accept(
+                overflowing,
+                transitionDurationNanoseconds: 500
+            )
+        }
+        #expect(
+            interpolator.frame(atUptimeNanoseconds: 2_000) == before
+        )
+
+        let delayedValid = try sample(
+            metersPerSecond: 12 / 3.6,
+            uptimeNanoseconds: 1_500
+        )
+        #expect(throws: SpeedDisplayInterpolationError.nonMonotonicMeasurement) {
+            try interpolator.accept(
+                delayedValid,
+                transitionDurationNanoseconds: 500
+            )
+        }
+        #expect(
+            interpolator.frame(atUptimeNanoseconds: 2_100) == before
+        )
+    }
 }
