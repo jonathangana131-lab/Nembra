@@ -40,6 +40,7 @@ struct NavigationSessionCoordinatorTests {
                 minimumDeviationDistanceMeters: 20,
                 requiredConsecutiveAcceptedSamples: 2,
                 minimumConsecutiveDeviationDurationNanoseconds: 10,
+                maximumAcceptedObservationGapNanoseconds: 100,
                 rerouteCooldownNanoseconds: 100
             )
         )
