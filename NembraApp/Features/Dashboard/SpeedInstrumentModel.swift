@@ -202,6 +202,9 @@ struct DashboardSpeedInstrumentView: View {
     var body: some View {
         let fallbackConfirmedKilometersPerHour = vehicle.state.speedKilometersPerHour
         let usesMetric = VehicleDisplayFormatting.usesMetric
+        let authoritativeKilometersPerHour = Self.validatedKilometersPerHour(
+            model.latestMeasuredKilometersPerHour
+        ) ?? Self.validatedKilometersPerHour(fallbackConfirmedKilometersPerHour)
 
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -216,11 +219,10 @@ struct DashboardSpeedInstrumentView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Speed")
             // VoiceOver stays anchored to the newest authoritative/raw speed,
-            // never a 60 Hz visual interpolation midpoint.
+            // never a 60 Hz visual interpolation midpoint or malformed value.
             .accessibilityValue(
                 VehicleDisplayFormatting.speed(
-                    kilometersPerHour: model.latestMeasuredKilometersPerHour
-                        ?? fallbackConfirmedKilometersPerHour
+                    kilometersPerHour: authoritativeKilometersPerHour
                 )
             )
             .accessibilityIdentifier("dashboard.speed")
@@ -229,7 +231,9 @@ struct DashboardSpeedInstrumentView: View {
                 if vehicle.state.dataAvailability == .retained {
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                 } else if vehicle.state.connection == .connected {
-                    Text(isVehicleMoving ? "RIDING" : "READY")
+                    Text(Self.liveSpeedStatusText(
+                        kilometersPerHour: authoritativeKilometersPerHour
+                    ))
                 } else {
                     Text("NO LIVE SPEED")
                 }
@@ -270,7 +274,7 @@ struct DashboardSpeedInstrumentView: View {
 
             HStack(alignment: .lastTextBaseline, spacing: 10) {
                 RollingSpeedValueView(
-                    value: displayedValue(
+                    value: Self.displayedValue(
                         kilometersPerHour: frame?.kilometersPerHour,
                         usesMetric: usesMetric
                     )
@@ -290,17 +294,26 @@ struct DashboardSpeedInstrumentView: View {
         }
     }
 
-    private func displayedValue(
+    static func displayedValue(
         kilometersPerHour: Double?,
         usesMetric: Bool
     ) -> Double? {
-        guard let kilometersPerHour else { return nil }
-        let nonnegative = max(0, kilometersPerHour)
-        return usesMetric ? nonnegative : nonnegative * 0.621_371
+        guard let kilometersPerHour = validatedKilometersPerHour(kilometersPerHour) else {
+            return nil
+        }
+        return usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
     }
 
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+    static func liveSpeedStatusText(kilometersPerHour: Double?) -> String {
+        guard let kilometersPerHour = validatedKilometersPerHour(kilometersPerHour) else {
+            return "NO LIVE SPEED"
+        }
+        return kilometersPerHour >= 0.5 ? "RIDING" : "READY"
+    }
+
+    static func validatedKilometersPerHour(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value >= 0 else { return nil }
+        return value == 0 ? 0 : value
     }
 
     private var modeAnimation: Animation? {
