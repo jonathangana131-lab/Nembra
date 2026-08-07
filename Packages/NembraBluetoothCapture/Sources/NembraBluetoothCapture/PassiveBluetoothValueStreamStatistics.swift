@@ -148,9 +148,10 @@ public enum PassiveBluetoothValueStreamAnalysis {
         }
     }
 
-    /// Summarizes only raw `.value` records. Interruption records start a new
-    /// continuity segment and therefore intentionally prevent an interval from
-    /// being measured across a disconnect/Bluetooth/process boundary.
+    /// Summarizes only raw `.value` records. Any parent-model event whose
+    /// `breaksByteContinuity` flag is true starts a new segment, preventing a
+    /// callback interval from being measured across a structured disconnect or
+    /// another known observation gap.
     public static func summarize(
         _ session: PassiveBluetoothCaptureSession
     ) -> [PassiveBluetoothValueStreamStatistics] {
@@ -158,25 +159,22 @@ public enum PassiveBluetoothValueStreamAnalysis {
         var accumulators: [PassiveBluetoothValueStreamKey: Accumulator] = [:]
 
         for record in session.records {
-            switch record.event {
-            case .interruption:
+            if record.event.breaksByteContinuity {
                 currentSegment += 1
-
-            case let .value(value):
-                let key = PassiveBluetoothValueStreamKey(
-                    peripheralIdentifier: value.peripheralIdentifier,
-                    serviceUUID: value.serviceUUID,
-                    characteristicUUID: value.characteristicUUID
-                )
-                accumulators[key, default: Accumulator()].ingest(
-                    value,
-                    uptime: record.receivedAtUptimeNanoseconds,
-                    segment: currentSegment
-                )
-
-            default:
-                break
+                continue
             }
+
+            guard case let .value(value) = record.event else { continue }
+            let key = PassiveBluetoothValueStreamKey(
+                peripheralIdentifier: value.peripheralIdentifier,
+                serviceUUID: value.serviceUUID,
+                characteristicUUID: value.characteristicUUID
+            )
+            accumulators[key, default: Accumulator()].ingest(
+                value,
+                uptime: record.receivedAtUptimeNanoseconds,
+                segment: currentSegment
+            )
         }
 
         return accumulators.keys.sorted().compactMap { key in
