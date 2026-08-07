@@ -42,10 +42,16 @@ public struct PropulsionGaugeSourceSession: Sendable {
 
     /// Accepts one already-authoritative observation after applying lifecycle retirement fences.
     ///
-    /// Retirement is checked before the display model sees the sample so an interruption that arrived
-    /// before any measurement, or while another authority was active, cannot later be bypassed by a
-    /// delayed callback from that retired generation.
+    /// Identity is rejected before lifecycle state is consulted so a cross-identity sample cannot be
+    /// classified using this session's retirement history. After that boundary, retirement is checked
+    /// before the display model sees the sample so an interruption that arrived before any measurement,
+    /// or while another authority was active, cannot later be bypassed by a delayed callback from that
+    /// retired generation.
     public mutating func accept(_ sample: PropulsionPowerSample) throws {
+        guard sample.identity == identity else {
+            throw PropulsionGaugeDisplayError.identityMismatch
+        }
+
         if let retiredGeneration = retiredGenerationByAuthority[sample.authority],
            sample.continuityGeneration <= retiredGeneration {
             throw PropulsionGaugeDisplayError.retiredContinuityGeneration
