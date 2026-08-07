@@ -234,12 +234,20 @@ public enum RideObservedPeakReadinessFailure: Equatable, Sendable {
     case telemetryQualityFailed([SpeedTelemetryQualityFailure])
 }
 
-/// `isReady` means software evidence satisfies the caller-supplied feature
-/// policy. It does not mean those thresholds are physically validated for ES80.
+/// Immutable audit result for one same-ride observed-peak quality decision.
+///
+/// `isReady` means the retained benchmark satisfied the retained caller-supplied
+/// policy and the peak-specific truth checks below. Keeping both policy and raw
+/// benchmark summary prevents a later consumer from seeing only an untraceable
+/// boolean/assessment after the thresholds or measured metrics have been lost.
+/// This type is intentionally not Codable and does not claim those thresholds
+/// have been physically validated for AOVOPRO ES80.
 public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let peakEvidence: RidePeakSpeedEvidence?
+    public let telemetryBenchmark: TelemetryBenchmarkSummary
+    public let policy: RideObservedPeakQualityPolicy
     public let telemetryQuality: SpeedTelemetryQualityAssessment
     public let failures: [RideObservedPeakReadinessFailure]
 
@@ -249,12 +257,16 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
         sessionID: UUID,
         source: SpeedTelemetrySource,
         peakEvidence: RidePeakSpeedEvidence?,
+        telemetryBenchmark: TelemetryBenchmarkSummary,
+        policy: RideObservedPeakQualityPolicy,
         telemetryQuality: SpeedTelemetryQualityAssessment,
         failures: [RideObservedPeakReadinessFailure]
     ) {
         self.sessionID = sessionID
         self.source = source
         self.peakEvidence = peakEvidence
+        self.telemetryBenchmark = telemetryBenchmark
+        self.policy = policy
         self.telemetryQuality = telemetryQuality
         self.failures = failures
     }
@@ -310,6 +322,8 @@ public extension RideSpeedEvidenceSessionSnapshot {
             sessionID: sessionID,
             source: source,
             peakEvidence: peakEvidence,
+            telemetryBenchmark: telemetryBenchmark,
+            policy: policy,
             telemetryQuality: telemetryQuality,
             failures: failures
         )
