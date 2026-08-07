@@ -166,6 +166,27 @@ struct PropulsionGaugePresentationTests {
         #expect(fallingAt100ms < 500)
     }
 
+    @Test("zero settling duration snaps both directions for Reduce Motion")
+    func reduceMotionCanSnapToAcceptedTarget() throws {
+        var model = PropulsionGaugeDisplayModel(
+            identity: identity,
+            policy: try motionPolicy(rise: 0, fall: 0)
+        )
+        try model.accept(simulatorSample(watts: 100, uptime: 1_000_000_000))
+        try model.accept(simulatorSample(watts: 800, uptime: 1_100_000_000))
+
+        let risen = model.frame(atUptimeNanoseconds: 1_100_000_000, scale: nil)
+        #expect(risen.origin == .acceptedMeasurement)
+        #expect(risen.displayWatts == 800)
+        #expect(risen.latestAcceptedWatts == 800)
+
+        try model.accept(simulatorSample(watts: 200, uptime: 1_200_000_000))
+        let fallen = model.frame(atUptimeNanoseconds: 1_200_000_000, scale: nil)
+        #expect(fallen.origin == .acceptedMeasurement)
+        #expect(fallen.displayWatts == 200)
+        #expect(fallen.latestAcceptedWatts == 200)
+    }
+
     @Test("stale evidence retains the accepted number but removes active gauge motion")
     func staleEvidenceStopsActiveGauge() throws {
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy(stale: 1_000_000_000))
