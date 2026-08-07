@@ -1,0 +1,187 @@
+import Foundation
+import NembraCore
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Passive Bluetooth stock-app correlation")
+struct PassiveBluetoothCorrelationTests {
+    private let identity = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "unknown-2025-es80"
+    )
+
+    @Test("nearby opaque values are ranked by time proximity without decoding them")
+    func nearbyCandidates() throws {
+        var session = try PassiveBluetoothCaptureSession(
+            vehicleIdentity: identity,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 1_000_000_000,
+            characteristic: "FFF1",
+            payload: [0x01]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: 2_900_000_000,
+            characteristic: "FFF2",
+            payload: [0x27, 0x10]
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "Voltage",
+                displayedValue: "39.8 V"
+            )),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
+            receivedAtDate: Date(timeIntervalSince1970: 1_700_000_003)
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 3_050_000_000,
+            characteristic: "FFF3",
+            payload: [0x9B, 0x7C]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 5,
+            uptime: 5_100_000_000,
+            characteristic: "FFF4",
+            payload: [0xFF]
+        )
+
+        let windows = PassiveBluetoothCorrelation.windows(
+            in: session,
+            field: "voltage",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(windows.count == 1)
+        #expect(windows[0].field == "Voltage")
+        #expect(windows[0].displayedValue == "39.8 V")
+        #expect(windows[0].candidates.map(\.sequenceNumber) == [4, 2])
+        #expect(windows[0].candidates[0].offsetSecondsFromMarker == 0.05)
+        #expect(windows[0].candidates[1].offsetSecondsFromMarker == -0.1)
+        #expect(windows[0].candidates[0].payloadHex == "9B 7C")
+    }
+
+    @Test("known continuity interruption prevents cross-gap correlation")
+    func interruptionIsHardBoundary() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 10_000,
+            characteristic: "OLD",
+            payload: [0xAA]
+        )
+        try session.append(
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "disconnect")),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 10_100,
+            receivedAtDate: .now
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "Current",
+                displayedValue: "4.2 A"
+            )),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 10_200,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 10_300,
+            characteristic: "NEW",
+            payload: [0xBB]
+        )
+
+        let window = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            lookbackNanoseconds: 1_000,
+            lookaheadNanoseconds: 1_000
+        ).first)
+
+        #expect(window.candidates.map(\.characteristicUUID) == ["NEW"])
+    }
+
+    @Test("overflow-safe lookahead still includes later values")
+    func uptimeOverflowSafety() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        let markerTime = UInt64.max - 5
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "Power",
+                displayedValue: "167 W"
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: markerTime,
+            receivedAtDate: .now
+        )
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: UInt64.max - 1,
+            characteristic: "POWER-CANDIDATE",
+            payload: [0x00, 0xA7]
+        )
+
+        let window = try #require(PassiveBluetoothCorrelation.windows(
+            in: session,
+            lookbackNanoseconds: 0,
+            lookaheadNanoseconds: 100
+        ).first)
+        #expect(window.candidates.map(\.sequenceNumber) == [2])
+    }
+
+    @Test("field filter does not reinterpret marker spelling")
+    func fieldFiltering() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Battery", displayedValue: "73%")),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: .now
+        )
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(field: "Voltage", displayedValue: "39.8 V")),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: .now
+        )
+
+        let windows = PassiveBluetoothCorrelation.windows(in: session, field: "BATTERY")
+        #expect(windows.map(\.field) == ["Battery"])
+    }
+
+    private func appendValue(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        characteristic: String,
+        payload: [UInt8]
+    ) throws {
+        try session.append(
+            .value(try PassiveBluetoothValueObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                serviceUUID: "TEST",
+                characteristicUUID: characteristic,
+                origin: .subscriptionUpdate,
+                payload: Data(payload)
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+}
