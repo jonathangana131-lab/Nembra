@@ -85,6 +85,117 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000004, tolerance: 1e-15)
     }
 
+    @Test("notification pause and resume splits only the affected characteristic cadence")
+    func notificationStateTransitionIsPathLocal() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 100,
+            characteristic: "A",
+            payload: [0x01]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: 150,
+            characteristic: "B",
+            payload: [0x10]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 3,
+            uptime: 200,
+            characteristic: "A",
+            payload: [0x02]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 250,
+            characteristic: "B",
+            payload: [0x11]
+        )
+        try appendSubscription(
+            to: &session,
+            sequence: 5,
+            uptime: 300,
+            characteristic: "A",
+            requestedEnabled: false,
+            resultingIsNotifying: false
+        )
+        try appendValue(
+            to: &session,
+            sequence: 6,
+            uptime: 400,
+            characteristic: "B",
+            payload: [0x12]
+        )
+        try appendSubscription(
+            to: &session,
+            sequence: 7,
+            uptime: 500,
+            characteristic: "A",
+            requestedEnabled: true,
+            resultingIsNotifying: true
+        )
+        try appendValue(
+            to: &session,
+            sequence: 8,
+            uptime: 10_000,
+            characteristic: "A",
+            payload: [0x03]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 9,
+            uptime: 10_100,
+            characteristic: "A",
+            payload: [0x04]
+        )
+        try appendValue(
+            to: &session,
+            sequence: 10,
+            uptime: 10_200,
+            characteristic: "B",
+            payload: [0x13]
+        )
+
+        let stats = PassiveBluetoothValueStreamAnalysis.summarize(session)
+        let a = try #require(stats.first { $0.key.characteristicUUID == "A" })
+        let b = try #require(stats.first { $0.key.characteristicUUID == "B" })
+
+        #expect(a.sampleCount == 4)
+        #expect(a.continuitySegmentCount == 2)
+        #expect(a.callbackIntervalCount == 2)
+        try expectApproximately(a.minimumCallbackIntervalSeconds, 0.0000001, tolerance: 1e-15)
+        try expectApproximately(a.maximumCallbackIntervalSeconds, 0.0000001, tolerance: 1e-15)
+
+        #expect(b.sampleCount == 4)
+        #expect(b.continuitySegmentCount == 1)
+        #expect(b.callbackIntervalCount == 3)
+        try expectApproximately(b.maximumCallbackIntervalSeconds, 0.0000098, tolerance: 1e-15)
+    }
+
+    @Test("first observed enabled state does not manufacture a cadence break")
+    func initialEnabledStateRemainsContinuous() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01])
+        try appendSubscription(
+            to: &session,
+            sequence: 2,
+            uptime: 150,
+            requestedEnabled: true,
+            resultingIsNotifying: true
+        )
+        try appendValue(to: &session, sequence: 3, uptime: 200, payload: [0x02])
+
+        let stats = try #require(PassiveBluetoothValueStreamAnalysis.summarize(session).first)
+        #expect(stats.continuitySegmentCount == 1)
+        #expect(stats.callbackIntervalCount == 1)
+        try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000001, tolerance: 1e-15)
+    }
+
     @Test("different characteristics remain independent streams and sort deterministically")
     func streamSeparation() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
@@ -141,6 +252,29 @@ struct PassiveBluetoothValueStreamStatisticsTests {
                 characteristicUUID: characteristic,
                 origin: origin,
                 payload: Data(payload)
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+
+    private func appendSubscription(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        service: String = "TEST",
+        characteristic: String = "VALUE",
+        requestedEnabled: Bool?,
+        resultingIsNotifying: Bool
+    ) throws {
+        try session.append(
+            .subscription(try PassiveBluetoothSubscriptionObservation(
+                peripheralIdentifier: "physical-es80-placeholder",
+                serviceUUID: service,
+                characteristicUUID: characteristic,
+                requestedEnabled: requestedEnabled,
+                resultingIsNotifying: resultingIsNotifying
             )),
             sequenceNumber: sequence,
             receivedAtUptimeNanoseconds: uptime,

@@ -83,9 +83,14 @@ public struct PassiveBluetoothValueStreamStatistics: Equatable, Sendable {
 }
 
 public enum PassiveBluetoothValueStreamAnalysis {
+    private struct SegmentIdentifier: Hashable {
+        let global: Int
+        let path: Int
+    }
+
     private struct Accumulator {
         var sampleCount = 0
-        var segmentIdentifiers: Set<Int> = []
+        var segmentIdentifiers: Set<SegmentIdentifier> = []
         var origins: Set<PassiveBluetoothValueOrigin> = []
         var minimumPayloadByteCount = Int.max
         var maximumPayloadByteCount = 0
@@ -94,12 +99,12 @@ public enum PassiveBluetoothValueStreamAnalysis {
         var firstUptime = UInt64.max
         var lastUptime: UInt64 = 0
         var callbackIntervalsNanoseconds: [UInt64] = []
-        var lastSampleBySegment: [Int: (uptime: UInt64, payload: Data)] = [:]
+        var lastSampleBySegment: [SegmentIdentifier: (uptime: UInt64, payload: Data)] = [:]
 
         mutating func ingest(
             _ value: PassiveBluetoothValueObservation,
             uptime: UInt64,
-            segment: Int
+            segment: SegmentIdentifier
         ) {
             sampleCount += 1
             segmentIdentifiers.insert(segment)
@@ -149,32 +154,70 @@ public enum PassiveBluetoothValueStreamAnalysis {
     }
 
     /// Summarizes only raw `.value` records. Any parent-model event whose
-    /// `breaksByteContinuity` flag is true starts a new segment, preventing a
-    /// callback interval from being measured across a structured disconnect or
-    /// another known observation gap.
+    /// `breaksByteContinuity` flag is true starts a new global segment. A known
+    /// CoreBluetooth notification-state transition starts a new segment only for
+    /// that exact peripheral/service/characteristic path, so a disable/resume gap
+    /// cannot be mistaken for callback cadence while unrelated streams remain
+    /// continuous. Subscription state is transport evidence only; it is never a
+    /// scooter command acknowledgement.
     public static func summarize(
         _ session: PassiveBluetoothCaptureSession
     ) -> [PassiveBluetoothValueStreamStatistics] {
-        var currentSegment = 0
+        var currentGlobalSegment = 0
+        var currentPathSegmentByKey: [PassiveBluetoothValueStreamKey: Int] = [:]
+        var notifyingStateByKey: [PassiveBluetoothValueStreamKey: Bool] = [:]
         var accumulators: [PassiveBluetoothValueStreamKey: Accumulator] = [:]
 
         for record in session.records {
             if record.event.breaksByteContinuity {
-                currentSegment += 1
+                currentGlobalSegment += 1
+                currentPathSegmentByKey.removeAll(keepingCapacity: true)
+                notifyingStateByKey.removeAll(keepingCapacity: true)
                 continue
             }
 
-            guard case let .value(value) = record.event else { continue }
-            let key = PassiveBluetoothValueStreamKey(
-                peripheralIdentifier: value.peripheralIdentifier,
-                serviceUUID: value.serviceUUID,
-                characteristicUUID: value.characteristicUUID
-            )
-            accumulators[key, default: Accumulator()].ingest(
-                value,
-                uptime: record.receivedAtUptimeNanoseconds,
-                segment: currentSegment
-            )
+            switch record.event {
+            case let .subscription(subscription):
+                let key = PassiveBluetoothValueStreamKey(
+                    peripheralIdentifier: subscription.peripheralIdentifier,
+                    serviceUUID: subscription.serviceUUID,
+                    characteristicUUID: subscription.characteristicUUID
+                )
+                let nextState = subscription.resultingIsNotifying
+                let previousState = notifyingStateByKey[key]
+                let hasCapturedValues = (accumulators[key]?.sampleCount ?? 0) > 0
+
+                if let previousState {
+                    if previousState != nextState {
+                        currentPathSegmentByKey[key, default: 0] += 1
+                    }
+                } else if !nextState && hasCapturedValues {
+                    // If values preceded the first observed subscription-state
+                    // callback, a newly observed non-notifying state is enough to
+                    // prove that future callbacks are not continuous with them.
+                    currentPathSegmentByKey[key, default: 0] += 1
+                }
+                notifyingStateByKey[key] = nextState
+
+            case let .value(value):
+                let key = PassiveBluetoothValueStreamKey(
+                    peripheralIdentifier: value.peripheralIdentifier,
+                    serviceUUID: value.serviceUUID,
+                    characteristicUUID: value.characteristicUUID
+                )
+                let segment = SegmentIdentifier(
+                    global: currentGlobalSegment,
+                    path: currentPathSegmentByKey[key, default: 0]
+                )
+                accumulators[key, default: Accumulator()].ingest(
+                    value,
+                    uptime: record.receivedAtUptimeNanoseconds,
+                    segment: segment
+                )
+
+            default:
+                continue
+            }
         }
 
         return accumulators.keys.sorted().compactMap { key in
