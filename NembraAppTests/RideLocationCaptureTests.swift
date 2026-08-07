@@ -208,7 +208,8 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertLessThan(summary.qualityScreenedDistanceMeters, 11)
         XCTAssertEqual(manifest.pointCount, 2)
 
-        let geometry = try XCTUnwrap(try await routeStore.geometry(sessionID: sessionID))
+        let loadedGeometry = try await routeStore.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loadedGeometry)
         XCTAssertEqual(geometry.segments.count, 1)
         XCTAssertEqual(geometry.segments[0].points.count, 2)
         XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
@@ -503,15 +504,18 @@ final class RideLocationCaptureTests: XCTestCase {
             return
         }
         XCTAssertEqual(evidence.sessionID, sessionID)
-        XCTAssertNil(try await persistence.historyStore.record(sessionID: sessionID))
+        let historyBeforeRetry = try await persistence.historyStore.record(sessionID: sessionID)
+        XCTAssertNil(historyBeforeRetry)
 
         rideStore.setRideCompletionBarrier { _ in }
         await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
         try await waitUntil("A later observation should retry and commit the same pending ride.") {
             rideStore.status == .idle && rideStore.lastCompletedSessionID == sessionID
         }
-        XCTAssertNotNil(try await persistence.historyStore.record(sessionID: sessionID))
-        XCTAssertNil(try await persistence.checkpointStore.load())
+        let historyAfterRetry = try await persistence.historyStore.record(sessionID: sessionID)
+        let checkpointAfterRetry = try await persistence.checkpointStore.load()
+        XCTAssertNotNil(historyAfterRetry)
+        XCTAssertNil(checkpointAfterRetry)
         rideStore.stop()
     }
 
@@ -526,7 +530,8 @@ final class RideLocationCaptureTests: XCTestCase {
             acceptedPointCount: 3
         )
         _ = try await store.commit(failed)
-        XCTAssertEqual(try await store.record(sessionID: sessionID), failed)
+        let loadedFailure = try await store.record(sessionID: sessionID)
+        XCTAssertEqual(loadedFailure, failed)
 
         let repaired = try RideRouteOutcomeRecord(
             sessionID: sessionID,
@@ -534,7 +539,8 @@ final class RideLocationCaptureTests: XCTestCase {
             acceptedPointCount: 3
         )
         _ = try await store.commit(repaired)
-        XCTAssertEqual(try await store.record(sessionID: sessionID), repaired)
+        let loadedRepair = try await store.record(sessionID: sessionID)
+        XCTAssertEqual(loadedRepair, repaired)
 
         let contradictory = try RideRouteOutcomeRecord(
             sessionID: sessionID,
