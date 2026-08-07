@@ -12,24 +12,34 @@ public enum NavigationArrivalEvidenceError: Error, Equatable, Sendable {
     case observationCountExhausted
 }
 
+/// Injected policy for sustained destination-arrival evidence.
+///
+/// There is intentionally no production default. Real outdoor traces must
+/// justify both proximity thresholds, the evidence-count/duration requirements,
+/// and the maximum spacing between accepted observations. The gap bound prevents
+/// a silent interval with no evidence from being counted as continuously
+/// observed arrival.
 public struct NavigationArrivalEvidencePolicy: Equatable, Sendable {
     public let maximumFinalStepDistanceRemainingMeters: Double
     public let maximumRouteDistanceRemainingMeters: Double
     public let minimumQualifyingObservationCount: Int
     public let minimumSustainedDurationNanoseconds: UInt64
+    public let maximumAcceptedObservationGapNanoseconds: UInt64
 
     public init(
         maximumFinalStepDistanceRemainingMeters: Double,
         maximumRouteDistanceRemainingMeters: Double,
         minimumQualifyingObservationCount: Int,
-        minimumSustainedDurationNanoseconds: UInt64
+        minimumSustainedDurationNanoseconds: UInt64,
+        maximumAcceptedObservationGapNanoseconds: UInt64
     ) throws {
         guard maximumFinalStepDistanceRemainingMeters.isFinite,
               maximumFinalStepDistanceRemainingMeters >= 0,
               maximumRouteDistanceRemainingMeters.isFinite,
               maximumRouteDistanceRemainingMeters >= 0,
               minimumQualifyingObservationCount >= 2,
-              minimumSustainedDurationNanoseconds > 0 else {
+              minimumSustainedDurationNanoseconds > 0,
+              maximumAcceptedObservationGapNanoseconds > 0 else {
             throw NavigationArrivalEvidenceError.invalidPolicy
         }
 
@@ -37,6 +47,7 @@ public struct NavigationArrivalEvidencePolicy: Equatable, Sendable {
         self.maximumRouteDistanceRemainingMeters = maximumRouteDistanceRemainingMeters
         self.minimumQualifyingObservationCount = minimumQualifyingObservationCount
         self.minimumSustainedDurationNanoseconds = minimumSustainedDurationNanoseconds
+        self.maximumAcceptedObservationGapNanoseconds = maximumAcceptedObservationGapNanoseconds
     }
 }
 
@@ -238,6 +249,21 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         if case .arrived = state {
             lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
             return .alreadyArrived
+        }
+
+        // Arrival evidence is contiguous only while accepted guidance samples
+        // stay inside the caller's explicit gap bound. A longer silent interval
+        // is missing evidence, not proof that the rider remained at the
+        // destination. Preserve process chronology, but make this observation
+        // the first possible member of a fresh candidate run.
+        if case .candidate = state,
+           let lastAcceptedObservationUptimeNanoseconds {
+            let acceptedObservationGap =
+                observation.receivedAtUptimeNanoseconds
+                - lastAcceptedObservationUptimeNanoseconds
+            if acceptedObservationGap > policy.maximumAcceptedObservationGapNanoseconds {
+                state = .awaitingEvidence(token: selectedToken)
+            }
         }
 
         guard qualification else {
