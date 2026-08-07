@@ -10,6 +10,7 @@ struct RidePeakPowerEvidenceTests {
     private let epoch = Date(timeIntervalSinceReferenceDate: 10_000)
 
     private struct StoredFixture: Codable {
+        var schemaVersion = CompletedRidePeakPowerCheckpoint.currentSchemaVersion
         var sessionID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
         var rideContinuity: RideSessionContinuity = .uninterruptedProcess
         var beganAfterKnownObservationGap = false
@@ -385,6 +386,18 @@ struct RidePeakPowerEvidenceTests {
             from: JSONEncoder().encode(checkpoint)
         )
         #expect(try decoded.restoredSimulatorQA(completedRide: ride, expectedScope: scope) == original)
+    }
+
+    @Test("checkpoint schema is explicit and unknown versions fail closed")
+    func checkpointSchemaVersionIsExplicit() throws {
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.simulatorQA(
+            from: completedPeak()
+        )
+        #expect(checkpoint.schemaVersion == CompletedRidePeakPowerCheckpoint.currentSchemaVersion)
+
+        var fixture = StoredFixture()
+        fixture.schemaVersion = CompletedRidePeakPowerCheckpoint.currentSchemaVersion + 1
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded unknown identity authority is rejected as malformed checkpoint")
