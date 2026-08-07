@@ -40,7 +40,8 @@ struct NavigationArrivalRouteBindingTests {
             maximumFinalStepDistanceRemainingMeters: 5,
             maximumRouteDistanceRemainingMeters: 8,
             minimumQualifyingObservationCount: 2,
-            minimumSustainedDurationNanoseconds: 1_000
+            minimumSustainedDurationNanoseconds: 1_000,
+            maximumAcceptedObservationGapNanoseconds: 10_000
         )
     }
 
