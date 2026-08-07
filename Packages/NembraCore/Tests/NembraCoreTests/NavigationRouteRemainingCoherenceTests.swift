@@ -65,21 +65,24 @@ struct NavigationRouteRemainingCoherenceTests {
         )
     }
 
-    @Test("contradictory independent projections fail closed without throwing")
-    func contradictoryProjectionBecomesUnavailableGuidance() throws {
+    @Test("contradictory independent projections preserve raw evidence and fail closed")
+    func contradictoryProjectionPreservesEvidence() throws {
         let selectedRoute = try route()
         let matcher = NavigationRouteGeometryMatcher(policy: try geometryPolicy())
         let match = matcher.match(location: try screened(), route: selectedRoute)
 
         #expect(match.stepIndex == 1)
         #expect(abs(match.distanceRemainingOnStepMeters - 75) < 1)
-        #expect(abs(match.distanceRemainingOnRouteMeters - 75) < 1)
-        #expect(match.distanceRemainingOnRouteMeters >= match.distanceRemainingOnStepMeters)
+        #expect(abs(match.distanceRemainingOnRouteMeters - 50) < 1)
+        #expect(match.distanceRemainingOnStepMeters > match.distanceRemainingOnRouteMeters)
         #expect(!match.isProgressAssignmentConfident)
 
         var tracker = NavigationGuidanceProgressTracker()
         let token = try tracker.select(route: selectedRoute)
         let observation = try match.guidanceObservation(selectionToken: token)
+        #expect(abs(observation.distanceRemainingOnStepMeters - 75) < 1)
+        #expect(abs(observation.distanceRemainingOnRouteMeters - 75) < 1)
+        #expect(!observation.isProgressAssignmentConfident)
         #expect(try tracker.observe(observation))
         #expect(
             tracker.state == .unavailable(
@@ -109,7 +112,7 @@ struct NavigationRouteRemainingCoherenceTests {
             return
         }
 
-        #expect(update.geometryMatch.distanceRemainingOnRouteMeters >= update.geometryMatch.distanceRemainingOnStepMeters)
+        #expect(update.geometryMatch.distanceRemainingOnStepMeters > update.geometryMatch.distanceRemainingOnRouteMeters)
         #expect(!update.geometryMatch.isProgressAssignmentConfident)
         #expect(update.rerouteDecision == .keepCurrentRoute)
         #expect(

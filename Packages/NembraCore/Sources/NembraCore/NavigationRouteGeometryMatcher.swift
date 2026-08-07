@@ -48,12 +48,21 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
     public func guidanceObservation(
         selectionToken: NavigationGuidanceSelectionToken
     ) throws -> NavigationGuidanceProgressObservation {
-        try NavigationGuidanceProgressObservation(
+        // Keep the match's independently projected route remainder untouched as
+        // evidence. A guidance observation has a stricter structural invariant:
+        // the whole-route remainder cannot be less than the current-step remainder.
+        // When independent projections contradict, confidence is already false;
+        // only this bridge raises the guidance value to that conservative lower bound.
+        let coherentRouteRemaining = max(
+            distanceRemainingOnRouteMeters,
+            distanceRemainingOnStepMeters
+        )
+        return try NavigationGuidanceProgressObservation(
             selectionToken: selectionToken,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             stepIndex: stepIndex,
             distanceRemainingOnStepMeters: distanceRemainingOnStepMeters,
-            distanceRemainingOnRouteMeters: distanceRemainingOnRouteMeters,
+            distanceRemainingOnRouteMeters: coherentRouteRemaining,
             isProgressAssignmentConfident: isProgressAssignmentConfident
         )
     }
@@ -70,17 +79,17 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
 /// Deterministic route-geometry matcher fed only by `QualityScreenedRideLocation`.
 ///
 /// The matcher performs no Core Location quality screening itself. It projects
-/// the accepted coordinate onto provider route/step geometry, derives provider-
-/// scaled remaining-distance estimates, and fails progress confidence closed for
-/// excessive route distance, competing steps, multiple near-equal positions
-/// separated far along one polyline (for example a self-intersection), or a
-/// contradiction between independently projected step and whole-route remainder.
-/// When that last contradiction occurs, whole-route remainder is conservatively
-/// raised to the current-step remainder so downstream guidance remains structurally
-/// coherent while the progress assignment itself stays unavailable. Deviation
-/// confidence remains separate so being too far away for trustworthy progress does
-/// not erase strong off-route-distance evidence. All numeric thresholds are injected
-/// so Simulator math cannot become an outdoor production claim.
+/// the accepted coordinate onto provider route/step geometry, derives independent
+/// provider-scaled remaining-distance estimates, and fails progress confidence
+/// closed for excessive route distance, competing steps, multiple near-equal
+/// positions separated far along one polyline (for example a self-intersection),
+/// or a contradiction between current-step and whole-route remainder. Raw derived
+/// projections stay intact in the match. Only `guidanceObservation` establishes
+/// the structural lower bound required by guidance while the contradictory progress
+/// assignment remains unavailable. Deviation confidence stays separate so being too
+/// far away for trustworthy progress does not erase strong off-route-distance evidence.
+/// All numeric thresholds are injected so Simulator math cannot become an outdoor
+/// production claim.
 public struct NavigationRouteGeometryMatcher: Sendable {
     private let policy: NavigationRouteGeometryMatchingPolicy
 
@@ -141,7 +150,6 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             progressFraction: routeProjection.progressFraction
         )
         let remainingDistanceConsistent = stepRemaining <= projectedRouteRemaining
-        let coherentRouteRemaining = max(projectedRouteRemaining, stepRemaining)
 
         let routeProgressUsable = routeProjection.hasDirectionalExtent || route.distanceMeters == 0
         let stepProgressUsable = bestStep.1.hasDirectionalExtent || step.distanceMeters == 0
@@ -160,7 +168,7 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             stepIndex: bestStep.0,
             distanceFromRouteMeters: routeProjection.distanceMeters,
             distanceRemainingOnStepMeters: stepRemaining,
-            distanceRemainingOnRouteMeters: coherentRouteRemaining,
+            distanceRemainingOnRouteMeters: projectedRouteRemaining,
             isProgressAssignmentConfident: confident,
             isDeviationAssessmentConfident: deviationConfident,
             startsNewRouteSegment: location.startsNewRouteSegment
