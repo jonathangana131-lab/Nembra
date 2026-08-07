@@ -226,10 +226,11 @@ final class RideApplicationStore {
     /// Candidate-level/internal entry for already screened GPS evidence. This is
     /// intentionally not the production ride-location lifecycle API because an
     /// unscoped delayed delta could otherwise be assigned to a later ride.
+    @discardableResult
     func ingestQualityScreenedGPSDistanceDelta(
         _ meters: Double,
         receivedAtUptimeNanoseconds: UInt64
-    ) async {
+    ) async -> Bool {
         await ingestObservation(
             speedSample: nil,
             qualityScreenedGPSDistanceDeltaMeters: meters,
@@ -238,22 +239,41 @@ final class RideApplicationStore {
     }
 
     /// Ride-scoped GPS evidence entry used by the phone-location capture path.
-    /// The capture owns the UUID it began with. If that ride has ended or a new
-    /// ride has taken over, a late coordinate delta is dropped instead of being
-    /// allowed to seed movement for the wrong `RideEngine` session.
+    /// The capture owns the UUID it began with. The Bool is authoritative for
+    /// the matching route point: `false` means this delta did not enter the
+    /// active ride and the coordinate must not be persisted as that ride's route.
+    @discardableResult
     func ingestQualityScreenedGPSDistanceDelta(
         _ meters: Double,
         receivedAtUptimeNanoseconds: UInt64,
         for sessionID: UUID
-    ) async {
-        // `activeSessionID` remains intentionally published until the root
-        // completion barrier has flushed route persistence. Once RideEngine has
-        // already emitted `rideEnded`, however, a buffered GPS callback must not
-        // re-enter the pending-completed coordinator and commit history early.
+    ) async -> Bool {
+        await admitQualityScreenedLocationEvidence(
+            distanceDeltaMeters: meters,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            for: sessionID
+        )
+    }
+
+    /// One application-owned admission boundary for every screened location
+    /// point. First-anchor points carry no distance and are admitted by identity
+    /// only; later points must successfully enter RideEngine GPS evidence before
+    /// their coordinate may become route evidence. Once ride completion starts,
+    /// both domains reject buffered points instead of depending on scheduler order.
+    func admitQualityScreenedLocationEvidence(
+        distanceDeltaMeters: Double?,
+        receivedAtUptimeNanoseconds: UInt64,
+        for sessionID: UUID
+    ) async -> Bool {
         guard !isFinalizingCompletedRide,
-              activeSessionID == sessionID else { return }
-        await ingestQualityScreenedGPSDistanceDelta(
-            meters,
+              activeSessionID == sessionID else { return false }
+
+        guard let distanceDeltaMeters else {
+            return true
+        }
+
+        return await ingestQualityScreenedGPSDistanceDelta(
+            distanceDeltaMeters,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
         )
     }
@@ -335,14 +355,15 @@ final class RideApplicationStore {
         }
     }
 
+    @discardableResult
     private func ingestObservation(
         speedSample: SpeedTelemetrySample?,
         qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
         minimumUptimeNanoseconds: UInt64 = 0
-    ) async {
+    ) async -> Bool {
         guard let coordinator,
               let historyStore,
-              configuration != nil else { return }
+              configuration != nil else { return false }
 
         let minimumUptime = max(
             speedSample?.receivedAtUptimeNanoseconds ?? 0,
@@ -350,7 +371,7 @@ final class RideApplicationStore {
         )
         guard let observationUptime = nextObservationUptime(minimum: minimumUptime) else {
             fail(RideEngineError.nonMonotonicObservation, persistence: false)
-            return
+            return false
         }
 
         do {
@@ -372,8 +393,8 @@ final class RideApplicationStore {
             // Keep the durable session identity valid until additive ride-scoped
             // capture has flushed/finalized. This prevents a completed-history UI
             // refresh from racing ahead of its route manifest. While the barrier
-            // drains, new session-scoped GPS engine input is closed fail-safe:
-            // RideEngine has already declared this ride ended at this point.
+            // drains, new location admissions are closed fail-safe: RideEngine
+            // has already declared this ride ended at this point.
             if let completedSessionID {
                 isFinalizingCompletedRide = true
                 await rideCompletionBarrier?(completedSessionID)
@@ -390,6 +411,7 @@ final class RideApplicationStore {
                 }
                 updatePublishedState(from: await coordinator.currentPhase())
             }
+            return true
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
             isFinalizingCompletedRide = false
             do {
@@ -399,9 +421,14 @@ final class RideApplicationStore {
             } catch {
                 fail(error, persistence: true)
             }
+            // The observation that hit completedRideAwaitingCommit was not
+            // ingested into RideEngine, so a route coordinate paired with it
+            // must not be admitted either.
+            return false
         } catch {
             isFinalizingCompletedRide = false
             fail(error, persistence: false)
+            return false
         }
     }
 
