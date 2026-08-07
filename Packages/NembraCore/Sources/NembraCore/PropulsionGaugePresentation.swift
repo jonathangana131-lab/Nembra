@@ -38,9 +38,12 @@ public enum PropulsionPowerSampleError: Error, Equatable, Sendable {
 public struct PropulsionPowerSample: Equatable, Sendable {
     public let identity: PropulsionGaugeIdentity
     public let watts: Double
-    /// Source-owned total-order receipt identity. This is chronology evidence, not power evidence.
+    /// Source-owned total-order receipt identity inside one continuity generation.
+    /// This is chronology evidence, not power evidence.
     public let receiptSequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
+    /// Source-owned continuity/clock generation. A strictly newer generation may
+    /// legitimately restart its receipt-sequence and uptime epochs.
     public let continuityGeneration: UInt64
     public let authority: PropulsionPowerSampleAuthority
 
@@ -325,6 +328,7 @@ public enum PropulsionGaugeDisplayError: Error, Equatable, Sendable {
     case nonIncreasingReceiptSequence
     case nonMonotonicMeasurement
     case staleContinuityGeneration
+    case retiredContinuityGeneration
 }
 
 /// Critically damped, retargetable render model for positive propulsion output.
@@ -341,6 +345,12 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     private var latestAcceptedUptimeNanoseconds: UInt64 = 0
     private var latestContinuityGeneration: UInt64 = 0
     private var latestAuthority: PropulsionPowerSampleAuthority = .simulator
+
+    /// Receipt chronology is scoped to the source-owned continuity generation.
+    /// A newer generation is an explicit clock/order epoch and may restart both
+    /// sequence and uptime. Within one generation, sequence is strict and uptime
+    /// is nondecreasing.
+    private var lastSeenContinuityGeneration: UInt64?
     private var lastSeenReceiptSequenceNumber: UInt64?
 
     private var transitionAnchorWatts = 0.0
@@ -351,6 +361,9 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     private var acceptedPeakWatts = 0.0
     private var acceptedPeakUptimeNanoseconds: UInt64 = 0
     private var explicitlyUnavailable = false
+    /// Once an explicit source/session interruption occurs, callbacks from that
+    /// generation or any older generation may not reopen live presentation.
+    private var retiredContinuityGeneration: UInt64?
 
     public init(identity: PropulsionGaugeIdentity, policy: PropulsionGaugeMotionPolicy) {
         self.identity = identity
@@ -362,23 +375,45 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             throw PropulsionGaugeDisplayError.identityMismatch
         }
 
-        if let lastSeenReceiptSequenceNumber {
-            guard sample.receiptSequenceNumber > lastSeenReceiptSequenceNumber else {
-                throw PropulsionGaugeDisplayError.nonIncreasingReceiptSequence
-            }
+        if let retiredContinuityGeneration,
+           sample.continuityGeneration <= retiredContinuityGeneration {
+            throw PropulsionGaugeDisplayError.retiredContinuityGeneration
         }
 
-        // Receipt chronology is source-owned and consumed before secondary time/
-        // continuity validation. A newer malformed callback may be rejected, but
-        // it cannot later be rewritten and a delayed lower sequence cannot re-enter.
+        if let lastSeenContinuityGeneration {
+            guard sample.continuityGeneration >= lastSeenContinuityGeneration else {
+                throw PropulsionGaugeDisplayError.staleContinuityGeneration
+            }
+
+            if sample.continuityGeneration == lastSeenContinuityGeneration {
+                if let lastSeenReceiptSequenceNumber {
+                    guard sample.receiptSequenceNumber > lastSeenReceiptSequenceNumber else {
+                        throw PropulsionGaugeDisplayError.nonIncreasingReceiptSequence
+                    }
+                }
+            } else {
+                // A source-owned newer continuity generation is the mechanical
+                // boundary that permits receipt-sequence and uptime epoch restart.
+                self.lastSeenContinuityGeneration = sample.continuityGeneration
+                self.lastSeenReceiptSequenceNumber = nil
+            }
+        } else {
+            lastSeenContinuityGeneration = sample.continuityGeneration
+        }
+
+        // Consume the receipt identity before secondary same-generation uptime
+        // validation. A newer malformed callback cannot later be rewritten, and
+        // a delayed lower sequence cannot re-enter that generation.
         lastSeenReceiptSequenceNumber = sample.receiptSequenceNumber
 
         if hasMeasurement {
             guard sample.continuityGeneration >= latestContinuityGeneration else {
                 throw PropulsionGaugeDisplayError.staleContinuityGeneration
             }
-            guard sample.receivedAtUptimeNanoseconds >= latestAcceptedUptimeNanoseconds else {
-                throw PropulsionGaugeDisplayError.nonMonotonicMeasurement
+            if sample.continuityGeneration == latestContinuityGeneration {
+                guard sample.receivedAtUptimeNanoseconds >= latestAcceptedUptimeNanoseconds else {
+                    throw PropulsionGaugeDisplayError.nonMonotonicMeasurement
+                }
             }
         }
 
@@ -427,11 +462,18 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         latestContinuityGeneration = sample.continuityGeneration
         latestAuthority = sample.authority
         explicitlyUnavailable = false
+        retiredContinuityGeneration = nil
     }
 
     /// Explicitly ends live presentation without manufacturing a zero-power sample.
+    /// If a generation has already produced accepted evidence, it is retired: a
+    /// delayed callback from that disconnected/interrupted generation cannot
+    /// resurrect the gauge. Resume requires a genuinely newer source generation.
     public mutating func markUnavailable() {
         explicitlyUnavailable = true
+        if hasMeasurement {
+            retiredContinuityGeneration = latestContinuityGeneration
+        }
         transitionSettlingDurationNanoseconds = 0
     }
 
