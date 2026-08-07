@@ -55,7 +55,7 @@ One `TuyaCandidateFragmentReassembler` permanently binds to the first stream ide
 
 That means a disconnect, interrupted acquisition, target change, or other evidence gap cannot silently splice bytes into one candidate message. The capture layer remains authoritative for deciding when continuity is broken.
 
-Within one unchanged stream/generation, the candidate framing itself gives one additional bounded signal: packet index zero denotes a new candidate message start. If packet zero arrives while a prior candidate is still incomplete, `TuyaCandidateTranscriptAnalyzer` now preserves the prior candidate as `.incompleteAtBoundary(..., boundary: .candidatePacketZeroRestart)` and feeds the **same immutable observation** into a fresh reassembler. This prevents a valid new first fragment from being consumed as the old candidate's index-mismatch failure. It is a framing-hypothesis boundary only; it does not invent a CoreBluetooth continuity gap or assert that the physical ES80 uses this protocol family.
+Within one unchanged stream/generation, the candidate framing itself gives one additional bounded signal: packet index zero denotes a new candidate message start. If packet zero arrives while a prior candidate is still incomplete **and its receipt uptime is strictly newer than the last accepted fragment**, `TuyaCandidateTranscriptAnalyzer` preserves the prior candidate as `.incompleteAtBoundary(..., boundary: .candidatePacketZeroRestart)` and feeds the **same immutable observation** into a fresh reassembler. This prevents a valid new first fragment from being consumed as the old candidate's index-mismatch failure. Equal or older receipt uptime remains the reassembler's `.nonMonotonicReceiptUptime` rejection; restart recovery never converts stale chronology into a fresh candidate. The restart is a framing-hypothesis boundary only: it does not invent a CoreBluetooth continuity gap or assert that the physical ES80 uses this protocol family.
 
 `TuyaCandidateTranscriptAnalyzer` adds a batch layer for an already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. It emits explicit events for:
 
@@ -66,7 +66,7 @@ Within one unchanged stream/generation, the candidate framing itself gives one a
 - an incomplete candidate still open when the transcript ends;
 - an unexpected analyzer failure, which stops analysis rather than silently discarding evidence.
 
-The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, or joins data across a known gap. A packet-zero restart reuses only the exact current observation under the already-declared public framing hypothesis; the fresh reassembler still validates its declared length, version byte, payload bounds, and subsequent fragment sequence normally. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
+The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, repairs timestamps, or joins data across a known gap. A packet-zero restart reuses only the exact current observation under the already-declared public framing hypothesis; the fresh reassembler still validates its declared length, version byte, payload bounds, and subsequent fragment sequence normally. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
 
 ## Resource safety without invented hardware limits
 
@@ -112,6 +112,7 @@ The repository tests exercise:
 - same-stream packet-zero restart without dropping the new first fragment;
 - malformed restarted first-fragment preservation as its own rejection;
 - precedence of a real stream/generation boundary over the packet-zero framing restart;
+- non-monotonic packet-zero evidence remaining a chronology rejection rather than bypassing the active candidate;
 - explicit end-of-transcript truncation evidence.
 
 The original merged slice reported **17/17 focused tests across two suites** under local Swift 6.2.1 debug/release validation with warnings treated as errors. This restart hardening adds dedicated regression coverage; repository exact-head CI remains the acceptance source for the integrated branch.
