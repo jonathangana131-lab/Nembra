@@ -97,7 +97,7 @@ Missing numeric samples, excessive timing span, and non-finite relationship math
 
 Each accepted anchor must keep predicted power, absolute error, relative allowance, and relative error finite. Overflowing relationship math is rejected rather than treated as a match.
 
-Aggregate mean absolute errors use normalized finite accumulation (`value / count` before summation) so several very large but finite per-anchor errors do not become infinite only because an intermediate raw sum overflowed. This does not increase evidence strength; it preserves truthful descriptive math.
+Aggregate mean absolute errors use the online update `mean += (value - mean) / countSoFar`. Because the inputs are finite nonnegative absolute errors, every update remains inside the observed error range instead of forming a potentially overflowing raw or rounded normalized sum. The adversarial regression uses three `Double.greatestFiniteMagnitude` relationship errors and requires both reported means to remain exactly finite at that representable maximum. This does not increase evidence strength; it preserves truthful descriptive math.
 
 ## Signed values
 
