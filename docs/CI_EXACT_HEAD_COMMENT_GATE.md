@@ -53,7 +53,7 @@ The intended worker rhythm is:
 4. mark a coherent same-repository PR ready for review;
 5. let the exact-head gate exercise that current acceptance candidate;
 6. if the PR changes while it remains ready, a current `synchronize` event may supersede the older valid gate for that PR;
-7. merge only when the required successful run corresponds to the final unchanged acceptance head.
+7. merge only when the required successful Simulator job corresponds to the final unchanged acceptance head.
 
 Draft PR checkpoint churn does not intentionally consume the self-hosted acceptance gate.
 
@@ -82,7 +82,33 @@ If the payload head is stale, the resolver records a notice and returns `should_
 
 This guard is intentionally before the per-PR Simulator concurrency group. A delayed obsolete event therefore cannot enter the Xcode job merely because it was valid when GitHub originally emitted it.
 
-The guard does **not** claim a PR can never change after resolver time. The resolver freezes one immutable SHA. Workers still compare the completed run SHA with the final PR SHA immediately before acceptance/merge; any later head change invalidates older proof.
+The guard does **not** claim a PR can never change after resolver time. The resolver freezes one immutable SHA. Workers still compare the completed Simulator job SHA with the final PR SHA immediately before acceptance/merge; any later head change invalidates older proof.
+
+## Filtered workflow success is not acceptance
+
+GitHub reports a job skipped by a job-level `if` as successful/skipped rather than as a failing required check. Therefore an intentionally filtered stale/draft/closed/fork event may leave the overall workflow run with a successful conclusion even though no PR software ran on `xcode-27`.
+
+**Overall workflow conclusion is not the acceptance signal.**
+
+Exact-head acceptance requires all of the following:
+
+- the `Build, test, and capture exact PR head` (`simulator-qa`) job actually ran;
+- that Simulator job concluded `success`, not `skipped`, `cancelled`, or absent;
+- its immutable checkout/verification exercised the candidate PR SHA;
+- the candidate SHA is still the unchanged final PR head at acceptance time;
+- required logs/artifacts were produced and inspected according to the lane's acceptance needs.
+
+A resolver-only success or a workflow run whose Simulator job was filtered is **diagnostic/non-acceptance evidence**, even if GitHub renders the workflow run itself green.
+
+Automation that gates merges must inspect the Simulator job/exact-head evidence, not only the top-level workflow conclusion.
+
+## Bootstrap/backlog caveat
+
+Workflow changes do not retroactively rewrite already-created workflow runs. A delayed event associated with a pre-fix workflow version can still execute that older resolver after this change reaches `main`.
+
+During rollout, old backlog events must therefore be classified by their actual resolver workflow bytes/logs or equivalent run/ref evidence. A pre-fix delayed event that still trusts `context.payload.pull_request` is historical backlog, not evidence that the new default-branch guard regressed.
+
+Post-bootstrap stale-event proof must show the trusted resolver version containing the live PR fetch and freshness check before drawing conclusions about the new guard.
 
 ## Optional trusted `/xcode27` command
 
@@ -92,7 +118,7 @@ On a Nembra pull request, an owner/member/collaborator may add this exact PR con
 /xcode27
 ```
 
-The workflow-level filter requires the exact body and trusted GitHub author association. `issue_comment` also evaluates the workflow definition from the default branch, so this admission path does not trust PR-proposed workflow bytes.
+The workflow-level filter requires the exact body and trusted GitHub author association. `issue_comment` evaluates the workflow definition from the default branch, so this admission path does not trust PR-proposed workflow bytes.
 
 The resolver then live-fetches the PR and freezes its **current** head. This manual path deliberately remains distinct from automatic ready-PR gating: it does not inherit the automatic event's non-draft freshness rule merely because both paths share the same Xcode job.
 
@@ -117,7 +143,7 @@ For a valid request the trusted workflow:
 11. runs the Xcode 27 / iPhone 12 Simulator build-test-capture script;
 12. uploads Simulator screenshots/log artifacts even on a later gate failure.
 
-A successful run proves only the exact software commit it exercised.
+A **successful Simulator job** proves only the exact software commit it exercised. A successful resolver-only/filtered workflow run proves no PR-code acceptance.
 
 ## Security boundary
 
