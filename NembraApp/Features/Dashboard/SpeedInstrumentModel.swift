@@ -31,6 +31,7 @@ final class SpeedInstrumentModel {
     private(set) var latestMeasurementSource: SpeedTelemetrySource?
     private(set) var latestMeasuredKilometersPerHour: Double?
     private(set) var isAnimationActive = false
+    private(set) var permitsLiveConfirmedFallback = true
 
     @ObservationIgnored private var interpolator = SpeedDisplayInterpolator()
     @ObservationIgnored private var previousMeasurementUptimeNanoseconds: UInt64?
@@ -78,10 +79,16 @@ final class SpeedInstrumentModel {
     /// physical speed. Old raw samples therefore stop driving the live readout,
     /// and samples delivered during the gap are ignored. Reconnection starts a
     /// new presentation continuity without inventing a cadence-based timeout.
+    ///
+    /// Once a gap has been observed, a cached `VehicleState` speed must also not
+    /// regain live meaning merely because transport becomes connected again.
+    /// Retained presentation may still show that cached value explicitly as last
+    /// known; the live cockpit waits for a new accepted raw sample instead.
     func setConnectionContinuityActive(_ isActive: Bool) {
         acceptsTelemetryForCurrentConnection = isActive
         guard !isActive else { return }
 
+        permitsLiveConfirmedFallback = false
         animationEndTask?.cancel()
         animationEndTask = nil
         isAnimationActive = false
@@ -123,8 +130,9 @@ final class SpeedInstrumentModel {
     }
 
     /// Returns a render-only frame. The fallback is the latest value already
-    /// confirmed in `VehicleState`; it is used only until fresh raw telemetry
-    /// arrives and is never converted into a telemetry sample internally.
+    /// confirmed in `VehicleState`; the caller decides whether that fallback is
+    /// still eligible for the current presentation continuity. It is never
+    /// converted into a telemetry sample internally.
     ///
     /// Reduce Motion changes presentation only: when an interpolation frame is
     /// active, the display snaps to the latest authoritative measurement that
@@ -223,11 +231,16 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
-        let fallbackConfirmedKilometersPerHour = vehicle.state.speedKilometersPerHour
+        let fallbackConfirmedKilometersPerHour = Self.confirmedFallbackForPresentation(
+            kilometersPerHour: vehicle.state.speedKilometersPerHour,
+            isRetained: vehicle.state.dataAvailability == .retained,
+            isConnected: vehicle.state.connection == .connected,
+            permitsLiveConfirmedFallback: model.permitsLiveConfirmedFallback
+        )
         let usesMetric = VehicleDisplayFormatting.usesMetric
         let authoritativeKilometersPerHour = Self.validatedKilometersPerHour(
             model.latestMeasuredKilometersPerHour
-        ) ?? Self.validatedKilometersPerHour(fallbackConfirmedKilometersPerHour)
+        ) ?? fallbackConfirmedKilometersPerHour
 
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -328,6 +341,20 @@ struct DashboardSpeedInstrumentView: View {
             return nil
         }
         return usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
+    }
+
+    static func confirmedFallbackForPresentation(
+        kilometersPerHour: Double?,
+        isRetained: Bool,
+        isConnected: Bool,
+        permitsLiveConfirmedFallback: Bool
+    ) -> Double? {
+        guard let kilometersPerHour = validatedKilometersPerHour(kilometersPerHour) else {
+            return nil
+        }
+        if isRetained { return kilometersPerHour }
+        guard isConnected, permitsLiveConfirmedFallback else { return nil }
+        return kilometersPerHour
     }
 
     static func liveSpeedStatusText(kilometersPerHour: Double?) -> String {
