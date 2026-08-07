@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`AccelerationRunEvaluator` records measurement-bounded 0-to-target observation evidence. `AccelerationEvidenceSession` closes the next truth gap: a completed timing result and the telemetry-quality evidence used to qualify it must come from the same selected-source attempt and, for final reporting, the same retained launch-to-target timing trace.
+`AccelerationRunEvaluator` records measurement-bounded 0-to-target observation evidence. `AccelerationEvidenceSession` closes the next truth gap: a completed timing result and the telemetry-quality evidence used to qualify it must come from the same selected source and the same final retained launch-to-target timing trace.
 
 This is a software evidence layer. It does not make a speed source physically authoritative for AOVOPRO ES80 and it does not turn packet-receipt time into exact scooter threshold-crossing time.
 
@@ -10,7 +10,7 @@ This is a software evidence layer. It does not make a speed source physically au
 
 A reporting policy requires both `AccelerationRunPolicy.requiredSource` and `SpeedTelemetryQualityPolicy.requiredSource`, and they must be identical.
 
-The session routes only that source into timing and benchmarking. Callbacks from another provider are explicitly ignored before either evidence consumer and counted diagnostically. This permits GPS and scooter BLE providers to coexist without accidentally mixing their evidence.
+Callbacks from another provider are explicitly ignored before timing evidence is consumed and counted diagnostically. This permits GPS and scooter BLE providers to coexist without accidentally mixing their evidence.
 
 No `.motionAssist` source can become acceleration timing truth because the underlying run policy rejects it as an authoritative source.
 
@@ -21,7 +21,7 @@ The policy chooses no ES80 numeric thresholds. Callers must supply them.
 For every source, product-reporting policy requires:
 
 - a maximum accepted timing-sample gap;
-- at least three benchmark samples so jitter has more than one interval;
+- at least three retained benchmark samples so jitter has more than one interval;
 - rejected-sample fraction policy;
 - mean and worst observed interval policy;
 - jitter policy;
@@ -35,20 +35,18 @@ For GPS, policy additionally requires:
 
 These are evidence-shape requirements, not claims that any particular threshold is correct for real ES80 acceleration testing.
 
-## Same-attempt and same-trace ownership
+## Exact retained-trace ownership
 
-Every selected-source callback first enters an attempt-wide `TelemetryBenchmarkCollector` and then the exact same sample is passed to `AccelerationRunEvaluator`. The attempt-wide summary is diagnostic only because it can include packets the final timing trace does not retain.
-
-A second constant-memory benchmark tracks only timing evidence retained by the evaluator:
+The session maintains one constant-memory benchmark for the timing evidence retained by the evaluator:
 
 - the first accepted stationary observation creates the candidate trace;
-- each newer accepted stationary observation replaces the old anchor and resets the candidate benchmark;
+- each newer accepted stationary observation replaces the old anchor and resets the benchmark;
 - moving samples enter the trace only when they pass the timing accuracy policy and the evaluator remains valid;
 - GPS samples rejected by the timing accuracy gate cannot contribute cadence, latency, or resolution evidence to the final run;
-- superseded stationary anchors cannot contribute quality evidence to the final run;
+- superseded stationary anchors and long idle time before the final anchor cannot contribute quality evidence to the final run;
 - the final collector freezes when the evaluator completes.
 
-This avoids retaining an unbounded raw sample array while still preventing pre-launch or timing-rejected packets from making a completed run look higher quality than the measurements actually used for timing.
+The session intentionally does **not** expose a broader attempt-wide benchmark. Source-characterization tooling can run its own `TelemetryBenchmarkCollector`, but acceleration product code receives only the quality evidence that belongs to the retained timing trace. This makes the truthful reporting path the easiest API path and avoids accidentally qualifying a result with measurements the evaluator did not retain.
 
 The session becomes immutable when:
 
@@ -58,7 +56,7 @@ The session becomes immutable when:
 
 Later packets cannot improve the benchmark of an earlier result. There is deliberately no session reset operation; a new attempt requires a new session.
 
-A known interruption after selected-source evidence begins freezes the attempt instead of joining quality statistics across missing observation time. Operator cancellation remains an explicit terminal evaluator state.
+A known interruption after selected-source evidence begins freezes the attempt instead of joining evidence across missing observation time. Operator cancellation remains an explicit terminal evaluator state.
 
 ## Reporting readiness
 
@@ -72,11 +70,11 @@ A known interruption after selected-source evidence begins freezes the attempt i
 6. no known observation interruption broke the attempt;
 7. the retained timing-trace benchmark satisfies the caller-supplied quality policy.
 
-The retained timing-sample requirement is important. Repeated stationary packets or GPS packets rejected by timing accuracy policy can make attempt-wide stream statistics look deep while the final launch-to-target trace still contains only two accepted measurements. Such a run is not reporting-ready.
+`telemetryQuality` is optional and is produced only for a completed run with a retained-trace benchmark. Incomplete or invalidated attempts do not receive a synthetic quality assessment from unrelated/pre-launch traffic.
 
-Likewise, a poor-accuracy GPS packet may appear to provide a fine empirical speed-resolution step in the raw attempt stream. If the timing evaluator rejects that packet, it is excluded from final trace quality and cannot make the run reportable.
+Repeated stationary packets cannot make a shallow launch-to-target trace look deep because only the final stationary anchor remains in the trace. Likewise, a poor-accuracy GPS packet cannot provide an attractive resolution or latency statistic if the timing evaluator rejected that packet.
 
-A raw finite SI speed can also overflow the benchmark's required km/h representation. If that retained sample completes the timing evaluator while the trace benchmark rejects it, readiness fails closed rather than presenting the run.
+A raw finite SI speed can overflow the benchmark's required km/h representation. If that retained sample completes the timing evaluator while the trace benchmark rejects it, readiness fails closed rather than presenting the run.
 
 ## Truth boundary
 
