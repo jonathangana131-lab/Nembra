@@ -25,9 +25,8 @@ extension BatterySOCReading {
         }
 
         do {
-            try self.init(
+            self = try Self.estimated(
                 percentage: percentage,
-                provenance: provenance,
                 receivedAtUptimeNanoseconds: uptime
             )
         } catch {
@@ -81,7 +80,7 @@ extension BatteryRangeLearningWindow {
         let endSOC = try container.decode(BatterySOCReading.self, forKey: .endSOC)
 
         do {
-            try self.init(
+            self = try Self.nonAuthoritative(
                 distanceMeters: distanceMeters,
                 distanceCoverage: distanceCoverage,
                 transportGapOccurred: transportGapOccurred,
@@ -255,33 +254,23 @@ extension AdaptiveBatteryRangeEstimate {
             )
         }
 
-        let fullChargeRange = metersPerPercentagePoint * 100
-        let tolerance = max(1, abs(fullChargeRange)) * 1e-12
-        guard rawRemainingMeters.isFinite,
-              rawRemainingMeters >= 0,
-              presentedRemainingMeters.isFinite,
-              presentedRemainingMeters >= 0,
-              metersPerPercentagePoint.isFinite,
-              metersPerPercentagePoint > 0,
-              fullChargeRange.isFinite,
-              rawRemainingMeters <= fullChargeRange + tolerance,
-              basis != .provisionalSeed || confidence == .learning else {
+        do {
+            self = try Self.nonAuthoritative(
+                rawRemainingMeters: rawRemainingMeters,
+                presentedRemainingMeters: presentedRemainingMeters,
+                metersPerPercentagePoint: metersPerPercentagePoint,
+                basis: basis,
+                confidence: confidence,
+                socProvenance: socProvenance,
+                lowSOCConservatismApplied: lowSOCConservatismApplied
+            )
+        } catch {
             throw DecodingError.dataCorruptedError(
                 forKey: .rawRemainingMeters,
                 in: container,
                 debugDescription: "Decoded adaptive battery-range estimate violates derived-range invariants."
             )
         }
-
-        self.init(
-            rawRemainingMeters: rawRemainingMeters,
-            presentedRemainingMeters: presentedRemainingMeters,
-            metersPerPercentagePoint: metersPerPercentagePoint,
-            basis: basis,
-            confidence: confidence,
-            socProvenance: socProvenance,
-            lowSOCConservatismApplied: lowSOCConservatismApplied
-        )
     }
 
     public func encode(to encoder: any Encoder) throws {
