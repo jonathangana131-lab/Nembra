@@ -4,6 +4,8 @@
 public enum TuyaCandidateOfflineAnalysisError: Error, Equatable, Sendable {
     case emptyStreamIdentityField
     case emptyFragment
+    case emptyReceiptSequenceScope
+    case receiptSequenceScopeRequiresSequence
     case malformedVarint
     case varintOverflow
     case firstFragmentRequired
@@ -16,6 +18,7 @@ public enum TuyaCandidateOfflineAnalysisError: Error, Equatable, Sendable {
     case streamChanged
     case continuityGenerationChanged
     case receiptOrderingAuthorityChanged
+    case receiptSequenceScopeChanged(expected: String?, actual: String?)
     case nonMonotonicReceiptSequence(previous: UInt64, actual: UInt64)
     case nonMonotonicReceiptUptime
     case assembledLengthExceeded(declared: Int, actual: Int)
@@ -63,11 +66,19 @@ public struct TuyaCandidateValueStreamIdentity: Hashable, Sendable {
 /// callback-order authority and uptime as a nondecreasing monotonic clock, which
 /// permits distinct callbacks that legitimately share one clock tick without
 /// fabricating timestamp precision.
+///
+/// `receiptSequenceScope` is an opaque identity for the counter epoch that owns a
+/// sequence (for example, Nembra passive capture's immutable session ID). A scope
+/// may only exist with a sequence. Generic/public-family callers may leave both
+/// fields nil, and existing sequence-only research callers remain supported, but
+/// a physical capture bridge should carry its real session/epoch scope so numeric
+/// sequence values from separate acquisitions can never be silently combined.
 public struct TuyaCandidateFragmentObservation: Equatable, Sendable {
     public let streamIdentity: TuyaCandidateValueStreamIdentity
     public let continuityGeneration: UInt64
     public let receiptUptimeNanoseconds: UInt64
     public let receiptSequenceNumber: UInt64?
+    public let receiptSequenceScope: String?
     public let bytes: [UInt8]
 
     public init(
@@ -75,15 +86,25 @@ public struct TuyaCandidateFragmentObservation: Equatable, Sendable {
         continuityGeneration: UInt64,
         receiptUptimeNanoseconds: UInt64,
         receiptSequenceNumber: UInt64? = nil,
+        receiptSequenceScope: String? = nil,
         bytes: [UInt8]
     ) throws {
         guard !bytes.isEmpty else {
             throw TuyaCandidateOfflineAnalysisError.emptyFragment
         }
+        if let receiptSequenceScope {
+            guard receiptSequenceNumber != nil else {
+                throw TuyaCandidateOfflineAnalysisError.receiptSequenceScopeRequiresSequence
+            }
+            guard !receiptSequenceScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw TuyaCandidateOfflineAnalysisError.emptyReceiptSequenceScope
+            }
+        }
         self.streamIdentity = streamIdentity
         self.continuityGeneration = continuityGeneration
         self.receiptUptimeNanoseconds = receiptUptimeNanoseconds
         self.receiptSequenceNumber = receiptSequenceNumber
+        self.receiptSequenceScope = receiptSequenceScope
         self.bytes = bytes
     }
 }
@@ -115,6 +136,7 @@ public struct TuyaCandidateReassembledMessage: Equatable, Sendable {
     public let fragmentCount: Int
     public let firstReceiptUptimeNanoseconds: UInt64
     public let lastReceiptUptimeNanoseconds: UInt64
+    public let receiptSequenceScope: String?
     public let firstReceiptSequenceNumber: UInt64?
     public let lastReceiptSequenceNumber: UInt64?
 }
@@ -141,6 +163,7 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
     private var firstReceiptSequenceNumber: UInt64?
     private var lastReceiptSequenceNumber: UInt64?
     private var receiptOrderingUsesSequence: Bool?
+    private var receiptSequenceScope: String?
     private var highestSeenReceiptSequenceNumber: UInt64?
     private var highestSeenReceiptUptimeNanoseconds: UInt64?
     private var isComplete = false
@@ -246,6 +269,7 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
                 fragmentCount: fragmentCount,
                 firstReceiptUptimeNanoseconds: firstReceiptUptimeNanoseconds!,
                 lastReceiptUptimeNanoseconds: lastReceiptUptimeNanoseconds!,
+                receiptSequenceScope: receiptSequenceScope,
                 firstReceiptSequenceNumber: firstReceiptSequenceNumber,
                 lastReceiptSequenceNumber: lastReceiptSequenceNumber
             )
@@ -264,6 +288,11 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
     /// evidence. Uptime remains a nondecreasing plausibility/clock constraint and
     /// may legitimately be equal across distinct callbacks. Legacy observations
     /// without a sequence preserve the original strict accepted-uptime behavior.
+    ///
+    /// When a sequence scope is supplied, it is part of the immutable ordering
+    /// authority. A different scope is rejected before sequence/time watermarks
+    /// mutate; numeric sequence values from another acquisition are therefore not
+    /// comparable merely because they happen to be larger.
     private mutating func admitReceiptChronology(
         _ observation: TuyaCandidateFragmentObservation
     ) throws {
@@ -272,8 +301,18 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
             guard receiptOrderingUsesSequence == usesSequence else {
                 throw TuyaCandidateOfflineAnalysisError.receiptOrderingAuthorityChanged
             }
+            if usesSequence,
+               receiptSequenceScope != observation.receiptSequenceScope {
+                throw TuyaCandidateOfflineAnalysisError.receiptSequenceScopeChanged(
+                    expected: receiptSequenceScope,
+                    actual: observation.receiptSequenceScope
+                )
+            }
         } else {
             receiptOrderingUsesSequence = usesSequence
+            if usesSequence {
+                receiptSequenceScope = observation.receiptSequenceScope
+            }
         }
 
         if let sequence = observation.receiptSequenceNumber {
