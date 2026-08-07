@@ -80,7 +80,8 @@ public enum NavigationPresentationProjector {
                 NavigationRouteOptionPresentation(
                     selectionID: NavigationRouteSelectionID(
                         requestToken: availableToken,
-                        index: index
+                        index: index,
+                        route: route
                     ),
                     index: index,
                     name: route.name,

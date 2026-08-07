@@ -13,13 +13,16 @@ public enum NavigationExperienceError: Error, Equatable, Sendable {
 public struct NavigationRouteSelectionID: Equatable, Sendable {
     public let requestToken: NavigationRouteRequestToken
     public let index: Int
+    let route: NavigationRouteSnapshot
 
-    public init(
+    init(
         requestToken: NavigationRouteRequestToken,
-        index: Int
+        index: Int,
+        route: NavigationRouteSnapshot
     ) {
         self.requestToken = requestToken
         self.index = index
+        self.route = route
     }
 }
 
@@ -100,14 +103,18 @@ public final class NavigationExperienceCoordinator {
     }
 
     /// Explicitly selects one route from the exact provider result generation
-    /// represented by `selectionID`. Stale UI actions fail closed rather than
-    /// retargeting the same array index into newer alternatives.
+    /// represented by `selectionID`. Both request identity and immutable route
+    /// facts must still match, so an ID from a replaced coordinator cannot
+    /// silently collide with a restarted token sequence/index.
     @discardableResult
     public func selectRoute(
         _ selectionID: NavigationRouteSelectionID
     ) throws -> NavigationExperienceSnapshot {
         guard case let .available(currentToken, _, _) = planningService.state,
-              currentToken == selectionID.requestToken else {
+              currentToken == selectionID.requestToken,
+              let selection = routeSelection,
+              selection.routes.indices.contains(selectionID.index),
+              selection.routes[selectionID.index] == selectionID.route else {
             throw NavigationExperienceError.staleRouteOptions
         }
         return try selectCurrentRoute(index: selectionID.index)
@@ -118,15 +125,10 @@ public final class NavigationExperienceCoordinator {
     /// this module only get the generation-bound `NavigationRouteSelectionID` API.
     @discardableResult
     func selectRoute(index: Int) throws -> NavigationExperienceSnapshot {
-        guard case let .available(currentToken, _, _) = planningService.state else {
+        guard case .available = planningService.state else {
             throw NavigationExperienceError.noRouteOptions
         }
-        return try selectRoute(
-            NavigationRouteSelectionID(
-                requestToken: currentToken,
-                index: index
-            )
-        )
+        return try selectCurrentRoute(index: index)
     }
 
     /// Feeds only quality-screened location evidence into the selected route's
