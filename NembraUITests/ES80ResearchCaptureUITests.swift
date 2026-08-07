@@ -22,6 +22,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The capture shell must keep its passive-only truth boundary visible."
         )
         XCTAssertTrue(
+            app.staticTexts
+                .matching(NSPredicate(format: "label CONTAINS[c] %@", "foreground"))
+                .firstMatch
+                .waitForExistence(timeout: 3),
+            "Foreground-only capture continuity must be disclosed before any physical research session starts."
+        )
+        XCTAssertTrue(
             app.buttons["Scan for scooter"].waitForExistence(timeout: 3),
             "Stationary setup must expose one obvious scan action even when Simulator Bluetooth cannot perform a physical scan."
         )
