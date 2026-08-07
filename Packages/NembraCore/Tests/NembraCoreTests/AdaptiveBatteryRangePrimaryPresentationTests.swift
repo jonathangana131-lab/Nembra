@@ -69,6 +69,21 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
         #expect(decision.primaryReadoutDisplay == .learning)
     }
 
+    @Test("estimated SoC outranks provisional basis in fail-closed reason precedence")
+    func estimatedSOCOutranksProvisionalBasis() {
+        let decision = policy.resolve(
+            estimate: estimate(
+                basis: .provisionalSeed,
+                confidence: .learning,
+                socProvenance: .estimate
+            ),
+            vehicleAvailability: .live
+        )
+
+        #expect(decision == .unavailable(.estimatedSOCRequiresQualifier))
+        #expect(decision.primaryReadoutDisplay == .unavailable)
+    }
+
     @Test("learning confidence stays learning")
     func learningConfidenceIsWithheld() {
         let decision = policy.resolve(
