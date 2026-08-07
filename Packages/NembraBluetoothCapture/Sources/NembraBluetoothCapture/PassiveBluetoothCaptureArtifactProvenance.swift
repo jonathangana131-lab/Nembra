@@ -13,7 +13,6 @@ public enum PassiveBluetoothCaptureArtifactProvenanceError: Error, Equatable, Se
     case invalidSourceArtifactDigest
     case invalidSourceArtifactByteCount
     case invalidSourceCaptureSchemaVersion
-    case sourceArtifactMismatch
     case invalidNembraSourceRevision
     case emptyAppVersion
     case emptyAppBuild
@@ -100,7 +99,8 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
         return value
     }
 
-    /// Re-check that this sidecar still belongs to these exact raw capture bytes.
+    /// Re-check that this sidecar still belongs to these exact raw capture bytes
+    /// and that its selected target is still present in attributable raw evidence.
     /// A match establishes artifact association only; it does not authenticate a
     /// scooter or promote any physical/protocol claim.
     public func matchesSourceArtifact(_ captureJSON: Data) throws -> Bool {
@@ -109,6 +109,8 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
         let captureSchemaVersion = try JSONDecoder()
             .decode(PassiveBluetoothCaptureArtifactSchemaProbe.self, from: captureJSON)
             .schemaVersion
+        let attributableTargets = PassiveBluetoothCaptureArtifactProvenanceBuilder
+            .attributablePeripheralIdentifiers(in: session)
 
         return sourceArtifact.sha256
                 == PassiveBluetoothCaptureArtifactProvenanceBuilder.sha256Hex(of: captureJSON)
@@ -116,6 +118,7 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
             && sourceArtifact.captureSchemaVersion == captureSchemaVersion
             && sourceArtifact.sessionID == session.id
             && sourceArtifact.sessionStartedAt == session.startedAt
+            && attributableTargets.contains(selectedTarget.peripheralIdentifier)
     }
 
     fileprivate func validate() throws {
@@ -268,7 +271,7 @@ public enum PassiveBluetoothCaptureArtifactProvenanceBuilder {
 
     /// Deliberately excludes advertisement-only sightings. A broad-scan
     /// candidate is catalog evidence, not selected-target capture attribution.
-    public static func attributablePeripheralIdentifiers(
+    fileprivate static func attributablePeripheralIdentifiers(
         in session: PassiveBluetoothCaptureSession
     ) -> [String] {
         var identifiers = Set<String>()
