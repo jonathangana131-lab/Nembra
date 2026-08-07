@@ -671,21 +671,22 @@ struct TuyaCandidateDPElectricalCoherenceTests {
         #expect(result.rejectedAnchors.first?.reason == .nonFiniteReferenceRelationship)
     }
 
-    @Test("aggregate errors stay finite when repeated extreme finite anchors would overflow a raw sum")
-    func aggregateMeansStayFinite() throws {
+    @Test("three greatest-finite errors retain a greatest-finite mean")
+    func aggregateMeansStayFiniteAtRepresentableMaximum() throws {
+        let maximum = Double.greatestFiniteMagnitude
         let voltage = try numericReport(
-            field: "Voltage", markerTimes: [100, 200], rawValues: [[1], [1]],
-            numericValues: [1e154, 1e154], scale: 1e154, candidateID: 1,
+            field: "Voltage", markerTimes: [100, 200, 300], rawValues: [[1], [1], [1]],
+            numericValues: [maximum, maximum, maximum], scale: maximum, candidateID: 1,
             numericTolerance: 0
         )
         let current = try numericReport(
-            field: "Current", markerTimes: [110, 210], rawValues: [[1], [1]],
-            numericValues: [1e154, 1e154], scale: 1e154, candidateID: 2,
+            field: "Current", markerTimes: [110, 210, 310], rawValues: [[1], [1], [1]],
+            numericValues: [1, 1, 1], scale: 1, candidateID: 2,
             numericTolerance: 0
         )
         let power = try numericReport(
-            field: "Power", markerTimes: [120, 220], rawValues: [[1], [1]],
-            numericValues: [1, 1], scale: 1, candidateID: 3,
+            field: "Power", markerTimes: [120, 220, 320], rawValues: [[0], [0], [0]],
+            numericValues: [0, 0, 0], scale: 1, candidateID: 3,
             numericTolerance: 0
         )
 
@@ -697,13 +698,13 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             powerReport: power,
             powerHypothesisIdentifier: "selected",
             evidenceContexts: contexts(),
-            anchors: [try anchor(0), try anchor(1)],
-            policy: coherencePolicy(span: 30, absolute: 1e308)
+            anchors: [try anchor(0), try anchor(1), try anchor(2)],
+            policy: coherencePolicy(span: 30, absolute: maximum)
         )
-        #expect(result.evaluations.count == 2)
-        #expect(result.meanReferenceAbsolutePowerError?.isFinite == true)
-        #expect(result.meanCandidateAbsolutePowerError?.isFinite == true)
-        #expect(result.maximumCandidateAbsolutePowerError?.isFinite == true)
+        #expect(result.evaluations.count == 3)
+        #expect(result.meanReferenceAbsolutePowerError == maximum)
+        #expect(result.meanCandidateAbsolutePowerError == maximum)
+        #expect(result.maximumCandidateAbsolutePowerError == maximum)
     }
 
     @Test("policy, capture context, and marker bounds are explicit and fail closed")
