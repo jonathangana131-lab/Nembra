@@ -135,4 +135,73 @@ struct RideSessionDurationProvenanceRegressionTests {
         }
         #expect(accumulator.snapshot == before)
     }
+
+    @Test("durable restore seals the old process and requires a fresh process generation")
+    func durableRestoreRequiresFreshProcessGeneration() throws {
+        var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
+        try accumulator.upsert(
+            segment(
+                segmentID: firstSegmentID,
+                processID: firstProcessID,
+                sequence: 0,
+                through: 300,
+                followsGap: false
+            )
+        )
+
+        let data = try JSONEncoder().encode(accumulator)
+        var restored = try JSONDecoder().decode(
+            RideSessionDurationEvidenceAccumulator.self,
+            from: data
+        )
+        let before = restored.snapshot
+
+        #expect(throws: RideSessionDurationEvidenceError.closedSegmentCannotExtend) {
+            try restored.upsert(
+                segment(
+                    segmentID: firstSegmentID,
+                    processID: firstProcessID,
+                    sequence: 0,
+                    through: 350,
+                    followsGap: false
+                )
+            )
+        }
+        #expect(throws: RideSessionDurationEvidenceError.restoredProcessGenerationReused) {
+            try restored.upsert(
+                segment(
+                    segmentID: secondSegmentID,
+                    processID: firstProcessID,
+                    sequence: 1,
+                    through: 400,
+                    followsGap: true
+                )
+            )
+        }
+        #expect(restored.snapshot == before)
+
+        let insertion = try restored.upsert(
+            segment(
+                segmentID: secondSegmentID,
+                processID: secondProcessID,
+                sequence: 1,
+                through: 400,
+                followsGap: true
+            )
+        )
+        let extensionResult = try restored.upsert(
+            segment(
+                segmentID: secondSegmentID,
+                processID: secondProcessID,
+                sequence: 1,
+                through: 450,
+                followsGap: true
+            )
+        )
+
+        #expect(insertion == .inserted)
+        #expect(extensionResult == .extended(additionalNanoseconds: 50))
+        #expect(restored.snapshot.coverage == .partial)
+        #expect(restored.snapshot.observedDurationNanoseconds == 550)
+    }
 }
