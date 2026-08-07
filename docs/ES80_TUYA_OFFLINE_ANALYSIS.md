@@ -55,15 +55,26 @@ One `TuyaCandidateFragmentReassembler` permanently binds to the first stream ide
 
 That means a disconnect, interrupted acquisition, target change, or other evidence gap cannot silently splice bytes into one candidate message. The capture layer remains authoritative for deciding when continuity is broken.
 
-`TuyaCandidateTranscriptAnalyzer` adds a batch layer for an already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. It emits explicit events for:
+`TuyaCandidateTranscriptAnalyzer` adds a batch layer for one already ordered immutable value transcript. It automatically rolls from one completed candidate message to the next while preserving every important failure boundary as output evidence. Receipt uptime remains a transcript-wide ordering clock: candidate completion, framing rejection, stream changes, continuity-generation changes, and candidate packet-zero restarts do **not** reset chronology. Every observation that advances that clock remains seen even if its candidate bytes are later rejected, so a delayed older observation cannot become a fresh candidate merely because framing state was reset. Equal or decreasing receipt uptime therefore fails closed across candidate boundaries as well as within one candidate.
+
+A continuity generation is a byte-continuity boundary, not permission to rewind the transcript receipt clock. Higher-level adapters that cannot guarantee one comparable monotonic clock domain must split their evidence into separate transcripts rather than concatenate unrelated uptime domains.
+
+Within one unchanged stream/generation, the candidate framing gives one additional bounded signal: packet index zero denotes a new candidate message start. After the observation has passed transcript-wide chronology admission, if packet zero arrives while a prior candidate is still incomplete, the analyzer preserves the prior candidate as `.incompleteAtBoundary(..., boundary: .candidatePacketZeroRestart)` and feeds the **same immutable observation** into a fresh bounded reassembler. This prevents a valid new first fragment from being consumed as the old candidate's index-mismatch failure. Stream/generation boundaries and transcript chronology are evaluated before this restart path, so they retain stronger authority. This is a framing-hypothesis boundary only; it does not invent a CoreBluetooth continuity gap or assert that the physical ES80 uses this protocol family.
+
+The transcript analyzer emits explicit events for:
 
 - completed candidate messages;
 - a candidate rejected by the framing contract, including its first, last accepted, and failing observation indices;
 - an incomplete candidate terminated by stream-identity and/or continuity-generation change;
+- an incomplete candidate terminated by an explicit same-stream candidate packet-zero restart;
 - an incomplete candidate still open when the transcript ends;
 - an unexpected analyzer failure, which stops analysis rather than silently discarding evidence.
 
-The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, or joins data across a known gap. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
+If an incomplete candidate reaches a stream/continuity boundary and the first observation beyond that boundary also rewinds receipt uptime, both facts remain visible: the incomplete-boundary event is emitted first, then the rewound observation is rejected. A later genuinely newer packet-zero observation may recover normally.
+
+If a same-stream packet-zero observation itself rewinds or repeats receipt uptime, transcript chronology rejects it before restart classification. The analyzer does not repair that timestamp, reset around it, or convert stale chronology into a believable new-message boundary.
+
+The transcript analyzer never retries mutated bytes, searches for a convenient parse offset, reorders observations, rewinds receipt chronology, or joins data across a known gap. Candidate packet-zero recovery reuses only the exact chronology-admitted observation; the fresh reassembler still validates declared length, version byte, payload bounds, resource limits, and subsequent fragment sequence normally. This makes future physical capture analysis reproducible without asking the user to manually decide which hex fragments look valid.
 
 ## Resource safety without invented hardware limits
 
@@ -106,9 +117,16 @@ The repository tests exercise:
 - automatic rollover across multiple complete candidate messages in one transcript;
 - explicit preservation of continuity-boundary truncation;
 - whole-candidate rejection followed by clean packet-zero recovery;
-- explicit end-of-transcript truncation evidence.
+- explicit end-of-transcript truncation evidence;
+- transcript-wide receipt-rewind rejection after a completed candidate;
+- seen-chronology preservation across a newer framing rejection followed by a delayed older observation;
+- explicit boundary preservation when the first observation in a new continuity generation rewinds receipt uptime, followed by recovery on genuinely newer evidence;
+- same-stream packet-zero restart without dropping the new first fragment;
+- malformed restarted first-fragment preservation as its own rejection;
+- precedence of a real stream/generation boundary over the packet-zero framing restart;
+- non-monotonic packet-zero evidence remaining a chronology rejection rather than bypassing the active candidate.
 
-Supplemental local Swift 6.2.1 validation passed **17/17 focused tests across two suites** in both debug and release with warnings treated as errors. That is supporting evidence only. Repository/exact-head CI remains the acceptance source for the integrated branch.
+The original framing slice had supplemental local Swift 6.2.1 validation across its focused suites. Repository/exact-head CI remains the acceptance source for integrated chronology and restart hardening; queued, skipped, stale-head, or ancestor runs are not accepted as proof.
 
 ## Physical next step
 

@@ -1,100 +1,125 @@
 # CONTINUATION PROMPT
 
-Continue the existing Nembra production iOS project in `jonathangana131-lab/Nembra`. Do not create another repository/app, restart accepted architecture, or ask the user to summarize previous work.
+Continue the existing production iOS application **Nembra** in `jonathangana131-lab/Nembra`.
 
-Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.md`. GitHub live state wins over this prose if they differ.
+Do not create another repository/app, restart accepted architecture, or ask the user to summarize previous work. Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.md`. This file is only a mutable resume aid.
 
-## Permanent primary-vehicle direction
+**Live GitHub always outranks this file.** If a branch, PR, SHA, CI state, dependency, or ownership statement below has changed, use the live state instead of trying to restore this snapshot.
+
+## Permanent direction
 - Primary real scooter / first hardware-validation target: **AOVOPRO ES80**.
-- **MAXSHOT V1S Pro** support is deferred/unverified. Preserve accepted abstractions, profile code, tests, simulation work, and generic vehicle architecture; do not delete them.
-- Future primary hardware validation, protocol research, battery reverse engineering, reconnect work, speed validation, and `IMPLEMENTED IN SOFTWARE` vs `VERIFIED ON REAL HARDWARE` statements target the **AOVOPRO ES80** unless explicitly discussing another scooter.
-- The stock ES80 Tuya app visibly reports battery percentage, but packet evidence must determine whether that value is directly measured, its resolution/cadence, whether voltage/charging state exists, and whether Tuya derives the percentage.
-- Battery/range must use one domain separating raw evidence, measured SoC, estimated SoC, display SoC, efficiency model, estimated range, range confidence, and unknown.
-- Battery indicator must eventually tap-toggle `% ↔ estimated remaining range` across relevant Home/Dashboard/live-ride surfaces.
-- Remaining range learns this particular ES80 from real battery consumption and distance; never use advertised range × percentage as the final model. Preserve recent-vs-history weighting, smoothing/hysteresis, confidence, outlier rejection, meaningful battery windows, low-battery conservatism, persisted learning, and deterministic tests.
-- Focused permanent subsystem contract: `docs/ES80_BATTERY_RANGE.md`.
+- **MAXSHOT V1S Pro** is deferred/unverified hardware support. Preserve reusable code, tests, simulation, profiles, and capability abstractions.
+- Baseline product target: **iPhone 12 / iOS 27**.
+- Preserve strict truth boundaries between measured, estimated, interpolated/displayed, retained, derived, Simulator, public research, and physically verified evidence.
+- Never promote stock-app displayed Battery / Voltage / Current / Power values directly into production protocol truth.
+- No random CoreBluetooth writes. Physical commands require strong protocol evidence, explicit authorization, fail-closed behavior, and real state-confirmation semantics.
+- Battery/range remains one serious domain: `% ↔ estimated range`, learned from legitimate battery consumption vs real distance, never advertised range × percentage.
+- Propulsion/power presentation must use accepted physical evidence when available; display smoothing is never telemetry evidence, and learned observed ceiling is never rated motor/controller maximum or throttle position.
+- Final production visual closure remains mandatory. A technically correct but mediocre screen is unfinished.
 
-## Fresh resume sequence
-1. Inspect `main`, open PRs, active branches, newest commits, and newest Xcode/Actions runs.
-2. Identify the real active branch/PR/head before trusting milestone text.
-3. Read `PROJECT_STATE.md` and this file from that active head.
-4. Read `docs/RIDE_LOCATION_CAPTURE.md`, `docs/RIDE_LOCATION_EVIDENCE.md`, `docs/ES80_BATTERY_RANGE.md`, `PROTOCOL_NOTES.md`, and only the relevant durable decisions/design notes.
-5. Resume the exact unfinished action; do not stop at a status report while another safe tool action can advance Nembra.
+## Fresh-chat boot sequence
+Start with tools, not a giant plan:
+1. inspect live `main` head;
+2. inspect open PRs and newest-changing branches;
+3. inspect recent commits;
+4. inspect newest Actions/Xcode runs;
+5. identify which lanes/files are actively owned;
+6. read `PROJECT_STATE.md` and this file only after live state is known;
+7. read only the relevant durable product/protocol/design docs;
+8. choose or recover one safe non-conflicting lane;
+9. execute immediately.
 
-## Expected live handoff
-- Stable `main` before the active slice: `e0d584ec35e6c6eab2b0789c4d2fe74f5c82e213`, containing merged PR #7 durable completed-ride route geometry.
-- Active branch: `feature/ride-location-capture`.
-- Active PR: **#8 — Add truthful ride-scoped phone location evidence**.
-- The ES80 product-target/battery requirement change was checkpointed on this branch without abandoning the active software slice.
-- The Core Location Xcode compile failure from `CLServiceSession.session(...)` was corrected to the current initializer form `CLServiceSession(authorization: .whenInUse)`; the corrected lineage still requires its own exact-head Xcode gate.
-- Resolve the exact branch SHA from GitHub; recent implementation/test/doc/product-memory commits intentionally require a fresh exact-head gate.
+One chat = one worker = one isolated branch/lane. Existing changing branches are presumed owned. Do not push to another worker's branch. If an old useful lane is clearly stopped, recover it on a **new** branch from its exact durable head.
 
-## Active slice
-The branch adds the phone-location evidence boundary needed before Nembra can safely enable real ride routes/GPS distance.
+Before any substantial edit, compare likely changed paths with active PRs. Avoid `project.pbxproj`, app bootstrap/root composition, shared persistence factories, global project-memory files, Dashboard/Home, and shared registries when another worker owns them.
 
-Preserve these boundaries:
-- raw Core Location updates are not automatically ride evidence.
-- quality thresholds are injected; there is no production outdoor policy until field traces justify one.
-- reduced/approximate location is rejected as precise route evidence.
-- software-simulated locations require explicit QA policy permission.
-- ordering uses process-local receipt uptime; wall-clock dates do not repair sequence.
-- only continuous adjacent accepted points may produce GPS-distance deltas.
-- known interruptions/continuity gaps start new route segments and do not invent distance across the gap.
-- coordinates persist through the existing immutable `RideRouteRecorder`; screened distance feeds the existing `RideApplicationStore`/`RideEngine` GPS input.
-- route geometry and GPS distance remain separate evidence domains even when they originate from the same screened sample stream.
-- additive route-store failure must not erase valid screened distance evidence.
-- production automatic ride detection remains **AOVOPRO ES80 hardware-gated**.
-- the Core Location adapter is software-implemented but production outdoor/background recording is not yet field validated or enabled as a completed feature.
-- no motorized-vehicle write semantics change in this slice.
+## Current checkpoint — 2026-08-07
+At this checkpoint:
+- `main` = `58ba1958a78f3410fc53e549e04398e43204fe25`.
+- That head merged #299, keeping propulsion-gauge accessibility anchored to accepted power evidence.
+- Recent accepted main work also includes #296 peak-power evidence, #294 Liquid Glass control-availability behavior, #281 ride-distance chronology, #290 ride-duration lifecycle observation, #285 field-specific speed currentness, #287 telemetry-benchmark chronology, and #272 transcript-wide Tuya receipt chronology.
 
-## Exact unfinished action
-1. Resolve the newest exact `feature/ride-location-capture` head after the ES80/battery product-memory checkpoint and current location-code fixes.
-2. Inspect the newest **Xcode 27 Simulator QA** run for that exact head.
-3. If it fails, inspect the failing job/log and fix the real issue; do not merge around it.
-4. If green, preserve run/job/artifact identifiers and confirm PR #8 has no unresolved review threads/comments and is mergeable.
-5. Mark PR #8 ready and squash merge using `expected_head_sha` equal to the exact green head.
-6. Verify fresh `main`.
-7. Immediately create/start the next meaningful branch. Do not stop at the merge boundary.
+Resolve current `main` again before acting. This SHA is **not** a permanent resume target.
 
-## Next substantial location slice after merge
-Exercise the new location capture through the real application ride lifecycle rather than only direct integration tests:
-- replace/bypass the old Simulator-only direct route-recorder fixture with an injected Simulator location source feeding `RideLocationCaptureCoordinator`,
-- make screened GPS distance travel through `RideEngine` into completed ride history while keeping ODO and GPS explicitly separate,
-- begin/end capture from authoritative root-owned ride state, not a SwiftUI view,
-- use real iPhone 12/iOS 27 Simulator UI evidence to verify route + GPS evidence,
-- then implement foreground/background lifecycle ownership using current iOS 27 location APIs before any real production activation.
+The old `feature/ride-location-capture` / PR #8 instructions previously stored here are obsolete historical handoff material. **Do not resume PR #8 because an older prompt names it.**
 
-## Future AOVOPRO ES80 battery/range vertical
-Treat adaptive battery/range as a dedicated serious vertical slice, not a view-only formula. The durable contract is `docs/ES80_BATTERY_RANGE.md` and must eventually include:
-- protocol capture of Tuya battery percentage source/resolution/cadence/load-rest behavior and voltage/charging evidence if exposed,
-- one authoritative battery domain,
-- measured vs estimated vs displayed SoC separation,
-- persisted ride battery anchors/history,
-- meaningful percentage-consumption windows,
-- recent + historical efficiency model,
-- range confidence and cold-start learning,
-- stable/hysteretic low-battery-aware range estimator,
-- `% ↔ miles` tap toggle with premium rolling transitions,
-- deterministic scenarios for no history, normal/high/low efficiency, sudden behavior changes, noisy/sparse battery anchors, gaps, incomplete rides, low SoC, aging, and voltage sag if available,
-- final production visual treatment during the mandatory overhaul.
+## Highest-value active product path
+The strongest current product gravity is the AOVOPRO ES80 passive read-only evidence chain.
 
-Do not expose fake current/watts/Wh/mi if ES80 hardware does not actually provide the required inputs.
+At this checkpoint, important active coordination includes:
+- #297 — hardened passive CoreBluetooth capture runtime recovery;
+- #307 — repeated stock-app marker correlation recovery on that runtime;
+- #305 — capture → Tuya candidate bridge recovery;
+- #301 — deterministic offline capture-artifact report downstream of the bridge;
+- #303 — product-facing Nembra Capture app recovery;
+- #295 and downstream DP research — structural candidate analysis, still research-only.
 
-## Systems not to casually rebuild
-- capability-driven `VehicleProfile`/`ScooterService` boundary and hardware-gated production service.
-- typed connection failures and live/retained/unavailable state semantics.
-- serialized pessimistic confirmed commands with connection-generation invalidation.
-- raw authoritative speed separate from display interpolation.
-- dedicated Dashboard speed/mode presentation architecture.
-- automatic `RideEngine`, crash-recovery journal, and completed-history commit handoff.
-- exact SwiftData history ledger.
-- independent ODO/GPS/live-distance reconciliation architecture.
-- immutable route chunks/manifests and explicit gap topology.
-- root-owned history/route presentation stores.
-- deferred MAXSHOT abstractions/tests/profile work.
+Do not duplicate those implementations. Reconcile through their accepted dependency order.
 
-## Still unresolved outside software-only validation
-AOVOPRO ES80 advertisement/GATT/protocol/acknowledgement facts; authoritative battery percentage source/resolution/cadence; voltage/charging state; ODO/mode/control semantics; production location quality policy; real iOS background location behavior; outdoor GPS continuity; energy impact; physical iPhone 12 performance; real ES80 ride validation. MAXSHOT-specific hardware validation is deferred.
+The target ladder is:
 
-## Execution reminder
-A build, commit, PR, screenshot, green gate, merge, or phase boundary is not a conversation stop. Keep executing while another safe tool action can advance Nembra. GitHub is the recovery memory if the platform terminates the run.
+**accepted passive capture runtime → product capture shell → immutable physical capture artifact → repeated stock-app correlation → bounded offline framing/DP candidates → repeatable physical field verification → production read-only service → battery/power integration → cockpit/range/propulsion product closure.**
+
+A framing candidate or numeric/electrical correlation is not physical ES80 field truth. No DP should become Battery, Voltage, Current, Power, Speed, Throttle, Regen, or a command until its physical source, exact stream identity, scale, signedness, units, cadence, continuity, and provenance are repeatably verified.
+
+When the capture toolchain is accepted, prefer one short, precise, safe **passive stationary physical experiment** over more speculative protocol abstraction. Preserve the raw artifact unchanged and let Nembra tooling do the offline analysis; do not make the user manually interpret hex.
+
+## Other active dependency surfaces
+Inspect live PRs before choosing work; this snapshot is intentionally incomplete.
+
+### Propulsion / power
+`main` contains truth-preserving propulsion presentation/accessibility and accepted peak-power foundations. Active #302 is recovering durable learned observed-power-envelope calibration.
+
+Do not treat any of this as proof of physical ES80 watts/current, throttle, regen, or rated maximum. Production integration remains physical-evidence-gated.
+
+### Speed / Dashboard
+Field-specific speed currentness is accepted on `main`, while provider/app/cockpit integration remains active in lanes such as #293/#282 and performance work such as #255.
+
+`DashboardView.swift` and related app/UI-test surfaces are high-contention. Do not create a second Dashboard truth implementation while those owners are active.
+
+### Battery / adaptive range
+Multiple receipt-authority, range-learning, persistence, and presentation branches are active or dependency-bound. Reconcile them rather than creating another adaptive-range model.
+
+No production battery/current/power/Wh/mi semantics are verified on the ES80 yet. Stock Tuya values remain correlation anchors.
+
+### Rides / history
+Ride-duration and ride-distance truth have advanced on `main`. Active work includes durable duration-history joining (#300), ride peak-power evidence (#306), recent-ride Home presentation, and premium Ride Details.
+
+Keep duration, ODO, GPS, integrated speed distance, route geometry, peak evidence, and missing/partial coverage separate.
+
+### Navigation
+Navigation foundations continue moving. At this checkpoint #309 is the recovery for route-request identity. Refresh ownership before touching planning/guidance/reroute/arrival/MapKit files.
+
+## Acceptance discipline
+A commit, passing unit test, screenshot, PR, green ancestor run, or merge is not automatically product completion.
+
+For package/domain-only work, use focused compile/tests and adversarial checks appropriate to risk.
+
+For app-visible work, require real iPhone 12 / iOS 27 Simulator interaction and screenshots, then critique/refine. Check Dynamic Type, VoiceOver/semantic output, Reduce Motion/Transparency/contrast as relevant. Profile when high-frequency rendering changes.
+
+For persistence, global build wiring, security/authorization, or physical command boundaries, use stronger adversarial/error-path validation.
+
+Queued, running, skipped, cancelled, resolver-only, stale-SHA, or ancestor CI is not exact-head acceptance. Do not rerun expensive full-app QA merely because unrelated files moved; classify drift intentionally.
+
+## Physical truth still unresolved
+Until repeatable real-hardware evidence proves otherwise, keep these UNKNOWN / NOT VERIFIED:
+- stable physical ES80 advertisement/peripheral identity suitable for production persistence;
+- exact GATT service/characteristic/notification source for target telemetry;
+- actual physical Tuya family/framing compatibility;
+- Battery / Voltage / Current / Power / Speed / ODO / mode/control DP identities and semantics;
+- signedness, units, scales, cadence, freshness, charging behavior, throttle, and regen;
+- command authorization and actual scooter acknowledgement/state confirmation;
+- physical speed quality policy;
+- true 1% battery resolution or energy telemetry;
+- physical iPhone 12 performance and outdoor ride/location behavior.
+
+## Exact resume rule
+Do not blindly follow a hard-coded "exact unfinished action" from old prose. Instead:
+1. resolve live GitHub;
+2. identify the newest safe dependency bottleneck or abandoned recovery candidate;
+3. verify no competing owner/file overlap;
+4. perform the next concrete operation;
+5. checkpoint useful work remotely;
+6. continue upward through integration/product/runtime quality while safe actionable work exists.
+
+GitHub is the durable recovery memory if the standard-chat run is interrupted.

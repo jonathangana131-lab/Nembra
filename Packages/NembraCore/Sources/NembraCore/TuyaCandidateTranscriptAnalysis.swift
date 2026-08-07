@@ -2,6 +2,11 @@ public enum TuyaCandidateTranscriptBoundary: Equatable, Sendable {
     case streamIdentityChanged
     case continuityGenerationChanged
     case streamIdentityAndContinuityGenerationChanged
+    /// Under the candidate framing hypothesis, packet index zero is an explicit
+    /// new-message start. If it arrives while a prior candidate is incomplete on
+    /// the same stream/generation, preserve the old candidate as truncated and
+    /// let this exact observation start the new candidate instead of discarding it.
+    case candidatePacketZeroRestart
 }
 
 /// Lossless analysis outcomes for an ordered capture transcript. Candidate
@@ -46,6 +51,7 @@ public enum TuyaCandidateTranscriptAnalyzer {
         var boundContinuityGeneration: UInt64?
         var startObservationIndex: Int?
         var lastAcceptedObservationIndex: Int?
+        var lastSeenReceiptUptimeNanoseconds: UInt64?
 
         for (index, observation) in observations.enumerated() {
             if let currentStreamIdentity = boundStreamIdentity,
@@ -80,6 +86,58 @@ public enum TuyaCandidateTranscriptAnalyzer {
                         lastAcceptedObservationIndex: &lastAcceptedObservationIndex
                     )
                 }
+            }
+
+            // Receipt uptime is process-local transcript ordering evidence, not
+            // candidate-local framing state. Preserve the newest observation seen
+            // even when its bytes are rejected so a later delayed observation cannot
+            // become a fresh candidate merely because the reassembler was reset.
+            if let lastSeenReceiptUptimeNanoseconds,
+               observation.receiptUptimeNanoseconds <= lastSeenReceiptUptimeNanoseconds {
+                events.append(
+                    .rejectedCandidate(
+                        startObservationIndex: startObservationIndex ?? index,
+                        lastAcceptedObservationIndex: lastAcceptedObservationIndex,
+                        failingObservationIndex: index,
+                        error: .nonMonotonicReceiptUptime
+                    )
+                )
+                reassembler = nil
+                resetState(
+                    streamIdentity: &boundStreamIdentity,
+                    continuityGeneration: &boundContinuityGeneration,
+                    startObservationIndex: &startObservationIndex,
+                    lastAcceptedObservationIndex: &lastAcceptedObservationIndex
+                )
+                continue
+            }
+            lastSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
+
+            // Once transcript chronology has admitted this exact observation, a
+            // packet-zero prefix is an explicit new-message marker under this
+            // candidate framing hypothesis. Preserve an unfinished candidate as a
+            // truncation boundary, then let the same immutable observation seed a
+            // fresh reassembler. Chronology and real stream/generation boundaries
+            // remain stronger because both are evaluated before this recovery path.
+            if reassembler != nil,
+               beginsWithCandidatePacketZero(observation),
+               let priorStartObservationIndex = startObservationIndex,
+               let priorLastAcceptedObservationIndex = lastAcceptedObservationIndex {
+                events.append(
+                    .incompleteAtBoundary(
+                        startObservationIndex: priorStartObservationIndex,
+                        lastAcceptedObservationIndex: priorLastAcceptedObservationIndex,
+                        nextObservationIndex: index,
+                        boundary: .candidatePacketZeroRestart
+                    )
+                )
+                reassembler = nil
+                resetState(
+                    streamIdentity: &boundStreamIdentity,
+                    continuityGeneration: &boundContinuityGeneration,
+                    startObservationIndex: &startObservationIndex,
+                    lastAcceptedObservationIndex: &lastAcceptedObservationIndex
+                )
             }
 
             if reassembler == nil {
@@ -152,6 +210,16 @@ public enum TuyaCandidateTranscriptAnalyzer {
         }
 
         return events
+    }
+
+    private static func beginsWithCandidatePacketZero(
+        _ observation: TuyaCandidateFragmentObservation
+    ) -> Bool {
+        var cursor = 0
+        return (try? TuyaCandidateFragmentReassembler.decodeCandidateVarint(
+            observation.bytes,
+            cursor: &cursor
+        )) == 0
     }
 
     private static func resetState(
