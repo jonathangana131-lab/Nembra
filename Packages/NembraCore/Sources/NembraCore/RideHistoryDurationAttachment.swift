@@ -56,10 +56,12 @@ public struct RideHistoryDurationJoinedRecord: Equatable, Sendable {
         historyRecord: RideHistoryRecord,
         durationRecord: RideHistoryDurationRecord
     ) throws {
-        try self.initValidated(
+        try Self.validate(
             historyRecord: historyRecord,
             durationRecord: durationRecord
         )
+        self.historyRecord = historyRecord
+        self.durationRecord = durationRecord
     }
 #else
     /// These core files are also compiled directly into Nembra.app rather than linked as a
@@ -69,14 +71,18 @@ public struct RideHistoryDurationJoinedRecord: Equatable, Sendable {
         historyRecord: RideHistoryRecord,
         durationRecord: RideHistoryDurationRecord
     ) throws {
-        try self.initValidated(
+        try Self.validate(
             historyRecord: historyRecord,
             durationRecord: durationRecord
         )
+        self.historyRecord = historyRecord
+        self.durationRecord = durationRecord
     }
 #endif
 
-    private initValidated(
+    public var sessionID: UUID { historyRecord.sessionID }
+
+    private static func validate(
         historyRecord: RideHistoryRecord,
         durationRecord: RideHistoryDurationRecord
     ) throws {
@@ -85,12 +91,7 @@ public struct RideHistoryDurationJoinedRecord: Equatable, Sendable {
         } catch {
             throw RideHistoryDurationJoinError.completedRideMismatch(historyRecord.sessionID)
         }
-
-        self.historyRecord = historyRecord
-        self.durationRecord = durationRecord
     }
-
-    public var sessionID: UUID { historyRecord.sessionID }
 }
 
 public enum RideHistoryDurationCommitCoordinatorError: Error, Equatable, Sendable {
