@@ -36,6 +36,31 @@ struct PassiveCoreBluetoothArtifactReadBarrier: Equatable, Sendable {
         guard let watermark else { return pendingTail }
         return min(watermark, pendingTail)
     }
+
+    func permittedDrainUpperBound(
+        firstPending: UInt64,
+        pendingTail: UInt64
+    ) -> UInt64? {
+        let upperBound = drainUpperBound(pendingTail: pendingTail)
+        return firstPending <= upperBound ? upperBound : nil
+    }
+}
+
+/// Immutable identity required for one capture artifact to remain authoritative
+/// across asynchronous recorder hops. Any target-session or authority-generation
+/// change invalidates the suspended read rather than relabeling newer evidence as
+/// part of the old artifact.
+struct PassiveCoreBluetoothArtifactAuthorityContext: Equatable, Sendable {
+    let targetSessionGeneration: UInt64
+    let authorityGeneration: UInt64
+
+    func matches(
+        targetSessionGeneration: UInt64,
+        authorityGeneration: UInt64
+    ) -> Bool {
+        self.targetSessionGeneration == targetSessionGeneration
+            && self.authorityGeneration == authorityGeneration
+    }
 }
 
 /// Identity for one finite GATT acquisition watchdog. The watchdog may fire only
@@ -46,15 +71,49 @@ struct PassiveCoreBluetoothAcquisitionWatchdogContext: Equatable, Sendable {
     let peripheralIdentifier: UUID
     let targetSessionGeneration: UInt64
     let acquisitionGeneration: UInt64
+}
 
-    func matches(
-        peripheralIdentifier: UUID?,
-        targetSessionGeneration: UInt64,
-        acquisitionGeneration: UInt64
+/// Deterministic watchdog arm/rearm/cancel state. `revision` distinguishes a
+/// newly rearmed deadline even when physical identity/generation is unchanged, so
+/// an old cancelled Task cannot fire early after legitimate acquisition progress.
+struct PassiveCoreBluetoothAcquisitionWatchdogState: Equatable, Sendable {
+    struct Ticket: Equatable, Sendable {
+        let context: PassiveCoreBluetoothAcquisitionWatchdogContext
+        let revision: UInt64
+    }
+
+    enum StateError: Error, Equatable, Sendable {
+        case revisionExhausted
+    }
+
+    private(set) var activeTicket: Ticket?
+    private var nextRevision: UInt64 = 1
+
+    var isArmed: Bool {
+        activeTicket != nil
+    }
+
+    mutating func arm(
+        for context: PassiveCoreBluetoothAcquisitionWatchdogContext
+    ) throws -> Ticket {
+        guard nextRevision != UInt64.max else {
+            throw StateError.revisionExhausted
+        }
+        let ticket = Ticket(context: context, revision: nextRevision)
+        nextRevision += 1
+        activeTicket = ticket
+        return ticket
+    }
+
+    mutating func cancel() {
+        activeTicket = nil
+    }
+
+    func acceptsExpiry(
+        _ ticket: Ticket,
+        currentContext: PassiveCoreBluetoothAcquisitionWatchdogContext?
     ) -> Bool {
-        self.peripheralIdentifier == peripheralIdentifier
-            && self.targetSessionGeneration == targetSessionGeneration
-            && self.acquisitionGeneration == acquisitionGeneration
+        activeTicket == ticket && currentContext == ticket.context
     }
 }
 
@@ -161,8 +220,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     private struct ArtifactContext {
         let recorder: PassiveCoreBluetoothCaptureRecorder
-        let targetSessionGeneration: UInt64
-        let authorityGeneration: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
         let eventWatermark: UInt64
     }
 
@@ -212,6 +270,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var activePeripheral: CBPeripheral?
     private var connectionTimeoutTask: Task<Void, Never>?
     private var acquisitionWatchdogTask: Task<Void, Never>?
+    private var acquisitionWatchdogState = PassiveCoreBluetoothAcquisitionWatchdogState()
     private var discoveredIncludedServiceObjectIDs: Set<ObjectIdentifier> = []
     private var discoveredCharacteristicServiceObjectIDs: Set<ObjectIdentifier> = []
     private var hasObservedInitialCentralState = false
@@ -464,16 +523,20 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard hasCompleteTargetEvidence else { throw ControllerError.captureIncomplete }
         return ArtifactContext(
             recorder: recorder,
-            targetSessionGeneration: targetSessionGeneration,
-            authorityGeneration: artifactAuthorityGeneration,
+            authority: PassiveCoreBluetoothArtifactAuthorityContext(
+                targetSessionGeneration: targetSessionGeneration,
+                authorityGeneration: artifactAuthorityGeneration
+            ),
             eventWatermark: lastEnqueuedEventSequence
         )
     }
 
     private func validate(_ context: ArtifactContext) throws {
         try ensureCaptureHealthy()
-        guard context.targetSessionGeneration == targetSessionGeneration,
-              context.authorityGeneration == artifactAuthorityGeneration else {
+        guard context.authority.matches(
+            targetSessionGeneration: targetSessionGeneration,
+            authorityGeneration: artifactAuthorityGeneration
+        ) else {
             throw ControllerError.targetSessionChanged
         }
         guard hasCompleteTargetEvidence else {
@@ -534,31 +597,42 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func refreshAcquisitionWatchdog() {
-        cancelAcquisitionWatchdog()
-        guard acquisitionLedger.phase == .acquiring,
-              let peripheral = activePeripheral else { return }
-
-        let context = PassiveCoreBluetoothAcquisitionWatchdogContext(
+    private func currentAcquisitionWatchdogContext() -> PassiveCoreBluetoothAcquisitionWatchdogContext? {
+        guard let peripheral = activePeripheral else { return nil }
+        return PassiveCoreBluetoothAcquisitionWatchdogContext(
             peripheralIdentifier: peripheral.identifier,
             targetSessionGeneration: targetSessionGeneration,
             acquisitionGeneration: acquisitionLedger.readiness.generation
         )
+    }
+
+    private func refreshAcquisitionWatchdog() {
+        cancelAcquisitionWatchdog()
+        guard acquisitionLedger.phase == .acquiring,
+              let context = currentAcquisitionWatchdogContext() else { return }
+
+        let ticket: PassiveCoreBluetoothAcquisitionWatchdogState.Ticket
+        do {
+            ticket = try acquisitionWatchdogState.arm(for: context)
+        } catch {
+            failCapture(error)
+            return
+        }
         let timeoutNanoseconds = acquisitionProgressTimeoutNanoseconds
 
         acquisitionWatchdogTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: timeoutNanoseconds)
             guard !Task.isCancelled,
                   let self,
-                  context.matches(
-                    peripheralIdentifier: self.activePeripheral?.identifier,
-                    targetSessionGeneration: self.targetSessionGeneration,
-                    acquisitionGeneration: self.acquisitionLedger.readiness.generation
+                  self.acquisitionWatchdogState.acceptsExpiry(
+                    ticket,
+                    currentContext: self.currentAcquisitionWatchdogContext()
                   ),
                   self.acquisitionLedger.phase == .acquiring,
-                  self.targetState.acceptsActiveCallback(from: context.peripheralIdentifier) else { return }
+                  self.targetState.acceptsActiveCallback(from: ticket.context.peripheralIdentifier) else { return }
 
             self.acquisitionWatchdogTask = nil
+            self.acquisitionWatchdogState.cancel()
             let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
             let timeoutDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
             self.enqueueInterruption("finite GATT acquisition progress timed out")
@@ -570,6 +644,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private func cancelAcquisitionWatchdog() {
         acquisitionWatchdogTask?.cancel()
         acquisitionWatchdogTask = nil
+        acquisitionWatchdogState.cancel()
     }
 
     private func beginDiscovery(on peripheral: CBPeripheral) throws {
@@ -745,11 +820,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private func startDrainIfNeeded() {
         guard eventDrainTask == nil,
               let firstPendingSequence = pendingEvents.first?.queueSequence,
-              let pendingTailSequence = pendingEvents.last?.queueSequence else { return }
-        let drainThroughSequence = artifactReadBarrier.drainUpperBound(
-            pendingTail: pendingTailSequence
-        )
-        guard firstPendingSequence <= drainThroughSequence else { return }
+              let pendingTailSequence = pendingEvents.last?.queueSequence,
+              let drainThroughSequence = artifactReadBarrier.permittedDrainUpperBound(
+                firstPending: firstPendingSequence,
+                pendingTail: pendingTailSequence
+              ) else { return }
 
         eventDrainTask = Task { @MainActor [weak self] in
             guard let self else { return }
