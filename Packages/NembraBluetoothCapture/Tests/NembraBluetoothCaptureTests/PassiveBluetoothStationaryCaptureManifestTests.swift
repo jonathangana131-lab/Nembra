@@ -115,6 +115,16 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
+    func unrelatedConnectionOnlyNoiseDoesNotChangeTargetAttributionOrContinuity() throws {
+        let captureJSON = try makeCapture(unrelatedConnectionPeripheral: "legacy-nearby-id")
+        let manifest = try makeManifest(captureJSON: captureJSON)
+
+        #expect(manifest.sourceArtifact.selectedPeripheralIdentifier == target)
+        #expect(manifest.evidenceSummary.targetGATTRecordCount == 3)
+        #expect(manifest.evidenceSummary.continuityBreakCount == 0)
+    }
+
+    @Test
     func invalidBuildCommitIsRejectedBeforeSidecarCreation() throws {
         let captureJSON = try makeCapture()
         #expect(
@@ -161,6 +171,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     private func makeCapture(
         targetPeripheral: String? = nil,
         additionalGATTPeripheral: String? = nil,
+        unrelatedConnectionPeripheral: String? = nil,
         includeDisconnect: Bool = false
     ) throws -> Data {
         let selected = targetPeripheral ?? target
@@ -212,6 +223,13 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
                 peripheralIdentifier: additionalGATTPeripheral,
                 serviceUUID: "A201",
                 isPrimary: true
+            )))
+        }
+
+        if let unrelatedConnectionPeripheral {
+            try append(.connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: unrelatedConnectionPeripheral,
+                state: .disconnected
             )))
         }
 
