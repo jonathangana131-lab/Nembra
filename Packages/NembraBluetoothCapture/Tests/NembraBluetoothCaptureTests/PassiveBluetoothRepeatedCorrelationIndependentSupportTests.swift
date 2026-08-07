@@ -186,6 +186,107 @@ struct PassiveBluetoothRepeatedCorrelationIndependentSupportTests {
         #expect(abs((preferred.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
     }
 
+    @Test("explicit target absent from attributable capture evidence fails closed")
+    func absentExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 950,
+            characteristic: "BAT",
+            peripheralIdentifier: "target-a"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            peripheralIdentifier: "missing-target",
+            field: "Battery",
+            lookbackNanoseconds: 100,
+            lookaheadNanoseconds: 100
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.markerCount == 1)
+        #expect(report.distinctDisplayedValues == ["73%"])
+        #expect(report.streamEvidence.isEmpty)
+    }
+
+    @Test("advertisement-only identity does not establish an explicit GATT correlation target")
+    func advertisementOnlyExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try session.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "advertised-only",
+                localName: "AOVOPRO"
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 900,
+            receivedAtDate: .now
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            peripheralIdentifier: "advertised-only",
+            field: "Battery",
+            lookbackNanoseconds: 100,
+            lookaheadNanoseconds: 100
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.streamEvidence.isEmpty)
+    }
+
+    @Test("batch explicit target absence fails closed for every observed field")
+    func batchAbsentExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 900,
+            characteristic: "BAT",
+            peripheralIdentifier: "target-a"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 3,
+            uptime: 1_100,
+            field: "Power",
+            value: "180 W"
+        )
+
+        let reports = PassiveBluetoothRepeatedCorrelationBatch.analyzeAllObservedFields(
+            in: session,
+            peripheralIdentifier: "missing-target",
+            lookbackNanoseconds: 200,
+            lookaheadNanoseconds: 200
+        )
+
+        #expect(reports.map(\.field) == ["Battery", "Power"])
+        #expect(reports.allSatisfy { $0.disposition == .invalidPeripheralScope })
+        #expect(reports.allSatisfy { $0.streamEvidence.isEmpty })
+    }
+
     @Test("structured connection identity participates in unscoped ambiguity")
     func unrelatedConnectionIdentityFailsClosed() throws {
         var session = try makeSession()
