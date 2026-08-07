@@ -312,7 +312,12 @@ public actor SimulatedScooterService: ScooterService {
         guard profile.capabilities.supportsLock else { throw ScooterCommandError.unsupportedCapability }
         let generation = try beginCommand()
         defer { finishCommand() }
-        guard (state.speedKilometersPerHour ?? 0) < 0.5 else { throw ScooterCommandError.commandRejected }
+        guard let speedKilometersPerHour = state.speedKilometersPerHour,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              speedKilometersPerHour < 0.5 else {
+            throw ScooterCommandError.commandRejected
+        }
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
         state.isLocked = locked
         publish()
