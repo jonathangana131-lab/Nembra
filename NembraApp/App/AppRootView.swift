@@ -504,7 +504,7 @@ private struct RideHistoryDetailView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "minus.circle")
                             .foregroundStyle(.secondary)
-                        Text("No distance was recorded for this ride.")
+                        Text("No distance measurement is available for this ride.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 0)
