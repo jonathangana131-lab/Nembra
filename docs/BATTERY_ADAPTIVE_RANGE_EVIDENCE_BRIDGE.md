@@ -27,13 +27,14 @@ The synthetic base keeps dependency code out of the effective worker diff. Under
 
 ## Worker-owned files
 
-Current worker delta is six isolated paths:
+Current worker delta is seven isolated paths:
 
 - `Packages/NembraCore/Sources/NembraCore/BatteryAdaptiveRangeEvidenceAdapter.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeEvidenceAdapterTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePipelineIntegrationTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeModelBoundaryTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePublicDispositionTests.swift`;
+- `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePreAnchorEvidenceTests.swift`;
 - this document.
 
 No dependency-owned source is modified by this worker.
@@ -61,11 +62,25 @@ A v7 cross-lane review found an upstream trust-boundary gap outside this worker'
 - `BatterySOCReading` currently has a public initializer;
 - public `BatterySOCProvenance.authoritativeMeasurement` can therefore be selected by external callers;
 - generic Codable can import that provenance;
-- the public window assembler accepts `BatterySOCReading` directly.
+- the public window assembler accepts `BatterySOCReading` directly;
+- generic `AdaptiveBatteryRangeEstimate` import can likewise restore `socProvenance == .authoritativeMeasurement` unless the range-core owner seals that path.
 
-That combination can bypass the sealed `BatteryEvidenceObservation` path if generic app/framework code manufactures an authoritative range reading directly.
+Those paths can bypass or replay authority outside the sealed `BatteryEvidenceObservation` boundary.
 
-The adaptive-range owner has been notified through the v7 control plane. #38 does not modify foreign parent files. Production integration remains blocked until the accepted range parent seals authoritative `BatterySOCReading` construction/import consistently with the battery-evidence authority model.
+The adaptive-range owner has been notified through the v7 control plane. #38 does not modify foreign parent files. Production integration remains blocked until the accepted range parent seals authoritative `BatterySOCReading` construction/import and authoritative derived-estimate generic import/export consistently with the battery-evidence authority model.
+
+### Proposed parent-seal compatibility
+
+A read-only v7 review proposed the narrow parent fix:
+
+- make raw `BatterySOCReading(percentage:provenance:uptime:)` module-internal;
+- expose an estimated-only public factory;
+- reject authoritative `BatterySOCReading` generic encode/decode;
+- reject authoritative `AdaptiveBatteryRangeEstimate` generic encode/decode while preserving legitimate in-memory production.
+
+#38 tested the SoC portion of that proposal in a disposable Swift 6.2.1 parent-contract harness without editing #40. The in-module `BatteryAdaptiveRangeEvidenceAdapter` continued to construct verified authoritative readings unchanged, while an external raw-authoritative constructor probe failed to compile as required.
+
+This is compatibility evidence for the parent owner, not a substitute for #40-owned implementation/tests or final Xcode acceptance.
 
 ## Public API boundary
 
@@ -172,7 +187,13 @@ The safe rules are:
 - a caller must explicitly pass `.complete` only when its producing distance subsystem has evidence for complete coverage;
 - `.partial` and `.unknown` remain sticky/rejectable learning evidence;
 - final app wiring must feed legitimate ride-distance evidence and must not reinterpret presentation interpolation or provider route geometry as measured ride distance;
-- this lane makes no claim that a caller-supplied `.complete` is cryptographically or architecturally impossible to misuse.
+- this lane makes no claim that a caller-supplied `.complete` is architecturally impossible to misuse.
+
+### Pre-anchor evidence cannot taint learning
+
+Distance and transport-gap state can arrive before a first verified SoC anchor. That pre-anchor state does not describe a battery-consumption span because there is no measured starting SoC yet.
+
+A dedicated #38 regression records partial distance plus a transport gap before the first verified SoC and proves that first authoritative anchor clears both. A later clean 80 → 77 span emits only its own 300 m with complete coverage and no inherited transport gap.
 
 ### Omitted distance coverage fails closed
 
@@ -225,16 +246,24 @@ A rejected emitted span nevertheless remains closed by the assembler. Its distan
 
 ## Focused validation
 
-Supplemental Swift 6.2.1 contract validation currently includes:
+Supplemental Swift 6.2.1 validation is intentionally split by parent contract:
 
+**Current unsealed range parent contract**
+- #38-focused seam/model/public-API suite: **19/19 debug + 19/19 release passed** across seven suites.
+
+**Proposed authority-sealed range parent contract**
+- the same 19 #38 cases plus three parent-seal compatibility probes: **22/22 debug + 22/22 release passed** across eight suites;
+- public estimated-only SoC factory round-tripped;
+- authoritative SoC generic encode rejected;
+- forged authoritative SoC generic decode rejected;
+- non-`@testable` external raw-authoritative SoC construction failed to compile as required.
+
+Additional API checks:
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window harness: **6/6 passed**;
-- current authority-sealed seam/model/public-API harness: **18/18 debug passed** and **18/18 release passed** across six suites;
-- legitimate external non-authoritative client: passed using payload-free disposition + `candidateLearningWindow`;
-- external verified-observation construction negative probe: blocked as required by the battery-evidence parent contract;
-- external forged-result negative probe: blocked;
-- external evidence-action naming/forging negative probe: blocked;
-- external old-`learningWindow` access probe: blocked;
+- legitimate external non-authoritative client passed using payload-free disposition + `candidateLearningWindow`;
+- external verified-observation construction is blocked by the battery-evidence parent contract;
+- external forged-result/action/old-`learningWindow` probes are blocked;
 - public symbol graph audit: evidence-bearing action/old window/assembler state absent; public disposition/result/candidate window present.
 
 These are supplemental software checks, not repository-wide Xcode acceptance.
@@ -245,11 +274,11 @@ This PR remains a dependent draft on a synthetic review base.
 
 Before production merge:
 
-1. adaptive-range parent reaches an accepted exact head **with authoritative SoC construction/import sealed**;
+1. adaptive-range parent reaches an accepted exact head **with authoritative SoC and derived-estimate authority import/export sealed**;
 2. assembler parent reaches an accepted exact head on that range parent;
 3. battery-evidence parent reaches its accepted/final authority-sealed head;
 4. this lane is rebuilt on those exact parents;
-5. the six worker files are revalidated;
+5. the seven worker files are revalidated;
 6. the PR is retargeted to production `main` and marked ready;
 7. the unchanged final SHA passes exact-head NembraCore + Xcode 27 / iPhone 12 / iOS 27 Simulator QA with durable `Nembra/Xcode27 Exact Head` success;
 8. merge uses expected-head protection.
