@@ -34,6 +34,16 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
 
 `--compact` emits sorted-key compact JSON for automation.
 
+When `--output` is used, the command also prints one compact operator summary to **stderr** after successful publication:
+
+```text
+candidate outcomes: completed=2 rejected=1 incomplete=1 unexpected_failures=0 streams=2 fragments=4
+```
+
+Those numbers are only cardinalities of bounded framing-candidate analyzer outcomes. `completed=2` means two byte sequences satisfied the selected public-family framing hypothesis under the selected offline limits; it does **not** mean Nembra verified two physical ES80 messages, decoded two DPs, or identified any vehicle field. Rejected and incomplete candidates remain useful falsifying/truncation evidence rather than being silently discarded.
+
+Stdout mode remains JSON-only so the command can be piped directly into other deterministic tooling without summary text mixed into the artifact.
+
 ## Evidence-preserving output behavior
 
 The command will **never** permit its derived report to replace the raw capture input, including when the output reaches the same file through a symlink alias. `--force-output` cannot override this rule.
@@ -46,6 +56,8 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
   --output /path/to/existing-framing-report.json \
   --force-output
 ```
+
+`--force-output` is valid only together with `--output` / `-o`; using it for stdout mode fails closed as an invalid command invocation.
 
 For protected output, Nembra writes the report to a uniquely named sibling first and then publishes it with a non-replacing `FileManager.moveItem`. If a destination appears after preflight, the move fails instead of replacing it, and the temporary sibling is cleaned. This avoids relying on the unsupported Foundation combination of atomic + without-overwriting write options.
 
@@ -106,6 +118,8 @@ The nested framing-analysis schema v1 includes:
 - end-of-capture truncation;
 - source-record mappings for every analyzer event.
 
+The library also exposes a deterministic `outcomeSummary` over those retained event kinds. It counts streams, fragments, completed candidates, rejected candidates, boundary-truncated candidates, end-truncated candidates, and unexpected analyzer failures. The summary derives only from the already-retained report; it does not reinterpret bytes or add protocol meaning.
+
 A `completed` event means only that the captured raw bytes satisfy the selected bounded public-family reassembly hypothesis. It does **not** mean the bytes are an ES80 message or that any field has been identified.
 
 ## Physical experiment handoff
@@ -116,7 +130,7 @@ After the product-facing Nembra Capture flow produces a versioned JSON artifact 
 2. run this command against that artifact;
 3. retain both the raw artifact and generated report;
 4. verify the report's source-artifact SHA-256 against the retained raw file before using it for later protocol evidence;
-5. use the report to identify exact streams/candidate outcomes for the next correlation layer;
+5. use the report plus its candidate-outcome summary to identify exact streams/candidate outcomes for the next correlation layer;
 6. only promote a field after repeatable physical evidence verifies raw source, framing, DP identity/type, scale, signedness, units, cadence, continuity, and provenance.
 
 A failed candidate is useful falsifying evidence. Do not edit the capture to manufacture a parse.
