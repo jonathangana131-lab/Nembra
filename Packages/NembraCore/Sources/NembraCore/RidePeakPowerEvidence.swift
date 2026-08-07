@@ -99,16 +99,14 @@ public enum CompletedRidePeakPowerEvidenceError: Error, Equatable, Sendable {
     case scopeMismatch
     case unsupportedCheckpointSchema(Int)
     case invalidEvidence
-    case untrustedCheckpointOrigin
 }
 
 /// Trusted accepted peak-power evidence bound to one immutable completed ride.
 ///
-/// This value is intentionally **not Decodable**. Arbitrary durable bytes must
-/// first decode into `CompletedRidePeakPowerCheckpoint`, which is only a validated
-/// persisted representation. Converting durable bytes back into verified-vehicle
-/// evidence additionally requires the package-sealed trusted persistence decode
-/// boundary; ordinary public decoding can never mint physical authority.
+/// This value is intentionally **not Decodable**. Arbitrary durable bytes first
+/// remain a non-authoritative wire representation. Public Codable import can only
+/// construct Simulator-QA checkpoints; verified durable bytes require the
+/// package-sealed verified persistence conversion before they can regain authority.
 ///
 /// Process-local receipt sequence and uptime are deliberately stripped before
 /// persistence. They are ordering evidence inside one acquisition process, and
@@ -299,11 +297,10 @@ public struct CompletedRidePeakPowerEvidence: Equatable, Sendable {
 
 /// Durable serialized representation of completed ride peak-power evidence.
 ///
-/// A decoded checkpoint is **not** trusted vehicle evidence. It may retain raw
-/// authority labels for validation/correlation, but those labels do not acquire
-/// domain authority by surviving Codable. Public clients can restore only
-/// Simulator-QA evidence. Verified-vehicle restoration requires a package-sealed
-/// trusted decode of the durable bytes before the same ride/scope checks run.
+/// Public Codable import is deliberately Simulator-QA only. Verified disk bytes
+/// are decoded into a non-authoritative wire DTO, then converted through the
+/// package-sealed verified persistence boundary. This prevents authority labels in
+/// arbitrary JSON from constructing a verified checkpoint at all.
 public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -339,6 +336,26 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         case observationContinuity
     }
 
+    /// Non-authoritative disk shape. Decoding this wire does not create any
+    /// trusted measurement evidence; package verified persistence must explicitly
+    /// convert it using the required verified authority pair.
+    private struct StoredCheckpointWire: Codable, Equatable, Sendable {
+        let schemaVersion: Int
+        let sessionID: UUID
+        let rideContinuity: RideSessionContinuity
+        let beganAfterKnownObservationGap: Bool
+        let vehicleIdentityKey: String
+        let confirmedModeKey: String?
+        let identityAuthority: String
+        let evidenceAuthority: String
+        let powerWatts: Double
+        let acceptedMeasurementCount: Int
+        let peakCandidateMeasurementCount: Int
+        let qualityRejectedMeasurementCount: Int
+        let knownInterruptionCount: Int
+        let observationContinuity: PeakPowerObservationContinuity
+    }
+
     private init(
         evidence: CompletedRidePeakPowerEvidence,
         requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
@@ -365,6 +382,54 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         observationContinuity = evidence.observationContinuity
     }
 
+    private init(
+        stored wire: StoredCheckpointWire,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws {
+        guard wire.schemaVersion == Self.currentSchemaVersion else {
+            throw CompletedRidePeakPowerEvidenceError.unsupportedCheckpointSchema(wire.schemaVersion)
+        }
+        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: wire.identityAuthority),
+              let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: wire.evidenceAuthority) else {
+            throw CompletedRidePeakPowerEvidenceError.invalidEvidence
+        }
+        guard identityAuthority == requiredScopeAuthority,
+              evidenceAuthority == requiredEvidenceAuthority else {
+            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
+        }
+
+        try CompletedRidePeakPowerEvidence.validateFields(
+            rideContinuity: wire.rideContinuity,
+            beganAfterKnownObservationGap: wire.beganAfterKnownObservationGap,
+            vehicleIdentityKey: wire.vehicleIdentityKey,
+            confirmedModeKey: wire.confirmedModeKey,
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority,
+            powerWatts: wire.powerWatts,
+            acceptedMeasurementCount: wire.acceptedMeasurementCount,
+            peakCandidateMeasurementCount: wire.peakCandidateMeasurementCount,
+            qualityRejectedMeasurementCount: wire.qualityRejectedMeasurementCount,
+            knownInterruptionCount: wire.knownInterruptionCount,
+            observationContinuity: wire.observationContinuity
+        )
+
+        schemaVersion = wire.schemaVersion
+        sessionID = wire.sessionID
+        rideContinuity = wire.rideContinuity
+        beganAfterKnownObservationGap = wire.beganAfterKnownObservationGap
+        vehicleIdentityKey = wire.vehicleIdentityKey
+        confirmedModeKey = wire.confirmedModeKey
+        self.identityAuthority = identityAuthority
+        self.evidenceAuthority = evidenceAuthority
+        powerWatts = wire.powerWatts
+        acceptedMeasurementCount = wire.acceptedMeasurementCount
+        peakCandidateMeasurementCount = wire.peakCandidateMeasurementCount
+        qualityRejectedMeasurementCount = wire.qualityRejectedMeasurementCount
+        knownInterruptionCount = wire.knownInterruptionCount
+        observationContinuity = wire.observationContinuity
+    }
+
     public static func simulatorQA(
         from evidence: CompletedRidePeakPowerEvidence
     ) throws -> Self {
@@ -386,21 +451,18 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         )
     }
 
-    /// Trusted durable decode boundary for verified measurement checkpoints.
-    ///
-    /// Generic `JSONDecoder` output intentionally remains inert even inside the
-    /// package. Persistence integration that intentionally owns verified restore
-    /// must enter through this package-only boundary and receive a wrapper that
-    /// cannot be constructed by public callers from arbitrary decoded values.
+    /// Trusted verified load path. Durable bytes remain a non-authoritative wire
+    /// until this package-only conversion validates the exact verified authority
+    /// pair and all structural evidence invariants.
     package static func trustedVerifiedPersistenceDecode(
         from data: Data
-    ) throws -> TrustedCompletedRidePeakPowerCheckpoint {
-        let checkpoint = try JSONDecoder().decode(Self.self, from: data)
-        guard checkpoint.identityAuthority == .verifiedVehicleIdentity,
-              checkpoint.evidenceAuthority == .verifiedVehicleMeasurement else {
-            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
-        }
-        return TrustedCompletedRidePeakPowerCheckpoint(checkpoint: checkpoint)
+    ) throws -> Self {
+        let wire = try JSONDecoder().decode(StoredCheckpointWire.self, from: data)
+        return try Self(
+            stored: wire,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
     }
     #else
     fileprivate static func verifiedVehicleMeasurements(
@@ -415,74 +477,45 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     #endif
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
         do {
-            let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
-            guard schemaVersion == Self.currentSchemaVersion else {
-                throw CompletedRidePeakPowerEvidenceError.unsupportedCheckpointSchema(schemaVersion)
-            }
-
-            let identityRaw = try container.decode(String.self, forKey: .identityAuthority)
-            let evidenceRaw = try container.decode(String.self, forKey: .evidenceAuthority)
-            guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityRaw),
-                  let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: evidenceRaw) else {
-                throw CompletedRidePeakPowerEvidenceError.invalidEvidence
-            }
-
-            let sessionID = try container.decode(UUID.self, forKey: .sessionID)
-            let rideContinuity = try container.decode(RideSessionContinuity.self, forKey: .rideContinuity)
-            let beganAfterKnownObservationGap = try container.decode(
-                Bool.self,
-                forKey: .beganAfterKnownObservationGap
-            )
-            let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
-            let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
-            let powerWatts = try container.decode(Double.self, forKey: .powerWatts)
-            let acceptedMeasurementCount = try container.decode(Int.self, forKey: .acceptedMeasurementCount)
-            let peakCandidateMeasurementCount = try container.decode(
-                Int.self,
-                forKey: .peakCandidateMeasurementCount
-            )
-            let qualityRejectedMeasurementCount = try container.decode(
-                Int.self,
-                forKey: .qualityRejectedMeasurementCount
-            )
-            let knownInterruptionCount = try container.decode(Int.self, forKey: .knownInterruptionCount)
-            let observationContinuity = try container.decode(
-                PeakPowerObservationContinuity.self,
-                forKey: .observationContinuity
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let wire = StoredCheckpointWire(
+                schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
+                sessionID: try container.decode(UUID.self, forKey: .sessionID),
+                rideContinuity: try container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
+                beganAfterKnownObservationGap: try container.decode(
+                    Bool.self,
+                    forKey: .beganAfterKnownObservationGap
+                ),
+                vehicleIdentityKey: try container.decode(String.self, forKey: .vehicleIdentityKey),
+                confirmedModeKey: try container.decodeIfPresent(String.self, forKey: .confirmedModeKey),
+                identityAuthority: try container.decode(String.self, forKey: .identityAuthority),
+                evidenceAuthority: try container.decode(String.self, forKey: .evidenceAuthority),
+                powerWatts: try container.decode(Double.self, forKey: .powerWatts),
+                acceptedMeasurementCount: try container.decode(
+                    Int.self,
+                    forKey: .acceptedMeasurementCount
+                ),
+                peakCandidateMeasurementCount: try container.decode(
+                    Int.self,
+                    forKey: .peakCandidateMeasurementCount
+                ),
+                qualityRejectedMeasurementCount: try container.decode(
+                    Int.self,
+                    forKey: .qualityRejectedMeasurementCount
+                ),
+                knownInterruptionCount: try container.decode(Int.self, forKey: .knownInterruptionCount),
+                observationContinuity: try container.decode(
+                    PeakPowerObservationContinuity.self,
+                    forKey: .observationContinuity
+                )
             )
 
-            try CompletedRidePeakPowerEvidence.validateFields(
-                rideContinuity: rideContinuity,
-                beganAfterKnownObservationGap: beganAfterKnownObservationGap,
-                vehicleIdentityKey: vehicleIdentityKey,
-                confirmedModeKey: confirmedModeKey,
-                identityAuthority: identityAuthority,
-                evidenceAuthority: evidenceAuthority,
-                powerWatts: powerWatts,
-                acceptedMeasurementCount: acceptedMeasurementCount,
-                peakCandidateMeasurementCount: peakCandidateMeasurementCount,
-                qualityRejectedMeasurementCount: qualityRejectedMeasurementCount,
-                knownInterruptionCount: knownInterruptionCount,
-                observationContinuity: observationContinuity
+            self = try Self(
+                stored: wire,
+                requiredScopeAuthority: .simulatorQA,
+                requiredEvidenceAuthority: .simulatorQA
             )
-
-            self.schemaVersion = schemaVersion
-            self.sessionID = sessionID
-            self.rideContinuity = rideContinuity
-            self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
-            self.vehicleIdentityKey = vehicleIdentityKey
-            self.confirmedModeKey = confirmedModeKey
-            self.identityAuthority = identityAuthority
-            self.evidenceAuthority = evidenceAuthority
-            self.powerWatts = powerWatts
-            self.acceptedMeasurementCount = acceptedMeasurementCount
-            self.peakCandidateMeasurementCount = peakCandidateMeasurementCount
-            self.qualityRejectedMeasurementCount = qualityRejectedMeasurementCount
-            self.knownInterruptionCount = knownInterruptionCount
-            self.observationContinuity = observationContinuity
         } catch let error as CompletedRidePeakPowerEvidenceError {
             throw DecodingError.dataCorrupted(
                 .init(
@@ -524,30 +557,32 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     }
 
     #if SWIFT_PACKAGE
-    /// A generic decoded checkpoint is intentionally never sufficient to regain
-    /// verified measurement authority. Callers that own the package persistence
-    /// boundary must use `trustedVerifiedPersistenceDecode(from:)` and restore
-    /// through the returned trusted wrapper instead.
     package func restoredVerifiedVehicleMeasurement(
         completedRide: CompletedRideEvidence,
         expectedScope: ObservedPowerEnvelopeScope
     ) throws -> CompletedRidePeakPowerEvidence {
-        _ = completedRide
-        _ = expectedScope
-        throw CompletedRidePeakPowerEvidenceError.untrustedCheckpointOrigin
+        try restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
     }
     #else
     fileprivate func restoredVerifiedVehicleMeasurement(
         completedRide: CompletedRideEvidence,
         expectedScope: ObservedPowerEnvelopeScope
     ) throws -> CompletedRidePeakPowerEvidence {
-        _ = completedRide
-        _ = expectedScope
-        throw CompletedRidePeakPowerEvidenceError.untrustedCheckpointOrigin
+        try restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
     }
     #endif
 
-    fileprivate func restoredEvidence(
+    private func restoredEvidence(
         completedRide: CompletedRideEvidence,
         expectedScope: ObservedPowerEnvelopeScope,
         requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
@@ -586,31 +621,3 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         )
     }
 }
-
-#if SWIFT_PACKAGE
-/// Package-sealed proof that verified checkpoint bytes entered through the
-/// explicit trusted persistence decode boundary rather than ordinary Codable.
-///
-/// This is a software provenance boundary, not hostile-storage attestation and
-/// not physical ES80 proof. It prevents generic decoded values from being
-/// upgraded merely because their labels match a trusted vehicle scope.
-package struct TrustedCompletedRidePeakPowerCheckpoint: Sendable {
-    fileprivate let checkpoint: CompletedRidePeakPowerCheckpoint
-
-    fileprivate init(checkpoint: CompletedRidePeakPowerCheckpoint) {
-        self.checkpoint = checkpoint
-    }
-
-    package func restoredVerifiedVehicleMeasurement(
-        completedRide: CompletedRideEvidence,
-        expectedScope: ObservedPowerEnvelopeScope
-    ) throws -> CompletedRidePeakPowerEvidence {
-        try checkpoint.restoredEvidence(
-            completedRide: completedRide,
-            expectedScope: expectedScope,
-            requiredScopeAuthority: .verifiedVehicleIdentity,
-            requiredEvidenceAuthority: .verifiedVehicleMeasurement
-        )
-    }
-}
-#endif
