@@ -20,8 +20,8 @@ public enum LiveDistanceSampleRejection: Error, Equatable, Sendable {
     case distanceOverflow
 }
 
-/// Policy is deliberately injected. Nembra has no production MAXSHOT cadence
-/// threshold until real BLE telemetry benchmarking establishes one.
+/// Policy is deliberately injected. Nembra has no production AOVOPRO ES80
+/// cadence threshold until real BLE telemetry benchmarking establishes one.
 public struct LiveDistanceIntegrationPolicy: Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let maximumIntegrationIntervalNanoseconds: UInt64
@@ -251,6 +251,8 @@ public enum RideLiveDistanceAggregationError: Error, Equatable, Sendable {
     case mismatchedSource
     case mismatchedMethod
     case conflictingSegment(UUID)
+    case conflictingProcessSegmentSequence(UInt64)
+    case nonContiguousProcessSegmentSequence(expected: UInt64, actual: UInt64)
     case distanceOverflow
     case gapCountOverflow
 }
@@ -258,58 +260,59 @@ public enum RideLiveDistanceAggregationError: Error, Equatable, Sendable {
 /// Durable, process-agnostic projection of one finalized live-distance segment.
 ///
 /// Monotonic uptime is deliberately omitted: uptime from one process/boot must
-/// never be compared with uptime restored from another. `segmentID` is supplied
-/// by the ride/recovery layer and provides an idempotency key for durable replay.
-/// `followsUnobservedInterval` preserves a known recovery/process gap without
-/// inventing distance across it.
+/// never be compared with uptime restored from another. `segmentID` is a durable
+/// idempotency key. `processSegmentSequence` is ride-scoped chronology assigned
+/// by the ride/recovery layer: zero is the original process segment and each
+/// subsequent value represents a new monotonic epoch after an unobserved process
+/// boundary. The sequence is evidence; UUID ordering is not.
 public struct RideLiveDistanceSegmentEvidence: Codable, Equatable, Sendable {
     public let rideSessionID: UUID
     public let segmentID: UUID
+    public let processSegmentSequence: UInt64
     public let source: SpeedTelemetrySource
     public let method: LiveDistanceIntegrationMethod
     public let distanceMeters: Double?
     public let coverage: RideDistanceCoverage
     public let knownCoverageGapCount: Int
-    public let followsUnobservedInterval: Bool
 
     private enum CodingKeys: String, CodingKey {
         case rideSessionID
         case segmentID
+        case processSegmentSequence
         case source
         case method
         case distanceMeters
         case coverage
         case knownCoverageGapCount
-        case followsUnobservedInterval
     }
 
     public init(
         rideSessionID: UUID,
         segmentID: UUID,
-        finalizedSegment: FinalizedLiveDistanceSegment,
-        followsUnobservedInterval: Bool
+        processSegmentSequence: UInt64,
+        finalizedSegment: FinalizedLiveDistanceSegment
     ) throws {
         try self.init(
             rideSessionID: rideSessionID,
             segmentID: segmentID,
+            processSegmentSequence: processSegmentSequence,
             source: finalizedSegment.source,
             method: finalizedSegment.method,
             distanceMeters: finalizedSegment.distanceMeters,
             coverage: finalizedSegment.coverage,
-            knownCoverageGapCount: finalizedSegment.knownCoverageGapCount,
-            followsUnobservedInterval: followsUnobservedInterval
+            knownCoverageGapCount: finalizedSegment.knownCoverageGapCount
         )
     }
 
     private init(
         rideSessionID: UUID,
         segmentID: UUID,
+        processSegmentSequence: UInt64,
         source: SpeedTelemetrySource,
         method: LiveDistanceIntegrationMethod,
         distanceMeters: Double?,
         coverage: RideDistanceCoverage,
-        knownCoverageGapCount: Int,
-        followsUnobservedInterval: Bool
+        knownCoverageGapCount: Int
     ) throws {
         guard source != .motionAssist,
               knownCoverageGapCount >= 0 else {
@@ -337,12 +340,12 @@ public struct RideLiveDistanceSegmentEvidence: Codable, Equatable, Sendable {
 
         self.rideSessionID = rideSessionID
         self.segmentID = segmentID
+        self.processSegmentSequence = processSegmentSequence
         self.source = source
         self.method = method
         self.distanceMeters = distanceMeters
         self.coverage = coverage
         self.knownCoverageGapCount = knownCoverageGapCount
-        self.followsUnobservedInterval = followsUnobservedInterval
     }
 
     public init(from decoder: Decoder) throws {
@@ -350,12 +353,12 @@ public struct RideLiveDistanceSegmentEvidence: Codable, Equatable, Sendable {
         try self.init(
             rideSessionID: container.decode(UUID.self, forKey: .rideSessionID),
             segmentID: container.decode(UUID.self, forKey: .segmentID),
+            processSegmentSequence: container.decode(UInt64.self, forKey: .processSegmentSequence),
             source: container.decode(SpeedTelemetrySource.self, forKey: .source),
             method: container.decode(LiveDistanceIntegrationMethod.self, forKey: .method),
             distanceMeters: container.decodeIfPresent(Double.self, forKey: .distanceMeters),
             coverage: container.decode(RideDistanceCoverage.self, forKey: .coverage),
-            knownCoverageGapCount: container.decode(Int.self, forKey: .knownCoverageGapCount),
-            followsUnobservedInterval: container.decode(Bool.self, forKey: .followsUnobservedInterval)
+            knownCoverageGapCount: container.decode(Int.self, forKey: .knownCoverageGapCount)
         )
     }
 
@@ -363,19 +366,21 @@ public struct RideLiveDistanceSegmentEvidence: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(rideSessionID, forKey: .rideSessionID)
         try container.encode(segmentID, forKey: .segmentID)
+        try container.encode(processSegmentSequence, forKey: .processSegmentSequence)
         try container.encode(source, forKey: .source)
         try container.encode(method, forKey: .method)
         try container.encodeIfPresent(distanceMeters, forKey: .distanceMeters)
         try container.encode(coverage, forKey: .coverage)
         try container.encode(knownCoverageGapCount, forKey: .knownCoverageGapCount)
-        try container.encode(followsUnobservedInterval, forKey: .followsUnobservedInterval)
     }
 }
 
 /// Reconciled live-distance evidence for one ride across any number of finalized
 /// process-local segments. The sum contains only distance that was actually
-/// integrated inside segments; recovery gaps remain coverage gaps, never guessed
-/// mileage. Equivalent duplicate segment records are ignored idempotently.
+/// integrated inside segments. Every process-segment transition is inherently an
+/// unobserved interval, so multi-segment rides are partial by construction rather
+/// than relying on a caller to remember a gap flag. Equivalent durable replay is
+/// ignored idempotently.
 public struct RideLiveDistanceAggregate: Equatable, Sendable {
     public let rideSessionID: UUID
     public let source: SpeedTelemetrySource
@@ -424,17 +429,34 @@ public enum RideLiveDistanceAggregator {
             }
         }
 
-        // UUID ordering is used only to make floating-point summation deterministic
-        // for the same durable record set. It carries no temporal meaning.
+        var segmentIDBySequence: [UInt64: UUID] = [:]
+        for record in uniqueBySegmentID.values {
+            if let existingID = segmentIDBySequence[record.processSegmentSequence],
+               existingID != record.segmentID {
+                throw RideLiveDistanceAggregationError.conflictingProcessSegmentSequence(
+                    record.processSegmentSequence
+                )
+            }
+            segmentIDBySequence[record.processSegmentSequence] = record.segmentID
+        }
+
         let orderedRecords = uniqueBySegmentID.values.sorted {
-            $0.segmentID.uuidString < $1.segmentID.uuidString
+            $0.processSegmentSequence < $1.processSegmentSequence
+        }
+        for (offset, record) in orderedRecords.enumerated() {
+            let expected = UInt64(offset)
+            guard record.processSegmentSequence == expected else {
+                throw RideLiveDistanceAggregationError.nonContiguousProcessSegmentSequence(
+                    expected: expected,
+                    actual: record.processSegmentSequence
+                )
+            }
         }
 
         var accumulatedDistanceMeters = 0.0
         var distanceEvidenceSegmentCount = 0
         var knownCoverageGapCount = 0
-        var unobservedIntervalCount = 0
-        var hasIncompleteCoverage = false
+        var hasIncompleteCoverage = orderedRecords.count > 1
 
         for record in orderedRecords {
             if let distanceMeters = record.distanceMeters {
@@ -457,19 +479,14 @@ public enum RideLiveDistanceAggregator {
                 throw RideLiveDistanceAggregationError.gapCountOverflow
             }
             knownCoverageGapCount = gapAddition.partialValue
-
-            if record.followsUnobservedInterval {
-                let totalGapAddition = knownCoverageGapCount.addingReportingOverflow(1)
-                let intervalAddition = unobservedIntervalCount.addingReportingOverflow(1)
-                guard !totalGapAddition.overflow,
-                      !intervalAddition.overflow else {
-                    throw RideLiveDistanceAggregationError.gapCountOverflow
-                }
-                knownCoverageGapCount = totalGapAddition.partialValue
-                unobservedIntervalCount = intervalAddition.partialValue
-                hasIncompleteCoverage = true
-            }
         }
+
+        let unobservedIntervalCount = max(orderedRecords.count - 1, 0)
+        let processGapAddition = knownCoverageGapCount.addingReportingOverflow(unobservedIntervalCount)
+        guard !processGapAddition.overflow else {
+            throw RideLiveDistanceAggregationError.gapCountOverflow
+        }
+        knownCoverageGapCount = processGapAddition.partialValue
 
         let distanceMeters: Double?
         let coverage: RideDistanceCoverage
