@@ -34,14 +34,35 @@ public enum BatteryEvidenceLiveTruthState: Equatable, Sendable {
     }
 }
 
+fileprivate enum BatteryEvidenceLiveTruthConstructionBoundary {
+    case resolvedSnapshot
+}
+
 public struct BatteryEvidenceLiveTruthSnapshot: Equatable, Sendable {
     public let stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]
 
-    /// Raw aggregate construction remains inside NembraCore so external consumers cannot
-    /// manually label fields `.verifiedLive` and bypass freshness/provenance resolution.
-    init(stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]) {
+    /// Production aggregate construction is file-scoped. If this package-domain source is
+    /// manually compiled into the Nembra app target, unrelated app code must not gain the
+    /// ability to hand-label arbitrary fields `.verifiedLive` merely through same-module
+    /// `internal` access.
+    fileprivate init(
+        stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState],
+        constructionBoundary: BatteryEvidenceLiveTruthConstructionBoundary
+    ) {
+        _ = constructionBoundary
         self.stateByField = stateByField
     }
+
+#if SWIFT_PACKAGE
+    /// Package-only fixture seam for NembraCore tests/dependent package-domain tests.
+    /// This initializer is absent from direct app-source compilation.
+    init(stateByField: [BatteryEvidenceField: BatteryEvidenceLiveTruthState]) {
+        self.init(
+            stateByField: stateByField,
+            constructionBoundary: .resolvedSnapshot
+        )
+    }
+#endif
 
     public subscript(field: BatteryEvidenceField) -> BatteryEvidenceLiveTruthState {
         stateByField[field] ?? .unavailable
@@ -54,11 +75,11 @@ public struct BatteryEvidenceLiveTruthSnapshot: Equatable, Sendable {
 
 /// Pure projection from validated freshness/availability into product live-truth state.
 public enum BatteryEvidenceLiveTruthResolver {
-    /// Field-level projection is deliberately module-internal. `BatteryEvidenceFieldAvailability`
-    /// is a public descriptive enum whose cases can be constructed by callers; exposing this
-    /// overload would let external code forge `.fresh` and then obtain `verifiedLive` without
-    /// passing through the aggregate availability evaluator.
-    static func resolve(
+    /// File-scoped field projection. `BatteryEvidenceFieldAvailability` is a public
+    /// descriptive enum whose cases can be constructed by callers; direct app-source code
+    /// must not be able to forge `.fresh` and feed it into a same-module resolver that
+    /// returns `verifiedLive` without the aggregate availability evaluator.
+    fileprivate static func resolveField(
         _ availability: BatteryEvidenceFieldAvailability
     ) -> BatteryEvidenceLiveTruthState {
         switch availability {
@@ -80,8 +101,19 @@ public enum BatteryEvidenceLiveTruthResolver {
         }
     }
 
+#if SWIFT_PACKAGE
+    /// Package-only field-level fixture seam for focused NembraCore tests. The production
+    /// app-source composition does not receive this overload.
+    static func resolve(
+        _ availability: BatteryEvidenceFieldAvailability
+    ) -> BatteryEvidenceLiveTruthState {
+        resolveField(availability)
+    }
+#endif
+
     /// Production live-truth construction accepts only an aggregate produced by the
-    /// NembraCore availability pipeline. Its raw initializer is not externally visible.
+    /// availability pipeline. The aggregate's raw initializer is file-scoped in direct app
+    /// composition, so this public method cannot be fed caller-manufactured freshness state.
     public static func resolve(
         _ availabilitySnapshot: BatteryEvidenceAvailabilitySnapshot
     ) -> BatteryEvidenceLiveTruthSnapshot {
@@ -89,9 +121,12 @@ public enum BatteryEvidenceLiveTruthResolver {
         result.reserveCapacity(BatteryEvidenceField.allCases.count)
 
         for field in BatteryEvidenceField.allCases {
-            result[field] = resolve(availabilitySnapshot[field])
+            result[field] = resolveField(availabilitySnapshot[field])
         }
 
-        return BatteryEvidenceLiveTruthSnapshot(stateByField: result)
+        return BatteryEvidenceLiveTruthSnapshot(
+            stateByField: result,
+            constructionBoundary: .resolvedSnapshot
+        )
     }
 }
