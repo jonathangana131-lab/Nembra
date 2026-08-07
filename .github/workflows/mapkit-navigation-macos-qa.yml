@@ -1,0 +1,34 @@
+name: MapKit Navigation macOS QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'feature/recover-mapkit-navigation-adapter-v13-macos-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-mapkit-navigation-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-qa:
+    name: Test navigation package on Apple SDK
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --sdk macosx --show-sdk-version
+
+      - name: Test MapKit navigation package
+        working-directory: Packages/NembraMapKitNavigation
+        run: swift test -Xswiftc -warnings-as-errors
