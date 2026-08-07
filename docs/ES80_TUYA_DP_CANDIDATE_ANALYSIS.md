@@ -28,7 +28,7 @@ Relevant Tuya documentation:
 
 The important ambiguity is preserved rather than hidden: Tuya documentation shows a **two-byte** DP data-length field for current Bluetooth SDK/MCU-standard material, while accessory/protocol-generation documentation states that some 3.x Bluetooth communication versions use **one byte** and 4.x-or-later versions use **two bytes**.
 
-Nembra therefore has no implicit DP-length default. `TuyaCandidateDPParserPolicy` requires the caller to select `.oneByte` or `.twoByteBigEndian` explicitly.
+Nembra therefore has no implicit DP-length default. `TuyaCandidateDPParserPolicy` requires the caller to select `.oneByte` or `.twoByteBigEndian` explicitly. Every successful `TuyaCandidateDPPayload` retains that selected width so downstream analysis cannot silently mix results produced by different framing hypotheses.
 
 ## Generic type evidence
 
@@ -106,7 +106,7 @@ It does not mean:
 
 ## Verification
 
-The focused suite covers both explicit length-width hypotheses, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
+The focused suite covers both explicit length-width hypotheses and preservation of that hypothesis in every successful parse, exact byte offsets, unknown types, fixed- and variable-length shape anomalies, malformed booleans, truncation, caller resource bounds, raw scalar projection, the logical-packet bridge, and deterministic malformed-input stress across both parser policies.
 
 A local Swift 6.2.1 warnings-as-errors mirror of the exact feature logic passes **14/14** tests in both debug and optimized release. That is supporting software evidence only; repository-native exact-head NembraCore/Xcode acceptance remains required on the final dependency composition.
 
