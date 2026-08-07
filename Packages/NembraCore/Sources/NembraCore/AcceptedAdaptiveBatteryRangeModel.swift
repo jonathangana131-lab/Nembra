@@ -1,18 +1,18 @@
 import Foundation
 
 public enum AcceptedAdaptiveRangeValidationError: Error, Equatable, Sendable {
+    case invalidDistance
     case invalidReceiptOrder
     case acquisitionEpochChanged
 }
 
-/// A receipt-bound range-learning window whose construction is unavailable to ordinary app
-/// source. The public raw `BatteryRangeLearningWindow` remains a useful pure-model fixture,
+/// A receipt-bound range-learning window whose trusted construction is unavailable to ordinary
+/// app source. The public raw `BatteryRangeLearningWindow` remains a useful pure-model fixture,
 /// but it is not the production authority boundary.
 ///
-/// Package-scoped construction intentionally makes the future trusted ride/battery evidence
-/// bridge responsible for declaring distance coverage. In the current direct-source app
-/// composition there is no generic same-module initializer that can reuse two real SoC
-/// anchors with invented distance and silently teach production range.
+/// The explicit private initializer is important for Nembra's current direct-source app
+/// composition: without it Swift could synthesize a same-module memberwise initializer and
+/// accidentally reopen the exact distance/coverage authority bypass this type is meant to seal.
 public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
     public let distanceMeters: Double
     public let distanceCoverage: BatteryRangeDistanceCoverage
@@ -20,14 +20,18 @@ public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
     public let startSOC: AcceptedBatterySOCAnchor
     public let endSOC: AcceptedBatterySOCAnchor
 
-#if SWIFT_PACKAGE
-    package init(
+    private init(
         distanceMeters: Double,
         distanceCoverage: BatteryRangeDistanceCoverage,
         transportGapOccurred: Bool,
         startSOC: AcceptedBatterySOCAnchor,
-        endSOC: AcceptedBatterySOCAnchor
+        endSOC: AcceptedBatterySOCAnchor,
+        trustedBoundary: Void
     ) throws {
+        _ = trustedBoundary
+        guard distanceMeters.isFinite, distanceMeters >= 0 else {
+            throw AcceptedAdaptiveRangeValidationError.invalidDistance
+        }
         guard startSOC.sourceReceiptIdentity.acquisitionEpoch
                 == endSOC.sourceReceiptIdentity.acquisitionEpoch else {
             throw AcceptedAdaptiveRangeValidationError.acquisitionEpochChanged
@@ -41,11 +45,31 @@ public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
         self.distanceMeters = distanceMeters
         self.distanceCoverage = distanceCoverage
         // An explicit post-gap battery boundary proves continuity was unobserved between the
-        // two anchors even if a higher layer accidentally supplies `false` here.
+        // two anchors even if a trusted higher layer accidentally supplies `false` here.
         self.transportGapOccurred = transportGapOccurred
             || endSOC.continuity == .afterUnobservedInterval
         self.startSOC = startSOC
         self.endSOC = endSOC
+    }
+
+#if SWIFT_PACKAGE
+    /// Package-trusted construction for the future ride-distance evidence bridge and tests.
+    /// Direct app source does not receive this initializer.
+    package init(
+        distanceMeters: Double,
+        distanceCoverage: BatteryRangeDistanceCoverage,
+        transportGapOccurred: Bool,
+        startSOC: AcceptedBatterySOCAnchor,
+        endSOC: AcceptedBatterySOCAnchor
+    ) throws {
+        try self.init(
+            distanceMeters: distanceMeters,
+            distanceCoverage: distanceCoverage,
+            transportGapOccurred: transportGapOccurred,
+            startSOC: startSOC,
+            endSOC: endSOC,
+            trustedBoundary: ()
+        )
     }
 #endif
 }
