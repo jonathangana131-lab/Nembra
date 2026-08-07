@@ -13,19 +13,26 @@ Nembra must require both before a field is allowed to appear as **verified live 
 
 A stock-app number can be very recent and still be only a correlation anchor. A verified value can be real but stale. Collapsing those axes into one `isLive` Boolean would create false confidence.
 
-## Construction boundary
+## Construction boundary follows both Nembra build graphs
 
-`BatteryEvidenceLiveTruthSnapshot` is public as a read-only output type, but its raw state dictionary initializer is module-internal.
+`BatteryEvidenceLiveTruthSnapshot` is public as a read-only output type, but production raw state-dictionary construction is **file-scoped**.
 
-The single-field `resolve(_ availability:)` projection is also module-internal. `BatteryEvidenceFieldAvailability` is intentionally descriptive/public, so exposing the field resolver would allow external code to manually construct `.fresh(...)` and skip the injected aggregate freshness path.
+The field-level availability→live-truth projection is also file-scoped in direct app-source compilation. `BatteryEvidenceFieldAvailability` is intentionally descriptive/public; if an arbitrary app source could call a same-module field resolver, it could hand-construct `.fresh(...)` and obtain `verifiedLive` without the aggregate uptime/policy path.
 
-The production live-truth path is therefore:
+This must account for Nembra's current iOS build graph, where selected package-domain source files may be manually compiled directly into the `Nembra` app target. Plain `internal` would therefore be insufficient as a production trust boundary.
+
+The source uses two explicit paths:
+
+- direct app-source compilation: raw live-truth snapshot construction and field-level projection remain file-scoped;
+- real Swift-package compilation (`SWIFT_PACKAGE`): internal fixture seams remain available to focused NembraCore/dependent package tests, while external package clients remain blocked.
+
+The production live-truth path remains:
 
 `BatteryEvidenceSnapshotAccumulator.currentSnapshot`
 → `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`
-→ `BatteryEvidenceLiveTruthResolver.resolve(...)`
+→ `BatteryEvidenceLiveTruthResolver.resolve(availabilitySnapshot)`
 
-External consumers may inspect the resulting states, but they cannot directly manufacture the trusted aggregates used by downstream verified-live consumers.
+A direct same-module compile probe without `SWIFT_PACKAGE` fails to construct current-segment, availability, or live-truth aggregates and fails to call the field-level resolver. The same package fixture spellings compile with `SWIFT_PACKAGE`. This is supplemental software evidence, not hosted acceptance or physical ES80 proof.
 
 ## Live-truth states
 
@@ -38,6 +45,8 @@ External consumers may inspect the resulting states, but they cannot directly ma
 - `verifiedLive` — and only here, evidence is both fresh and already physically verified in provenance.
 
 The original observation is preserved in every non-unavailable state so diagnostics or a detailed UI can explain why a value is not promoted.
+
+The enum cases themselves are descriptive values. Downstream trusted code must consume a sealed `BatteryEvidenceLiveTruthSnapshot`, not treat a caller-constructed enum case as proof that the production resolver ran.
 
 ## What can become verified live
 
