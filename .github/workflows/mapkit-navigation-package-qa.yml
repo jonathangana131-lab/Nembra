@@ -1,0 +1,31 @@
+name: MapKit Navigation Package QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'feature/recover-mapkit-navigation-adapter-v13-linux-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-mapkit-navigation-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-qa:
+    name: Test navigation package against current core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Swift toolchain
+        run: swift --version
+
+      - name: Test MapKit navigation package
+        working-directory: Packages/NembraMapKitNavigation
+        run: swift test -Xswiftc -warnings-as-errors
