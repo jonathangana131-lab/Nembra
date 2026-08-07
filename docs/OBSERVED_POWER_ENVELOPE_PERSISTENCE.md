@@ -36,9 +36,15 @@ Restore additionally requires the caller to supply the exact current `ObservedPo
 
 The count invariants mirror #225's bounded rolling-window semantics: `learningSampleCount` is the current eligible window count and cannot exceed `windowCapacity`; `upperBandSupportCount` comes from that same window and cannot exceed the sample count.
 
-## Relaunch floor
+## Relaunch floor and upward hysteresis
 
-A validated retained calibration is a presentation **floor** for the same scope + policy. Lower current-session output cannot silently shrink an already learned observed full-power region. A current-session learner replaces the retained calibration only after learning a strictly higher gauge scale under the exact same scope, policy, and authority.
+A validated retained calibration is a presentation **floor** for the same scope + policy. Lower current-session output cannot silently shrink an already learned observed full-power region.
+
+A fresh learner starts without the retained calibration, so its first newly established scale must not bypass #225's scale-stability policy merely because it is a little higher. Reconciliation therefore reapplies the exact retained policy's `upwardHysteresisFraction` across the process boundary. The current-session calibration replaces the retained one only when:
+
+`current scale > retained scale × (1 + upward hysteresis)`
+
+If that threshold overflows or the current scale does not strictly exceed it, the retained calibration remains authoritative. This mirrors #225's in-session upward-adaptation rule and prevents small restart-to-restart scale jitter.
 
 The selected result carries explicit provenance:
 
@@ -49,14 +55,14 @@ That is calibration provenance, not telemetry evidence.
 
 ## Persistence-write reconciliation
 
-The floor applies on writes too. Once a durable checkpoint exists, callers must not create a lower fresh checkpoint and overwrite it directly.
+The floor and hysteresis rule apply on writes too. Once a durable checkpoint exists, callers must not create a lower or merely marginally higher fresh checkpoint and overwrite it directly.
 
 Use:
 
 - `reconciledSimulatorQACheckpoint(with:)` for Simulator/runtime QA;
 - package-sealed `reconciledVerifiedVehicleMeasurementCheckpoint(with:)` for trusted production integration.
 
-These validate exact retained scope/policy/authority against the current learner first. Uncalibrated or lower/equal sessions return the retained checkpoint unchanged. Only a strictly stronger qualified calibration produces a replacement.
+These validate exact retained scope/policy/authority against the current learner first. Uncalibrated, lower/equal, or sub-hysteresis increases return the retained checkpoint unchanged. Only a qualified increase above the retained hysteresis threshold produces a replacement.
 
 One-shot snapshot constructors are for initial checkpoint creation when no retained checkpoint exists.
 
@@ -66,7 +72,7 @@ This branch is based directly on blocker-fixed #225 head `e9e2520bf847b16f56e2a1
 
 Current #225 mechanically binds each observation to an exact calibration scope before chronology/window mutation and separately carries strict source-owned `receiptSequenceNumber` plus monotonic uptime. Persistence stores neither chronology field and requires the current trusted scope again when restoring.
 
-The regression suite creates observations with the learner's exact scope, exercises equal uptime ticks with strictly increasing receipt sequence, persists the established calibration, and verifies that old observation chronology is absent from durable state.
+The regression suite creates observations with the learner's exact scope, exercises equal uptime ticks with strictly increasing receipt sequence, persists the established calibration, and verifies that old observation chronology is absent from durable state. Separate cross-launch hysteresis regressions prove a small fresh-session increase cannot advance effective or durable calibration while a qualified increase can.
 
 ## Hardware status
 
