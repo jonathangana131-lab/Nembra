@@ -83,6 +83,12 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
     @Test("projects only the selected target and isolates exact GATT plus value origin")
     func projectsTargetAndSeparatesOrigins() throws {
         var session = try makeSession()
+        let expectedContext = PassiveBluetoothTuyaCandidateCaptureContext(
+            sessionID: session.id,
+            vehicleIdentity: session.vehicleIdentity,
+            sessionStartedAt: session.startedAt,
+            peripheralIdentifier: "target-A"
+        )
         try appendValue(
             to: &session,
             peripheral: "target-A",
@@ -136,6 +142,7 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
         )
 
         #expect(transcripts.count == 3)
+        #expect(transcripts.allSatisfy { $0.captureContext == expectedContext })
         #expect(transcripts.map(\.sourceStream.valueStreamIdentity.serviceIdentifier) == [
             "FFF0", "ABCD", "FFF0"
         ])
@@ -148,6 +155,12 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
         #expect(transcripts[0].fragments.map(\.captureSequenceNumber) == [1, 5])
         #expect(transcripts[1].fragments.map(\.captureSequenceNumber) == [3])
         #expect(transcripts[2].fragments.map(\.captureSequenceNumber) == [4])
+        #expect(transcripts[0].fragments.map(\.receivedAtDate) == [
+            Date(timeIntervalSince1970: 1),
+            Date(timeIntervalSince1970: 5)
+        ])
+        #expect(transcripts[1].fragments.map(\.receivedAtDate) == [Date(timeIntervalSince1970: 3)])
+        #expect(transcripts[2].fragments.map(\.receivedAtDate) == [Date(timeIntervalSince1970: 4)])
         #expect(transcripts.flatMap(\.fragments).contains { $0.captureSequenceNumber == 2 } == false)
         #expect(transcripts[0].sourceFragment(atAnalysisObservationIndex: 1)?.captureSequenceNumber == 5)
         #expect(transcripts[0].sourceFragment(atAnalysisObservationIndex: -1) == nil)
@@ -211,8 +224,15 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
         #expect(analyses.count == 1)
 
         let transcript = analyses[0].transcript
+        #expect(transcript.captureContext.sessionID == session.id)
+        #expect(transcript.captureContext.vehicleIdentity == identity)
+        #expect(transcript.captureContext.sessionStartedAt == Date(timeIntervalSince1970: 1_000))
+        #expect(transcript.captureContext.peripheralIdentifier == "target-A")
         #expect(transcript.fragments.map(\.observation.continuityGeneration) == [0, 0, 1, 2])
         #expect(transcript.fragments.map(\.captureSequenceNumber) == [1, 3, 5, 7])
+        #expect(transcript.fragments.map(\.receivedAtDate) == [1, 3, 5, 7].map {
+            Date(timeIntervalSince1970: Double($0))
+        })
 
         let events = analyses[0].events
         #expect(events.count == 3)
@@ -316,6 +336,10 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
         #expect(analyses.count == 1)
         #expect(analyses[0].transcript.fragments.map(\.captureSequenceNumber) == [1, 2])
         #expect(analyses[0].transcript.fragments.map(\.observation.receiptUptimeNanoseconds) == [100, 100])
+        #expect(analyses[0].transcript.fragments.map(\.receivedAtDate) == [
+            Date(timeIntervalSince1970: 1),
+            Date(timeIntervalSince1970: 2)
+        ])
         #expect(analyses[0].events == [
             .rejectedCandidate(
                 startObservationIndex: 0,

@@ -30,13 +30,25 @@ For that target it:
 
 - consumes immutable `PassiveBluetoothCaptureSession` records in original capture order;
 - includes only raw `.value` observations from the exact selected peripheral;
+- preserves capture session ID, vehicle identity, session start time, and selected peripheral identity on every detached transcript;
 - preserves the exact peripheral, service, and characteristic strings supplied by capture;
-- preserves the exact receipt uptime supplied by capture;
+- preserves both source clocks: boot-relative receipt uptime for ordering and wall-clock `receivedAtDate` as metadata;
 - preserves the original capture record index and sequence number for audit mapping;
 - groups independent transcripts by exact GATT identity **and** `PassiveBluetoothValueOrigin`;
 - keeps transcript order deterministic by first observation in the source capture;
 - never treats an interleaved callback from another characteristic as a byte gap for the selected stream;
 - never splices read-response bytes with notification/indication/subscription-update bytes merely because they share a characteristic.
+
+The stream builder uses one deterministic source array keyed by exact stream identity. It has no lossy final `compactMap` step that could silently discard an internally inconsistent stream.
+
+### Timing provenance
+
+The passive capture domain intentionally distinguishes two clocks:
+
+- `receivedAtUptimeNanoseconds` is the boot-relative monotonic ordering clock; and
+- `receivedAtDate` is wall-clock correlation metadata.
+
+The bridge preserves both values exactly. Wall-clock dates never repair, reorder, or interpolate capture chronology. Equal uptime values remain equal even when their wall-clock metadata differs; if the bounded analyzer rejects that chronology inside a candidate, the rejection is retained as evidence instead of being hidden by synthesized timing.
 
 ### Continuity
 
@@ -59,7 +71,16 @@ The bridge also preserves equal receipt uptimes exactly. If the candidate analyz
 
 `PassiveBluetoothTuyaCandidateBridge.analyze(...)` runs the existing `TuyaCandidateTranscriptAnalyzer` independently for every projected GATT+origin transcript.
 
-Analyzer observation indices are stream-local. Each `PassiveBluetoothTuyaCandidateStreamTranscript` retains the corresponding `PassiveBluetoothTuyaCandidateSourceFragment` array so an event can be mapped back to the exact raw capture record and sequence number.
+Analyzer observation indices are stream-local. Each `PassiveBluetoothTuyaCandidateStreamTranscript` retains:
+
+- the source capture session ID;
+- the capture's `VehicleIdentity`;
+- the session start date;
+- the explicitly selected peripheral identity;
+- the exact GATT + value-origin stream identity; and
+- its `PassiveBluetoothTuyaCandidateSourceFragment` array containing source record index, sequence number, wall-clock receipt date, monotonic receipt uptime, and raw candidate bytes.
+
+That lets an analyzer event remain auditable back to the immutable capture even after the transcript is detached from the UI/export object. No filename convention or external bookkeeping becomes part of evidence truth.
 
 No analyzer event is telemetry. In particular, `completed` means only that raw bytes satisfy the bounded public-family candidate reassembly rules. It does not mean:
 
@@ -80,10 +101,10 @@ After the passive-capture parent is accepted on a physical-device-capable build,
 5. run this bridge and the offline candidate analyzer automatically across every exact captured value stream;
 6. compare structural candidate outcomes and repeated marker correlation without manually editing bytes.
 
-A failed candidate parse is useful falsifying evidence. Do not shift offsets, remove bytes, merge origins, or alter continuity until a public protocol source or new physical evidence justifies a different hypothesis.
+A failed candidate parse is useful falsifying evidence. Do not shift offsets, remove bytes, merge origins, alter clocks, or alter continuity until a public protocol source or new physical evidence justifies a different hypothesis.
 
 ## Safety boundary
 
 This bridge adds no `writeValue`, no command path, no encryption/decryption key handling, no device authentication, no production `ScooterService`, and no Dashboard telemetry wiring.
 
-Its role is narrower: move trustworthy raw capture evidence into reproducible offline analysis while preserving provenance and known gaps.
+Its role is narrower: move trustworthy raw capture evidence into reproducible offline analysis while preserving capture identity, timing provenance, transport provenance, and known gaps.

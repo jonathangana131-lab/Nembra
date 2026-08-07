@@ -19,6 +19,28 @@ public enum PassiveBluetoothTuyaCandidateProjectionError: Error, Equatable, Send
     )
 }
 
+/// Capture-level provenance copied losslessly onto every detached candidate
+/// transcript. Offline analysis must remain attributable to the exact evidence
+/// session rather than depending on external filename or UI bookkeeping.
+public struct PassiveBluetoothTuyaCandidateCaptureContext: Equatable, Sendable {
+    public let sessionID: UUID
+    public let vehicleIdentity: VehicleIdentity
+    public let sessionStartedAt: Date
+    public let peripheralIdentifier: String
+
+    public init(
+        sessionID: UUID,
+        vehicleIdentity: VehicleIdentity,
+        sessionStartedAt: Date,
+        peripheralIdentifier: String
+    ) {
+        self.sessionID = sessionID
+        self.vehicleIdentity = vehicleIdentity
+        self.sessionStartedAt = sessionStartedAt
+        self.peripheralIdentifier = peripheralIdentifier
+    }
+}
+
 /// Exact value-source identity used by the bridge. The candidate analyzer's
 /// GATT stream identity is preserved verbatim, while CoreBluetooth value origin
 /// is kept separate so read responses are never silently spliced together with
@@ -37,20 +59,24 @@ public struct PassiveBluetoothTuyaCandidateSourceStream: Equatable, Sendable {
 }
 
 /// One lossless source mapping from a raw capture record into an analyzer
-/// observation. The original capture sequence number remains available even
-/// though transcript-event indices are stream-local.
+/// observation. Both source clocks remain present: boot-relative uptime is the
+/// ordering clock used by the analyzer, while wall-clock Date stays metadata
+/// exactly as captured and never repairs ordering.
 public struct PassiveBluetoothTuyaCandidateSourceFragment: Equatable, Sendable {
     public let captureRecordIndex: Int
     public let captureSequenceNumber: UInt64
+    public let receivedAtDate: Date
     public let observation: TuyaCandidateFragmentObservation
 
     public init(
         captureRecordIndex: Int,
         captureSequenceNumber: UInt64,
+        receivedAtDate: Date,
         observation: TuyaCandidateFragmentObservation
     ) {
         self.captureRecordIndex = captureRecordIndex
         self.captureSequenceNumber = captureSequenceNumber
+        self.receivedAtDate = receivedAtDate
         self.observation = observation
     }
 }
@@ -59,13 +85,16 @@ public struct PassiveBluetoothTuyaCandidateSourceFragment: Equatable, Sendable {
 /// Interleaved callbacks from other streams are intentionally filtered instead
 /// of becoming fake stream-boundary evidence for this stream.
 public struct PassiveBluetoothTuyaCandidateStreamTranscript: Equatable, Sendable {
+    public let captureContext: PassiveBluetoothTuyaCandidateCaptureContext
     public let sourceStream: PassiveBluetoothTuyaCandidateSourceStream
     public let fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
 
     public init(
+        captureContext: PassiveBluetoothTuyaCandidateCaptureContext,
         sourceStream: PassiveBluetoothTuyaCandidateSourceStream,
         fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
     ) {
+        self.captureContext = captureContext
         self.sourceStream = sourceStream
         self.fragments = fragments
     }
@@ -122,9 +151,15 @@ public enum PassiveBluetoothTuyaCandidateBridge {
             throw PassiveBluetoothTuyaCandidateProjectionError.emptyPeripheralIdentifier
         }
 
+        let captureContext = PassiveBluetoothTuyaCandidateCaptureContext(
+            sessionID: session.id,
+            vehicleIdentity: session.vehicleIdentity,
+            sessionStartedAt: session.startedAt,
+            peripheralIdentifier: peripheralIdentifier
+        )
         var continuityGeneration: UInt64 = 0
-        var orderedKeys: [StreamKey] = []
-        var builders: [StreamKey: StreamBuilder] = [:]
+        var builders: [StreamBuilder] = []
+        var builderIndexByKey: [StreamKey: Int] = [:]
 
         for (recordIndex, record) in session.records.enumerated() {
             switch record.event {
@@ -180,17 +215,19 @@ public enum PassiveBluetoothTuyaCandidateBridge {
                 let sourceFragment = PassiveBluetoothTuyaCandidateSourceFragment(
                     captureRecordIndex: recordIndex,
                     captureSequenceNumber: record.sequenceNumber,
+                    receivedAtDate: record.receivedAtDate,
                     observation: candidateObservation
                 )
 
-                if builders[key] == nil {
-                    orderedKeys.append(key)
-                    builders[key] = StreamBuilder(
+                if let builderIndex = builderIndexByKey[key] {
+                    builders[builderIndex].fragments.append(sourceFragment)
+                } else {
+                    builderIndexByKey[key] = builders.count
+                    builders.append(StreamBuilder(
                         sourceStream: sourceStream,
-                        fragments: []
-                    )
+                        fragments: [sourceFragment]
+                    ))
                 }
-                builders[key]?.fragments.append(sourceFragment)
 
             case .advertisement,
                  .service,
@@ -203,9 +240,9 @@ public enum PassiveBluetoothTuyaCandidateBridge {
             }
         }
 
-        return orderedKeys.compactMap { key in
-            guard let builder = builders[key] else { return nil }
-            return PassiveBluetoothTuyaCandidateStreamTranscript(
+        return builders.map { builder in
+            PassiveBluetoothTuyaCandidateStreamTranscript(
+                captureContext: captureContext,
                 sourceStream: builder.sourceStream,
                 fragments: builder.fragments
             )
