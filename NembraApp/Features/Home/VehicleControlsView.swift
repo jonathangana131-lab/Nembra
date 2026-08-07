@@ -52,20 +52,17 @@ struct VehicleControlsView: View {
 
     private var vehicleStatusField: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(vehicle.profile.identity.displayName)
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.primary)
-
-                    Text("Vehicle configuration")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    vehicleIdentity
+                    Spacer(minLength: 12)
+                    connectionBadge
                 }
 
-                Spacer(minLength: 12)
-
-                connectionBadge
+                VStack(alignment: .leading, spacing: 12) {
+                    vehicleIdentity
+                    connectionBadge
+                }
             }
 
             if vehicle.state.connection != .connected {
@@ -103,6 +100,18 @@ struct VehicleControlsView: View {
         }
     }
 
+    private var vehicleIdentity: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(vehicle.profile.identity.displayName)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
+
+            Text("Vehicle configuration")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var connectionBadge: some View {
         Label(connectionText, systemImage: connectionSymbol)
             .font(.caption.weight(.semibold))
@@ -116,41 +125,59 @@ struct VehicleControlsView: View {
 
     @ViewBuilder
     private var connectionAction: some View {
-        switch vehicle.state.connectionIssue {
-        case .bluetoothPermissionDenied:
-            Button {
-                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                openURL(url)
-            } label: {
-                Image(systemName: "gear")
-                    .fontWeight(.semibold)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .nembraGlassControl()
-            .accessibilityLabel("Open Settings")
-        case .bluetoothPoweredOff, .unsupportedConfiguration:
-            EmptyView()
-        case .scooterUnavailable, .none:
-            Button {
-                Task { await vehicle.connect() }
-            } label: {
-                Group {
-                    if vehicle.pendingCommands.contains(.connect) {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .fontWeight(.semibold)
-                    }
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPermissionDenied:
+                Button {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                } label: {
+                    Image(systemName: "gear")
+                        .fontWeight(.semibold)
+                        .frame(width: 44, height: 44)
                 }
-                .frame(width: 44, height: 44)
+                .buttonStyle(.plain)
+                .nembraGlassControl()
+                .accessibilityLabel("Open Settings")
+            case .bluetoothPoweredOff, .unsupportedConfiguration:
+                EmptyView()
+            case .scooterUnavailable:
+                reconnectButton
             }
-            .buttonStyle(.plain)
-            .nembraGlassControl()
-            .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
-            .accessibilityLabel(vehicle.pendingCommands.contains(.connect) ? "Connecting" : "Reconnect")
+        } else {
+            switch vehicle.state.connection {
+            case .connecting, .reconnecting:
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel(connectionText)
+            case .disconnected:
+                reconnectButton
+            case .connected:
+                EmptyView()
+            }
         }
+    }
+
+    private var reconnectButton: some View {
+        Button {
+            Task { await vehicle.connect() }
+        } label: {
+            Group {
+                if vehicle.pendingCommands.contains(.connect) {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .fontWeight(.semibold)
+                }
+            }
+            .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .nembraGlassControl()
+        .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
+        .accessibilityLabel(vehicle.pendingCommands.contains(.connect) ? "Connecting" : "Reconnect")
     }
 
     private var modeSection: some View {
@@ -162,7 +189,7 @@ struct VehicleControlsView: View {
                 ForEach(supportedModes, id: \.self) { mode in
                     choiceControl(
                         title: mode.displayName,
-                        subtitle: modeSubtitle(mode),
+                        subtitle: "Ride profile",
                         icon: modeIcon(mode),
                         selected: vehicle.state.rideMode == mode,
                         pending: vehicle.pendingRideMode == mode
@@ -180,7 +207,7 @@ struct VehicleControlsView: View {
             title: "Cruise Control",
             subtitle: "Availability and behavior remain governed by the scooter firmware."
         ) {
-            HStack(spacing: 10) {
+            LazyVGrid(columns: adaptiveColumns, spacing: 10) {
                 choiceControl(
                     title: "Off",
                     subtitle: "Manual speed",
@@ -294,11 +321,11 @@ struct VehicleControlsView: View {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(pending ? "Confirming…" : subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
@@ -358,10 +385,10 @@ struct VehicleControlsView: View {
     private var connectionSymbol: String {
         if let issue = vehicle.state.connectionIssue {
             switch issue {
-            case .bluetoothPoweredOff: return "bluetooth.slash"
+            case .bluetoothPoweredOff: return "wifi.slash"
             case .bluetoothPermissionDenied: return "exclamationmark.triangle"
-            case .scooterUnavailable: return "antenna.radiowaves.left.and.right.slash"
-            case .unsupportedConfiguration: return "hand.raised.fill"
+            case .scooterUnavailable: return "antenna.radiowaves.left.and.right"
+            case .unsupportedConfiguration: return "exclamationmark.triangle.fill"
             }
         }
 
@@ -374,27 +401,29 @@ struct VehicleControlsView: View {
     }
 
     private var connectionStyle: Color {
-        switch vehicle.state.connectionIssue {
-        case .unsupportedConfiguration:
-            return .red
-        case .bluetoothPermissionDenied, .bluetoothPoweredOff, .scooterUnavailable:
-            return .orange
-        case .none:
-            return vehicle.state.connection == .connected ? .green : .secondary
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .unsupportedConfiguration:
+                return .red
+            case .bluetoothPermissionDenied, .bluetoothPoweredOff, .scooterUnavailable:
+                return .orange
+            }
         }
+
+        return vehicle.state.connection == .connected ? .green : .secondary
     }
 
     private var connectionIssuePresentation: (icon: String, title: String, message: String) {
         if let issue = vehicle.state.connectionIssue {
             switch issue {
             case .bluetoothPoweredOff:
-                return ("bluetooth.slash", "Bluetooth is off", "Turn on Bluetooth to restore vehicle controls.")
+                return ("wifi.slash", "Bluetooth is off", "Turn on Bluetooth to restore vehicle controls.")
             case .bluetoothPermissionDenied:
                 return ("hand.raised", "Bluetooth permission needed", "Allow Bluetooth access in Settings to connect to the scooter.")
             case .scooterUnavailable:
-                return ("antenna.radiowaves.left.and.right.slash", "Scooter not found", "Keep the scooter powered on and nearby, then try again.")
+                return ("antenna.radiowaves.left.and.right", "Scooter not found", "Keep the scooter powered on and nearby, then try again.")
             case .unsupportedConfiguration:
-                return ("exclamationmark.shield", "Controls unavailable", "This vehicle configuration is not verified for control commands.")
+                return ("exclamationmark.triangle.fill", "Controls unavailable", "This vehicle configuration is not verified for control commands.")
             }
         }
 
@@ -414,23 +443,14 @@ struct VehicleControlsView: View {
         switch mode {
         case .walk: return "figure.walk"
         case .eco: return "leaf"
-        case .drive: return "gauge.with.dots.needle.50percent"
+        case .drive: return "gauge.with.dots.needle.67percent"
         case .sport: return "bolt.fill"
-        }
-    }
-
-    private func modeSubtitle(_ mode: RideMode) -> String {
-        switch mode {
-        case .walk: return "Walking pace"
-        case .eco: return "Efficiency"
-        case .drive: return "Everyday ride"
-        case .sport: return "Maximum response"
         }
     }
 
     private func startModeIcon(_ mode: StartMode) -> String {
         switch mode {
-        case .kickStart: return "figure.walk.motion"
+        case .kickStart: return "figure.walk"
         case .zeroStart: return "bolt.circle"
         }
     }
