@@ -52,8 +52,20 @@ public extension PropulsionGaugeDisplayModel {
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
     ) -> PropulsionGaugeAccessibilitySnapshot {
-        let frame = frame(atUptimeNanoseconds: now, scale: scale)
+        accessibilitySnapshot(
+            from: frame(atUptimeNanoseconds: now, scale: scale),
+            scale: scale
+        )
+    }
 
+    /// Internal composition seam for callers that already evaluated the canonical
+    /// gauge frame for this display tick. Reusing that exact frame keeps visual,
+    /// semantic, and accessibility projections on one immutable presentation cut
+    /// without turning render interpolation into accepted evidence.
+    internal func accessibilitySnapshot(
+        from frame: PropulsionGaugeFrame,
+        scale: PropulsionGaugeScale?
+    ) -> PropulsionGaugeAccessibilitySnapshot {
         // The accepted presentation frame remains the single authority for scale
         // compatibility. Accessibility must not duplicate vehicle/mode/authority
         // admission rules that could later diverge from the visual model.
