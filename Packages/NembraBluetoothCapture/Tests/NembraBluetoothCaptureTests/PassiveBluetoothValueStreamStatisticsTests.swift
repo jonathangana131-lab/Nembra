@@ -60,6 +60,31 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.meanCallbackIntervalSeconds, 0.00000025, tolerance: 1e-15)
     }
 
+    @Test("structured disconnect uses the same byte-continuity boundary as an interruption")
+    func structuredDisconnectBreaksCadence() throws {
+        let peripheral = "physical-es80-placeholder"
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01])
+        try appendValue(to: &session, sequence: 2, uptime: 200, payload: [0x02])
+        try session.append(
+            .connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: peripheral,
+                state: .disconnected
+            )),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 300,
+            receivedAtDate: .now
+        )
+        try appendValue(to: &session, sequence: 4, uptime: 10_000, payload: [0x03])
+        try appendValue(to: &session, sequence: 5, uptime: 10_400, payload: [0x04])
+
+        let stats = try #require(PassiveBluetoothValueStreamAnalysis.summarize(session).first)
+        #expect(stats.continuitySegmentCount == 2)
+        #expect(stats.callbackIntervalCount == 2)
+        try expectApproximately(stats.minimumCallbackIntervalSeconds, 0.0000001, tolerance: 1e-15)
+        try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000004, tolerance: 1e-15)
+    }
+
     @Test("different characteristics remain independent streams and sort deterministically")
     func streamSeparation() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
