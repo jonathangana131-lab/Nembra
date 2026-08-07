@@ -27,6 +27,8 @@ This lane prevents integration code from flattening every non-nil range estimate
 5. estimate basis is `.learned`, not `.provisionalSeed`;
 6. confidence is `.normal` or `.high`.
 
+The policy consumes the existing `VehicleDataAvailability` classification from `VehicleDomain.swift` directly. It deliberately does not define a second live/retained/unavailable enum. This keeps range freshness on the same canonical retained-data boundary already used by Dashboard and other vehicle presentation code and removes a mapping seam where retained data could accidentally be reclassified as live.
+
 The output preserves a detailed withholding reason while separately projecting into the existing `BatteryEstimatedRangeDisplay` contract.
 
 ### Current fail-closed mapping
