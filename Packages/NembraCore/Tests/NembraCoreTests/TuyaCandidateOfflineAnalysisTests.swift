@@ -237,6 +237,11 @@ struct TuyaCandidateOfflineAnalysisTests {
 
     @Test("logical parser validates public-family big-endian header and CRC without interpreting code or data")
     func parsesLogicalPacket() throws {
+        // Independent canonical CRC-16/MODBUS check value for init 0xFFFF,
+        // reflected polynomial 0xA001. This prevents the packet fixture helper
+        // from validating a consistently wrong CRC implementation against itself.
+        #expect(TuyaCandidateLogicalPacket.crc16A001(Array("123456789".utf8)) == 0x4B37)
+
         let raw = logicalPacket(padded: false)
         let packet = try TuyaCandidateLogicalPacket.parse(raw, paddingPolicy: .exact)
         #expect(packet.sequenceNumber == 0x01020304)
