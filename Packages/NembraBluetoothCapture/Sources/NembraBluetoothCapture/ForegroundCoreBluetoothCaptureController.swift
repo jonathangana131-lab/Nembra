@@ -250,10 +250,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         recorder != nil
     }
 
-    /// Authoritative analysis/export is available only after the selected target
-    /// has one completely drained finite GATT acquisition and no cancellation
-    /// terminal callback is outstanding. Ongoing notifications are not readiness
-    /// operations and may continue after this becomes true.
+    /// Authoritative analysis/export is available after the selected target has
+    /// one completely drained finite GATT acquisition and no controller-local
+    /// acquisition/cancellation transition currently blocks the artifact. Ongoing
+    /// notifications are not readiness operations and may continue after this.
+    ///
+    /// Same-target retry quarantine is independent: retained evidence may remain
+    /// ready while `isSelectedTargetAwaitingTerminalCallback` stays true until the
+    /// real terminal callback releases that retry boundary.
     public var hasCompleteTargetEvidence: Bool {
         recorder != nil
             && !captureFailed
