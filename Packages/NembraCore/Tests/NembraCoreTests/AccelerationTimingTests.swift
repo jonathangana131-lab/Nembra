@@ -5,6 +5,24 @@ import Testing
 @Suite("Truthful acceleration timing")
 struct AccelerationTimingTests {
     private let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+    /// Synthetic software fixture only. This is deliberately not a production
+    /// AOVOPRO ES80 stationary threshold.
+    private let fixtureStationaryMaximumMetersPerSecond = 0.5
+
+    private func policy(
+        targetMetersPerSecond: Double,
+        requiredSource: SpeedTelemetrySource? = nil,
+        maximumSpeedAccuracyMetersPerSecond: Double? = nil,
+        maximumSampleIntervalNanoseconds: UInt64? = nil
+    ) throws -> AccelerationRunPolicy {
+        try AccelerationRunPolicy(
+            targetMetersPerSecond: targetMetersPerSecond,
+            stationaryMaximumMetersPerSecond: fixtureStationaryMaximumMetersPerSecond,
+            requiredSource: requiredSource,
+            maximumSpeedAccuracyMetersPerSecond: maximumSpeedAccuracyMetersPerSecond,
+            maximumSampleIntervalNanoseconds: maximumSampleIntervalNanoseconds
+        )
+    }
 
     private func sample(
         source: SpeedTelemetrySource = .scooterBluetooth,
@@ -28,16 +46,14 @@ struct AccelerationTimingTests {
 
     @Test("rolling start is rejected before a standstill anchor exists")
     func rollingStartRejected() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 1.5, seconds: 1))
         #expect(evaluator.state == .invalidated(.rollingStart))
     }
 
     @Test("completed run reports only receive-clock observation interval")
     func reportsReceiveClockObservationInterval() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 4, seconds: 3))
@@ -62,8 +78,7 @@ struct AccelerationTimingTests {
 
     @Test("below-target samples do not become a first-reach timing claim")
     func earlierUnsampledTargetExcursionRemainsPossible() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 10)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 10))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 0))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 9, seconds: 2))
@@ -89,8 +104,7 @@ struct AccelerationTimingTests {
 
     @Test("measurement dates and delivery latency do not silently become the timing basis")
     func receiveUptimeRemainsExplicitTimingBasis() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
 
         evaluator.accept(try sample(
             metersPerSecond: 0,
@@ -130,8 +144,7 @@ struct AccelerationTimingTests {
 
     @Test("timing evidence count excludes superseded stationary anchors")
     func timingEvidenceCountReflectsRetainedTrace() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 0.1, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 3))
@@ -150,8 +163,7 @@ struct AccelerationTimingTests {
 
     @Test("a sparse sample that already reaches target remains observation-bounded")
     func sparseImmediateTargetObservation() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 10))
         evaluator.accept(try sample(metersPerSecond: 6, seconds: 10.4))
 
@@ -165,8 +177,7 @@ struct AccelerationTimingTests {
 
     @Test("motion-assisted display estimate cannot arm or advance a run")
     func motionEstimateIgnored() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(
             source: .motionAssist,
             provenance: .shortHorizonEstimate,
@@ -178,10 +189,32 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .armed(source: .scooterBluetooth))
     }
 
+    @Test("decoded impossible motion-assist provenance cannot become authoritative timing evidence")
+    func malformedDecodedMotionAssistIsIgnored() throws {
+        let valid = try sample(metersPerSecond: 0, seconds: 1)
+        let encoded = try JSONEncoder().encode(valid)
+        let validJSON = try #require(String(data: encoded, encoding: .utf8))
+        let malformedJSON = validJSON.replacingOccurrences(
+            of: "\"scooterBluetooth\"",
+            with: "\"motionAssist\""
+        )
+        #expect(malformedJSON != validJSON)
+
+        let malformed = try JSONDecoder().decode(
+            SpeedTelemetrySample.self,
+            from: try #require(malformedJSON.data(using: .utf8))
+        )
+        #expect(malformed.source == .motionAssist)
+        #expect(malformed.isAuthoritativeMeasurement)
+
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
+        evaluator.accept(malformed)
+        #expect(evaluator.state == .waitingForStandstill)
+    }
+
     @Test("a source change invalidates an in-progress timing trace")
     func sourceChangeInvalidates() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.accept(try sample(source: .gps, metersPerSecond: 3, seconds: 3, accuracy: 0.5))
@@ -190,12 +223,11 @@ struct AccelerationTimingTests {
 
     @Test("required source ignores other authoritative providers before they can affect timing")
     func requiredSourceIgnoresOthers() throws {
-        let policy = try AccelerationRunPolicy(
+        var evaluator = AccelerationRunEvaluator(policy: try policy(
             targetMetersPerSecond: 5,
             requiredSource: .gps,
             maximumSpeedAccuracyMetersPerSecond: 1
-        )
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        ))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         #expect(evaluator.state == .waitingForStandstill)
         evaluator.accept(try sample(source: .gps, metersPerSecond: 0, seconds: 2, accuracy: 2))
@@ -206,12 +238,11 @@ struct AccelerationTimingTests {
 
     @Test("quality-rejected locked-source observation still protects monotonic ordering")
     func rejectedQualityObservationPreventsOlderMeasurementFromBecomingFresh() throws {
-        let policy = try AccelerationRunPolicy(
+        var evaluator = AccelerationRunEvaluator(policy: try policy(
             targetMetersPerSecond: 5,
             requiredSource: .gps,
             maximumSpeedAccuracyMetersPerSecond: 1
-        )
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        ))
         evaluator.accept(try sample(
             source: .gps,
             metersPerSecond: 0,
@@ -239,8 +270,7 @@ struct AccelerationTimingTests {
 
     @Test("nonmonotonic authoritative measurement invalidates timing evidence")
     func nonMonotonicInvalidates() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 3))
         evaluator.accept(try sample(metersPerSecond: 3, seconds: 2.5))
@@ -249,11 +279,10 @@ struct AccelerationTimingTests {
 
     @Test("configured sample interval ceiling rejects weak timing evidence")
     func longMeasurementGapInvalidates() throws {
-        let policy = try AccelerationRunPolicy(
+        var evaluator = AccelerationRunEvaluator(policy: try policy(
             targetMetersPerSecond: 5,
             maximumSampleIntervalNanoseconds: 1_500_000_000
-        )
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        ))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 6, seconds: 4))
@@ -262,13 +291,12 @@ struct AccelerationTimingTests {
 
     @Test("sample-gap ceiling measures usable timing evidence rather than rejected callbacks")
     func rejectedQualityCallbackDoesNotHideAcceptedMeasurementGap() throws {
-        let policy = try AccelerationRunPolicy(
+        var evaluator = AccelerationRunEvaluator(policy: try policy(
             targetMetersPerSecond: 5,
             requiredSource: .gps,
             maximumSpeedAccuracyMetersPerSecond: 1,
             maximumSampleIntervalNanoseconds: 1_500_000_000
-        )
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        ))
         evaluator.accept(try sample(
             source: .gps,
             metersPerSecond: 0,
@@ -292,18 +320,30 @@ struct AccelerationTimingTests {
 
     @Test("connection interruption invalidates armed or running evidence")
     func interruptionInvalidates() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.interrupt(.vehicleConnectionLost)
         #expect(evaluator.state == .invalidated(.interruption(.vehicleConnectionLost)))
     }
 
+    @Test("operator cancellation is terminal even while waiting for standstill")
+    func operatorCancellationStopsWaitingAttemptUntilReset() throws {
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
+        evaluator.interrupt(.operatorCancelled)
+        #expect(evaluator.state == .invalidated(.interruption(.operatorCancelled)))
+
+        evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
+        #expect(evaluator.state == .invalidated(.interruption(.operatorCancelled)))
+
+        evaluator.reset()
+        evaluator.accept(try sample(metersPerSecond: 0, seconds: 2))
+        #expect(evaluator.state == .armed(source: .scooterBluetooth))
+    }
+
     @Test("returning to stationary after launch invalidates rather than silently restarting")
     func returnedToStationaryInvalidates() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 2))
         evaluator.accept(try sample(metersPerSecond: 0.2, seconds: 3))
@@ -312,8 +352,7 @@ struct AccelerationTimingTests {
 
     @Test("reset discards prior invalid evidence and requires a fresh standstill")
     func resetRequiresFreshStandstill() throws {
-        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
-        var evaluator = AccelerationRunEvaluator(policy: policy)
+        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
         evaluator.accept(try sample(metersPerSecond: 2, seconds: 1))
         #expect(evaluator.state == .invalidated(.rollingStart))
         evaluator.reset()
@@ -325,19 +364,37 @@ struct AccelerationTimingTests {
     @Test("policy validation rejects impossible timing configurations")
     func policyValidation() {
         #expect(throws: AccelerationRunPolicyError.invalidTargetSpeed) {
-            try AccelerationRunPolicy(targetMetersPerSecond: 0)
+            try AccelerationRunPolicy(
+                targetMetersPerSecond: 0,
+                stationaryMaximumMetersPerSecond: 0.5
+            )
         }
         #expect(throws: AccelerationRunPolicyError.invalidStationaryThreshold) {
-            try AccelerationRunPolicy(targetMetersPerSecond: 5, stationaryMaximumMetersPerSecond: 5)
+            try AccelerationRunPolicy(
+                targetMetersPerSecond: 5,
+                stationaryMaximumMetersPerSecond: 5
+            )
         }
         #expect(throws: AccelerationRunPolicyError.invalidMaximumSpeedAccuracy) {
-            try AccelerationRunPolicy(targetMetersPerSecond: 5, maximumSpeedAccuracyMetersPerSecond: .infinity)
+            try AccelerationRunPolicy(
+                targetMetersPerSecond: 5,
+                stationaryMaximumMetersPerSecond: 0.5,
+                maximumSpeedAccuracyMetersPerSecond: .infinity
+            )
         }
         #expect(throws: AccelerationRunPolicyError.invalidMaximumSampleInterval) {
-            try AccelerationRunPolicy(targetMetersPerSecond: 5, maximumSampleIntervalNanoseconds: 0)
+            try AccelerationRunPolicy(
+                targetMetersPerSecond: 5,
+                stationaryMaximumMetersPerSecond: 0.5,
+                maximumSampleIntervalNanoseconds: 0
+            )
         }
         #expect(throws: AccelerationRunPolicyError.invalidRequiredSource) {
-            try AccelerationRunPolicy(targetMetersPerSecond: 5, requiredSource: .motionAssist)
+            try AccelerationRunPolicy(
+                targetMetersPerSecond: 5,
+                stationaryMaximumMetersPerSecond: 0.5,
+                requiredSource: .motionAssist
+            )
         }
     }
 }
