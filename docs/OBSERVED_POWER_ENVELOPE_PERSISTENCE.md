@@ -79,11 +79,14 @@ Uncalibrated, lower/equal, or sub-hysteresis sessions return the retained checkp
 
 ## Current #225 compatibility
 
-This branch is based directly on #225 head `d973452f6c34e9b055236aac61f8a7e29b67c10e`, which includes:
+The v4 lane was cut from #225 head `d973452f6c34e9b055236aac61f8a7e29b67c10e`, the commit that sealed calibration construction. The live parent subsequently advanced to `e672494783a1b343931abe56555bb377e4373432` with chronology-only hardening:
 
-- exact observation scope binding before chronology/window mutation;
-- strict source-owned receipt sequence separated from monotonic uptime;
-- sealed `ObservedPowerEnvelopeCalibration` construction in both SwiftPM and direct-source app build modes.
+- a genuinely newer receipt sequence is consumed before uptime/value admission;
+- backward uptime preserves the existing monotonic uptime floor;
+- replay/delayed lower receipt identities remain rejected after a newer invalid callback;
+- tests prove that behavior.
+
+Those commits do not alter checkpoint fields, scope, policy, calibration values, or the persistence-facing API. This layer intentionally does **not** persist the live learner's consumed receipt identity or uptime floor; a new process must start new callback chronology rather than treating old ordering metadata as fresh evidence.
 
 The tests construct observations using the learner's exact scope and explicit receipt order, exercise equal uptime ticks with increasing receipt sequence, and verify restored durable state is the separate retained-calibration value rather than a newly minted live calibration.
 
