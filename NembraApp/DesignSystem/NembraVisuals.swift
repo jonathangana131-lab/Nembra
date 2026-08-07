@@ -14,6 +14,7 @@ struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityShowBorders) private var showBorders
+    @Environment(\.isEnabled) private var isEnabled
 
     /// Normal Liquid Glass already adapts to Increased Contrast at the material layer.
     /// Nembra adds a strong explicit boundary only when Show Borders asks custom
@@ -49,7 +50,7 @@ struct NembraGlassButtonStyle: ViewModifier {
             } else if #available(iOS 26.0, *) {
                 content
                     .glassEffect(
-                        .regular.interactive(),
+                        .regular.interactive(isEnabled),
                         in: .rect(cornerRadius: NembraMetrics.controlRadius)
                     )
             } else {
