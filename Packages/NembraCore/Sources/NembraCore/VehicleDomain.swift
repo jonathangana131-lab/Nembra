@@ -69,14 +69,35 @@ public struct SpeedLimitRange: Equatable, Codable, Sendable {
     public let minimumKilometersPerHour: Int
     public let maximumKilometersPerHour: Int
 
+    private enum CodingKeys: String, CodingKey {
+        case minimumKilometersPerHour
+        case maximumKilometersPerHour
+    }
+
     public init(minimumKilometersPerHour: Int, maximumKilometersPerHour: Int) {
         precondition(minimumKilometersPerHour <= maximumKilometersPerHour)
         self.minimumKilometersPerHour = minimumKilometersPerHour
         self.maximumKilometersPerHour = maximumKilometersPerHour
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let minimum = try container.decode(Int.self, forKey: .minimumKilometersPerHour)
+        let maximum = try container.decode(Int.self, forKey: .maximumKilometersPerHour)
+        guard minimum <= maximum else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .maximumKilometersPerHour,
+                in: container,
+                debugDescription: "Maximum speed must be greater than or equal to minimum speed."
+            )
+        }
+        minimumKilometersPerHour = minimum
+        maximumKilometersPerHour = maximum
+    }
+
     public func contains(_ value: Int) -> Bool {
-        (minimumKilometersPerHour...maximumKilometersPerHour).contains(value)
+        guard minimumKilometersPerHour <= maximumKilometersPerHour else { return false }
+        return (minimumKilometersPerHour...maximumKilometersPerHour).contains(value)
     }
 }
 
