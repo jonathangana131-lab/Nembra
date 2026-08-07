@@ -45,6 +45,19 @@ The exact accepted `observedDurationNanoseconds` remains attached to the present
 
 UI formatting such as `12:34` stays above this domain so localization and visual design do not become evidence semantics.
 
+### Stable clock fields
+
+`RideDurationCockpitClockComponents` decomposes the already-accepted `wholeObservedSeconds` into integer `hours`, `minutes`, and `seconds` fields. It exists so a future fixed-geometry cockpit readout can render `MM:SS` or `H:MM:SS` without introducing `Date`, floating-point conversion, or a display-owned timer.
+
+The decomposition is intentionally one-way presentation arithmetic:
+- seconds are never rounded up from subsecond evidence;
+- minutes and seconds remain bounded to `0...59`;
+- hours remain `UInt64`, so very large accepted durations do not overflow merely because presentation crosses an hour boundary;
+- `usesHourField` is layout guidance only and carries no evidence meaning;
+- the original `RideDurationCockpitValue.role` remains beside the components, so partial observed time cannot become unqualified elapsed time through formatting.
+
+Clock components are not persisted telemetry, are not a new measurement, and must never be fed back into ride-duration evidence.
+
 ## Integration boundary
 
 This lane deliberately does not modify:
