@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 @testable import NembraCore
 
@@ -52,7 +51,7 @@ struct NavigationGuidanceSelectionIdentityTests {
 
         #expect(firstToken.sequence == 1)
         #expect(secondToken.sequence == 1)
-        #expect(firstToken.trackerGenerationID != secondToken.trackerGenerationID)
+        #expect(!firstToken.sharesTrackerGeneration(with: secondToken))
         #expect(firstToken != secondToken)
     }
 
@@ -67,8 +66,7 @@ struct NavigationGuidanceSelectionIdentityTests {
 
         #expect(firstToken.sequence == 1)
         #expect(secondToken.sequence == 1)
-        #expect(firstToken.trackerGenerationID == secondToken.trackerGenerationID)
-        #expect(firstToken.selectionID != secondToken.selectionID)
+        #expect(firstToken.sharesTrackerGeneration(with: secondToken))
         #expect(firstToken != secondToken)
     }
 
@@ -96,10 +94,9 @@ struct NavigationGuidanceSelectionIdentityTests {
         let firstToken = try tracker.select(route: selectedRoute)
         let secondToken = try tracker.select(route: selectedRoute)
 
-        #expect(firstToken.trackerGenerationID == secondToken.trackerGenerationID)
+        #expect(firstToken.sharesTrackerGeneration(with: secondToken))
         #expect(firstToken.sequence == 1)
         #expect(secondToken.sequence == 2)
-        #expect(firstToken.selectionID != secondToken.selectionID)
         #expect(firstToken != secondToken)
     }
 }
