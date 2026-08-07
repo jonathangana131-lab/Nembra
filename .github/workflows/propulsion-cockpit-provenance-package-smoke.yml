@@ -1,0 +1,38 @@
+name: Propulsion Cockpit Provenance Package Smoke
+
+on:
+  push:
+    branches:
+      - qa/propulsion-cockpit-provenance/chat-j8r5v-ce91e1e
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent and workflow-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_sha="ce91e1ea33ec6a184420a2b7b1d74f1c19859420"
+          test "$(git rev-parse HEAD^)" = "$product_sha"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = ".github/workflows/propulsion-cockpit-provenance-package-smoke.yml"
+
+      - name: Run full NembraCore suite with Swift 6.2 warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/Packages/NembraCore \
+            swift:6.2 \
+            bash -lc 'swift --version && swift test -Xswiftc -warnings-as-errors'
