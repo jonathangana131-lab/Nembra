@@ -244,6 +244,10 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
         cursor: inout Int
     ) throws -> UInt64 {
         let initialCursor = cursor
+        guard initialCursor >= 0 else {
+            throw TuyaCandidateOfflineAnalysisError.malformedVarint
+        }
+
         var position = cursor
         var result: UInt64 = 0
         var shift: UInt64 = 0
