@@ -226,6 +226,12 @@ public actor RideCheckpointCoordinator {
         pendingCompletedRide
     }
 
+    /// Package-internal observability for deterministic transaction tests. This
+    /// is not product state and does not expose or mutate queued observations.
+    func queuedMutationCountForTesting() -> Int {
+        mutationWaiters.count
+    }
+
     /// Called only after the completed-ride ledger has durably committed the same
     /// session. Clearing first would reopen the exact crash-loss window this layer
     /// exists to close. This mutation shares the same transaction permit as ingest
