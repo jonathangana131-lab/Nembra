@@ -16,9 +16,11 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         #expect(readiness.pendingOperationCount == 2)
         #expect(!readiness.isReady)
 
-        #expect(readiness.completeOperation(services))
+        let completedServices = readiness.completeOperation(services)
+        #expect(completedServices)
         #expect(!readiness.isReady)
-        #expect(readiness.completeOperation(characteristics))
+        let completedCharacteristics = readiness.completeOperation(characteristics)
+        #expect(completedCharacteristics)
         #expect(readiness.isReady)
         #expect(readiness.phase == .ready)
     }
@@ -33,9 +35,11 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         try readiness.startAcquisition()
         let current = try readiness.beginOperation()
 
-        #expect(!readiness.completeOperation(old))
+        let completedStale = readiness.completeOperation(old)
+        #expect(!completedStale)
         #expect(!readiness.isReady)
-        #expect(readiness.completeOperation(current))
+        let completedCurrent = readiness.completeOperation(current)
+        #expect(completedCurrent)
         #expect(readiness.isReady)
     }
 
@@ -45,7 +49,8 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let operation = try readiness.beginOperation()
-        #expect(readiness.completeOperation(operation))
+        let completed = readiness.completeOperation(operation)
+        #expect(completed)
         #expect(readiness.isReady)
 
         readiness.beginConnectionAttempt()
