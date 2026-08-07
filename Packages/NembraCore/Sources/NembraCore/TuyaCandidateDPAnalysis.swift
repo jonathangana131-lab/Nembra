@@ -134,7 +134,11 @@ public struct TuyaCandidateDPRecord: Equatable, Sendable {
     }
 }
 
+/// A successful candidate parse retains the exact framing hypothesis that
+/// produced it. Downstream analysis must not silently mix one-byte and two-byte
+/// DP interpretations as if they were the same evidence.
 public struct TuyaCandidateDPPayload: Equatable, Sendable {
+    public let dataLengthWidth: TuyaCandidateDPDataLengthWidth
     public let sourceByteCount: Int
     public let records: [TuyaCandidateDPRecord]
 }
@@ -217,7 +221,11 @@ public enum TuyaCandidateDPPayloadParser {
             )
         }
 
-        return TuyaCandidateDPPayload(sourceByteCount: bytes.count, records: records)
+        return TuyaCandidateDPPayload(
+            dataLengthWidth: policy.dataLengthWidth,
+            sourceByteCount: bytes.count,
+            records: records
+        )
     }
 
     /// Convenience bridge from #219's already CRC-validated logical candidate.
