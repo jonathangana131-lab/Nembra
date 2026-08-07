@@ -14,6 +14,7 @@ The visual gauge may render many presentation frames between accepted propulsion
 
 `PropulsionGaugeAccessibilitySnapshot` therefore exposes:
 
+- the exact `PropulsionGaugeIdentity` of its owning vehicle / confirmed-mode presentation session;
 - the latest accepted watts;
 - the source-owned receipt sequence number of that accepted observation;
 - the receive uptime of that accepted observation;
@@ -38,6 +39,8 @@ The projection preserves the last accepted watts and provenance when the underly
 - source currently unavailable.
 
 No stale value is silently presented as current.
+
+The snapshot keeps its exact vehicle / confirmed-mode identity even when measurement truth is unavailable. That identity is session context and provenance only: it never manufactures watts, freshness, measurement authority, or a compatible scale position.
 
 ## Observed-scale position is not throttle
 
@@ -64,7 +67,7 @@ A scale contributes an accessibility fraction only when all of the following mat
 2. Simulator measurement with Simulator scale, or verified vehicle measurement with verified observed-envelope scale;
 3. evidence remains live rather than retained/unavailable.
 
-Cross-vehicle, cross-mode, or cross-authority scales fail closed. The accepted watts and provenance remain readable where the presentation model legitimately retains them, but no normalized percentage is manufactured.
+Cross-vehicle, cross-mode, or cross-authority scales fail closed. The accepted watts and provenance remain readable where the presentation model legitimately retains them, but no normalized percentage is manufactured. A foreign scale also cannot relabel the snapshot's own identity: that scope comes from the owning display model, not from whichever scale a caller supplies.
 
 The source-owned receipt sequence number is chronology/provenance evidence only. It is not power evidence and never changes the measured watts by itself.
 
