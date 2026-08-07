@@ -43,6 +43,7 @@ struct TuyaCandidateReceiptChronologyTests {
             continuityGeneration: generation,
             receiptUptimeNanoseconds: uptime,
             receiptSequenceNumber: sequence,
+            receiptSequenceScope: sequence == nil ? nil : "capture-session-A",
             bytes: bytes
         )
     }
@@ -85,6 +86,7 @@ struct TuyaCandidateReceiptChronologyTests {
         #expect(message.encryptedBytes == [0xAA, 0xBB])
         #expect(message.firstReceiptUptimeNanoseconds == 1_000)
         #expect(message.lastReceiptUptimeNanoseconds == 1_000)
+        #expect(message.receiptSequenceScope == "capture-session-A")
         #expect(message.firstReceiptSequenceNumber == 40)
         #expect(message.lastReceiptSequenceNumber == 41)
     }
@@ -138,6 +140,7 @@ struct TuyaCandidateReceiptChronologyTests {
             return nil
         }())
         #expect(message.encryptedBytes == [1, 2])
+        #expect(message.receiptSequenceScope == "capture-session-A")
         #expect(message.firstReceiptSequenceNumber == 10)
         #expect(message.lastReceiptSequenceNumber == 13)
     }
@@ -187,13 +190,13 @@ struct TuyaCandidateReceiptChronologyTests {
             )
         )
         if case .complete = completion {
-            // Expected: equal uptime is valid because callback identity advanced.
+            // Expected: equal uptime is valid because scoped callback identity advanced.
         } else {
             Issue.record("Expected sequence 22 at the preserved uptime floor to complete")
         }
     }
 
-    @Test("one candidate cannot switch between sequence-backed and legacy ordering authority")
+    @Test("one candidate cannot switch between scoped sequence and legacy ordering authority")
     func rejectsMixedReceiptOrderingAuthority() throws {
         var sequenceFirst = TuyaCandidateFragmentReassembler(policy: try policy())
         _ = try sequenceFirst.ingest(
