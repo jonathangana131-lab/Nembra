@@ -340,6 +340,9 @@ private struct RideHistoryDetailView: View {
                 ZStack(alignment: .bottomLeading) {
                     RideRouteMapView(geometry: geometry)
                         .frame(height: 268)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Recorded ride route")
+                        .accessibilityValue(routeAccessibilityValue(geometry))
                         .accessibilityIdentifier("rides.route-map")
 
                     Text(routeCoverageLabel(geometry.coverage))
@@ -648,6 +651,19 @@ private struct RideHistoryDetailView: View {
         }
     }
 
+    private func routeAccessibilityValue(_ geometry: RideRouteGeometry) -> String {
+        let gapDescription: String
+        switch geometry.knownGapCount {
+        case 0:
+            gapDescription = "No known route gaps recorded"
+        case 1:
+            gapDescription = "1 known route gap recorded"
+        default:
+            gapDescription = "\(geometry.knownGapCount) known route gaps recorded"
+        }
+        return "\(routeCoverageLabel(geometry.coverage)). \(gapDescription)."
+    }
+
     private var odometerDeltaKilometers: Double? {
         guard let start = record.evidence.startingOdometerKilometers,
               let end = record.evidence.endingOdometerKilometers,
@@ -674,6 +690,14 @@ private struct RideRouteMapView: View {
                 }
             }
         }
+        .mapStyle(
+            .standard(
+                elevation: .flat,
+                emphasis: .muted,
+                pointsOfInterest: .excludingAll,
+                showsTraffic: false
+            )
+        )
     }
 
     private func coordinates(for segment: RideRouteSegment) -> [CLLocationCoordinate2D] {
