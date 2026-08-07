@@ -2,12 +2,18 @@ import CryptoKit
 import Foundation
 import NembraCore
 
+private struct PassiveBluetoothCaptureArtifactSchemaProbe: Decodable {
+    let schemaVersion: Int
+}
+
 /// Validation errors for the operator-supplied provenance sidecar that travels
 /// with one immutable passive-capture JSON artifact.
 public enum PassiveBluetoothCaptureArtifactProvenanceError: Error, Equatable, Sendable {
     case unsupportedSchemaVersion(Int)
     case invalidSourceArtifactDigest
     case invalidSourceArtifactByteCount
+    case invalidSourceCaptureSchemaVersion
+    case sourceArtifactMismatch
     case invalidNembraSourceRevision
     case emptyAppVersion
     case emptyAppBuild
@@ -94,6 +100,24 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
         return value
     }
 
+    /// Re-check that this sidecar still belongs to these exact raw capture bytes.
+    /// A match establishes artifact association only; it does not authenticate a
+    /// scooter or promote any physical/protocol claim.
+    public func matchesSourceArtifact(_ captureJSON: Data) throws -> Bool {
+        try validate()
+        let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
+        let captureSchemaVersion = try JSONDecoder()
+            .decode(PassiveBluetoothCaptureArtifactSchemaProbe.self, from: captureJSON)
+            .schemaVersion
+
+        return sourceArtifact.sha256
+                == PassiveBluetoothCaptureArtifactProvenanceBuilder.sha256Hex(of: captureJSON)
+            && sourceArtifact.byteCount == captureJSON.count
+            && sourceArtifact.captureSchemaVersion == captureSchemaVersion
+            && sourceArtifact.sessionID == session.id
+            && sourceArtifact.sessionStartedAt == session.startedAt
+    }
+
     fileprivate func validate() throws {
         guard schemaVersion == Self.currentSchemaVersion else {
             throw PassiveBluetoothCaptureArtifactProvenanceError
@@ -104,6 +128,9 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
         }
         guard sourceArtifact.byteCount >= 0 else {
             throw PassiveBluetoothCaptureArtifactProvenanceError.invalidSourceArtifactByteCount
+        }
+        guard sourceArtifact.captureSchemaVersion > 0 else {
+            throw PassiveBluetoothCaptureArtifactProvenanceError.invalidSourceCaptureSchemaVersion
         }
         guard Self.isExactGitObjectID(nembraBuild.sourceRevision) else {
             throw PassiveBluetoothCaptureArtifactProvenanceError.invalidNembraSourceRevision
@@ -143,12 +170,12 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
         }
     }
 
-    private static func isExactNonblank(_ value: String) -> Bool {
+    fileprivate static func isExactNonblank(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty && trimmed == value
     }
 
-    private static func isExactGitObjectID(_ value: String) -> Bool {
+    fileprivate static func isExactGitObjectID(_ value: String) -> Bool {
         guard value.count == 40 || value.count == 64 else { return false }
         return value.utf8.allSatisfy { byte in
             (48...57).contains(byte) || (97...102).contains(byte)
@@ -164,10 +191,6 @@ public struct PassiveBluetoothCaptureArtifactProvenance: Equatable, Codable, Sen
 }
 
 public enum PassiveBluetoothCaptureArtifactProvenanceBuilder {
-    private struct CaptureVersionProbe: Decodable {
-        let schemaVersion: Int
-    }
-
     /// Build provenance from the exact raw JSON bytes. The selected peripheral
     /// must already appear in target-attributable connection/GATT/value evidence;
     /// advertisement-only catalog evidence is deliberately insufficient.
@@ -182,9 +205,18 @@ public enum PassiveBluetoothCaptureArtifactProvenanceBuilder {
         acquisitionFailureNote: String? = nil,
         createdAt: Date = .now
     ) throws -> PassiveBluetoothCaptureArtifactProvenance {
+        guard PassiveBluetoothCaptureArtifactProvenance
+            .isExactNonblank(selectedPeripheralIdentifier) else {
+            throw PassiveBluetoothCaptureArtifactProvenanceError.emptySelectedPeripheralIdentifier
+        }
+        guard PassiveBluetoothCaptureArtifactProvenance
+            .isExactGitObjectID(nembraSourceRevision) else {
+            throw PassiveBluetoothCaptureArtifactProvenanceError.invalidNembraSourceRevision
+        }
+
         let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
         let captureSchemaVersion = try JSONDecoder()
-            .decode(CaptureVersionProbe.self, from: captureJSON)
+            .decode(PassiveBluetoothCaptureArtifactSchemaProbe.self, from: captureJSON)
             .schemaVersion
 
         let available = attributablePeripheralIdentifiers(in: session)
