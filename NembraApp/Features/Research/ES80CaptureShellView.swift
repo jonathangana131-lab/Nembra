@@ -339,12 +339,14 @@ struct ES80CaptureShellView: View {
     private var candidateList: some View {
         VStack(spacing: 10) {
             ForEach(controller.discoveredPeripherals) { peripheral in
-                candidateRow(peripheral, selected: selectedCandidateIdentifier == peripheral.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard peripheral.isConnectable != false else { return }
-                        selectedCandidateIdentifier = peripheral.id
-                    }
+                Button {
+                    selectedCandidateIdentifier = peripheral.id
+                } label: {
+                    candidateRow(peripheral, selected: selectedCandidateIdentifier == peripheral.id)
+                }
+                .buttonStyle(.plain)
+                .disabled(peripheral.isConnectable == false)
+                .accessibilityIdentifier("es80.capture.candidate.\(peripheral.id.uuidString)")
             }
         }
         .animation(
