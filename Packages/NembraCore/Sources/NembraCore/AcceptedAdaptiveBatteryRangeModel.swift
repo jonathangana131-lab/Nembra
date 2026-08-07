@@ -80,7 +80,7 @@ public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
 /// simulation, offline research, and future migration. This wrapper is the stronger boundary
 /// for live product use: ordinary app code cannot import arbitrary raw model state or feed it
 /// caller-constructed learning windows. New production presentation should request live range
-/// only through a receipt-bound `AcceptedBatterySOCAnchor`.
+/// only through a receipt-bound `AcceptedBatterySOCAnchor` plus the validator that still owns it.
 ///
 /// This type is deliberately non-Codable for now. Persisting learned production state needs an
 /// explicit scooter-identity-bound envelope; generic decoding must not silently turn imported
@@ -130,15 +130,23 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
         _ window: AcceptedBatteryRangeLearningWindow,
         policy: AdaptiveBatteryRangePolicy
     ) -> BatteryRangeLearningResult {
-        guard let start = try? BatterySOCReading.accepted(window.startSOC),
-              let end = try? BatterySOCReading.accepted(window.endSOC),
-              let rawWindow = try? BatteryRangeLearningWindow(
-                distanceMeters: window.distanceMeters,
-                distanceCoverage: window.distanceCoverage,
-                transportGapOccurred: window.transportGapOccurred,
-                startSOC: start,
-                endSOC: end
-              ) else {
+        guard let start = try? BatterySOCReading(
+            percentage: window.startSOC.percentage,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: window.startSOC.receivedAtUptimeNanoseconds
+        ),
+        let end = try? BatterySOCReading(
+            percentage: window.endSOC.percentage,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: window.endSOC.receivedAtUptimeNanoseconds
+        ),
+        let rawWindow = try? BatteryRangeLearningWindow(
+            distanceMeters: window.distanceMeters,
+            distanceCoverage: window.distanceCoverage,
+            transportGapOccurred: window.transportGapOccurred,
+            startSOC: start,
+            endSOC: end
+        ) else {
             return BatteryRangeLearningResult(
                 disposition: .rejected(.numericalOverflow),
                 sample: nil,
@@ -152,11 +160,13 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
 
     public func estimateRemainingRange(
         atAcceptedSOC soc: AcceptedBatterySOCAnchor,
+        acceptedBy validator: BatteryEvidenceStreamValidator,
         previousPresentedRemainingMeters: Double? = nil,
         policy: AdaptiveBatteryRangePolicy
     ) -> AdaptiveBatteryRangeLiveEstimate? {
         model.estimateRemainingRange(
             atAcceptedSOC: soc,
+            acceptedBy: validator,
             previousPresentedRemainingMeters: previousPresentedRemainingMeters,
             policy: policy
         )
