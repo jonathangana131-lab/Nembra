@@ -6,16 +6,18 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     private let policy = AdaptiveBatteryRangePrimaryPresentationPolicy()
 
     private func estimate(
+        rawRemainingMeters: Double = 1_500,
         presentedRemainingMeters: Double = 1_200,
+        metersPerPercentagePoint: Double = 100,
         basis: AdaptiveRangeEstimateBasis = .learned,
         confidence: AdaptiveRangeConfidence = .normal,
         socProvenance: BatterySOCProvenance = .authoritativeMeasurement,
         lowSOCConservatismApplied: Bool = false
     ) -> AdaptiveBatteryRangeEstimate {
         AdaptiveBatteryRangeEstimate(
-            rawRemainingMeters: 1_500,
+            rawRemainingMeters: rawRemainingMeters,
             presentedRemainingMeters: presentedRemainingMeters,
-            metersPerPercentagePoint: 100,
+            metersPerPercentagePoint: metersPerPercentagePoint,
             basis: basis,
             confidence: confidence,
             socProvenance: socProvenance,
@@ -84,7 +86,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     @Test("zero remaining range is a legitimate numeric endpoint")
     func zeroRangeIsEligible() {
         let decision = policy.resolve(
-            estimate: estimate(presentedRemainingMeters: 0, confidence: .high),
+            estimate: estimate(rawRemainingMeters: 0, presentedRemainingMeters: 0, confidence: .high),
             vehicleState: liveState
         )
 
@@ -182,13 +184,23 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     }
 
     @Test("retained state cannot hide a malformed presented range")
-    func retainedInvalidRangeIsInvalid() {
+    func retainedInvalidPresentedRangeIsInvalid() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: .infinity, confidence: .high),
             vehicleState: retainedState
         )
 
         #expect(decision == .unavailable(.invalidPresentedRange))
+    }
+
+    @Test("retained state cannot hide a malformed estimate structure")
+    func retainedInvalidStructureIsInvalid() {
+        let decision = policy.resolve(
+            estimate: estimate(rawRemainingMeters: -1, confidence: .high),
+            vehicleState: retainedState
+        )
+
+        #expect(decision == .unavailable(.invalidEstimateStructure))
     }
 
     @Test("no confirmed vehicle data is unavailable even while connection says connected")
@@ -236,5 +248,75 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
 
         #expect(negative == .unavailable(.invalidPresentedRange))
         #expect(nonFinite == .unavailable(.invalidPresentedRange))
+    }
+
+    @Test("negative or non-finite raw range is structurally invalid")
+    func invalidRawRangeIsUnavailable() {
+        let negative = policy.resolve(
+            estimate: estimate(rawRemainingMeters: -1, confidence: .high),
+            vehicleState: liveState
+        )
+        let nonFinite = policy.resolve(
+            estimate: estimate(rawRemainingMeters: .infinity, confidence: .high),
+            vehicleState: liveState
+        )
+
+        #expect(negative == .unavailable(.invalidEstimateStructure))
+        #expect(nonFinite == .unavailable(.invalidEstimateStructure))
+    }
+
+    @Test("non-positive or non-finite efficiency is structurally invalid")
+    func invalidEfficiencyIsUnavailable() {
+        let zero = policy.resolve(
+            estimate: estimate(metersPerPercentagePoint: 0, confidence: .high),
+            vehicleState: liveState
+        )
+        let nonFinite = policy.resolve(
+            estimate: estimate(metersPerPercentagePoint: .infinity, confidence: .high),
+            vehicleState: liveState
+        )
+
+        #expect(zero == .unavailable(.invalidEstimateStructure))
+        #expect(nonFinite == .unavailable(.invalidEstimateStructure))
+    }
+
+    @Test("raw range cannot exceed the current full-charge equivalent")
+    func rawRangeAboveFullChargeEquivalentIsUnavailable() {
+        let decision = policy.resolve(
+            estimate: estimate(
+                rawRemainingMeters: 10_001,
+                presentedRemainingMeters: 9_000,
+                metersPerPercentagePoint: 100,
+                confidence: .high
+            ),
+            vehicleState: liveState
+        )
+
+        #expect(decision == .unavailable(.invalidEstimateStructure))
+    }
+
+    @Test("provisional estimates cannot claim learned confidence")
+    func provisionalNonLearningConfidenceIsUnavailable() {
+        let decision = policy.resolve(
+            estimate: estimate(basis: .provisionalSeed, confidence: .normal),
+            vehicleState: liveState
+        )
+
+        #expect(decision == .unavailable(.invalidEstimateStructure))
+    }
+
+    @Test("presented range may legitimately exceed the current full-charge equivalent during smoothing")
+    func presentedRangeIsNotIncorrectlyCapped() {
+        let decision = policy.resolve(
+            estimate: estimate(
+                rawRemainingMeters: 5_000,
+                presentedRemainingMeters: 12_000,
+                metersPerPercentagePoint: 100,
+                confidence: .high
+            ),
+            vehicleState: liveState
+        )
+
+        #expect(decision == .valueMeters(12_000))
     }
 }
