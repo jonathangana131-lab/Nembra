@@ -1,8 +1,9 @@
 # Observed peak-speed evidence
 
 Date: 2026-08-06
-Worker: `chat-p7w3k`
-Lane: `peak-speed-evidence`
+Original worker: `chat-p7w3k`
+V7 recovery worker: `chat-s8k3p`
+Lane: `recover-peak-speed-evidence`
 Primary hardware-validation target: **AOVOPRO ES80**
 
 This slice establishes a truthful core boundary for future top-speed displays, ride details, and performance tests.
@@ -66,16 +67,19 @@ A known observation interruption does not erase a speed measurement that was gen
 - known interruption count;
 - `PeakSpeedObservationContinuity`.
 
-`uninterruptedAcceptedObservations` means no selected-source quality rejection or explicit interruption was recorded in this accumulator. It still does **not** claim continuous physical sampling between packets.
+The public continuity cases intentionally describe only **recorded selected-source evidence loss**:
 
-`partialAcceptedObservations` means at least one selected-source quality rejection or explicit observation interruption occurred. The retained peak remains a truthful observed value, but Nembra must not imply complete observation coverage for the session.
+- `.noRecordedSelectedSourceEvidenceLoss` means no selected-source quality rejection or explicit interruption was recorded in this accumulator. It still does **not** claim continuous physical sampling between packets.
+- `.partialSelectedSourceEvidence` means at least one selected-source quality rejection or explicit observation interruption occurred. The retained peak remains a truthful observed value, but Nembra must not imply complete observation coverage for the session.
+
+These names are the actual public NembraCore API. Tests use the same cases directly; there is no test-only compatibility vocabulary masking stale consumer terminology.
 
 ## Quality rejection behavior
 
 When the policy requests speed accuracy:
 
-- missing accuracy is rejected and marks accepted-observation continuity partial once evidence exists;
-- accuracy worse than the injected ceiling is rejected and marks continuity partial;
+- missing accuracy is rejected and marks selected-source evidence partial once peak evidence exists;
+- accuracy worse than the injected ceiling is rejected and marks evidence partial;
 - the rejected observation still advances selected-source ordering evidence;
 - a later monotonic good sample can still establish/update observed peak evidence.
 
@@ -83,13 +87,13 @@ A wrong-source sample is different: it was never part of the selected source's e
 
 ## Relationship to telemetry quality
 
-The separate telemetry-quality-gate worker evaluates measured source cadence, jitter, latency, timestamp coverage, rejected fraction, and empirical speed resolution against caller-supplied requirements.
+The separate telemetry-quality-gate subsystem evaluates measured source cadence, jitter, latency, timestamp coverage, rejected fraction, and empirical speed resolution against caller-supplied requirements.
 
 That is intentionally separate from this accumulator:
 
 - telemetry benchmarking answers how the source behaved;
 - telemetry quality policy answers whether that behavior meets a feature's requirements;
-- peak-speed evidence answers what the highest accepted measurement was and whether known observation continuity was lost.
+- peak-speed evidence answers what the highest accepted measurement was and whether known selected-source evidence loss was recorded.
 
 A future top-speed feature should combine these boundaries rather than hiding weak cadence inside a single impressive number.
 
@@ -111,10 +115,10 @@ Repository tests cover:
 - GPS accuracy missing/exceeded handling;
 - rejected-quality observations still preventing older timestamps from becoming fresh;
 - transactional stale-timestamp rejection;
-- interruption preserving the measured peak while marking continuity partial;
-- reset clearing prior peak/continuity state.
+- interruption preserving the measured peak while marking selected-source evidence partial;
+- reset clearing prior peak/evidence-loss state.
 
-The revised focused Swift 6.2.1 package using the same core semantics passed **7/7 grouped tests** after the rejected-quality ordering hardening. Repository-wide exact-head NembraCore/Xcode 27 QA is still required before merge.
+The predecessor focused Swift 6.2.1 package passed **7/7 grouped tests** after the rejected-quality ordering hardening. The v7 recovery also removes stale test-only continuity aliases so repository tests compile against the real public case names directly. Exact-final-head NembraCore/Xcode 27 QA is still required before merge.
 
 ## Hardware validation still required
 
