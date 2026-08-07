@@ -100,6 +100,42 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         )
     }
 
+    /// Bridges the durable ride-level live-distance aggregate only when its
+    /// session identity matches the completed ride. This mechanically prevents
+    /// valid integrated evidence from ride A being paired with ride B merely
+    /// because both scalar distance/coverage values are individually valid.
+    public init(
+        completedRide: CompletedRideEvidence,
+        odometerCoverage: RideDistanceCoverage,
+        gpsRouteCoverage: RideDistanceCoverage,
+        liveDistanceAggregate: RideLiveDistanceAggregate?,
+        transportGapOccurred: Bool
+    ) throws {
+        if let liveDistanceAggregate {
+            guard liveDistanceAggregate.rideSessionID == completedRide.sessionID else {
+                throw RideDistanceReconciliationError.invalidEvidence
+            }
+
+            try self.init(
+                completedRide: completedRide,
+                odometerCoverage: odometerCoverage,
+                gpsRouteCoverage: gpsRouteCoverage,
+                liveIntegratedDistanceMeters: liveDistanceAggregate.distanceMeters,
+                liveIntegratedCoverage: liveDistanceAggregate.coverage,
+                transportGapOccurred: transportGapOccurred
+            )
+        } else {
+            try self.init(
+                completedRide: completedRide,
+                odometerCoverage: odometerCoverage,
+                gpsRouteCoverage: gpsRouteCoverage,
+                liveIntegratedDistanceMeters: nil,
+                liveIntegratedCoverage: .unknown,
+                transportGapOccurred: transportGapOccurred
+            )
+        }
+    }
+
     public var scooterOdometerDeltaMeters: Double? {
         guard let start = startingOdometerKilometers,
               let end = endingOdometerKilometers else {
@@ -152,10 +188,10 @@ public struct RideDistanceEvidence: Equatable, Sendable {
     }
 }
 
-/// Reconciliation behavior is injected rather than hard-coded as MAXSHOT truth.
-/// Hardware/field validation will decide the production source order and
-/// tolerance values. Every known source must be ranked explicitly so evidence is
-/// never silently ignored by an incomplete priority list.
+/// Reconciliation behavior is injected rather than hard-coded as physical
+/// scooter truth. Hardware/field validation will decide the production source
+/// order and tolerance values. Every known source must be ranked explicitly so
+/// evidence is never silently ignored by an incomplete priority list.
 public struct RideDistanceReconciliationPolicy: Equatable, Sendable {
     public let sourcePriority: [RideDistanceSource]
     public let absoluteAgreementToleranceMeters: Double
