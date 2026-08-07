@@ -11,14 +11,17 @@ struct AccelerationTimingTests {
         provenance: SpeedTelemetryProvenance = .absoluteMeasurement,
         metersPerSecond: Double,
         seconds: Double,
-        accuracy: Double? = nil
+        accuracy: Double? = nil,
+        receivedAtDate: Date? = nil,
+        measurementDate: Date? = nil
     ) throws -> SpeedTelemetrySample {
         try SpeedTelemetrySample(
             source: source,
             provenance: provenance,
             metersPerSecond: metersPerSecond,
             receivedAtUptimeNanoseconds: UInt64(seconds * 1_000_000_000),
-            receivedAtDate: epoch,
+            receivedAtDate: receivedAtDate ?? epoch,
+            measurementDate: measurementDate,
             speedAccuracyMetersPerSecond: accuracy
         )
     }
@@ -31,8 +34,8 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .invalidated(.rollingStart))
     }
 
-    @Test("completed run reports packet-bounded elapsed time instead of fake exact precision")
-    func reportsTimingBounds() throws {
+    @Test("completed run keeps first-reach lower bound conservative on receive clock")
+    func reportsConservativeReceiveClockEnvelope() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
         var evaluator = AccelerationRunEvaluator(policy: policy)
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
@@ -44,18 +47,84 @@ struct AccelerationTimingTests {
             Issue.record("Expected completed run")
             return
         }
-        #expect(result.launchWindow == AccelerationTimingWindow(
+        #expect(result.timingBasis == .receiveObservationUptime)
+        #expect(result.launchObservationWindow == AccelerationTimingWindow(
             earliestUptimeNanoseconds: 1_000_000_000,
             latestUptimeNanoseconds: 2_000_000_000
         ))
-        #expect(result.targetCrossingWindow == AccelerationTimingWindow(
+        #expect(result.targetTransitionObservationWindow == AccelerationTimingWindow(
             earliestUptimeNanoseconds: 3_000_000_000,
             latestUptimeNanoseconds: 4_000_000_000
         ))
-        #expect(result.elapsedLowerBoundSeconds == 1)
-        #expect(result.elapsedUpperBoundSeconds == 3)
-        #expect(result.timingUncertaintySeconds == 2)
+        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
+        #expect(result.firstReachReceiveClockUpperBoundSeconds == 3)
+        #expect(result.firstReachReceiveClockEnvelopeWidthSeconds == 3)
         #expect(result.timingEvidenceSampleCount == 4)
+    }
+
+    @Test("below-target samples do not manufacture a positive first-reach lower bound")
+    func earlierUnsampledTargetExcursionRemainsPossible() throws {
+        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 10)
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+        evaluator.accept(try sample(metersPerSecond: 0, seconds: 0))
+        evaluator.accept(try sample(metersPerSecond: 2, seconds: 1))
+        evaluator.accept(try sample(metersPerSecond: 9, seconds: 2))
+        evaluator.accept(try sample(metersPerSecond: 8, seconds: 3))
+        evaluator.accept(try sample(metersPerSecond: 10, seconds: 4))
+
+        guard case let .completed(result) = evaluator.state else {
+            Issue.record("Expected completed run")
+            return
+        }
+
+        #expect(result.targetTransitionObservationWindow == AccelerationTimingWindow(
+            earliestUptimeNanoseconds: 3_000_000_000,
+            latestUptimeNanoseconds: 4_000_000_000
+        ))
+        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
+        #expect(result.firstReachReceiveClockUpperBoundSeconds == 4)
+    }
+
+    @Test("measurement dates and delivery latency do not silently become the timing basis")
+    func receiveUptimeRemainsExplicitTimingBasis() throws {
+        let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
+        var evaluator = AccelerationRunEvaluator(policy: policy)
+
+        evaluator.accept(try sample(
+            metersPerSecond: 0,
+            seconds: 1,
+            receivedAtDate: epoch.addingTimeInterval(1.5),
+            measurementDate: epoch.addingTimeInterval(1.0)
+        ))
+        evaluator.accept(try sample(
+            metersPerSecond: 2,
+            seconds: 2,
+            receivedAtDate: epoch.addingTimeInterval(2.4),
+            measurementDate: epoch.addingTimeInterval(1.2)
+        ))
+        evaluator.accept(try sample(
+            metersPerSecond: 6,
+            seconds: 3,
+            receivedAtDate: epoch.addingTimeInterval(3.1),
+            measurementDate: epoch.addingTimeInterval(2.5)
+        ))
+
+        guard case let .completed(result) = evaluator.state else {
+            Issue.record("Expected completed run")
+            return
+        }
+
+        #expect(result.timingBasis == .receiveObservationUptime)
+        #expect(result.launchObservationWindow == AccelerationTimingWindow(
+            earliestUptimeNanoseconds: 1_000_000_000,
+            latestUptimeNanoseconds: 2_000_000_000
+        ))
+        #expect(result.targetTransitionObservationWindow == AccelerationTimingWindow(
+            earliestUptimeNanoseconds: 2_000_000_000,
+            latestUptimeNanoseconds: 3_000_000_000
+        ))
+        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
+        #expect(result.firstReachReceiveClockUpperBoundSeconds == 2)
     }
 
     @Test("timing evidence count excludes superseded stationary anchors")
@@ -71,15 +140,15 @@ struct AccelerationTimingTests {
             Issue.record("Expected completed run")
             return
         }
-        #expect(result.launchWindow == AccelerationTimingWindow(
+        #expect(result.launchObservationWindow == AccelerationTimingWindow(
             earliestUptimeNanoseconds: 2_000_000_000,
             latestUptimeNanoseconds: 3_000_000_000
         ))
         #expect(result.timingEvidenceSampleCount == 3)
     }
 
-    @Test("a sparse sample that already crosses target remains a bounded result")
-    func sparseImmediateTargetCrossing() throws {
+    @Test("a sparse sample that already reaches target remains observation-bounded")
+    func sparseImmediateTargetObservation() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
         var evaluator = AccelerationRunEvaluator(policy: policy)
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 10))
@@ -89,9 +158,9 @@ struct AccelerationTimingTests {
             Issue.record("Expected completed run")
             return
         }
-        #expect(abs(result.elapsedLowerBoundSeconds - 0) < 0.000_001)
-        #expect(abs(result.elapsedUpperBoundSeconds - 0.4) < 0.000_001)
-        #expect(abs(result.timingUncertaintySeconds - 0.4) < 0.000_001)
+        #expect(abs(result.firstReachReceiveClockLowerBoundSeconds - 0) < 0.000_001)
+        #expect(abs(result.firstReachReceiveClockUpperBoundSeconds - 0.4) < 0.000_001)
+        #expect(abs(result.firstReachReceiveClockEnvelopeWidthSeconds - 0.4) < 0.000_001)
         #expect(result.timingEvidenceSampleCount == 2)
     }
 
