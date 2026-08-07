@@ -35,7 +35,10 @@ struct NavigationArrivalEvidenceRecoveryTests {
         )
     }
 
-    private func policy(count: Int = 3, duration: UInt64 = 2_000) throws -> NavigationArrivalEvidencePolicy {
+    private func policy(
+        count: Int = 3,
+        duration: UInt64 = 2_000
+    ) throws -> NavigationArrivalEvidencePolicy {
         try NavigationArrivalEvidencePolicy(
             maximumFinalStepDistanceRemainingMeters: 5,
             maximumRouteDistanceRemainingMeters: 8,
@@ -60,15 +63,6 @@ struct NavigationArrivalEvidenceRecoveryTests {
             distanceRemainingOnRouteMeters: routeRemaining,
             isProgressAssignmentConfident: confident
         )
-    }
-
-    private func accept(
-        _ observation: NavigationGuidanceProgressObservation,
-        guidance: inout NavigationGuidanceProgressTracker,
-        arrival: inout NavigationArrivalEvidenceTracker
-    ) throws -> NavigationArrivalObservationResult {
-        #expect(try guidance.observe(observation))
-        return try arrival.observeAccepted(observation, resultingGuidanceState: guidance.state)
     }
 
     @Test("policy requires repeated sustained evidence")
@@ -99,9 +93,24 @@ struct NavigationArrivalEvidenceRecoveryTests {
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: token, route: selectedRoute)
 
-        #expect(try accept(try observation(token: token, uptime: 100), guidance: &guidance, arrival: &arrival) == .candidate)
-        #expect(try accept(try observation(token: token, uptime: 1_100), guidance: &guidance, arrival: &arrival) == .candidate)
-        #expect(try accept(try observation(token: token, uptime: 2_100), guidance: &guidance, arrival: &arrival) == .arrived)
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 1_100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 2_100),
+                guidanceTracker: &guidance
+            ) == .arrived
+        )
 
         guard case let .arrived(evidence) = arrival.state else {
             Issue.record("Expected confirmed arrival")
@@ -121,9 +130,34 @@ struct NavigationArrivalEvidenceRecoveryTests {
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: token, route: selectedRoute)
 
-        #expect(try accept(try observation(token: token, uptime: 100), guidance: &guidance, arrival: &arrival) == .candidate)
-        #expect(try accept(try observation(token: token, uptime: 1_100, stepRemaining: 6, routeRemaining: 7), guidance: &guidance, arrival: &arrival) == .awaitingEvidence)
-        #expect(try accept(try observation(token: token, uptime: 2_100, stepRemaining: 4, routeRemaining: 9), guidance: &guidance, arrival: &arrival) == .awaitingEvidence)
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        #expect(
+            try arrival.observe(
+                observation(
+                    token: token,
+                    uptime: 1_100,
+                    stepRemaining: 6,
+                    routeRemaining: 7
+                ),
+                guidanceTracker: &guidance
+            ) == .awaitingEvidence
+        )
+        #expect(
+            try arrival.observe(
+                observation(
+                    token: token,
+                    uptime: 2_100,
+                    stepRemaining: 4,
+                    routeRemaining: 9
+                ),
+                guidanceTracker: &guidance
+            ) == .awaitingEvidence
+        )
     }
 
     @Test("ambiguous progress and known continuity gaps reset an unconfirmed candidate")
@@ -134,31 +168,58 @@ struct NavigationArrivalEvidenceRecoveryTests {
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: token, route: selectedRoute)
 
-        #expect(try accept(try observation(token: token, uptime: 100), guidance: &guidance, arrival: &arrival) == .candidate)
-        #expect(try accept(try observation(token: token, uptime: 1_100, confident: false), guidance: &guidance, arrival: &arrival) == .awaitingEvidence)
-        #expect(try accept(try observation(token: token, uptime: 2_100), guidance: &guidance, arrival: &arrival) == .candidate)
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 1_100, confident: false),
+                guidanceTracker: &guidance
+            ) == .awaitingEvidence
+        )
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 2_100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
         arrival.markKnownContinuityGap()
+        guidance.markKnownContinuityGap()
         #expect(arrival.state == .awaitingEvidence(token: token))
-        #expect(try accept(try observation(token: token, uptime: 4_500), guidance: &guidance, arrival: &arrival) == .candidate)
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 4_500),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
     }
 
-    @Test("replayed accepted observation cannot count twice")
-    func replayIsRejected() throws {
+    @Test("replayed guidance observation cannot enter arrival twice")
+    func replayIsRejectedBySealedGuidanceBoundary() throws {
         let selectedRoute = try route()
         var guidance = NavigationGuidanceProgressTracker()
         let token = try guidance.select(route: selectedRoute)
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: token, route: selectedRoute)
         let sample = try observation(token: token, uptime: 100)
-        #expect(try guidance.observe(sample))
-        let state = guidance.state
-        #expect(try arrival.observeAccepted(sample, resultingGuidanceState: state) == .candidate)
-        #expect(throws: NavigationArrivalEvidenceError.nonMonotonicObservation) {
-            try arrival.observeAccepted(sample, resultingGuidanceState: state)
+
+        #expect(
+            try arrival.observe(sample, guidanceTracker: &guidance) == .candidate
+        )
+        let arrivalBefore = arrival.state
+        let guidanceBefore = guidance.state
+
+        #expect(throws: NavigationGuidanceProgressError.nonMonotonicObservation) {
+            try arrival.observe(sample, guidanceTracker: &guidance)
         }
+        #expect(arrival.state == arrivalBefore)
+        #expect(guidance.state == guidanceBefore)
     }
 
-    @Test("new selection invalidates the old route before the new route has observations")
+    @Test("new same-tracker selection invalidates old observations without mutating current state")
     func reselectionRejectsOldGeneration() throws {
         let firstRoute = try route(name: "First")
         let secondRoute = try route(name: "Second")
@@ -167,37 +228,146 @@ struct NavigationArrivalEvidenceRecoveryTests {
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: firstToken, route: firstRoute)
 
-        let old = try observation(token: firstToken, uptime: 100)
-        #expect(try guidance.observe(old))
-        let oldState = guidance.state
-        #expect(try arrival.observeAccepted(old, resultingGuidanceState: oldState) == .candidate)
+        #expect(
+            try arrival.observe(
+                observation(token: firstToken, uptime: 100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
 
         let secondToken = try guidance.select(route: secondRoute)
         try arrival.select(token: secondToken, route: secondRoute)
-        let before = arrival.state
-        #expect(try arrival.observeAccepted(old, resultingGuidanceState: oldState) == .ignoredSupersededSelection)
-        #expect(arrival.state == before)
+        let arrivalBefore = arrival.state
+        let guidanceBefore = guidance.state
+
+        #expect(
+            try arrival.observe(
+                observation(token: firstToken, uptime: 200),
+                guidanceTracker: &guidance
+            ) == .ignoredSupersededSelection
+        )
+        #expect(arrival.state == arrivalBefore)
+        #expect(guidance.state == guidanceBefore)
     }
 
-    @Test("accepted observation must match the exact resulting guidance state")
-    func mismatchedGuidanceStateFailsTransactionally() throws {
+    @Test("future same-tracker observation requires explicit arrival reselection")
+    func futureSelectionFailsClosed() throws {
+        let firstRoute = try route(name: "First")
+        let secondRoute = try route(name: "Second")
+        var guidance = NavigationGuidanceProgressTracker()
+        let firstToken = try guidance.select(route: firstRoute)
+        var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
+        try arrival.select(token: firstToken, route: firstRoute)
+
+        let secondToken = try guidance.select(route: secondRoute)
+        let arrivalBefore = arrival.state
+        let guidanceBefore = guidance.state
+
+        #expect(throws: NavigationArrivalEvidenceError.observationForFutureSelection) {
+            try arrival.observe(
+                observation(token: secondToken, uptime: 100),
+                guidanceTracker: &guidance
+            )
+        }
+        #expect(arrival.state == arrivalBefore)
+        #expect(guidance.state == guidanceBefore)
+    }
+
+    @Test("cross-tracker selection order is never inferred from sequence")
+    func recreatedTrackerRequiresExplicitClearBeforeRebind() throws {
+        let selectedRoute = try route()
+        var firstGuidance = NavigationGuidanceProgressTracker(initialSelectionSequence: 99)
+        var secondGuidance = NavigationGuidanceProgressTracker()
+        let firstToken = try firstGuidance.select(route: selectedRoute)
+        let secondToken = try secondGuidance.select(route: selectedRoute)
+        #expect(firstToken.sequence == 100)
+        #expect(secondToken.sequence == 1)
+        #expect(!firstToken.sharesTrackerGeneration(with: secondToken))
+
+        var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
+        try arrival.select(token: firstToken, route: selectedRoute)
+
+        #expect(throws: NavigationArrivalEvidenceError.selectionTrackerGenerationMismatch) {
+            try arrival.select(token: secondToken, route: selectedRoute)
+        }
+
+        arrival.clearSelection()
+        #expect(try arrival.select(token: secondToken, route: selectedRoute))
+        #expect(arrival.state == .awaitingEvidence(token: secondToken))
+    }
+
+    @Test("cross-tracker observation fails closed even when its sequence looks older")
+    func recreatedTrackerObservationIsNotCalledSuperseded() throws {
+        let selectedRoute = try route()
+        var firstGuidance = NavigationGuidanceProgressTracker(initialSelectionSequence: 99)
+        var secondGuidance = NavigationGuidanceProgressTracker()
+        let firstToken = try firstGuidance.select(route: selectedRoute)
+        let secondToken = try secondGuidance.select(route: selectedRoute)
+
+        var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
+        try arrival.select(token: firstToken, route: selectedRoute)
+        let arrivalBefore = arrival.state
+        let guidanceBefore = secondGuidance.state
+
+        #expect(throws: NavigationArrivalEvidenceError.observationTrackerGenerationMismatch) {
+            try arrival.observe(
+                observation(token: secondToken, uptime: 100),
+                guidanceTracker: &secondGuidance
+            )
+        }
+        #expect(arrival.state == arrivalBefore)
+        #expect(secondGuidance.state == guidanceBefore)
+    }
+
+    @Test("divergent copied trackers with equal sequence are ambiguous rather than ordered")
+    func divergentCopyEqualSequenceFailsClosed() throws {
+        let selectedRoute = try route()
+        var guidance = NavigationGuidanceProgressTracker()
+        var divergent = guidance
+        let currentToken = try guidance.select(route: selectedRoute)
+        let divergentToken = try divergent.select(route: selectedRoute)
+        #expect(currentToken.sequence == divergentToken.sequence)
+        #expect(currentToken.sharesTrackerGeneration(with: divergentToken))
+        #expect(currentToken != divergentToken)
+
+        var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
+        try arrival.select(token: currentToken, route: selectedRoute)
+        let arrivalBefore = arrival.state
+        let divergentBefore = divergent.state
+
+        #expect(throws: NavigationArrivalEvidenceError.selectionOrderAmbiguous) {
+            try arrival.observe(
+                observation(token: divergentToken, uptime: 100),
+                guidanceTracker: &divergent
+            )
+        }
+        #expect(arrival.state == arrivalBefore)
+        #expect(divergent.state == divergentBefore)
+    }
+
+    @Test("guidance rejection and arrival rejection commit neither reducer")
+    func compositeAdmissionIsTransactional() throws {
         let selectedRoute = try route()
         var guidance = NavigationGuidanceProgressTracker()
         let token = try guidance.select(route: selectedRoute)
         var arrival = NavigationArrivalEvidenceTracker(policy: try policy())
         try arrival.select(token: token, route: selectedRoute)
 
-        let first = try observation(token: token, uptime: 100)
-        #expect(try guidance.observe(first))
-        let firstState = guidance.state
-        #expect(try arrival.observeAccepted(first, resultingGuidanceState: firstState) == .candidate)
-        let before = arrival.state
+        let arrivalBefore = arrival.state
+        let guidanceBefore = guidance.state
+        let badStep = try observation(
+            token: token,
+            uptime: 100,
+            stepIndex: 99,
+            stepRemaining: 4,
+            routeRemaining: 6
+        )
 
-        let next = try observation(token: token, uptime: 200, stepRemaining: 3, routeRemaining: 5)
-        #expect(throws: NavigationArrivalEvidenceError.observationStateMismatch) {
-            try arrival.observeAccepted(next, resultingGuidanceState: firstState)
+        #expect(throws: NavigationGuidanceProgressError.invalidStepIndex) {
+            try arrival.observe(badStep, guidanceTracker: &guidance)
         }
-        #expect(arrival.state == before)
+        #expect(arrival.state == arrivalBefore)
+        #expect(guidance.state == guidanceBefore)
     }
 
     @Test("confirmed arrival remains latched for its selection")
@@ -205,15 +375,38 @@ struct NavigationArrivalEvidenceRecoveryTests {
         let selectedRoute = try route()
         var guidance = NavigationGuidanceProgressTracker()
         let token = try guidance.select(route: selectedRoute)
-        var arrival = NavigationArrivalEvidenceTracker(policy: try policy(count: 2, duration: 1_000))
+        var arrival = NavigationArrivalEvidenceTracker(
+            policy: try policy(count: 2, duration: 1_000)
+        )
         try arrival.select(token: token, route: selectedRoute)
 
-        _ = try accept(try observation(token: token, uptime: 100), guidance: &guidance, arrival: &arrival)
-        #expect(try accept(try observation(token: token, uptime: 1_100), guidance: &guidance, arrival: &arrival) == .arrived)
+        _ = try arrival.observe(
+            observation(token: token, uptime: 100),
+            guidanceTracker: &guidance
+        )
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 1_100),
+                guidanceTracker: &guidance
+            ) == .arrived
+        )
+
         let confirmed = arrival.state
         arrival.markKnownContinuityGap()
+        guidance.markKnownContinuityGap()
         #expect(arrival.state == confirmed)
-        #expect(try accept(try observation(token: token, uptime: 2_100, stepRemaining: 20, routeRemaining: 20), guidance: &guidance, arrival: &arrival) == .alreadyArrived)
+
+        #expect(
+            try arrival.observe(
+                observation(
+                    token: token,
+                    uptime: 2_100,
+                    stepRemaining: 20,
+                    routeRemaining: 20
+                ),
+                guidanceTracker: &guidance
+            ) == .alreadyArrived
+        )
         #expect(arrival.state == confirmed)
     }
 }

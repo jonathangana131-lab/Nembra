@@ -57,10 +57,11 @@ struct NavigationArrivalBackwardProgressRegressionTests {
             distanceRemainingOnRouteMeters: 6,
             isProgressAssignmentConfident: true
         )
-        #expect(try guidance.observe(candidateSample))
         #expect(
-            try arrival.observeAccepted(candidateSample, resultingGuidanceState: guidance.state)
-                == .candidate
+            try arrival.observe(
+                candidateSample,
+                guidanceTracker: &guidance
+            ) == .candidate
         )
 
         let backwardSample = try NavigationGuidanceProgressObservation(
@@ -71,17 +72,18 @@ struct NavigationArrivalBackwardProgressRegressionTests {
             distanceRemainingOnRouteMeters: 20,
             isProgressAssignmentConfident: true
         )
-        #expect(try guidance.observe(backwardSample))
+        #expect(
+            try arrival.observe(
+                backwardSample,
+                guidanceTracker: &guidance
+            ) == .awaitingEvidence
+        )
         #expect(
             guidance.state == .unavailable(
                 token: token,
                 route: selectedRoute,
                 reason: .ambiguousProgress
             )
-        )
-        #expect(
-            try arrival.observeAccepted(backwardSample, resultingGuidanceState: guidance.state)
-                == .awaitingEvidence
         )
         #expect(arrival.state == .awaitingEvidence(token: token))
     }

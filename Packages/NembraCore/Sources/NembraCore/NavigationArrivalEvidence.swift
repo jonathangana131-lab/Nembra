@@ -1,8 +1,12 @@
 public enum NavigationArrivalEvidenceError: Error, Equatable, Sendable {
     case invalidPolicy
     case selectionIdentityMismatch
+    case selectionTrackerGenerationMismatch
+    case selectionOrderAmbiguous
     case observationWithoutSelectedRoute
+    case observationTrackerGenerationMismatch
     case observationForFutureSelection
+    case guidanceRejectedCurrentSelection
     case observationStateMismatch
     case nonMonotonicObservation
     case observationCountExhausted
@@ -66,8 +70,20 @@ public enum NavigationArrivalObservationResult: Equatable, Sendable {
 }
 
 /// Process-local, fail-closed destination-arrival evidence for one selected
-/// navigation route generation. This reducer never completes rides, mutates
-/// measured distance, or converts provider route distance into vehicle telemetry.
+/// navigation route generation.
+///
+/// Raw guidance observations are admitted through the supplied
+/// `NavigationGuidanceProgressTracker` on a value copy. Arrival consumes only
+/// the tracker's sealed accepted-observation receipt, then both value-type
+/// reducers commit together. A rejected/replayed guidance callback therefore
+/// cannot be paired with a separately copied state and promoted into arrival
+/// evidence.
+///
+/// `NavigationGuidanceSelectionToken.sequence` is compared only when the two
+/// tokens share one tracker generation. Cross-generation ordering is unknown;
+/// same-generation equal-sequence but unequal identities are ambiguous and fail
+/// closed. This reducer never completes rides, mutates measured distance, or
+/// converts provider route distance into vehicle telemetry.
 public struct NavigationArrivalEvidenceTracker: Sendable {
     public private(set) var state: NavigationArrivalEvidenceState = .idle
 
@@ -86,14 +102,23 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         route: NavigationRouteSnapshot
     ) throws -> Bool {
         if let selectedToken {
-            if token.sequence < selectedToken.sequence {
-                return false
-            }
             if token == selectedToken {
                 guard selectedRoute == route else {
                     throw NavigationArrivalEvidenceError.selectionIdentityMismatch
                 }
                 return true
+            }
+
+            guard token.sharesTrackerGeneration(with: selectedToken) else {
+                throw NavigationArrivalEvidenceError.selectionTrackerGenerationMismatch
+            }
+
+            if token.sequence < selectedToken.sequence {
+                return false
+            }
+
+            guard token.sequence > selectedToken.sequence else {
+                throw NavigationArrivalEvidenceError.selectionOrderAmbiguous
             }
         }
 
@@ -104,25 +129,104 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         return true
     }
 
+    /// Atomically advances guidance and arrival for one raw progress
+    /// observation. The caller cannot supply or forge a separately copied
+    /// guidance state: only the exact state bound into the guidance tracker's
+    /// sealed acceptance receipt is eligible.
     @discardableResult
-    public mutating func observeAccepted(
+    public mutating func observe(
         _ observation: NavigationGuidanceProgressObservation,
-        resultingGuidanceState: NavigationGuidanceProgressState
+        guidanceTracker: inout NavigationGuidanceProgressTracker
+    ) throws -> NavigationArrivalObservationResult {
+        guard let selectedToken, selectedRoute != nil else {
+            throw NavigationArrivalEvidenceError.observationWithoutSelectedRoute
+        }
+
+        let relationship = try relationship(
+            of: observation.selectionToken,
+            to: selectedToken
+        )
+
+        switch relationship {
+        case .superseded:
+            return .ignoredSupersededSelection
+        case .future:
+            throw NavigationArrivalEvidenceError.observationForFutureSelection
+        case .current:
+            break
+        }
+
+        var guidanceCandidate = guidanceTracker
+        guard let receipt = try guidanceCandidate.acceptanceReceipt(for: observation) else {
+            throw NavigationArrivalEvidenceError.guidanceRejectedCurrentSelection
+        }
+
+        var arrivalCandidate = self
+        let result = try arrivalCandidate.consumeAccepted(receipt)
+        guidanceTracker = guidanceCandidate
+        self = arrivalCandidate
+        return result
+    }
+
+    public mutating func markKnownContinuityGap() {
+        guard let selectedToken else { return }
+        guard case .arrived = state else {
+            state = .awaitingEvidence(token: selectedToken)
+            return
+        }
+    }
+
+    public mutating func clearSelection() {
+        selectedToken = nil
+        selectedRoute = nil
+        lastAcceptedObservationUptimeNanoseconds = nil
+        state = .idle
+    }
+
+    private enum SelectionRelationship {
+        case current
+        case superseded
+        case future
+    }
+
+    private func relationship(
+        of token: NavigationGuidanceSelectionToken,
+        to selectedToken: NavigationGuidanceSelectionToken
+    ) throws -> SelectionRelationship {
+        if token == selectedToken {
+            return .current
+        }
+
+        guard token.sharesTrackerGeneration(with: selectedToken) else {
+            throw NavigationArrivalEvidenceError.observationTrackerGenerationMismatch
+        }
+
+        if token.sequence < selectedToken.sequence {
+            return .superseded
+        }
+
+        if token.sequence > selectedToken.sequence {
+            return .future
+        }
+
+        throw NavigationArrivalEvidenceError.selectionOrderAmbiguous
+    }
+
+    private mutating func consumeAccepted(
+        _ receipt: NavigationGuidanceAcceptedObservationReceipt
     ) throws -> NavigationArrivalObservationResult {
         guard let selectedToken, let selectedRoute else {
             throw NavigationArrivalEvidenceError.observationWithoutSelectedRoute
         }
 
-        if observation.selectionToken.sequence < selectedToken.sequence {
-            return .ignoredSupersededSelection
-        }
+        let observation = receipt.observation
         guard observation.selectionToken == selectedToken else {
-            throw NavigationArrivalEvidenceError.observationForFutureSelection
+            throw NavigationArrivalEvidenceError.observationStateMismatch
         }
 
         let qualification = try qualification(
             for: observation,
-            resultingGuidanceState: resultingGuidanceState,
+            resultingGuidanceState: receipt.resultingState,
             selectedRoute: selectedRoute
         )
 
@@ -165,7 +269,9 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             )
         }
 
-        let sustainedDuration = candidate.latestQualifyingObservationUptimeNanoseconds - candidate.firstQualifyingObservationUptimeNanoseconds
+        let sustainedDuration =
+            candidate.latestQualifyingObservationUptimeNanoseconds
+            - candidate.firstQualifyingObservationUptimeNanoseconds
         lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
 
         guard candidate.qualifyingObservationCount >= policy.minimumQualifyingObservationCount,
@@ -183,21 +289,6 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             )
         )
         return .arrived
-    }
-
-    public mutating func markKnownContinuityGap() {
-        guard let selectedToken else { return }
-        guard case .arrived = state else {
-            state = .awaitingEvidence(token: selectedToken)
-            return
-        }
-    }
-
-    public mutating func clearSelection() {
-        selectedToken = nil
-        selectedRoute = nil
-        lastAcceptedObservationUptimeNanoseconds = nil
-        state = .idle
     }
 
     private func qualification(
@@ -229,10 +320,13 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
                 throw NavigationArrivalEvidenceError.observationStateMismatch
             }
 
-            let isFinalStep = progress.currentStepIndex == route.steps.index(before: route.steps.endIndex)
-            return isFinalStep &&
-                progress.distanceRemainingOnStepMeters <= policy.maximumFinalStepDistanceRemainingMeters &&
-                progress.distanceRemainingOnRouteMeters <= policy.maximumRouteDistanceRemainingMeters
+            let isFinalStep =
+                progress.currentStepIndex == route.steps.index(before: route.steps.endIndex)
+            return isFinalStep
+                && progress.distanceRemainingOnStepMeters
+                    <= policy.maximumFinalStepDistanceRemainingMeters
+                && progress.distanceRemainingOnRouteMeters
+                    <= policy.maximumRouteDistanceRemainingMeters
         }
     }
 }
