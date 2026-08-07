@@ -21,7 +21,7 @@ struct RideLiveDistanceReconciliationBridgeTests {
         )
     }
 
-    private func aggregate(sessionID: UUID = rideID) throws -> RideLiveDistanceAggregate {
+    private func aggregate(sessionID: UUID) throws -> RideLiveDistanceAggregate {
         let finalized = FinalizedLiveDistanceSegment(
             source: .scooterBluetooth,
             method: .trapezoidalBetweenMeasurements,
@@ -52,7 +52,7 @@ struct RideLiveDistanceReconciliationBridgeTests {
     @Test("same-session aggregate becomes live distance evidence without losing coverage")
     func sameSessionBridges() throws {
         let completed = try completedRide(sessionID: rideID)
-        let liveDistance = try aggregate()
+        let liveDistance = try aggregate(sessionID: rideID)
 
         let evidence = try RideDistanceEvidence(
             completedRide: completed,
