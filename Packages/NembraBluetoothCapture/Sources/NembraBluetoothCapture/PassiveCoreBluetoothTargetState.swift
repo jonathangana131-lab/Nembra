@@ -19,7 +19,7 @@ struct PassiveCoreBluetoothTargetState: Sendable {
         let characteristicUUID: String
     }
 
-    enum DisconnectDisposition: Equatable, Sendable {
+    enum TerminalDisposition: Equatable, Sendable {
         case active(Attempt)
         case retired
         case ignored
@@ -27,7 +27,7 @@ struct PassiveCoreBluetoothTargetState: Sendable {
 
     enum StateError: Swift.Error, Equatable, Sendable {
         case targetNotSelected(UUID)
-        case peripheralAwaitingDisconnect(UUID)
+        case peripheralAwaitingTerminalCallback(UUID)
         case generationExhausted
     }
 
@@ -41,21 +41,28 @@ struct PassiveCoreBluetoothTargetState: Sendable {
 
     mutating func selectTarget(_ identifier: UUID) {
         guard selectedTargetIdentifier != identifier else { return }
+        if let activeAttempt {
+            retiredPeripheralIdentifiers.insert(activeAttempt.peripheralIdentifier)
+        }
         selectedTargetIdentifier = identifier
         activeAttempt = nil
         resetAcquisitionProvenance()
+    }
+
+    func validateCanBeginAttempt(for identifier: UUID) throws {
+        guard !retiredPeripheralIdentifiers.contains(identifier) else {
+            throw StateError.peripheralAwaitingTerminalCallback(identifier)
+        }
+        guard nextGeneration != UInt64.max else {
+            throw StateError.generationExhausted
+        }
     }
 
     mutating func beginAttempt(for identifier: UUID) throws -> Attempt {
         guard selectedTargetIdentifier == identifier else {
             throw StateError.targetNotSelected(identifier)
         }
-        guard !retiredPeripheralIdentifiers.contains(identifier) else {
-            throw StateError.peripheralAwaitingDisconnect(identifier)
-        }
-        guard nextGeneration != UInt64.max else {
-            throw StateError.generationExhausted
-        }
+        try validateCanBeginAttempt(for: identifier)
 
         let attempt = Attempt(
             peripheralIdentifier: identifier,
@@ -72,8 +79,9 @@ struct PassiveCoreBluetoothTargetState: Sendable {
     }
 
     /// Explicit cancellation/timeout retires the attempt until CoreBluetooth
-    /// confirms a disconnect. This prevents a new attempt to the same object from
-    /// being confused with callbacks still draining from the cancelled attempt.
+    /// emits either terminal callback (`didFailToConnect` or disconnect). This
+    /// prevents a new attempt to the same object from being confused with
+    /// callbacks still draining from the cancelled attempt.
     @discardableResult
     mutating func retireActiveAttempt() -> Attempt? {
         guard let activeAttempt else { return nil }
@@ -83,28 +91,12 @@ struct PassiveCoreBluetoothTargetState: Sendable {
         return activeAttempt
     }
 
-    @discardableResult
-    mutating func completeFailedConnection(from identifier: UUID) -> Attempt? {
-        guard let activeAttempt,
-              activeAttempt.peripheralIdentifier == identifier else { return nil }
-        self.activeAttempt = nil
-        resetAcquisitionProvenance()
-        return activeAttempt
+    mutating func completeFailedConnection(from identifier: UUID) -> TerminalDisposition {
+        completeTerminalCallback(from: identifier)
     }
 
-    mutating func completeDisconnect(from identifier: UUID) -> DisconnectDisposition {
-        if let activeAttempt,
-           activeAttempt.peripheralIdentifier == identifier {
-            self.activeAttempt = nil
-            resetAcquisitionProvenance()
-            return .active(activeAttempt)
-        }
-
-        if retiredPeripheralIdentifiers.remove(identifier) != nil {
-            return .retired
-        }
-
-        return .ignored
+    mutating func completeDisconnect(from identifier: UUID) -> TerminalDisposition {
+        completeTerminalCallback(from: identifier)
     }
 
     /// A central-manager reset/power transition invalidates all CoreBluetooth
@@ -134,5 +126,20 @@ struct PassiveCoreBluetoothTargetState: Sendable {
     mutating func resetAcquisitionProvenance() {
         pendingReads.removeAll()
         pendingSubscriptionRequests.removeAll()
+    }
+
+    private mutating func completeTerminalCallback(from identifier: UUID) -> TerminalDisposition {
+        if let activeAttempt,
+           activeAttempt.peripheralIdentifier == identifier {
+            self.activeAttempt = nil
+            resetAcquisitionProvenance()
+            return .active(activeAttempt)
+        }
+
+        if retiredPeripheralIdentifiers.remove(identifier) != nil {
+            return .retired
+        }
+
+        return .ignored
     }
 }
