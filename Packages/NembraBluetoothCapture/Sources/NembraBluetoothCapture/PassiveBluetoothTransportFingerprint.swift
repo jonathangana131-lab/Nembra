@@ -164,9 +164,10 @@ public enum PassiveBluetoothTransportFingerprint {
                 for service in observation.overflowServiceUUIDs {
                     observeService(service, aggregate: &aggregate, segment: &currentSegment)
                 }
-                for service in observation.solicitedServiceUUIDs {
-                    observeService(service, aggregate: &aggregate, segment: &currentSegment)
-                }
+                // Service Solicitation has the opposite GAP role: it names
+                // services the peripheral wants a central to provide. Preserve
+                // those UUIDs in raw advertisement evidence, but never promote
+                // them into peripheral-hosted GATT/candidate-service topology.
                 for service in observation.serviceData.keys {
                     observeService(service, aggregate: &aggregate, segment: &currentSegment)
                 }
