@@ -10,17 +10,25 @@ struct PropulsionGaugeCockpitProjectionTests {
         try PropulsionGaugeIdentity(vehicleID: vehicleID, modeKey: modeKey)
     }
 
-    private func motionPolicy(
+    private func displayModel(
+        identity: PropulsionGaugeIdentity,
         rise: UInt64 = 1_000_000_000,
         fall: UInt64 = 500_000_000,
         stale: UInt64 = 2_000_000_000,
         peakHold: UInt64 = 750_000_000
-    ) throws -> PropulsionGaugeMotionPolicy {
-        try PropulsionGaugeMotionPolicy(
+    ) throws -> PropulsionGaugeDisplayModel {
+        let animationPolicy = try PropulsionGaugeAnimationPolicy(
             riseSettlingDurationNanoseconds: rise,
             fallSettlingDurationNanoseconds: fall,
-            staleAfterNanoseconds: stale,
             acceptedPeakHoldNanoseconds: peakHold
+        )
+        let freshnessPolicy = try PropulsionGaugeFreshnessPolicy(
+            staleAfterNanoseconds: stale
+        )
+        return PropulsionGaugeDisplayModel(
+            identity: identity,
+            animationPolicy: animationPolicy,
+            freshnessPolicy: freshnessPolicy
         )
     }
 
@@ -59,7 +67,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("no accepted measurement keeps every cockpit power surface unavailable")
     func noMeasurementIsUnavailable() throws {
         let identity = try makeIdentity()
-        let model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        let model = try displayModel(identity: identity)
 
         let snapshot = model.cockpitSnapshot(
             atUptimeNanoseconds: 1_000,
@@ -75,7 +83,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("numeric cockpit power stays accepted while the live band interpolates")
     func interpolatedBandNeverBecomesNumericMeasurement() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
 
         try model.accept(simulatorSample(identity: identity, watts: 100, receipt: 10, uptime: 1_000_000_000))
@@ -103,7 +111,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("falling render motion and a held accepted peak stay separate from numeric power")
     func fallingMotionKeepsMeasurementAndPeakDistinct() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         let scale = try PropulsionGaugeScale.simulator(identity: identity, ceilingWatts: 1_000)
 
         try model.accept(simulatorSample(identity: identity, watts: 950, receipt: 20, uptime: 1_000_000_000))
@@ -128,7 +136,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("accepted watts above the learned presentation ceiling remain unclamped numeric evidence")
     func acceptedWattsRemainUnclampedAbovePresentationScale() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         try model.accept(verifiedSample(identity: identity, watts: 1_200, receipt: 30, uptime: 1_000))
 
         let snapshot = model.cockpitSnapshot(
@@ -150,10 +158,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("stale evidence becomes a typed retained measurement and stops live gauge motion")
     func staleEvidenceIsRetainedNotLive() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(
-            identity: identity,
-            policy: try motionPolicy(stale: 1_000_000_000)
-        )
+        var model = try displayModel(identity: identity, stale: 1_000_000_000)
         try model.accept(simulatorSample(identity: identity, watts: 700, receipt: 40, uptime: 1_000_000_000))
 
         let snapshot = model.cockpitSnapshot(
@@ -173,10 +178,57 @@ struct PropulsionGaugeCockpitProjectionTests {
         #expect(snapshot.scaleOrigin == nil)
     }
 
+    @Test("freshness currentness stays independent from animation timing")
+    func freshnessDoesNotFollowAnimationPolicy() throws {
+        let identity = try makeIdentity()
+        var immediateModel = try displayModel(
+            identity: identity,
+            rise: 0,
+            fall: 0,
+            stale: 1_000_000_000,
+            peakHold: 0
+        )
+        var slowModel = try displayModel(
+            identity: identity,
+            rise: 10_000_000_000,
+            fall: 10_000_000_000,
+            stale: 1_000_000_000,
+            peakHold: 10_000_000_000
+        )
+        let sample = try simulatorSample(
+            identity: identity,
+            watts: 500,
+            receipt: 45,
+            uptime: 1_000_000_000
+        )
+        try immediateModel.accept(sample)
+        try slowModel.accept(sample)
+
+        let immediate = immediateModel.cockpitSnapshot(
+            atUptimeNanoseconds: 2_000_000_001,
+            scale: try .simulator(identity: identity, ceilingWatts: 800)
+        )
+        let slow = slowModel.cockpitSnapshot(
+            atUptimeNanoseconds: 2_000_000_001,
+            scale: try .simulator(identity: identity, ceilingWatts: 800)
+        )
+
+        guard case let .retained(immediateMeasurement) = immediate.measurement,
+              case let .retained(slowMeasurement) = slow.measurement else {
+            #expect(Bool(false))
+            return
+        }
+
+        #expect(immediateMeasurement.watts == 500)
+        #expect(slowMeasurement.watts == 500)
+        #expect(immediate.visualPropulsionFraction == nil)
+        #expect(slow.visualPropulsionFraction == nil)
+    }
+
     @Test("explicit interruption hides the primary numeric power instead of manufacturing zero")
     func explicitUnavailabilityHidesPrimaryNumericPower() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         try model.accept(simulatorSample(identity: identity, watts: 420, receipt: 50, uptime: 1_000))
         model.markUnavailable()
 
@@ -195,7 +247,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     func foreignScaleFailsClosed() throws {
         let identity = try makeIdentity()
         let foreignIdentity = try makeIdentity(vehicleID: "different-es80")
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         try model.accept(simulatorSample(identity: identity, watts: 500, receipt: 60, uptime: 1_000))
 
         let snapshot = model.cockpitSnapshot(
@@ -217,7 +269,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("simulator measurement cannot use a verified observed-envelope scale")
     func authorityDomainsDoNotCross() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         try model.accept(simulatorSample(identity: identity, watts: 950, receipt: 70, uptime: 1_000))
 
         let snapshot = model.cockpitSnapshot(
@@ -240,7 +292,7 @@ struct PropulsionGaugeCockpitProjectionTests {
     @Test("render clock before the latest accepted receipt fails the cockpit closed")
     func backwardsRenderClockFailsClosed() throws {
         let identity = try makeIdentity()
-        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        var model = try displayModel(identity: identity)
         try model.accept(simulatorSample(identity: identity, watts: 500, receipt: 80, uptime: 1_000))
 
         let snapshot = model.cockpitSnapshot(
