@@ -83,11 +83,13 @@ Unsigned magnitude is not a signedness claim, scale claim, unit claim, field-mea
 Each evaluable sample preserves:
 
 - #262 marker index;
+- exact marker receipt uptime;
 - exact stock-app displayed reference string;
 - caller-supplied numeric reference;
 - observation index;
 - first and last message receipt uptime;
 - temporal distance and before/same/after relation;
+- exact DP header/value/end byte offsets;
 - exact raw DP value bytes;
 - raw unsigned magnitude;
 - caller-supplied transform result;
@@ -145,7 +147,7 @@ The child suite covers:
 - explicit unused references where the candidate has no hit;
 - preservation of parent conflicting-nearest ambiguity;
 - preservation of parent shared-observation rejection;
-- preservation of first/last receipt timing, temporal distance, and direction;
+- preservation of exact marker receipt, first/last observation receipt, temporal distance/direction, and DP byte offsets;
 - duplicate and out-of-range marker reference rejection;
 - invalid candidate rejection;
 - non-finite input and zero-scale rejection;
