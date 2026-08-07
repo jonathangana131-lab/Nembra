@@ -104,7 +104,7 @@ struct NavigationSimulationDirectionsTests {
         #expect(routes == [expected])
     }
 
-    @Test("simulation provider composes through explicit route selection workflow")
+    @Test("simulation provider composes through generation-bound explicit route selection workflow")
     func experienceComposition() async throws {
         let first = try route(name: "First")
         let second = try route(name: "Second")
@@ -126,7 +126,9 @@ struct NavigationSimulationDirectionsTests {
 
         let planned = try await experience.plan(request())
         #expect(planned.routeSelection?.selectedIndex == nil)
-        let selected = try experience.selectRoute(index: 1)
+        let presentation = NavigationPresentationProjector.snapshot(from: planned)
+        let secondSelectionID = try #require(presentation.routeOptions.last?.selectionID)
+        let selected = try experience.selectRoute(secondSelectionID)
         #expect(selected.selectedRoute == second)
     }
 
