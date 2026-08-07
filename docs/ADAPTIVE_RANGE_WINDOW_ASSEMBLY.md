@@ -115,6 +115,24 @@ Reset also abandons the prior authoritative uptime-ordering baseline, so a genui
 
 Persisted learned efficiency remains owned by `AdaptiveBatteryRangeModel` and its persistence layer. This assembler does not introduce another learned-history store.
 
+## Future app-target source visibility
+
+Nembra's current iOS target does not automatically link every NembraCore SwiftPM source. It manually compiles a selected source subset through `project.pbxproj`. Therefore a package-green range feature is not automatically app-visible.
+
+For a future app consumer of the **current normalized battery-evidence → adaptive-range pipeline**, the minimum software-domain source closure is presently:
+- `BatteryEvidenceDomain.swift` (#34);
+- `BatteryEvidenceStreamValidator.swift` (#34);
+- `AdaptiveBatteryRange.swift` (#40);
+- `AdaptiveBatteryRangeCodableValidation.swift` (#40);
+- `AdaptiveBatteryRangeWindowAssembler.swift` (#54);
+- `BatteryAdaptiveRangeEvidenceAdapter.swift` (#38, including the sealed bridge and public pipeline).
+
+`AdaptiveBatteryRangeCodableValidation.swift` is a **semantic companion**, not merely a symbol dependency. It supplies custom decoding/encoding that routes restored SoC readings, learning windows, policies, and estimates back through validation. If a manual app-target integration compiles `AdaptiveBatteryRange.swift` while omitting this companion, Swift can still synthesize `Codable`; the app may compile while silently losing those restore guards. A local Swift compile probe reproduced that behavior: invalid JSON decoded when the companion extension was absent and was rejected when it was compiled.
+
+If an app consumer also persists learned range state, the accepted descendant of #16's `AdaptiveBatteryRangePersistence.swift` becomes an additional source dependency. If a future production path constructs `BatteryEvidenceObservation` from a later accepted physical battery transport/authority chain, include the exact accepted upstream sources that path uses as well; this six-file software closure does **not** prove physical ES80 telemetry.
+
+Any `project.pbxproj` wiring must be owned by the active Class-A integration worker. This Class-B range lane deliberately records the closure but does not race the shared project file.
+
 ## Explicit non-goals
 
 This slice does not:
