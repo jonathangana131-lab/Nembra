@@ -96,20 +96,19 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
 
 public extension PropulsionGaugeDisplayModel {
     /// Projects one cockpit snapshot while keeping accepted-measurement truth and display-clock motion separate.
+    /// The canonical frame is evaluated exactly once per call so a 60 Hz cockpit does not duplicate
+    /// interpolation work merely to recover the accepted numeric value.
     func cockpitSnapshot(
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?,
         policy cockpitPolicy: PropulsionGaugeCockpitPolicy
     ) -> PropulsionGaugeCockpitSnapshot {
         let frame = frame(atUptimeNanoseconds: now, scale: scale)
-        let accepted = accessibilitySnapshot(atUptimeNanoseconds: now, scale: scale)
+        let measurement = cockpitMeasurement(from: frame)
 
-        let measurement = cockpitMeasurement(from: accepted)
-
-        // If the accepted projection itself cannot produce a usable measurement for what otherwise
-        // looks like a live/retained frame, fail the whole cockpit surface closed rather than showing
-        // moving presentation state with no accepted numeric truth behind it.
-        guard measurement != .unavailable || accepted.availability == .unavailable else {
+        // A live/retained frame must carry complete accepted provenance. If it does not, fail the whole
+        // cockpit surface closed rather than showing moving presentation state without accepted truth.
+        guard measurement != .unavailable || frame.availability == .unavailable else {
             return PropulsionGaugeCockpitSnapshot(
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
@@ -120,7 +119,7 @@ public extension PropulsionGaugeDisplayModel {
             )
         }
 
-        guard accepted.availability == .live else {
+        guard frame.availability == .live else {
             return PropulsionGaugeCockpitSnapshot(
                 measurement: measurement,
                 visualPropulsionFraction: nil,
@@ -131,8 +130,8 @@ public extension PropulsionGaugeDisplayModel {
             )
         }
 
-        let acceptedFraction = accepted.acceptedObservedScaleFraction
-        let scaleOrigin = accepted.scaleOrigin
+        let acceptedFraction = acceptedObservedScaleFraction(from: frame, scale: scale)
+        let scaleOrigin = acceptedFraction == nil ? nil : frame.scaleOrigin
         let nearObservedCeilingStatus = Self.nearObservedCeilingStatus(
             acceptedFraction: acceptedFraction,
             scaleOrigin: scaleOrigin,
@@ -152,13 +151,13 @@ public extension PropulsionGaugeDisplayModel {
     }
 
     private func cockpitMeasurement(
-        from snapshot: PropulsionGaugeAccessibilitySnapshot
+        from frame: PropulsionGaugeFrame
     ) -> PropulsionGaugeCockpitMeasurement {
-        guard snapshot.availability != .unavailable,
-              let watts = snapshot.latestAcceptedWatts,
-              let receiptSequenceNumber = snapshot.latestAcceptedReceiptSequenceNumber,
-              let receivedAtUptimeNanoseconds = snapshot.latestAcceptedUptimeNanoseconds,
-              let authority = snapshot.latestAuthority else {
+        guard frame.availability != .unavailable,
+              let watts = frame.latestAcceptedWatts,
+              let receiptSequenceNumber = frame.latestAcceptedReceiptSequenceNumber,
+              let receivedAtUptimeNanoseconds = frame.latestAcceptedUptimeNanoseconds,
+              let authority = frame.latestAuthority else {
             return .unavailable
         }
 
@@ -169,7 +168,7 @@ public extension PropulsionGaugeDisplayModel {
             authority: authority
         )
 
-        switch snapshot.availability {
+        switch frame.availability {
         case .live:
             return .live(accepted)
         case .retained:
@@ -177,6 +176,24 @@ public extension PropulsionGaugeDisplayModel {
         case .unavailable:
             return .unavailable
         }
+    }
+
+    /// Reuses the canonical frame's scale admission rather than reimplementing identity or authority
+    /// matching. `frame.scaleOrigin != nil` is produced only after the supplied scale has passed the
+    /// model's vehicle/mode/authority compatibility checks.
+    private func acceptedObservedScaleFraction(
+        from frame: PropulsionGaugeFrame,
+        scale: PropulsionGaugeScale?
+    ) -> Double? {
+        guard frame.availability == .live,
+              let scaleOrigin = frame.scaleOrigin,
+              let scale,
+              scale.origin == scaleOrigin,
+              let latestAcceptedWatts = frame.latestAcceptedWatts else {
+            return nil
+        }
+
+        return min(1, max(0, latestAcceptedWatts / scale.ceilingWatts))
     }
 
     private static func nearObservedCeilingStatus(
