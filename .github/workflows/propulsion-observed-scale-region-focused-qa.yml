@@ -1,0 +1,38 @@
+name: Propulsion Observed Scale Region Focused QA
+
+on:
+  push:
+    branches:
+      - qa/propulsion-observed-scale-region/chat-g5m7q-3d4e442
+
+permissions:
+  contents: read
+
+jobs:
+  swift-test:
+    name: Swift package build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout QA mirror with feature ancestor
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact feature source mirror
+        env:
+          EXPECTED_FEATURE_HEAD: 3d4e4421ac7684c18231a4cf30d076a9480fa97f
+        run: |
+          git cat-file -e "$EXPECTED_FEATURE_HEAD^{commit}"
+          changed="$(git diff --name-only "$EXPECTED_FEATURE_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/propulsion-observed-scale-region-focused-qa.yml"
+
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+          swift package --package-path Packages/NembraCore dump-package >/dev/null
+
+      - name: Build and run NembraCore tests
+        working-directory: Packages/NembraCore
+        run: swift test
