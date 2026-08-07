@@ -49,9 +49,12 @@ struct RideDurationObservationOwnerTests {
         #expect(snapshot.observedDurationNanoseconds == 1_000)
         #expect(snapshot.coverage == .partial)
         #expect(snapshot.observationSegmentCount == 2)
-        #expect(RideDurationCockpitState(snapshot: snapshot) == .observed(
-            try #require(observedValue(from: snapshot))
-        ))
+        guard case let .observed(value) = RideDurationCockpitState(snapshot: snapshot) else {
+            Issue.record("Expected partial observed cockpit value")
+            return
+        }
+        #expect(value.role == .partialObserved)
+        #expect(value.wholeObservedSeconds == 0)
     }
 
     @Test("recovered attachment is partial from its first observed segment")
@@ -110,14 +113,5 @@ struct RideDurationObservationOwnerTests {
                 atUptimeNanoseconds: 200
             )
         }
-    }
-
-    private func observedValue(
-        from snapshot: RideSessionDurationEvidenceSnapshot
-    ) -> RideDurationCockpitValue? {
-        guard case let .observed(value) = RideDurationCockpitState(snapshot: snapshot) else {
-            return nil
-        }
-        return value
     }
 }
