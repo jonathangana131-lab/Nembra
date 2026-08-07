@@ -261,4 +261,49 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 58)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 58)
     }
+
+    @Test("coalesced duplicate authoritative SoC failure is atomic across bridge and assembler")
+    func repeatedBoundaryDuplicateSOCFailureIsAtomic() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        let first = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(59),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+        #expect(first.disposition == .continuityResetAndAuthoritativeSOCIngested)
+        let before = pipeline
+
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try pipeline.acceptBatteryObservation(
+                observation(
+                    value: BatterySemanticValue.stateOfChargePercent(58),
+                    uptime: 1,
+                    continuity: .afterUnobservedInterval
+                ),
+                policy: p
+            )
+        }
+
+        #expect(pipeline == before)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
+        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 1)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 59)
+
+        let voltage = try pipeline.acceptBatteryObservation(
+            observation(
+                value: try BatterySemanticValue.voltageVolts(39.5),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+        #expect(voltage.disposition == .ignored)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+    }
 }
