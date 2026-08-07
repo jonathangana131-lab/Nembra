@@ -2,10 +2,6 @@ import Foundation
 
 /// Classifies normalized state-of-charge values before the adaptive range model
 /// is allowed to learn from them.
-///
-/// Raw protocol bytes remain outside this type. A vehicle adapter must first
-/// decode raw evidence into a normalized SoC reading and preserve whether that
-/// value was actually measured or estimated.
 public enum BatterySOCProvenance: String, Codable, Sendable {
     case authoritativeMeasurement
     case estimate
@@ -16,17 +12,22 @@ public enum BatteryRangeValidationError: Error, Equatable, Sendable {
     case invalidDistance
     case invalidTimestampOrder
     case invalidPolicy
+    case invalidEvidenceRole
+    case invalidEstimate
 }
 
-/// One normalized SoC reading. Estimated values are intentionally representable
-/// because they may be useful for presentation, but they are never accepted as
-/// learning evidence by `AdaptiveBatteryRangeModel`.
+/// One normalized SoC reading.
+///
+/// The role-selecting initializer is deliberately file-scoped in direct-source builds. This
+/// prevents unrelated Nembra app files from asserting `.authoritativeMeasurement` merely
+/// because this source is compiled into the same Swift module. Swift-package sources/tests
+/// retain a package-scoped initializer as the explicit trusted package boundary.
 public struct BatterySOCReading: Equatable, Codable, Sendable {
     public let percentage: Double
     public let provenance: BatterySOCProvenance
     public let receivedAtUptimeNanoseconds: UInt64
 
-    public init(
+    fileprivate init(
         percentage: Double,
         provenance: BatterySOCProvenance,
         receivedAtUptimeNanoseconds: UInt64
@@ -38,6 +39,43 @@ public struct BatterySOCReading: Equatable, Codable, Sendable {
         self.percentage = percentage
         self.provenance = provenance
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+    }
+
+#if SWIFT_PACKAGE
+    package init(
+        percentage: Double,
+        provenance: BatterySOCProvenance,
+        receivedAtUptimeNanoseconds: UInt64
+    ) throws {
+        try self.init(
+            percentage: percentage,
+            provenance: provenance,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+#endif
+
+    /// Generic/public construction is intentionally estimated-only.
+    public static func estimated(
+        percentage: Double,
+        receivedAtUptimeNanoseconds: UInt64
+    ) throws -> Self {
+        try Self(
+            percentage: percentage,
+            provenance: .estimate,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
+        )
+    }
+
+    /// Converts a sealed accepted SoC anchor into the pure math model's authoritative input.
+    /// A caller cannot mint the anchor from a percentage; it must first cross battery receipt
+    /// validation in `AcceptedBatterySOCAnchor.current(observation:acceptedBy:)`.
+    public static func accepted(_ anchor: AcceptedBatterySOCAnchor) throws -> Self {
+        try Self(
+            percentage: anchor.percentage,
+            provenance: .authoritativeMeasurement,
+            receivedAtUptimeNanoseconds: anchor.receivedAtUptimeNanoseconds
+        )
     }
 
     public var isAuthoritativeMeasurement: Bool {
@@ -55,6 +93,10 @@ public enum BatteryRangeDistanceCoverage: String, Codable, Sendable {
 
 /// A ride segment that can potentially teach the range model how far this
 /// scooter travels for each authoritative battery percentage point consumed.
+///
+/// Direct-source app code cannot construct an authority-bearing window. Generic public
+/// construction is estimated/non-authoritative only; package-trusted range assembly retains
+/// the package initializer for focused tests and future evidence integration.
 public struct BatteryRangeLearningWindow: Equatable, Codable, Sendable {
     public let distanceMeters: Double
     public let distanceCoverage: BatteryRangeDistanceCoverage
@@ -62,7 +104,7 @@ public struct BatteryRangeLearningWindow: Equatable, Codable, Sendable {
     public let startSOC: BatterySOCReading
     public let endSOC: BatterySOCReading
 
-    public init(
+    fileprivate init(
         distanceMeters: Double,
         distanceCoverage: BatteryRangeDistanceCoverage,
         transportGapOccurred: Bool,
@@ -81,6 +123,46 @@ public struct BatteryRangeLearningWindow: Equatable, Codable, Sendable {
         self.transportGapOccurred = transportGapOccurred
         self.startSOC = startSOC
         self.endSOC = endSOC
+    }
+
+#if SWIFT_PACKAGE
+    package init(
+        distanceMeters: Double,
+        distanceCoverage: BatteryRangeDistanceCoverage,
+        transportGapOccurred: Bool,
+        startSOC: BatterySOCReading,
+        endSOC: BatterySOCReading
+    ) throws {
+        try self.init(
+            distanceMeters: distanceMeters,
+            distanceCoverage: distanceCoverage,
+            transportGapOccurred: transportGapOccurred,
+            startSOC: startSOC,
+            endSOC: endSOC
+        )
+    }
+#endif
+
+    /// Generic/imported windows are representable for offline analysis, but they cannot carry
+    /// authoritative SoC and therefore cannot train `AdaptiveBatteryRangeModel`.
+    public static func nonAuthoritative(
+        distanceMeters: Double,
+        distanceCoverage: BatteryRangeDistanceCoverage,
+        transportGapOccurred: Bool,
+        startSOC: BatterySOCReading,
+        endSOC: BatterySOCReading
+    ) throws -> Self {
+        guard startSOC.isAuthoritativeMeasurement == false,
+              endSOC.isAuthoritativeMeasurement == false else {
+            throw BatteryRangeValidationError.invalidEvidenceRole
+        }
+        return try Self(
+            distanceMeters: distanceMeters,
+            distanceCoverage: distanceCoverage,
+            transportGapOccurred: transportGapOccurred,
+            startSOC: startSOC,
+            endSOC: endSOC
+        )
     }
 
     public var consumedPercentagePoints: Double {
@@ -287,6 +369,8 @@ public struct AdaptiveBatteryRangePolicy: Equatable, Codable, Sendable {
     }
 }
 
+/// Derived range output. Direct-source app code cannot synthesize a memberwise instance that
+/// claims authoritative SoC provenance; the trusted model construction is file-scoped.
 public struct AdaptiveBatteryRangeEstimate: Equatable, Codable, Sendable {
     /// Range produced directly from selected efficiency and the current SoC
     /// before presentation hysteresis/smoothing.
@@ -298,6 +382,83 @@ public struct AdaptiveBatteryRangeEstimate: Equatable, Codable, Sendable {
     public let confidence: AdaptiveRangeConfidence
     public let socProvenance: BatterySOCProvenance
     public let lowSOCConservatismApplied: Bool
+
+    fileprivate init(
+        rawRemainingMeters: Double,
+        presentedRemainingMeters: Double,
+        metersPerPercentagePoint: Double,
+        basis: AdaptiveRangeEstimateBasis,
+        confidence: AdaptiveRangeConfidence,
+        socProvenance: BatterySOCProvenance,
+        lowSOCConservatismApplied: Bool
+    ) {
+        self.rawRemainingMeters = rawRemainingMeters
+        self.presentedRemainingMeters = presentedRemainingMeters
+        self.metersPerPercentagePoint = metersPerPercentagePoint
+        self.basis = basis
+        self.confidence = confidence
+        self.socProvenance = socProvenance
+        self.lowSOCConservatismApplied = lowSOCConservatismApplied
+    }
+
+#if SWIFT_PACKAGE
+    package init(
+        rawRemainingMeters: Double,
+        presentedRemainingMeters: Double,
+        metersPerPercentagePoint: Double,
+        basis: AdaptiveRangeEstimateBasis,
+        confidence: AdaptiveRangeConfidence,
+        socProvenance: BatterySOCProvenance,
+        lowSOCConservatismApplied: Bool
+    ) {
+        self.init(
+            rawRemainingMeters: rawRemainingMeters,
+            presentedRemainingMeters: presentedRemainingMeters,
+            metersPerPercentagePoint: metersPerPercentagePoint,
+            basis: basis,
+            confidence: confidence,
+            socProvenance: socProvenance,
+            lowSOCConservatismApplied: lowSOCConservatismApplied
+        )
+    }
+#endif
+
+    /// Generic/imported construction is explicitly non-authoritative and structurally checked.
+    public static func nonAuthoritative(
+        rawRemainingMeters: Double,
+        presentedRemainingMeters: Double,
+        metersPerPercentagePoint: Double,
+        basis: AdaptiveRangeEstimateBasis,
+        confidence: AdaptiveRangeConfidence,
+        socProvenance: BatterySOCProvenance,
+        lowSOCConservatismApplied: Bool
+    ) throws -> Self {
+        guard socProvenance != .authoritativeMeasurement else {
+            throw BatteryRangeValidationError.invalidEvidenceRole
+        }
+        let fullChargeRange = metersPerPercentagePoint * 100
+        let tolerance = max(1, abs(fullChargeRange)) * 1e-12
+        guard rawRemainingMeters.isFinite,
+              rawRemainingMeters >= 0,
+              presentedRemainingMeters.isFinite,
+              presentedRemainingMeters >= 0,
+              metersPerPercentagePoint.isFinite,
+              metersPerPercentagePoint > 0,
+              fullChargeRange.isFinite,
+              rawRemainingMeters <= fullChargeRange + tolerance,
+              basis != .provisionalSeed || confidence == .learning else {
+            throw BatteryRangeValidationError.invalidEstimate
+        }
+        return Self(
+            rawRemainingMeters: rawRemainingMeters,
+            presentedRemainingMeters: presentedRemainingMeters,
+            metersPerPercentagePoint: metersPerPercentagePoint,
+            basis: basis,
+            confidence: confidence,
+            socProvenance: socProvenance,
+            lowSOCConservatismApplied: lowSOCConservatismApplied
+        )
+    }
 }
 
 /// Persistable learning state for one physical scooter.
@@ -338,10 +499,6 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
     public func blendedEfficiencyMetersPerPercentagePoint(
         using policy: AdaptiveBatteryRangePolicy
     ) -> Double? {
-        // The active policy is authoritative immediately. Persisted learning may
-        // have retained more recent samples under an older/larger capacity; a
-        // policy reduction must not wait for another ride sample before taking
-        // effect in the estimate.
         let recentEfficiency = weightedRecentEfficiency(
             maximumSampleCount: policy.recentWindowCapacity
         )
@@ -433,8 +590,6 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
                 return rejected(.numericalOverflow, policy: policy)
             }
 
-            // Online weighted mean avoids overflow from multiplying large
-            // accumulated values while preserving exact weighting semantics.
             let weight = consumed / totalConsumed
             let candidate = historical + (sample.metersPerPercentagePoint - historical) * weight
             guard candidate.isFinite,
@@ -463,10 +618,8 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         )
     }
 
-    /// Uses learned efficiency when available. With no accepted history, a
-    /// higher layer may provide a conservative provisional seed. If neither
-    /// exists, range remains unavailable rather than silently multiplying an
-    /// advertised range by battery percentage.
+    /// Uses learned efficiency when available. With no accepted history, a higher layer may
+    /// provide a conservative provisional seed. If neither exists, range stays unavailable.
     public func estimateRemainingRange(
         at soc: BatterySOCReading,
         previousPresentedRemainingMeters: Double? = nil,
