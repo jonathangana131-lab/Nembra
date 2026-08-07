@@ -39,4 +39,38 @@ struct SimulatorProfileTruthTests {
         #expect(identity.protocolFamily.contains("not physical scooter protocol"))
         #expect(!identity.protocolFamily.contains("Tuya"))
     }
+
+    @Test("lock confirmation requires valid stopped speed evidence")
+    func lockFailsClosedWithoutValidStoppedSpeed() async {
+        let invalidSpeeds: [Double?] = [nil, .nan, .infinity, -.infinity, -0.1, 0.5, 18]
+
+        for speed in invalidSpeeds {
+            var state = SimulatedScooterService.state(for: .connectedStopped)
+            state.speedKilometersPerHour = speed
+            state.isLocked = false
+            let service = SimulatedScooterService(
+                initialState: state,
+                commandLatencyNanoseconds: 0
+            )
+
+            await #expect(throws: ScooterCommandError.commandRejected) {
+                try await service.setLocked(true)
+            }
+            #expect((await service.snapshot()).isLocked == false)
+        }
+    }
+
+    @Test("known stopped speed can still confirm lock")
+    func lockAcceptsKnownStoppedSpeed() async throws {
+        var state = SimulatedScooterService.state(for: .connectedStopped)
+        state.speedKilometersPerHour = 0
+        state.isLocked = false
+        let service = SimulatedScooterService(
+            initialState: state,
+            commandLatencyNanoseconds: 0
+        )
+
+        try await service.setLocked(true)
+        #expect((await service.snapshot()).isLocked == true)
+    }
 }
