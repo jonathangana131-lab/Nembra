@@ -382,12 +382,37 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
-    func testDashboardUnavailableSpeedHasSemanticAccessibilityValue() {
-        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: nil), "Unavailable")
-        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: -0.01), "Unavailable")
-        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .nan), "Unavailable")
-        XCTAssertEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .infinity), "Unavailable")
-        XCTAssertNotEqual(DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: 0), "Unavailable")
+    func testDashboardSpeedAccessibilityPreservesUnavailableAndRetainedTruth() {
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: nil, isRetained: false),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: -0.01, isRetained: true),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .nan, isRetained: false),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            DashboardSpeedInstrumentView.accessibilitySpeedValue(kilometersPerHour: .infinity, isRetained: true),
+            "Unavailable"
+        )
+
+        let live = DashboardSpeedInstrumentView.accessibilitySpeedValue(
+            kilometersPerHour: 0,
+            isRetained: false
+        )
+        XCTAssertNotEqual(live, "Unavailable")
+        XCTAssertFalse(live.localizedCaseInsensitiveContains("last known"))
+
+        let retained = DashboardSpeedInstrumentView.accessibilitySpeedValue(
+            kilometersPerHour: 7,
+            isRetained: true
+        )
+        XCTAssertTrue(retained.localizedCaseInsensitiveContains("last known"))
+        XCTAssertNotEqual(retained, "Unavailable")
     }
 
     @MainActor
