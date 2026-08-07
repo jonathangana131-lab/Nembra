@@ -81,7 +81,11 @@ struct LiveDistanceChronologyTests {
             segmentStartUptimeNanoseconds: 0
         )
 
-        #expect(accumulator.record(try sample(speed: 0, uptime: 0)) == .anchored)
+        #expect(
+            accumulator.record(
+                try sample(speed: Double.greatestFiniteMagnitude, uptime: 0)
+            ) == .anchored
+        )
         #expect(
             accumulator.record(
                 try sample(speed: Double.greatestFiniteMagnitude, uptime: 2_000_000_000)
