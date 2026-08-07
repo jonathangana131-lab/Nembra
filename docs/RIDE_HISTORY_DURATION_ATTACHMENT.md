@@ -17,7 +17,7 @@ The attachment never subtracts `beganAtDate`, `confirmedAtDate`, or `endedAtDate
 
 `RideHistoryDurationJoinedRecord` is a runtime-only validated join. It requires the attachment's session identity and recorded ride continuity to match the exact `RideHistoryRecord` before a consumer may present or aggregate duration.
 
-The joined type is intentionally not `Codable`. Persistence stores the two independently valid records, then revalidates their relationship every time they are joined. A matching UUID with mismatched continuity therefore fails closed instead of silently becoming ride history.
+The joined type is intentionally not `Codable`, and its initializer is package-scoped. Persistence stores the two independently valid records, then the core coordinator revalidates their relationship when loading them. App code may consume a joined record returned by that coordinator but cannot directly manufacture one from arbitrary matching records. A matching UUID with mismatched continuity therefore fails closed instead of silently becoming ride history.
 
 A completed base ride without a duration attachment is ordinary duration unavailability. If an attachment exists without its required base history record, the coordinator treats that as a durable inconsistency and fails closed rather than hiding the orphan as normal unavailability.
 
@@ -37,7 +37,7 @@ This ordering intentionally prefers a temporarily missing optional duration atta
 
 ## Trusted statistics bridge
 
-`RideDurationStatisticsRide` deliberately keeps its independent completed-ride + duration constructor package-scoped so app code cannot bypass the cross-record trust boundary. `RideHistoryDurationStatisticsAdapter.swift` supplies the production bridge from `RideHistoryDurationJoinedRecord`, which has already revalidated session identity and continuity.
+`RideDurationStatisticsRide` deliberately keeps its independent completed-ride + duration constructor package-scoped so app code cannot bypass the cross-record trust boundary. `RideHistoryDurationStatisticsAdapter.swift` supplies the public production bridge from a `RideHistoryDurationJoinedRecord` that app code can receive from the coordinator but cannot forge directly.
 
 The bridge preserves the existing statistics semantics exactly:
 
