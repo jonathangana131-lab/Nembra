@@ -31,7 +31,7 @@ struct ES80CaptureShellView: View {
         let recordCount: Int
         let valueObservationCount: Int
         let continuityBreakCount: Int
-        let observedSpanSeconds: TimeInterval
+        let receiptTimelineSpanSeconds: TimeInterval
         let schemaVersion: Int
 
         init(session: PassiveBluetoothCaptureSession) {
@@ -46,21 +46,21 @@ struct ES80CaptureShellView: View {
 
             if let first = session.records.first, let last = session.records.last {
                 let elapsedNanoseconds = last.receivedAtUptimeNanoseconds - first.receivedAtUptimeNanoseconds
-                observedSpanSeconds = TimeInterval(elapsedNanoseconds) / 1_000_000_000
+                receiptTimelineSpanSeconds = TimeInterval(elapsedNanoseconds) / 1_000_000_000
             } else {
-                observedSpanSeconds = 0
+                receiptTimelineSpanSeconds = 0
             }
         }
 
-        var observedSpanDescription: String {
-            if observedSpanSeconds < 1 {
-                return String(format: "%.2f s", observedSpanSeconds)
+        var receiptTimelineSpanDescription: String {
+            if receiptTimelineSpanSeconds < 1 {
+                return String(format: "%.2f s", receiptTimelineSpanSeconds)
             }
-            if observedSpanSeconds < 60 {
-                return String(format: "%.1f s", observedSpanSeconds)
+            if receiptTimelineSpanSeconds < 60 {
+                return String(format: "%.1f s", receiptTimelineSpanSeconds)
             }
 
-            let wholeSeconds = Int(observedSpanSeconds.rounded(.down))
+            let wholeSeconds = Int(receiptTimelineSpanSeconds.rounded(.down))
             return String(format: "%d:%02d", wholeSeconds / 60, wholeSeconds % 60)
         }
     }
@@ -121,6 +121,11 @@ struct ES80CaptureShellView: View {
             case let .failure(error):
                 diagnosticMessage = "The capture is still prepared, but export did not finish: \(error.localizedDescription)"
             }
+        }
+        .onChange(of: controller.discoveredPeripherals.map(\.id)) { _, identifiers in
+            guard let selectedCandidateIdentifier,
+                  !identifiers.contains(selectedCandidateIdentifier) else { return }
+            self.selectedCandidateIdentifier = nil
         }
         .accessibilityIdentifier("es80.capture-shell")
     }
@@ -485,10 +490,10 @@ struct ES80CaptureShellView: View {
                 preparedSummaryRow("Recorded events", value: "\(summary.recordCount)")
                 preparedSummaryRow("Value observations", value: "\(summary.valueObservationCount)")
                 preparedSummaryRow("Continuity breaks", value: "\(summary.continuityBreakCount)")
-                preparedSummaryRow("Observed span", value: summary.observedSpanDescription)
+                preparedSummaryRow("Receipt timeline span", value: summary.receiptTimelineSpanDescription)
             }
 
-            Text("These describe the exact prepared JSON file. They do not identify scooter fields or prove protocol semantics.")
+            Text("The timeline span is the first-to-last receipt-clock interval and may include explicit continuity gaps; it is not continuously observed time. These values describe the exact prepared JSON file and do not identify scooter fields or prove protocol semantics.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -497,7 +502,7 @@ struct ES80CaptureShellView: View {
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "Prepared capture file. Format version \(summary.schemaVersion). \(summary.recordCount) recorded events. \(summary.valueObservationCount) value observations. \(summary.continuityBreakCount) continuity breaks. Observed span \(summary.observedSpanDescription)."
+            "Prepared capture file. Format version \(summary.schemaVersion). \(summary.recordCount) recorded events. \(summary.valueObservationCount) value observations. \(summary.continuityBreakCount) continuity breaks. Receipt timeline span \(summary.receiptTimelineSpanDescription). This interval may include continuity gaps and is not continuously observed time."
         )
     }
 
@@ -628,9 +633,9 @@ struct ES80CaptureShellView: View {
             return controller.hasCompleteTargetEvidence ? .capturing : .preparingEvidence
         case .idle:
             if controller.isScanning {
-                return selectedCandidateIdentifier == nil ? .scanning : .candidateSelected
+                return selectedCandidate == nil ? .scanning : .candidateSelected
             }
-            if selectedCandidateIdentifier != nil {
+            if selectedCandidate != nil {
                 return .candidateSelected
             }
             return .ready
@@ -724,10 +729,14 @@ struct ES80CaptureShellView: View {
     }
 
     private func startCapture() {
-        guard let selectedCandidateIdentifier else { return }
+        guard let selectedCandidate else {
+            selectedCandidateIdentifier = nil
+            diagnosticMessage = "The selected candidate is no longer available. Scan again before starting a target session."
+            return
+        }
         diagnosticMessage = nil
         do {
-            try controller.connect(to: selectedCandidateIdentifier)
+            try controller.connect(to: selectedCandidate.id)
         } catch {
             diagnosticMessage = error.localizedDescription
         }
