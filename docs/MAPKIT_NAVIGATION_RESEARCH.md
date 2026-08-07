@@ -52,7 +52,8 @@ Any future jurisdiction rules, path restrictions, grade/surface data, hazard rep
 - Unknown/future provider transport semantics remain `unknown` instead of being guessed into a known mode.
 - Raw Core Location callbacks do not enter guidance or reroute logic directly. Location evidence first passes the existing ride-location quality boundary.
 - Simulator/software-generated route/location evidence is QA evidence only.
-- No production route-corridor, ambiguity, or reroute-cooldown threshold is selected until real iPhone/outdoor traces justify it.
+- No production route-corridor, ambiguity, reroute-duration, or reroute-cooldown threshold is selected until real iPhone/outdoor traces justify it.
+- Route-progress confidence and confidence in distance-from-route deviation are separate facts: a location can be too far from the active route for trustworthy progress while still providing strong off-route evidence.
 - A route can remain renderable while current progress becomes unavailable after ambiguity or a continuity gap.
 - Navigation state is never allowed to repair or rewrite the independent ride-evidence domains.
 
@@ -84,6 +85,8 @@ Implemented:
 - stale success/failure callback rejection;
 - cancellation invalidation before transport cancellation races;
 - empty provider-route response rejection;
+- active-request provenance validation: every accepted route must report the same requested transport mode as the request generation that produced it;
+- returned transport mode remains independent provider truth and may legitimately differ from requested transport;
 - atomic token-exhaustion failure.
 
 The coordinator performs no network request and imports no MapKit.
@@ -93,16 +96,19 @@ The coordinator performs no network request and imports no MapKit.
 Implemented:
 - injected route-deviation threshold;
 - injected required consecutive accepted samples;
+- injected minimum consecutive deviation duration;
 - domain invariant requiring at least two accepted samples so one noisy point cannot reroute;
+- domain invariant requiring positive elapsed deviation duration so a dense callback burst cannot masquerade as sustained deviation;
 - injected reroute cooldown;
-- no production default threshold/cooldown;
-- ambiguous progress assignment clears deviation evidence instead of guessing;
-- on-route evidence clears accumulated deviation;
-- known continuity gaps clear accumulated deviation;
+- no production default threshold/duration/cooldown;
+- deviation-assessment confidence is separate from route-progress confidence;
+- unconfident deviation assessment clears accumulated deviation instead of guessing;
+- on-route evidence clears accumulated deviation and duration start;
+- known continuity gaps clear accumulated deviation and duration start;
 - process-local monotonic ordering retained across gaps to reject older callbacks;
 - non-monotonic rejection is atomic;
 - cooldown suppresses request storms;
-- newly selected route clears route-specific deviation/cooldown state.
+- newly selected route clears route-specific deviation/duration/cooldown state.
 
 The evaluator computes no route geometry, accepts no raw GPS callback, changes no ride distance, and makes no legality/safety claim.
 
@@ -120,22 +126,25 @@ Implemented:
 - stale callbacks after a known gap remain rejectable;
 - selection-sequence exhaustion fails atomically.
 
-This tracker does not compute/snaps coordinates, does not perform rerouting, and never writes navigation progress into ride-distance history.
+This tracker does not compute/snap coordinates, does not perform rerouting, and never writes navigation progress into ride-distance history.
 
 ### 5. Screened-location geometry matching — `NavigationRouteGeometryMatcher.swift`
 
 Implemented:
 - accepts only `QualityScreenedRideLocation`, never raw Core Location callbacks;
-- injected maximum route-distance confidence threshold;
+- injected maximum route-distance progress-confidence threshold;
 - injected minimum separation needed to distinguish competing steps;
+- injected minimum along-polyline separation needed to reject two near-equal projection positions on the same geometry;
 - no production matching-policy default;
 - deterministic projection onto route and step polylines;
 - dateline-aware longitude wrapping;
 - provider-scaled remaining step and route distance estimates;
 - route total remains independent from summed provider step totals;
-- nearby/parallel-step ambiguity fails confidence closed;
+- nearby/parallel-step ambiguity fails progress confidence closed;
+- self-intersections/loops with multiple near-equal projections far apart along one polyline fail progress confidence closed;
 - far-from-route evidence remains observable while current progress becomes untrusted;
-- non-zero provider distance with degenerate one-point geometry fails confidence;
+- far-from-route progress failure does not erase separately valid route-deviation distance evidence;
+- non-zero provider distance with degenerate one-point geometry fails both trustworthy progress and deviation assessment;
 - zero-distance one-point provider routes remain representable;
 - accepted location continuity-segment flags survive the projection;
 - one immutable match can project into both guidance and reroute observations without changing the source evidence.
@@ -152,15 +161,16 @@ Implemented:
 - route selection/clear does not falsely reset the process callback clock;
 - known accepted-location segment gaps reset guidance/reroute continuity evidence before the same accepted point is processed;
 - one off-route point cannot reroute;
-- sustained confident deviation can request a reroute under injected policy;
-- ambiguity cannot become active guidance or qualifying reroute evidence;
+- sustained deviation must satisfy injected sample-count and elapsed-duration evidence;
+- sustained deviation beyond the progress-confidence corridor can still request reroute when route-deviation distance evidence remains trustworthy;
+- competing-step and within-step/self-intersection ambiguity cannot become active guidance;
 - clear-route returns guidance to idle without rewriting prior ride evidence.
 
 The session coordinator still performs no MapKit request, no Core Location quality screening, no SwiftUI work, no ride-distance mutation, and no scooter-legality inference.
 
 ## Current software pipeline
 
-The current platform-neutral path is now:
+The current platform-neutral path is:
 
 `RideLocationSample`
 → existing `RideLocationQualityScreen`
@@ -170,19 +180,19 @@ The current platform-neutral path is now:
 → `NavigationGuidanceProgressTracker` + `NavigationRerouteEvaluator`
 → `NavigationSessionCoordinator` update
 
-The navigation side consumes the already-accepted location evidence. It does not feed snapped/progress coordinates back into the ride-location evidence path.
+The navigation side consumes already-accepted location evidence. It does not feed snapped/progress coordinates back into the ride-location evidence path.
 
 ## Future Apple-platform MapKit adapter
 
 The next Apple-platform boundary should:
 - build a fresh `MKDirections.Request` from `NavigationRoutePlanRequest`;
-- map `.cycling` to `MKDirectionsTransportType.cycling`;
-- map alternate/highway/toll preferences without changing meaning;
+- map supported request transport modes without changing meaning;
 - own the active `MKDirections` instance per Nembra request generation;
 - call `cancel()` when a generation is superseded/cancelled;
 - still rely on the Nembra token to reject a racing completion;
 - map documented MapKit errors into stable Nembra failure states;
 - project successful `MKRoute`/`MKRoute.Step` values into immutable Nembra snapshots;
+- preserve active-request provenance consistently;
 - fail closed if no usable route is returned.
 
 Do not infer a specific MapKit error code for Nembra-initiated cancellation unless Apple documents one. Nembra already knows when it invalidated its own generation.
@@ -193,9 +203,9 @@ Request identity belongs to Nembra, not callback timing.
 
 1. `begin` creates a monotonic request token.
 2. If another request is active, the old token is returned as superseded.
-3. The adapter cancels the old `MKDirections` object if it still exists.
+3. The adapter cancels the old provider operation if it still exists.
 4. The new provider calculation begins.
-5. Completion publishes only if its Nembra token is still current.
+5. Completion publishes only if its Nembra token is still current and projected route provenance agrees with the active requested transport.
 6. User cancellation invalidates the current generation before provider cancellation.
 7. A racing old callback is ignored.
 
@@ -214,8 +224,8 @@ Nembra should:
 - debounce destination/search changes;
 - cancel superseded calculations;
 - keep render cadence separate from route-request cadence;
-- never reroute from normal GPS noise;
-- use explicit cooldown/evidence rather than using provider throttling as flow control.
+- never reroute from normal GPS noise or merely from a dense callback burst;
+- use explicit sample-count, elapsed-duration, cooldown, and evidence-confidence gates rather than provider throttling as flow control.
 
 ## Accessibility and motion
 
@@ -227,19 +237,24 @@ Future navigation UI should:
 
 ## Deterministic verification state
 
-Distinct focused test cases that have passed in this lane:
-- route snapshot + route request planning + reroute policy: **39**;
+The exact six navigation suites reconstructed from PR #41 passed **75/75** before review hardening under Swift 6.2.1.
+
+After the four review repairs above, the exact current source/test bytes passed **82/82 focused tests across the same six suites**:
+- route/domain + planning + reroute group: **43**;
 - guidance progress: **13**;
-- route geometry matching: **13**;
-- composed navigation session: **10**.
+- route geometry matching: **14**;
+- composed navigation session: **12**.
 
-That is **75 distinct focused test cases** exercised across the lane's isolated suites.
+New regression coverage includes:
+- sample count cannot substitute for injected elapsed deviation duration;
+- exact duration boundary behavior;
+- deviation-duration reset on on-route/unconfident/gap/new-route evidence;
+- sustained far-off-route reroute while progress remains unavailable;
+- single-step self-intersection ambiguity;
+- active-request/requested-transport provenance contradiction rejection;
+- returned transport differences remain preservable provider truth.
 
-The latest combined package run after the fresh-main reconciliation executed guidance + geometry + session together: **36/36 passed** under Swift 6.2.1.
-
-Guidance, geometry, and session source/test blob SHAs were checked against the exact locally tested files before/after checkpointing. These are focused software checks, not a substitute for repository-wide Xcode 27/iPhone 12 Simulator acceptance.
-
-A previous sandbox attempt to clone the full GitHub branch and run the complete real NembraCore package could not begin because that sandbox could not resolve `github.com`. That was a tooling/network limitation, not repository-wide green evidence.
+The seven repaired source/test files were checkpointed to GitHub with content blob identities matching the exact locally tested files. This is focused software verification, not repository-wide Xcode 27/iPhone 12 Simulator acceptance.
 
 ## Covered deterministic behaviors
 
@@ -248,53 +263,59 @@ Implemented/covered now:
 2. alternate/highway/toll preferences remain explicit;
 3. route/step provider facts and provenance are preserved;
 4. invalid/empty provider data fails closed;
-5. superseded/cancelled request generations cannot publish stale routes;
-6. throttled/server/unavailable/unknown failures remain explicit;
-7. invalid coordinates/distances/time fail closed;
-8. provider step totals are not forced to equal route totals;
-9. unknown provider transport semantics stay unknown;
-10. one noisy deviation sample cannot reroute;
-11. sustained accepted deviation can request one reroute under injected policy;
-12. reroute cooldown prevents request storms;
-13. ambiguous progress and continuity gaps invalidate accumulated reroute evidence;
-14. selected-route generations reject stale progress callbacks;
-15. ambiguous route assignment removes current progress instead of guessing;
-16. continuity gaps remove displayed current step/distance until fresh evidence;
-17. current/next provider instructions/notices survive guidance state unchanged;
-18. final step has no invented next maneuver;
-19. accepted quality-screened locations project onto route/step geometry;
-20. far-route evidence fails progress confidence without disappearing;
-21. parallel-step ambiguity fails closed;
-22. dateline-adjacent route geometry uses wrapped longitude math;
-23. navigation route remaining-distance math remains separate from provider step totals;
-24. one immutable match feeds both guidance and reroute domains;
-25. session-level stale callback rejection occurs before partial navigation mutation;
-26. route selection/clear preserves process-local callback ordering truth.
+5. active request and returned route requested-transport provenance cannot contradict each other;
+6. returned transport mode may differ and remains provider truth;
+7. superseded/cancelled request generations cannot publish stale routes;
+8. throttled/server/unavailable/unknown failures remain explicit;
+9. invalid coordinates/distances/time fail closed;
+10. provider step totals are not forced to equal route totals;
+11. unknown provider transport semantics stay unknown;
+12. one noisy deviation sample cannot reroute;
+13. callback count alone cannot satisfy sustained deviation;
+14. sustained accepted deviation can request one reroute only after injected count + duration evidence;
+15. reroute cooldown prevents request storms;
+16. unconfident deviation and continuity gaps invalidate accumulated reroute evidence;
+17. selected-route generations reject stale progress callbacks;
+18. competing-step ambiguity removes current progress instead of guessing;
+19. within-step/self-intersection ambiguity removes current progress instead of guessing;
+20. continuity gaps remove displayed current step/distance until fresh evidence;
+21. current/next provider instructions/notices survive guidance state unchanged;
+22. final step has no invented next maneuver;
+23. accepted quality-screened locations project onto route/step geometry;
+24. far-route evidence fails progress confidence without disappearing;
+25. far-route distance evidence can still qualify for reroute assessment;
+26. parallel-step ambiguity fails closed;
+27. dateline-adjacent route geometry uses wrapped longitude math;
+28. navigation route remaining-distance math remains separate from provider step totals;
+29. one immutable match feeds both guidance and reroute domains using separate confidence facts;
+30. session-level stale callback rejection occurs before partial navigation mutation;
+31. route selection/clear preserves process-local callback ordering truth.
 
 Still required before production navigation acceptance:
-27. real MapKit request/result/error mapping compiles/runs under Xcode/iOS;
-28. deterministic MapKit adapter fixture independent of live Apple servers;
-29. repository-wide exact-head Xcode 27/iPhone 12 Simulator gate on the final integrated head;
-30. real Simulator navigation interaction and screenshot critique;
-31. physical iPhone outdoor route/progress/reroute validation;
-32. product UI never surfaces cycling provenance as scooter legality;
-33. production matching/reroute thresholds selected only from real trace evidence.
+32. current adapter request/result/error mapping compiles/runs under Xcode/iOS and rejects unsupported request-side semantics;
+33. deterministic MapKit adapter fixture independent of live Apple servers;
+34. repository-wide exact-final-head Xcode 27/iPhone 12/iOS 27 Simulator gate on the final integrated head;
+35. real Simulator navigation interaction and screenshot critique;
+36. physical iPhone outdoor route/progress/reroute validation;
+37. product UI never surfaces cycling provenance as scooter legality;
+38. production matching/reroute thresholds selected only from real trace evidence.
 
 ## Suggested continuation order
 
-1. Apple-platform MapKit adapter + focused Xcode tests/fixtures.
-2. Deterministic Simulator route provider fixture.
-3. Lightweight route preview UI after the adapter boundary is accepted.
-4. Landscape Dashboard navigation composition after current performance/UI ownership is reconciled.
-5. Simulator interaction + screenshot critique.
-6. Physical iPhone outdoor validation before production claims.
+1. Accept/merge this platform-neutral parent after fresh-main reconciliation, exact-head peer review, and required Xcode/Simulator evidence.
+2. Reconcile the dependent Apple-platform MapKit adapter onto the accepted parent and close its own API-review blockers.
+3. Deterministic Simulator route/search provider fixtures.
+4. Lightweight route preview UI after adapter acceptance.
+5. Landscape Dashboard navigation composition after current performance/UI ownership is reconciled.
+6. Simulator interaction + screenshot critique.
+7. Physical iPhone outdoor validation before production claims.
 
 Do not edit high-contention app/project files merely to create visible progress before the adapter/domain is accepted.
 
 ## Explicit non-goals of the current lane
 
-- no live Apple-server route request is currently made by Nembra;
-- no production MapKit adapter is claimed compiled/accepted;
+- no live Apple-server route request is currently made by NembraCore;
+- no production MapKit adapter is claimed accepted by this parent lane;
 - no legal-routing database;
 - no claim that cycling directions are scooter-safe;
 - no physical ES80 validation;
