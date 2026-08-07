@@ -210,10 +210,10 @@ public struct AccelerationRunEvaluator: Sendable {
 
     public mutating func accept(_ sample: SpeedTelemetrySample) {
         guard canAcceptMoreEvidence else { return }
-        // Defense in depth: SpeedTelemetrySample currently has synthesized Codable,
-        // so a decoded impossible `.motionAssist + .absoluteMeasurement` pair can
-        // bypass its validating initializer. This evidence consumer must still fail
-        // closed even if an upstream persistence/import boundary is malformed.
+        // Defense in depth: this evidence consumer never accepts motion-assisted
+        // data as authoritative, even if an import or persistence boundary is
+        // malformed. A hardened upstream decoder may reject that sample earlier;
+        // this guard remains safe redundancy rather than relying on decode policy.
         guard sample.source != .motionAssist else { return }
         guard sample.isAuthoritativeMeasurement else { return }
         guard sourceMatchesPolicy(sample.source) else { return }
