@@ -14,6 +14,22 @@ struct RideCheckpointClearOrderingTests {
         return url
     }
 
+    private func policy() throws -> RideDetectionPolicy {
+        try RideDetectionPolicy(
+            candidateSpeedKilometersPerHour: 1,
+            confirmationSpeedKilometersPerHour: 4,
+            confirmationDurationNanoseconds: 0,
+            confirmationOdometerDeltaKilometers: 0.05,
+            confirmationGPSDistanceMeters: 8,
+            endingDurationNanoseconds: 5_000,
+            maximumSpeedSampleAgeNanoseconds: 1_000
+        )
+    }
+
+    private func cadence() throws -> RideCheckpointCadence {
+        try RideCheckpointCadence(minimumIntervalNanoseconds: 10_000_000)
+    }
+
     private func checkpoint(
         id: UUID,
         latestODO: Double,
@@ -116,6 +132,65 @@ struct RideCheckpointClearOrderingTests {
         #expect(try await fresh.load() == .completedPendingCommit(completion))
         try await fresh.clear()
         #expect(try await fresh.load() == nil)
+    }
+
+    @Test("durable history plus interrupted acknowledgement restarts as completion and retries idempotently")
+    func interruptedHistoryAcknowledgementNeverRestoresOlderRide() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sessionID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        let completion = try completed(id: sessionID, endingODO: 101.1, gpsMeters: 1_100)
+        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2)
+        let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
+        let history = ClearOrderingHistoryStore()
+
+        try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.5, gpsMeters: 500)))
+        try await store.save(.completedPendingCommit(completion))
+
+        let firstRecovery = try await RideCheckpointCoordinator.restoring(
+            policy: try policy(),
+            store: store,
+            cadence: try cadence(),
+            recoveredAtUptimeNanoseconds: 50_000_000_000,
+            recoveredAtDate: epoch.addingTimeInterval(70),
+            makeSessionID: { sessionID }
+        )
+        let firstCommit = RideHistoryCommitCoordinator(
+            recoveryCoordinator: firstRecovery,
+            historyStore: history
+        )
+
+        await #expect(throws: FailOnNthRemovalFileManager.InjectedFailure.removal(2)) {
+            _ = try await firstCommit.commitPendingRide()
+        }
+
+        let durableRecord = RideHistoryRecord(evidence: completion)
+        #expect(try await history.record(sessionID: sessionID) == durableRecord)
+        #expect(await firstRecovery.pendingCompletedRideEvidence() == completion)
+
+        // Model process termination immediately after the first physical delete.
+        // The old in-progress generation is already gone; a fresh store can only
+        // recover the completion handoff that permanent history has committed.
+        let freshStore = AtomicRideCheckpointStore(directoryURL: dir)
+        #expect(try await freshStore.load() == .completedPendingCommit(completion))
+        let secondRecovery = try await RideCheckpointCoordinator.restoring(
+            policy: try policy(),
+            store: freshStore,
+            cadence: try cadence(),
+            recoveredAtUptimeNanoseconds: 60_000_000_000,
+            recoveredAtDate: epoch.addingTimeInterval(80),
+            makeSessionID: { sessionID }
+        )
+        #expect(await secondRecovery.pendingCompletedRideEvidence() == completion)
+
+        let retry = RideHistoryCommitCoordinator(
+            recoveryCoordinator: secondRecovery,
+            historyStore: history
+        )
+        #expect(try await retry.commitPendingRide() == .alreadyPresent)
+        #expect(await history.commitCount == 2)
+        #expect(await secondRecovery.pendingCompletedRideEvidence() == nil)
+        #expect(try await freshStore.load() == nil)
     }
 
     @Test("corrupt newest plus older readable ride fails clear without deleting either file")
@@ -244,6 +319,27 @@ struct RideCheckpointClearOrderingTests {
         #expect(try await store.load() == nil)
         try await store.clear()
         #expect(try await store.load() == nil)
+    }
+}
+
+private actor ClearOrderingHistoryStore: RideHistoryStore {
+    private var records: [UUID: RideHistoryRecord] = [:]
+    private(set) var commitCount = 0
+
+    func commit(_ record: RideHistoryRecord) async throws -> RideHistoryCommitResult {
+        commitCount += 1
+        if let existing = records[record.sessionID] {
+            guard existing == record else {
+                throw RideHistoryStoreError.sessionConflict(record.sessionID)
+            }
+            return .alreadyPresent
+        }
+        records[record.sessionID] = record
+        return .inserted
+    }
+
+    func record(sessionID: UUID) async throws -> RideHistoryRecord? {
+        records[sessionID]
     }
 }
 
