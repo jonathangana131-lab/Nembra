@@ -12,8 +12,11 @@ struct PassiveCoreBluetoothGATTIdentityRegistryTests {
         try registry.registerService(uuid: "FD50", instance: first)
         try registry.registerService(uuid: "FD50", instance: first)
 
-        #expect(throws: PassiveCoreBluetoothGATTIdentityRegistry.RegistryError.duplicateServiceUUID("FD50")) {
+        do {
             try registry.registerService(uuid: "FD50", instance: duplicate)
+            Issue.record("Expected duplicate service UUID instance to fail closed")
+        } catch let error as PassiveCoreBluetoothGATTIdentityRegistry.RegistryError {
+            #expect(error == .duplicateServiceUUID("FD50"))
         }
     }
 
@@ -35,15 +38,18 @@ struct PassiveCoreBluetoothGATTIdentityRegistryTests {
             instance: otherService
         )
 
-        #expect(throws: PassiveCoreBluetoothGATTIdentityRegistry.RegistryError.duplicateCharacteristicPath(
-            serviceUUID: "FD50",
-            characteristicUUID: "0001"
-        )) {
+        do {
             try registry.registerCharacteristic(
                 serviceUUID: "FD50",
                 characteristicUUID: "0001",
                 instance: duplicate
             )
+            Issue.record("Expected duplicate characteristic UUID path to fail closed")
+        } catch let error as PassiveCoreBluetoothGATTIdentityRegistry.RegistryError {
+            #expect(error == .duplicateCharacteristicPath(
+                serviceUUID: "FD50",
+                characteristicUUID: "0001"
+            ))
         }
     }
 
