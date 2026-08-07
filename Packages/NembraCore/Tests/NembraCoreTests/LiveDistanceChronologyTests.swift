@@ -85,10 +85,12 @@ struct LiveDistanceChronologyTests {
 
         // Neither unrelated callback owns chronology for the selected BLE stream.
         #expect(accumulator.record(try sample(speed: 4, uptime: 100)) == .anchored)
-        #expect(
-            accumulator.record(try sample(speed: 4, uptime: 200))
-                == .integrated(addedMeters: 0.000_000_4)
-        )
+        let result = accumulator.record(try sample(speed: 4, uptime: 200))
+        guard case let .integrated(addedMeters) = result else {
+            Issue.record("selected authoritative callbacks should remain integrable")
+            return
+        }
+        #expect(abs(addedMeters - 0.000_000_4) < 1e-15)
     }
 
     @Test("pre-segment callback does not consume in-segment chronology")
@@ -129,5 +131,6 @@ struct LiveDistanceChronologyTests {
         #expect(final.lastAcceptedSampleUptimeNanoseconds == 0)
         #expect(final.distanceMeters == nil)
         #expect(final.coverage == .unknown)
+        #expect(final.knownCoverageGapCount == 1)
     }
 }
