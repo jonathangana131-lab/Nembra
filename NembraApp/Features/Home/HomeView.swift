@@ -5,7 +5,7 @@ struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var showLockConfirmation = false
+    @State private var pendingLockConfirmation: Bool?
 
     var body: some View {
         ScrollView {
@@ -44,16 +44,21 @@ struct HomeView: View {
             Text(vehicle.lastErrorMessage ?? "The scooter did not confirm the change.")
         }
         .confirmationDialog(
-            vehicle.state.isLocked == true ? "Unlock scooter?" : "Lock scooter?",
-            isPresented: $showLockConfirmation,
+            pendingLockConfirmation == true ? "Lock scooter?" : "Unlock scooter?",
+            isPresented: lockConfirmationPresented,
             titleVisibility: .visible
         ) {
             Button(
-                vehicle.state.isLocked == true ? "Unlock" : "Lock",
-                role: vehicle.state.isLocked == true ? nil : .destructive
+                pendingLockConfirmation == true ? "Lock" : "Unlock",
+                role: pendingLockConfirmation == true ? .destructive : nil
             ) {
-                Task { await vehicle.setLocked(!(vehicle.state.isLocked ?? false)) }
+                guard let requestedLocked = pendingLockConfirmation,
+                      isLockConfirmationStillValid(requestedLocked) else { return }
+                Task { await vehicle.setLocked(requestedLocked) }
             }
+            .disabled(
+                pendingLockConfirmation.map { !isLockConfirmationStillValid($0) } ?? true
+            )
         } message: {
             Text("Nembra changes the lock state only after the scooter confirms the command.")
         }
@@ -63,6 +68,13 @@ struct HomeView: View {
         Binding(
             get: { vehicle.lastErrorMessage != nil },
             set: { if !$0 { vehicle.lastErrorMessage = nil } }
+        )
+    }
+
+    private var lockConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingLockConfirmation != nil },
+            set: { if !$0 { pendingLockConfirmation = nil } }
         )
     }
 
@@ -271,7 +283,8 @@ struct HomeView: View {
                         available: vehicle.state.isLocked != nil,
                         enabled: canChangeLockState
                     ) {
-                        showLockConfirmation = true
+                        guard let locked = vehicle.state.isLocked else { return }
+                        pendingLockConfirmation = !locked
                     }
                 }
             }
@@ -382,7 +395,6 @@ struct HomeView: View {
                 in: RoundedRectangle(cornerRadius: 17, style: .continuous)
             )
         }
-        .sensoryFeedback(.selection, trigger: vehicle.state.rideMode)
     }
 
     private var vehicleSection: some View {
@@ -693,22 +705,37 @@ struct HomeView: View {
     }
 
     private var lockControlTitle: String {
-        if isVehicleMoving && vehicle.state.isLocked != true { return "Lock" }
-        return vehicle.state.isLocked == true ? "Unlock" : "Lock"
+        vehicle.state.isLocked == true ? "Unlock" : "Lock"
     }
 
     private var lockSubtitle: String {
         guard let locked = vehicle.state.isLocked else { return "Unknown" }
-        if !locked && isVehicleMoving { return "Stop to lock" }
-        return locked ? "Secured" : "Ready"
-    }
-
-    private var isVehicleMoving: Bool {
-        (vehicle.state.speedKilometersPerHour ?? 0) >= 0.5
+        if locked { return "Secured" }
+        guard let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return "Speed unavailable"
+        }
+        return speed >= 0.5 ? "Stop to lock" : "Ready"
     }
 
     private var canChangeLockState: Bool {
-        vehicle.state.isLocked == true || !isVehicleMoving
+        guard let locked = vehicle.state.isLocked else { return false }
+        if locked { return true }
+        guard let speed = vehicle.state.speedKilometersPerHour,
+              speed.isFinite,
+              speed >= 0 else {
+            return false
+        }
+        return speed < 0.5
+    }
+
+    private func isLockConfirmationStillValid(_ requestedLocked: Bool) -> Bool {
+        if requestedLocked {
+            guard vehicle.state.isLocked == false else { return false }
+            return canChangeLockState
+        }
+        return vehicle.state.isLocked == true
     }
 
     private var isBatteryLow: Bool {
