@@ -27,7 +27,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func learnedNormalLiveRangeIsEligible() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: 1_234),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .valueMeters(1_234))
@@ -42,7 +42,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
                 confidence: .high,
                 lowSOCConservatismApplied: true
             ),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .valueMeters(900))
@@ -52,7 +52,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func zeroRangeIsEligible() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: 0, confidence: .high),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .valueMeters(0))
@@ -62,7 +62,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func provisionalSeedIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(basis: .provisionalSeed, confidence: .learning),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .learning(.provisionalSeed))
@@ -77,7 +77,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
                 confidence: .learning,
                 socProvenance: .estimate
             ),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .unavailable(.estimatedSOCRequiresQualifier))
@@ -88,7 +88,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func learningConfidenceIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .learning),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .learning(.learningConfidence))
@@ -98,7 +98,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func lowConfidenceIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .low),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .learning(.lowConfidenceRequiresQualifier))
@@ -108,7 +108,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func estimatedSOCIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high, socProvenance: .estimate),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .unavailable(.estimatedSOCRequiresQualifier))
@@ -119,7 +119,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func retainedVehicleDataIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high),
-            vehicleAvailability: .retained
+            dataAvailability: .retained
         )
 
         #expect(decision == .unavailable(.retainedVehicleDataRequiresQualifier))
@@ -129,7 +129,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func unavailableVehicleDataIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high),
-            vehicleAvailability: .unavailable
+            dataAvailability: .unavailable
         )
 
         #expect(decision == .unavailable(.vehicleDataUnavailable))
@@ -139,7 +139,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func missingEstimateIsUnavailable() {
         let decision = policy.resolve(
             estimate: nil,
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(decision == .unavailable(.noEstimate))
@@ -149,11 +149,11 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func invalidPresentedRangeIsUnavailable() {
         let negative = policy.resolve(
             estimate: estimate(presentedRemainingMeters: -1, confidence: .high),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
         let nonFinite = policy.resolve(
             estimate: estimate(presentedRemainingMeters: .infinity, confidence: .high),
-            vehicleAvailability: .live
+            dataAvailability: .live
         )
 
         #expect(negative == .unavailable(.invalidPresentedRange))
