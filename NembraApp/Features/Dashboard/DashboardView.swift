@@ -294,7 +294,7 @@ struct DashboardView: View {
 
     private var dashboardBatteryMetric: some View {
         Button(action: toggleBatteryReadout) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Label(batteryReadoutTitle, systemImage: batteryIcon)
                     .font(.caption2.weight(.bold))
                     .tracking(1.2)
@@ -305,6 +305,16 @@ struct DashboardView: View {
                     .foregroundStyle(isBatteryLow ? Color.red : Color.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
+
+                if batteryReadoutPresentation.batteryFillPercent != nil {
+                    Text("LAST KNOWN CHARGE")
+                        .font(.caption2.weight(.medium))
+                        .tracking(0.5)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .accessibilityHidden(true)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
@@ -422,17 +432,16 @@ struct DashboardView: View {
         }
 
         var qualifiers: [String] = []
-        if isBatteryLow {
-            qualifiers.append("low battery")
-        }
-        if vehicle.state.dataAvailability == .retained,
-           batteryReadoutPresentation.batteryFillPercent != nil {
+        if batteryReadoutPresentation.batteryFillPercent != nil {
             switch batteryReadoutMode {
             case .percentage:
                 qualifiers.append("last known vehicle data")
             case .estimatedRange:
                 qualifiers.append("battery charge is last known vehicle data")
             }
+        }
+        if isBatteryLow {
+            qualifiers.append("low battery")
         }
 
         guard !qualifiers.isEmpty else { return baseValue }
@@ -446,9 +455,9 @@ struct DashboardView: View {
 
         switch batteryReadoutMode {
         case .percentage:
-            return "Double tap to show estimated remaining range."
+            return "Showing the last known charge. Double tap to show estimated remaining range."
         case .estimatedRange:
-            return "Double tap to show battery percentage."
+            return "Showing the last known charge. Double tap to show battery percentage."
         }
     }
 
