@@ -44,6 +44,36 @@ struct AccelerationTimingTests {
         )
     }
 
+    private func malformedEncodedSample(
+        from validSample: SpeedTelemetrySample,
+        mutate: (inout [String: Any]) -> Void
+    ) throws -> Data {
+        let encoded = try JSONEncoder().encode(validSample)
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        mutate(&object)
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    private func expectImportedEvidenceRejectedAtDecoderOrEvaluator(
+        _ data: Data,
+        expectedValidationError: SpeedTelemetryValidationError
+    ) throws {
+        do {
+            // On an older permissive Codable boundary, the evaluator itself must
+            // still refuse a value that bypassed the validating initializer.
+            let malformed = try JSONDecoder().decode(SpeedTelemetrySample.self, from: data)
+            var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
+            evaluator.accept(malformed)
+            #expect(evaluator.state == .waitingForStandstill)
+        } catch let validationError as SpeedTelemetryValidationError {
+            // A hardened imported-sample boundary may reject the malformed value
+            // before this evaluator sees it. That is the preferred safe path.
+            #expect(validationError == expectedValidationError)
+        }
+    }
+
     @Test("rolling start is rejected before a standstill anchor exists")
     func rollingStartRejected() throws {
         var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
@@ -191,34 +221,37 @@ struct AccelerationTimingTests {
 
     @Test("malformed motion-assist evidence is rejected by decoder or evaluator boundary")
     func malformedMotionAssistNeverBecomesTimingEvidence() throws {
-        let valid = try sample(metersPerSecond: 0, seconds: 1)
-        let encoded = try JSONEncoder().encode(valid)
-        let validJSON = try #require(String(data: encoded, encoding: .utf8))
-        let malformedJSON = validJSON.replacingOccurrences(
-            of: "\"scooterBluetooth\"",
-            with: "\"motionAssist\""
-        )
-        #expect(malformedJSON != validJSON)
-        let malformedData = try #require(malformedJSON.data(using: .utf8))
-
-        do {
-            // On an older permissive Codable boundary, prove the evaluator still
-            // refuses the impossible motion-assist/absolute-measurement pairing.
-            let malformed = try JSONDecoder().decode(
-                SpeedTelemetrySample.self,
-                from: malformedData
-            )
-            #expect(malformed.source == .motionAssist)
-            #expect(malformed.isAuthoritativeMeasurement)
-
-            var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
-            evaluator.accept(malformed)
-            #expect(evaluator.state == .waitingForStandstill)
-        } catch let validationError as SpeedTelemetryValidationError {
-            // A hardened imported-sample boundary may reject the malformed pair
-            // before this evaluator ever sees it. That is the preferred safe path.
-            #expect(validationError == .invalidProvenanceForSource)
+        let data = try malformedEncodedSample(from: sample(metersPerSecond: 0, seconds: 1)) {
+            $0["source"] = SpeedTelemetrySource.motionAssist.rawValue
         }
+        try expectImportedEvidenceRejectedAtDecoderOrEvaluator(
+            data,
+            expectedValidationError: .invalidProvenanceForSource
+        )
+    }
+
+    @Test("negative imported speed is rejected by decoder or evaluator boundary")
+    func malformedNegativeSpeedNeverBecomesTimingEvidence() throws {
+        let data = try malformedEncodedSample(from: sample(metersPerSecond: 0, seconds: 1)) {
+            $0["metersPerSecond"] = -1.0
+        }
+        try expectImportedEvidenceRejectedAtDecoderOrEvaluator(
+            data,
+            expectedValidationError: .invalidSpeed
+        )
+    }
+
+    @Test("negative imported accuracy is rejected even when no accuracy ceiling is configured")
+    func malformedNegativeAccuracyNeverBecomesTimingEvidence() throws {
+        let data = try malformedEncodedSample(
+            from: sample(metersPerSecond: 0, seconds: 1, accuracy: 0.5)
+        ) {
+            $0["speedAccuracyMetersPerSecond"] = -0.5
+        }
+        try expectImportedEvidenceRejectedAtDecoderOrEvaluator(
+            data,
+            expectedValidationError: .invalidAccuracy
+        )
     }
 
     @Test("a source change invalidates an in-progress timing trace")
