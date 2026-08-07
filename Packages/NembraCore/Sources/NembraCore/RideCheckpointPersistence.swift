@@ -15,8 +15,9 @@ public enum RideCheckpointPhase: String, Codable, Equatable, Sendable {
 }
 
 /// Durable, compact evidence needed to recover one confirmed ride after process
-/// termination. Monotonic uptime is intentionally absent: uptime belongs to one
-/// process/boot epoch and must never be treated as durable wall-clock history.
+/// termination. Monotonic uptime is intentionally absent: it is boot-relative
+/// transient timing evidence, and a durable checkpoint cannot prove that a later
+/// process shares the same uptime domain.
 public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beganAtDate: Date
@@ -28,6 +29,9 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
     public let startingOdometerKilometers: Double?
     public let latestOdometerKilometers: Double?
     public let accumulatedGPSDistanceMeters: Double
+    /// Durable transport-continuity provenance accumulated before this
+    /// checkpoint. A legacy checkpoint without this field decodes as unknown.
+    public let transportGapEvidence: RideTransportGapEvidence
 
     public init(
         sessionID: UUID,
@@ -39,7 +43,8 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         checkpointedAtDate: Date,
         startingOdometerKilometers: Double?,
         latestOdometerKilometers: Double?,
-        accumulatedGPSDistanceMeters: Double
+        accumulatedGPSDistanceMeters: Double,
+        transportGapEvidence: RideTransportGapEvidence = .unknown
     ) throws {
         guard beganAtDate.timeIntervalSinceReferenceDate.isFinite,
               confirmedAtDate.timeIntervalSinceReferenceDate.isFinite,
@@ -56,7 +61,15 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
             guard phaseBeganAtDate == nil else {
                 throw RideCheckpointError.invalidCheckpoint
             }
-        case .temporarilyDisconnected, .endingCandidate:
+        case .temporarilyDisconnected:
+            guard phaseBeganAtDate != nil,
+                  transportGapEvidence != .noneObserved else {
+                // A current-process temporary-disconnect phase is direct gap
+                // evidence. Recovery-created disconnected phases are persisted
+                // with `.unknown`, never with an unqualified no-gap claim.
+                throw RideCheckpointError.invalidCheckpoint
+            }
+        case .endingCandidate:
             guard phaseBeganAtDate != nil else {
                 throw RideCheckpointError.invalidCheckpoint
             }
@@ -89,6 +102,7 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         self.startingOdometerKilometers = startingOdometerKilometers
         self.latestOdometerKilometers = latestOdometerKilometers
         self.accumulatedGPSDistanceMeters = accumulatedGPSDistanceMeters
+        self.transportGapEvidence = transportGapEvidence
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -102,6 +116,7 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
         case startingOdometerKilometers
         case latestOdometerKilometers
         case accumulatedGPSDistanceMeters
+        case transportGapEvidence
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,7 +132,11 @@ public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
                 checkpointedAtDate: container.decode(Date.self, forKey: .checkpointedAtDate),
                 startingOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .startingOdometerKilometers),
                 latestOdometerKilometers: container.decodeIfPresent(Double.self, forKey: .latestOdometerKilometers),
-                accumulatedGPSDistanceMeters: container.decode(Double.self, forKey: .accumulatedGPSDistanceMeters)
+                accumulatedGPSDistanceMeters: container.decode(Double.self, forKey: .accumulatedGPSDistanceMeters),
+                transportGapEvidence: try container.decodeIfPresent(
+                    RideTransportGapEvidence.self,
+                    forKey: .transportGapEvidence
+                ) ?? .unknown
             )
         } catch RideCheckpointError.invalidCheckpoint {
             throw DecodingError.dataCorrupted(
@@ -189,7 +208,11 @@ public protocol RideCheckpointStore: Sendable {
 /// checkpoint files. It does not claim a stronger power-loss durability guarantee
 /// than the underlying filesystem/Foundation atomic-write semantics provide.
 public actor AtomicRideCheckpointStore: RideCheckpointStore {
-    static let schemaVersion = 1
+    /// v2 adds explicit ride transport-gap provenance. v1 is still readable so
+    /// an existing in-progress ride can recover, but every subsequent write is
+    /// v2. Older apps will reject v2 instead of silently erasing the new meaning.
+    static let schemaVersion = 2
+    static let legacySchemaVersion = 1
     static let slotAFileName = "ride-journal-a.json"
     static let slotBFileName = "ride-journal-b.json"
 
@@ -201,6 +224,259 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         let schemaVersion: Int
         let generation: UInt64
         let checkpoint: RideDurableCheckpoint
+    }
+
+    private struct DecodedEnvelope<Checkpoint: Decodable>: Decodable {
+        let schemaVersion: Int
+        let generation: UInt64
+        let checkpoint: Checkpoint
+    }
+
+    private enum JournalCheckpointKind: String, Decodable {
+        case inProgress
+        case completedPendingCommit
+    }
+
+    private enum JournalCheckpointCodingKeys: String, CodingKey {
+        case kind
+        case inProgress
+        case completedPendingCommit
+    }
+
+    private enum RecoveryCodingKeys: String, CodingKey {
+        case sessionID
+        case beganAtDate
+        case confirmedAtDate
+        case persistedPhase
+        case phaseBeganAtDate
+        case lastObservedAtDate
+        case checkpointedAtDate
+        case startingOdometerKilometers
+        case latestOdometerKilometers
+        case accumulatedGPSDistanceMeters
+        case transportGapEvidence
+    }
+
+    private struct RecoveryFields {
+        let sessionID: UUID
+        let beganAtDate: Date
+        let confirmedAtDate: Date
+        let persistedPhase: RideCheckpointPhase
+        let phaseBeganAtDate: Date?
+        let lastObservedAtDate: Date
+        let checkpointedAtDate: Date
+        let startingOdometerKilometers: Double?
+        let latestOdometerKilometers: Double?
+        let accumulatedGPSDistanceMeters: Double
+
+        init(container: KeyedDecodingContainer<RecoveryCodingKeys>) throws {
+            self.sessionID = try container.decode(UUID.self, forKey: .sessionID)
+            self.beganAtDate = try container.decode(Date.self, forKey: .beganAtDate)
+            self.confirmedAtDate = try container.decode(Date.self, forKey: .confirmedAtDate)
+            self.persistedPhase = try container.decode(RideCheckpointPhase.self, forKey: .persistedPhase)
+            self.phaseBeganAtDate = try container.decodeIfPresent(Date.self, forKey: .phaseBeganAtDate)
+            self.lastObservedAtDate = try container.decode(Date.self, forKey: .lastObservedAtDate)
+            self.checkpointedAtDate = try container.decode(Date.self, forKey: .checkpointedAtDate)
+            self.startingOdometerKilometers = try container.decodeIfPresent(
+                Double.self,
+                forKey: .startingOdometerKilometers
+            )
+            self.latestOdometerKilometers = try container.decodeIfPresent(
+                Double.self,
+                forKey: .latestOdometerKilometers
+            )
+            self.accumulatedGPSDistanceMeters = try container.decode(
+                Double.self,
+                forKey: .accumulatedGPSDistanceMeters
+            )
+        }
+
+        func domain(
+            transportGapEvidence: RideTransportGapEvidence
+        ) throws -> RideRecoveryCheckpoint {
+            try RideRecoveryCheckpoint(
+                sessionID: sessionID,
+                beganAtDate: beganAtDate,
+                confirmedAtDate: confirmedAtDate,
+                persistedPhase: persistedPhase,
+                phaseBeganAtDate: phaseBeganAtDate,
+                lastObservedAtDate: lastObservedAtDate,
+                checkpointedAtDate: checkpointedAtDate,
+                startingOdometerKilometers: startingOdometerKilometers,
+                latestOdometerKilometers: latestOdometerKilometers,
+                accumulatedGPSDistanceMeters: accumulatedGPSDistanceMeters,
+                transportGapEvidence: transportGapEvidence
+            )
+        }
+    }
+
+    private struct CurrentRideRecoveryCheckpoint: Decodable {
+        let value: RideRecoveryCheckpoint
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: RecoveryCodingKeys.self)
+            let fields = try RecoveryFields(container: container)
+            let transportGapEvidence = try container.decode(
+                RideTransportGapEvidence.self,
+                forKey: .transportGapEvidence
+            )
+            self.value = try fields.domain(transportGapEvidence: transportGapEvidence)
+        }
+    }
+
+    private struct LegacyRideRecoveryCheckpoint: Decodable {
+        let value: RideRecoveryCheckpoint
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: RecoveryCodingKeys.self)
+            let fields = try RecoveryFields(container: container)
+            self.value = try fields.domain(transportGapEvidence: .unknown)
+        }
+    }
+
+    private enum CompletedCodingKeys: String, CodingKey {
+        case sessionID
+        case beganAtDate
+        case confirmedAtDate
+        case endedAtDate
+        case startingOdometerKilometers
+        case endingOdometerKilometers
+        case qualityScreenedGPSDistanceMeters
+        case continuity
+        case transportGapEvidence
+    }
+
+    private struct CompletedFields {
+        let sessionID: UUID
+        let beganAtDate: Date
+        let confirmedAtDate: Date
+        let endedAtDate: Date
+        let startingOdometerKilometers: Double?
+        let endingOdometerKilometers: Double?
+        let qualityScreenedGPSDistanceMeters: Double
+        let continuity: RideSessionContinuity
+
+        init(container: KeyedDecodingContainer<CompletedCodingKeys>) throws {
+            self.sessionID = try container.decode(UUID.self, forKey: .sessionID)
+            self.beganAtDate = try container.decode(Date.self, forKey: .beganAtDate)
+            self.confirmedAtDate = try container.decode(Date.self, forKey: .confirmedAtDate)
+            self.endedAtDate = try container.decode(Date.self, forKey: .endedAtDate)
+            self.startingOdometerKilometers = try container.decodeIfPresent(
+                Double.self,
+                forKey: .startingOdometerKilometers
+            )
+            self.endingOdometerKilometers = try container.decodeIfPresent(
+                Double.self,
+                forKey: .endingOdometerKilometers
+            )
+            self.qualityScreenedGPSDistanceMeters = try container.decode(
+                Double.self,
+                forKey: .qualityScreenedGPSDistanceMeters
+            )
+            self.continuity = try container.decode(RideSessionContinuity.self, forKey: .continuity)
+        }
+
+        func domain(
+            transportGapEvidence: RideTransportGapEvidence
+        ) throws -> CompletedRideEvidence {
+            try CompletedRideEvidence(
+                sessionID: sessionID,
+                beganAtDate: beganAtDate,
+                confirmedAtDate: confirmedAtDate,
+                endedAtDate: endedAtDate,
+                startingOdometerKilometers: startingOdometerKilometers,
+                endingOdometerKilometers: endingOdometerKilometers,
+                qualityScreenedGPSDistanceMeters: qualityScreenedGPSDistanceMeters,
+                continuity: continuity,
+                transportGapEvidence: transportGapEvidence
+            )
+        }
+    }
+
+    private struct CurrentCompletedRideEvidence: Decodable {
+        let value: CompletedRideEvidence
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CompletedCodingKeys.self)
+            let fields = try CompletedFields(container: container)
+            let transportGapEvidence = try container.decode(
+                RideTransportGapEvidence.self,
+                forKey: .transportGapEvidence
+            )
+            self.value = try fields.domain(transportGapEvidence: transportGapEvidence)
+        }
+    }
+
+    private struct LegacyCompletedRideEvidence: Decodable {
+        let value: CompletedRideEvidence
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CompletedCodingKeys.self)
+            let fields = try CompletedFields(container: container)
+            self.value = try fields.domain(transportGapEvidence: .unknown)
+        }
+    }
+
+    private enum CurrentDurableCheckpoint: Decodable {
+        case inProgress(RideRecoveryCheckpoint)
+        case completedPendingCommit(CompletedRideEvidence)
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: JournalCheckpointCodingKeys.self)
+            switch try container.decode(JournalCheckpointKind.self, forKey: .kind) {
+            case .inProgress:
+                self = .inProgress(
+                    try container.decode(CurrentRideRecoveryCheckpoint.self, forKey: .inProgress).value
+                )
+            case .completedPendingCommit:
+                self = .completedPendingCommit(
+                    try container.decode(
+                        CurrentCompletedRideEvidence.self,
+                        forKey: .completedPendingCommit
+                    ).value
+                )
+            }
+        }
+
+        var value: RideDurableCheckpoint {
+            switch self {
+            case let .inProgress(checkpoint):
+                return .inProgress(checkpoint)
+            case let .completedPendingCommit(evidence):
+                return .completedPendingCommit(evidence)
+            }
+        }
+    }
+
+    private enum LegacyDurableCheckpoint: Decodable {
+        case inProgress(RideRecoveryCheckpoint)
+        case completedPendingCommit(CompletedRideEvidence)
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: JournalCheckpointCodingKeys.self)
+            switch try container.decode(JournalCheckpointKind.self, forKey: .kind) {
+            case .inProgress:
+                self = .inProgress(
+                    try container.decode(LegacyRideRecoveryCheckpoint.self, forKey: .inProgress).value
+                )
+            case .completedPendingCommit:
+                self = .completedPendingCommit(
+                    try container.decode(
+                        LegacyCompletedRideEvidence.self,
+                        forKey: .completedPendingCommit
+                    ).value
+                )
+            }
+        }
+
+        var value: RideDurableCheckpoint {
+            switch self {
+            case let .inProgress(checkpoint):
+                return .inProgress(checkpoint)
+            case let .completedPendingCommit(evidence):
+                return .completedPendingCommit(evidence)
+            }
+        }
     }
 
     private enum SlotRead {
@@ -323,10 +599,49 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
 
         do {
             let probe = try decoder.decode(SchemaProbe.self, from: data)
-            guard probe.schemaVersion == Self.schemaVersion else {
+            switch probe.schemaVersion {
+            case Self.schemaVersion:
+                // The same JSONDecoder path that accepts the current journal also
+                // requires non-null, valid transport provenance. There is no
+                // JSONSerialization preflight whose duplicate-key semantics can
+                // disagree with the authoritative decode.
+                let current = try decoder.decode(
+                    DecodedEnvelope<CurrentDurableCheckpoint>.self,
+                    from: data
+                )
+                guard current.schemaVersion == Self.schemaVersion else {
+                    return .corrupt
+                }
+                return .valid(
+                    Envelope(
+                        schemaVersion: Self.schemaVersion,
+                        generation: current.generation,
+                        checkpoint: current.checkpoint.value
+                    )
+                )
+
+            case Self.legacySchemaVersion:
+                // Schema v1 predates transport provenance. The legacy DTO never
+                // decodes that key, so even an injected current-era field cannot
+                // self-assert a v2 claim; migration always supplies `.unknown`.
+                let legacy = try decoder.decode(
+                    DecodedEnvelope<LegacyDurableCheckpoint>.self,
+                    from: data
+                )
+                guard legacy.schemaVersion == Self.legacySchemaVersion else {
+                    return .corrupt
+                }
+                return .valid(
+                    Envelope(
+                        schemaVersion: Self.schemaVersion,
+                        generation: legacy.generation,
+                        checkpoint: legacy.checkpoint.value
+                    )
+                )
+
+            default:
                 return .unsupported(probe.schemaVersion)
             }
-            return .valid(try decoder.decode(Envelope.self, from: data))
         } catch {
             return .corrupt
         }
