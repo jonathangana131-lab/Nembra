@@ -20,6 +20,10 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case manifestDoesNotMatchCapture
 }
 
+public enum PassiveBluetoothStationaryCaptureExperimentKind: String, Codable, Sendable {
+    case stationaryBaseline
+}
+
 public enum PassiveBluetoothStationaryCaptureReferenceSetup: String, Codable, Sendable {
     /// No stock-app reference value was used for this capture.
     case none
@@ -104,6 +108,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     }
 
     public let schemaVersion: Int
+    public let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
     public let experimentID: UUID
     public let preparedAt: Date
     public let nembraBuildCommitSHA: String
@@ -113,6 +118,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 
     fileprivate init(
         schemaVersion: Int,
+        experimentKind: PassiveBluetoothStationaryCaptureExperimentKind,
         experimentID: UUID,
         preparedAt: Date,
         nembraBuildCommitSHA: String,
@@ -121,6 +127,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
         evidenceSummary: EvidenceSummary
     ) {
         self.schemaVersion = schemaVersion
+        self.experimentKind = experimentKind
         self.experimentID = experimentID
         self.preparedAt = preparedAt
         self.nembraBuildCommitSHA = nembraBuildCommitSHA
@@ -156,6 +163,7 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
 
         return PassiveBluetoothStationaryCaptureManifest(
             schemaVersion: PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion,
+            experimentKind: .stationaryBaseline,
             experimentID: experimentID,
             preparedAt: preparedAt,
             nembraBuildCommitSHA: buildCommit,
@@ -308,6 +316,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
 
     private struct Wire: Codable {
         let schemaVersion: Int
+        let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
         let experimentID: UUID
         let preparedAt: Date
         let nembraBuildCommitSHA: String
@@ -317,6 +326,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
 
         init(_ manifest: PassiveBluetoothStationaryCaptureManifest) {
             schemaVersion = manifest.schemaVersion
+            experimentKind = manifest.experimentKind
             experimentID = manifest.experimentID
             preparedAt = manifest.preparedAt
             nembraBuildCommitSHA = manifest.nembraBuildCommitSHA
@@ -338,6 +348,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         func exactManifest() -> PassiveBluetoothStationaryCaptureManifest {
             PassiveBluetoothStationaryCaptureManifest(
                 schemaVersion: schemaVersion,
+                experimentKind: experimentKind,
                 experimentID: experimentID,
                 preparedAt: preparedAt,
                 nembraBuildCommitSHA: nembraBuildCommitSHA,
