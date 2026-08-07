@@ -24,9 +24,9 @@ public struct PropulsionObservedScaleRegionPolicy: Equatable, Sendable {
 
 /// Render-independent semantic region for the current accepted propulsion sample.
 ///
-/// A future cockpit may use `.nearObservedScaleEdge` for restrained emphasis or
-/// truthful wording such as "near observed max". It must not relabel this state as
-/// throttle position, rated/certified maximum, or a new telemetry measurement.
+/// `.nearObservedScaleEdge` remains authority-agnostic so Simulator QA can exercise
+/// the same visual region. Product wording must use the snapshot's verified wording
+/// eligibility instead of treating this enum case alone as physical evidence.
 public enum PropulsionObservedScaleRegion: String, Equatable, Sendable {
     case unavailable
     case retained
@@ -47,8 +47,32 @@ public struct PropulsionObservedScaleRegionSnapshot: Equatable, Sendable {
     public let acceptedObservedScaleFraction: Double?
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
 
+    /// Visual-region convenience only. This may be true for Simulator QA and must
+    /// not by itself drive production wording that implies physically verified
+    /// observed-power authority.
     public var isNearObservedScaleEdge: Bool {
         region == .nearObservedScaleEdge
+    }
+
+    /// The only convenience intended to gate production wording such as
+    /// "Near observed max". It requires the semantic region, a current accepted
+    /// verified-vehicle power measurement, and a compatible verified observed-
+    /// envelope presentation scale. It still does not mean throttle position,
+    /// rated/certified maximum, or a perfect continuous-time physical maximum.
+    public var permitsVerifiedNearObservedMaximumWording: Bool {
+        region == .nearObservedScaleEdge
+            && availability == .live
+            && latestAuthority == .verifiedVehicleMeasurement
+            && scaleOrigin == .verifiedObservedEnvelope
+    }
+
+    /// Explicit Simulator-QA classification so visual tests can exercise the
+    /// region without accidentally sharing the production verified-wording gate.
+    public var isSimulatorNearObservedScaleEdge: Bool {
+        region == .nearObservedScaleEdge
+            && availability == .live
+            && latestAuthority == .simulator
+            && scaleOrigin == .simulator
     }
 }
 
