@@ -31,6 +31,36 @@ struct RideSessionDurationProvenanceRegressionTests {
         )
     }
 
+    @Test("late-start recovery can acknowledge an initial unobserved interval")
+    func lateStartRecoveryIsPartial() throws {
+        var accumulator = RideSessionDurationEvidenceAccumulator(
+            sessionID: sessionID,
+            beginsAfterUnobservedInterval: true
+        )
+
+        let encoded = try JSONEncoder().encode(accumulator)
+        accumulator = try JSONDecoder().decode(
+            RideSessionDurationEvidenceAccumulator.self,
+            from: encoded
+        )
+        #expect(accumulator.beginsAfterUnobservedInterval)
+
+        let result = try accumulator.upsert(
+            segment(
+                segmentID: firstSegmentID,
+                processID: firstProcessID,
+                sequence: 0,
+                through: 300,
+                followsGap: true
+            )
+        )
+
+        #expect(result == .inserted)
+        #expect(accumulator.snapshot.observedDurationNanoseconds == 200)
+        #expect(accumulator.snapshot.coverage == .partial)
+        #expect(accumulator.snapshot.hasUnobservedInterval)
+    }
+
     @Test("a sealed earlier segment cannot grow after a later observation segment begins")
     func sealedSegmentCannotExtend() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
