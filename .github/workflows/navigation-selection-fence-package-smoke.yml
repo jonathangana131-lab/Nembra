@@ -1,0 +1,34 @@
+name: Navigation Selection Fence Package Smoke
+
+on:
+  push:
+    branches:
+      - qa/navigation-selection-fence/chat-m4q7n-v3
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD=59f4ccb056680f8b59118ff47e705ee36e3c869f
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          changed="$(git diff --name-only "$PRODUCT_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/navigation-selection-fence-package-smoke.yml"
+          echo "QA mirror contains exactly one workflow-only commit above $PRODUCT_HEAD"
+
+      - name: Report Swift toolchain
+        run: swift --version
+
+      - name: Test NembraCore with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
