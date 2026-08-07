@@ -48,7 +48,10 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
     public let distinctMarkerFields: Set<String>
     public let targetValueOrigins: Set<PassiveBluetoothValueOrigin>
 
-    public init(
+    /// Readiness is evidence-derived authority, not a scalar value callers may
+    /// mint. Keep construction inside this file so every public report originates
+    /// from `PassiveBluetoothCaptureCorrelationReadiness.assess(...)`.
+    fileprivate init(
         disposition: PassiveBluetoothCaptureCorrelationReadinessDisposition,
         peripheralIdentifier: String,
         sessionRecordCount: Int,
