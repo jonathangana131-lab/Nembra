@@ -3,6 +3,7 @@ import Foundation
 import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A product-facing shell around the passive ES80 research controller.
 ///
