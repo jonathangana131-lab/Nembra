@@ -97,12 +97,12 @@ public enum TuyaCandidateTranscriptAnalyzer {
             // structure and can reject it normally without mutating raw evidence.
             if reassembler != nil,
                beginsWithCandidatePacketZero(observation),
-               let startObservationIndex,
-               let lastAcceptedObservationIndex {
+               let priorStartObservationIndex = startObservationIndex,
+               let priorLastAcceptedObservationIndex = lastAcceptedObservationIndex {
                 events.append(
                     .incompleteAtBoundary(
-                        startObservationIndex: startObservationIndex,
-                        lastAcceptedObservationIndex: lastAcceptedObservationIndex,
+                        startObservationIndex: priorStartObservationIndex,
+                        lastAcceptedObservationIndex: priorLastAcceptedObservationIndex,
                         nextObservationIndex: index,
                         boundary: .candidatePacketZeroRestart
                     )
