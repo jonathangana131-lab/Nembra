@@ -201,12 +201,14 @@ public struct TuyaCandidateDPNumericHypothesisEvidence: Equatable, Sendable {
 
 /// Numeric hypothesis evaluation for one exact candidate from one parent report.
 /// Scope/continuity/framing truth remains owned by that report rather than being
-/// re-invented here.
+/// re-invented here. The exact tolerance is retained because `isWithinTolerance`
+/// is otherwise not auditable once the caller-owned policy leaves scope.
 public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
     public let correlationScope: TuyaCandidateDPMarkerCorrelationScope
     public let candidateIndex: Int
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let numericReferenceCount: Int
+    public let absoluteTolerance: Double
     public let unusedReferenceMarkerIndices: [Int]
     public let ambiguousReferenceMarkerIndices: [Int]
     public let sharedObservationReferenceMarkerIndices: [Int]
@@ -217,6 +219,7 @@ public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
         candidateIndex: Int,
         candidate: TuyaCandidateDPCorrelationCandidate,
         numericReferenceCount: Int,
+        absoluteTolerance: Double,
         unusedReferenceMarkerIndices: [Int],
         ambiguousReferenceMarkerIndices: [Int],
         sharedObservationReferenceMarkerIndices: [Int],
@@ -226,6 +229,7 @@ public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
         self.candidateIndex = candidateIndex
         self.candidate = candidate
         self.numericReferenceCount = numericReferenceCount
+        self.absoluteTolerance = absoluteTolerance
         self.unusedReferenceMarkerIndices = unusedReferenceMarkerIndices
         self.ambiguousReferenceMarkerIndices = ambiguousReferenceMarkerIndices
         self.sharedObservationReferenceMarkerIndices = sharedObservationReferenceMarkerIndices
@@ -295,6 +299,7 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
             candidateIndex: candidateIndex,
             candidate: candidateEvidence.candidate,
             numericReferenceCount: numericReferences.count,
+            absoluteTolerance: policy.absoluteTolerance,
             unusedReferenceMarkerIndices: unusedReferenceMarkerIndices,
             ambiguousReferenceMarkerIndices: ambiguousReferenceMarkerIndices,
             sharedObservationReferenceMarkerIndices: sharedObservationReferenceMarkerIndices,
