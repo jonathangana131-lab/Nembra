@@ -54,12 +54,13 @@ public final class NavigationRoutePlanningService {
         return true
     }
 
-    /// Cancels any current request, then clears product-facing planning state.
-    /// Request-sequence identity remains monotonic inside NembraCore.
+    /// Clears product-facing planning state before cancelling provider work.
+    /// NembraCore returns the exact active token, if any, so a provider cancel
+    /// callback can never observe a transient `.failed(.cancelled)` state from
+    /// reset and a late completion remains generation-rejected.
     public func reset() {
-        if let token = planner.cancelCurrent() {
+        if let token = planner.reset() {
             _ = operations.cancel(token: token)
         }
-        planner.reset()
     }
 }
