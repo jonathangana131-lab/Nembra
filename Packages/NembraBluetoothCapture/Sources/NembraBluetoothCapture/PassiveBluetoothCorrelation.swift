@@ -75,10 +75,10 @@ public enum PassiveBluetoothCorrelation {
     ///   - lookbackNanoseconds: Maximum raw-value age before the marker.
     ///   - lookaheadNanoseconds: Maximum raw-value time after the marker.
     ///
-    /// An interruption is a hard boundary. A value on the other side of a
-    /// disconnect/Bluetooth transition/observer restart is never presented as a
-    /// candidate for the marker, even if wall-clock or uptime proximity happens
-    /// to be small.
+    /// Any parent-model byte-continuity break is a hard boundary. A value on the
+    /// other side of a structured disconnect/Bluetooth transition/observer
+    /// restart is never presented as a candidate for the marker, even if timing
+    /// proximity happens to be small.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         field: String? = nil,
@@ -94,7 +94,7 @@ public enum PassiveBluetoothCorrelation {
 
         for index in records.indices {
             segmentIndexByRecord[index] = currentSegment
-            if case .interruption = records[index].event {
+            if records[index].event.breaksByteContinuity {
                 segmentEnds.append(index)
                 segmentStart = index + 1
                 currentSegment += 1
