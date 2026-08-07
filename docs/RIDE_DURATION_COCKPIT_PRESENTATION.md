@@ -53,8 +53,8 @@ The decomposition is intentionally one-way presentation arithmetic:
 - seconds are never rounded up from subsecond evidence;
 - minutes and seconds remain bounded to `0...59`;
 - hours remain `UInt64`, so very large accepted durations do not overflow merely because presentation crosses an hour boundary;
-- `usesHourField` is layout guidance only and carries no evidence meaning;
-- the original `RideDurationCockpitValue.role` remains beside the components, so partial observed time cannot become unqualified elapsed time through formatting.
+- source `sessionID`, complete-vs-partial `role`, and accepted `wholeObservedSeconds` are copied into the same clock payload so digits cannot be casually detached from their truth qualifier;
+- `usesHourField` is layout guidance only and carries no evidence meaning.
 
 Clock components are not persisted telemetry, are not a new measurement, and must never be fed back into ride-duration evidence.
 
