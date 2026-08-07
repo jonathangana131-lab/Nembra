@@ -111,6 +111,33 @@ struct PassiveBluetoothTuyaCaptureArtifactReportTests {
         )
     }
 
+    @Test("advertisement-only artifacts never become target evidence")
+    func advertisementOnlyArtifactHasNoAttributableTarget() throws {
+        var session = try makeSession(peripherals: [])
+        try session.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "scan-noise",
+                localName: "Nearby device",
+                rssi: -44,
+                isConnectable: true
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 100,
+            receivedAtDate: Date(timeIntervalSince1970: 1)
+        )
+        let artifact = try PassiveBluetoothCaptureJSON.encode(
+            session,
+            prettyPrinted: false
+        )
+
+        #expect(throws: PassiveBluetoothTuyaCaptureArtifactReportError.noAttributablePeripheral) {
+            try PassiveBluetoothTuyaCaptureArtifactReportBuilder.make(
+                captureJSON: artifact,
+                policy: policy()
+            )
+        }
+    }
+
     @Test("multiple target-attributable peripherals fail closed until explicitly selected")
     func ambiguousTargetRequiresExplicitSelection() throws {
         let session = try makeSession(peripherals: ["target-A", "target-B"])
