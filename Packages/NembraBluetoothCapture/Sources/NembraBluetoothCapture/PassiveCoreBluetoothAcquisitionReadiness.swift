@@ -24,6 +24,7 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
         case operationIdentifierExhausted
         case acquisitionNotActive
         case acquisitionAlreadyActive
+        case acquisitionNotPermitted(Phase)
         case invalidChildOperationCount
     }
 
@@ -69,13 +70,29 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
         phase = .terminalWithoutGattAcquisition
     }
 
-    /// Starts a fresh finite acquisition generation, for example after connect
-    /// or a quiescent GATT service invalidation. CoreBluetooth does not attach a
-    /// request-generation identifier to service-discovery callbacks, so an
-    /// in-flight acquisition cannot be destructively replaced by another one and
-    /// still be attributed truthfully.
+    /// Starts a fresh finite acquisition only from a lifecycle state where
+    /// CoreBluetooth callbacks can be attributed without pretending software has
+    /// a request-generation identity the platform does not provide.
+    ///
+    /// Allowed:
+    /// - `.awaitingConnection` after the selected attempt actually connects;
+    /// - `.ready` for a quiescent topology invalidation/reacquisition.
+    ///
+    /// Rejected:
+    /// - `.acquiring`, because unresolved callbacks remain in flight;
+    /// - `.noTarget`, because there is no selected target session;
+    /// - `.terminalWithoutGattAcquisition`, which requires a new explicit
+    ///   connection attempt before another acquisition can begin.
     mutating func startAcquisition() throws {
-        guard phase != .acquiring, pendingOperations.isEmpty else {
+        switch phase {
+        case .awaitingConnection, .ready:
+            break
+        case .acquiring:
+            throw StateError.acquisitionAlreadyActive
+        case .noTarget, .terminalWithoutGattAcquisition:
+            throw StateError.acquisitionNotPermitted(phase)
+        }
+        guard pendingOperations.isEmpty else {
             throw StateError.acquisitionAlreadyActive
         }
         guard generation != UInt64.max else {
