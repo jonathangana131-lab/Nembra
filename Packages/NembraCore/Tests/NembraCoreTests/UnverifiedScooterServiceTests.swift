@@ -14,13 +14,27 @@ struct UnverifiedScooterServiceTests {
         #expect(state.rideMode == nil)
     }
 
-    @Test("connect cannot fabricate success before Bluetooth identity is verified")
+    @Test("connect cannot fabricate success or fresh vehicle evidence before Bluetooth identity is verified")
     func connectStaysBlocked() async {
         let service = UnverifiedScooterService()
+        let before = await service.snapshot()
+
         await service.connect()
-        let state = await service.snapshot()
-        #expect(state.connection == .disconnected)
-        #expect(state.connectionIssue == .unsupportedConfiguration)
+
+        let after = await service.snapshot()
+        #expect(after == before)
+        #expect(after.connection == .disconnected)
+        #expect(after.connectionIssue == .unsupportedConfiguration)
+    }
+
+    @Test("disconnect remains an idempotent local republish without fresh vehicle evidence")
+    func disconnectPreservesState() async {
+        let service = UnverifiedScooterService()
+        let before = await service.snapshot()
+
+        await service.disconnect()
+
+        #expect(await service.snapshot() == before)
     }
 
     @Test("unverified service emits no fake raw speed samples")
