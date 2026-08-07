@@ -15,13 +15,18 @@ Example of what must not happen:
 
 `BatteryEvidenceSnapshotAccumulator` prevents that class of stale/fresh mixing.
 
-## Construction boundary
+## Construction boundary follows both Nembra build graphs
 
-`BatteryEvidenceCurrentSegmentSnapshot` is public as a read-only output type, but its raw dictionary initializer is intentionally module-internal.
+`BatteryEvidenceCurrentSegmentSnapshot` is public as a read-only output type, but production raw-dictionary construction is **file-scoped** to `BatteryEvidenceSnapshotAccumulator.swift`.
 
-External app/framework code therefore cannot manufacture an arbitrary "current segment" and feed it into later freshness/live-truth stages while bypassing stream ordering and continuity. The production construction path is `BatteryEvidenceSnapshotAccumulator.currentSnapshot`.
+That is intentionally stronger than ordinary module-internal access. The current iOS project may manually compile selected NembraCore package-domain source files directly into the `Nembra` app target. In that composition, plain `internal` would also be callable by unrelated app source files and could let them manufacture a fake "current segment" without stream/continuity validation.
 
-NembraCore's `@testable` tests may still construct fixtures directly where necessary; that is test access, not a production trust path.
+The source therefore has two explicit paths:
+
+- direct app-source compilation: raw aggregate construction stays file-scoped; the production path is `BatteryEvidenceSnapshotAccumulator.currentSnapshot`;
+- real Swift-package compilation (`SWIFT_PACKAGE`): an internal fixture initializer remains available to NembraCore `@testable` and dependent package-domain tests, while external package clients still cannot call it.
+
+A direct same-module compile probe without `SWIFT_PACKAGE` fails when it tries the raw current-segment initializer. The same package-fixture spelling compiles with `SWIFT_PACKAGE`. This is supplemental software evidence, not hosted acceptance or physical ES80 proof.
 
 ## Current-segment semantics
 
@@ -64,14 +69,16 @@ The accumulator therefore treats same-uptime explicit boundary observations as o
 
 Without a separate sequence identifier, two spontaneous distinct gaps that somehow present the exact same receipt uptime cannot be distinguished from one multi-field boundary batch. The model does not invent a sequence fact that the evidence lacks. A higher layer that actually knows another gap occurred must call `markUnobservedInterval()`.
 
-## Same-field ambiguity
+## Same-field ambiguity and replay ordering
 
 Different fields may legitimately share one receipt uptime.
 
 For the **same field** at the exact same uptime:
 
-- an exact duplicate observation is idempotent;
+- an exact duplicate observation is globally idempotent;
 - a conflicting value/role/timestamp shape is rejected rather than arbitrarily choosing whichever callback happened to be processed last.
+
+Exact duplicate detection happens before stream-validator mutation. This is required because replaying an older retained field after newer evidence arrived must not rewind the process-local ordering baseline. Focused regressions also prove that a later genuinely new lower-uptime field remains rejected after such a replay.
 
 Without an additional sequence identifier, choosing between conflicting same-field same-uptime observations would manufacture an ordering fact that does not exist.
 
