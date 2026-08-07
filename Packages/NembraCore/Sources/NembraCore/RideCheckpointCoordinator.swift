@@ -4,6 +4,7 @@ public enum RideCheckpointCoordinatorError: Error, Equatable, Sendable {
     case invalidCadence
     case completedRideAwaitingCommit(UUID)
     case noMatchingPendingCompletion
+    case checkpointPersistenceUnavailable
 }
 
 /// Durable provenance describing what Nembra can truthfully say about scooter
@@ -70,6 +71,13 @@ public actor RideCheckpointCoordinator {
     private let cadence: RideCheckpointCadence
     private var lastSuccessfulCheckpointUptimeNanoseconds: UInt64?
     private var pendingCompletedRide: CompletedRideEvidence?
+
+    /// A required checkpoint-save error can be indeterminate: bytes may have
+    /// changed even though the caller observed an error. Once that happens this
+    /// coordinator instance stops accepting ride mutations until a fresh restore
+    /// reconciles durable journal authority. This prevents a later observation
+    /// from writing a newer checkpoint from stale in-memory engine state.
+    private var checkpointPersistenceFaulted = false
 
     /// Actors are reentrant at `await`. Checkpoint writes therefore need an
     /// explicit transaction permit so a second ingest cannot stage from the old
@@ -156,12 +164,22 @@ public actor RideCheckpointCoordinator {
         await acquireMutationPermit()
         defer { releaseMutationPermit() }
 
+        // This guard deliberately runs after permit acquisition. A second ingest
+        // may already be queued while the first caller is suspended in store.save;
+        // if that save faults, the resumed waiter must observe the newly latched
+        // persistence failure before staging from the old engine.
+        guard !checkpointPersistenceFaulted else {
+            throw RideCheckpointCoordinatorError.checkpointPersistenceUnavailable
+        }
+
         if let pendingCompletedRide {
             throw RideCheckpointCoordinatorError.completedRideAwaitingCommit(pendingCompletedRide.sessionID)
         }
 
-        // Work on a copy. If a required durable write fails, the in-memory engine
-        // remains at its prior state and the same observation can be retried.
+        // Work on a copy. The in-memory engine is committed only after every
+        // required durable save succeeds. If a save fails, this coordinator is
+        // latched persistence-unavailable because the filesystem outcome may be
+        // indeterminate; a fresh restore is required before ride mutation resumes.
         // Snapshot the prior durable transport classification before mutation so
         // newly direct gap evidence can force a write even when the ride phase is
         // already `temporarilyDisconnected` after process recovery.
@@ -173,7 +191,7 @@ public actor RideCheckpointCoordinator {
         let update = try nextEngine.ingest(observation)
 
         if let completed = update.completedRideEvidence {
-            try await store.save(.completedPendingCommit(completed))
+            try await saveRequiredCheckpoint(.completedPendingCommit(completed))
             engine = nextEngine
             pendingCompletedRide = completed
             lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
@@ -191,7 +209,7 @@ public actor RideCheckpointCoordinator {
                 observation: observation,
                 transportGapEvidenceBecameObserved: transportGapEvidenceBecameObserved
             ) {
-                try await store.save(.inProgress(checkpoint))
+                try await saveRequiredCheckpoint(.inProgress(checkpoint))
                 lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
             }
         }
@@ -222,6 +240,15 @@ public actor RideCheckpointCoordinator {
         try await store.clear()
         pendingCompletedRide = nil
         lastSuccessfulCheckpointUptimeNanoseconds = nil
+    }
+
+    private func saveRequiredCheckpoint(_ checkpoint: RideDurableCheckpoint) async throws {
+        do {
+            try await store.save(checkpoint)
+        } catch {
+            checkpointPersistenceFaulted = true
+            throw error
+        }
     }
 
     private func shouldPersistInProgress(
