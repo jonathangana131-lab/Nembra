@@ -1,17 +1,23 @@
 /// The accepted numeric power value that a cockpit may present as a measurement.
 /// Construction is file-private so callers cannot relabel an interpolated render value as accepted evidence.
 public struct PropulsionGaugeCockpitAcceptedMeasurement: Equatable, Sendable {
+    /// Exact vehicle/mode identity of the display model that accepted this measurement.
+    /// Detached cockpit values must stay bound to their source identity rather than relying on
+    /// whichever vehicle happens to be current when a UI callback is later delivered.
+    public let identity: PropulsionGaugeIdentity
     public let watts: Double
     public let receiptSequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
     public let authority: PropulsionPowerSampleAuthority
 
     fileprivate init(
+        identity: PropulsionGaugeIdentity,
         watts: Double,
         receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
         authority: PropulsionPowerSampleAuthority
     ) {
+        self.identity = identity
         self.watts = watts
         self.receiptSequenceNumber = receiptSequenceNumber
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
@@ -34,6 +40,10 @@ public enum PropulsionGaugeCockpitMeasurement: Equatable, Sendable {
 /// unavailable). Product semantics such as "near observed max" are intentionally owned by the separate
 /// accepted-power observed-scale-region layer rather than duplicated here.
 public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
+    /// Exact vehicle/mode identity for this snapshot, including unavailable states.
+    /// Keeping identity on the snapshot prevents an asynchronous/cached projection from becoming
+    /// ordinary-looking state for a different selected vehicle or confirmed mode.
+    public let identity: PropulsionGaugeIdentity
     public let measurement: PropulsionGaugeCockpitMeasurement
 
     /// Render-only position for the live propulsion band. Never telemetry evidence.
@@ -45,11 +55,13 @@ public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
 
     fileprivate init(
+        identity: PropulsionGaugeIdentity,
         measurement: PropulsionGaugeCockpitMeasurement,
         visualPropulsionFraction: Double?,
         recentAcceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
+        self.identity = identity
         self.measurement = measurement
         self.visualPropulsionFraction = visualPropulsionFraction
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
@@ -72,6 +84,7 @@ public extension PropulsionGaugeDisplayModel {
         // cockpit surface closed rather than showing moving presentation state without accepted truth.
         guard measurement != .unavailable || frame.availability == .unavailable else {
             return PropulsionGaugeCockpitSnapshot(
+                identity: identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
@@ -81,6 +94,7 @@ public extension PropulsionGaugeDisplayModel {
 
         guard frame.availability == .live else {
             return PropulsionGaugeCockpitSnapshot(
+                identity: identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
@@ -89,6 +103,7 @@ public extension PropulsionGaugeDisplayModel {
         }
 
         return PropulsionGaugeCockpitSnapshot(
+            identity: identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
@@ -108,6 +123,7 @@ public extension PropulsionGaugeDisplayModel {
         }
 
         let accepted = PropulsionGaugeCockpitAcceptedMeasurement(
+            identity: identity,
             watts: watts,
             receiptSequenceNumber: receiptSequenceNumber,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
