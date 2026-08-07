@@ -5,6 +5,39 @@ import Testing
 
 @Suite("Completed ride duration persistence invariants")
 struct CompletedRideDurationPersistenceInvariantTests {
+    private let sessionID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+
+    private func completedRide() throws -> CompletedRideEvidence {
+        let date = Date(timeIntervalSinceReferenceDate: 1_000)
+        return try CompletedRideEvidence(
+            sessionID: sessionID,
+            beganAtDate: date,
+            confirmedAtDate: date,
+            endedAtDate: date,
+            startingOdometerKilometers: nil,
+            endingOdometerKilometers: nil,
+            qualityScreenedGPSDistanceMeters: 0,
+            continuity: .uninterruptedProcess
+        )
+    }
+
+    @Test("bound complete coverage cannot claim multiple observation segments")
+    func boundCompleteMultipleSegmentsRejected() throws {
+        let duration = RideSessionDurationEvidenceSnapshot(
+            sessionID: sessionID,
+            observedDurationNanoseconds: 2,
+            coverage: .complete,
+            observationSegmentCount: 2
+        )
+
+        #expect(throws: CompletedRideDurationEvidenceError.invalidDurationEvidence) {
+            try CompletedRideDurationEvidence(
+                completedRide: completedRide(),
+                duration: duration
+            )
+        }
+    }
+
     @Test("decoded complete coverage cannot claim multiple observation segments")
     func malformedCompleteMultipleSegmentsRejected() {
         let data = Data(
