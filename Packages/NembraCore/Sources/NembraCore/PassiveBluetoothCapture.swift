@@ -12,6 +12,7 @@ public enum PassiveBluetoothCaptureValidationError: Error, Equatable, Sendable {
     case nonMonotonicSequence
     case nonMonotonicReceiptTime
     case unsupportedSchemaVersion(Int)
+    case eventNotSupportedBySchemaVersion(Int)
 }
 
 /// Characteristic properties observed during GATT discovery.
@@ -253,6 +254,13 @@ public struct PassiveBluetoothCharacteristicObservation: Equatable, Codable, Sen
     public let characteristicUUID: String
     public let properties: Set<PassiveBluetoothCharacteristicProperty>
 
+    private enum CodingKeys: String, CodingKey {
+        case peripheralIdentifier
+        case serviceUUID
+        case characteristicUUID
+        case properties
+    }
+
     public init(
         peripheralIdentifier: String,
         serviceUUID: String,
@@ -271,6 +279,30 @@ public struct PassiveBluetoothCharacteristicObservation: Equatable, Codable, Sen
         self.serviceUUID = serviceUUID
         self.characteristicUUID = characteristicUUID
         self.properties = properties
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let peripheralIdentifier = try container.decode(String.self, forKey: .peripheralIdentifier)
+        let serviceUUID = try container.decode(String.self, forKey: .serviceUUID)
+        let characteristicUUID = try container.decode(String.self, forKey: .characteristicUUID)
+        let properties = Set(
+            try container.decode([PassiveBluetoothCharacteristicProperty].self, forKey: .properties)
+        )
+        try self.init(
+            peripheralIdentifier: peripheralIdentifier,
+            serviceUUID: serviceUUID,
+            characteristicUUID: characteristicUUID,
+            properties: properties
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(peripheralIdentifier, forKey: .peripheralIdentifier)
+        try container.encode(serviceUUID, forKey: .serviceUUID)
+        try container.encode(characteristicUUID, forKey: .characteristicUUID)
+        try container.encode(properties.sorted { $0.rawValue < $1.rawValue }, forKey: .properties)
     }
 }
 
@@ -354,8 +386,10 @@ public struct PassiveBluetoothStockAppObservation: Equatable, Codable, Sendable 
 }
 
 /// Marks a known capture continuity break such as disconnect, Bluetooth state
-/// transition, process restart, or observer restart. A later decoder must never
-/// silently pretend bytes on opposite sides of this marker were continuous.
+/// transition, an app-process restart within the same device boot, or observer
+/// restart. A later decoder must never silently treat bytes across this marker
+/// as continuous. A physical device reboot starts a new capture session because
+/// the boot-relative receipt uptime clock resets.
 public struct PassiveBluetoothCaptureInterruption: Equatable, Codable, Sendable {
     public let reason: String
 
@@ -378,6 +412,21 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case value(PassiveBluetoothValueObservation)
     case stockAppState(PassiveBluetoothStockAppObservation)
     case interruption(PassiveBluetoothCaptureInterruption)
+
+    /// Whether raw value evidence on opposite sides of this event must be
+    /// analyzed as separate continuity segments. Structured disconnects carry
+    /// this semantic directly; generic interruption events cover every other
+    /// known observation gap.
+    public var breaksByteContinuity: Bool {
+        switch self {
+        case let .connection(observation):
+            return observation.state == .disconnected
+        case .interruption:
+            return true
+        default:
+            return false
+        }
+    }
 
     /// Synthesized Codable initializers on nested evidence structs do not call
     /// their public validating initializers. Reconstructing each event here
@@ -469,8 +518,12 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
 
 /// One ordered record in a capture session.
 ///
-/// The monotonic uptime is the process-local ordering clock. Wall-clock `Date`
-/// is retained only as useful metadata and is never allowed to repair ordering.
+/// The acquisition adapter supplies a monotonic uptime ordering clock. The
+/// current iOS adapter uses `DispatchTime.now().uptimeNanoseconds`, which is
+/// system-boot-relative rather than process-relative. Wall-clock `Date` is
+/// retained only as metadata and never repairs ordering. A capture session must
+/// start fresh after a physical device reboot unless a future explicit clock
+/// epoch model is added.
 public struct PassiveBluetoothCaptureRecord: Equatable, Codable, Sendable {
     public let sequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
@@ -490,21 +543,16 @@ public struct PassiveBluetoothCaptureRecord: Equatable, Codable, Sendable {
     }
 }
 
-/// Durable, platform-neutral capture artifact for one real-world observation
-/// session. This type contains no motorized-vehicle command encoder and no
-/// inferred Tuya DP mapping.
-public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
+/// Platform-neutral in-memory capture state for one real-world observation
+/// session. Durable serialization is intentionally available only through
+/// `PassiveBluetoothCaptureJSON`, whose envelope owns the schema version. The
+/// session itself does not conform to `Codable`, preventing callers from
+/// accidentally persisting an unversioned long-lived evidence artifact.
+public struct PassiveBluetoothCaptureSession: Equatable, Sendable {
     public let id: UUID
     public let vehicleIdentity: VehicleIdentity
     public let startedAt: Date
     public private(set) var records: [PassiveBluetoothCaptureRecord]
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case vehicleIdentity
-        case startedAt
-        case records
-    }
 
     public init(
         id: UUID = UUID(),
@@ -520,25 +568,6 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
         for record in records {
             try append(record)
         }
-    }
-
-    /// Decoding deliberately replays records through the same validation path
-    /// as live appends. Imported/corrupt JSON therefore cannot bypass sequence,
-    /// monotonic-time, or nested evidence truth constraints through synthesized
-    /// `Codable` initializers.
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let id = try container.decode(UUID.self, forKey: .id)
-        let vehicleIdentity = try container.decode(VehicleIdentity.self, forKey: .vehicleIdentity)
-        let startedAt = try container.decode(Date.self, forKey: .startedAt)
-        let decodedRecords = try container.decode([PassiveBluetoothCaptureRecord].self, forKey: .records)
-
-        try self.init(
-            id: id,
-            vehicleIdentity: vehicleIdentity,
-            startedAt: startedAt,
-            records: decodedRecords
-        )
     }
 
     public mutating func append(_ record: PassiveBluetoothCaptureRecord) throws {
@@ -572,10 +601,11 @@ public struct PassiveBluetoothCaptureSession: Equatable, Codable, Sendable {
 }
 
 /// Stable, versioned JSON codec for sharing capture artifacts between
-/// physical-device sessions and offline parser/tests. Sorted keys keep diffs
-/// reviewable while millisecond epoch dates preserve sub-second correlation
-/// metadata. Schema v2 adds structured connection/subscription evidence; v1
-/// remains readable so existing raw evidence is not discarded.
+/// physical-device sessions and offline parser/tests. Sorted keys plus explicit
+/// deterministic characteristic-property encoding keep semantically identical
+/// artifacts reviewable while millisecond epoch dates preserve sub-second
+/// correlation metadata. Schema v2 adds structured connection/subscription
+/// evidence; v1 remains readable so existing raw evidence is not discarded.
 public enum PassiveBluetoothCaptureJSON {
     public static let currentSchemaVersion = 2
     private static let supportedSchemaVersions: Set<Int> = [1, 2]
@@ -584,9 +614,32 @@ public enum PassiveBluetoothCaptureJSON {
         let schemaVersion: Int
     }
 
+    private struct SessionPayload: Codable {
+        let id: UUID
+        let vehicleIdentity: VehicleIdentity
+        let startedAt: Date
+        let records: [PassiveBluetoothCaptureRecord]
+
+        init(_ session: PassiveBluetoothCaptureSession) {
+            id = session.id
+            vehicleIdentity = session.vehicleIdentity
+            startedAt = session.startedAt
+            records = session.records
+        }
+
+        func validatedSession() throws -> PassiveBluetoothCaptureSession {
+            try PassiveBluetoothCaptureSession(
+                id: id,
+                vehicleIdentity: vehicleIdentity,
+                startedAt: startedAt,
+                records: records
+            )
+        }
+    }
+
     private struct Envelope: Codable {
         let schemaVersion: Int
-        let session: PassiveBluetoothCaptureSession
+        let session: SessionPayload
     }
 
     public static func encode(_ session: PassiveBluetoothCaptureSession, prettyPrinted: Bool = true) throws -> Data {
@@ -596,7 +649,7 @@ public enum PassiveBluetoothCaptureJSON {
         return try encoder.encode(
             Envelope(
                 schemaVersion: currentSchemaVersion,
-                session: session
+                session: SessionPayload(session)
             )
         )
     }
@@ -608,7 +661,25 @@ public enum PassiveBluetoothCaptureJSON {
         guard supportedSchemaVersions.contains(probe.schemaVersion) else {
             throw PassiveBluetoothCaptureValidationError.unsupportedSchemaVersion(probe.schemaVersion)
         }
+
         let envelope = try decoder.decode(Envelope.self, from: data)
-        return envelope.session
+        let session = try envelope.session.validatedSession()
+        try validateEventVocabulary(in: session, schemaVersion: envelope.schemaVersion)
+        return session
+    }
+
+    private static func validateEventVocabulary(
+        in session: PassiveBluetoothCaptureSession,
+        schemaVersion: Int
+    ) throws {
+        guard schemaVersion == 1 else { return }
+        for record in session.records {
+            switch record.event {
+            case .connection, .subscription:
+                throw PassiveBluetoothCaptureValidationError.eventNotSupportedBySchemaVersion(schemaVersion)
+            default:
+                continue
+            }
+        }
     }
 }
