@@ -201,13 +201,15 @@ public struct TuyaCandidateDPNumericHypothesisEvidence: Equatable, Sendable {
 
 /// Numeric hypothesis evaluation for one exact candidate from one parent report.
 /// Scope/continuity/framing truth remains owned by that report rather than being
-/// re-invented here. The exact tolerance is retained because `isWithinTolerance`
-/// is otherwise not auditable once the caller-owned policy leaves scope.
+/// re-invented here. Caller references and the exact tolerance are retained so
+/// excluded inputs and every `isWithinTolerance` result remain auditable after
+/// the original policy and invocation leave scope.
 public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
     public let correlationScope: TuyaCandidateDPMarkerCorrelationScope
     public let candidateIndex: Int
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let numericReferenceCount: Int
+    public let numericReferences: [TuyaCandidateDPNumericReference]
     public let absoluteTolerance: Double
     public let unusedReferenceMarkerIndices: [Int]
     public let ambiguousReferenceMarkerIndices: [Int]
@@ -218,7 +220,7 @@ public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
         correlationScope: TuyaCandidateDPMarkerCorrelationScope,
         candidateIndex: Int,
         candidate: TuyaCandidateDPCorrelationCandidate,
-        numericReferenceCount: Int,
+        numericReferences: [TuyaCandidateDPNumericReference],
         absoluteTolerance: Double,
         unusedReferenceMarkerIndices: [Int],
         ambiguousReferenceMarkerIndices: [Int],
@@ -228,7 +230,8 @@ public struct TuyaCandidateDPNumericHypothesisReport: Equatable, Sendable {
         self.correlationScope = correlationScope
         self.candidateIndex = candidateIndex
         self.candidate = candidate
-        self.numericReferenceCount = numericReferenceCount
+        self.numericReferenceCount = numericReferences.count
+        self.numericReferences = numericReferences
         self.absoluteTolerance = absoluteTolerance
         self.unusedReferenceMarkerIndices = unusedReferenceMarkerIndices
         self.ambiguousReferenceMarkerIndices = ambiguousReferenceMarkerIndices
@@ -267,6 +270,9 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
             numericReferences,
             markerCount: report.markerCount
         )
+        let canonicalNumericReferences = numericReferences.sorted {
+            $0.markerIndex < $1.markerIndex
+        }
         let hitMarkerIndices = Set(candidateEvidence.hits.map(\.markerIndex))
         let ambiguousMarkerIndices = Set(candidateEvidence.ambiguousNearestMarkerIndices)
         let sharedObservationMarkerIndices = Set(candidateEvidence.sharedObservationMarkerIndices)
@@ -298,7 +304,7 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
             correlationScope: report.scope,
             candidateIndex: candidateIndex,
             candidate: candidateEvidence.candidate,
-            numericReferenceCount: numericReferences.count,
+            numericReferences: canonicalNumericReferences,
             absoluteTolerance: policy.absoluteTolerance,
             unusedReferenceMarkerIndices: unusedReferenceMarkerIndices,
             ambiguousReferenceMarkerIndices: ambiguousReferenceMarkerIndices,
