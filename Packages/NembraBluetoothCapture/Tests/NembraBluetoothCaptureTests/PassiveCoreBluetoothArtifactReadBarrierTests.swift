@@ -25,10 +25,12 @@ struct PassiveCoreBluetoothArtifactReadBarrierTests {
         var recorded: [Int] = []
 
         try barrier.begin(through: 10)
+        let firstPending = try #require(pending.first)
+        let firstTail = try #require(pending.last)
         let firstUpperBound = try #require(
             barrier.permittedDrainUpperBound(
-                firstPending: UInt64(try #require(pending.first)),
-                pendingTail: UInt64(try #require(pending.last))
+                firstPending: UInt64(firstPending),
+                pendingTail: UInt64(firstTail)
             )
         )
         recorded.append(contentsOf: pending.filter { UInt64($0) <= firstUpperBound })
@@ -46,10 +48,12 @@ struct PassiveCoreBluetoothArtifactReadBarrierTests {
         #expect(pending == [11])
 
         barrier.end()
+        let resumedPending = try #require(pending.first)
+        let resumedTail = try #require(pending.last)
         let resumedUpperBound = try #require(
             barrier.permittedDrainUpperBound(
-                firstPending: UInt64(try #require(pending.first)),
-                pendingTail: UInt64(try #require(pending.last))
+                firstPending: UInt64(resumedPending),
+                pendingTail: UInt64(resumedTail)
             )
         )
         recorded.append(contentsOf: pending.filter { UInt64($0) <= resumedUpperBound })
