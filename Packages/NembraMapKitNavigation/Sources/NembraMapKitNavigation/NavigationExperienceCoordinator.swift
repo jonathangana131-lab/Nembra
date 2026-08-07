@@ -3,6 +3,24 @@ import NembraCore
 public enum NavigationExperienceError: Error, Equatable, Sendable {
     case workflowSequenceExhausted
     case noRouteOptions
+    case staleRouteOptions
+}
+
+/// Identifies one route option inside the exact provider result generation that
+/// produced it. UI must carry this identity back when selecting an alternative;
+/// a bare array index is not sufficient because replanning can replace the
+/// result array before a delayed tap/callback arrives.
+public struct NavigationRouteSelectionID: Equatable, Sendable {
+    public let requestToken: NavigationRouteRequestToken
+    public let index: Int
+
+    public init(
+        requestToken: NavigationRouteRequestToken,
+        index: Int
+    ) {
+        self.requestToken = requestToken
+        self.index = index
+    }
 }
 
 public struct NavigationExperienceSnapshot: Equatable, Sendable {
@@ -81,23 +99,34 @@ public final class NavigationExperienceCoordinator {
         return snapshot
     }
 
-    /// Explicitly selects one route from the exact current provider result set.
-    /// Provider ordering is preserved but never interpreted as automatic choice.
+    /// Explicitly selects one route from the exact provider result generation
+    /// represented by `selectionID`. Stale UI actions fail closed rather than
+    /// retargeting the same array index into newer alternatives.
     @discardableResult
-    public func selectRoute(index: Int) throws -> NavigationExperienceSnapshot {
-        guard var selection = routeSelection else {
+    public func selectRoute(
+        _ selectionID: NavigationRouteSelectionID
+    ) throws -> NavigationExperienceSnapshot {
+        guard case let .available(currentToken, _, _) = planningService.state,
+              currentToken == selectionID.requestToken else {
+            throw NavigationExperienceError.staleRouteOptions
+        }
+        return try selectCurrentRoute(index: selectionID.index)
+    }
+
+    /// Package-internal convenience for deterministic tests/composition that
+    /// intentionally means "the current result set". Production callers outside
+    /// this module only get the generation-bound `NavigationRouteSelectionID` API.
+    @discardableResult
+    func selectRoute(index: Int) throws -> NavigationExperienceSnapshot {
+        guard case let .available(currentToken, _, _) = planningService.state else {
             throw NavigationExperienceError.noRouteOptions
         }
-
-        try selection.select(index: index)
-        guard let route = selection.selectedRoute else {
-            throw NavigationExperienceError.noRouteOptions
-        }
-
-        routeSelection = selection
-        selectedRoute = route
-        _ = try session.select(route: route)
-        return snapshot
+        return try selectRoute(
+            NavigationRouteSelectionID(
+                requestToken: currentToken,
+                index: index
+            )
+        )
     }
 
     /// Feeds only quality-screened location evidence into the selected route's
@@ -141,6 +170,24 @@ public final class NavigationExperienceCoordinator {
         routeSelection = nil
         selectedRoute = nil
         session.clearRoute()
+    }
+
+    private func selectCurrentRoute(
+        index: Int
+    ) throws -> NavigationExperienceSnapshot {
+        guard var selection = routeSelection else {
+            throw NavigationExperienceError.noRouteOptions
+        }
+
+        try selection.select(index: index)
+        guard let route = selection.selectedRoute else {
+            throw NavigationExperienceError.noRouteOptions
+        }
+
+        routeSelection = selection
+        selectedRoute = route
+        _ = try session.select(route: route)
+        return snapshot
     }
 
     private func nextWorkflowGeneration() throws -> UInt64 {
