@@ -34,6 +34,22 @@ public enum CoreBluetoothCaptureMapping {
         )
     }
 
+    public static func connection(
+        peripheralIdentifier: UUID,
+        state: PassiveBluetoothConnectionState,
+        platformEventTimestamp: TimeInterval? = nil,
+        isReconnecting: Bool? = nil,
+        error: Error? = nil
+    ) throws -> PassiveBluetoothConnectionObservation {
+        try PassiveBluetoothConnectionObservation(
+            peripheralIdentifier: peripheralIdentifier.uuidString,
+            state: state,
+            platformEventTimestamp: platformEventTimestamp,
+            isReconnecting: isReconnecting,
+            error: try errorObservation(error)
+        )
+    }
+
     public static func service(
         peripheralIdentifier: UUID,
         service: CBService
@@ -89,6 +105,24 @@ public enum CoreBluetoothCaptureMapping {
         )
     }
 
+    public static func subscription(
+        peripheralIdentifier: UUID,
+        characteristic: CBCharacteristic,
+        requestedEnabled: Bool?,
+        error: Error? = nil
+    ) throws -> PassiveBluetoothSubscriptionObservation {
+        let service = try requiredService(for: characteristic)
+
+        return try PassiveBluetoothSubscriptionObservation(
+            peripheralIdentifier: peripheralIdentifier.uuidString,
+            serviceUUID: normalizedUUID(service.uuid),
+            characteristicUUID: normalizedUUID(characteristic.uuid),
+            requestedEnabled: requestedEnabled,
+            resultingIsNotifying: characteristic.isNotifying,
+            error: try errorObservation(error)
+        )
+    }
+
     public static func value(
         peripheralIdentifier: UUID,
         characteristic: CBCharacteristic,
@@ -103,6 +137,15 @@ public enum CoreBluetoothCaptureMapping {
             characteristicUUID: normalizedUUID(characteristic.uuid),
             origin: origin,
             payload: payload
+        )
+    }
+
+    public static func errorObservation(_ error: Error?) throws -> PassiveBluetoothErrorObservation? {
+        guard let error else { return nil }
+        let nsError = error as NSError
+        return try PassiveBluetoothErrorObservation(
+            domain: nsError.domain,
+            code: nsError.code
         )
     }
 
