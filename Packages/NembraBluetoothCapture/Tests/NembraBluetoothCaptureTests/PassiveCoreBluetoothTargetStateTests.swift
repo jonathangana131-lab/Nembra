@@ -21,14 +21,14 @@ struct PassiveCoreBluetoothTargetStateTests {
         #expect(state.acceptsActiveCallback(from: b))
         #expect(!state.acceptsActiveCallback(from: a))
 
-        #expect(state.completeFailedConnection(from: a) == nil)
+        #expect(state.completeFailedConnection(from: a) == .retired)
         #expect(state.activeAttempt == attemptB)
-        #expect(state.completeDisconnect(from: a) == .retired)
+        #expect(state.completeDisconnect(from: a) == .ignored)
         #expect(state.activeAttempt == attemptB)
     }
 
     @Test
-    func cancelledSamePeripheralIsQuarantinedUntilDisconnect() throws {
+    func cancelledSamePeripheralIsQuarantinedUntilEitherTerminalCallback() throws {
         let peripheral = UUID()
         var state = PassiveCoreBluetoothTargetState()
 
@@ -36,13 +36,38 @@ struct PassiveCoreBluetoothTargetStateTests {
         let first = try state.beginAttempt(for: peripheral)
         #expect(state.retireActiveAttempt() == first)
 
-        #expect(throws: PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingDisconnect(peripheral)) {
+        do {
             _ = try state.beginAttempt(for: peripheral)
+            Issue.record("Expected the cancelled peripheral to remain quarantined")
+        } catch let error as PassiveCoreBluetoothTargetState.StateError {
+            #expect(error == .peripheralAwaitingTerminalCallback(peripheral))
         }
 
-        #expect(state.completeDisconnect(from: peripheral) == .retired)
+        #expect(state.completeFailedConnection(from: peripheral) == .retired)
         let second = try state.beginAttempt(for: peripheral)
         #expect(second.generation == first.generation + 1)
+
+        #expect(state.retireActiveAttempt() == second)
+        #expect(state.completeDisconnect(from: peripheral) == .retired)
+        let third = try state.beginAttempt(for: peripheral)
+        #expect(third.generation == second.generation + 1)
+    }
+
+    @Test
+    func changingTargetRetiresAnUnexpectedlyActiveOldAttempt() throws {
+        let a = UUID()
+        let b = UUID()
+        var state = PassiveCoreBluetoothTargetState()
+
+        state.selectTarget(a)
+        _ = try state.beginAttempt(for: a)
+        state.selectTarget(b)
+        let attemptB = try state.beginAttempt(for: b)
+
+        #expect(!state.acceptsActiveCallback(from: a))
+        #expect(state.activeAttempt == attemptB)
+        #expect(state.completeDisconnect(from: a) == .retired)
+        #expect(state.activeAttempt == attemptB)
     }
 
     @Test
