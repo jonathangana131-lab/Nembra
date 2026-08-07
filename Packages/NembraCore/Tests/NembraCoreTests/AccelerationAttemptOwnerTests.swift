@@ -111,6 +111,34 @@ struct AccelerationAttemptOwnerTests {
         ))
     }
 
+    @Test("connection interruption before selected-source evidence is an explicit no-op")
+    func interruptionBeforeSelectedSourceEvidenceDoesNotClaimMutation() throws {
+        var owner = AccelerationAttemptOwner()
+        let generation = try owner.begin(
+            policy: policy(),
+            startedAtUptimeNanoseconds: 1_000
+        )
+
+        let interruptionResult = owner.interrupt(.vehicleConnectionLost, for: generation)
+        #expect(interruptionResult == .ignoredBeforeSelectedSourceEvidence(
+            runState: .waitingForStandstill
+        ))
+
+        let uninterrupted = try #require(owner.currentSnapshot)
+        #expect(!uninterrupted.isTerminal)
+        #expect(!uninterrupted.evidence.continuityWasBroken)
+        #expect(uninterrupted.evidence.knownObservationInterruptionCount == 0)
+
+        let firstSelectedObservation = try sample(
+            metersPerSecond: 0,
+            uptimeNanoseconds: 1_001
+        )
+        let recordResult = owner.record(firstSelectedObservation, for: generation)
+        #expect(recordResult == .session(
+            .processed(runState: .armed(source: .scooterBluetooth))
+        ))
+    }
+
     @Test("delayed callbacks from an older generation cannot mutate its replacement")
     func staleGenerationCannotCrossAttemptBoundary() throws {
         var owner = AccelerationAttemptOwner()
