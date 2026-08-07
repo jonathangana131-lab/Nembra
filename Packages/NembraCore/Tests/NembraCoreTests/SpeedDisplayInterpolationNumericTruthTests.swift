@@ -38,6 +38,29 @@ struct SpeedDisplayInterpolationNumericTruthTests {
         #expect(interpolator.frame(atUptimeNanoseconds: 1_000) == nil)
     }
 
+    @Test("very large representable derived speed is not rejected by a guessed hardware cap")
+    func veryLargeRepresentableDerivedSpeedRemainsAccepted() throws {
+        var interpolator = SpeedDisplayInterpolator()
+        let representable = try sample(
+            metersPerSecond: Double.greatestFiniteMagnitude / 4,
+            uptimeNanoseconds: 1_000
+        )
+
+        #expect(representable.kilometersPerHour.isFinite)
+        try interpolator.accept(
+            representable,
+            transitionDurationNanoseconds: 100
+        )
+
+        let frame = try #require(
+            interpolator.frame(atUptimeNanoseconds: 1_000)
+        )
+        #expect(frame.kilometersPerHour.isFinite)
+        #expect(frame.kilometersPerHour == representable.kilometersPerHour)
+        #expect(frame.latestMeasuredKilometersPerHour == representable.kilometersPerHour)
+        #expect(frame.origin == .measured)
+    }
+
     @Test("rejected derived overflow cannot replace the last valid display measurement")
     func overflowingDerivedSpeedIsTransactionalAfterValidMeasurement() throws {
         var interpolator = SpeedDisplayInterpolator()
