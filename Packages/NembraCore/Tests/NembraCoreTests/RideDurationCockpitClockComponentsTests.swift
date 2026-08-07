@@ -50,10 +50,13 @@ struct RideDurationCockpitClockComponentsTests {
     @Test("subsecond evidence never rounds the display into the next second")
     func subsecondEvidenceRoundsDownOnly() {
         let value = observedValue(nanoseconds: 999_999_999)
+        let components = value?.clockComponents
+
         #expect(value?.wholeObservedSeconds == 0)
-        #expect(value?.clockComponents.hours == 0)
-        #expect(value?.clockComponents.minutes == 0)
-        #expect(value?.clockComponents.seconds == 0)
+        #expect(components?.wholeObservedSeconds == 0)
+        #expect(components?.hours == 0)
+        #expect(components?.minutes == 0)
+        #expect(components?.seconds == 0)
     }
 
     @Test("maximum UInt64 duration decomposes without overflow")
@@ -67,13 +70,16 @@ struct RideDurationCockpitClockComponentsTests {
         let expectedWithinHour = wholeSeconds % 3_600
         let components = value.clockComponents
 
+        #expect(components.sessionID == sessionID)
+        #expect(components.role == .elapsedObserved)
+        #expect(components.wholeObservedSeconds == wholeSeconds)
         #expect(components.hours == wholeSeconds / 3_600)
         #expect(components.minutes == UInt8(expectedWithinHour / 60))
         #expect(components.seconds == UInt8(expectedWithinHour % 60))
         #expect(components.usesHourField)
     }
 
-    @Test("partial observed duration keeps its truth qualifier beside clock arithmetic")
+    @Test("partial observed duration keeps its truth qualifier inside clock payload")
     func partialRoleIsNotPromoted() {
         let snapshot = RideSessionDurationEvidenceSnapshot(
             sessionID: sessionID,
@@ -87,11 +93,14 @@ struct RideDurationCockpitClockComponentsTests {
             return
         }
 
-        #expect(value.role == .partialObserved)
-        #expect(value.clockComponents.hours == 0)
-        #expect(value.clockComponents.minutes == 1)
-        #expect(value.clockComponents.seconds == 1)
-        #expect(!value.clockComponents.usesHourField)
+        let components = value.clockComponents
+        #expect(components.sessionID == sessionID)
+        #expect(components.role == .partialObserved)
+        #expect(components.wholeObservedSeconds == 61)
+        #expect(components.hours == 0)
+        #expect(components.minutes == 1)
+        #expect(components.seconds == 1)
+        #expect(!components.usesHourField)
     }
 
     private func assertClock(
@@ -107,6 +116,9 @@ struct RideDurationCockpitClockComponentsTests {
         }
 
         let components = value.clockComponents
+        #expect(components.sessionID == sessionID)
+        #expect(components.role == .elapsedObserved)
+        #expect(components.wholeObservedSeconds == nanoseconds / 1_000_000_000)
         #expect(components.hours == hours)
         #expect(components.minutes == minutes)
         #expect(components.seconds == seconds)
