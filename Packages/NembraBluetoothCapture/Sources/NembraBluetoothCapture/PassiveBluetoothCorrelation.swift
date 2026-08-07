@@ -69,21 +69,57 @@ public struct PassiveBluetoothCorrelationWindow: Equatable, Sendable {
 public enum PassiveBluetoothCorrelation {
     /// Builds time-local candidate windows around stock-app observations.
     ///
-    /// - Parameters:
-    ///   - session: Immutable raw capture evidence.
-    ///   - field: Optional case-insensitive exact stock-app field filter.
-    ///   - lookbackNanoseconds: Maximum raw-value age before the marker.
-    ///   - lookaheadNanoseconds: Maximum raw-value time after the marker.
-    ///
-    /// Any parent-model byte-continuity break is a hard boundary. A value on the
-    /// other side of a structured disconnect/Bluetooth transition/observer
-    /// restart is never presented as a candidate for the marker, even if timing
-    /// proximity happens to be small.
+    /// This convenience fails closed when imported GATT/value evidence belongs
+    /// to more than one peripheral. Stock-app markers have no peripheral field,
+    /// so choosing one device in a mixed session would fabricate attribution.
+    /// Nearby advertisement-only noise does not create this ambiguity.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         field: String? = nil,
         lookbackNanoseconds: UInt64 = 2_000_000_000,
         lookaheadNanoseconds: UInt64 = 2_000_000_000
+    ) -> [PassiveBluetoothCorrelationWindow] {
+        let peripheralIdentifiers = correlationPeripheralIdentifiers(in: session)
+        guard peripheralIdentifiers.count <= 1 else { return [] }
+
+        return buildWindows(
+            in: session,
+            peripheralIdentifier: peripheralIdentifiers.first,
+            field: field,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
+        )
+    }
+
+    /// Builds correlation windows for an explicitly selected peripheral in an
+    /// imported/mixed session. Only raw value evidence from that exact target is
+    /// eligible; the marker itself remains a human observation, not telemetry.
+    public static func windows(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String,
+        field: String? = nil,
+        lookbackNanoseconds: UInt64 = 2_000_000_000,
+        lookaheadNanoseconds: UInt64 = 2_000_000_000
+    ) -> [PassiveBluetoothCorrelationWindow] {
+        buildWindows(
+            in: session,
+            peripheralIdentifier: peripheralIdentifier,
+            field: field,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
+        )
+    }
+
+    /// Any parent-model byte-continuity break is a hard boundary. A value on the
+    /// other side of a structured disconnect/Bluetooth transition/observer
+    /// restart is never presented as a candidate for the marker, even if timing
+    /// proximity happens to be small.
+    private static func buildWindows(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String?,
+        field: String?,
+        lookbackNanoseconds: UInt64,
+        lookaheadNanoseconds: UInt64
     ) -> [PassiveBluetoothCorrelationWindow] {
         let records = session.records
         var segmentStart = 0
@@ -129,6 +165,10 @@ public enum PassiveBluetoothCorrelation {
                 guard record.receivedAtUptimeNanoseconds >= minimumUptime,
                       record.receivedAtUptimeNanoseconds <= upperUptime,
                       case let .value(value) = record.event else { continue }
+                if let peripheralIdentifier,
+                   value.peripheralIdentifier != peripheralIdentifier {
+                    continue
+                }
 
                 candidates.append(
                     PassiveBluetoothCorrelationCandidate(
@@ -167,6 +207,33 @@ public enum PassiveBluetoothCorrelation {
         }
 
         return result
+    }
+
+    private static func correlationPeripheralIdentifiers(
+        in session: PassiveBluetoothCaptureSession
+    ) -> Set<String> {
+        var identifiers: Set<String> = []
+
+        for record in session.records {
+            switch record.event {
+            case let .service(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .includedService(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .characteristic(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .descriptor(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .subscription(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .value(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case .advertisement, .connection, .stockAppState, .interruption:
+                break
+            }
+        }
+
+        return identifiers
     }
 
     private static func signedOffsetSeconds(candidate: UInt64, marker: UInt64) -> Double {
