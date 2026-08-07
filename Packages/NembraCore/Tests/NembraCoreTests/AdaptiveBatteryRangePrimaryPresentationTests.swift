@@ -23,11 +23,44 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
         )
     }
 
+    private func vehicleState(
+        connection: VehicleConnectionState,
+        batteryPercent: Int?
+    ) -> VehicleState {
+        VehicleState(
+            connection: connection,
+            batteryPercent: batteryPercent,
+            speedKilometersPerHour: nil,
+            odometerKilometers: nil,
+            tripKilometers: nil,
+            rideMode: nil,
+            startMode: nil,
+            speedLimitsKilometersPerHour: [:],
+            isLocked: nil,
+            isHeadlightOn: nil,
+            isCruiseEnabled: nil,
+            powerWatts: nil,
+            currentAmps: nil
+        )
+    }
+
+    private var liveState: VehicleState {
+        vehicleState(connection: .connected, batteryPercent: 70)
+    }
+
+    private var retainedState: VehicleState {
+        vehicleState(connection: .disconnected, batteryPercent: 70)
+    }
+
+    private var unavailableState: VehicleState {
+        vehicleState(connection: .disconnected, batteryPercent: nil)
+    }
+
     @Test("learned normal-confidence live range may reach the primary readout")
     func learnedNormalLiveRangeIsEligible() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: 1_234),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .valueMeters(1_234))
@@ -42,7 +75,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
                 confidence: .high,
                 lowSOCConservatismApplied: true
             ),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .valueMeters(900))
@@ -52,7 +85,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func zeroRangeIsEligible() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: 0, confidence: .high),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .valueMeters(0))
@@ -62,7 +95,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func provisionalSeedIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(basis: .provisionalSeed, confidence: .learning),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .learning(.provisionalSeed))
@@ -77,7 +110,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
                 confidence: .learning,
                 socProvenance: .estimate
             ),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .unavailable(.estimatedSOCRequiresQualifier))
@@ -88,7 +121,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func learningConfidenceIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .learning),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .learning(.learningConfidence))
@@ -98,7 +131,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func lowConfidenceIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .low),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .learning(.lowConfidenceRequiresQualifier))
@@ -108,20 +141,33 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func estimatedSOCIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high, socProvenance: .estimate),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .unavailable(.estimatedSOCRequiresQualifier))
         #expect(decision.primaryReadoutDisplay == .unavailable)
     }
 
-    @Test("retained vehicle data cannot masquerade as a live numeric range")
+    @Test("disconnected confirmed vehicle state becomes retained instead of live")
     func retainedVehicleDataIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high),
-            dataAvailability: .retained
+            vehicleState: retainedState
         )
 
+        #expect(retainedState.dataAvailability == .retained)
+        #expect(decision == .unavailable(.retainedVehicleDataRequiresQualifier))
+    }
+
+    @Test("reconnecting confirmed vehicle state also remains retained")
+    func reconnectingVehicleDataIsWithheld() {
+        let state = vehicleState(connection: .reconnecting, batteryPercent: 70)
+        let decision = policy.resolve(
+            estimate: estimate(confidence: .high),
+            vehicleState: state
+        )
+
+        #expect(state.dataAvailability == .retained)
         #expect(decision == .unavailable(.retainedVehicleDataRequiresQualifier))
     }
 
@@ -129,7 +175,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func retainedMissingEstimateIsNoEstimate() {
         let decision = policy.resolve(
             estimate: nil,
-            dataAvailability: .retained
+            vehicleState: retainedState
         )
 
         #expect(decision == .unavailable(.noEstimate))
@@ -139,17 +185,29 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func retainedInvalidRangeIsInvalid() {
         let decision = policy.resolve(
             estimate: estimate(presentedRemainingMeters: .infinity, confidence: .high),
-            dataAvailability: .retained
+            vehicleState: retainedState
         )
 
         #expect(decision == .unavailable(.invalidPresentedRange))
+    }
+
+    @Test("no confirmed vehicle data is unavailable even while connection says connected")
+    func connectedWithoutConfirmedDataIsUnavailable() {
+        let state = vehicleState(connection: .connected, batteryPercent: nil)
+        let decision = policy.resolve(
+            estimate: estimate(confidence: .high),
+            vehicleState: state
+        )
+
+        #expect(state.dataAvailability == .unavailable)
+        #expect(decision == .unavailable(.vehicleDataUnavailable))
     }
 
     @Test("unavailable vehicle data dominates a stale estimate")
     func unavailableVehicleDataIsWithheld() {
         let decision = policy.resolve(
             estimate: estimate(confidence: .high),
-            dataAvailability: .unavailable
+            vehicleState: unavailableState
         )
 
         #expect(decision == .unavailable(.vehicleDataUnavailable))
@@ -159,7 +217,7 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func missingEstimateIsUnavailable() {
         let decision = policy.resolve(
             estimate: nil,
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(decision == .unavailable(.noEstimate))
@@ -169,11 +227,11 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
     func invalidPresentedRangeIsUnavailable() {
         let negative = policy.resolve(
             estimate: estimate(presentedRemainingMeters: -1, confidence: .high),
-            dataAvailability: .live
+            vehicleState: liveState
         )
         let nonFinite = policy.resolve(
             estimate: estimate(presentedRemainingMeters: .infinity, confidence: .high),
-            dataAvailability: .live
+            vehicleState: liveState
         )
 
         #expect(negative == .unavailable(.invalidPresentedRange))
