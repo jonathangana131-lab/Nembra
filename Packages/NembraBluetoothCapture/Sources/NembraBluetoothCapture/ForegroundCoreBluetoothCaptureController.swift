@@ -44,7 +44,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case connectionAlreadyActive
         case invalidConnectionTimeout
         case targetNotSelected
-        case peripheralAwaitingDisconnect(UUID)
+        case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
         case targetSessionChanged
         case captureFailed
@@ -176,11 +176,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.peripheralNotConnectable(peripheralIdentifier)
         }
 
+        do {
+            try targetState.validateCanBeginAttempt(for: peripheralIdentifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
+            throw ControllerError.attemptGenerationExhausted
+        } catch {
+            throw ControllerError.targetNotSelected
+        }
+
         try beginTargetSessionIfNeeded(for: peripheralIdentifier)
         do {
             _ = try targetState.beginAttempt(for: peripheralIdentifier)
-        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingDisconnect(let identifier) {
-            throw ControllerError.peripheralAwaitingDisconnect(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
         } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
             throw ControllerError.attemptGenerationExhausted
         } catch {
@@ -196,8 +206,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     /// Cancels the active attempt without allowing a subsequent attempt to the
-    /// same CoreBluetooth peripheral until its disconnect callback arrives. A
-    /// different selected target may start immediately and late callbacks from
+    /// same CoreBluetooth peripheral until one of its terminal callbacks arrives.
+    /// A different selected target may start immediately and late callbacks from
     /// the cancelled target are ignored for that new session.
     public func cancelActiveConnection() {
         connectionTimeoutTask?.cancel()
@@ -581,7 +591,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         rssi RSSI: NSNumber
     ) {
         peripheralByIdentifier[peripheral.identifier] = peripheral
-        let connectable = (advertisementData[CBAdvertisementDataIsConnectableKey] as? NSNumber)?.boolValue
+        let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         let discovery = DiscoveredPeripheral(
             id: peripheral.identifier,
             localName: advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name,
@@ -647,24 +657,30 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         error: Error?
     ) {
         let identifier = peripheral.identifier
-        guard targetState.completeFailedConnection(from: identifier) != nil else { return }
+        let disposition = targetState.completeFailedConnection(from: identifier)
+        guard disposition != .ignored else { return }
 
-        do {
-            enqueue(
-                .connection(
-                    try CoreBluetoothCaptureMapping.connection(
-                        peripheralIdentifier: identifier,
-                        state: .failedToConnect,
-                        error: error
+        if targetState.selectedTargetIdentifier == identifier {
+            do {
+                enqueue(
+                    .connection(
+                        try CoreBluetoothCaptureMapping.connection(
+                            peripheralIdentifier: identifier,
+                            state: .failedToConnect,
+                            error: error
+                        )
                     )
                 )
-            )
-        } catch {
-            failCapture(error)
-            return
+            } catch {
+                failCapture(error)
+                return
+            }
+            lastDiagnostic = Self.diagnostic(error, fallback: "Failed to connect to peripheral.")
         }
-        lastDiagnostic = Self.diagnostic(error, fallback: "Failed to connect to peripheral.")
-        clearActiveConnectionState(for: identifier)
+
+        if case .active = disposition {
+            clearActiveConnectionState(for: identifier)
+        }
     }
 
     public func centralManager(
@@ -868,26 +884,27 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         }
         let requestedEnabled = targetState.consumeSubscriptionRequest(key)
 
-        if let error {
-            // Subscription failure makes value acquisition incomplete. Keep the
-            // diagnostic fail-closed rather than exporting a seemingly complete
-            // session whose missing notifications could be misread as absence.
-            failCapture(error, fallback: "Notification subscription failed; capture is incomplete.")
-            return
-        }
-
         do {
             enqueue(
                 .subscription(
                     try CoreBluetoothCaptureMapping.subscription(
                         peripheralIdentifier: peripheral.identifier,
                         characteristic: characteristic,
-                        requestedEnabled: requestedEnabled
+                        requestedEnabled: requestedEnabled,
+                        error: error
                     )
                 )
             )
         } catch {
             failCapture(error)
+            return
+        }
+
+        if let error {
+            // Preserve the structured subscription callback first, then fail the
+            // target artifact closed because subsequent missing value evidence
+            // must not be misread as a proven absence.
+            failCapture(error, fallback: "Notification subscription failed; capture is incomplete.")
         }
     }
 
