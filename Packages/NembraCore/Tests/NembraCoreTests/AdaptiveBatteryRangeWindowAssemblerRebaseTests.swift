@@ -116,9 +116,10 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(tainted.transportGapOccurred)
     }
 
-    @Test("partial coverage cannot be repaired by later complete deltas in one span")
+    @Test("partial coverage cannot be repaired and rejected evidence does not poison the next span")
     func partialCoverageIsSticky() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
@@ -130,6 +131,53 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
 
         #expect(window.distanceMeters == 150)
         #expect(window.distanceCoverage == .partial)
+        #expect(model.ingest(window, policy: p).disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
+    @Test("unknown coverage rejection closes its span so later complete evidence can train")
+    func unknownCoverageRejectionDoesNotPoisonNextSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        try assembler.recordDistance(deltaMeters: 0, coverage: .unknown)
+
+        let unknownCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let unknown = try #require(unknownCandidate)
+        #expect(unknown.distanceMeters == 150)
+        #expect(unknown.distanceCoverage == .unknown)
+        #expect(model.ingest(unknown, policy: p).disposition == .rejected(.incompleteDistanceEvidence))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceMeters == 150)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
     }
 
     @Test("a rejected gap window closes its span so later clean evidence can train")
@@ -139,7 +187,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         assembler.recordTransportGap()
 
         let taintedCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
@@ -149,7 +197,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.transportGapOccurred == false)
         #expect(assembler.distanceCoverage == .complete)
 
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
         let clean = try #require(cleanCandidate)
 
@@ -161,6 +209,38 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(model.acceptedWindowCount == 1)
     }
 
+    @Test("a numerical-overflow rejection closes its span so later clean evidence can train")
+    func numericalOverflowRejectionDoesNotPoisonNextSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        try assembler.recordDistance(deltaMeters: .greatestFiniteMagnitude, coverage: .complete)
+
+        let overflowCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
+        let overflow = try #require(overflowCandidate)
+        #expect(overflow.distanceMeters == .greatestFiniteMagnitude)
+        #expect(overflow.distanceCoverage == .complete)
+        #expect(model.ingest(overflow, policy: p).disposition == .rejected(.numericalOverflow))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+        #expect(assembler.distanceCoverage == .complete)
+        #expect(assembler.transportGapOccurred == false)
+
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
+        let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
+        let clean = try #require(cleanCandidate)
+        #expect(clean.startSOC.percentage == 77)
+        #expect(clean.endSOC.percentage == 74)
+        #expect(clean.distanceMeters == 300)
+        #expect(clean.distanceCoverage == .complete)
+        #expect(clean.transportGapOccurred == false)
+        #expect(model.ingest(clean, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("an efficiency outlier closes its span without poisoning later clean evidence")
     func rejectedEfficiencyOutlierDoesNotPoisonNextSpan() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
@@ -168,13 +248,13 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 300)
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
         let baselineCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
         let baseline = try #require(baselineCandidate)
         #expect(model.ingest(baseline, policy: p).disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
 
-        try assembler.recordDistance(deltaMeters: 1_000)
+        try assembler.recordDistance(deltaMeters: 1_000, coverage: .complete)
         let outlierCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
         let outlier = try #require(outlierCandidate)
         #expect(model.ingest(outlier, policy: p).disposition == .rejected(.efficiencyOutlier))
@@ -182,7 +262,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.anchorSOC?.percentage == 74)
         #expect(assembler.accumulatedDistanceMeters == 0)
 
-        try assembler.recordDistance(deltaMeters: 300)
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
         let cleanCandidate = try assembler.ingestSOC(reading(71, uptime: 4), policy: p)
         let clean = try #require(cleanCandidate)
 
@@ -199,13 +279,16 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         var model = AdaptiveBatteryRangeModel()
         let p = try policy()
 
-        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
+        _ = try assembler.ingestSOC(reading(80, uptime: 100), policy: p)
         try assembler.recordDistance(deltaMeters: 500, coverage: .partial)
         assembler.recordTransportGap()
 
-        // A higher integration layer has identified the first trustworthy
-        // post-gap authoritative reading. Continuity cannot be proven, so the
-        // pre-gap candidate is intentionally abandoned rather than bridged.
+        #expect(throws: BatteryRangeWindowAssemblyError.nonMonotonicAuthoritativeSOC) {
+            _ = try assembler.ingestSOC(reading(75, uptime: 99), policy: p)
+        }
+
+        // A higher integration layer has identified a fresh post-gap epoch.
+        // Reset deliberately abandons the old ordering baseline and evidence.
         assembler.reset()
         _ = try assembler.ingestSOC(reading(75, uptime: 10), policy: p)
         try assembler.recordDistance(deltaMeters: 180, coverage: .complete)
@@ -214,6 +297,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let clean = try #require(candidate)
 
         #expect(clean.startSOC.percentage == 75)
+        #expect(clean.startSOC.receivedAtUptimeNanoseconds == 10)
         #expect(clean.endSOC.percentage == 72)
         #expect(clean.distanceMeters == 180)
         #expect(clean.distanceCoverage == .complete)
