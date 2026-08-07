@@ -42,6 +42,22 @@ struct PropulsionObservedScaleRegionTests {
         )
     }
 
+    private func verifiedSample(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        sequence: UInt64,
+        uptime: UInt64,
+        generation: UInt64 = 1
+    ) throws -> PropulsionPowerSample {
+        try .verifiedVehicleMeasurement(
+            identity: identity,
+            watts: watts,
+            receiptSequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            continuityGeneration: generation
+        )
+    }
+
     @Test("near-edge threshold is a finite positive fraction no greater than one")
     func policyValidation() throws {
         #expect(throws: PropulsionObservedScaleRegionPolicyError.invalidNearEdgeFraction) {
@@ -79,6 +95,40 @@ struct PropulsionObservedScaleRegionTests {
         #expect(region.latestAcceptedWatts == 950)
         #expect(region.acceptedObservedScaleFraction == 0.95)
         #expect(region.scaleOrigin == .simulator)
+        #expect(region.isSimulatorNearObservedScaleEdge)
+        #expect(!region.permitsVerifiedNearObservedMaximumWording)
+    }
+
+    @Test("verified near-edge wording requires verified measurement and observed-envelope scale")
+    func verifiedWordingGateIsAuthoritySealed() throws {
+        let id = try identity()
+        let policy = try PropulsionObservedScaleRegionPolicy(nearEdgeFraction: 0.9)
+        var gauge = try model(identity: id)
+        try gauge.accept(verifiedSample(
+            identity: id,
+            watts: 950,
+            sequence: 1,
+            uptime: 1_000
+        ))
+
+        let verified = gauge.observedScaleRegionSnapshot(
+            atUptimeNanoseconds: 1_000,
+            scale: try .verifiedObservedEnvelope(identity: id, ceilingWatts: 1_000),
+            policy: policy
+        )
+        #expect(verified.region == .nearObservedScaleEdge)
+        #expect(verified.latestAuthority == .verifiedVehicleMeasurement)
+        #expect(verified.scaleOrigin == .verifiedObservedEnvelope)
+        #expect(verified.permitsVerifiedNearObservedMaximumWording)
+        #expect(!verified.isSimulatorNearObservedScaleEdge)
+
+        let wrongScaleAuthority = gauge.observedScaleRegionSnapshot(
+            atUptimeNanoseconds: 1_000,
+            scale: try .simulator(identity: id, ceilingWatts: 1_000),
+            policy: policy
+        )
+        #expect(wrongScaleAuthority.region == .observedScaleUnavailable)
+        #expect(!wrongScaleAuthority.permitsVerifiedNearObservedMaximumWording)
     }
 
     @Test("interpolated high tail cannot keep near-edge semantics after accepted power falls")
@@ -103,6 +153,7 @@ struct PropulsionObservedScaleRegionTests {
         #expect(region.region == .normal)
         #expect(region.latestAcceptedWatts == 100)
         #expect(region.acceptedObservedScaleFraction == 0.1)
+        #expect(!region.permitsVerifiedNearObservedMaximumWording)
     }
 
     @Test("freshness policy expires near-edge truth independently from slow animation tuning")
@@ -124,6 +175,7 @@ struct PropulsionObservedScaleRegionTests {
             policy: policy
         )
         #expect(live.region == .nearObservedScaleEdge)
+        #expect(live.isSimulatorNearObservedScaleEdge)
 
         let retained = gauge.observedScaleRegionSnapshot(
             atUptimeNanoseconds: 1_101,
@@ -133,6 +185,8 @@ struct PropulsionObservedScaleRegionTests {
         #expect(retained.region == .retained)
         #expect(retained.latestAcceptedWatts == 950)
         #expect(retained.acceptedObservedScaleFraction == nil)
+        #expect(!retained.isSimulatorNearObservedScaleEdge)
+        #expect(!retained.permitsVerifiedNearObservedMaximumWording)
     }
 
     @Test("incompatible or absent scale keeps live accepted watts but withholds observed-region semantics")
@@ -155,6 +209,8 @@ struct PropulsionObservedScaleRegionTests {
             #expect(region.latestAcceptedWatts == 950)
             #expect(region.acceptedObservedScaleFraction == nil)
             #expect(region.scaleOrigin == nil)
+            #expect(!region.isSimulatorNearObservedScaleEdge)
+            #expect(!region.permitsVerifiedNearObservedMaximumWording)
         }
     }
 
@@ -175,6 +231,8 @@ struct PropulsionObservedScaleRegionTests {
         #expect(unavailable.region == .unavailable)
         #expect(unavailable.latestAcceptedWatts == 950)
         #expect(unavailable.acceptedObservedScaleFraction == nil)
+        #expect(!unavailable.isSimulatorNearObservedScaleEdge)
+        #expect(!unavailable.permitsVerifiedNearObservedMaximumWording)
     }
 
     @Test("threshold comparison is inclusive and remains presentation-only")
@@ -192,6 +250,8 @@ struct PropulsionObservedScaleRegionTests {
         )
         #expect(region.region == .nearObservedScaleEdge)
         #expect(region.isNearObservedScaleEdge)
+        #expect(region.isSimulatorNearObservedScaleEdge)
+        #expect(!region.permitsVerifiedNearObservedMaximumWording)
         #expect(region.acceptedObservedScaleFraction == 0.9)
     }
 }
