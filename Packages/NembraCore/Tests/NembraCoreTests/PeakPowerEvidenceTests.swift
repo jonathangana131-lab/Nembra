@@ -269,6 +269,46 @@ struct PeakPowerEvidenceTests {
         #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
+    @Test("reset preserves monotonic uptime floor and rejected receipt identity")
+    func resetPreservesUptimeReplayFloor() throws {
+        var accumulator = try PeakPowerEvidenceAccumulator.simulatorQA(scope: simulatorScope())
+        _ = accumulator.record(simulatorObservation(
+            watts: 700,
+            sequence: 50,
+            uptime: 500
+        ))
+
+        accumulator.reset()
+
+        #expect(accumulator.record(simulatorObservation(
+            watts: 900,
+            sequence: 51,
+            uptime: 499
+        )) == .rejected(.nonIncreasingObservationTimestamp))
+
+        // The rejected newer receipt remains consumed; reset did not reopen the
+        // stream and a caller cannot rewrite that callback with cleaner metadata.
+        #expect(accumulator.record(simulatorObservation(
+            watts: 900,
+            sequence: 51,
+            uptime: 500
+        )) == .rejected(.nonIncreasingObservationSequence))
+
+        guard case let .peakUpdated(measurement) = accumulator.record(simulatorObservation(
+            watts: 320,
+            sequence: 52,
+            uptime: 500
+        )) else {
+            Issue.record("A genuinely newer receipt may recover at the preserved uptime floor")
+            return
+        }
+        #expect(measurement.powerWatts == 320)
+
+        let evidence = try #require(accumulator.evidence)
+        #expect(evidence.qualityRejectedMeasurementCount == 2)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
+    }
+
     @Test("known interruptions preserve observed peak but mark continuity partial")
     func interruptionPreservesPeakWithPartialContinuity() throws {
         var accumulator = try PeakPowerEvidenceAccumulator.simulatorQA(scope: simulatorScope())
