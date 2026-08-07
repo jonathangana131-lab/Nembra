@@ -218,7 +218,12 @@ public enum TuyaCandidateDPPayloadParser {
                     knownType: knownType,
                     declaredValueLength: declaredLength,
                     valueBytes: value,
-                    shapeFinding: shapeFinding(for: knownType, rawType: rawType, length: declaredLength)
+                    shapeFinding: shapeFinding(
+                        for: knownType,
+                        rawType: rawType,
+                        length: declaredLength,
+                        maximumValueBytes: policy.maximumValueBytes
+                    )
                 )
             )
         }
@@ -243,7 +248,8 @@ public enum TuyaCandidateDPPayloadParser {
     private static func shapeFinding(
         for knownType: TuyaCandidateDPKnownType?,
         rawType: UInt8,
-        length: Int
+        length: Int,
+        maximumValueBytes: Int
     ) -> TuyaCandidateDPShapeFinding {
         guard let knownType else {
             return .unknownType(rawType: rawType)
@@ -251,7 +257,10 @@ public enum TuyaCandidateDPPayloadParser {
 
         switch knownType {
         case .raw:
-            let allowed = 1...255
+            // Current public Tuya material permits product/transport-specific raw
+            // maxima beyond 255 bytes. At this generic layer, only non-empty raw
+            // plus the caller's explicit resource ceiling is safe to assert.
+            let allowed = 1...maximumValueBytes
             guard allowed.contains(length) else {
                 return .unexpectedVariableKnownTypeLength(
                     knownType,
