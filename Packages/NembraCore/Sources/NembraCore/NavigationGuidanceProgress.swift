@@ -10,14 +10,14 @@ public enum NavigationGuidanceProgressError: Error, Equatable, Sendable {
 /// Opaque identity for one exact route selection.
 ///
 /// `sequence` remains public as the ordering counter within one tracker generation.
-/// Internal tracker/selection UUIDs prevent two fresh trackers — or two copied
+/// Private tracker/selection UUIDs prevent two fresh trackers — or two copied
 /// tracker values that later diverge — from minting equal tokens at the same sequence.
 /// Consumers outside NembraCore should continue treating the full token as opaque
 /// equality identity instead of assuming sequences are globally ordered.
 public struct NavigationGuidanceSelectionToken: Equatable, Sendable {
     public let sequence: UInt64
-    let trackerGenerationID: UUID
-    let selectionID: UUID
+    private let trackerGenerationID: UUID
+    private let selectionID: UUID
 
     fileprivate init(
         trackerGenerationID: UUID,
@@ -27,6 +27,13 @@ public struct NavigationGuidanceSelectionToken: Equatable, Sendable {
         self.trackerGenerationID = trackerGenerationID
         self.selectionID = selectionID
         self.sequence = sequence
+    }
+
+    /// Sequence ordering is meaningful only when two tokens share this tracker
+    /// generation. The UUID itself stays private so downstream reducers cannot
+    /// accidentally promote implementation identity into a public contract.
+    func sharesTrackerGeneration(with other: Self) -> Bool {
+        trackerGenerationID == other.trackerGenerationID
     }
 }
 
