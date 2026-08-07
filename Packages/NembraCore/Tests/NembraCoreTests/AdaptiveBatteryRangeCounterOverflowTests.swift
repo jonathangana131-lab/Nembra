@@ -62,13 +62,17 @@ struct AdaptiveBatteryRangeCounterOverflowTests {
         return try JSONSerialization.data(withJSONObject: object)
     }
 
-    @Test("raw model restore rejects an exhausted accepted-window counter")
-    func exhaustedCounterRestoreRejected() throws {
+    @Test("terminal accepted-window counter is a valid restorable state")
+    func terminalCounterRestoreRoundTrips() throws {
         let data = try seededModelData(acceptedWindowCount: Int.max)
+        let terminal = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
 
-        #expect(throws: DecodingError.self) {
-            _ = try JSONDecoder().decode(AdaptiveBatteryRangeModel.self, from: data)
-        }
+        #expect(terminal.acceptedWindowCount == Int.max)
+        let roundTrip = try JSONDecoder().decode(
+            AdaptiveBatteryRangeModel.self,
+            from: JSONEncoder().encode(terminal)
+        )
+        #expect(roundTrip == terminal)
     }
 
     @Test("raw model restore rejects recent evidence larger than historical evidence")
@@ -102,6 +106,12 @@ struct AdaptiveBatteryRangeCounterOverflowTests {
         #expect(model.acceptedWindowCount == Int.max)
 
         let terminalState = model
+        let persistedTerminalState = try JSONDecoder().decode(
+            AdaptiveBatteryRangeModel.self,
+            from: JSONEncoder().encode(terminalState)
+        )
+        #expect(persistedTerminalState == terminalState)
+
         let rejected = model.ingest(
             try window(
                 startPercentage: 80,
