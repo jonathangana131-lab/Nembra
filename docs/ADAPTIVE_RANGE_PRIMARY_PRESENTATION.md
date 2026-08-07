@@ -58,16 +58,36 @@ This is deliberately conservative. A future detailed battery surface may choose 
 
 This presentation policy does **not** itself prove that an upstream `.authoritativeMeasurement` claim is trustworthy.
 
-Current live review of parent PR #40 found that `BatterySOCReading` still exposes a public initializer that accepts public `.authoritativeMeasurement`, while the type is also generally `Codable`. External production code can therefore manufacture/import an adaptive-range SoC reading that claims authority without passing through the sealed battery-evidence path in #34/#38.
+Current live review of parent PR #40 found two generic authority-assertion paths:
 
-That is an upstream parent trust-boundary bug, not a reason for this lane to duplicate battery-evidence validation. This lane therefore treats the following as a hard production dependency:
+1. `BatterySOCReading` exposes a raw constructor that accepts public `.authoritativeMeasurement`, and its generic Codable import can decode that role;
+2. `AdaptiveBatteryRangeEstimate.init(from:)` likewise decodes `socProvenance` and can import an otherwise-valid learned/normal/high estimate that self-asserts `.authoritativeMeasurement`.
+
+The second path matters directly to this lane: #83 is behaving correctly when it trusts the parent estimate's provenance field, but a forged imported parent estimate can currently make that field look authoritative. Generic encode/decode of authoritative derived estimates therefore needs the same explicit trust treatment as authoritative SoC readings.
+
+These are upstream trust-boundary bugs, not reasons for this lane to duplicate battery-evidence validation. This lane therefore treats the following as hard production dependencies:
 
 1. the accepted descendant of #40 must seal authoritative `BatterySOCReading` construction/import;
-2. #38 (or its accepted successor) must remain the trusted battery-evidence → adaptive-range integration seam;
-3. only then may a `.authoritativeMeasurement` carried by the accepted adaptive-range result satisfy this policy's numeric-eligibility rule;
-4. until that parent seal exists, PR #83 stays draft/dependent and no Dashboard integration should interpret this policy's current numeric branch as production authority proof.
+2. generic `AdaptiveBatteryRangeEstimate` import/export must not be able to create or carry authoritative provenance without an explicit separately verified persistence envelope;
+3. #38 (or its accepted successor) must remain the trusted battery-evidence → adaptive-range integration seam;
+4. only then may a `.authoritativeMeasurement` carried by the accepted adaptive-range result satisfy this policy's numeric-eligibility rule;
+5. until those seals exist, PR #83 stays draft/dependent and no Dashboard integration should interpret this policy's current numeric branch as production authority proof.
 
-A historical/queued green for the old #40 head does not close this blocker because the reviewed source itself still contains the public-authority bypass.
+A historical/queued green for the old #40 head does not close these blockers because the reviewed source itself still contains the authority-import/construction paths.
+
+### Production module-layout caveat
+
+A proposed #40 hardening direction is to make the raw `BatterySOCReading` role-selecting initializer module-internal and leave a public estimated-only factory. That helps Swift-package clients, but **module-internal access is not sufficient by itself under Nembra's current production iOS build graph**.
+
+The current `Nembra` app target does not link `NembraCore` as a separate package-product dependency. Instead, `project.pbxproj` places selected files from `Packages/NembraCore/Sources/NembraCore` directly in the `Nembra` app Sources build phase. Once adaptive-range/evidence files are wired the same way for Dashboard, those declarations and ordinary app UI code compile in the same Swift module. Plain `internal` access would therefore remain callable by app code.
+
+Production acceptance must consequently prove an authority construction boundary that remains non-forgeable in the **actual final app composition**, not only in an external package-client probe. Viable architecture belongs to the owning integration/range lanes, but the proof must be equivalent to one of these outcomes:
+
+- the app deliberately links `NembraCore` as a distinct module before relying on module-internal authority access; or
+- authoritative conversion uses a file/private capability or another construction API that ordinary same-module app code cannot forge; or
+- authoritative range conversion accepts only already-sealed verified evidence through a path that never exposes a raw same-module role selector to app callers.
+
+The final integration gate should include an app-side negative compile/API proof after the adaptive-range dependency closure is wired, demonstrating that ordinary `NembraApp` code cannot manufacture authoritative SoC or authoritative derived-range provenance.
 
 ## Why `presentedRemainingMeters`
 
@@ -110,9 +130,9 @@ It does not modify:
 Nembra currently has two different source-discovery realities:
 
 - the Swift package auto-discovers files under `Packages/NembraCore/Sources/NembraCore` and package tests therefore see this policy automatically;
-- the `Nembra.app` Xcode target manually enumerates selected NembraCore source files in `Nembra.xcodeproj/project.pbxproj`.
+- the `Nembra.app` Xcode target manually enumerates selected NembraCore source files in `Nembra.xcodeproj/project.pbxproj` and compiles them directly into the app module.
 
-This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), then compile the real app on the exact final SHA.
+This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type, and package-module access-control probes are not automatically proof of the production app trust boundary. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), compile the real app on the exact final SHA, and re-prove authority construction under that exact module layout.
 
 After #40 is authority-sealed, accepted, and landed, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
 
