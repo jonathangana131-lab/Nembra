@@ -58,14 +58,16 @@ public struct NavigationSessionCoordinator: Sendable {
         rerouteEvaluator = NavigationRerouteEvaluator(policy: reroutePolicy)
     }
 
-    /// Selects a route without installing an additional receipt-time fence.
+    /// Selects a route without minting a new receipt-time fence.
     ///
     /// This preserves the original synchronous/serialized contract: the global
     /// seen-callback high-water mark still rejects callbacks older than any
-    /// location already delivered to this coordinator. Callers whose route
-    /// selection can race with already-screened location delivery should use the
-    /// `receiptFence` overload instead so a callback received before selection
-    /// cannot be delivered later and masquerade as evidence for the new route.
+    /// location already delivered to this coordinator. If an earlier strong
+    /// selection established a process-local receipt fence, this compatibility
+    /// path preserves that already-proven floor instead of weakening chronology.
+    /// It does not pretend that floor is the exact time of this newer selection.
+    /// Callers whose route selection can race with already-screened location
+    /// delivery should use the `receiptFence` overload for an exact new boundary.
     @discardableResult
     public mutating func select(
         route: NavigationRouteSnapshot
@@ -102,11 +104,11 @@ public struct NavigationSessionCoordinator: Sendable {
     /// while idle and never regress that high-water mark. With a selected route,
     /// non-monotonic callbacks fail closed before guidance or reroute mutation.
     ///
-    /// When the selected route has an explicit receipt fence, a newer-to-this-
-    /// coordinator callback can still fail closed if its actual receipt uptime is
-    /// not newer than the selection boundary. That rejected callback still advances
-    /// the global seen-callback high-water mark, preserving replay protection without
-    /// promoting it into route progress or reroute evidence.
+    /// When the selected route carries an explicit or inherited proven receipt
+    /// floor, a newer-to-this-coordinator callback can still fail closed if its
+    /// actual receipt uptime is not newer than that floor. That rejected callback
+    /// still advances the global seen-callback high-water mark, preserving replay
+    /// protection without promoting it into route progress or reroute evidence.
     @discardableResult
     public mutating func process(
         location: QualityScreenedRideLocation
@@ -154,8 +156,9 @@ public struct NavigationSessionCoordinator: Sendable {
     /// while cleared continue advancing that clock, while replayed/older callbacks
     /// cannot move it backward. Later route selection therefore cannot resurrect
     /// older callbacks from the idle interval as current evidence. The active route
-    /// fence is removed, but the last fenced-selection high-water mark is retained so
-    /// a later fenced selection cannot claim an earlier process-local boundary.
+    /// fence is removed, but the last fenced-selection high-water mark is retained.
+    /// A later compatibility selection inherits that value only as a conservative
+    /// known floor; a later strong selection must supply a non-regressing exact fence.
     public mutating func clearRoute() {
         selectedRoute = nil
         selectionToken = nil
@@ -177,7 +180,8 @@ public struct NavigationSessionCoordinator: Sendable {
         let token = try guidanceTracker.select(route: route)
         selectedRoute = route
         selectionToken = token
-        selectionReceiptFenceUptimeNanoseconds = receiptFenceUptimeNanoseconds
+        selectionReceiptFenceUptimeNanoseconds =
+            receiptFenceUptimeNanoseconds ?? lastSeenSelectionReceiptFenceUptimeNanoseconds
         if let receiptFenceUptimeNanoseconds {
             lastSeenSelectionReceiptFenceUptimeNanoseconds = receiptFenceUptimeNanoseconds
         }
