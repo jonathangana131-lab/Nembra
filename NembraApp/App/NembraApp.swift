@@ -80,9 +80,9 @@ struct NembraApp: App {
     private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
         try? ForegroundCoreBluetoothCaptureController(
             vehicleIdentity: NembraCore.VehicleIdentity(
-                manufacturer: "AOVOPRO",
-                model: "ES80",
-                displayName: "AOVOPRO ES80 research target",
+                manufacturer: "Unverified",
+                model: "Bluetooth peripheral",
+                displayName: "Selected Bluetooth candidate",
                 protocolFamily: "unverified-passive-research"
             )
         )
