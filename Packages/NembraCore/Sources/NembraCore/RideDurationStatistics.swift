@@ -108,16 +108,21 @@ public enum RideDurationStatisticsAggregator {
         }
 
         let uniqueRides = try deduplicated(rides)
-        guard uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
-            throw RideDurationStatisticsError.invalidRide
-        }
-
         let selectedWindow = try periodWindow(
             for: period,
             referenceDate: referenceDate,
             calendar: calendar
         )
         let periodRides = uniqueRides.filter { selectedWindow.contains($0.attributedDate) }
+
+        // Calendar representability is relevant only after period selection.
+        // A finite but calendar-unrepresentable historical date outside the
+        // requested bucket must not make an otherwise valid Today/Week/etc.
+        // summary unavailable. If the malformed date belongs to the selected
+        // input set (including All Time), fail closed as before.
+        guard periodRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+            throw RideDurationStatisticsError.invalidRide
+        }
 
         var completeCoverageRideCount = 0
         var partialCoverageRideCount = 0
