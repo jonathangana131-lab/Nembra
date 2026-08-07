@@ -311,8 +311,7 @@ struct DashboardView: View {
                         .font(.caption2.weight(.medium))
                         .tracking(0.5)
                         .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityHidden(true)
                 }
             }
