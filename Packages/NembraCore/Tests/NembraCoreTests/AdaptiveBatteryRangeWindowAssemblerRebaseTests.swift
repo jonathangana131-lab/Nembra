@@ -187,7 +187,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         assembler.recordTransportGap()
 
         let taintedCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
@@ -197,7 +197,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.transportGapOccurred == false)
         #expect(assembler.distanceCoverage == .complete)
 
-        try assembler.recordDistance(deltaMeters: 150)
+        try assembler.recordDistance(deltaMeters: 150, coverage: .complete)
         let cleanCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
         let clean = try #require(cleanCandidate)
 
@@ -248,13 +248,13 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         let p = try policy()
 
         _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: p)
-        try assembler.recordDistance(deltaMeters: 300)
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
         let baselineCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: p)
         let baseline = try #require(baselineCandidate)
         #expect(model.ingest(baseline, policy: p).disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
 
-        try assembler.recordDistance(deltaMeters: 1_000)
+        try assembler.recordDistance(deltaMeters: 1_000, coverage: .complete)
         let outlierCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: p)
         let outlier = try #require(outlierCandidate)
         #expect(model.ingest(outlier, policy: p).disposition == .rejected(.efficiencyOutlier))
@@ -262,7 +262,7 @@ struct AdaptiveBatteryRangeWindowAssemblerRebaseTests {
         #expect(assembler.anchorSOC?.percentage == 74)
         #expect(assembler.accumulatedDistanceMeters == 0)
 
-        try assembler.recordDistance(deltaMeters: 300)
+        try assembler.recordDistance(deltaMeters: 300, coverage: .complete)
         let cleanCandidate = try assembler.ingestSOC(reading(71, uptime: 4), policy: p)
         let clean = try #require(cleanCandidate)
 
