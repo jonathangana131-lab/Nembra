@@ -175,10 +175,14 @@ public struct ES80PassiveCaptureResearchView: View {
                                     .foregroundStyle(.secondary)
                             } else {
                                 Button(connectionActionLabel(for: peripheral.id)) {
-                                    perform {
+                                    let previousTargetIdentifier = controller.selectedTargetIdentifier
+                                    if perform({
                                         try controller.connect(to: peripheral.id)
                                         analysis = nil
                                         exportDocument = nil
+                                    }), previousTargetIdentifier != peripheral.id {
+                                        markerValue = ""
+                                        markerNote = ""
                                     }
                                 }
                                 .disabled(!canStartConnection(to: peripheral.id))
@@ -226,7 +230,8 @@ public struct ES80PassiveCaptureResearchView: View {
                 .disabled(artifactInteractionLocked)
 
             Button("Record marker") {
-                perform {
+                let recordedFieldTitle = markerField.title
+                if perform({
                     try controller.recordStockAppObservation(
                         field: markerField.captureField,
                         displayedValue: markerValue.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -235,7 +240,8 @@ public struct ES80PassiveCaptureResearchView: View {
                     markerValue = ""
                     markerNote = ""
                     analysis = nil
-                    diagnosticMessage = "Recorded \(markerField.title) marker. Refresh the evidence summary to include the new marker."
+                }) {
+                    diagnosticMessage = "Accepted \(recordedFieldTitle) marker into the live capture queue. Refresh the evidence summary to include it."
                 }
             }
             .disabled(
@@ -250,7 +256,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Only record what is actually visible in the stock app or other legitimate reference setup. Timing proximity is not a decoded DP claim.")
+            Text("Only record what is actually visible in the stock app or other legitimate reference setup. The marker timestamp is when Nembra receives your Record marker action; it does not prove when the stock app refreshed or changed, and timing proximity is not a decoded DP claim.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -466,12 +472,15 @@ public struct ES80PassiveCaptureResearchView: View {
         String(identifier.uuidString.prefix(8))
     }
 
-    private func perform(_ operation: () throws -> Void) {
+    @discardableResult
+    private func perform(_ operation: () throws -> Void) -> Bool {
         do {
             try operation()
             diagnosticMessage = nil
+            return true
         } catch {
             diagnosticMessage = error.localizedDescription
+            return false
         }
     }
 
