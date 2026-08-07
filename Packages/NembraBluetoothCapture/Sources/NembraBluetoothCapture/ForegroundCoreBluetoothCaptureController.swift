@@ -3,6 +3,41 @@ import Dispatch
 import Foundation
 import NembraCore
 
+/// MainActor artifact-read gate that freezes how far the asynchronous recorder
+/// may drain while one immutable capture artifact is being read.
+///
+/// Events after `watermark` remain queued until the read ends. This keeps the
+/// recorder actor from accepting a post-cut callback before `snapshot()` or
+/// `encodedJSON()` reaches that actor, without suppressing live CoreBluetooth
+/// callbacks or pretending those later observations never happened.
+struct PassiveCoreBluetoothArtifactReadBarrier: Equatable, Sendable {
+    enum StateError: Error, Equatable, Sendable {
+        case alreadyActive
+    }
+
+    private(set) var watermark: UInt64?
+
+    var isActive: Bool {
+        watermark != nil
+    }
+
+    mutating func begin(through watermark: UInt64) throws {
+        guard self.watermark == nil else {
+            throw StateError.alreadyActive
+        }
+        self.watermark = watermark
+    }
+
+    mutating func end() {
+        watermark = nil
+    }
+
+    func drainUpperBound(pendingTail: UInt64) -> UInt64 {
+        guard let watermark else { return pendingTail }
+        return min(watermark, pendingTail)
+    }
+}
+
 /// A user-initiated, foreground-only CoreBluetooth acquisition controller for
 /// physical protocol research.
 ///
@@ -68,6 +103,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
         case targetSessionChanged
+        case artifactReadAlreadyActive
         case captureIncomplete
         case captureFailed
     }
@@ -174,6 +210,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var eventDrainTask: Task<Void, Never>?
     private var lastEnqueuedEventSequence: UInt64 = 0
     private var lastProcessedEventSequence: UInt64 = 0
+    private var artifactReadBarrier = PassiveCoreBluetoothArtifactReadBarrier()
 
     public init(
         vehicleIdentity: VehicleIdentity,
@@ -325,6 +362,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {
         let context = try currentArtifactContext()
+        try beginArtifactRead(through: context.eventWatermark)
+        defer { endArtifactRead() }
+
         await flushPendingEvents(through: context.eventWatermark)
         try validate(context)
         let snapshot = await context.recorder.snapshot()
@@ -334,6 +374,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     public func encodedCaptureJSON(prettyPrinted: Bool = true) async throws -> Data {
         let context = try currentArtifactContext()
+        try beginArtifactRead(through: context.eventWatermark)
+        defer { endArtifactRead() }
+
         await flushPendingEvents(through: context.eventWatermark)
         try validate(context)
         let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)
@@ -404,6 +447,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
         guard hasCompleteTargetEvidence else {
             throw ControllerError.captureIncomplete
+        }
+    }
+
+    private func beginArtifactRead(through watermark: UInt64) throws {
+        do {
+            try artifactReadBarrier.begin(through: watermark)
+        } catch PassiveCoreBluetoothArtifactReadBarrier.StateError.alreadyActive {
+            throw ControllerError.artifactReadAlreadyActive
+        }
+    }
+
+    private func endArtifactRead() {
+        artifactReadBarrier.end()
+        if eventDrainTask == nil, !pendingEvents.isEmpty, !captureFailed {
+            startDrainIfNeeded()
         }
     }
 
@@ -616,7 +674,13 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     private func startDrainIfNeeded() {
         guard eventDrainTask == nil,
-              let drainThroughSequence = pendingEvents.last?.queueSequence else { return }
+              let firstPendingSequence = pendingEvents.first?.queueSequence,
+              let pendingTailSequence = pendingEvents.last?.queueSequence else { return }
+        let drainThroughSequence = artifactReadBarrier.drainUpperBound(
+            pendingTail: pendingTailSequence
+        )
+        guard firstPendingSequence <= drainThroughSequence else { return }
+
         eventDrainTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while let first = self.pendingEvents.first,
