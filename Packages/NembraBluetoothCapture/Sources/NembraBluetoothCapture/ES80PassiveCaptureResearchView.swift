@@ -167,7 +167,7 @@ public struct ES80PassiveCaptureResearchView: View {
                                         clearTargetScopedPresentation()
                                     }
                                 }
-                                .disabled(!canStartConnection)
+                                .disabled(!canStartConnection(to: peripheral.id))
                             }
 
                             Spacer()
@@ -314,11 +314,11 @@ public struct ES80PassiveCaptureResearchView: View {
         }
     }
 
-    private var canStartConnection: Bool {
-        if case .idle = controller.connectionPhase {
-            return !controller.captureFailed && !controller.isSelectedTargetAwaitingTerminalCallback
-        }
-        return false
+    private func canStartConnection(to identifier: UUID) -> Bool {
+        guard case .idle = controller.connectionPhase,
+              !controller.captureFailed else { return false }
+        return controller.selectedTargetIdentifier != identifier
+            || !controller.isSelectedTargetAwaitingTerminalCallback
     }
 
     private var targetSessionReady: Bool {
