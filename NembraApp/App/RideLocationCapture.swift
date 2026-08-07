@@ -509,7 +509,15 @@ actor RideLocationCaptureCoordinator {
                 accepted.distanceDeltaMeters,
                 accepted.sample.receivedAtUptimeNanoseconds
             )
-            guard admitted else { return }
+            guard admitted else {
+                // The quality screen already advanced its accepted baseline. If
+                // the application rejects this point, continuity to the next
+                // point is no longer proven for either GPS distance or route
+                // topology. Force the next accepted point to begin after a known
+                // gap instead of measuring from evidence the ride did not admit.
+                qualityScreen.markKnownCoverageGap()
+                return
+            }
 
             if accepted.startsNewRouteSegment {
                 await markRouteGapIfAvailable()
