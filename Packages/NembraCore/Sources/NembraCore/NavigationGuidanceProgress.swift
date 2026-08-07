@@ -103,6 +103,25 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
     )
 }
 
+/// Immutable proof that this exact observation was accepted by a guidance tracker
+/// and produced this exact resulting guidance state in the same mutation.
+///
+/// Construction is file-private so downstream NembraCore reducers cannot pair a
+/// replayed/rejected raw observation with a separately copied matching state and
+/// misrepresent that pair as one accepted guidance event.
+struct NavigationGuidanceAcceptedObservationReceipt: Equatable, Sendable {
+    let observation: NavigationGuidanceProgressObservation
+    let resultingState: NavigationGuidanceProgressState
+
+    fileprivate init(
+        observation: NavigationGuidanceProgressObservation,
+        resultingState: NavigationGuidanceProgressState
+    ) {
+        self.observation = observation
+        self.resultingState = resultingState
+    }
+}
+
 /// Platform-neutral guidance-state reducer above route geometry matching.
 ///
 /// Selection tokens isolate route generations so late observations for a prior
@@ -224,6 +243,22 @@ public struct NavigationGuidanceProgressTracker: Sendable {
             )
         )
         return true
+    }
+
+    /// Atomically binds one accepted raw observation to the state produced by
+    /// that exact `observe` mutation. Superseded selections return nil; rejected
+    /// current-selection observations throw and cannot mint a receipt.
+    @discardableResult
+    mutating func acceptanceReceipt(
+        for observation: NavigationGuidanceProgressObservation
+    ) throws -> NavigationGuidanceAcceptedObservationReceipt? {
+        guard try observe(observation) else {
+            return nil
+        }
+        return NavigationGuidanceAcceptedObservationReceipt(
+            observation: observation,
+            resultingState: state
+        )
     }
 
     /// Known location/guidance continuity loss invalidates the displayed route
