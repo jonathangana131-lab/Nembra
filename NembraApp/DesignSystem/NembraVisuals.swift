@@ -15,20 +15,24 @@ struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityShowBorders) private var showBorders
 
-    private var strongBoundaryRequested: Bool {
-        colorSchemeContrast == .increased || showBorders
+    /// Normal Liquid Glass already adapts to Increased Contrast at the material layer.
+    /// Nembra adds a strong explicit boundary only when Show Borders asks custom
+    /// controls to expose their edges, or when Reduce Transparency replaces glass
+    /// with our opaque fallback and therefore removes that native glass adaptation.
+    private var strongExplicitBoundaryRequested: Bool {
+        showBorders || (reduceTransparency && colorSchemeContrast == .increased)
     }
 
-    private var shouldShowBoundary: Bool {
-        reduceTransparency || strongBoundaryRequested
+    private var shouldShowExplicitBoundary: Bool {
+        reduceTransparency || showBorders
     }
 
     private var boundaryOpacity: Double {
-        strongBoundaryRequested ? 0.42 : 0.16
+        strongExplicitBoundaryRequested ? 0.42 : 0.16
     }
 
     private var boundaryLineWidth: CGFloat {
-        strongBoundaryRequested ? 1.5 : 1
+        strongExplicitBoundaryRequested ? 1.5 : 1
     }
 
     func body(content: Content) -> some View {
@@ -66,7 +70,7 @@ struct NembraGlassButtonStyle: ViewModifier {
 
     @ViewBuilder
     private var controlBoundary: some View {
-        if shouldShowBoundary {
+        if shouldShowExplicitBoundary {
             RoundedRectangle(
                 cornerRadius: NembraMetrics.controlRadius,
                 style: .continuous
