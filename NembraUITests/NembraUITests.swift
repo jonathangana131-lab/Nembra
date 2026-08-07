@@ -15,7 +15,7 @@ final class NembraUITests: XCTestCase {
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
-        XCTAssertTrue(app.staticTexts["MAXSHOT V1S Pro"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
 
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
