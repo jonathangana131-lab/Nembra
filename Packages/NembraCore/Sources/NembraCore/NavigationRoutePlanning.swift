@@ -1,3 +1,5 @@
+import Foundation
+
 public enum NavigationRoutePreference: String, Equatable, Sendable {
     case any
     case avoid
@@ -62,11 +64,20 @@ public enum NavigationRoutePlanningError: Error, Equatable, Sendable {
     case requestSequenceExhausted
 }
 
+/// Opaque identity for one concrete provider request generation.
+///
+/// `sequence` remains public for local ordering/diagnostics, but equality also
+/// includes an implementation-private per-request identity. A recreated or copied
+/// coordinator may legitimately mint the same sequence number; those requests must
+/// never compare equal or let a stale asynchronous callback publish into a newer
+/// coordinator instance.
 public struct NavigationRouteRequestToken: Equatable, Sendable {
     public let sequence: UInt64
+    private let identity: UUID
 
-    fileprivate init(sequence: UInt64) {
+    fileprivate init(sequence: UInt64, identity: UUID) {
         self.sequence = sequence
+        self.identity = identity
     }
 }
 
@@ -135,7 +146,10 @@ public struct NavigationRoutePlanningCoordinator: Sendable {
         }
 
         lastSequence += 1
-        let token = NavigationRouteRequestToken(sequence: lastSequence)
+        let token = NavigationRouteRequestToken(
+            sequence: lastSequence,
+            identity: UUID()
+        )
         state = .requesting(token: token, request: request)
         return NavigationRouteRequestStart(
             token: token,
