@@ -37,13 +37,13 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.3)
     }
 
-    @Test("interruptions split cadence so a disconnect gap is never averaged into callback timing")
+    @Test("interruptions split cadence so a capture gap is never averaged into callback timing")
     func interruptionBreaksCadence() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
         try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01])
         try appendValue(to: &session, sequence: 2, uptime: 200, payload: [0x02])
         try session.append(
-            .interruption(try PassiveBluetoothCaptureInterruption(reason: "disconnect")),
+            .interruption(try PassiveBluetoothCaptureInterruption(reason: "observer gap")),
             sequenceNumber: 3,
             receivedAtUptimeNanoseconds: 300,
             receivedAtDate: .now
@@ -60,23 +60,15 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.meanCallbackIntervalSeconds, 0.00000025, tolerance: 1e-15)
     }
 
-    @Test("structured disconnect uses the same byte-continuity boundary as an interruption")
+    @Test("same-peripheral structured disconnect splits cadence")
     func structuredDisconnectBreaksCadence() throws {
-        let peripheral = "physical-es80-placeholder"
+        let peripheral = "target-a"
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
-        try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01])
-        try appendValue(to: &session, sequence: 2, uptime: 200, payload: [0x02])
-        try session.append(
-            .connection(try PassiveBluetoothConnectionObservation(
-                peripheralIdentifier: peripheral,
-                state: .disconnected
-            )),
-            sequenceNumber: 3,
-            receivedAtUptimeNanoseconds: 300,
-            receivedAtDate: .now
-        )
-        try appendValue(to: &session, sequence: 4, uptime: 10_000, payload: [0x03])
-        try appendValue(to: &session, sequence: 5, uptime: 10_400, payload: [0x04])
+        try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01], peripheral: peripheral)
+        try appendValue(to: &session, sequence: 2, uptime: 200, payload: [0x02], peripheral: peripheral)
+        try appendDisconnect(to: &session, sequence: 3, uptime: 300, peripheral: peripheral)
+        try appendValue(to: &session, sequence: 4, uptime: 10_000, payload: [0x03], peripheral: peripheral)
+        try appendValue(to: &session, sequence: 5, uptime: 10_400, payload: [0x04], peripheral: peripheral)
 
         let stats = try #require(PassiveBluetoothValueStreamAnalysis.summarize(session).first)
         #expect(stats.continuitySegmentCount == 2)
@@ -85,25 +77,25 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000004, tolerance: 1e-15)
     }
 
+    @Test("unrelated peripheral disconnect does not fragment target cadence")
+    func unrelatedDisconnectDoesNotBreakCadence() throws {
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
+        try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01], peripheral: "target-a")
+        try appendDisconnect(to: &session, sequence: 2, uptime: 150, peripheral: "unrelated-b")
+        try appendValue(to: &session, sequence: 3, uptime: 400, payload: [0x02], peripheral: "target-a")
+
+        let stats = try #require(PassiveBluetoothValueStreamAnalysis.summarize(session).first)
+        #expect(stats.key.peripheralIdentifier == "target-a")
+        #expect(stats.continuitySegmentCount == 1)
+        #expect(stats.callbackIntervalCount == 1)
+        try expectApproximately(stats.meanCallbackIntervalSeconds, 0.0000003, tolerance: 1e-15)
+    }
+
     @Test("different characteristics remain independent streams and sort deterministically")
     func streamSeparation() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
-        try appendValue(
-            to: &session,
-            sequence: 1,
-            uptime: 1,
-            service: "FD50",
-            characteristic: "B",
-            payload: [0x01]
-        )
-        try appendValue(
-            to: &session,
-            sequence: 2,
-            uptime: 2,
-            service: "A201",
-            characteristic: "A",
-            payload: [0x02]
-        )
+        try appendValue(to: &session, sequence: 1, uptime: 1, service: "FD50", characteristic: "B", payload: [0x01])
+        try appendValue(to: &session, sequence: 2, uptime: 2, service: "A201", characteristic: "A", payload: [0x02])
 
         let stats = PassiveBluetoothValueStreamAnalysis.summarize(session)
         #expect(stats.count == 2)
@@ -132,15 +124,33 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         service: String = "TEST",
         characteristic: String = "VALUE",
         payload: [UInt8],
-        origin: PassiveBluetoothValueOrigin = .subscriptionUpdate
+        origin: PassiveBluetoothValueOrigin = .subscriptionUpdate,
+        peripheral: String = "physical-es80-placeholder"
     ) throws {
         try session.append(
             .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: "physical-es80-placeholder",
+                peripheralIdentifier: peripheral,
                 serviceUUID: service,
                 characteristicUUID: characteristic,
                 origin: origin,
                 payload: Data(payload)
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+
+    private func appendDisconnect(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        peripheral: String
+    ) throws {
+        try session.append(
+            .connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: peripheral,
+                state: .disconnected
             )),
             sequenceNumber: sequence,
             receivedAtUptimeNanoseconds: uptime,
