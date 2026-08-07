@@ -78,6 +78,20 @@ public enum PassiveBluetoothTransportFingerprint {
         let optionalCharacteristics: Set<String>
     }
 
+    private struct ObservedTopology {
+        var services: Set<String> = []
+        var characteristicsByService: [String: Set<String>] = [:]
+
+        mutating func observeService(_ serviceUUID: String) {
+            services.insert(serviceUUID)
+        }
+
+        mutating func observeCharacteristic(_ characteristicUUID: String, serviceUUID: String) {
+            services.insert(serviceUUID)
+            characteristicsByService[serviceUUID, default: []].insert(characteristicUUID)
+        }
+    }
+
     private static let definitions: [CandidateDefinition] = [
         CandidateDefinition(
             family: .tuyaModernFD50,
@@ -120,85 +134,134 @@ public enum PassiveBluetoothTransportFingerprint {
     /// Multiple candidate families can match and an empty match list is valid.
     /// Connection lifecycle alone establishes no GATT topology. A subscription
     /// record may establish only the exact service/characteristic path it names.
+    ///
+    /// The report-level topology is an "ever observed" inventory. Candidate
+    /// strength is stricter: it is the strongest topology actually observed
+    /// inside one parent-model byte-continuity segment. Evidence on opposite
+    /// sides of a disconnect/interruption may remain visible in the inventory,
+    /// but it can never be combined to manufacture a stronger transport match.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
     ) -> PassiveBluetoothTransportFingerprintReport {
-        var services: Set<String> = []
-        var characteristicsByService: [String: Set<String>] = [:]
+        var aggregate = ObservedTopology()
+        var currentSegment = ObservedTopology()
+        var segments: [ObservedTopology] = []
 
         for record in session.records {
+            if record.event.breaksByteContinuity {
+                segments.append(currentSegment)
+                currentSegment = ObservedTopology()
+                continue
+            }
+
             switch record.event {
             case let .advertisement(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
-                services.formUnion(observation.serviceUUIDs.map(normalize))
-                services.formUnion(observation.overflowServiceUUIDs.map(normalize))
-                services.formUnion(observation.solicitedServiceUUIDs.map(normalize))
-                services.formUnion(observation.serviceData.keys.map(normalize))
+                for service in observation.serviceUUIDs {
+                    observeService(service, aggregate: &aggregate, segment: &currentSegment)
+                }
+                for service in observation.overflowServiceUUIDs {
+                    observeService(service, aggregate: &aggregate, segment: &currentSegment)
+                }
+                for service in observation.solicitedServiceUUIDs {
+                    observeService(service, aggregate: &aggregate, segment: &currentSegment)
+                }
+                for service in observation.serviceData.keys {
+                    observeService(service, aggregate: &aggregate, segment: &currentSegment)
+                }
 
             case let .service(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(normalize(observation.serviceUUID))
+                observeService(
+                    observation.serviceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             case let .includedService(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(normalize(observation.parentServiceUUID))
-                services.insert(normalize(observation.includedServiceUUID))
+                observeService(
+                    observation.parentServiceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
+                observeService(
+                    observation.includedServiceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             case let .characteristic(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
+                observeCharacteristic(
+                    observation.characteristicUUID,
+                    serviceUUID: observation.serviceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             case let .descriptor(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
                 // Descriptor evidence confirms the parent GATT path existed even
                 // if a partial/imported capture lacks a separate service record.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
+                observeCharacteristic(
+                    observation.characteristicUUID,
+                    serviceUUID: observation.serviceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             case let .subscription(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
                 // Subscription-state evidence names one exact observed GATT path.
                 // It does not say anything about application protocol meaning.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
+                observeCharacteristic(
+                    observation.characteristicUUID,
+                    serviceUUID: observation.serviceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             case let .value(observation)
                 where observation.peripheralIdentifier == peripheralIdentifier:
                 // Same rule for partial captures containing value evidence.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
+                observeCharacteristic(
+                    observation.characteristicUUID,
+                    serviceUUID: observation.serviceUUID,
+                    aggregate: &aggregate,
+                    segment: &currentSegment
+                )
 
             default:
                 break
             }
         }
+        segments.append(currentSegment)
 
         let matches = definitions.compactMap { definition -> PassiveBluetoothTransportCandidateMatch? in
-            guard services.contains(definition.serviceUUID) else { return nil }
-            let observedCharacteristics = characteristicsByService[definition.serviceUUID] ?? []
+            guard aggregate.services.contains(definition.serviceUUID) else { return nil }
+            let aggregateCharacteristics = aggregate.characteristicsByService[definition.serviceUUID] ?? []
             let researchedCharacteristics = definition.primaryCharacteristics
                 .union(definition.optionalCharacteristics)
-            let matchingCharacteristics = observedCharacteristics.intersection(researchedCharacteristics)
+            let matchingCharacteristics = aggregateCharacteristics.intersection(researchedCharacteristics)
 
-            let strength: PassiveBluetoothTransportCandidateStrength
-            if definition.primaryCharacteristics.isSubset(of: observedCharacteristics) {
-                strength = .expectedDataPathObserved
-            } else if !matchingCharacteristics.isEmpty {
-                strength = .characteristicFamilyObserved
-            } else {
-                strength = .serviceObserved
+            let strongestSegment = segments.compactMap { segment -> PassiveBluetoothTransportCandidateStrength? in
+                guard segment.services.contains(definition.serviceUUID) else { return nil }
+                let observedCharacteristics = segment.characteristicsByService[definition.serviceUUID] ?? []
+                let matching = observedCharacteristics.intersection(researchedCharacteristics)
+
+                if definition.primaryCharacteristics.isSubset(of: observedCharacteristics) {
+                    return .expectedDataPathObserved
+                }
+                if !matching.isEmpty {
+                    return .characteristicFamilyObserved
+                }
+                return .serviceObserved
             }
+            .max()
 
+            guard let strength = strongestSegment else { return nil }
             return PassiveBluetoothTransportCandidateMatch(
                 family: definition.family,
                 strength: strength,
@@ -213,10 +276,32 @@ public enum PassiveBluetoothTransportFingerprint {
 
         return PassiveBluetoothTransportFingerprintReport(
             peripheralIdentifier: peripheralIdentifier,
-            observedServiceUUIDs: services,
-            characteristicUUIDsByService: characteristicsByService,
+            observedServiceUUIDs: aggregate.services,
+            characteristicUUIDsByService: aggregate.characteristicsByService,
             candidateMatches: matches
         )
+    }
+
+    private static func observeService(
+        _ rawServiceUUID: String,
+        aggregate: inout ObservedTopology,
+        segment: inout ObservedTopology
+    ) {
+        let serviceUUID = normalize(rawServiceUUID)
+        aggregate.observeService(serviceUUID)
+        segment.observeService(serviceUUID)
+    }
+
+    private static func observeCharacteristic(
+        _ rawCharacteristicUUID: String,
+        serviceUUID rawServiceUUID: String,
+        aggregate: inout ObservedTopology,
+        segment: inout ObservedTopology
+    ) {
+        let serviceUUID = normalize(rawServiceUUID)
+        let characteristicUUID = normalize(rawCharacteristicUUID)
+        aggregate.observeCharacteristic(characteristicUUID, serviceUUID: serviceUUID)
+        segment.observeCharacteristic(characteristicUUID, serviceUUID: serviceUUID)
     }
 
     private static func observedPeripheralIdentifiers(
