@@ -57,8 +57,8 @@ public struct PassiveBluetoothValueStreamStatistics: Equatable, Sendable {
 
 public enum PassiveBluetoothValueStreamAnalysis {
     private struct ContinuitySegment: Hashable {
-        let globalGeneration: UInt64
-        let peripheralGeneration: UInt64
+        let lastGlobalBoundarySequence: UInt64
+        let lastPeripheralDisconnectSequence: UInt64
     }
 
     private struct Accumulator {
@@ -115,19 +115,19 @@ public enum PassiveBluetoothValueStreamAnalysis {
     }
 
     public static func summarize(_ session: PassiveBluetoothCaptureSession) -> [PassiveBluetoothValueStreamStatistics] {
-        var globalGeneration: UInt64 = 0
-        var peripheralGeneration: [String: UInt64] = [:]
+        var lastGlobalBoundarySequence: UInt64 = 0
+        var lastDisconnectSequenceByPeripheral: [String: UInt64] = [:]
         var accumulators: [PassiveBluetoothValueStreamKey: Accumulator] = [:]
 
         for record in session.records {
             switch record.event {
             case .interruption:
-                globalGeneration &+= 1
+                lastGlobalBoundarySequence = record.sequenceNumber
             case let .connection(observation) where observation.state == .disconnected:
-                peripheralGeneration[observation.peripheralIdentifier, default: 0] &+= 1
+                lastDisconnectSequenceByPeripheral[observation.peripheralIdentifier] = record.sequenceNumber
             case let .value(value):
                 let key = PassiveBluetoothValueStreamKey(peripheralIdentifier: value.peripheralIdentifier, serviceUUID: value.serviceUUID, characteristicUUID: value.characteristicUUID)
-                let segment = ContinuitySegment(globalGeneration: globalGeneration, peripheralGeneration: peripheralGeneration[value.peripheralIdentifier, default: 0])
+                let segment = ContinuitySegment(lastGlobalBoundarySequence: lastGlobalBoundarySequence, lastPeripheralDisconnectSequence: lastDisconnectSequenceByPeripheral[value.peripheralIdentifier, default: 0])
                 accumulators[key, default: Accumulator()].ingest(value, uptime: record.receivedAtUptimeNanoseconds, segment: segment)
             default:
                 continue
