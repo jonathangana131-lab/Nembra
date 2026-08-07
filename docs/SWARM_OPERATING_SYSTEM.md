@@ -1,22 +1,33 @@
 # NEMBRA SWARM OPERATING SYSTEM
-CURRENT_PROTOCOL_VERSION: 10
+CURRENT_PROTOCOL_VERSION: 11
 STATUS: ACTIVE
-CODENAME: CONTINUOUS SHIFT RUNTIME
+CODENAME: FEATURE CELL RELEASE FABRIC
 
 Repository: `jonathangana131-lab/Nembra`
 
-V10 is a runtime rewrite. Its primary goal is to keep each individual engineering chat doing useful work for as long as the outer platform permits, with a desired shift target of **180+ minutes** when meaningful work exists. This is a behavioral target, not a guarantee that ChatGPT will keep one turn alive for three hours. Never attempt to evade runtime, quota, security, or tool limits.
+V11 is a throughput-architecture rewrite built on V10 Continuous Shift Runtime.
+
+V10 keeps individual workers behaving like long-running engineers. V11 makes 10, 15, 20, or more concurrent strong agents translate into **finished Nembra product** instead of PR sprawl, repeated reconciliation, and a giant single-Xcode acceptance funnel.
+
+Desired individual shift target remains **180+ minutes of continuous useful engineering when meaningful work exists and the outer platform permits it**. This is a behavioral target, not a runtime guarantee. Never attempt to circumvent runtime, context, quota, security, review, or permission boundaries.
 
 ## 0. Prime directives
 
-1. **A CHECKPOINT IS A SAVE POINT, NOT AN ENDPOINT.**
-2. **FINAL IS NOT A NORMAL WORKER STATE.**
-3. **A MERGE IS A TRANSITION, NOT THE END OF THE SHIFT.**
-4. **UNCERTAINTY BECOMES A TARGETED TOOL/EVIDENCE ACTION, NOT A LONG MONOLITHIC THINKING PHASE.**
-5. **ONE SLOW OR FAILED SERVICE MUST NOT FREEZE THE SHIFT.**
-6. **KEEP CHAT CONTEXT LEAN; GITHUB DURABLE STATE IS TEAM MEMORY.**
-7. **OPTIMIZE VALIDATED WORK MERGED + BLOCKERS REMOVED, NOT PR COUNT OR WORDS WRITTEN.**
-8. **NEVER INVENT HARDWARE OR RUNTIME EVIDENCE.**
+1. **ONE WORKER, ONE FEATURE CELL AT A TIME.**
+2. **ONE FEATURE CELL, ONE COHERENT USER-VISIBLE OUTCOME.**
+3. **BIG FEATURES MAY HAVE MANY AGENTS WORKING TOGETHER.**
+4. **AGENT_COUNT != FEATURE_COUNT.** More agents deepen important features before creating more features.
+5. **DO NOT LEAVE A FEATURE HALF-FINISHED TO START SOMETHING SHINY.**
+6. **PERFECT THE FEATURE BEFORE THE CELL DISSOLVES.**
+7. **DO NOT SPEND FULL XCODE ACCEPTANCE ON EVERY MICRO-PR.**
+8. **EXPENSIVE ACCEPTANCE IS BATCHED THROUGH RELEASE TRAINS.**
+9. **NON-OVERLAPPING MAIN DRIFT DOES NOT AUTOMATICALLY ERASE VALID FOCUSED EVIDENCE.**
+10. **THE FINAL RELEASE TRAIN PROVES THE ACTUAL COMBINED HEAD.**
+11. **MORE AGENTS SHOULD CREATE DEPTH, REVIEW, TESTS, PERFORMANCE, ACCESSIBILITY, VISUAL POLISH, AND FASTER DEFECT BURN-DOWN — NOT MORE PRS.**
+12. **A CHECKPOINT IS A SAVE POINT, NOT AN ENDPOINT.**
+13. **FINAL IS NOT A NORMAL WORKER STATE.**
+14. **ONE OPTIONAL SERVICE OR QUOTA MAY NOT STOP DEVELOPMENT.**
+15. **NEVER INVENT HARDWARE, TELEMETRY, SIMULATOR, CI, OR PHYSICAL-DEVICE EVIDENCE.**
 
 ## 1. Product kernel
 
@@ -30,412 +41,630 @@ Permanent truth:
 - automatic rides remain automatic and crash-safe;
 - route gaps remain gaps;
 - ODO / GPS / recorded route / provider route remain separate evidence;
-- battery `% ↔ estimated range` is a signature interaction;
+- battery `% ↔ estimated range` remains a signature interaction;
 - range learns from legitimate battery use + trustworthy real distance, never advertised range × percentage;
 - stale/weak/provisional/estimated/retained evidence remains qualified or fails closed;
 - display animation never becomes telemetry;
-- observed peak speed is sampled evidence, not perfect continuous physical top speed;
+- observed peak speed is sampled evidence, not exact continuous physical top speed;
 - acceleration timing reflects its real observation clock;
 - navigation suggestions do not prove scooter legality/safety;
+- package-green does not prove manually wired app-target source visibility;
 - current systems UI is not final;
 - final visual/motion/haptics/accessibility/performance work is a major release program;
 - baseline iPhone 12 / iOS 27 unless policy changes.
 
-Final product target: original Nembra, premium native iOS 27 vehicle software, premium EV-instrumentation quality, signature battery/range, glanceable speed, premium Home, landscape/live cockpit, strong maps/history/stats/navigation, restrained native materials/Liquid Glass, excellent motion/haptics/accessibility. No generic Tuya dashboard, card soup, gamer RGB, giant useless black space, debug-first hierarchy, cheap cross-platform look, or mediocre technically-correct final UI.
+Final product target: original Nembra, premium native iOS 27 vehicle software, premium EV-instrumentation quality, signature battery/range, glanceable speed, premium Home, landscape/live cockpit, strong maps/history/stats/navigation, restrained native materials/Liquid Glass, excellent motion/haptics/accessibility. Reject generic Tuya dashboard, card soup, gamer RGB, giant useless black space, debug-first hierarchy, cheap cross-platform feel, fake metrics, and technically-correct-but-mediocre final UI.
 
-## 2. Shift model
+## 2. Feature-cell organization
 
-A worker receives a **SHIFT_ROLE**, not a one-task assignment.
+A **Feature Cell** is a temporary cross-functional mini-team dedicated to one feature outcome until that feature is perfected and integrated.
 
 Examples:
-- SENIOR BATTERY/RANGE ENGINEER
-- SENIOR RIDE/PERSISTENCE ENGINEER
-- SENIOR NAVIGATION ENGINEER
-- SENIOR ES80/BLUETOOTH ENGINEER
-- SENIOR PRODUCT/SWIFTUI ENGINEER
-- PERFORMANCE ENGINEER
-- ACCESSIBILITY/INTERACTION ENGINEER
-- BUILD/CI/DEVEX ENGINEER
-- REVIEWER/RED TEAM
-- VERIFIER/ARTIFACT QA
-- RECOVERY/TRIAGE
-- CHIEF ARCHITECT/RELEASE COMMANDER
+- Battery Truth + Learned Range
+- Navigation + Route Planning
+- Navigation + Live Ride Cockpit
+- ES80 Passive Capture + CoreBluetooth Adapter
+- Automatic Ride Durability
+- Ride History + Maps + Statistics
+- Home Product Redesign
+- Dashboard Product Overhaul
 
-The role persists across multiple tasks/PRs in the same chat.
+Workers do not abandon a cell because one PR merged. The cell survives implementation, review, QA, product polish, local acceptance, release-train admission, integrated acceptance, merge, and post-merge observation.
 
-Example:
-`fix → verify → merge → refresh release train → claim next safe same-role work → continue`
+## 3. Elastic cell sizing
 
-Finishing one PR does not finish the shift.
+Cell size is dynamic.
 
-## 3. WIP governor
+**Small feature: 2–3 agents**
+- captain/builder
+- reviewer
+- verifier
 
-`MAX_ACTIVE_IMPLEMENTATION_LANES = 7`
+**Medium feature: 4–5 agents**
+- captain/builder
+- second builder/integration specialist
+- red-team reviewer
+- verifier
+- optional product/performance/accessibility specialist
 
-Extra chats become reviewers, verifiers, recovery, test, performance, accessibility, visual QA, research, or dependency-unblock workers rather than creating random implementation.
+**Large feature: 6–8 agents**
+Appropriate for major cross-cutting outcomes such as Navigation + Live Ride, Battery/Range end-to-end, Production ES80 transport, Ride persistence/location/history, or major Home/Dashboard overhaul.
 
-When WIP is high, prefer ~70% close/recover/review existing work and <=30% genuinely new implementation.
+Possible roles:
+1. feature captain / architect
+2. implementation builder A
+3. implementation builder B
+4. red-team reviewer
+5. verifier / test engineer
+6. product / SwiftUI specialist
+7. performance / accessibility specialist
+8. integration / build specialist
 
-## 4. Identity / ownership
+**Huge flagship feature: 8+ agents** is allowed only when the feature genuinely decomposes into independent subdomains that recombine into one user-visible outcome.
 
-`WORKER_ID = chat-xxxxx`
-`SESSION_ID = session-xxxxx`
-`SHIFT_ROLE = stable senior function`
-`LANE_ID = current conceptual lane`
-`EPOCH = ownership generation`
+Example `Navigation + Live Ride Cockpit`:
+- route-planning builder
+- MapKit adapter builder
+- navigation-session/reroute builder
+- Dashboard integration builder
+- product/SwiftUI specialist
+- performance/accessibility engineer
+- red-team reviewer
+- verifier/artifact QA
 
-Highest valid epoch owns the lane. Returning lower epoch yields.
+This remains ONE feature program, not eight random features.
 
-Claim before edit. Earlier meaningful incumbent wins. Never hijack or force-push another worker branch.
+## 4. Scaling by total agent count
 
-Branches:
-- `parallel/<lane>/<worker>`
-- `parallel/recover-<lane>/<worker>`
-- `parallel/integrate-<lane>/<worker>`
+Guidelines, not hard caps:
 
-## 5. Lock classes
+- **6–9 agents:** normally 2 feature cells + release/CI role.
+- **10–14 agents:** normally 3 feature cells + Release Commander + CI Sheriff.
+- **15–20 agents:** normally 3–4 feature cells; highest-value features become larger cells.
+- **20–30 agents:** normally 4–5 feature cells maximum unless architecture genuinely supports more; flagship cells may contain 6–8+ agents.
+- **30+ agents:** increase depth first: reviewers, test engineers, performance, accessibility, visual QA, hardware/public research, integration, defect burn-down. Do not automatically increase feature count.
 
-CLASS A EXCLUSIVE:
-- project.pbxproj
-- root/bootstrap/runtime composition
-- global navigation shell
-- global persistence/environment wiring
-- GitHub workflows/scheduler
-- permanent organization policy
+The organization optimizes finished features, not maximum simultaneous feature count.
 
-CLASS B SUBSYSTEM:
-- Home
-- Dashboard
-- rides/persistence
-- battery/range
-- navigation
-- Bluetooth/transport
+## 5. One feature at a time
 
-CLASS C ADDITIVE:
-- isolated core/tests
-- independent packages
-- docs/research/fixtures
+Every worker has:
 
-## 6. Continuous shift state machine
+`FEATURE_CELL_ID`
+`FEATURE_ID`
+`FEATURE_ROLE`
+`FEATURE_LOCK = true`
 
-Normal:
-`BOOT → JOIN_SHIFT → CLAIM → EXECUTE → VERIFY → CHECKPOINT → NEXT_ACTION → EXECUTE → ...`
+While `FEATURE_LOCK = true`, the worker may not begin unrelated implementation.
 
-After merge:
-`MERGE → RELEASE_LANE → REFRESH_TEAM → NEXT_LANE → CLAIM → EXECUTE`
+Allowed same-feature work:
+- implementation;
+- deterministic/adversarial tests;
+- API review;
+- concurrency/race review;
+- product review;
+- accessibility;
+- performance;
+- screenshot/artifact QA;
+- build graph/source visibility;
+- dependency integration;
+- feature-specific docs;
+- rollback/recovery analysis.
 
-Service trouble:
-`EXECUTE → SERVICE_DEGRADED → ALTERNATE_WORK → RECHECK_NATURALLY → EXECUTE`
+If CI is waiting, stay inside the same feature and deepen it. Do not escape to another random feature merely to appear busy.
 
-FINAL only when:
-- user explicitly asked for status-only answer;
-- genuine user-only physical/external action is required and no independent useful work exists;
-- continuing is unsafe;
-- every useful unowned implementation/review/research/verification path is unavailable or duplicative;
-- outer platform ends the turn.
+Release Commander may release a worker from a feature only when the feature is merged/perfected, cancelled/superseded, or genuinely externally blocked after all independent work is exhausted.
 
-## 7. Anti-40-minute rule
+## 6. Feature mission card
 
-V10 deletes the V9 macrocycle-complete boundary.
+Every cell owns one issue:
 
-There is **NO `MACROCYCLE_COMPLETE` state**.
+`[FEATURE CELL] <feature name>`
 
-Every checkpoint ends with a concrete next action. After the checkpoint, invoke the next useful tool/action in the **same assistant turn** whenever possible.
+Required state:
 
-Forbidden:
-`CHECKPOINT → SUMMARY → FINAL`
+```md
+### V11 FEATURE MISSION
+FEATURE_CELL_ID:
+FEATURE_ID:
+USER_VISIBLE_OUTCOME:
+WHY_NOW:
+CAPTAIN:
+BUILDERS:
+REVIEWERS:
+VERIFIERS:
+SPECIALISTS:
+BASELINE_MAIN:
+CELL_INTEGRATION_BRANCH:
+DELIVERY_BRANCH:
+RISK_TIER:
+OWNED_PATHS:
+SUBDOMAINS:
+DEPENDENCIES:
+NON_GOALS:
+TRUTH_BOUNDARY:
+PHYSICAL_BOUNDARY:
+DEFINITION_OF_PERFECTION:
+CURRENT_PHASE:
+KNOWN_DEFECTS:
+LOCAL_GATE_STATUS:
+TRAIN_ELIGIBILITY:
+RELEASE_TRAIN:
+STATUS:
+```
+
+The mission issue is canonical feature-level memory. Do not spread the complete feature state across dozens of PR comments.
+
+## 7. Subdomains inside large cells
+
+Large cells split ONE feature into subdomains.
+
+Example Navigation + Live Ride:
+- A: route planning / MapKit
+- B: navigation session / reroute
+- C: Dashboard integration
+- D: visual/interaction
+- E: performance/accessibility
+
+Each subdomain has one active owner. The Feature Captain owns the integration branch and feature contract. Workers do not edit another active subdomain's files without handoff.
+
+## 8. Branch topology
+
+Prefer:
+
+```text
+cell/<feature>/integration
+    ↑
+    ├─ cell/<feature>/<subdomain-a>/<worker>
+    ├─ cell/<feature>/<subdomain-b>/<worker>
+    ├─ cell/<feature>/<review-fix>/<worker>
+    └─ cell/<feature>/<qa>/<worker>
+```
+
+Subdomain PRs target **cell integration**, not `main`, when practical.
+
+The final feature delivery targets the active **release train** branch.
+
+This prevents every tiny patch from fighting directly with main.
+
+## 9. No PR soup
+
+Prefer:
+- a few purposeful subdomain PRs;
+- one cell integration branch;
+- one feature delivery.
+
+Avoid:
+- one PR per tiny test/doc fix;
+- repeated sync PRs for harmless main movement;
+- multiple workers independently recovering the same conceptual feature;
+- duplicate feature ownership.
+
+PR count is not productivity.
+
+## 10. Feature phases
+
+Every feature moves through:
+
+`DISCOVERY → CONTRACT → IMPLEMENTATION → ADVERSARIAL HARDENING → PRODUCT POLISH → LOCAL ACCEPTANCE → CELL INTEGRATION → TRAIN_READY → RELEASE TRAIN → INTEGRATED ACCEPTANCE → MERGED → POST-MERGE OBSERVATION`
+
+Do not skip from implementation directly to done.
+
+## 11. Definition of Perfection
+
+A Feature Mission defines exact completion criteria. Applicable dimensions include:
+
+**Functional** — intended behavior + edge/failure/recovery states.
+
+**Truth** — no evidence promotion, stale/retained/estimated value masquerading as live measurement, or invented hardware semantics.
+
+**API** — invalid states fail closed; serialization/import cannot bypass validation; provenance survives consumers.
+
+**Test** — deterministic regressions, adversarial cases, race/concurrency tests where relevant.
+
+**Product** — hierarchy, empty/loading/error/offline states, polished interaction, no developer theater.
+
+**Accessibility** — VoiceOver, Dynamic Type, motion, contrast, assistive-control semantics.
+
+**Performance** — no unnecessary high-frequency invalidation; profile hot paths where warranted.
+
+**Integration** — app source visibility, dependency closure, project wiring when needed.
+
+**Release** — focused cell evidence + integrated train evidence.
+
+**Physical** — physical requirements remain explicitly pending if software cannot prove them.
+
+## 12. Tiered acceptance — critical V11 throughput change
+
+### Tier C — isolated package/domain
+Examples: isolated NembraCore types, math/state machines, package-only evidence primitives, research/docs.
+
+Before cell acceptance:
+- focused SwiftPM compile/tests;
+- deterministic/adversarial tests;
+- independent review;
+- API/truth boundary review.
+
+**No mandatory full iPhone Simulator run for every isolated Tier-C microchange.**
+
+### Tier B — app-visible/subsystem
+Examples: Home, Dashboard, ride persistence, navigation, battery/range app path, Bluetooth transport.
 
 Required:
-`CHECKPOINT → NEXT_ACTION → TOOL`
+- focused tests;
+- independent review;
+- cell integration proof;
+- targeted Simulator proof when the coherent feature reaches LOCAL ACCEPTANCE.
 
-No 30/40/60-minute milestone triggers a summary or final. Desired shift target is 180+ useful minutes when the platform permits; elapsed time itself neither justifies continuing nor stopping.
+Do not full-gate every small commit.
 
-## 8. Anti-monolithic-thinking policy
+### Tier A — global/security/persistence/build
+Examples: project.pbxproj, bootstrap/root composition, CI/security, global persistence migration, motorized authorization boundary.
 
-Do not try to solve large uncertainty through one prolonged internal reasoning phase.
+Required:
+- stronger review quorum;
+- adversarial analysis;
+- targeted exact-head gate before TRAIN_READY when warranted;
+- integrated train gate again before merge.
 
-Operational rule:
-`UNCERTAINTY → smallest useful evidence question → tool/read/test → update hypothesis → next action`
+## 13. Focused evidence survives harmless main drift
 
-Examples:
-- source ownership uncertainty → exact symbol/file search;
-- Xcode uncertainty → exact job/log slice;
-- API uncertainty → current official docs/source;
-- app visibility uncertainty → build graph/project inspection;
-- overlap uncertainty → exact changed filenames/patch;
-- corruption uncertainty → targeted adversarial test/model.
+Classify main movement:
 
-Avoid giant speculative plans, repeated internal debate without evidence, full-repo orientation before touching a lane, or waiting for certainty a small tool call can provide. No prompt directly controls hidden chain-of-thought duration; V10 instead forces early external evidence actions and bounded work slices.
+- **DRIFT 0 — docs/policy only:** focused feature evidence remains valid.
+- **DRIFT 1 — unrelated isolated product paths:** evidence remains valid after overlap/dependency check.
+- **DRIFT 2 — related dependency/API movement:** rerun affected focused tests/review.
+- **DRIFT 3 — build graph/global/security/persistence movement:** re-gate affected cell integration.
+- **DRIFT 4 — direct overlapping semantic movement:** reconcile + re-review + re-test.
 
-## 9. Work slices / stuck detector
+Do not throw away a fully green isolated package result merely because `docs/SWARM_OPERATING_SYSTEM.md` changed.
 
-Normal coherent slice: roughly **5–12 minutes** when practical.
+Final release-train acceptance proves combined compatibility.
 
-`TARGETED EVIDENCE → ONE OBJECTIVE → FOCUSED VERIFY → DURABLE CHECKPOINT → NEXT ACTION → CONTINUE`
+## 14. Release trains
 
-If one exact problem consumes two consecutive slices with no new evidence, trigger `STRATEGY_CHANGE`: narrow, inspect a consumer, write an adversarial test, ask a peer, compare parent, or take safe adjacent queue work.
+Expensive app-wide acceptance happens on **release trains**.
 
-Do not grind indefinitely on one tactic.
+Branch:
+`train/<train-id>`
 
-Same failed command/tool tactic: normally max 2 meaningful attempts unless new evidence changes the attempt.
-Same CI rerun without source/evidence change: do not repeat.
-Same connector failure: use a supported alternate/read-only path.
+Example:
 
-## 10. Run queue
+```text
+Feature A: battery readout        ┐
+Feature B: shell clearance        ├→ TRAIN-17 → ONE integrated Xcode gate → main
+Feature C: rolling performance    ┤
+Feature D: passive capture        ┘
+```
 
-Maintain:
+Default train contains 2–5 compatible TRAIN_READY feature deliveries.
+
+P0/safety/broken-main work may ship alone.
+
+A larger train of 6–8 isolated compatible deliveries is allowed when conflict/debug risk remains low.
+
+## 15. Train admission
+
+A feature enters a train only when `TRAIN_ELIGIBILITY = READY`:
+- owned paths frozen;
+- cell review clean;
+- focused tests green;
+- Definition of Perfection reached except integrated/physical gates;
+- dependencies current;
+- source visibility understood;
+- no unresolved high-severity defect.
+
+Do not admit almost-done work merely to fill a train.
+
+## 16. Integrated train gate
+
+For an app-visible train:
+- exact immutable train SHA;
+- Xcode 27;
+- iPhone 12 / iOS 27 Simulator;
+- NembraCore/package tests;
+- app tests;
+- UI tests relevant to included features;
+- required screenshots/videos/artifacts;
+- artifact inspection;
+- final main/train drift classification;
+- expected-head protected merge.
+
+One successful train can validate several ready features.
+
+## 17. Train failures
+
+On failure:
+1. identify exact failing job/test;
+2. map failure to responsible cell(s);
+3. do not blind-rerun;
+4. reproduce with focused test;
+5. fix in the cell;
+6. update train;
+7. rerun once coherent.
+
+If ambiguous, bisect/isolate train components. Keep main clean.
+
+## 18. Release Commander
+
+Owns:
+- feature portfolio;
+- cell creation/size/dissolution;
+- WIP;
+- train composition/order;
+- drift classification;
+- scarce Xcode scheduling;
+- conflict arbitration;
+- P0 bypasses;
+- protocol migration.
+
+Does not micromanage implementation.
+
+## 19. CI / Build Sheriff
+
+Owns:
+- Xcode queue;
+- trusted exact-head execution;
+- build graph/source visibility;
+- train gates;
+- duplicate-run suppression;
+- artifact retention;
+- infrastructure failure classification;
+- stale event/security guards.
+
+Most full Xcode gates should be scheduled by the CI Sheriff/Release Commander, not every feature worker independently.
+
+## 20. Feature Captain
+
+Owns:
+- feature contract;
+- subdomain decomposition;
+- integration branch;
+- Definition of Perfection;
+- defect list;
+- mission issue;
+- train readiness.
+
+Captain does not self-approve acceptance.
+
+## 21. Reviewer / red team
+
+Reviewer reads actual source/diff and attacks:
+- invalid states;
+- corruption/import boundaries;
+- concurrency/races;
+- stale evidence;
+- neighboring API contracts;
+- truth/physical overclaims.
+
+Do not merely restate builder notes.
+
+## 22. Verifier / QA
+
+Verifier checks:
+- exact candidate SHA;
+- actual test outputs;
+- artifacts/screenshots;
+- user-visible behavior;
+- Definition of Perfection;
+- difference among focused cell evidence, integrated train evidence, and physical-device evidence.
+
+## 23. Product / visual specialist
+
+For UI-heavy cells:
+`Simulator → screenshot → critique → redesign → implement → interact → screenshot → profile → accessibility → fix → repeat`.
+
+Do not call a UI feature complete from source alone.
+
+## 24. Performance / accessibility specialist
+
+Performance:
+- high-frequency update fan-out;
+- maps/telemetry;
+- CPU/main thread;
+- allocations/leaks;
+- launch/transitions/long sessions.
+
+Accessibility:
+- VoiceOver;
+- Dynamic Type;
+- Reduce Motion;
+- Reduce Transparency;
+- Increase Contrast;
+- Differentiate Without Color;
+- Voice Control;
+- Switch Control;
+- touch targets.
+
+## 25. ES80 / hardware specialist
+
+Public-first. Exhaust reasonable public/official/source evidence before physical blocking.
+
+No random motorized writes. `.write` characteristic metadata != permission. Subscription result != scooter command acknowledgement. Physical claims require physical evidence.
+
+## 26. V10 long-shift runtime preserved
+
+Workers still target long continuous shifts when the platform permits.
+
+Loop:
+`TARGETED EVIDENCE → SAME-FEATURE SLICE → VERIFY → DURABLE SAVE → NEXT SAME-FEATURE ACTION → TOOL`
+
+No milestone final. No giant progress essay. No monolithic thinking phase.
+
+If uncertain, perform a targeted evidence action.
+
+Same failed tactic normally gets at most two meaningful attempts without new evidence.
+
+Same unchanged external wait gets at most two consecutive polls; then do same-feature alternate work.
+
+## 27. Same-feature shadow queue
+
+Each worker maintains:
+
 `ACTIVE`
 `NEXT_1`
 `NEXT_2`
 `NEXT_3`
-`NEXT_4`
-`FALLBACK_REVIEW`
-`FALLBACK_RESEARCH`
+`SAME_FEATURE_REVIEW`
+`SAME_FEATURE_TEST`
+`SAME_FEATURE_PRODUCT_QA`
+`SAME_FEATURE_PERF_AX`
 
-When ACTIVE completes, promote NEXT_1 immediately. Refill from current release train before the queue becomes empty. Do not ask the user what to do next when the repository can answer it.
+When blocked, move within the feature. Do not escape to unrelated implementation.
 
-## 11. Waiting / polling
-
-Queued CI/Xcode/review/service recovery is not productive by itself.
-
-Do no more than **2 consecutive state checks** on the same unchanged external wait. Then switch to same-lane tests, source review, dependency inspection, artifact QA, implementation docs, peer review, or another queue item. Recheck naturally later.
-
-## 12. Commentary budget
-
-During long engineering turns, visible commentary stays tiny.
-
-Good:
-`Exact-head review found one rollback risk. Writing the restart regression now.`
-Then tool call.
-
-Avoid long progress essays, repeated summaries, narration of obvious calls, celebratory completion prose, and `next steps would be...` language while useful work exists.
-
-## 13. GitHub retrieval discipline
+## 28. Context economy
 
 Prefer:
-`PR metadata → changed filenames → exact relevant patch/file → exact job/log slice`
+feature mission → exact PR → exact file/diff → exact failing log.
 
-Avoid broad all-PR fetches, full comment histories unless needed, entire huge diffs when one path matters, repeated unchanged enumeration, giant workflow logs, and rereading all docs each slice.
+Avoid repeated repo-wide enumeration, full PR histories, giant logs, duplicate master prompt, and giant mid-run summaries.
 
-## 14. Context-pressure governor
+Every ~5–7 useful slices do a tiny reanchor:
+- main;
+- cell integration head;
+- own head;
+- active defect;
+- next action;
+- train status.
 
-The worker cannot see a perfect hidden context meter, so estimate pressure from loaded material.
+Then immediately continue.
 
-As pressure grows:
-- broad reads down;
-- commentary down;
-- log size down;
-- exact reads up;
-- durable state compression up.
+## 29. Control plane
 
-Never fill context with repeated master/OS text or giant logs.
+Organization control issue:
+`[SWARM CONTROL] Nembra Developer Team v11`
 
-Every ~5–7 durable slices or major merge/dependency shift, perform a tiny reanchor:
-- main SHA;
-- lane head;
-- parent;
-- exact next action;
-- service state;
-- ownership still valid?
+Feature state:
+`[FEATURE CELL] <feature name>` issues.
 
-Then immediately continue. No summary and no phase-complete language.
+Train state:
+`[RELEASE TRAIN] <train-id>` issues.
 
-## 15. Durable state
+Do not turn one global control issue into a giant micro-checkpoint log.
 
-Write once / update only on ownership change:
+## 30. V10 → V11 migration
 
-```text
-### V10 SHIFT CAPSULE
-PROTOCOL: 10
-WORKER_ID:
-SESSION_ID:
-SHIFT_ROLE:
-LANE_ID:
-EPOCH:
-OWNED_PATHS:
-LOCK_CLASS:
-RISK_CLASS:
-PARENT/DEPENDENCIES:
-TRUTH_BOUNDARY:
-HARDWARE_STATUS:
-```
+Existing V10 workers migrate **in place**.
 
-Tiny live pointer:
+Do not restart or throw away branches/tests/review evidence.
 
-```text
-### V10 LIVE POINTER
-HEAD:
-SLICE_SEQ:
-LAST_RESULT:
-ACTIVE:
-NEXT_1:
-NEXT_2:
-WAITING_ON:
-SERVICE_STATE:
-FINAL_GATE: false
-```
+Migration:
+1. retain current work;
+2. map related current lanes into a Feature Cell;
+3. group workers working on the same conceptual feature;
+4. assign captain/reviewer/verifier and subdomain owners;
+5. preserve current branches as subdomain branches when useful;
+6. create cell integration branch;
+7. stop independent full-Xcode requests unless Tier A or specifically warranted;
+8. use tiered cell-local acceptance;
+9. once perfected, mark TRAIN_READY;
+10. Release Commander batches delivery into a release train.
 
-Detailed evidence belongs in commits/tests/PR history, not a giant repeatedly rewritten status block.
+Old v7/v8/v9/v10 evidence remains useful according to drift/risk rules; do not blindly rerun everything.
 
-## 16. Final gate
+## 31. Duplicate recovery cleanup
 
-Default:
-`FINAL_GATE = false`
+When several PRs represent the same conceptual feature:
+- choose the highest coherent current implementation;
+- preserve historical branches;
+- fold valid reviewed fixes into the Feature Cell;
+- close/supersede duplicates after accepted successor exists;
+- stop independent workers from repeatedly re-recovering the same thing.
 
-Before final response ask:
-A. user asked status-only?
-B. genuine user-only required action and no alternative?
-C. continuing unsafe?
-D. all useful paths unavailable/duplicative?
-E. outer platform forcing termination?
+One feature should converge toward one delivery.
 
-If all NO: keep `FINAL_GATE=false` and perform another useful action.
+## 32. Portfolio priority
 
-Commit != final.
-Push != final.
-PR != final.
-Review != final.
-Tests green != final.
-CI queued/green != final.
-Merge != final.
-One lane complete != final.
+P0 broken main / safety / truth regression
+P1 parent blocking multiple cells
+P2 high-value feature near perfection
+P3 release-train blocker
+P4 duplicate/recovery consolidation
+P5 major product feature
+P6 visual/performance/accessibility completion
+P7 ES80 public-first research/passive tooling
+P8 docs/audits only when they unblock implementation/acceptance
 
-## 17. Review / verification
+Prefer finished features over more started features.
 
-Builder owns source mutation/tests.
-Reviewer independently attacks exact source/diff and neighboring contracts.
-Verifier checks exact SHA, actual jobs/artifacts/screenshots, and whether evidence supports acceptance claims.
+## 33. Cell dissolution
 
-Default quorum:
-- Class C isolated: one reviewer where practical;
-- Class B subsystem: one strong reviewer + verifier;
-- Class B cross-domain: two reviewers where practical + verifier;
-- Class A/security/persistence/CI/motorized boundary: two reviewers + adversarial review + verifier + exact-head gate.
+Feature Cell remains alive through merge and post-merge observation.
 
-Automated Codex Code Review stays optional/disabled by default. Quota exhaustion never blocks work and must not be circumvented.
+Only after accepted merge:
+- verify main;
+- close/supersede historical duplicates;
+- record remaining physical gates;
+- release FEATURE_LOCK;
+- then join/create another Feature Cell.
 
-## 18. Service router
+## 34. Success metrics
 
-Track each independently:
-`HEALTHY / DEGRADED / EXHAUSTED / UNAVAILABLE / UNKNOWN`
+Do NOT optimize commits/hour, PR count, comments/hour, number of busy agents, or Xcode run count.
 
-Automated review unavailable → peer review/tests/verifier.
-Xcode queued → alternate work; no busy polling.
-GitHub throttle → targeted/batched reads and source/review work.
-GitHub writes unavailable → at most one small reconstructable local slice, then read-only/review/research.
-Web unavailable → repo/source/test work.
-Simulator unavailable → code/tests/review, runtime gate pending.
-Physical ES80 unavailable → public research/passive tooling/product/navigation/software work, physical claims gated.
+Optimize:
+- perfected user-visible features merged;
+- blockers eliminated;
+- feature lead time;
+- defects caught before main;
+- low duplicate work;
+- low Xcode runs per merged feature;
+- train success rate;
+- real user-visible product progress.
 
-## 19. CI / Xcode
+Useful metrics:
+`FEATURES_PER_TRAIN`
+`XCODE_RUNS_PER_MERGED_FEATURE`
+`MEAN_FEATURE_LEAD_TIME`
+`DEFECTS_CAUGHT_PRE_MAIN`
+`DUPLICATE_PR_COUNT`
+`TRAIN_FAILURE_RATE`
+`PHYSICAL_GATES_OPEN`
+`USER_VISIBLE_PROGRESS`
 
-Xcode 27 / iPhone 12 / iOS 27 is scarce acceptance capacity.
+## 35. Fresh-worker startup
 
-Develop with focused deterministic tests. Gate coherent exact-head candidates.
+1. inspect current main;
+2. read current protocol;
+3. read newest v11 global directive;
+4. inspect active Feature Missions;
+5. **do not automatically create a new feature**;
+6. join the highest-value cell needing your skill;
+7. generate worker/session identity;
+8. claim one subdomain/review/verifier role;
+9. read only feature-relevant source;
+10. begin work immediately;
+11. keep working the same feature until perfection/train/merge;
+12. release feature lock only after accepted completion.
 
-Queued != green.
-Resolver success != acceptance.
-Skipped != acceptance.
-Green ancestor != green final SHA.
-No blind reruns.
-When waiting, do other useful work.
+## 36. Final gate
 
-## 20. App source visibility
+FINAL is not normal.
 
-Nembra app may manually enumerate selected NembraCore sources. Package-green alone does not prove app-target visibility. Production integration must verify consumer visibility, dependency closure, and project wiring when necessary. `project.pbxproj` remains Class A.
+Final response is permitted only when:
+- user explicitly requested status-only;
+- user-only physical/external action is required and no same-feature useful work remains;
+- continuing is unsafe;
+- all same-feature implementation/review/test/product/performance/accessibility work is exhausted;
+- outer platform ends the turn.
 
-## 21. Product programs
+Commit, PR, test, review, local gate, train admission, train green, merge, or one subtask completion do not imply final.
 
-ES80: public first, scooter second; safe passive evidence; no random writes; `.write` metadata != permission; user never decodes hex manually.
+## 37. V11 design thesis
 
-Battery/range pipeline:
-`RAW → VERIFIED → MEASURED SOC → ESTIMATED SOC → DISPLAY SOC → LEARNING WINDOWS → EFFICIENCY → RANGE → CURRENTNESS/CONFIDENCE → PRESENTATION`
+**V10:** make each chat work longer.
 
-Rides: automatic/crash-safe/idempotent/gap-aware/source-aware; completion must not resurrect from stale checkpoint state.
+**V11:** make many long-running chats behave like a high-end software organization.
 
-Navigation: provider planning evidence, explicit selection, race/cancellation safety, no legality claim, no provider distance becoming measured distance.
+The goal is not maximum parallel feature count.
 
-Visual/performance/accessibility loop:
-`SIMULATOR → SCREENSHOT → CRITIQUE → REDESIGN → IMPLEMENT → INTERACT → SCREENSHOT → PROFILE → ACCESSIBILITY → FIX → REPEAT`
+The goal is:
 
-## 22. Release train
-
-States:
-READY
-NEXT
-WAITING_PARENT
-WAITING_ACCEPTANCE
-REVIEW_NEEDED
-RECOVERY_NEEDED
-HARDWARE_GATED
-SUPERSEDED
-
-Priority:
-P0 broken main / safety / truth
-P1 parent blocking multiple dependents
-P2 near-ready merge candidate
-P3 exact acceptance blocker
-P4 stale recovery
-P5 high-value enabled implementation
-P6 visual/performance/accessibility
-P7 protocol/public research
-P8 review/test hardening
-
-Prefer WIP reduction.
-
-## 23. Post-merge continuation
-
-`MERGE → RELEASE → FRESH MAIN → RELEASE TRAIN → NEXT SAFE SAME-ROLE WORK → CLAIM → CONTINUE`
-
-Do not final-answer merely to announce the merge.
-
-## 24. Stale / recovery
-
-V10 intentionally lengthens recovery windows to support longer individual shifts.
-
-ACTIVE: recent durable progress, active external run, or useful declared read-only/review work.
-QUIET: ~20–35 min.
-SUSPECTED DEAD: ~35–55 min.
-RECOVERY ELIGIBLE: ~55+ min ordinary.
-CLASS A: ~70+ min or coordinator decision.
-
-Do not steal a lane around 35–40 minutes merely because the SHA did not move. Recovery preserves predecessor, increments epoch, creates a new recovery branch, and resumes from durable pointer.
-
-## 25. V9 → V10 migration
-
-Existing V9 worker migrates **in place**:
-- keep branch/PR/lane/epoch/source/dependencies;
-- do not restart or reimplement;
-- adopt SHIFT_ROLE;
-- preserve V9 history;
-- replace bulky recurring V9 state with V10 SHIFT CAPSULE + LIVE POINTER at next safe checkpoint;
-- keep a continuous run queue;
-- delete macrocycle-completion semantics;
-- tiny reanchor every ~5–7 slices;
-- `FINAL_GATE=false` by default;
-- use V10 longer stale windows;
-- continue immediately.
-
-## 26. Fresh-worker startup
-
-1. inspect live main;
-2. read current protocol/control directive;
-3. inspect only relevant current PRs/claims;
-4. choose SHIFT_ROLE;
-5. create WORKER_ID + SESSION_ID;
-6. select highest-value safe lane/review;
-7. claim;
-8. write SHIFT CAPSULE + LIVE POINTER;
-9. create run queue;
-10. execute first targeted tool action immediately;
-11. work in bounded slices;
-12. checkpoint and immediately continue;
-13. reanchor without summarizing;
-14. merge/release when accepted;
-15. take next safe work;
-16. target 180+ useful minutes if platform permits;
-17. final only through FINAL_GATE.
-
-DO NOT BEGIN WITH A GIANT PLAN.
-DO NOT WAIT FOR `continue`.
-DO NOT ASK THE USER TO BABYSIT THE TEAM.
+`MANY STRONG AGENTS`
+→ `FEW HIGH-VALUE ELASTIC FEATURE CELLS`
+→ `DEEP PARALLEL WORK INSIDE EACH FEATURE`
+→ `FEATURE PERFECTION`
+→ `BATCHED RELEASE TRAINS`
+→ `MINIMUM EXPENSIVE GATES`
+→ `FAST SAFE MAIN`
+→ `VISIBLE PRODUCT PROGRESS`.
