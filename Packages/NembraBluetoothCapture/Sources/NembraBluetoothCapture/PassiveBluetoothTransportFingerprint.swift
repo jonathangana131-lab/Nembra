@@ -110,7 +110,7 @@ public enum PassiveBluetoothTransportFingerprint {
     ) -> [PassiveBluetoothTransportFingerprintReport] {
         observedPeripheralIdentifiers(in: session)
             .sorted()
-            .map { analyze(session, peripheralIdentifier: $0) }
+            .compactMap { analyze(session, peripheralIdentifier: $0) }
     }
 
     /// Aggregate identifier sets are descriptive ever-observed evidence. Match
@@ -118,10 +118,20 @@ public enum PassiveBluetoothTransportFingerprint {
     /// exact peripheral. Structured disconnects from unrelated imported devices
     /// do not fragment the selected peripheral; generic interruptions remain a
     /// global observation gap because they carry no peripheral identity.
+    ///
+    /// Returns `nil` when the requested identifier never appears in any typed
+    /// peripheral observation in the artifact. A non-`nil` report with empty
+    /// topology/candidates therefore means the target was genuinely observed but
+    /// no researched hosted-service evidence was established (for example,
+    /// solicitation-only advertisement evidence).
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
-    ) -> PassiveBluetoothTransportFingerprintReport {
+    ) -> PassiveBluetoothTransportFingerprintReport? {
+        guard observedPeripheralIdentifiers(in: session).contains(peripheralIdentifier) else {
+            return nil
+        }
+
         var aggregate = EvidenceAccumulator()
         var currentSegment = EvidenceAccumulator()
         var segments: [EvidenceAccumulator] = []
