@@ -332,7 +332,6 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
         var transformationFailureCount = 0
         var samples: [TuyaCandidateDPNumericHypothesisSample] = []
         var distinctEvaluableReferences: Set<Double> = []
-        var totalAbsoluteError = 0.0
         var maximumAbsoluteError: Double?
 
         for hit in candidateEvidence.hits {
@@ -367,13 +366,23 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
                 )
             )
             distinctEvaluableReferences.insert(numericReference)
-            totalAbsoluteError += absoluteError
             maximumAbsoluteError = max(maximumAbsoluteError ?? absoluteError, absoluteError)
         }
 
         samples.sort { lhs, rhs in
             if lhs.markerIndex != rhs.markerIndex { return lhs.markerIndex < rhs.markerIndex }
             return lhs.observationIndex < rhs.observationIndex
+        }
+
+        let meanAbsoluteError: Double?
+        if samples.isEmpty {
+            meanAbsoluteError = nil
+        } else {
+            let divisor = Double(samples.count)
+            let normalizedSum = samples.reduce(0.0) { partial, sample in
+                partial + sample.absoluteError / divisor
+            }
+            meanAbsoluteError = normalizedSum.isFinite ? normalizedSum : nil
         }
 
         return TuyaCandidateDPNumericHypothesisEvidence(
@@ -385,7 +394,7 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
             transformationFailureCount: transformationFailureCount,
             distinctEvaluableReferenceValueCount: distinctEvaluableReferences.count,
             samples: samples,
-            meanAbsoluteError: samples.isEmpty ? nil : totalAbsoluteError / Double(samples.count),
+            meanAbsoluteError: meanAbsoluteError,
             maximumAbsoluteError: maximumAbsoluteError
         )
     }
@@ -437,6 +446,15 @@ public enum TuyaCandidateDPNumericHypothesisEvaluator {
         let lhsMean = lhs.meanAbsoluteError ?? .infinity
         let rhsMean = rhs.meanAbsoluteError ?? .infinity
         if lhsMean != rhsMean { return lhsMean < rhsMean }
-        return lhs.hypothesis.identifier < rhs.hypothesis.identifier
+        if lhs.hypothesis.identifier != rhs.hypothesis.identifier {
+            return lhs.hypothesis.identifier < rhs.hypothesis.identifier
+        }
+        if lhs.hypothesis.scale != rhs.hypothesis.scale {
+            return lhs.hypothesis.scale < rhs.hypothesis.scale
+        }
+        if lhs.hypothesis.offset != rhs.hypothesis.offset {
+            return lhs.hypothesis.offset < rhs.hypothesis.offset
+        }
+        return false
     }
 }
