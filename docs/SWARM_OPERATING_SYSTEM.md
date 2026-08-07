@@ -1,402 +1,125 @@
 # NEMBRA SWARM OPERATING SYSTEM
-CURRENT_PROTOCOL_VERSION: 9
+CURRENT_PROTOCOL_VERSION: 12
 STATUS: ACTIVE
-CODENAME: LONG-HORIZON ENGINEERING MESH
+CODENAME: PRODUCT-FIRST AUTONOMOUS SOL
 
 Repository: `jonathangana131-lab/Nembra`
 
-This document is the current coordination/execution operating system for parallel Nembra ChatGPT workers.
-It supersedes v8 organization mechanics when they conflict. Product truth remains in current code and product docs.
+V12 deliberately removes most V11 swarm bureaucracy. The goal is to let strong GPT-5.6 SOL workers spend their context and runtime building Nembra instead of managing a complex organization.
 
-## 0. Prime directives
+## Prime directive
 
-1. **NO OPTIONAL SERVICE MAY FREEZE THE ORGANIZATION.**
-2. **FINAL RESPONSE IS NOT A NORMAL WORKER STATE.**
-3. **MORE CHATS MUST NOT MEAN MORE CONFLICTING IMPLEMENTATION.**
-4. **DURABLE GITHUB STATE MUST MAKE EACH SESSION CHEAP TO REPLACE.**
-5. **OPTIMIZE VALIDATED WORK MERGED + BLOCKERS REMOVED, NOT PR COUNT.**
+**BUILD NEMBRA.**
 
-No prompt guarantees one Chat session runs for hours. Do not attempt quota/runtime circumvention. V9 reduces voluntary stops and makes forced termination recoverable.
+Workers should spend the overwhelming majority of useful effort on product code, tests, runtime validation, visual polish, performance, accessibility, necessary protocol/Bluetooth research, and safe integration.
 
-## 1. Product kernel
+Do not spend large amounts of time creating control-plane prose, migration chatter, feature-cell ceremony, release-train bureaucracy, role systems, epochs, or status artifacts.
+
+## Simple collaboration
+
+1. Inspect current `main` and active PRs before choosing work.
+2. Avoid editing files another active worker is already changing unless collaboration is clearly intentional.
+3. Own one meaningful feature/subfeature until it is genuinely strong.
+4. Large features may naturally split across workers by non-overlapping subdomains.
+5. Prefer a few coherent PRs over many tiny PRs.
+6. Do not create process artifacts unless they directly help ship product work.
+7. If GitHub content writes are throttled, keep coding/reviewing/testing and batch the next useful write instead of retry-spamming.
+8. After finishing a feature, inspect current `main` and choose the next important safe task.
+
+No Feature Cell registration, epoch bookkeeping, release-train ceremony, mandatory captains, migration comments, or worker-state blocks are required under V12.
+
+Historical V7–V11 issues/PRs remain evidence only. Existing workers migrate in place: keep current branch/source/tests, stop adding V11 ceremony, and continue actual product work.
+
+## Long-run behavior
+
+Keep working as long as the outer platform permits and useful work exists. Commit/test/PR/review/merge/subtask completion is not a reason to voluntarily stop. A checkpoint is not an endpoint.
+
+Avoid monolithic reasoning stalls. Turn uncertainty into targeted source reads, tests, logs, official docs, or runtime evidence. Do not endlessly poll or repeat the same failed tactic; change approach after two attempts without new evidence. Keep commentary short to preserve context for engineering.
+
+## Product target
 
 Primary physical target: current/newer Tuya-generation **AOVOPRO ES80**.
 
-Permanent product truth:
-- measured / estimated / displayed / derived / retained / unknown stay distinct;
-- never invent telemetry;
-- Simulator/software proof != physical ES80 verification;
-- no unverified motorized-hardware writes;
-- public-first ES80 research before physical blocking;
-- automatic rides remain automatic;
-- battery `% ↔ estimated range` is a signature interaction;
-- range learns from legitimate battery use + trustworthy distance, never advertised range × percentage;
-- ODO / GPS / recorded route / provider route remain separate evidence;
-- navigation suggestions do not prove scooter legality/safety;
-- current systems-era UI is not final;
-- final visual/motion/haptics/accessibility/performance work is a major release program;
-- baseline iPhone 12 / iOS 27 unless policy changes.
-
-## 2. Team roles
-
-- CHIEF ARCHITECT / RELEASE COMMANDER
-- BUILD / CI / DEVEX
-- DOMAIN BUILDER
-- PRODUCT / VISUAL BUILDER
-- HARDWARE / PROTOCOL RESEARCH
-- PERFORMANCE ENGINEER
-- ACCESSIBILITY / INTERACTION ENGINEER
-- REVIEWER / RED TEAM
-- VERIFIER / ARTIFACT QA
-- RECOVERY / TRIAGE
-
-Strongest available coding/reasoning configuration is preferred for architect, critical-path, CI/security, persistence, reviewer and verifier roles. The prompt cannot force an unavailable hidden model/tier.
-
-## 3. WIP governor
-
-Default:
-`MAX_ACTIVE_IMPLEMENTATION_LANES = 7`
-
-When at cap, new workers become reviewers, verifiers, recovery, testing, research, or artifact QA.
-
-When repository WIP is high, default new-worker allocation:
-- ~70% close/recover/review existing work
-- <=30% genuinely new implementation
-
-## 4. Control plane
-
-Current control issue:
-`[SWARM CONTROL] Nembra Developer Team v9`
-
-Primary durable worker memory remains PR body + branch + commits.
-Control issue stores organization-level state only:
-- V9 GLOBAL DIRECTIVE
-- V9 SERVICE INCIDENT
-- V9 RELEASE TRAIN
-- V9 CLAIM
-- V9 TAKEOVER
-- V9 RELEASE
+Nembra must become premium native iOS 27 vehicle software for an iPhone 12 baseline: fast, original, trustworthy, tactile, glanceable, polished, native, and accessible.
 
-Avoid routine checkpoint spam.
+Reject generic Tuya-dashboard feel, cheap cross-platform styling, card soup, gamer RGB, giant empty black areas, debug-first UI, developer jargon, fake precision, invented hardware behavior, or technically-correct-but-mediocre final screens.
 
-## 5. Identity
+### Home
+Quickly communicate scooter identity, connection, battery, range, ride mode, known lock/vehicle state, issue/recovery action, trip context, and recent ride. Premium, compact, clear, non-duplicative.
 
-`WORKER_ID = chat-xxxxx`
-`SESSION_ID = session-xxxxx`
-`LANE_ID = stable conceptual lane`
-`EPOCH = ownership generation`
+### Live Ride / Dashboard
+Landscape cockpit quality. Huge truthful speed, battery/range, mode, trip distance, ride duration, connection/identity, navigation when active, and useful safe controls. Measurement and presentation interpolation stay separate.
 
-Highest valid epoch owns the lane. Returning lower epoch yields.
+### Battery
+Keep raw evidence, verified evidence, measured SoC, estimated SoC, display SoC, retained/last-known SoC, and unavailable/unknown distinct. Never present retained or estimated data as fresh measurement. Battery visuals should be signature-quality and truthful.
 
-Branches:
-- `parallel/<lane>/<worker>`
-- `parallel/recover-<lane>/<worker>`
-- `parallel/integrate-<lane>/<worker>`
+### Battery % ↔ Range
+Primary interaction like `73% ↔ 8.4 mi`. Battery fill still means charge. Range learns from legitimate battery consumption + trustworthy real distance. Never manufacturer advertised range × battery percentage. Handle cold start, stale evidence, gaps, incomplete rides, outliers, confidence, low SoC, reconnects, and scooter identity. No fake Wh/mi without verified electrical semantics.
 
-## 6. Claim before edit
+### Automatic rides
+No manual Start Ride workaround replacing the architecture. Survive disconnect/reconnect/process interruption/crash/relaunch/partial route capture/duplicate completion. Require durable session identity, crash-safe recovery, idempotent completion, explicit gaps, no invented continuity, immutable history, and no resurrection of completed rides.
 
-Before deep editing:
-1. inspect incumbent PR/claims
-2. identify intended paths
-3. risk/lock classify
-4. post CLAIM
-5. re-read recent claims
-6. edit only if ownership is safe
+### History / statistics
+Premium logbook, deterministic stats from valid evidence. Keep ODO, GPS distance, recorded route geometry, provider route distance, and imported/estimated values separate.
 
-Earlier meaningful incumbent wins. Later duplicate pivots.
+### Location / routes
+Quality-screen accepted GPS evidence. Route gaps remain gaps. Never fabricate continuity. Background location only when legitimately justified.
 
-## 7. Lock classes
+### Navigation
+Use MapKit appropriately. Separate route planning, alternatives, selection, ride evidence, navigation progress, reroute, and provider ETA/distance. Provider route distance never becomes measured ride distance. Need cancellation, stale-callback protection, route generation identity, explicit selection, deterministic tests, quality-screened progress, sustained reroute evidence, and fail-closed ambiguity. Navigation + live ride should eventually be one excellent Dashboard experience.
 
-CLASS A EXCLUSIVE:
-- project.pbxproj
-- root/bootstrap/runtime composition
-- global nav shell
-- global persistence/environment wiring
-- CI workflows/scheduler
-- permanent organization policy docs
+### ES80 / Bluetooth
+**PUBLIC FIRST, SCOOTER SECOND.** Use official/public AOVO/AOVOPRO, Tuya, Apple CoreBluetooth docs, public reverse engineering, safe passive capture, and offline analysis. Preserve raw evidence/provenance. No random writes, no `.write` capability interpreted as permission, no subscription success called a command acknowledgement, no invented DP meanings/scaling/cadence/units.
 
-CLASS B SUBSYSTEM:
-- Home
-- Dashboard
-- rides/persistence
-- battery truth
-- adaptive range
-- navigation
-- Bluetooth/transport
+### Commands
+Desired lifecycle: requested → pending → observed/acknowledged evidence → confirmed. Do not claim success merely because the user tapped. Motorized/safety-relevant writes require strong evidence and authorization boundaries.
 
-CLASS C ADDITIVE:
-- isolated core type/tests
-- independent package
-- docs/research/fixtures
+### Acceleration / peak speed
+Only report when observation quality is sufficient. Reject rolling starts, weak cadence, source switches, transport gaps, interruptions, or weak GPS when relevant. Peak means highest accepted observed sample, not perfect continuous physical maximum.
 
-## 8. Builder / reviewer / verifier
+### Simulation
+Simulator is development evidence, not physical scooter proof. Cover disconnected, Bluetooth off, permission denied, reconnecting, stopped, riding, low battery, retained battery, mode changes, commands, route recording, gaps, recovery, history, learned/unavailable range, navigation/reroute, orientation, and accessibility.
 
-Critical work separates ownership.
+### Visual program
+For UI work: `SIMULATOR → SCREENSHOT → CRITIQUE → REDESIGN → IMPLEMENT → INTERACT → SCREENSHOT → COMPARE → PROFILE → ACCESSIBILITY → FIX → REPEAT`.
 
-Builder owns implementation and tests.
-Reviewer attacks exact source/diff and neighboring contracts.
-Verifier inspects exact SHA, CI/jobs/artifacts/screenshots and validates acceptance claims.
+### Performance
+iPhone 12 baseline. Localize high-frequency updates. Measure launch, Home, Dashboard, rolling numbers, maps+telemetry, navigation+telemetry, long rides, history, persistence, CPU/main thread, memory/leaks.
 
-Default quorum:
-- C isolated: 1 reviewer where practical
-- B subsystem: 1 strong reviewer + verifier
-- B cross-domain: 2 reviewers where practical + verifier
-- A/security/persistence/CI/motorized boundary: 2 reviewers + red-team + verifier + exact-head gate
+### Accessibility
+Support VoiceOver, Dynamic Type, Reduce Motion, Reduce Transparency, Increase Contrast, Differentiate Without Color, Voice Control, Switch Control, touch targets, and orientation changes.
 
-Automated Codex Code Review remains optional and disabled by default.
-
-## 9. Automated review quota
-
-If quota is exhausted:
-`AUTOMATED_REVIEW_STATE = UNAVAILABLE_QUOTA`
-
-Do not retry, wait, stop, buy credits, rotate identities, or evade quota.
-Use normal peer review + tests + exact-head verification.
-
-## 10. Long-horizon state machine
-
-Normal:
-`BOOT → CLAIMED → WORKING → CHECKPOINTING → WORKING → ... → ACCEPTANCE → RELEASE → NEXT_LANE → WORKING`
-
-Service wait:
-`WORKING → WAITING_ON_SERVICE → SHADOW_WORK → WORKING`
-
-FINAL is permitted only from:
-- HARD_BLOCKED
-- NO_SAFE_WORK
-- USER_INPUT_REQUIRED
-- outer platform termination
+### Privacy
+Core control/history offline-capable where practical. Precise route/start/end/GPS data private by default.
 
-Commit/PR/test/CI/merge/phase completion never implies FINAL.
-
-## 11. Atomic packet cadence
-
-Target packet: 5–12 minutes.
-
-`TARGETED READ → ONE OBJECTIVE → FOCUSED VERIFY → DURABLE CHECKPOINT → RESUME POINTER → NEXT PACKET`
-
-2–4 packets = one macrocycle.
-Then perform a small context refresh.
-
-Do not carry huge uncheckpointed rewrites.
-
-## 12. Shadow work
-
-Every implementation worker keeps:
-- PRIMARY_NEXT
-- SHADOW_1
-- SHADOW_2
-- SHADOW_3
-
-If primary is blocked by CI/reviewer/service, perform shadow work.
-If lane shadow work is exhausted, do read-only peer review/verification elsewhere without stealing ownership.
-
-## 13. Context-pressure governor
-
-Every ~4 macrocycles or major dependency change, refresh only:
-- main SHA
-- lane head
-- parent
-- PR state
-- service states
-- release-train position
-- next 3 actions
-
-Do not repeatedly reread entire project/master/OS or dump giant logs.
-
-## 14. Packet resume protocol
-
-Durable state includes:
-- LAST_PACKET_SEQ
-- LAST_PACKET_RESULT
-- NEXT_PACKET_SEQ
-- NEXT_EXACT_ACTION
-
-Successor reads this instead of old chat history.
-
-## 15. Worker state
-
-```text
-### V9 WORKER STATE
-PROTOCOL_VERSION: 9
-WORKER_ID:
-SESSION_ID:
-ROLE:
-LANE_ID:
-EPOCH:
-CONTROL_CLAIM:
-CURRENT_HEAD:
-BASE_OR_PARENT:
-OWNED_PATHS:
-RISK_CLASS:
-LOCK_CLASS:
-LAST_PACKET_SEQ:
-LAST_PACKET_RESULT:
-NEXT_PACKET_SEQ:
-PRIMARY_NEXT:
-SHADOW_1:
-SHADOW_2:
-SHADOW_3:
-LAST_KNOWN_GREEN:
-PEER_REVIEW:
-VERIFICATION:
-CI_STATE:
-AUTOMATED_REVIEW_STATE:
-SERVICE_STATES:
-DEPENDENCIES:
-KNOWN_OVERLAP:
-HARD_BLOCKER:
-HARDWARE_STATUS:
-HANDOFF_READY: false
-```
+## Truth constitution
 
-## 16. Lease / recovery
+Never fabricate speed, battery %, voltage, current, watts/power, energy, Wh/mi, temperature, torque, throttle, regen, distance, odometer, GPS accuracy, route geometry, protocol semantics, command acknowledgement, battery health, charging state, or route legality/safety.
 
-ACTIVE: recent durable progress, current external run, or declared long op.
-QUIET: ~15–25 min.
-SUSPECTED DEAD: ~25–35 min.
-RECOVERABLE: ~35+ min ordinary.
-CLASS A: ~45+ min or coordinator decision.
+Keep distinct: `MEASURED / ESTIMATED / DISPLAYED / DERIVED / RETAINED / UNKNOWN / SIMULATOR / PUBLIC / PHYSICAL`.
 
-Takeover preserves old branch, increments epoch, creates new recovery branch and resumes from exact packet pointer.
+Simulator != physical. Public evidence != physical verification. Disconnect != measured zero.
 
-## 17. Service router
+## Testing / acceptance
 
-Each service independently:
-HEALTHY / DEGRADED / EXHAUSTED / UNAVAILABLE / UNKNOWN.
+Use judgment proportional to risk.
 
-Automated review → peer review.
-Xcode queue → shadow/review/test/artifact work.
-GitHub throttle → targeted/batched reads and local/review work.
-GitHub write failure → at most one reconstructable small packet then read-only work.
-Web unavailable → repo/source work.
-Simulator unavailable → code/tests/review, runtime gate pending.
-Physical ES80 unavailable → public research/capture/software/product work, physical claims gated.
+- Isolated package/domain changes: focused compile/tests, adversarial tests when useful, source review. No mandatory full Simulator gate for every tiny edit.
+- App-visible changes: focused tests, Xcode build/test, Simulator interaction, screenshots when visual behavior changes.
+- Persistence/security/global build wiring/motorized boundaries: stronger adversarial testing and exact-head acceptance.
 
-## 18. Release train
+Do not rerun expensive full-app acceptance merely because unrelated docs changed. Never call queued/skipped/resolver-only work accepted, and never treat a green old SHA as proof for a changed SHA.
 
-States:
-READY
-NEXT
-WAITING_PARENT
-WAITING_ACCEPTANCE
-HARDWARE_GATED
-REVIEW_NEEDED
-RECOVERY_NEEDED
-SUPERSEDED
+## GitHub throttle
 
-Work selection:
-P0 broken main/safety/truth
-P1 parent blocking multiple dependents
-P2 near-ready merge candidate
-P3 exact acceptance blocker
-P4 stale recovery
-P5 product implementation enabled by accepted parents
-P6 visual/performance/accessibility
-P7 protocol/public research
-P8 review/test hardening
+On secondary content-creation throttling: stop retry-spamming, continue useful work, batch pending writes, retry naturally later, and do not mistake temporary throttle for permanent permission loss.
 
-Prefer reducing WIP.
+## Success metric
 
-## 19. Dependency DAG
+Optimize for finished app capability, correctness, product quality, performance, accessibility, fewer defects, less duplication, and visible Nembra progress — not PR count, comments, control artifacts, or agents appearing busy.
 
-Dependent PR records parent PR/branch/exact SHA.
-Parent movement = narrow reconcile.
-Parent merge = fresh-main retarget and final re-gate when required.
-No competing copies of parent implementation.
+## Startup
 
-## 20. CI / Xcode
+Inspect live GitHub. Understand what is occupied and genuinely unfinished. Choose the highest-value safe work and engineer it. Do not wait for the user to say continue. Do not spend the turn designing another swarm system.
 
-Xcode 27 / iPhone 12 / iOS 27 is a scarce acceptance resource.
-Do focused tests during development and gate coherent candidates.
-
-Acceptance requires actual immutable checkout + required package/app/UI jobs + artifacts, not queue/start/resolver-only/skipped status.
-
-Green ancestor != green final SHA.
-
-## 21. CI failure
-
-Inspect exact failing job/step/log region.
-Separate baseline/infrastructure from lane regression.
-Fix only evidence-backed cause.
-Do not blind-rerun.
-
-## 22. App source visibility
-
-The app target may manually compile selected NembraCore sources.
-Package green alone does not prove app visibility.
-Any production consumer must verify dependency closure and Class-A project wiring when necessary.
-
-## 23. ES80 program
-
-Public first, scooter second.
-No random writes.
-No `.write` capability interpreted as permission.
-No subscription result interpreted as command acknowledgement.
-User never decodes hex manually.
-
-Evidence taxonomy remains explicit.
-
-## 24. Battery/range program
-
-`RAW → VERIFIED → MEASURED SOC → ESTIMATED SOC → DISPLAY SOC → LEARNING WINDOWS → EFFICIENCY → RANGE → CURRENTNESS/CONFIDENCE → PRESENTATION`
-
-No advertised-range multiplication.
-No bad/gapped/partial evidence training.
-No stale retained estimate presented as fresh.
-No display frame used as telemetry.
-
-## 25. Ride/speed/navigation truth
-
-Speed interpolation is display-only.
-Peak is sampled authoritative evidence, not perfect physical top speed.
-Acceleration timing reflects actual observation basis.
-Rides remain automatic/crash-safe.
-Route gaps remain gaps.
-Provider navigation is planning evidence, not ride distance or legality proof.
-
-## 26. Product visual / performance / accessibility
-
-Current UI is not final.
-Mandatory loop:
-`SIMULATOR → SCREENSHOT → CRITIQUE → REDESIGN → IMPLEMENT → INTERACT → SCREENSHOT → PROFILE → ACCESSIBILITY → FIX → REPEAT`
-
-Visual/performance/accessibility remain large product programs, not cleanup.
-
-## 27. Merge gate
-
-Docs/research: current/isolated/fact-checked.
-Core: tests + peer review + appropriate repo gate.
-App/UI: peer review + exact Xcode + screenshot/accessibility evidence.
-Class A/security/persistence/CI: stronger quorum/adversarial review + exact gate + expected-head protection.
-Physical claims remain physical-evidence gated.
-
-## 28. Post-merge autonomy
-
-Merge → release → fresh main → inspect release train → claim next safe high-value work → continue.
-
-Do not final-answer merely because merge happened.
-
-## 29. V8 migration
-
-Existing v8 worker migrates in place:
-- keep branch/PR/lane/epoch
-- preserve old worker states
-- add SESSION_ID
-- add V9 worker state at next safe checkpoint
-- create packet sequence/resume pointer
-- create primary + shadow queue
-- obey WIP/reviewer/verifier rules
-- automated review remains optional/non-gating
-
-## 30. Legitimate final conditions
-
-Only when:
-- genuine user-only action/fact is required and no independent work exists;
-- next action unsafe;
-- all routes to useful work unavailable;
-- all meaningful work/review/research would duplicate active ownership;
-- user asked only for a status/answer;
-- platform terminates session.
-
-Before final: if any safe useful action exists, do it.
+**Build Nembra.**
