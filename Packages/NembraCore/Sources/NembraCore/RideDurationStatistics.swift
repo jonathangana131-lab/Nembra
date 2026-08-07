@@ -199,6 +199,12 @@ public enum RideDurationStatisticsAggregator {
         _ rides: [RideDurationStatisticsRide],
         selectedWindow: PeriodWindow
     ) throws -> [RideDurationStatisticsRide] {
+        // All Time intentionally preserves the original global reconciliation
+        // path and avoids allocating a selected-session set for the full history.
+        guard selectedWindow.interval != nil else {
+            return try deduplicated(rides)
+        }
+
         let selectedSessionIDs = Set(
             rides.lazy
                 .filter { selectedWindow.contains($0.attributedDate) }
