@@ -57,4 +57,66 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         #expect(readiness.phase == .awaitingConnection)
         #expect(readiness.isIncomplete)
     }
+
+    @Test
+    func terminalConnectionWithoutGattAcquisitionRemainsIncomplete() {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.beginConnectionAttempt()
+        readiness.finishWithoutGattAcquisition()
+
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.isIncomplete)
+        #expect(!readiness.isReady)
+        #expect(readiness.pendingOperationCount == 0)
+    }
+
+    @Test
+    func parentOperationTransitionsAtomicallyToChildOperations() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let parent = try readiness.beginOperation()
+
+        let startedChildren = try readiness.completeOperation(
+            parent,
+            startingChildOperations: 2
+        )
+        let children = try #require(startedChildren)
+
+        #expect(children.count == 2)
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.pendingOperationCount == 2)
+        #expect(!readiness.isReady)
+
+        let completedFirst = readiness.completeOperation(children[0])
+        #expect(completedFirst)
+        #expect(!readiness.isReady)
+        let completedSecond = readiness.completeOperation(children[1])
+        #expect(completedSecond)
+        #expect(readiness.isReady)
+    }
+
+    @Test
+    func staleParentCannotSpawnChildOperationsInNewGeneration() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let oldParent = try readiness.beginOperation()
+
+        try readiness.startAcquisition()
+        let current = try readiness.beginOperation()
+
+        let staleChildren = try readiness.completeOperation(
+            oldParent,
+            startingChildOperations: 2
+        )
+        #expect(staleChildren == nil)
+        #expect(readiness.pendingOperationCount == 1)
+        #expect(!readiness.isReady)
+
+        let completedCurrent = readiness.completeOperation(current)
+        #expect(completedCurrent)
+        #expect(readiness.isReady)
+    }
 }
