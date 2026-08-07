@@ -56,6 +56,7 @@ struct BatteryEvidenceStreamValidatorTests {
         try validator.accept(try observation(sequence: 1, uptime: 10, field: .currentAmps))
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 1))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 1))
         #expect(validator.lastAcceptedUptimeNanoseconds == 10)
         #expect(!validator.requiresContinuityBoundary)
     }
@@ -68,6 +69,7 @@ struct BatteryEvidenceStreamValidatorTests {
         try validator.accept(try observation(sequence: 2, uptime: 10))
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 2))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 2))
         #expect(validator.lastAcceptedUptimeNanoseconds == 10)
     }
 
@@ -85,46 +87,58 @@ struct BatteryEvidenceStreamValidatorTests {
 
         #expect(captured == .staleReceiptIdentity)
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 20))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 20))
         #expect(validator.lastAcceptedUptimeNanoseconds == 20)
         #expect(!validator.requiresContinuityBoundary)
 
         try validator.accept(try observation(sequence: 21, uptime: 21))
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 21))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 21))
     }
 
-    @Test("newer receipt cannot move uptime backwards")
-    func newerReceiptWithOlderUptimeFailsAtomically() throws {
+    @Test("rejected newer receipt consumes callback chronology and cannot be rewritten")
+    func rejectedNewerReceiptConsumesChronology() throws {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(try observation(sequence: 20, uptime: 200))
 
-        var captured: BatteryEvidenceStreamValidationError?
-        do {
-            try validator.accept(try observation(sequence: 21, uptime: 199))
-        } catch let error as BatteryEvidenceStreamValidationError {
-            captured = error
+        #expect(throws: BatteryEvidenceStreamValidationError.nonMonotonicUptime) {
+            try validator.accept(try observation(sequence: 22, uptime: 199))
         }
 
-        #expect(captured == .nonMonotonicUptime)
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 20))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 22))
         #expect(validator.lastAcceptedUptimeNanoseconds == 200)
 
-        try validator.accept(try observation(sequence: 21, uptime: 200))
-        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 21))
+        #expect(throws: BatteryEvidenceStreamValidationError.staleReceiptIdentity) {
+            try validator.accept(try observation(sequence: 21, uptime: 201))
+        }
+        #expect(throws: BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata) {
+            try validator.accept(try observation(sequence: 22, uptime: 200))
+        }
+
+        try validator.accept(try observation(sequence: 23, uptime: 200))
+        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 23))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 23))
     }
 
-    @Test("known missed evidence requires a strictly newer explicit boundary")
+    @Test("known missed evidence requires a genuinely newer explicit boundary")
     func markedGapRequiresNewerBoundary() throws {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(try observation(sequence: 100, uptime: 1_000))
         validator.markUnobservedInterval()
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 100))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 100))
         #expect(validator.lastAcceptedUptimeNanoseconds == 1_000)
         #expect(validator.requiresContinuityBoundary)
 
         #expect(throws: BatteryEvidenceStreamValidationError.missingContinuityBoundary) {
             try validator.accept(try observation(sequence: 101, uptime: 1_000))
         }
+        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 100))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 101))
+        #expect(validator.requiresContinuityBoundary)
+
         #expect(throws: BatteryEvidenceStreamValidationError.staleReceiptIdentity) {
             try validator.accept(
                 try observation(
@@ -134,24 +148,31 @@ struct BatteryEvidenceStreamValidatorTests {
                 )
             )
         }
-
-        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 100))
-        #expect(validator.requiresContinuityBoundary)
+        #expect(throws: BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata) {
+            try validator.accept(
+                try observation(
+                    sequence: 101,
+                    uptime: 1_000,
+                    continuity: .afterUnobservedInterval
+                )
+            )
+        }
 
         try validator.accept(
             try observation(
-                sequence: 101,
+                sequence: 102,
                 uptime: 1_000,
                 continuity: .afterUnobservedInterval
             )
         )
-        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 101))
+        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 102))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 102))
         #expect(validator.lastAcceptedUptimeNanoseconds == 1_000)
         #expect(!validator.requiresContinuityBoundary)
     }
 
-    @Test("lower-uptime boundary failure preserves pending gap atomically")
-    func lowerUptimeBoundaryFailsAtomically() throws {
+    @Test("lower-uptime boundary failure consumes that receipt but preserves pending gap")
+    func lowerUptimeBoundaryConsumesReceiptAndPreservesGap() throws {
         var validator = BatteryEvidenceStreamValidator()
         try validator.accept(try observation(sequence: 10, uptime: 9_000))
         validator.markUnobservedInterval()
@@ -167,16 +188,29 @@ struct BatteryEvidenceStreamValidatorTests {
         }
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 10))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 11))
         #expect(validator.lastAcceptedUptimeNanoseconds == 9_000)
         #expect(validator.requiresContinuityBoundary)
 
+        #expect(throws: BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata) {
+            try validator.accept(
+                try observation(
+                    sequence: 11,
+                    uptime: 9_000,
+                    continuity: .afterUnobservedInterval
+                )
+            )
+        }
+
         try validator.accept(
             try observation(
-                sequence: 11,
+                sequence: 12,
                 uptime: 9_000,
                 continuity: .afterUnobservedInterval
             )
         )
+        #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 12))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 12))
         #expect(!validator.requiresContinuityBoundary)
     }
 
@@ -200,6 +234,7 @@ struct BatteryEvidenceStreamValidatorTests {
         }
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 1))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 1))
         #expect(validator.lastAcceptedUptimeNanoseconds == 50)
         #expect(!validator.requiresContinuityBoundary)
     }
@@ -228,6 +263,7 @@ struct BatteryEvidenceStreamValidatorTests {
         )
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 2))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 2))
         #expect(!validator.requiresContinuityBoundary)
     }
 
@@ -242,6 +278,7 @@ struct BatteryEvidenceStreamValidatorTests {
             )
         }
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 90))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 90))
         #expect(validator.lastAcceptedUptimeNanoseconds == 9_000)
 
         var freshValidator = BatteryEvidenceStreamValidator()
@@ -255,6 +292,10 @@ struct BatteryEvidenceStreamValidatorTests {
         )
         #expect(
             freshValidator.lastAcceptedReceiptIdentity
+                == receipt(sequence: 1, epoch: nextEpoch)
+        )
+        #expect(
+            freshValidator.lastSeenReceiptIdentity
                 == receipt(sequence: 1, epoch: nextEpoch)
         )
         #expect(freshValidator.lastAcceptedUptimeNanoseconds == 4)
@@ -280,6 +321,7 @@ struct BatteryEvidenceStreamValidatorTests {
             try validator.accept(preGap)
         }
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 41))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 41))
         #expect(validator.lastAcceptedUptimeNanoseconds == 900)
         #expect(!validator.requiresContinuityBoundary)
     }
@@ -299,6 +341,7 @@ struct BatteryEvidenceStreamValidatorTests {
             try validator.accept(importedLike)
         }
         #expect(validator.lastAcceptedReceiptIdentity == nil)
+        #expect(validator.lastSeenReceiptIdentity == nil)
         #expect(validator.lastAcceptedUptimeNanoseconds == nil)
     }
 
@@ -310,6 +353,7 @@ struct BatteryEvidenceStreamValidatorTests {
         try validator.accept(try observation(sequence: 31, uptime: 31, date: 1_000))
 
         #expect(validator.lastAcceptedReceiptIdentity == receipt(sequence: 31))
+        #expect(validator.lastSeenReceiptIdentity == receipt(sequence: 31))
         #expect(validator.lastAcceptedUptimeNanoseconds == 31)
     }
 
