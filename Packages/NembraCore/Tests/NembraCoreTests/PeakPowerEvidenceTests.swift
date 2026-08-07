@@ -323,6 +323,42 @@ struct PeakPowerEvidenceTests {
         #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
+    @Test("stream restart marker never authorizes receipt chronology restart")
+    func streamRestartMarkerDoesNotReopenChronology() throws {
+        var accumulator = try PeakPowerEvidenceAccumulator.simulatorQA(scope: simulatorScope())
+        _ = accumulator.record(simulatorObservation(
+            watts: 600,
+            sequence: 50,
+            uptime: 500
+        ))
+
+        accumulator.recordInterruption(.observationStreamRestarted)
+
+        // An interruption marker records evidence loss only. The accepted
+        // observation shape has no acquisition-generation identity, so the
+        // marker cannot prove that a restarted receipt sequence is a new stream.
+        #expect(accumulator.record(simulatorObservation(
+            watts: 900,
+            sequence: 1,
+            uptime: 1
+        )) == .rejected(.nonIncreasingObservationSequence))
+
+        guard case let .peakUpdated(measurement) = accumulator.record(simulatorObservation(
+            watts: 650,
+            sequence: 51,
+            uptime: 500
+        )) else {
+            Issue.record("Only genuinely newer selected-stream evidence may advance after interruption")
+            return
+        }
+        #expect(measurement.powerWatts == 650)
+
+        let evidence = try #require(accumulator.evidence)
+        #expect(evidence.knownInterruptionCount == 1)
+        #expect(evidence.qualityRejectedMeasurementCount == 1)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
+    }
+
     @Test("reset clears peak window but never reopens selected-stream replay chronology")
     func resetPreservesReplayProtection() throws {
         let scope = try simulatorScope(mode: "drive")
