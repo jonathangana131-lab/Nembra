@@ -32,12 +32,26 @@ The default research surface is intentionally sparse and operator-oriented:
 5. wait for finite service/topology/read/subscription acquisition to become complete;
 6. once **Capture Active** appears, put the phone away and do not interact with it while riding;
 7. when safely stopped, choose **Finish Capture**;
-8. Nembra requests the controller's authoritative versioned JSON first, then ends the selected connection;
-9. share the prepared file unchanged for offline analysis.
+8. Nembra requests the controller's versioned JSON first, decodes those exact prepared bytes through the capture schema, then ends the selected connection;
+9. review the prepared-file facts and share the unchanged JSON for offline analysis.
 
 Technical UUID/GATT/raw-stream/marker controls remain available behind **Advanced details** while the controller is idle. The polished shell does not duplicate the recorder, invent a second capture state machine, or promote presentation state into evidence.
 
 A separate same-target session currently requires relaunching Nembra Capture because the parent controller intentionally does not expose an unsafe public reset that could silently reuse or mix target evidence.
+
+## Prepared-file summary
+
+After finalization, the product shell summarizes only facts derived from the exact JSON bytes being offered for export:
+
+- capture schema version;
+- total recorded events;
+- raw value-observation count;
+- explicit continuity-break count;
+- observed evidence span computed from the first/last boot-relative monotonic receipt timestamps.
+
+The shell does not call this a protocol-verification or hardware-integrity verdict. The summary explicitly says that these file facts do **not** identify scooter fields or prove protocol semantics.
+
+Decoding the exact prepared JSON before presenting the finished state also prevents the UI from summarizing a second, later recorder snapshot that could differ from the file being shared. Parent PR #239 still owns the stronger export-watermark/snapshot consistency guarantee described below.
 
 ## Safety / truth boundary
 
@@ -75,6 +89,8 @@ The `ForegroundCoreBluetoothCaptureController` is created once for the app launc
 
 The product shell keeps primary actions at large touch targets, gives candidate rows combined semantic labels, expresses failure/warning/capture states in text rather than color alone, and suppresses candidate-list animation when Reduce Motion is enabled.
 
+The intentionally black research surface uses an explicit dark presentation so semantic secondary text keeps deterministic contrast even when the phone otherwise uses Light appearance.
+
 Raw technical detail remains a secondary disclosure rather than occupying the primary physical workflow.
 
 ## Simulator acceptance
@@ -95,7 +111,7 @@ The UI test deliberately does not tap **Scan for scooter**, connect to a periphe
 
 Final export truth remains owned by PR #239's controller/recorder layer. The product shell calls `encodedCaptureJSON(...)` before cancelling the selected connection; it does not copy or reinterpret recorder state.
 
-Any unresolved parent concern about exact export watermark/snapshot consistency remains a blocker for calling a shared file authoritative. This child must not visually polish around a parent evidence defect or call a queued/failed parent gate accepted.
+Any unresolved parent concern about exact export watermark/snapshot consistency remains a blocker for calling a shared file authoritative. Decoding and summarizing the exact bytes in this child does not repair or conceal that parent concern. This child must not call a queued/failed parent gate accepted.
 
 ## First physical experiment after combined build acceptance
 
@@ -108,7 +124,7 @@ Use the smallest first physical action before any moving capture or field decodi
 5. physically correlate the likely scooter candidate, then explicitly select it; do not treat name/RSSI/UUID as identity proof;
 6. choose **Start Capture** and wait until the shell reports **Capture Active**;
 7. keep the first baseline stationary for about 60 seconds;
-8. while still safely stopped, choose **Finish Capture** and share the versioned JSON unchanged;
+8. while still safely stopped, choose **Finish Capture**, review the prepared-file facts, and share the versioned JSON unchanged;
 9. inspect the immutable artifact with Nembra's offline tooling before proposing Tuya framing or any battery/current/power/speed field mapping.
 
 Only after this stationary path is repeatable and accepted should a later experiment ask for a short moving capture. The phone must be put away before motion and handled again only after safely stopping.
