@@ -343,18 +343,28 @@ struct AccelerationEvidenceSessionTests {
 
         let snapshot = session.snapshot
         let trace = try #require(snapshot.timingTraceBenchmark)
+        let resolution = try #require(trace.empiricalMinimumNonzeroSpeedStepKilometersPerHour)
         let attemptQuality = snapshot.attemptStreamBenchmark.qualityAssessment(using: telemetry)
         let readiness = snapshot.readiness()
+        let resolutionFailure = readiness.telemetryQuality.failures.first { failure in
+            if case .speedResolutionStepExceeded = failure {
+                return true
+            }
+            return false
+        }
+        let failure = try #require(resolutionFailure)
+        guard case let .speedResolutionStepExceeded(maximum, actual) = failure else {
+            Issue.record("Expected retained timing-trace speed-resolution failure")
+            return
+        }
 
         #expect(attemptQuality.isQualified)
         #expect(snapshot.attemptStreamBenchmark.acceptedSampleCount == 5)
         #expect(trace.acceptedSampleCount == 4)
-        #expect(trace.empiricalMinimumNonzeroSpeedStepKilometersPerHour == 7.2)
+        #expect(abs(resolution - 7.2) < 0.000_001)
         #expect(!readiness.telemetryQuality.isQualified)
-        #expect(readiness.telemetryQuality.failures.contains(.speedResolutionStepExceeded(
-            maximumKilometersPerHour: 1,
-            actualKilometersPerHour: 7.2
-        )))
+        #expect(maximum == 1)
+        #expect(abs(actual - resolution) < 0.000_001)
         #expect(!readiness.isReady)
     }
 
