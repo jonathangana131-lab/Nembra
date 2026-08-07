@@ -178,7 +178,7 @@ final class VehicleStore {
             try await operation()
         } catch ScooterCommandError.disconnected {
             lastErrorMessage = "Scooter disconnected before the command was confirmed."
-        } catch ScooterCommandError.unsupportedConfiguration {
+        } catch ScooterCommandError.unverifiedConfiguration {
             lastErrorMessage = "Controls for this scooter aren’t verified yet."
         } catch ScooterCommandError.commandRejected {
             lastErrorMessage = "The scooter rejected that command in its current state."
