@@ -4,106 +4,93 @@ Status: dependent software truth/presentation policy. Physical AOVOPRO ES80 beha
 
 ## Purpose
 
-The recovered adaptive-range model carries more truth than the current battery instrument can visibly qualify. In particular, an `AdaptiveBatteryRangeEstimate` distinguishes:
+The adaptive-range model carries more truth than the current battery instrument can visibly qualify: provisional vs learned basis, learning/low/normal/high confidence, measured vs estimated SoC provenance, raw vs smoothed range, and optional low-SoC conservatism.
 
-- provisional cold-start seed vs learned history;
-- learning / low / normal / high confidence;
-- authoritative measured SoC vs estimated SoC;
-- raw range vs the model's smoothed/deadband presentation range;
-- optional evidence-backed low-SoC conservatism.
+The current `BatteryEstimatedRangeDisplay` intentionally has only numeric meters, learning, or unavailable. This lane prevents integration code from flattening every non-nil estimate into authoritative-looking mileage.
 
-The current `BatteryEstimatedRangeDisplay` intentionally has only three simple states: numeric meters, learning, or unavailable. It has no visible qualifier for "provisional", "low confidence", "estimated SoC", or "last known while disconnected".
-
-This lane prevents integration code from flattening every non-nil range estimate into an authoritative-looking mileage number.
-
-## Policy
+## Primary numeric policy
 
 `AdaptiveBatteryRangePrimaryPresentationPolicy` allows an unqualified numeric primary range only when all of these are true:
 
-1. canonical data availability derived from the supplied `VehicleState` is live rather than retained/unavailable;
+1. canonical availability derived from the supplied `VehicleState` is live;
 2. an adaptive estimate exists;
-3. `presentedRemainingMeters` is finite and non-negative;
-4. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
-5. estimate basis is `.learned`, not `.provisionalSeed`;
-6. confidence is `.normal` or `.high`.
+3. the estimate satisfies the parent model's policy-independent structural invariants;
+4. `presentedRemainingMeters` is finite and non-negative;
+5. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
+6. basis is `.learned`, not `.provisionalSeed`;
+7. confidence is `.normal` or `.high`.
 
-The **public** policy API accepts `VehicleState`, not a caller-selected `VehicleDataAvailability`. It derives `vehicleState.dataAvailability` inside NembraCore. This removes a role-selector seam where app integration could accidentally pass `.live` for retained/no-confirmed-data state, and it remains compatible with a future separate `NembraCore` module because the app caller does not need access to the internal `VehicleState.dataAvailability` helper.
+The public API accepts `VehicleState`, not a caller-selected `VehicleDataAvailability`. It derives `vehicleState.dataAvailability` inside the policy. This removes a freshness role-selector seam where app code could accidentally label retained/no-data state as live.
 
-The canonical vehicle-state rule remains:
+Canonical vehicle-state behavior remains:
 
-- no confirmed vehicle values -> `.unavailable`, even if connection happens to say connected;
+- no confirmed vehicle values -> `.unavailable`, even when connection says connected;
 - confirmed values + connected -> `.live`;
 - confirmed values + disconnected/connecting/reconnecting -> `.retained`.
 
-The output preserves a detailed withholding reason while separately projecting into the existing `BatteryEstimatedRangeDisplay` contract.
-
 ### Current fail-closed mapping
 
-| Input state | Detailed decision | Existing primary readout |
+| Input state | Detailed decision | Primary readout |
 | --- | --- | --- |
-| learned + normal/high + authoritative SoC + canonical live state | numeric value | numeric value |
+| learned + normal/high + authoritative SoC + canonical live state | numeric | numeric |
 | provisional seed | learning | learning |
 | learning confidence | learning | learning |
 | low confidence | learning | learning |
-| estimated SoC | unavailable until qualified | unavailable |
-| retained + otherwise-valid range | unavailable until qualified | unavailable |
+| estimated SoC | qualifier required | unavailable |
+| retained + otherwise-valid range | qualifier required | unavailable |
 | retained + no range estimate | no estimate | unavailable |
-| retained + invalid range | invalid range | unavailable |
+| retained + invalid presented range | invalid presented range | unavailable |
+| malformed estimate structure | invalid estimate structure | unavailable |
 | no confirmed vehicle data | unavailable | unavailable |
-| missing/invalid live range | unavailable | unavailable |
 
-Reason precedence is deliberate. A retained qualifier only makes sense when an otherwise-usable range actually exists; missing or malformed range is therefore classified before `.retained`. Conversely, unavailable canonical vehicle data remains a top-level blocker because no confirmed vehicle snapshot exists to support a range at all.
+Reason precedence is deliberate. A retained qualifier only makes sense when an otherwise-usable estimate exists; missing/malformed values are classified before retained status. For a structurally valid live estimate, estimated SoC outranks provisional basis so a weak battery source cannot hide behind generic learning.
 
-When multiple range-evidence conditions coexist on a valid live estimate, stronger evidence-quality qualifiers win over weaker presentation-progress qualifiers. In particular, estimated SoC outranks provisional basis: a provisional estimate based on estimated SoC is `unavailable(.estimatedSOCRequiresQualifier)`, not merely `learning(.provisionalSeed)`. This avoids telling the user only that the model is learning while hiding the weaker battery source underneath it.
+## Structural defense in depth
 
-This is deliberately conservative. A future detailed battery surface may choose to present provisional, retained, estimated-SoC, or low-confidence values with explicit labels. That richer UX must not weaken the truth classification of the underlying evidence.
+Parent #40 already validates decoded `AdaptiveBatteryRangeEstimate` values. #83 mirrors the policy-independent subset before numeric presentation because today's iOS target may compile these domain sources directly into the same app module, where ordinary same-module code could manually construct malformed in-memory values without crossing Codable.
 
-## Upstream authority blocker
+The presentation boundary rejects an estimate unless:
 
-This presentation policy does **not** itself prove that an upstream `.authoritativeMeasurement` claim is trustworthy.
+- `rawRemainingMeters` is finite and non-negative;
+- `metersPerPercentagePoint` is finite and positive;
+- `metersPerPercentagePoint * 100` is finite;
+- raw remaining range is at most the current full-charge-equivalent range, with the same tiny floating tolerance used by the parent decoder;
+- a `.provisionalSeed` estimate has `.learning` confidence.
 
-Current live review of parent PR #40 found two generic authority-assertion paths:
+`presentedRemainingMeters` is **not** capped by the current full-charge-equivalent range. Valid deadband/smoothing can temporarily lag a changed learned efficiency, so presentation may legitimately exceed the new raw full-charge equivalent while converging. The policy only requires that presented range itself be finite and non-negative.
 
-1. `BatterySOCReading` exposes a raw constructor that accepts public `.authoritativeMeasurement`, and its generic Codable import can decode that role;
-2. `AdaptiveBatteryRangeEstimate.init(from:)` likewise decodes `socProvenance` and can import an otherwise-valid learned/normal/high estimate that self-asserts `.authoritativeMeasurement`.
+This defense does not create authority. It only ensures an already-supplied estimate is structurally representable before the UI can show it numerically.
 
-The second path matters directly to this lane: #83 is behaving correctly when it trusts the parent estimate's provenance field, but a forged imported parent estimate can currently make that field look authoritative. Generic encode/decode of authoritative derived estimates therefore needs the same explicit trust treatment as authoritative SoC readings.
+## Upstream authority blockers
 
-These are upstream trust-boundary bugs, not reasons for this lane to duplicate battery-evidence validation. This lane therefore treats the following as hard production dependencies:
+This policy does not prove that `.authoritativeMeasurement` is trustworthy. Live review of the parent/dependent chain found multiple authority-assertion paths outside #83 ownership:
 
-1. the accepted descendant of #40 must seal authoritative `BatterySOCReading` construction/import;
-2. generic `AdaptiveBatteryRangeEstimate` import/export must not be able to create or carry authoritative provenance without an explicit separately verified persistence envelope;
-3. #38 (or its accepted successor) must remain the trusted battery-evidence → adaptive-range integration seam;
-4. only then may a `.authoritativeMeasurement` carried by the accepted adaptive-range result satisfy this policy's numeric-eligibility rule;
-5. until those seals exist, PR #83 stays draft/dependent and no Dashboard integration should interpret this policy's current numeric branch as production authority proof.
+1. raw/generic `BatterySOCReading` can currently claim `.authoritativeMeasurement`;
+2. generic `AdaptiveBatteryRangeEstimate` import can self-assert authoritative `socProvenance`;
+3. legitimate authoritative readings can be reused with a caller-constructed learning window carrying invented distance/coverage;
+4. the #38/#54 evidence-to-candidate path accepts caller-classified distance, so the final app architecture must seal the whole evidence -> candidate -> model path rather than only provenance-bearing value initializers.
 
-A green Xcode/Simulator run for the old #40 head does not close these blockers because the exact green source still contains the authority-import/construction paths.
+Generic authoritative SoC and derived-estimate Codable import/export must reject self-asserted authority unless a separately verified persistence envelope explicitly owns that restoration.
 
-### Production module-layout caveat
+A green Xcode/Simulator run for old #40@`18051b...` is diagnostic only: that exact green source still contains these semantic blockers and is stale relative to current `main`.
 
-A proposed #40 hardening direction is to make the raw `BatterySOCReading` role-selecting initializer module-internal and leave a public estimated-only factory. That helps Swift-package clients, but **module-internal access is not sufficient by itself under Nembra's current production iOS build graph**.
+## Production module-layout caveat
 
-The current `Nembra` app target does not link `NembraCore` as a separate package-product dependency. Instead, `project.pbxproj` places selected files from `Packages/NembraCore/Sources/NembraCore` directly in the `Nembra` app Sources build phase. Once adaptive-range/evidence files are wired the same way for Dashboard, those declarations and ordinary app UI code compile in the same Swift module. Plain `internal` access would therefore remain callable by app code.
+Plain module-`internal` constructors are not sufficient under Nembra's current iOS build graph. The app does not currently link `NembraCore` as a distinct package-product dependency; selected files under `Packages/NembraCore/Sources/NembraCore` are compiled directly into the `Nembra` app Sources build phase. Once adaptive-range/evidence files are wired the same way, app UI and those domain files share one Swift module.
 
-Production acceptance must consequently prove an authority construction boundary that remains non-forgeable in the **actual final app composition**, not only in an external package-client probe. Viable architecture belongs to the owning integration/range lanes, but the proof must be equivalent to one of these outcomes:
+Therefore production authority proof must survive the actual final app composition. The owning lanes must converge on an architecture equivalent to one of:
 
-- the app deliberately links `NembraCore` as a distinct module before relying on module-internal authority access; or
-- authoritative conversion uses a file/private capability or another construction API that ordinary same-module app code cannot forge; or
-- authoritative range conversion accepts only already-sealed verified evidence through a path that never exposes a raw same-module role selector to app callers.
+- link `NembraCore` as a separate module before relying on module-internal authority access;
+- use a same-module file/private capability or factory ordinary app code cannot forge;
+- expose authoritative conversion only through inputs whose own construction is already sealed, without raw role/window/distance selectors available to app callers.
 
-The final integration gate should include an app-side negative compile/API proof after the adaptive-range dependency closure is wired, demonstrating that ordinary `NembraApp` code cannot manufacture authoritative SoC or authoritative derived-range provenance.
+Final integration should include an app-side negative API/compile proof after wiring, demonstrating that ordinary app code cannot manufacture authoritative SoC, learning-window authority, or authoritative derived-range provenance.
 
 ## Why `presentedRemainingMeters`
 
-The adaptive model already owns range deadband/smoothing and evidence-backed low-SoC conservatism. This policy consumes its `presentedRemainingMeters`; it does not recompute efficiency or introduce a second smoothing model.
+The adaptive model owns deadband/smoothing and low-SoC conservatism. This policy consumes `presentedRemainingMeters`; it does not recompute efficiency or add a second smoothing model.
 
-The policy never uses:
-
-- advertised range × battery percentage;
-- fabricated current, watts, watt-hours, or Wh/mi;
-- Dashboard interpolation frames;
-- battery display-animation intermediate values;
-- route distance as a substitute for the range model.
+It never uses advertised range x battery percentage, fabricated current/watts/Wh/Wh-mi, Dashboard interpolation frames, battery display-animation intermediates, or route geometry as a substitute for range evidence.
 
 ## Ownership / dependency boundary
 
@@ -117,30 +104,21 @@ Owned paths:
 - `Packages/NembraCore/Tests/NembraCoreTests/AdaptiveBatteryRangePrimaryPresentationTests.swift`
 - `docs/ADAPTIVE_RANGE_PRIMARY_PRESENTATION.md`
 
-This branch is intentionally based on adaptive-range recovery PR #40 exact head `18051b003d8c2b48e37baa3af1dba1fbac9a2d1c` because `AdaptiveBatteryRangeEstimate` is not yet on production `main`.
+This branch intentionally targets PR #40 exact parent `18051b003d8c2b48e37baa3af1dba1fbac9a2d1c`. It does not modify #40, #54, #38, #45, #57, battery-evidence, app-bootstrap, workflow, project-file, or global-memory paths.
 
-It does not modify:
+### App-target visibility gate
 
-- PR #40 adaptive-range implementation files;
-- PR #54 learning-window assembly;
-- PR #38 battery/range evidence bridge;
-- PR #45 battery integer-transition/readout source;
-- PR #57 Dashboard/project/UI-test files;
-- battery evidence-chain files;
-- app bootstrap/persistence/global project memory.
+The Swift package auto-discovers these files, while `Nembra.app` manually enumerates selected core sources. Package success therefore proves neither app visibility nor app-side trust isolation. A future app consumer must wire the complete accepted dependency closure (or deliberately change linkage architecture), compile the exact final app, and re-prove authority construction under that exact module layout.
 
-### App-target source visibility gate
+The `VehicleState`-accepting public policy API avoids introducing another app-visible freshness selector and works with both today's direct-source composition and a future separately linked core module.
 
-Nembra currently has two different source-discovery realities:
+After the authority-sealed semantic parent lands, #83 must reconcile its exact three-file delta onto accepted parent/fresh `main`, run real package checks, verify app source/linkage closure, and obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge.
 
-- the Swift package auto-discovers files under `Packages/NembraCore/Sources/NembraCore` and package tests therefore see this policy automatically;
-- the `Nembra.app` Xcode target manually enumerates selected NembraCore source files in `Nembra.xcodeproj/project.pbxproj` and compiles them directly into the app module.
+## Validation
 
-This lane intentionally does **not** edit that Class-A project file while PR #57 owns it. Consequently, a green package test for this policy is not proof that a future Dashboard build can see the type, and package-module access-control probes are not automatically proof of the production app trust boundary. The later app integration must explicitly verify/wire every adaptive-range source it consumes into the app target (or deliberately change the app/package linkage architecture under its own accepted lane), compile the real app on the exact final SHA, and re-prove authority construction under that exact module layout.
+Supplemental Swift 6.2.1 compatibility harness: **22/22 debug + 22/22 release**. In addition to the prior availability/provenance/confidence matrix, it covers malformed raw range, malformed efficiency, raw range above the full-charge equivalent, provisional basis paired with non-learning confidence, retained malformed structure, and the valid smoothed-presented-range-above-current-full-charge counterexample.
 
-The `VehicleState`-accepting public policy API deliberately avoids adding another app-visible freshness-selector dependency: both current direct-source compilation and a future linked-module architecture can call the same API while canonical availability stays derived inside the domain layer.
-
-After #40 is authority-sealed, accepted, and landed, this lane must reconcile onto the accepted exact parent/fresh `main`, rerun package checks, then obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge. A green dependency head is not proof for a changed child SHA.
+This is supplemental semantic/API evidence only, not repository package or Xcode acceptance.
 
 ## Hardware boundary
 
