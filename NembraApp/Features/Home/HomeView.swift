@@ -138,6 +138,7 @@ struct HomeView: View {
                         title: "Battery",
                         value: batteryText,
                         icon: batteryIcon,
+                        accessibilityValue: batteryAccessibilityValue,
                         accessibilityIdentifier: "home.metric.battery",
                         valueStyle: batteryValueStyle
                     )
@@ -163,6 +164,7 @@ struct HomeView: View {
                         title: "Battery",
                         value: batteryText,
                         icon: batteryIcon,
+                        accessibilityValue: batteryAccessibilityValue,
                         accessibilityIdentifier: "home.metric.battery",
                         valueStyle: batteryValueStyle
                     )
@@ -211,6 +213,7 @@ struct HomeView: View {
         value: String,
         icon: String,
         accessibilityTitle: String? = nil,
+        accessibilityValue: String? = nil,
         accessibilityIdentifier: String,
         valueStyle: Color = .primary
     ) -> some View {
@@ -230,7 +233,7 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle ?? title)
-        .accessibilityValue(value)
+        .accessibilityValue(accessibilityValue ?? value)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
@@ -321,6 +324,7 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .nembraGlassControl()
+        .accessibilityValue(pending ? "Requesting confirmation" : "")
         .disabled(
             vehicle.state.connection != .connected ||
             vehicle.isVehicleCommandPending ||
@@ -367,6 +371,7 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
                     .accessibilityLabel(mode.displayName)
+                    .accessibilityValue(vehicle.pendingRideMode == mode ? "Requesting confirmation" : "")
                     .accessibilityAddTraits(vehicle.state.rideMode == mode ? .isSelected : [])
                     .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
                 }
@@ -666,6 +671,11 @@ struct HomeView: View {
     private var batteryText: String {
         guard let value = vehicle.state.batteryPercent else { return "—" }
         return "\(value)%"
+    }
+
+    private var batteryAccessibilityValue: String {
+        guard let value = vehicle.state.batteryPercent else { return "Unavailable" }
+        return value <= 15 ? "\(value) percent, low battery" : "\(value) percent"
     }
 
     private var tripDistanceText: String {
