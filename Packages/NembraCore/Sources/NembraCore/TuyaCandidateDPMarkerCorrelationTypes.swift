@@ -18,6 +18,7 @@ public enum TuyaCandidateDPMarkerCorrelationError: Error, Equatable, Sendable {
     case snapshotCountExceedsPolicy(maximum: Int)
     case hypothesisCountExceedsPolicy(maximum: Int)
     case duplicateMarkerSequenceNumber(UInt64)
+    case duplicateCandidateSnapshotIdentity(continuityGeneration: UInt64, candidateSequenceNumber: UInt64)
     case mixedSourceStreamIdentity
     case mixedDataLengthWidth
 }
