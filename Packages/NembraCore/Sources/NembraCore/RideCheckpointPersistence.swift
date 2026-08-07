@@ -185,7 +185,7 @@ public enum RideDurableCheckpoint: Codable, Equatable, Sendable {
             try container.encode(Kind.inProgress, forKey: .kind)
             try container.encode(checkpoint, forKey: .inProgress)
         case let .completedPendingCommit(evidence):
-            try container.encode(Kind.completedPendingCommit, forKey: .kind)
+            try container.encode(Kind.completedPendingCommit, forKey: .completedPendingCommit)
             try container.encode(evidence, forKey: .completedPendingCommit)
         }
     }
@@ -572,8 +572,44 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
     }
 
     public func clear() async throws {
-        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
+        let a = try readSlot(at: slotAURL)
+        let b = try readSlot(at: slotBURL)
+        try rejectUnsupportedSchema(a, b)
+        try rejectConflictingGenerations(a, b)
+
+        let slots: [(url: URL, read: SlotRead)] = [
+            (slotAURL, a),
+            (slotBURL, b),
+        ]
+        let validSlots: [(url: URL, envelope: Envelope)] = slots.compactMap { slot in
+            guard let envelope = slot.read.envelope else { return nil }
+            return (slot.url, envelope)
+        }
+
+        guard let newest = validSlots.max(by: {
+            $0.envelope.generation < $1.envelope.generation
+        }) else {
+            // `clear()` is the explicit recovery path when no valid generation
+            // survives. Unsupported schemas and conflicting valid generations
+            // have already failed closed above.
+            for slot in slots where fileManager.fileExists(atPath: slot.url.path) {
+                try fileManager.removeItem(at: slot.url)
+            }
+            return
+        }
+
+        // Remove every non-authoritative fallback before the newest valid
+        // generation. If deletion is interrupted, restart can still recover only
+        // the newest checkpoint; an older in-progress ride can never be exposed
+        // merely because completion acknowledgement partially cleared the journal.
+        for slot in slots
+            where slot.url != newest.url
+            && fileManager.fileExists(atPath: slot.url.path) {
+            try fileManager.removeItem(at: slot.url)
+        }
+
+        if fileManager.fileExists(atPath: newest.url.path) {
+            try fileManager.removeItem(at: newest.url)
         }
     }
 
