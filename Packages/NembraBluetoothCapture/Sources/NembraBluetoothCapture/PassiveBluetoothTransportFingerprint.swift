@@ -78,6 +78,15 @@ public enum PassiveBluetoothTransportFingerprint {
         let optionalCharacteristics: Set<String>
     }
 
+    private struct EvidenceAccumulator {
+        var services: Set<String> = []
+        var characteristicsByService: [String: Set<String>] = [:]
+
+        var isEmpty: Bool {
+            services.isEmpty && characteristicsByService.isEmpty
+        }
+    }
+
     private static let definitions: [CandidateDefinition] = [
         CandidateDefinition(
             family: .tuyaModernFD50,
@@ -120,91 +129,46 @@ public enum PassiveBluetoothTransportFingerprint {
     /// Multiple candidate families can match and an empty match list is valid.
     /// Connection lifecycle alone establishes no GATT topology. A subscription
     /// record may establish only the exact service/characteristic path it names.
+    ///
+    /// The report's identifier sets are descriptive "ever observed" evidence.
+    /// Candidate strength is stricter: one continuity segment must contain the
+    /// evidence required for that strength. Evidence separated by a disconnect,
+    /// service invalidation, or other continuity break is never synthesized into
+    /// a stronger topology that was not observed together.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
     ) -> PassiveBluetoothTransportFingerprintReport {
-        var services: Set<String> = []
-        var characteristicsByService: [String: Set<String>] = [:]
+        var aggregate = EvidenceAccumulator()
+        var currentSegment = EvidenceAccumulator()
+        var segments: [EvidenceAccumulator] = []
 
         for record in session.records {
-            switch record.event {
-            case let .advertisement(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                services.formUnion(observation.serviceUUIDs.map(normalize))
-                services.formUnion(observation.overflowServiceUUIDs.map(normalize))
-                services.formUnion(observation.solicitedServiceUUIDs.map(normalize))
-                services.formUnion(observation.serviceData.keys.map(normalize))
-
-            case let .service(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(normalize(observation.serviceUUID))
-
-            case let .includedService(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                services.insert(normalize(observation.parentServiceUUID))
-                services.insert(normalize(observation.includedServiceUUID))
-
-            case let .characteristic(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
-
-            case let .descriptor(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                // Descriptor evidence confirms the parent GATT path existed even
-                // if a partial/imported capture lacks a separate service record.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
-
-            case let .subscription(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                // Subscription-state evidence names one exact observed GATT path.
-                // It does not say anything about application protocol meaning.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
-
-            case let .value(observation)
-                where observation.peripheralIdentifier == peripheralIdentifier:
-                // Same rule for partial captures containing value evidence.
-                let service = normalize(observation.serviceUUID)
-                services.insert(service)
-                characteristicsByService[service, default: []]
-                    .insert(normalize(observation.characteristicUUID))
-
-            default:
-                break
+            if record.event.breaksByteContinuity {
+                if !currentSegment.isEmpty {
+                    segments.append(currentSegment)
+                }
+                currentSegment = EvidenceAccumulator()
             }
+
+            accumulate(
+                record.event,
+                peripheralIdentifier: peripheralIdentifier,
+                into: &aggregate
+            )
+            accumulate(
+                record.event,
+                peripheralIdentifier: peripheralIdentifier,
+                into: &currentSegment
+            )
         }
 
-        let matches = definitions.compactMap { definition -> PassiveBluetoothTransportCandidateMatch? in
-            guard services.contains(definition.serviceUUID) else { return nil }
-            let observedCharacteristics = characteristicsByService[definition.serviceUUID] ?? []
-            let researchedCharacteristics = definition.primaryCharacteristics
-                .union(definition.optionalCharacteristics)
-            let matchingCharacteristics = observedCharacteristics.intersection(researchedCharacteristics)
+        if !currentSegment.isEmpty {
+            segments.append(currentSegment)
+        }
 
-            let strength: PassiveBluetoothTransportCandidateStrength
-            if definition.primaryCharacteristics.isSubset(of: observedCharacteristics) {
-                strength = .expectedDataPathObserved
-            } else if !matchingCharacteristics.isEmpty {
-                strength = .characteristicFamilyObserved
-            } else {
-                strength = .serviceObserved
-            }
-
-            return PassiveBluetoothTransportCandidateMatch(
-                family: definition.family,
-                strength: strength,
-                observedServiceUUIDs: [definition.serviceUUID],
-                observedCharacteristicUUIDs: matchingCharacteristics
-            )
+        let matches = definitions.compactMap { definition in
+            strongestMatch(for: definition, in: segments)
         }
         .sorted { lhs, rhs in
             if lhs.strength != rhs.strength { return lhs.strength > rhs.strength }
@@ -213,9 +177,112 @@ public enum PassiveBluetoothTransportFingerprint {
 
         return PassiveBluetoothTransportFingerprintReport(
             peripheralIdentifier: peripheralIdentifier,
-            observedServiceUUIDs: services,
-            characteristicUUIDsByService: characteristicsByService,
+            observedServiceUUIDs: aggregate.services,
+            characteristicUUIDsByService: aggregate.characteristicsByService,
             candidateMatches: matches
+        )
+    }
+
+    private static func accumulate(
+        _ event: PassiveBluetoothCaptureEvent,
+        peripheralIdentifier: String,
+        into evidence: inout EvidenceAccumulator
+    ) {
+        switch event {
+        case let .advertisement(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            evidence.services.formUnion(observation.serviceUUIDs.map(normalize))
+            evidence.services.formUnion(observation.overflowServiceUUIDs.map(normalize))
+            evidence.services.formUnion(observation.solicitedServiceUUIDs.map(normalize))
+            evidence.services.formUnion(observation.serviceData.keys.map(normalize))
+
+        case let .service(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            evidence.services.insert(normalize(observation.serviceUUID))
+
+        case let .includedService(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            evidence.services.insert(normalize(observation.parentServiceUUID))
+            evidence.services.insert(normalize(observation.includedServiceUUID))
+
+        case let .characteristic(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            let service = normalize(observation.serviceUUID)
+            evidence.services.insert(service)
+            evidence.characteristicsByService[service, default: []]
+                .insert(normalize(observation.characteristicUUID))
+
+        case let .descriptor(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            // Descriptor evidence confirms the parent GATT path existed even
+            // if a partial/imported capture lacks a separate service record.
+            let service = normalize(observation.serviceUUID)
+            evidence.services.insert(service)
+            evidence.characteristicsByService[service, default: []]
+                .insert(normalize(observation.characteristicUUID))
+
+        case let .subscription(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            // Subscription-state evidence names one exact observed GATT path.
+            // It does not say anything about application protocol meaning.
+            let service = normalize(observation.serviceUUID)
+            evidence.services.insert(service)
+            evidence.characteristicsByService[service, default: []]
+                .insert(normalize(observation.characteristicUUID))
+
+        case let .value(observation)
+            where observation.peripheralIdentifier == peripheralIdentifier:
+            // Same rule for partial captures containing value evidence.
+            let service = normalize(observation.serviceUUID)
+            evidence.services.insert(service)
+            evidence.characteristicsByService[service, default: []]
+                .insert(normalize(observation.characteristicUUID))
+
+        default:
+            break
+        }
+    }
+
+    private static func strongestMatch(
+        for definition: CandidateDefinition,
+        in segments: [EvidenceAccumulator]
+    ) -> PassiveBluetoothTransportCandidateMatch? {
+        var strongest: PassiveBluetoothTransportCandidateMatch?
+
+        for segment in segments {
+            guard let candidate = match(for: definition, in: segment) else { continue }
+            if strongest == nil || candidate.strength > strongest!.strength {
+                strongest = candidate
+            }
+        }
+
+        return strongest
+    }
+
+    private static func match(
+        for definition: CandidateDefinition,
+        in evidence: EvidenceAccumulator
+    ) -> PassiveBluetoothTransportCandidateMatch? {
+        guard evidence.services.contains(definition.serviceUUID) else { return nil }
+        let observedCharacteristics = evidence.characteristicsByService[definition.serviceUUID] ?? []
+        let researchedCharacteristics = definition.primaryCharacteristics
+            .union(definition.optionalCharacteristics)
+        let matchingCharacteristics = observedCharacteristics.intersection(researchedCharacteristics)
+
+        let strength: PassiveBluetoothTransportCandidateStrength
+        if definition.primaryCharacteristics.isSubset(of: observedCharacteristics) {
+            strength = .expectedDataPathObserved
+        } else if !matchingCharacteristics.isEmpty {
+            strength = .characteristicFamilyObserved
+        } else {
+            strength = .serviceObserved
+        }
+
+        return PassiveBluetoothTransportCandidateMatch(
+            family: definition.family,
+            strength: strength,
+            observedServiceUUIDs: [definition.serviceUUID],
+            observedCharacteristicUUIDs: matchingCharacteristics
         )
     }
 
