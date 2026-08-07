@@ -175,9 +175,15 @@ public struct SpeedEvidenceConnectionGeneration: RawRepresentable, Equatable, Ha
 /// token with any asynchronously delivered sample. After an explicit evidence
 /// gap, a new token is issued; queued callbacks carrying the previous token can
 /// no longer resurrect pre-gap evidence.
+///
+/// The public generation/segment fields are diagnostics, not token identity.
+/// A private implementation-minted UUID participates in synthesized equality and
+/// hashing so independent/recreated truth owners cannot collide merely because
+/// their caller-visible counters happen to match.
 public struct SpeedEvidenceContinuityToken: Equatable, Hashable, Sendable {
     public let connectionGeneration: SpeedEvidenceConnectionGeneration
     public let segmentSequence: UInt64
+    private let identity = UUID()
 
     fileprivate init(
         connectionGeneration: SpeedEvidenceConnectionGeneration,
