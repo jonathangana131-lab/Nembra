@@ -95,22 +95,28 @@ public struct RidePeakPowerEvidenceAccumulator: Sendable {
 public enum CompletedRidePeakPowerEvidenceError: Error, Equatable, Sendable {
     case sessionMismatch
     case continuityMismatch
+    case authorityMismatch
+    case scopeMismatch
     case invalidEvidence
 }
 
-/// Durable accepted peak-power evidence bound to one immutable completed ride.
+/// Trusted accepted peak-power evidence bound to one immutable completed ride.
 ///
-/// Process-local receipt sequence and uptime are deliberately stripped. They are
-/// ordering evidence inside one acquisition process, and the current accepted
-/// power observation does not carry a mechanically bound source-generation ID
-/// that would make those clocks meaningful after relaunch. Durable history keeps
-/// only the accepted observed maximum, exact vehicle/mode scope identity,
-/// authority, evidence-loss counts, and ride identity/continuity.
+/// This value is intentionally **not Decodable**. Arbitrary durable bytes must
+/// first decode into `CompletedRidePeakPowerCheckpoint`, which is only a validated
+/// persisted representation. Converting a checkpoint back into verified-vehicle
+/// evidence requires an exact package-owned verified scope and package-sealed
+/// restore method; ordinary public decoding can never mint physical authority.
+///
+/// Process-local receipt sequence and uptime are deliberately stripped before
+/// persistence. They are ordering evidence inside one acquisition process, and
+/// the current accepted power observation does not carry a mechanically bound
+/// source-generation ID that would make those clocks meaningful after relaunch.
 ///
 /// This remains an *observed* peak over retained coverage. It is not a rated
 /// motor/controller maximum, learned full-power ceiling, throttle signal, or
 /// proof of the unobserved continuous-time physical maximum.
-public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
+public struct CompletedRidePeakPowerEvidence: Equatable, Sendable {
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
     public let beganAfterKnownObservationGap: Bool
@@ -168,8 +174,52 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
         }
     }
 
-    private init(
+    fileprivate init(
         sessionID: UUID,
+        rideContinuity: RideSessionContinuity,
+        beganAfterKnownObservationGap: Bool,
+        vehicleIdentityKey: String,
+        confirmedModeKey: String?,
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority,
+        powerWatts: Double,
+        acceptedMeasurementCount: Int,
+        peakCandidateMeasurementCount: Int,
+        qualityRejectedMeasurementCount: Int,
+        knownInterruptionCount: Int,
+        observationContinuity: PeakPowerObservationContinuity
+    ) throws {
+        try Self.validateFields(
+            rideContinuity: rideContinuity,
+            beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority,
+            powerWatts: powerWatts,
+            acceptedMeasurementCount: acceptedMeasurementCount,
+            peakCandidateMeasurementCount: peakCandidateMeasurementCount,
+            qualityRejectedMeasurementCount: qualityRejectedMeasurementCount,
+            knownInterruptionCount: knownInterruptionCount,
+            observationContinuity: observationContinuity
+        )
+
+        self.sessionID = sessionID
+        self.rideContinuity = rideContinuity
+        self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+        self.vehicleIdentityKey = vehicleIdentityKey
+        self.confirmedModeKey = confirmedModeKey
+        self.identityAuthority = identityAuthority
+        self.evidenceAuthority = evidenceAuthority
+        self.powerWatts = powerWatts
+        self.acceptedMeasurementCount = acceptedMeasurementCount
+        self.peakCandidateMeasurementCount = peakCandidateMeasurementCount
+        self.qualityRejectedMeasurementCount = qualityRejectedMeasurementCount
+        self.knownInterruptionCount = knownInterruptionCount
+        self.observationContinuity = observationContinuity
+    }
+
+    fileprivate static func validateFields(
         rideContinuity: RideSessionContinuity,
         beganAfterKnownObservationGap: Bool,
         vehicleIdentityKey: String,
@@ -191,7 +241,7 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
             throw CompletedRidePeakPowerEvidenceError.invalidEvidence
         }
 
-        guard Self.authorityPairIsValid(
+        guard authorityPairIsValid(
             identityAuthority: identityAuthority,
             evidenceAuthority: evidenceAuthority
         ),
@@ -229,21 +279,43 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
             knownInterruptionCount == 0) {
             throw CompletedRidePeakPowerEvidenceError.invalidEvidence
         }
-
-        self.sessionID = sessionID
-        self.rideContinuity = rideContinuity
-        self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
-        self.vehicleIdentityKey = vehicleIdentityKey
-        self.confirmedModeKey = confirmedModeKey
-        self.identityAuthority = identityAuthority
-        self.evidenceAuthority = evidenceAuthority
-        self.powerWatts = powerWatts
-        self.acceptedMeasurementCount = acceptedMeasurementCount
-        self.peakCandidateMeasurementCount = peakCandidateMeasurementCount
-        self.qualityRejectedMeasurementCount = qualityRejectedMeasurementCount
-        self.knownInterruptionCount = knownInterruptionCount
-        self.observationContinuity = observationContinuity
     }
+
+    fileprivate static func authorityPairIsValid(
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) -> Bool {
+        switch (identityAuthority, evidenceAuthority) {
+        case (.simulatorQA, .simulatorQA),
+             (.verifiedVehicleIdentity, .verifiedVehicleMeasurement):
+            true
+        default:
+            false
+        }
+    }
+}
+
+/// Durable serialized representation of completed ride peak-power evidence.
+///
+/// A decoded checkpoint is **not** trusted vehicle evidence. It may retain raw
+/// authority labels for validation/correlation, but those labels do not acquire
+/// domain authority by surviving Codable. Public clients can restore only
+/// Simulator-QA evidence. Restoring verified-vehicle evidence is package-sealed
+/// and requires an independently trusted exact verified scope.
+public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
+    public let sessionID: UUID
+    public let rideContinuity: RideSessionContinuity
+    public let beganAfterKnownObservationGap: Bool
+    public let vehicleIdentityKey: String
+    public let confirmedModeKey: String?
+    public let identityAuthority: ObservedPowerEnvelopeScopeAuthority
+    public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    public let powerWatts: Double
+    public let acceptedMeasurementCount: Int
+    public let peakCandidateMeasurementCount: Int
+    public let qualityRejectedMeasurementCount: Int
+    public let knownInterruptionCount: Int
+    public let observationContinuity: PeakPowerObservationContinuity
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
@@ -261,6 +333,63 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
         case observationContinuity
     }
 
+    private init(
+        evidence: CompletedRidePeakPowerEvidence,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws {
+        guard evidence.identityAuthority == requiredScopeAuthority,
+              evidence.evidenceAuthority == requiredEvidenceAuthority else {
+            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
+        }
+
+        sessionID = evidence.sessionID
+        rideContinuity = evidence.rideContinuity
+        beganAfterKnownObservationGap = evidence.beganAfterKnownObservationGap
+        vehicleIdentityKey = evidence.vehicleIdentityKey
+        confirmedModeKey = evidence.confirmedModeKey
+        identityAuthority = evidence.identityAuthority
+        evidenceAuthority = evidence.evidenceAuthority
+        powerWatts = evidence.powerWatts
+        acceptedMeasurementCount = evidence.acceptedMeasurementCount
+        peakCandidateMeasurementCount = evidence.peakCandidateMeasurementCount
+        qualityRejectedMeasurementCount = evidence.qualityRejectedMeasurementCount
+        knownInterruptionCount = evidence.knownInterruptionCount
+        observationContinuity = evidence.observationContinuity
+    }
+
+    public static func simulatorQA(
+        from evidence: CompletedRidePeakPowerEvidence
+    ) throws -> Self {
+        try Self(
+            evidence: evidence,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+    #if SWIFT_PACKAGE
+    package static func verifiedVehicleMeasurements(
+        from evidence: CompletedRidePeakPowerEvidence
+    ) throws -> Self {
+        try Self(
+            evidence: evidence,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+    #else
+    fileprivate static func verifiedVehicleMeasurements(
+        from evidence: CompletedRidePeakPowerEvidence
+    ) throws -> Self {
+        try Self(
+            evidence: evidence,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+    #endif
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -272,38 +401,63 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
                 throw CompletedRidePeakPowerEvidenceError.invalidEvidence
             }
 
-            try self.init(
-                sessionID: container.decode(UUID.self, forKey: .sessionID),
-                rideContinuity: container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
-                beganAfterKnownObservationGap: container.decode(
-                    Bool.self,
-                    forKey: .beganAfterKnownObservationGap
-                ),
-                vehicleIdentityKey: container.decode(String.self, forKey: .vehicleIdentityKey),
-                confirmedModeKey: container.decodeIfPresent(String.self, forKey: .confirmedModeKey),
+            let sessionID = try container.decode(UUID.self, forKey: .sessionID)
+            let rideContinuity = try container.decode(RideSessionContinuity.self, forKey: .rideContinuity)
+            let beganAfterKnownObservationGap = try container.decode(
+                Bool.self,
+                forKey: .beganAfterKnownObservationGap
+            )
+            let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
+            let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
+            let powerWatts = try container.decode(Double.self, forKey: .powerWatts)
+            let acceptedMeasurementCount = try container.decode(Int.self, forKey: .acceptedMeasurementCount)
+            let peakCandidateMeasurementCount = try container.decode(
+                Int.self,
+                forKey: .peakCandidateMeasurementCount
+            )
+            let qualityRejectedMeasurementCount = try container.decode(
+                Int.self,
+                forKey: .qualityRejectedMeasurementCount
+            )
+            let knownInterruptionCount = try container.decode(Int.self, forKey: .knownInterruptionCount)
+            let observationContinuity = try container.decode(
+                PeakPowerObservationContinuity.self,
+                forKey: .observationContinuity
+            )
+
+            try CompletedRidePeakPowerEvidence.validateFields(
+                rideContinuity: rideContinuity,
+                beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+                vehicleIdentityKey: vehicleIdentityKey,
+                confirmedModeKey: confirmedModeKey,
                 identityAuthority: identityAuthority,
                 evidenceAuthority: evidenceAuthority,
-                powerWatts: container.decode(Double.self, forKey: .powerWatts),
-                acceptedMeasurementCount: container.decode(Int.self, forKey: .acceptedMeasurementCount),
-                peakCandidateMeasurementCount: container.decode(
-                    Int.self,
-                    forKey: .peakCandidateMeasurementCount
-                ),
-                qualityRejectedMeasurementCount: container.decode(
-                    Int.self,
-                    forKey: .qualityRejectedMeasurementCount
-                ),
-                knownInterruptionCount: container.decode(Int.self, forKey: .knownInterruptionCount),
-                observationContinuity: container.decode(
-                    PeakPowerObservationContinuity.self,
-                    forKey: .observationContinuity
-                )
+                powerWatts: powerWatts,
+                acceptedMeasurementCount: acceptedMeasurementCount,
+                peakCandidateMeasurementCount: peakCandidateMeasurementCount,
+                qualityRejectedMeasurementCount: qualityRejectedMeasurementCount,
+                knownInterruptionCount: knownInterruptionCount,
+                observationContinuity: observationContinuity
             )
+
+            self.sessionID = sessionID
+            self.rideContinuity = rideContinuity
+            self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+            self.vehicleIdentityKey = vehicleIdentityKey
+            self.confirmedModeKey = confirmedModeKey
+            self.identityAuthority = identityAuthority
+            self.evidenceAuthority = evidenceAuthority
+            self.powerWatts = powerWatts
+            self.acceptedMeasurementCount = acceptedMeasurementCount
+            self.peakCandidateMeasurementCount = peakCandidateMeasurementCount
+            self.qualityRejectedMeasurementCount = qualityRejectedMeasurementCount
+            self.knownInterruptionCount = knownInterruptionCount
+            self.observationContinuity = observationContinuity
         } catch let error as CompletedRidePeakPowerEvidenceError {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "Completed ride peak-power evidence is structurally invalid: \(error)."
+                    debugDescription: "Completed ride peak-power checkpoint is structurally invalid: \(error)."
                 )
             )
         }
@@ -326,16 +480,80 @@ public struct CompletedRidePeakPowerEvidence: Codable, Equatable, Sendable {
         try container.encode(observationContinuity, forKey: .observationContinuity)
     }
 
-    private static func authorityPairIsValid(
-        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
-        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
-    ) -> Bool {
-        switch (identityAuthority, evidenceAuthority) {
-        case (.simulatorQA, .simulatorQA),
-             (.verifiedVehicleIdentity, .verifiedVehicleMeasurement):
-            true
-        default:
-            false
+    public func restoredSimulatorQA(
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope
+    ) throws -> CompletedRidePeakPowerEvidence {
+        try restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+    #if SWIFT_PACKAGE
+    package func restoredVerifiedVehicleMeasurement(
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope
+    ) throws -> CompletedRidePeakPowerEvidence {
+        try restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+    #else
+    fileprivate func restoredVerifiedVehicleMeasurement(
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope
+    ) throws -> CompletedRidePeakPowerEvidence {
+        try restoredEvidence(
+            completedRide: completedRide,
+            expectedScope: expectedScope,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+    #endif
+
+    private func restoredEvidence(
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws -> CompletedRidePeakPowerEvidence {
+        guard expectedScope.identityAuthority == requiredScopeAuthority,
+              identityAuthority == requiredScopeAuthority,
+              evidenceAuthority == requiredEvidenceAuthority else {
+            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
         }
+        guard expectedScope.vehicleIdentityKey == vehicleIdentityKey,
+              expectedScope.confirmedModeKey == confirmedModeKey else {
+            throw CompletedRidePeakPowerEvidenceError.scopeMismatch
+        }
+        guard completedRide.sessionID == sessionID else {
+            throw CompletedRidePeakPowerEvidenceError.sessionMismatch
+        }
+        guard completedRide.continuity == rideContinuity else {
+            throw CompletedRidePeakPowerEvidenceError.continuityMismatch
+        }
+
+        return try CompletedRidePeakPowerEvidence(
+            sessionID: sessionID,
+            rideContinuity: rideContinuity,
+            beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: requiredScopeAuthority,
+            evidenceAuthority: requiredEvidenceAuthority,
+            powerWatts: powerWatts,
+            acceptedMeasurementCount: acceptedMeasurementCount,
+            peakCandidateMeasurementCount: peakCandidateMeasurementCount,
+            qualityRejectedMeasurementCount: qualityRejectedMeasurementCount,
+            knownInterruptionCount: knownInterruptionCount,
+            observationContinuity: observationContinuity
+        )
     }
 }
