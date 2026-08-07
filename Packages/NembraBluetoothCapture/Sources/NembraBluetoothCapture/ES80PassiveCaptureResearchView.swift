@@ -6,8 +6,11 @@ import UniformTypeIdentifiers
 /// Reusable research-only UI for acquiring and exporting passive ES80 Bluetooth
 /// evidence. The production Nembra app does not wire this view yet.
 ///
-/// Safety boundary: every action delegates to the passive CoreBluetooth
-/// controller. There is no application characteristic-value write control.
+/// Safety boundary: broad discovery is only a candidate catalog. Markers,
+/// analysis, and export become available only after one observed peripheral has
+/// been explicitly selected as this research session's target. VehicleIdentity
+/// remains an app/operator label, not proof that the selected peripheral is an
+/// ES80. There is no application characteristic-value write control.
 @MainActor
 public struct ES80PassiveCaptureResearchView: View {
     private let controller: ForegroundCoreBluetoothCaptureController
@@ -64,6 +67,10 @@ public struct ES80PassiveCaptureResearchView: View {
             Text("Stock-app values are correlation markers. Nembra is not an over-the-air sniffer for another app's private Bluetooth session.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+
+            Text("Selecting a discovered peripheral makes it the research target for this capture. That selection is evidence attribution only; it does not prove the peripheral is physically the ES80.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -71,6 +78,7 @@ public struct ES80PassiveCaptureResearchView: View {
         Section("Bluetooth") {
             LabeledContent("Central state", value: bluetoothStateLabel)
             LabeledContent("Connection", value: connectionLabel)
+            LabeledContent("Selected target", value: selectedTargetLabel)
 
             Toggle("Capture advertisement cadence", isOn: $captureAdvertisementCadence)
                 .disabled(controller.isScanning)
@@ -146,9 +154,14 @@ public struct ES80PassiveCaptureResearchView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
-                                Button("Connect") {
+                                Button(controller.selectedTargetIdentifier == peripheral.id ? "Reconnect target" : "Select & connect") {
                                     perform {
+                                        let previousTarget = controller.selectedTargetIdentifier
                                         try controller.connect(to: peripheral.id)
+                                        if previousTarget != peripheral.id {
+                                            analysis = nil
+                                            exportDocument = nil
+                                        }
                                     }
                                 }
                                 .disabled(!canStartConnection)
@@ -156,7 +169,11 @@ public struct ES80PassiveCaptureResearchView: View {
 
                             Spacer()
 
-                            if peripheral.isConnectable == true {
+                            if controller.selectedTargetIdentifier == peripheral.id {
+                                Label("Selected target", systemImage: "scope")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else if peripheral.isConnectable == true {
                                 Text("Connectable")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -194,7 +211,16 @@ public struct ES80PassiveCaptureResearchView: View {
                     diagnosticMessage = "Recorded \(markerField.title) marker."
                 }
             }
-            .disabled(markerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(
+                markerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || !targetEvidenceReady
+            )
+
+            if !controller.hasTargetSession {
+                Text("Select one discovered peripheral before recording target-labeled markers.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
 
             Text("Only record what is actually visible in the stock app or other legitimate reference setup. Timing proximity is not a decoded DP claim.")
                 .font(.footnote)
@@ -215,11 +241,12 @@ public struct ES80PassiveCaptureResearchView: View {
                     }
                 }
             }
+            .disabled(!targetEvidenceReady)
 
             if let analysis {
                 LabeledContent("Records", value: "\(analysis.recordCount)")
                 LabeledContent("Raw value streams", value: "\(analysis.valueStreamCount)")
-                LabeledContent("Interruptions", value: "\(analysis.interruptionCount)")
+                LabeledContent("Continuity breaks", value: "\(analysis.continuityBreakCount)")
 
                 if analysis.transportCandidates.isEmpty {
                     Text("No researched Tuya transport candidate matched the captured identifiers yet.")
@@ -247,7 +274,9 @@ public struct ES80PassiveCaptureResearchView: View {
                     }
                 }
             } else {
-                Text("Analysis operates only on immutable capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry.")
+                Text(controller.hasTargetSession
+                    ? "Analysis operates only on immutable capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry."
+                    : "Select one research target before analyzing evidence.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -268,16 +297,23 @@ public struct ES80PassiveCaptureResearchView: View {
                     }
                 }
             }
+            .disabled(!targetEvidenceReady)
 
-            Text("The versioned JSON contains raw evidence and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens.")
+            Text(controller.hasTargetSession
+                ? "The versioned JSON contains target-scoped raw evidence and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens."
+                : "Select one research target before preparing a target-labeled capture artifact.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var canStartConnection: Bool {
-        if case .idle = controller.connectionPhase { return true }
+        if case .idle = controller.connectionPhase { return !controller.captureFailed }
         return false
+    }
+
+    private var targetEvidenceReady: Bool {
+        controller.hasTargetSession && !controller.captureFailed
     }
 
     private var bluetoothStateLabel: String {
@@ -301,6 +337,13 @@ public struct ES80PassiveCaptureResearchView: View {
         case let .connected(identifier):
             "Connected · \(shortIdentifier(identifier))"
         }
+    }
+
+    private var selectedTargetLabel: String {
+        guard let identifier = controller.selectedTargetIdentifier else {
+            return "None — scan catalog only"
+        }
+        return shortIdentifier(identifier)
     }
 
     private func shortIdentifier(_ identifier: UUID) -> String {
@@ -379,14 +422,14 @@ private struct AnalysisSummary {
 
     let recordCount: Int
     let valueStreamCount: Int
-    let interruptionCount: Int
+    let continuityBreakCount: Int
     let transportCandidates: [String]
     let fastestStreams: [Stream]
 
     init(session: PassiveBluetoothCaptureSession) {
         recordCount = session.records.count
-        interruptionCount = session.records.reduce(into: 0) { count, record in
-            if case .interruption = record.event { count += 1 }
+        continuityBreakCount = session.records.reduce(into: 0) { count, record in
+            if record.event.breaksByteContinuity { count += 1 }
         }
 
         let fingerprint = PassiveBluetoothTransportFingerprint.analyze(session)
