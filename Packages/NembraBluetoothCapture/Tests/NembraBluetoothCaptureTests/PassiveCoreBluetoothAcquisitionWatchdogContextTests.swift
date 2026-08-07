@@ -30,6 +30,34 @@ struct PassiveCoreBluetoothAcquisitionWatchdogContextTests {
     }
 
     @Test
+    func matchingWatchdogExpiryLeavesIncompleteFiniteAcquisitionUnavailable() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        _ = try readiness.beginOperation()
+
+        var state = PassiveCoreBluetoothAcquisitionWatchdogState()
+        let current = context(acquisitionGeneration: readiness.generation)
+        let ticket = try state.arm(for: current)
+
+        // This is the controller's fail-closed expiry policy expressed through
+        // the exact deterministic state contracts used by the runtime: only the
+        // active ticket may expire this generation, then cancellation terminates
+        // its unresolved finite ledger rather than laundering it as complete.
+        #expect(state.acceptsExpiry(ticket, currentContext: current))
+        readiness.finishWithoutGattAcquisition()
+        state.cancel()
+
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.isIncomplete)
+        #expect(!readiness.isReady)
+        #expect(readiness.pendingOperationCount == 0)
+        #expect(!state.isArmed)
+        #expect(!state.acceptsExpiry(ticket, currentContext: current))
+    }
+
+    @Test
     func acquisitionProgressRearmRejectsOldDeadlineEvenWithinSameGeneration() throws {
         var state = PassiveCoreBluetoothAcquisitionWatchdogState()
         let current = context()
