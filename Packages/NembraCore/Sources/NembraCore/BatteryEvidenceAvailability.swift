@@ -50,16 +50,36 @@ public enum BatteryEvidenceFieldAvailability: Equatable, Sendable {
     }
 }
 
+fileprivate enum BatteryEvidenceAvailabilityConstructionBoundary {
+    case evaluatedSnapshot
+}
+
 /// Availability view over every battery semantic field for one validated current segment.
 public struct BatteryEvidenceAvailabilitySnapshot: Equatable, Sendable {
     public let availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]
 
-    /// Raw snapshot construction stays inside NembraCore. Production consumers obtain
-    /// this aggregate only from `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`,
-    /// preventing arbitrary `.fresh` labels from bypassing uptime/policy evaluation.
-    init(availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]) {
+    /// Production aggregate construction is file-scoped. This matters when package-domain
+    /// source files are manually compiled into the Nembra app Swift module: an unrelated
+    /// app source must not be able to manufacture arbitrary `.fresh` labels and bypass the
+    /// uptime/policy evaluator merely because plain `internal` access became same-module.
+    fileprivate init(
+        availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability],
+        constructionBoundary: BatteryEvidenceAvailabilityConstructionBoundary
+    ) {
+        _ = constructionBoundary
         self.availabilityByField = availabilityByField
     }
+
+#if SWIFT_PACKAGE
+    /// Package-only fixture seam for NembraCore tests/dependent package-domain tests.
+    /// This spelling is absent from direct app-source compilation.
+    init(availabilityByField: [BatteryEvidenceField: BatteryEvidenceFieldAvailability]) {
+        self.init(
+            availabilityByField: availabilityByField,
+            constructionBoundary: .evaluatedSnapshot
+        )
+    }
+#endif
 
     public subscript(field: BatteryEvidenceField) -> BatteryEvidenceFieldAvailability {
         availabilityByField[field] ?? .unavailable
@@ -110,6 +130,9 @@ public enum BatteryEvidenceAvailabilityEvaluator {
             )
         }
 
-        return BatteryEvidenceAvailabilitySnapshot(availabilityByField: result)
+        return BatteryEvidenceAvailabilitySnapshot(
+            availabilityByField: result,
+            constructionBoundary: .evaluatedSnapshot
+        )
     }
 }
