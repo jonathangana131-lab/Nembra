@@ -31,6 +31,7 @@ jobs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
       same_repo: ${{ steps.pr.outputs.same_repo }}
+      should_run: ${{ steps.pr.outputs.should_run }}
 
     steps:
       - name: Resolve immutable PR head
@@ -38,27 +39,44 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            let pr
-            if (context.eventName === 'pull_request') {
-              pr = context.payload.pull_request
-            } else {
-              const response = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-              })
-              pr = response.data
-            }
+            const pullNumber = context.eventName === 'pull_request'
+              ? context.payload.pull_request.number
+              : context.issue.number
+
+            const { data: livePr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            })
 
             const repository = `${context.repo.owner}/${context.repo.repo}`
-            core.setOutput('head_sha', pr.head.sha)
-            core.setOutput('pr_number', String(pr.number))
-            core.setOutput('same_repo', String(pr.head.repo.full_name === repository))
+            const sameRepo = livePr.head.repo?.full_name === repository
+            let shouldRun = sameRepo
+
+            if (context.eventName === 'pull_request') {
+              const eventHeadSha = context.payload.pull_request.head.sha
+              const stillCurrent = eventHeadSha === livePr.head.sha
+              const liveAcceptanceReady = livePr.state === 'open' && livePr.draft === false
+
+              if (!stillCurrent) {
+                core.notice(`Skipping stale pull_request event head ${eventHeadSha}; live PR #${livePr.number} head is ${livePr.head.sha}.`)
+              }
+              if (!liveAcceptanceReady) {
+                core.notice(`Skipping automatic gate for live PR #${livePr.number}: state=${livePr.state}, draft=${livePr.draft}.`)
+              }
+
+              shouldRun = sameRepo && stillCurrent && liveAcceptanceReady
+            }
+
+            core.setOutput('head_sha', livePr.head.sha)
+            core.setOutput('pr_number', String(livePr.number))
+            core.setOutput('same_repo', String(sameRepo))
+            core.setOutput('should_run', String(shouldRun))
 
   simulator-qa:
     name: Build, test, and capture exact PR head
     needs: resolve
-    if: needs.resolve.outputs.same_repo == 'true'
+    if: needs.resolve.outputs.same_repo == 'true' && needs.resolve.outputs.should_run == 'true'
     concurrency:
       group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}
       cancel-in-progress: true
