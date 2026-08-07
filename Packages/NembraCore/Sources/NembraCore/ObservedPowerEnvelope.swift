@@ -5,18 +5,27 @@ public enum ObservedPowerEnvelopeScopeError: Error, Equatable, Sendable {
     case emptyConfirmedModeKey
 }
 
-/// An opaque calibration scope supplied by the integration layer after it has a
-/// legitimate stable scooter identity. NembraCore deliberately does not derive
-/// this key from model name, BLE local name, or any other unverified identity.
-///
-/// `confirmedModeKey` is optional. Supplying one means the caller has already
-/// established that the mode identity itself is trustworthy enough to own a
-/// separate learned envelope.
+/// Identity provenance is distinct from power-observation provenance. Simulator
+/// identities are intentionally useful for QA but are never physical scooter
+/// identity evidence.
+public enum ObservedPowerEnvelopeScopeAuthority: String, Equatable, Hashable, Sendable {
+    case verifiedVehicleIdentity
+    case simulatorQA
+}
+
+/// Opaque calibration scope. Verified physical scope construction is package-
+/// sealed so app/UI clients cannot manufacture a "physical scooter identity" by
+/// passing a profile name, BLE local name, or arbitrary string.
 public struct ObservedPowerEnvelopeScope: Equatable, Hashable, Sendable {
     public let vehicleIdentityKey: String
     public let confirmedModeKey: String?
+    public let identityAuthority: ObservedPowerEnvelopeScopeAuthority
 
-    public init(vehicleIdentityKey: String, confirmedModeKey: String? = nil) throws {
+    private init(
+        vehicleIdentityKey: String,
+        confirmedModeKey: String?,
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority
+    ) throws {
         guard !vehicleIdentityKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ObservedPowerEnvelopeScopeError.emptyVehicleIdentityKey
         }
@@ -27,7 +36,43 @@ public struct ObservedPowerEnvelopeScope: Equatable, Hashable, Sendable {
         }
         self.vehicleIdentityKey = vehicleIdentityKey
         self.confirmedModeKey = confirmedModeKey
+        self.identityAuthority = identityAuthority
     }
+
+    public static func simulatorQA(
+        vehicleIdentityKey: String,
+        confirmedModeKey: String? = nil
+    ) throws -> Self {
+        try Self(
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    package static func verifiedVehicleIdentity(
+        vehicleIdentityKey: String,
+        confirmedModeKey: String? = nil
+    ) throws -> Self {
+        try Self(
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: .verifiedVehicleIdentity
+        )
+    }
+#else
+    fileprivate static func verifiedVehicleIdentity(
+        vehicleIdentityKey: String,
+        confirmedModeKey: String? = nil
+    ) throws -> Self {
+        try Self(
+            vehicleIdentityKey: vehicleIdentityKey,
+            confirmedModeKey: confirmedModeKey,
+            identityAuthority: .verifiedVehicleIdentity
+        )
+    }
+#endif
 }
 
 public enum ObservedPowerEnvelopePolicyError: Error, Equatable, Sendable {
@@ -209,6 +254,13 @@ public enum ObservedPowerEnvelopeRecordResult: Equatable, Sendable {
     case rejected(ObservedPowerEnvelopeRejection)
 }
 
+public enum ObservedPowerEnvelopeLearnerError: Error, Equatable, Sendable {
+    case scopeAuthorityMismatch(
+        expected: ObservedPowerEnvelopeScopeAuthority,
+        actual: ObservedPowerEnvelopeScopeAuthority
+    )
+}
+
 /// Learns a stable upward-adapting presentation scale from one explicitly scoped
 /// evidence authority.
 ///
@@ -244,23 +296,41 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
     public static func simulatorQA(
         scope: ObservedPowerEnvelopeScope,
         policy: ObservedPowerEnvelopePolicy
-    ) -> Self {
-        Self(scope: scope, policy: policy, evidenceAuthority: .simulatorQA)
+    ) throws -> Self {
+        guard scope.identityAuthority == .simulatorQA else {
+            throw ObservedPowerEnvelopeLearnerError.scopeAuthorityMismatch(
+                expected: .simulatorQA,
+                actual: scope.identityAuthority
+            )
+        }
+        return Self(scope: scope, policy: policy, evidenceAuthority: .simulatorQA)
     }
 
 #if SWIFT_PACKAGE
     package static func verifiedVehicleMeasurements(
         scope: ObservedPowerEnvelopeScope,
         policy: ObservedPowerEnvelopePolicy
-    ) -> Self {
-        Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
+    ) throws -> Self {
+        guard scope.identityAuthority == .verifiedVehicleIdentity else {
+            throw ObservedPowerEnvelopeLearnerError.scopeAuthorityMismatch(
+                expected: .verifiedVehicleIdentity,
+                actual: scope.identityAuthority
+            )
+        }
+        return Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
     }
 #else
     fileprivate static func verifiedVehicleMeasurements(
         scope: ObservedPowerEnvelopeScope,
         policy: ObservedPowerEnvelopePolicy
-    ) -> Self {
-        Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
+    ) throws -> Self {
+        guard scope.identityAuthority == .verifiedVehicleIdentity else {
+            throw ObservedPowerEnvelopeLearnerError.scopeAuthorityMismatch(
+                expected: .verifiedVehicleIdentity,
+                actual: scope.identityAuthority
+            )
+        }
+        return Self(scope: scope, policy: policy, evidenceAuthority: .verifiedVehicleMeasurement)
     }
 #endif
 
@@ -287,11 +357,15 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
         // prevents an older delayed value from entering after this rejection.
         lastObservedUptimeNanoseconds = observation.observedAtUptimeNanoseconds
 
-        guard observation.powerWatts.isFinite, observation.powerWatts >= 0 else {
+        guard observation.powerWatts.isFinite else {
             return .rejected(.invalidPowerWatts)
         }
 
-        guard observation.learningEligibility == .eligibleForEnvelopeLearning else {
+        // A verified negative value may eventually be legitimate regenerative
+        // power. It is not propulsion-envelope evidence, but it must not be
+        // relabeled as invalid telemetry by this positive-output learner.
+        guard observation.powerWatts >= 0,
+              observation.learningEligibility == .eligibleForEnvelopeLearning else {
             return .acceptedMeasurementOnly
         }
 
