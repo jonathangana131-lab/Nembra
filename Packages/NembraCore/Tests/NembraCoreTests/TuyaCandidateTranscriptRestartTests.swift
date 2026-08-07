@@ -114,6 +114,56 @@ struct TuyaCandidateTranscriptRestartTests {
         ])
     }
 
+    @Test("malformed restart still consumes transcript chronology before later recovery")
+    func malformedRestartConsumesChronology() throws {
+        let policy = try TuyaCandidateFragmentReassemblyPolicy(
+            maximumEncryptedMessageBytes: 64,
+            maximumFragmentCount: 8
+        )
+        let first = try observation(payload: [1], packetIndex: 0, uptime: 10, totalLength: 2)
+        let malformedRestart = try TuyaCandidateFragmentObservation(
+            streamIdentity: identity(),
+            continuityGeneration: 7,
+            receiptUptimeNanoseconds: 20,
+            bytes: [0x00]
+        )
+        let delayedRetry = try observation(payload: [5], packetIndex: 0, uptime: 15, totalLength: 1)
+        let newerRecovery = try observation(payload: [6], packetIndex: 0, uptime: 21, totalLength: 1)
+
+        let events = TuyaCandidateTranscriptAnalyzer.analyze(
+            [first, malformedRestart, delayedRetry, newerRecovery],
+            policy: policy
+        )
+
+        #expect(events.count == 4)
+        #expect(events[0] == .incompleteAtBoundary(
+            startObservationIndex: 0,
+            lastAcceptedObservationIndex: 0,
+            nextObservationIndex: 1,
+            boundary: .candidatePacketZeroRestart
+        ))
+        #expect(events[1] == .rejectedCandidate(
+            startObservationIndex: 1,
+            lastAcceptedObservationIndex: nil,
+            failingObservationIndex: 1,
+            error: .malformedVarint
+        ))
+        #expect(events[2] == .rejectedCandidate(
+            startObservationIndex: 2,
+            lastAcceptedObservationIndex: nil,
+            failingObservationIndex: 2,
+            error: .nonMonotonicReceiptUptime
+        ))
+        guard case let .completed(start, end, message) = events[3] else {
+            Issue.record("Expected genuinely newer packet zero to recover after malformed restart")
+            return
+        }
+        #expect(start == 3)
+        #expect(end == 3)
+        #expect(message.encryptedBytes == [6])
+        #expect(message.firstReceiptUptimeNanoseconds == 21)
+    }
+
     @Test("stream-generation boundary remains stronger than packet-zero restart")
     func continuityBoundaryKeepsExistingClassification() throws {
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
