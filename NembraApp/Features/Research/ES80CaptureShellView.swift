@@ -298,7 +298,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "CONNECTION ENDED",
                 title: "Evidence retained — finish when safely stopped",
-                message: "The selected target disconnected after finite setup had completed. Nembra retains that disconnect in this session. Do not reconnect inside this capture if you want a clean evidence boundary.",
+                message: "The selected target disconnected or transport became unavailable after finite setup had completed. Nembra retains that break in this session. Do not reconnect inside this capture if you want a clean evidence boundary.",
                 symbol: "link"
             )
 
@@ -610,6 +610,11 @@ struct ES80CaptureShellView: View {
         if exportDocument != nil {
             return .finished
         }
+        if controller.hasTargetSession,
+           controller.hasCompleteTargetEvidence,
+           case .idle = controller.connectionPhase {
+            return .disconnectedCaptureReady
+        }
         if controller.bluetoothState != .poweredOn {
             return .bluetoothUnavailable(bluetoothUnavailableMessage)
         }
@@ -620,9 +625,6 @@ struct ES80CaptureShellView: View {
         case .connected:
             return controller.hasCompleteTargetEvidence ? .capturing : .preparingEvidence
         case .idle:
-            if controller.hasTargetSession, controller.hasCompleteTargetEvidence {
-                return .disconnectedCaptureReady
-            }
             if controller.isScanning {
                 return selectedCandidateIdentifier == nil ? .scanning : .candidateSelected
             }
