@@ -103,8 +103,87 @@ struct PassiveBluetoothRepeatedCorrelationIndependentSupportTests {
         let assignedOffsets = evidence.hits.map(\.absoluteOffsetSeconds)
         #expect(abs(assignedOffsets[0] - 0.2) < 0.000_000_001)
         #expect(abs(assignedOffsets[1] - 0.1) < 0.000_000_001)
+        #expect(abs((evidence.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.15) < 0.000_000_001)
+        #expect(abs((evidence.maximumAssignedAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
         #expect(abs((evidence.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
         #expect(abs((evidence.maximumNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+    }
+
+    @Test("ranking uses independently assigned callback proximity instead of reusable nearest callbacks")
+    func rankingUsesAssignedEvidenceProximity() throws {
+        var session = try makeSession()
+
+        // Stream A has a very attractive callback between both markers. A second,
+        // farther callback is required to obtain two independent supports.
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 600_000_000,
+            characteristic: "A",
+            payload: [0xA2]
+        )
+
+        // Stream B has two genuinely independent, moderately close callbacks.
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: 800_000_000,
+            characteristic: "B",
+            payload: [0xB1]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 3,
+            uptime: 1_000_000_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 1_100_000_000,
+            characteristic: "A",
+            payload: [0xA1]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 5,
+            uptime: 1_200_000_000,
+            field: "Battery",
+            value: "72%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 6,
+            uptime: 1_400_000_000,
+            characteristic: "B",
+            payload: [0xB2]
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            field: "Battery",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(report.streamEvidence.count == 2)
+        let preferred = try #require(report.streamEvidence.first)
+        let second = report.streamEvidence[1]
+
+        #expect(preferred.key.characteristicUUID == "B")
+        #expect(second.key.characteristicUUID == "A")
+        #expect(preferred.markerSupportCount == 2)
+        #expect(second.markerSupportCount == 2)
+
+        #expect(abs((preferred.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
+        #expect(abs((second.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.25) < 0.000_000_001)
+
+        // A still correctly reports the better local nearest-window metric. That
+        // value no longer determines ranking because it reuses the same callback
+        // before independent allocation.
+        #expect(abs((second.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+        #expect(abs((preferred.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
     }
 
     @Test("structured connection identity participates in unscoped ambiguity")
