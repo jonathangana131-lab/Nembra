@@ -28,6 +28,7 @@ struct PropulsionGaugeAuthorityContinuityTests {
         try model.accept(.verifiedVehicleMeasurement(
             identity: identity,
             watts: 200,
+            receiptSequenceNumber: 2_000,
             receivedAtUptimeNanoseconds: 2_000,
             continuityGeneration: 1
         ))
@@ -52,6 +53,7 @@ struct PropulsionGaugeAuthorityContinuityTests {
         try model.accept(.verifiedVehicleMeasurement(
             identity: identity,
             watts: 900,
+            receiptSequenceNumber: 1_000,
             receivedAtUptimeNanoseconds: 1_000,
             continuityGeneration: 1
         ))
@@ -59,6 +61,7 @@ struct PropulsionGaugeAuthorityContinuityTests {
         try model.accept(.simulator(
             identity: identity,
             watts: 100,
+            receiptSequenceNumber: 2_000,
             receivedAtUptimeNanoseconds: 2_000,
             continuityGeneration: 1
         ))
