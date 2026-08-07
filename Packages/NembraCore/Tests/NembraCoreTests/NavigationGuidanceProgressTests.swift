@@ -190,6 +190,18 @@ struct NavigationGuidanceProgressTests {
         #expect(tracker.state == before)
     }
 
+    @Test("route remaining cannot be less than the current step remaining")
+    func routeRemainingCannotContradictCurrentStep() throws {
+        var tracker = NavigationGuidanceProgressTracker()
+        let token = try tracker.select(route: route())
+        let before = tracker.state
+
+        #expect(throws: NavigationGuidanceProgressError.invalidObservation) {
+            try tracker.observe(observation(token: token, stepRemaining: 80, routeRemaining: 79))
+        }
+        #expect(tracker.state == before)
+    }
+
     @Test("zero remaining distance is legitimate at route completion")
     func zeroRemainingDistanceAccepted() throws {
         var tracker = NavigationGuidanceProgressTracker()
