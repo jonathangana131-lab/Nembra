@@ -24,6 +24,99 @@ public struct RideHistoryRecord: Codable, Equatable, Sendable {
     public var sessionID: UUID { evidence.sessionID }
 }
 
+// MARK: - Compact completed-ride presentation truth
+
+public enum RideHistoryCompactOdometerState: Equatable, Sendable {
+    case unavailable
+    case observedDelta
+}
+
+public enum RideHistoryCompactGPSState: Equatable, Sendable {
+    /// The current durable record cannot distinguish a legitimately observed
+    /// zero-meter GPS accumulation from no usable GPS distance observation.
+    case unresolvedZeroOrNoObservation
+    case observedPositiveDistance
+}
+
+/// A compact, truth-preserving projection of exactly one `RideHistoryRecord`.
+///
+/// This type is intentionally derived and non-Codable. Its only public
+/// construction path consumes an already-validated durable history record, so
+/// callers cannot manufacture impossible negative/NaN "observed" values through
+/// a separate presentation initializer.
+///
+/// It is suitable for a compact Home/recent-ride surface or History row without
+/// becoming a second persistence truth. It does not reconcile distance sources
+/// and does not select which history record is "latest".
+///
+/// `presentationEndedAtDate` is wall-clock presentation metadata only. Nembra's
+/// ride model deliberately permits the system clock to move during a ride, so
+/// callers must not treat this projection as a monotonic completion-order token.
+public struct RideHistoryCompactSummary: Equatable, Sendable {
+    public let sessionID: UUID
+    public let presentationEndedAtDate: Date
+    public let continuity: RideSessionContinuity
+
+    /// Whether validated ODO endpoints produced an observed delta.
+    public let odometerState: RideHistoryCompactOdometerState
+    /// Observed ODO endpoint delta only; never an automatically reconciled or
+    /// complete ride distance. Non-nil exactly when `odometerState == .observedDelta`.
+    public let observedOdometerDeltaKilometers: Double?
+
+    /// Whether the current durable GPS accumulation can be shown as positive
+    /// source-specific evidence without pretending a stored zero is measured zero.
+    public let gpsState: RideHistoryCompactGPSState
+    /// Positive accumulated quality-screened GPS evidence only. Coverage is not
+    /// implied. Non-nil exactly when `gpsState == .observedPositiveDistance`.
+    public let observedPositiveGPSDistanceMeters: Double?
+
+    public init(record: RideHistoryRecord) {
+        let evidence = record.evidence
+
+        self.sessionID = record.sessionID
+        self.presentationEndedAtDate = evidence.endedAtDate
+        self.continuity = evidence.continuity
+
+        if let delta = evidence.odometerDeltaKilometers {
+            self.odometerState = .observedDelta
+            self.observedOdometerDeltaKilometers = delta
+        } else {
+            self.odometerState = .unavailable
+            self.observedOdometerDeltaKilometers = nil
+        }
+
+        if evidence.qualityScreenedGPSDistanceMeters > 0 {
+            self.gpsState = .observedPositiveDistance
+            self.observedPositiveGPSDistanceMeters = evidence.qualityScreenedGPSDistanceMeters
+        } else {
+            self.gpsState = .unresolvedZeroOrNoObservation
+            self.observedPositiveGPSDistanceMeters = nil
+        }
+    }
+
+    /// Number of independently displayable distance-evidence values.
+    ///
+    /// This count does not imply corroboration, completeness, or reconciliation.
+    public var displayableDistanceEvidenceCount: Int {
+        var count = 0
+        if odometerState == .observedDelta {
+            count += 1
+        }
+        if gpsState == .observedPositiveDistance {
+            count += 1
+        }
+        return count
+    }
+
+    public var hasDisplayableDistanceEvidence: Bool {
+        displayableDistanceEvidenceCount > 0
+    }
+
+    public var wasRecoveredFromCheckpoint: Bool {
+        continuity == .recoveredCheckpoint
+    }
+}
+
 /// Local completed-ride storage contract. Implementations must make commit
 /// idempotent by session UUID: committing an equivalent record again returns
 /// `alreadyPresent`; the same UUID with different durable evidence must fail
