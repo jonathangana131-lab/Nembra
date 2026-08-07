@@ -67,6 +67,22 @@ The ride peak pipeline separately records the same selected-source interruption 
 
 An initial recovery gap before the first accepted benchmark packet cannot be represented as a fictitious benchmark segment. Instead it remains explicit through `beganAfterKnownObservationGap` and through the ride peak's partial continuity.
 
+## One physical outage remains one logical gap
+
+A single selected-source outage can produce repeated lifecycle notifications. The benchmark dependency already treats repeated gap marks as idempotent while evidence has not resumed, but the generic peak accumulator counts every interruption call. The ride-owned session normalizes those two behaviors before forwarding interruptions.
+
+`selectedSourceInterruptionPending` stays true from the first recorded gap until accepted raw evidence from the selected benchmark source arrives again. While it is pending, repeated selected-source/application interruption notifications are ignored rather than inflating durable peak-loss counts.
+
+Important distinctions:
+
+- a first accepted selected-source benchmark sample after the outage re-arms interruption recording for a later distinct gap;
+- a wrong-source callback does not end the selected-source outage;
+- a selected-source callback rejected by the benchmark does not end the outage;
+- an accepted GPS callback does prove the raw GPS source resumed even if the stricter peak-specific GPS accuracy gate rejects that same sample;
+- `beginsAfterKnownObservationGap` starts with a logical gap already pending, so repeated startup/lifecycle notifications cannot double-count the known recovery gap before first accepted evidence.
+
+This keeps peak and benchmark provenance describing the same logical outage topology rather than one counter reflecting notification multiplicity.
+
 ## Source switching / mixing fails closed
 
 `TelemetryBenchmarkCollector` already rejects wrong-source callbacks. A generic quality policy could legitimately permit some rejected samples for other feature types, so rejected fraction alone is not strong enough for peak reporting.
@@ -150,7 +166,10 @@ Additional post-hardening evidence currently includes:
 
 - same-package `package` access compile: pass with warnings-as-errors;
 - external-package fresh observer construction: rejected at compile time as intended;
-- new deterministic policy regressions reject minimum accepted sample counts of 1 and 2 and accept 3.
+- deterministic policy regressions reject minimum accepted sample counts of 1 and 2 and accept 3: **3/3 debug + 3/3 release**;
+- logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors, covering repeated-gap deduplication, recovery-start deduplication, rejected-source evidence preserving a pending gap, and GPS raw resumption re-arming a later gap even when peak-specific accuracy rejects that sample.
+
+A separate read-only dependency review also identified a possible rejected-newer/stale-replay chronology edge in #185 and recorded it in PR #185 comment `5215568271`. This lane does not modify the dependency's owned files.
 
 Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
 
