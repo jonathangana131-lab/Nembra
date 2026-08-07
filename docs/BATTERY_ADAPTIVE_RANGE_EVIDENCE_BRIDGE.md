@@ -13,83 +13,97 @@ Nembra separates battery-range learning into distinct truth domains:
 
 This lane does not own adaptive-model persistence, per-scooter identity, BLE/Tuya decoding, distance-source selection, or UI presentation.
 
-## Live dependency lineage
+## V7 lane lineage
 
-The synthetic review base is composed from exact active/frozen dependency artifacts rather than modifying another worker's branch:
+The lane is the incumbent Epoch-1 `battery-range-evidence-bridge` worker under Nembra Swarm OS v7.
 
-- adaptive-range/window integration PR #54 at `ec2a920eeaa9d435a0e4a6885c314f0d71aa2375`;
-- authority-sealed battery-evidence PR #34 at `8e7ecdb7a6798ed23b147173d169dd35614d6ee7`;
-- #54 carries coordinator adaptive-range recovery #40 and current `main@045a7a7c466e049d933439f608d387658f111ebf` in ancestry.
+Its synthetic review base is `9eca0d5622ed694bc88b84d63b6320b4ec24eb0a`. That base composes the then-current adaptive-range/window and authority-sealed battery-evidence dependencies so the worker-owned delta remains independently reviewable.
 
-Synthetic dependency commit: `9eca0d5622ed694bc88b84d63b6320b4ec24eb0a`.
+Live v7 parent movement is classified before reconciliation:
 
-The worker-owned delta remains five files:
+- parent changes that alter a consumed semantic contract require a narrow rebuild/revalidation;
+- docs/workflow/test-only ancestry movement does not justify churn by itself;
+- final production integration still rebuilds on the exact accepted parent heads.
+
+## Worker-owned files
+
+Current worker delta is six isolated paths:
 
 - `Packages/NembraCore/Sources/NembraCore/BatteryAdaptiveRangeEvidenceAdapter.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeEvidenceAdapterTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePipelineIntegrationTests.swift`;
 - `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangeModelBoundaryTests.swift`;
+- `Packages/NembraCore/Tests/NembraCoreTests/BatteryAdaptiveRangePublicDispositionTests.swift`;
 - this document.
 
-If any dependency moves or lands, this lane must reconcile to the accepted exact parent before final QA.
+No dependency-owned source is modified by this worker.
 
-## Authority seal
+## Authority seal inherited from battery evidence
 
-PR #34 now prevents generic application/import code from self-asserting `verifiedVehicleMeasurement`.
+The battery-evidence parent prevents generic application/import code from self-asserting `verifiedVehicleMeasurement`:
 
-`BatteryEvidenceObservation` has:
+- raw `BatteryEvidenceObservation` construction is module-internal;
+- the public non-authoritative factory rejects `.verifiedVehicleMeasurement`;
+- generic Codable import/export cannot restore verified authority from serialized data.
 
-- an internal raw initializer used only inside the trusted NembraCore boundary;
-- a public `nonAuthoritative(...)` factory that rejects `.verifiedVehicleMeasurement`;
-- decoded imported observations that reject persisted `.verifiedVehicleMeasurement` rather than trusting serialized authority.
+This pipeline consumes that sealed observation boundary and exposes no alternate verified-observation constructor.
 
-That means this pipeline can consume authoritative SoC only after a future trusted physical adapter inside the authority boundary creates it. Stock-app correlation, Simulator fixtures, derived estimates, presentation state, or imported JSON cannot manufacture measured scooter truth.
+Only `verifiedVehicleMeasurement + stateOfChargePercent` may become authoritative adaptive-range SoC through this pipeline.
 
-This worker preserves that seal. It does not expose a new authority constructor.
+Continuous stock-app, Simulator, derived, presentation-only, voltage, current, power, and charging-state evidence never becomes percentage-learning evidence.
+
+No voltage→SoC conversion, energy integration, Wh/mi, or battery-health inference exists here.
+
+## Upstream authority dependency still open
+
+A v7 cross-lane review found an upstream range-core trust-boundary gap outside this worker's owned files:
+
+- `BatterySOCReading` currently has a public initializer;
+- public `BatterySOCProvenance.authoritativeMeasurement` can therefore be selected by external callers;
+- the window assembler also has a public SoC ingest API.
+
+That combination can bypass the sealed `BatteryEvidenceObservation` path if generic app code constructs an authoritative range reading directly.
+
+The range-core owner has been notified under the v7 control plane. #38 does not modify foreign parent files. Production integration is blocked until the accepted range parent seals authoritative `BatterySOCReading` construction/import consistently with the battery-evidence authority model.
 
 ## Public API boundary
 
-External production consumers are intentionally forced through `BatteryAdaptiveRangeLearningPipeline`.
+External production consumers are forced through `BatteryAdaptiveRangeLearningPipeline` for this lane's evidence→window path.
 
 Internal-only worker seams:
 
+- `BatteryAdaptiveRangeEvidenceAction`;
 - `BatteryAdaptiveRangeEvidenceAdapter`;
 - `BatteryAdaptiveRangeEvidenceBridge`;
 - stream-validator state;
 - ephemeral `BatteryRangeLearningWindowAssembler` state;
 - `BatteryAdaptiveRangePipelineResult` initializer.
 
-Public callers may:
+The internal action may carry a validated authoritative SoC because the pipeline needs that payload to drive the assembler. It is deliberately **not exported**.
 
-- create a pipeline;
-- mark a known unobserved interval;
-- record caller-classified distance;
-- record an observed transport gap;
-- submit a `BatteryEvidenceObservation`;
-- inspect the returned read-only action/window result.
+External callers receive only:
 
-A Swift 6.2.1 external-client build and symbol-graph audit confirmed that the raw adapter/bridge/assembler state/result initializer are not exported.
+- pipeline commands;
+- `BatteryAdaptiveRangePipelineDisposition`, a payload-free transition classification;
+- the read-only optional learning window on a pipeline-created result.
 
-Two negative external compile probes also pass by **failing as required**:
+Public dispositions are:
 
-- raw construction of a `.verifiedVehicleMeasurement` observation fails because the initializer is internal;
-- direct construction of `BatteryAdaptiveRangePipelineResult` fails because its initializer is internal.
+- `ignored`;
+- `continuityReset`;
+- `authoritativeSOCAccepted`;
+- `continuityResetAndAuthoritativeSOCAccepted`.
 
-The legitimate public non-authoritative path compiles/runs and is ignored by range learning.
+A public disposition can describe what happened, but it cannot carry or manufacture an authoritative SoC reading.
 
-## Value-authority rule
+External-client and symbol-graph checks verify:
 
-Only `verifiedVehicleMeasurement + stateOfChargePercent` can become `BatterySOCReading(provenance: .authoritativeMeasurement)`.
+- `BatteryAdaptiveRangeEvidenceAction` is absent from the exported API;
+- `BatteryAdaptiveRangePipelineDisposition` and `BatteryAdaptiveRangePipelineResult` are exported;
+- ephemeral assembler state remains absent from the exported pipeline surface;
+- external code cannot construct a pipeline result through its internal initializer.
 
-The conversion preserves:
-
-- the normalized percentage exactly;
-- process-local receipt uptime;
-- authoritative provenance.
-
-Continuous stock-app, Simulator, derived, presentation-only, voltage, current, power, and charging-state evidence never becomes percentage-learning evidence.
-
-No voltage→SoC conversion, energy integration, Wh/mi, or battery-health inference exists here.
+A negative external compile probe attempting to name `BatteryAdaptiveRangeEvidenceAction` fails because the type is not visible outside NembraCore.
 
 ## Continuity rule
 
@@ -106,7 +120,7 @@ This includes a boundary carried by:
 
 The attached number is promoted only if it independently satisfies the verified-SoC authority rule.
 
-A spontaneous explicit boundary is also accepted conservatively even when the higher layer did not pre-call `markUnobservedInterval()`. It may start a numerically lower uptime epoch after process relaunch, and the assembler is reset at the same seam.
+A spontaneous explicit boundary is accepted conservatively even when the higher layer did not pre-call `markUnobservedInterval()`. It may start a numerically lower process-uptime epoch after relaunch, and the assembler is reset at the same seam.
 
 ## Atomic pipeline
 
@@ -114,24 +128,33 @@ For each observation, `BatteryAdaptiveRangeLearningPipeline`:
 
 1. copies the evidence bridge and window assembler;
 2. validates stream continuity/uptime on the candidate bridge;
-3. derives a truth action;
+3. derives an internal truth action;
 4. applies that action to the candidate assembler;
-5. commits **both** candidates only if the whole transition succeeds.
-
-Actions:
-
-- `ignore` → no assembler mutation;
-- `resetContinuity` → reset assembler;
-- `ingestSOC` → ingest verified SoC under the caller's current policy;
-- `resetContinuityAndIngestSOC` → reset then establish the new verified anchor.
+5. commits **both** candidates only if the whole transition succeeds;
+6. returns a payload-free public disposition plus any emitted learning window.
 
 A stream failure cannot mutate the assembler, and an assembler failure cannot partially advance the accepted stream baseline.
 
+### Equal-uptime authoritative rebound
+
+Battery evidence may legitimately contain multiple normalized fields from one callback at the same process uptime. The range assembler is stricter for repeated authoritative SoC: a second measured SoC at the same uptime cannot advance or rebase the authoritative cursor.
+
+A dedicated pipeline regression proves:
+
+- `80 @ 10` establishes the anchor;
+- `77 @ 20` advances the latest authoritative cursor without yet closing the high-threshold span;
+- a rebound `79 @ 20` fails with `nonMonotonicAuthoritativeSOC`;
+- the whole pipeline remains byte-for-byte equal to its pre-failure state;
+- later `76 @ 21` can still close the untouched `80 → 76` span;
+- partial coverage and observed transport-gap evidence remain sticky through that recovery.
+
+This is the evidence→window atomic seam implied by the assembler parent's same-timestamp hardening.
+
 ## Distance and latest-authoritative semantics
 
-The pipeline delegates distance math to PR #54's assembler and does not select ODO versus GPS.
+The pipeline delegates distance math to the assembler and does not select ODO versus GPS.
 
-Preserved parent behavior includes:
+Preserved behavior includes:
 
 - coverage degrades monotonically `complete → partial → unknown`;
 - invalid/nonfinite/negative deltas fail atomically;
@@ -146,19 +169,19 @@ Preserved parent behavior includes:
 
 The public pipeline intentionally defaults an omitted `coverage:` argument to `.unknown`, **not `.complete`**.
 
-This keeps older call sites source-compatible without allowing omission to silently assert trustworthy distance. A caller that has actually proven complete coverage must pass `.complete` explicitly.
+This preserves source compatibility without allowing omission to silently assert trustworthy distance. A caller that has actually proven complete coverage must pass `.complete` explicitly.
 
-A dedicated model-boundary regression omits coverage on a 300 m / 3% candidate and verifies:
+A model-boundary regression omits coverage on a 300 m / 3% candidate and verifies:
 
 - the emitted candidate is `.unknown` coverage;
 - the adaptive model rejects it as `incompleteDistanceEvidence`;
 - learned history remains unchanged.
 
-Intentional complete-distance regressions, including outlier lifecycle tests, now pass `.complete` explicitly.
+Intentional complete-distance regressions pass `.complete` explicitly.
 
 ## Missing evidence versus observed transport gap
 
-These are deliberately different:
+These remain deliberately different:
 
 - `markUnobservedInterval()` means battery evidence continuity itself is unknown, so all ephemeral assembler state is discarded immediately and the next observation must carry a boundary;
 - `recordTransportGap()` means a non-connected vehicle state was actually observed inside an otherwise represented span, so that flag remains on the candidate for model rejection.
@@ -173,17 +196,14 @@ That separation matters because durable learned history eventually requires a ve
 
 End-to-end model-boundary tests prove:
 
-- clean complete/no-gap pipeline candidate → accepted;
+- clean complete/no-gap candidate → accepted;
 - omitted coverage → unknown coverage, rejected as incomplete distance, model unchanged;
 - explicit partial candidate → rejected as incomplete distance, model unchanged;
 - explicit unknown candidate → rejected as incomplete distance, model unchanged;
-- observed transport-gap candidate → rejected as transport gap, model unchanged.
+- observed transport-gap candidate → rejected as transport gap, model unchanged;
+- efficiency outlier → rejected without learned-history mutation.
 
-### Rejected outlier lifecycle
-
-A model rejection also must not reopen an already emitted assembler span.
-
-The seam regression establishes a 100 m/% baseline, emits a later 300 m/% candidate, and verifies the model rejects it as `efficiencyOutlier` without mutating learned history. The assembler has nevertheless already closed that candidate at the new SoC anchor. A subsequent clean 300 m / 3% span is emitted from the new anchor only; the rejected span's 900 m is never replayed.
+A rejected emitted span nevertheless remains closed by the assembler. Its distance is never replayed into a later clean learning window.
 
 ## Focused validation
 
@@ -191,15 +211,14 @@ Supplemental Swift 6.2.1 contract validation currently includes:
 
 - earlier bridge-focused harness: **10/10 passed**;
 - earlier evidence→window harness: **6/6 passed**;
-- authority-sealed latest assembler/seam/model harness: **15/15 debug passed** and **15/15 release passed**;
-- external legitimate non-authoritative client: passed;
-- external verified-authority negative compile probe: failed as required;
-- external forged-result negative compile probe: failed as required;
-- public symbol graph audit: passed.
+- current authority-sealed seam/model/public-API harness: **17/17 debug passed** and **17/17 release passed** across 6 suites;
+- legitimate external non-authoritative client: passed using the payload-free public disposition;
+- external verified-observation construction negative probe: blocked as required by the battery-evidence parent contract;
+- external forged-result negative probe: blocked as required;
+- external evidence-action naming/forging negative probe: blocked as required;
+- public symbol graph audit: evidence-bearing action absent, public disposition/result present, assembler state absent.
 
-The reduced local model stub initially lacked the real parent's outlier check, causing the new lifecycle test to fail for the wrong reason. After matching the real `AdaptiveBatteryRangeModel.ingest` outlier/weighted-history boundary, the outlier lifecycle passed. The subsequent omitted-coverage regression raised the current combined contract suite to 15/15 in both debug and release.
-
-This is supplemental software evidence, not repository-wide Xcode acceptance.
+These are supplemental software checks, not repository-wide Xcode acceptance.
 
 ## Merge boundary
 
@@ -207,17 +226,17 @@ This PR remains a dependent draft on a synthetic review base.
 
 Before production merge:
 
-1. adaptive-range recovery reaches an accepted exact head;
-2. PR #54 reaches an accepted assembler head on that parent;
-3. PR #34 reaches its accepted/final authority-sealed evidence head;
+1. adaptive-range parent reaches an accepted exact head **with authoritative SoC construction/import sealed**;
+2. assembler parent reaches an accepted exact head on that range parent;
+3. battery-evidence parent reaches its accepted/final authority-sealed head;
 4. this lane is rebuilt on those exact parents;
-5. the five worker files are revalidated;
+5. the six worker files are revalidated;
 6. the PR is retargeted to production `main` and marked ready;
 7. the unchanged final SHA passes exact-head Xcode 27 / iPhone 12 Simulator QA with durable `Nembra/Xcode27 Exact Head` success;
 8. merge uses expected-head protection.
 
-GitHub Actions is currently degraded/backlogged; missing workflow/scheduler runs are never considered green.
+Queued, skipped, stale-head, or missing workflow evidence is never considered green.
 
 ## Hardware status
 
-**IMPLEMENTED/TESTED IN SOFTWARE ONLY.** Physical 2025-generation AOVOPRO ES80 SoC source/resolution/cadence, voltage/current/power semantics, charging behavior, continuity behavior, and stable scooter identity remain unverified.
+**IMPLEMENTED/TESTED IN SOFTWARE ONLY.** Physical current-generation AOVOPRO ES80 SoC source/resolution/cadence, voltage/current/power semantics, charging behavior, continuity behavior, and stable scooter identity remain unverified.
