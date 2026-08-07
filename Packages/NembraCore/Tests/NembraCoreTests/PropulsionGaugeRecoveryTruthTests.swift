@@ -2,25 +2,6 @@ import Foundation
 import Testing
 @testable import NembraCore
 
-// Compatibility only for the recovered predecessor tests. Production/package
-// clients must supply source-owned receipt order to the sealed verified factory.
-extension PropulsionPowerSample {
-    static func verifiedVehicleMeasurement(
-        identity: PropulsionGaugeIdentity,
-        watts: Double,
-        receivedAtUptimeNanoseconds: UInt64,
-        continuityGeneration: UInt64
-    ) throws -> Self {
-        try .verifiedVehicleMeasurement(
-            identity: identity,
-            watts: watts,
-            receiptSequenceNumber: receivedAtUptimeNanoseconds,
-            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
-            continuityGeneration: continuityGeneration
-        )
-    }
-}
-
 @Suite("Propulsion gauge recovery truth")
 struct PropulsionGaugeRecoveryTruthTests {
     private let identity = PropulsionGaugeIdentity(vehicleID: "recovery-es80", modeKey: "sport")
