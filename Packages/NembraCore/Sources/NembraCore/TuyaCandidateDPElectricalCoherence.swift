@@ -159,14 +159,19 @@ public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
 }
 
 /// Exact candidate + transform selected by the caller for one research role.
-/// Complete validated parent references and the exact numeric tolerance are
-/// retained because excluded caller values and bare `isWithinTolerance` flags
-/// are otherwise not auditable. Selection remains evidence provenance only.
+///
+/// The complete parent report and exact selected evidence are retained so a
+/// downstream audit can recover parent unused/ambiguous/shared exclusions,
+/// nonnumeric/transformation counts, complete caller references, and every raw
+/// selected sample without reconstructing provenance from child summary flags.
+/// Convenience fields are copied only for stable direct access.
 public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
     public let role: TuyaCandidateDPElectricalRole
     public let fieldLabel: String
     public let candidateIndex: Int
     public let candidate: TuyaCandidateDPCorrelationCandidate
+    public let sourceReport: TuyaCandidateDPNumericHypothesisReport
+    public let selectedEvidence: TuyaCandidateDPNumericHypothesisEvidence
     public let hypothesis: TuyaCandidateDPNumericTransformHypothesis
     public let numericReferences: [TuyaCandidateDPNumericReference]
     public let numericAbsoluteTolerance: Double
@@ -181,6 +186,8 @@ public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
         fieldLabel = report.correlationScope.fieldLabel
         candidateIndex = report.candidateIndex
         candidate = report.candidate
+        sourceReport = report
+        selectedEvidence = evidence
         hypothesis = evidence.hypothesis
         numericReferences = report.numericReferences
         numericAbsoluteTolerance = report.absoluteTolerance
