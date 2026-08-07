@@ -143,6 +143,7 @@ struct RideCheckpointCoordinatorTransactionTests {
 
     @Test("fresh post-recovery direct gap evidence checkpoints immediately and survives another recovery")
     func recoveredDirectGapEvidenceIsImmediatelyDurable() async throws {
+        let sessionID = fixedSessionID
         for initialEvidence in [RideTransportGapEvidence.noneObserved, .unknown] {
             let store = TransactionTestCheckpointStore(
                 value: .inProgress(try recoveredCheckpoint(transportGapEvidence: initialEvidence))
@@ -153,7 +154,7 @@ struct RideCheckpointCoordinatorTransactionTests {
                 cadence: try cadence(),
                 recoveredAtUptimeNanoseconds: 50_000,
                 recoveredAtDate: epoch.addingTimeInterval(50),
-                makeSessionID: { self.fixedSessionID }
+                makeSessionID: { sessionID }
             )
 
             // Recovery already places the engine in temporarilyDisconnected, so
@@ -184,7 +185,7 @@ struct RideCheckpointCoordinatorTransactionTests {
                 cadence: try cadence(),
                 recoveredAtUptimeNanoseconds: 60_000,
                 recoveredAtDate: epoch.addingTimeInterval(60),
-                makeSessionID: { self.fixedSessionID }
+                makeSessionID: { sessionID }
             )
             _ = try await secondRecovery.ingest(
                 observation(
@@ -205,9 +206,10 @@ struct RideCheckpointCoordinatorTransactionTests {
 
     @Test("overlapping ingests cannot stage from stale engine state while a checkpoint save is suspended")
     func overlappingIngestsSerializeAcrossStoreAwait() async throws {
+        let sessionID = fixedSessionID
         let store = OverlapDetectingCheckpointStore()
         let coordinator = RideCheckpointCoordinator(
-            engine: RideEngine(policy: try policy(), makeSessionID: { self.fixedSessionID }),
+            engine: RideEngine(policy: try policy(), makeSessionID: { sessionID }),
             store: store,
             cadence: try cadence()
         )
