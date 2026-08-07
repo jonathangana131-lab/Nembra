@@ -742,13 +742,17 @@ public struct AdaptiveBatteryRangeModel: Equatable, Codable, Sendable {
         let recentSamples = try container.decode([BatteryRangeEfficiencySample].self, forKey: .recentSamples)
         let acceptedWindowCount = try container.decode(Int.self, forKey: .acceptedWindowCount)
         let recentConsumed = recentSamples.reduce(into: 0.0) { total, sample in total += sample.consumedPercentagePoints }
+        let evidenceTolerance = max(1, abs(historicalConsumed)) * 1e-12
+        let maximumPlausibleConsumed = Double(acceptedWindowCount) * 100
+        let maximumPlausibleTolerance = max(1, abs(maximumPlausibleConsumed)) * 1e-12
 
         guard historicalConsumed.isFinite,
               historicalConsumed >= 0,
               recentConsumed.isFinite,
-              recentConsumed <= historicalConsumed,
               acceptedWindowCount >= 0,
-              acceptedWindowCount < Int.max,
+              recentConsumed <= historicalConsumed + evidenceTolerance,
+              maximumPlausibleConsumed.isFinite,
+              historicalConsumed <= maximumPlausibleConsumed + maximumPlausibleTolerance,
               recentSamples.count <= acceptedWindowCount else { throw Self.corruptedStateError(container) }
 
         if let historicalEfficiency {
