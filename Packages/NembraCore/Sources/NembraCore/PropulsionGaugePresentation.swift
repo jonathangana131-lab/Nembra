@@ -300,6 +300,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         let sharesContinuity: Bool
         if hasMeasurement,
            !explicitlyUnavailable,
+           sample.authority == latestAuthority,
            sample.continuityGeneration == latestContinuityGeneration {
             let gap = sample.receivedAtUptimeNanoseconds - latestAcceptedUptimeNanoseconds
             sharesContinuity = gap <= policy.staleAfterNanoseconds
