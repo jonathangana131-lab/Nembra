@@ -392,6 +392,34 @@ public struct RideLiveDistanceAggregate: Equatable, Sendable {
     public let distanceEvidenceSegmentCount: Int
     public let knownCoverageGapCount: Int
     public let unobservedIntervalCount: Int
+
+    /// Aggregate truth can only be minted by `RideLiveDistanceAggregator` in this
+    /// file. This stays sealed even when this source is compiled directly into the
+    /// app target, where a normal internal memberwise initializer would otherwise
+    /// let same-module callers bypass the aggregation invariants.
+    fileprivate init(
+        rideSessionID: UUID,
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        distanceMeters: Double?,
+        coverage: RideDistanceCoverage,
+        uniqueSegmentCount: Int,
+        duplicateRecordCount: Int,
+        distanceEvidenceSegmentCount: Int,
+        knownCoverageGapCount: Int,
+        unobservedIntervalCount: Int
+    ) {
+        self.rideSessionID = rideSessionID
+        self.source = source
+        self.method = method
+        self.distanceMeters = distanceMeters
+        self.coverage = coverage
+        self.uniqueSegmentCount = uniqueSegmentCount
+        self.duplicateRecordCount = duplicateRecordCount
+        self.distanceEvidenceSegmentCount = distanceEvidenceSegmentCount
+        self.knownCoverageGapCount = knownCoverageGapCount
+        self.unobservedIntervalCount = unobservedIntervalCount
+    }
 }
 
 public enum RideLiveDistanceAggregator {
