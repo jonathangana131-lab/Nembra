@@ -25,7 +25,9 @@ public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
     public let origin: PassiveBluetoothValueOrigin
     public let payloadByteCount: Int
 
-    public init(
+    /// Analyzer output only. File-private construction prevents unrelated callers
+    /// from minting correlation evidence that was never derived from a capture.
+    fileprivate init(
         markerSequenceNumber: UInt64,
         markerDisplayedValue: String,
         candidateSequenceNumber: UInt64,
@@ -64,7 +66,10 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
 
     public var id: PassiveBluetoothValueStreamKey { key }
 
-    public init(
+    /// Analyzer output only. Keeping construction in this file makes support
+    /// counts, hit provenance, and summary statistics read-only evidence outside
+    /// the producer boundary.
+    fileprivate init(
         key: PassiveBluetoothValueStreamKey,
         totalMarkerCount: Int,
         rawCandidateCount: Int,
@@ -117,7 +122,9 @@ public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
     public let distinctDisplayedValues: Set<String>
     public let streamEvidence: [PassiveBluetoothRepeatedCorrelationStreamEvidence]
 
-    public init(
+    /// Analyzer output only. Callers consume reports read-only rather than
+    /// manufacturing an `.analyzed` result disconnected from capture evidence.
+    fileprivate init(
         disposition: PassiveBluetoothRepeatedCorrelationDisposition,
         field: String,
         markerCount: Int,
