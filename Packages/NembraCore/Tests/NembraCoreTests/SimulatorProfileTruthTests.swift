@@ -122,8 +122,9 @@ struct SimulatorProfileTruthTests {
         )
 
         await service.simulateRide(speedKilometersPerHour: -4, elapsedSeconds: 30)
+        let snapshot = await service.snapshot()
 
-        #expect(await service.snapshot() == initial)
+        #expect(snapshot == initial)
     }
 
     @Test("lock confirmation revalidates stopped speed after acknowledgement")
