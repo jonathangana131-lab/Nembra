@@ -1,5 +1,6 @@
 public enum NavigationSessionCoordinatorError: Error, Equatable, Sendable {
     case nonMonotonicLocation
+    case nonMonotonicSelectionFence
     case locationReceivedAtOrBeforeSelectionFence
 }
 
@@ -41,6 +42,7 @@ public struct NavigationSessionCoordinator: Sendable {
     private var selectedRoute: NavigationRouteSnapshot?
     private var selectionToken: NavigationGuidanceSelectionToken?
     private var selectionReceiptFenceUptimeNanoseconds: UInt64?
+    private var lastSeenSelectionReceiptFenceUptimeNanoseconds: UInt64?
     private var lastSeenLocationUptimeNanoseconds: UInt64?
 
     public var guidanceState: NavigationGuidanceProgressState {
@@ -78,7 +80,10 @@ public struct NavigationSessionCoordinator: Sendable {
     /// asynchronously queued location callback. Only location receipts strictly
     /// newer than the fence may become guidance/reroute evidence for this route.
     /// A fence older than the coordinator's existing seen-location high-water mark
-    /// is still safe: the existing high-water mark is the stronger boundary.
+    /// is still safe: the existing location high-water mark is the stronger boundary.
+    /// Fenced route selections themselves may not move backward in the same
+    /// coordinator process; a regressing fence is rejected before selection state
+    /// or reroute state mutates.
     @discardableResult
     public mutating func select(
         route: NavigationRouteSnapshot,
@@ -148,7 +153,9 @@ public struct NavigationSessionCoordinator: Sendable {
     /// process-local seen-callback clock restarted. Newer screened callbacks observed
     /// while cleared continue advancing that clock, while replayed/older callbacks
     /// cannot move it backward. Later route selection therefore cannot resurrect
-    /// older callbacks from the idle interval as current evidence.
+    /// older callbacks from the idle interval as current evidence. The active route
+    /// fence is removed, but the last fenced-selection high-water mark is retained so
+    /// a later fenced selection cannot claim an earlier process-local boundary.
     public mutating func clearRoute() {
         selectedRoute = nil
         selectionToken = nil
@@ -161,10 +168,19 @@ public struct NavigationSessionCoordinator: Sendable {
         route: NavigationRouteSnapshot,
         receiptFenceUptimeNanoseconds: UInt64?
     ) throws -> NavigationGuidanceSelectionToken {
+        if let receiptFenceUptimeNanoseconds,
+           let lastSeenSelectionReceiptFenceUptimeNanoseconds,
+           receiptFenceUptimeNanoseconds < lastSeenSelectionReceiptFenceUptimeNanoseconds {
+            throw NavigationSessionCoordinatorError.nonMonotonicSelectionFence
+        }
+
         let token = try guidanceTracker.select(route: route)
         selectedRoute = route
         selectionToken = token
         selectionReceiptFenceUptimeNanoseconds = receiptFenceUptimeNanoseconds
+        if let receiptFenceUptimeNanoseconds {
+            lastSeenSelectionReceiptFenceUptimeNanoseconds = receiptFenceUptimeNanoseconds
+        }
         rerouteEvaluator.didSelectNewRoute()
         return token
     }
