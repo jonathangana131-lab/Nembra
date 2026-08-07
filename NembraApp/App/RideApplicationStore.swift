@@ -259,22 +259,38 @@ final class RideApplicationStore {
     }
 
     /// One application-owned admission boundary for every screened location
-    /// point. First-anchor points carry no distance and are admitted by identity
-    /// only; later points must successfully enter RideEngine GPS evidence before
-    /// their coordinate may become route evidence. Once ride completion starts,
-    /// both domains reject buffered points instead of depending on scheduler order.
+    /// point. First-anchor points carry no distance, but they still consult the
+    /// durable coordinator before admission. This closes the reentrancy window
+    /// where RideEngine may already have created `completedPendingCommit` while
+    /// MainActor has not yet published finalization state. Later points must
+    /// successfully enter RideEngine GPS evidence before their coordinate may
+    /// become route evidence.
     func admitQualityScreenedLocationEvidence(
         distanceDeltaMeters: Double?,
         receivedAtUptimeNanoseconds: UInt64,
         for sessionID: UUID
     ) async -> Bool {
         guard !isFinalizingCompletedRide,
-              activeSessionID == sessionID else { return false }
+              activeSessionID == sessionID,
+              let coordinator else { return false }
 
-        guard let distanceDeltaMeters else {
+        if distanceDeltaMeters == nil {
+            // Querying the checkpoint actor is essential even for an anchor with
+            // no GPS delta. If a concurrent speed observation just ended the ride,
+            // this call queues behind that ingest and observes the exact pending
+            // completed UUID before route persistence is allowed to proceed.
+            if let pending = await coordinator.pendingCompletedRideEvidence(),
+               pending.sessionID == sessionID {
+                return false
+            }
+            // MainActor is reentrant across the actor hop above; re-check the
+            // published admission boundary before accepting the anchor.
+            guard !isFinalizingCompletedRide,
+                  activeSessionID == sessionID else { return false }
             return true
         }
 
+        guard let distanceDeltaMeters else { return false }
         return await ingestQualityScreenedGPSDistanceDelta(
             distanceDeltaMeters,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
