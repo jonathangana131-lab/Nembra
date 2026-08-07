@@ -26,12 +26,29 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
-    func staleOperationCannotCompleteNewAcquisitionGeneration() throws {
+    func overlappingAcquisitionCannotDiscardPendingOperations() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        try readiness.startAcquisition()
+        let pending = try readiness.beginOperation()
+
+        #expect(throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionAlreadyActive) {
+            try readiness.startAcquisition()
+        }
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.pendingOperationCount == 1)
+        #expect(readiness.completeOperation(pending))
+        #expect(readiness.isReady)
+    }
+
+    @Test
+    func staleOperationCannotCompleteAfterLegitimateConnectionBoundary() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let old = try readiness.beginOperation()
 
+        readiness.beginConnectionAttempt()
         try readiness.startAcquisition()
         let current = try readiness.beginOperation()
 
@@ -98,12 +115,13 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
     }
 
     @Test
-    func staleParentCannotSpawnChildOperationsInNewGeneration() throws {
+    func staleParentCannotSpawnChildrenAfterLegitimateConnectionBoundary() throws {
         var readiness = PassiveCoreBluetoothAcquisitionReadiness()
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let oldParent = try readiness.beginOperation()
 
+        readiness.beginConnectionAttempt()
         try readiness.startAcquisition()
         let current = try readiness.beginOperation()
 
