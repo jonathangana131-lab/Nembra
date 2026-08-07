@@ -158,6 +158,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(frame.latestMeasuredKilometersPerHour)
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertEqual(model.measurementRevision, 0)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
     }
 
     @MainActor
@@ -290,11 +291,13 @@ final class NembraAppTests: XCTestCase {
         model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
         XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
 
         model.setConnectionContinuityActive(false)
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
         XCTAssertFalse(model.isAnimationActive)
+        XCTAssertFalse(model.permitsLiveConfirmedFallback)
 
         let retainedFallback = try XCTUnwrap(model.frame(
             atUptimeNanoseconds: 2_100_000_000,
@@ -308,9 +311,54 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasuredKilometersPerHour)
 
         model.setConnectionContinuityActive(true)
+        XCTAssertFalse(model.permitsLiveConfirmedFallback)
         model.accept(try speedSample(kilometersPerHour: 8, uptimeNanoseconds: 4_000_000_000))
         XCTAssertEqual(model.measurementRevision, 2)
         XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 8, accuracy: 0.000_1)
+    }
+
+    @MainActor
+    func testConfirmedFallbackRemainsRetainedAcrossKnownReconnectGap() throws {
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+                kilometersPerHour: 7,
+                isRetained: false,
+                isConnected: true,
+                permitsLiveConfirmedFallback: true
+            )),
+            7,
+            accuracy: 0.000_1
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+                kilometersPerHour: 7,
+                isRetained: true,
+                isConnected: false,
+                permitsLiveConfirmedFallback: false
+            )),
+            7,
+            accuracy: 0.000_1
+        )
+
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: 7,
+            isRetained: false,
+            isConnected: true,
+            permitsLiveConfirmedFallback: false
+        ))
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: 7,
+            isRetained: false,
+            isConnected: false,
+            permitsLiveConfirmedFallback: true
+        ))
+        XCTAssertNil(DashboardSpeedInstrumentView.confirmedFallbackForPresentation(
+            kilometersPerHour: .nan,
+            isRetained: true,
+            isConnected: false,
+            permitsLiveConfirmedFallback: false
+        ))
     }
 
     @MainActor
