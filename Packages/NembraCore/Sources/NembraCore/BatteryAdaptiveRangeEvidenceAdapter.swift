@@ -153,6 +153,17 @@ public struct BatteryAdaptiveRangePipelineResult: Equatable, Sendable {
     public let disposition: BatteryAdaptiveRangePipelineDisposition
     public let candidateLearningWindow: BatteryRangeLearningWindow?
 
+    /// Public equality is intentionally defined only by public state. Hidden
+    /// authoritative SoC carried by `action` must not leak through `==` by making
+    /// otherwise indistinguishable public results compare differently.
+    public static func == (
+        lhs: BatteryAdaptiveRangePipelineResult,
+        rhs: BatteryAdaptiveRangePipelineResult
+    ) -> Bool {
+        lhs.disposition == rhs.disposition &&
+        lhs.candidateLearningWindow == rhs.candidateLearningWindow
+    }
+
     /// Internal compatibility spelling for module tests/implementation. Keeping
     /// this non-public prevents external callers from mistaking an assembler
     /// candidate for model-accepted learned history.
