@@ -58,6 +58,14 @@ struct PassiveCoreBluetoothTargetState: Sendable {
         }
     }
 
+    /// Read-only retry quarantine truth for presentation/integration layers.
+    /// A retired peripheral remains unavailable until CoreBluetooth delivers a
+    /// terminal callback, or until central invalidation destroys the transport
+    /// objects and clears the quarantine explicitly.
+    func isAwaitingTerminalCallback(for identifier: UUID) -> Bool {
+        retiredPeripheralIdentifiers.contains(identifier)
+    }
+
     mutating func beginAttempt(for identifier: UUID) throws -> Attempt {
         guard selectedTargetIdentifier == identifier else {
             throw StateError.targetNotSelected(identifier)

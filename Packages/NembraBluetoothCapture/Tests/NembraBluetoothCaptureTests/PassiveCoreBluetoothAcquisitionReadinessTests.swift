@@ -37,7 +37,8 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         }
         #expect(readiness.phase == .acquiring)
         #expect(readiness.pendingOperationCount == 1)
-        #expect(readiness.completeOperation(pending))
+        let completedPending = readiness.completeOperation(pending)
+        #expect(completedPending)
         #expect(readiness.isReady)
     }
 
@@ -80,7 +81,8 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         readiness.beginTargetSession()
         try readiness.startAcquisition()
         let first = try readiness.beginOperation()
-        #expect(readiness.completeOperation(first))
+        let completedFirst = readiness.completeOperation(first)
+        #expect(completedFirst)
         #expect(readiness.phase == .ready)
         let firstGeneration = readiness.generation
 
@@ -134,6 +136,27 @@ struct PassiveCoreBluetoothAcquisitionReadinessTests {
         #expect(readiness.isIncomplete)
         #expect(!readiness.isReady)
         #expect(readiness.pendingOperationCount == 0)
+    }
+
+    @Test
+    func incompleteFiniteAcquisitionCanRecoverOnlyInANewGeneration() throws {
+        var readiness = PassiveCoreBluetoothAcquisitionReadiness()
+        readiness.beginTargetSession()
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        _ = try readiness.beginOperation()
+        let incompleteGeneration = readiness.generation
+
+        readiness.finishWithoutGattAcquisition()
+        #expect(readiness.phase == .terminalWithoutGattAcquisition)
+        #expect(readiness.isIncomplete)
+        #expect(!readiness.isReady)
+        #expect(readiness.pendingOperationCount == 0)
+
+        readiness.beginConnectionAttempt()
+        try readiness.startAcquisition()
+        #expect(readiness.phase == .acquiring)
+        #expect(readiness.generation == incompleteGeneration + 1)
     }
 
     @Test
