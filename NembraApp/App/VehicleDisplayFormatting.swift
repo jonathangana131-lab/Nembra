@@ -13,18 +13,44 @@ enum VehicleDisplayFormatting {
     }
 
     static func speed(kilometersPerHour: Double?, decimals: Int = 0) -> String {
+        compactSpeed(kilometersPerHour: kilometersPerHour, decimals: decimals) ?? "—"
+    }
+
+    /// Semantic counterpart for assistive output. It deliberately shares the
+    /// exact compact projection used by visible speed text, but replaces the
+    /// punctuation sentinel with a word VoiceOver can communicate meaningfully.
+    static func accessibilitySpeed(kilometersPerHour: Double?, decimals: Int = 0) -> String {
+        compactSpeed(kilometersPerHour: kilometersPerHour, decimals: decimals) ?? "Unavailable"
+    }
+
+    static func speed(kilometersPerHour: Int?) -> String {
+        guard let kilometersPerHour, kilometersPerHour >= 0 else { return "—" }
+        return speed(kilometersPerHour: Double(kilometersPerHour), decimals: 0)
+    }
+
+    static func distance(kilometers: Double?, decimals: Int = 1) -> String {
+        guard let kilometers, kilometers.isFinite, kilometers >= 0 else {
+            return "—"
+        }
+        let normalizedKilometers = kilometers == 0 ? 0 : kilometers
+        let value = usesMetric ? normalizedKilometers : normalizedKilometers * 0.621_371
+        let unit = usesMetric ? "km" : "mi"
+        return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
+    }
+
+    private static func compactSpeed(kilometersPerHour: Double?, decimals: Int) -> String? {
         guard let kilometersPerHour,
               kilometersPerHour.isFinite,
               kilometersPerHour >= 0,
               (0...maximumSpeedFractionDigits).contains(decimals) else {
-            return "—"
+            return nil
         }
 
         let normalizedKilometersPerHour = kilometersPerHour == 0 ? 0 : kilometersPerHour
         let value = usesMetric
             ? normalizedKilometersPerHour
             : normalizedKilometersPerHour * 0.621_371
-        guard value.isFinite, value >= 0 else { return "—" }
+        guard value.isFinite, value >= 0 else { return nil }
 
         // Keep textual speed rounding identical to the rolling cockpit digits.
         // Foundation `%f` uses ties-to-even on half steps, while the cockpit's
@@ -41,25 +67,10 @@ enum VehicleDisplayFormatting {
         guard roundedValue.isFinite,
               roundedValue >= 0,
               roundedValue < maximumSpeedDisplayMagnitude else {
-            return "—"
+            return nil
         }
 
         let unit = usesMetric ? "km/h" : "mph"
         return String(format: "%.*f %@", locale: Locale.current, decimals, roundedValue, unit)
-    }
-
-    static func speed(kilometersPerHour: Int?) -> String {
-        guard let kilometersPerHour, kilometersPerHour >= 0 else { return "—" }
-        return speed(kilometersPerHour: Double(kilometersPerHour), decimals: 0)
-    }
-
-    static func distance(kilometers: Double?, decimals: Int = 1) -> String {
-        guard let kilometers, kilometers.isFinite, kilometers >= 0 else {
-            return "—"
-        }
-        let normalizedKilometers = kilometers == 0 ? 0 : kilometers
-        let value = usesMetric ? normalizedKilometers : normalizedKilometers * 0.621_371
-        let unit = usesMetric ? "km" : "mi"
-        return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
 }
