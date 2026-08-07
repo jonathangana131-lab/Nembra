@@ -35,22 +35,22 @@ struct UnverifiedScooterServiceTests {
     func commandsStayUnavailableForTruthfulReason() async {
         let service = UnverifiedScooterService()
 
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setHeadlight(true)
         }
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setLocked(true)
         }
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setCruise(true)
         }
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setRideMode(.sport)
         }
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setStartMode(.zeroStart)
         }
-        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+        await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setSpeedLimit(kilometersPerHour: 20, slot: .limit1)
         }
 
