@@ -71,6 +71,15 @@ public actor RideCheckpointCoordinator {
     private var lastSuccessfulCheckpointUptimeNanoseconds: UInt64?
     private var pendingCompletedRide: CompletedRideEvidence?
 
+    /// Actors are reentrant at `await`. Checkpoint writes therefore need an
+    /// explicit transaction permit so a second ingest cannot stage from the old
+    /// engine while the first ingest is waiting for durable storage. The permit
+    /// is handed directly to the next FIFO waiter and remains held across the
+    /// external store await; read-only actor methods may still observe the last
+    /// fully committed state while a write transaction is pending.
+    private var mutationInFlight = false
+    private var mutationWaiters: [CheckedContinuation<Void, Never>] = []
+
     public init(
         engine: RideEngine,
         store: any RideCheckpointStore,
@@ -96,7 +105,7 @@ public actor RideCheckpointCoordinator {
     }
 
     /// Reconstructs the coordinator from the newest durable journal generation.
-    /// In-progress rides are re-anchored to the new process uptime and return as
+    /// In-progress rides are re-anchored to fresh observation uptime and return as
     /// temporarily disconnected. A completed-pending record blocks new ride input
     /// until the history layer durably commits it and acknowledges the handoff.
     public static func restoring(
@@ -144,12 +153,22 @@ public actor RideCheckpointCoordinator {
     }
 
     public func ingest(_ observation: RideObservation) async throws -> RideEngineUpdate {
+        await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
         if let pendingCompletedRide {
             throw RideCheckpointCoordinatorError.completedRideAwaitingCommit(pendingCompletedRide.sessionID)
         }
 
         // Work on a copy. If a required durable write fails, the in-memory engine
         // remains at its prior state and the same observation can be retried.
+        // Snapshot the prior durable transport classification before mutation so
+        // newly direct gap evidence can force a write even when the ride phase is
+        // already `temporarilyDisconnected` after process recovery.
+        let priorTransportGapEvidence = try engine.recoveryCheckpoint(
+            checkpointedAtDate: observation.receivedAtDate
+        )?.transportGapEvidence
+
         var nextEngine = engine
         let update = try nextEngine.ingest(observation)
 
@@ -163,9 +182,18 @@ public actor RideCheckpointCoordinator {
 
         if let checkpoint = try nextEngine.recoveryCheckpoint(
             checkpointedAtDate: observation.receivedAtDate
-        ), shouldPersistInProgress(update: update, observation: observation) {
-            try await store.save(.inProgress(checkpoint))
-            lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        ) {
+            let transportGapEvidenceBecameObserved = priorTransportGapEvidence != .observed
+                && checkpoint.transportGapEvidence == .observed
+
+            if shouldPersistInProgress(
+                update: update,
+                observation: observation,
+                transportGapEvidenceBecameObserved: transportGapEvidenceBecameObserved
+            ) {
+                try await store.save(.inProgress(checkpoint))
+                lastSuccessfulCheckpointUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+            }
         }
 
         engine = nextEngine
@@ -182,8 +210,12 @@ public actor RideCheckpointCoordinator {
 
     /// Called only after the completed-ride ledger has durably committed the same
     /// session. Clearing first would reopen the exact crash-loss window this layer
-    /// exists to close.
+    /// exists to close. This mutation shares the same transaction permit as ingest
+    /// so a newly arriving observation cannot race the journal clear.
     public func acknowledgeCompletedRideCommitted(sessionID: UUID) async throws {
+        await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
         guard pendingCompletedRide?.sessionID == sessionID else {
             throw RideCheckpointCoordinatorError.noMatchingPendingCompletion
         }
@@ -194,9 +226,10 @@ public actor RideCheckpointCoordinator {
 
     private func shouldPersistInProgress(
         update: RideEngineUpdate,
-        observation: RideObservation
+        observation: RideObservation,
+        transportGapEvidenceBecameObserved: Bool
     ) -> Bool {
-        if update.events.containsConfirmedRideTransition {
+        if transportGapEvidenceBecameObserved || update.events.containsConfirmedRideTransition {
             return true
         }
         guard let lastSuccessfulCheckpointUptimeNanoseconds else {
@@ -204,6 +237,29 @@ public actor RideCheckpointCoordinator {
         }
         return observation.receivedAtUptimeNanoseconds - lastSuccessfulCheckpointUptimeNanoseconds
             >= cadence.minimumIntervalNanoseconds
+    }
+
+    private func acquireMutationPermit() async {
+        guard mutationInFlight else {
+            mutationInFlight = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            mutationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseMutationPermit() {
+        guard !mutationWaiters.isEmpty else {
+            mutationInFlight = false
+            return
+        }
+
+        let next = mutationWaiters.removeFirst()
+        // Keep `mutationInFlight` true: ownership transfers directly to the
+        // resumed waiter rather than opening a race window for a later caller.
+        next.resume()
     }
 }
 
