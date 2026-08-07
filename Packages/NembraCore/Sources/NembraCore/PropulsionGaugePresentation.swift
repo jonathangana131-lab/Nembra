@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PropulsionPowerSampleAuthority: String, Codable, Sendable {
+public enum PropulsionPowerSampleAuthority: String, Codable, Hashable, Sendable {
     /// Production-only authority. Construction is package-sealed so UI or generic clients cannot mint it.
     case verifiedVehicleMeasurement
     /// Explicitly synthetic evidence for Simulator/runtime visual QA.
@@ -65,12 +65,13 @@ public enum PropulsionPowerSampleError: Error, Equatable, Sendable {
 public struct PropulsionPowerSample: Equatable, Sendable {
     public let identity: PropulsionGaugeIdentity
     public let watts: Double
-    /// Source-owned total-order receipt identity inside one continuity generation.
+    /// Source-owned total-order receipt identity inside one authority + continuity generation.
     /// This is chronology evidence, not power evidence.
     public let receiptSequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
-    /// Source-owned continuity/clock generation. A strictly newer generation may
-    /// legitimately restart its receipt-sequence and uptime epochs.
+    /// Source-owned continuity/clock generation inside one authority domain. A
+    /// strictly newer generation may legitimately restart its receipt-sequence
+    /// and uptime epochs.
     public let continuityGeneration: UInt64
     public let authority: PropulsionPowerSampleAuthority
 
@@ -360,6 +361,15 @@ public enum PropulsionGaugeDisplayError: Error, Equatable, Sendable {
     case retiredContinuityGeneration
 }
 
+private struct PropulsionGaugeChronologyState: Sendable {
+    var continuityGeneration: UInt64
+    var lastSeenReceiptSequenceNumber: UInt64
+    /// Monotonic receive-uptime floor for this authority + generation. If a
+    /// newer receipt is rejected for backwards uptime, its sequence remains
+    /// consumed while this floor deliberately remains at the last valid uptime.
+    var uptimeFloorNanoseconds: UInt64
+}
+
 /// Critically damped, retargetable render model for positive propulsion output.
 ///
 /// Measurement and display clocks remain separate: accepted samples change the target, while callers may
@@ -375,12 +385,12 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     private var latestContinuityGeneration: UInt64 = 0
     private var latestAuthority: PropulsionPowerSampleAuthority = .simulator
 
-    /// Receipt chronology is scoped to the source-owned continuity generation.
-    /// A newer generation is an explicit clock/order epoch and may restart both
-    /// sequence and uptime. Within one generation, sequence is strict and uptime
-    /// is nondecreasing.
-    private var lastSeenContinuityGeneration: UInt64?
-    private var lastSeenReceiptSequenceNumber: UInt64?
+    /// Receipt chronology belongs to the authority/source domain that minted it.
+    /// Simulator and verified physical streams cannot poison each other's numeric
+    /// sequence/generation namespace. Within one authority + generation, receipt
+    /// sequence is strict and uptime is nondecreasing. A newer generation resets
+    /// that authority's sequence/uptime epoch.
+    private var chronologyByAuthority: [PropulsionPowerSampleAuthority: PropulsionGaugeChronologyState] = [:]
 
     private var transitionAnchorWatts = 0.0
     private var transitionTargetWatts = 0.0
@@ -390,9 +400,9 @@ public struct PropulsionGaugeDisplayModel: Sendable {
     private var acceptedPeakWatts = 0.0
     private var acceptedPeakUptimeNanoseconds: UInt64 = 0
     private var explicitlyUnavailable = false
-    /// Once an explicit source/session interruption occurs, callbacks from that
-    /// generation or any older generation may not reopen live presentation.
-    private var retiredContinuityGeneration: UInt64?
+    /// An explicit interruption retires only the currently active authority's
+    /// source generation. A foreign authority has its own generation namespace.
+    private var retiredContinuityGenerationByAuthority: [PropulsionPowerSampleAuthority: UInt64] = [:]
 
     public init(identity: PropulsionGaugeIdentity, policy: PropulsionGaugeMotionPolicy) {
         self.identity = identity
@@ -404,46 +414,47 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             throw PropulsionGaugeDisplayError.identityMismatch
         }
 
-        if let retiredContinuityGeneration,
-           sample.continuityGeneration <= retiredContinuityGeneration {
+        if let retiredGeneration = retiredContinuityGenerationByAuthority[sample.authority],
+           sample.continuityGeneration <= retiredGeneration {
             throw PropulsionGaugeDisplayError.retiredContinuityGeneration
         }
 
-        if let lastSeenContinuityGeneration {
-            guard sample.continuityGeneration >= lastSeenContinuityGeneration else {
+        if var chronology = chronologyByAuthority[sample.authority] {
+            guard sample.continuityGeneration >= chronology.continuityGeneration else {
                 throw PropulsionGaugeDisplayError.staleContinuityGeneration
             }
 
-            if sample.continuityGeneration == lastSeenContinuityGeneration {
-                if let lastSeenReceiptSequenceNumber {
-                    guard sample.receiptSequenceNumber > lastSeenReceiptSequenceNumber else {
-                        throw PropulsionGaugeDisplayError.nonIncreasingReceiptSequence
-                    }
+            if sample.continuityGeneration == chronology.continuityGeneration {
+                guard sample.receiptSequenceNumber > chronology.lastSeenReceiptSequenceNumber else {
+                    throw PropulsionGaugeDisplayError.nonIncreasingReceiptSequence
                 }
-            } else {
-                // A source-owned newer continuity generation is the mechanical
-                // boundary that permits receipt-sequence and uptime epoch restart.
-                self.lastSeenContinuityGeneration = sample.continuityGeneration
-                self.lastSeenReceiptSequenceNumber = nil
-            }
-        } else {
-            lastSeenContinuityGeneration = sample.continuityGeneration
-        }
 
-        // Consume the receipt identity before secondary same-generation uptime
-        // validation. A newer malformed callback cannot later be rewritten, and
-        // a delayed lower sequence cannot re-enter that generation.
-        lastSeenReceiptSequenceNumber = sample.receiptSequenceNumber
+                // Consume source-owned receipt identity before the secondary
+                // uptime check so a malformed newer callback cannot be rewritten.
+                chronology.lastSeenReceiptSequenceNumber = sample.receiptSequenceNumber
+                chronologyByAuthority[sample.authority] = chronology
 
-        if hasMeasurement {
-            guard sample.continuityGeneration >= latestContinuityGeneration else {
-                throw PropulsionGaugeDisplayError.staleContinuityGeneration
-            }
-            if sample.continuityGeneration == latestContinuityGeneration {
-                guard sample.receivedAtUptimeNanoseconds >= latestAcceptedUptimeNanoseconds else {
+                guard sample.receivedAtUptimeNanoseconds >= chronology.uptimeFloorNanoseconds else {
                     throw PropulsionGaugeDisplayError.nonMonotonicMeasurement
                 }
+
+                chronology.uptimeFloorNanoseconds = sample.receivedAtUptimeNanoseconds
+                chronologyByAuthority[sample.authority] = chronology
+            } else {
+                // Strictly newer source generation establishes a fresh clock/order
+                // epoch for this authority only.
+                chronologyByAuthority[sample.authority] = PropulsionGaugeChronologyState(
+                    continuityGeneration: sample.continuityGeneration,
+                    lastSeenReceiptSequenceNumber: sample.receiptSequenceNumber,
+                    uptimeFloorNanoseconds: sample.receivedAtUptimeNanoseconds
+                )
             }
+        } else {
+            chronologyByAuthority[sample.authority] = PropulsionGaugeChronologyState(
+                continuityGeneration: sample.continuityGeneration,
+                lastSeenReceiptSequenceNumber: sample.receiptSequenceNumber,
+                uptimeFloorNanoseconds: sample.receivedAtUptimeNanoseconds
+            )
         }
 
         let sharesContinuity: Bool
@@ -451,6 +462,8 @@ public struct PropulsionGaugeDisplayModel: Sendable {
            !explicitlyUnavailable,
            sample.authority == latestAuthority,
            sample.continuityGeneration == latestContinuityGeneration {
+            // Same-authority chronology validation above guarantees this
+            // subtraction cannot underflow.
             let gap = sample.receivedAtUptimeNanoseconds - latestAcceptedUptimeNanoseconds
             sharesContinuity = gap <= policy.staleAfterNanoseconds
         } else {
@@ -491,17 +504,21 @@ public struct PropulsionGaugeDisplayModel: Sendable {
         latestContinuityGeneration = sample.continuityGeneration
         latestAuthority = sample.authority
         explicitlyUnavailable = false
-        retiredContinuityGeneration = nil
+        retiredContinuityGenerationByAuthority.removeValue(forKey: sample.authority)
     }
 
     /// Explicitly ends live presentation without manufacturing a zero-power sample.
-    /// If a generation has already produced accepted evidence, it is retired: a
-    /// delayed callback from that disconnected/interrupted generation cannot
-    /// resurrect the gauge. Resume requires a genuinely newer source generation.
+    /// If a generation has already produced accepted evidence, it is retired only
+    /// inside the active authority/source domain. A delayed same-authority callback
+    /// cannot resurrect the gauge; a foreign authority does not inherit that floor.
     public mutating func markUnavailable() {
         explicitlyUnavailable = true
         if hasMeasurement {
-            retiredContinuityGeneration = latestContinuityGeneration
+            let existing = retiredContinuityGenerationByAuthority[latestAuthority]
+            retiredContinuityGenerationByAuthority[latestAuthority] = max(
+                existing ?? latestContinuityGeneration,
+                latestContinuityGeneration
+            )
         }
         transitionSettlingDurationNanoseconds = 0
     }
