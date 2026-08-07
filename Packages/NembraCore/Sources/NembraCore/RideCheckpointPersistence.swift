@@ -572,7 +572,30 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
     }
 
     public func clear() async throws {
-        for url in [slotAURL, slotBURL] where fileManager.fileExists(atPath: url.path) {
+        let a = try readSlot(at: slotAURL)
+        let b = try readSlot(at: slotBURL)
+        try rejectUnsupportedSchema(a, b)
+        try rejectConflictingGenerations(a, b)
+
+        // A completion acknowledgement must be monotonic across interruption.
+        // Remove non-authoritative/corrupt copies before valid copies, then valid
+        // generations oldest-first. The newest durable handoff is therefore the
+        // final physical mutation: any earlier failure or process termination
+        // leaves it recoverable instead of exposing an older in-progress ride.
+        let orderedSlots = [(slotAURL, a), (slotBURL, b)].sorted { lhs, rhs in
+            switch (lhs.1.envelope?.generation, rhs.1.envelope?.generation) {
+            case let (.some(left), .some(right)) where left != right:
+                return left < right
+            case (.none, .some):
+                return true
+            case (.some, .none):
+                return false
+            default:
+                return lhs.0.lastPathComponent < rhs.0.lastPathComponent
+            }
+        }
+
+        for (url, _) in orderedSlots where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
     }
