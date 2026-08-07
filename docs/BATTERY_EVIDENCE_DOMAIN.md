@@ -34,7 +34,7 @@ The identity must be minted at the serialized raw acquisition boundary **before*
 
 Receipt identity does **not** mean the field is physically verified. A simulation or stock-app correlation value can be well ordered and still remain non-authoritative. The verified role and the receipt/order proof are separate gates.
 
-The package-scoped `BatteryEvidenceReceiptSequencer` is a small synchronous value intended for one serialized trusted callback owner. It starts at sequence 1 and fails closed before `UInt64` wrap. It is not an actor because hopping to an actor merely to mint identity could reorder callbacks before they are stamped; the already-serialized acquisition path owns and mutates it synchronously.
+The package-scoped `BatteryEvidenceReceiptSequencer` is a small synchronous reference object intended for one serialized trusted callback owner. It starts at sequence 1 and fails closed before `UInt64` wrap. Reference semantics are deliberate: copying a mutable value sequencer could fork its counter and mint duplicate `(epoch, sequence)` identities, while aliasing one reference keeps one shared counter. The sequencer is intentionally not `Sendable`; the trusted acquisition owner stamps receipts synchronously on its already-serialized callback path before immutable identities fan out into async normalization.
 
 There is intentionally no public receipt initializer. Under a real Swift-package build, package-scoped construction supports package tests and a future trusted acquisition target in the **same Swift package**. Under direct app-source compilation, the initializer remains file-scoped. Ordinary app/package clients may read a receipt identity carried by a projection, but cannot mint one through this API.
 
