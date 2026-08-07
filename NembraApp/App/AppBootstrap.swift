@@ -342,14 +342,14 @@ enum AppBootstrap {
 
         let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
         if simulatorAutoCompletesRide,
-           let routeStore = persistence?.routeStore {
+           let persistence {
             do {
                 let source = SimulatorRideLocationSource.completedRideQA()
                 let policy = try RideLocationQualityPolicy.simulatorQA()
                 rideLocationCaptureCoordinator = try RideLocationCaptureCoordinator(
                     source: source,
                     qualityPolicy: policy,
-                    routeStore: routeStore,
+                    routeStore: persistence.routeStore,
                     routeChunkSize: 2,
                     sessionScopedDistanceSink: { [weak rideStore] sessionID, meters, uptime in
                         await rideStore?.ingestQualityScreenedGPSDistanceDelta(
