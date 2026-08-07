@@ -70,6 +70,70 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(VehicleProfile.maxshotV1SPro.capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
+    func testDashboardStoppedControlsDistinguishStoppedMovingAndUnknownSpeed() {
+        XCTAssertEqual(
+            DashboardStoppedControlAvailability.resolved(
+                connection: .connected,
+                speedKilometersPerHour: nil
+            ),
+            .speedUnavailable
+        )
+        XCTAssertEqual(
+            DashboardStoppedControlAvailability.resolved(
+                connection: .connected,
+                speedKilometersPerHour: 0
+            ),
+            .confirmedStopped
+        )
+        XCTAssertEqual(
+            DashboardStoppedControlAvailability.resolved(
+                connection: .connected,
+                speedKilometersPerHour: 0.49
+            ),
+            .confirmedStopped
+        )
+        XCTAssertEqual(
+            DashboardStoppedControlAvailability.resolved(
+                connection: .connected,
+                speedKilometersPerHour: 0.5
+            ),
+            .moving
+        )
+        XCTAssertEqual(
+            DashboardStoppedControlAvailability.resolved(
+                connection: .connected,
+                speedKilometersPerHour: 18.4
+            ),
+            .moving
+        )
+    }
+
+    func testDashboardStoppedControlsRejectInvalidOrRetainedStopEvidence() {
+        for speed in [-1.0, .infinity, -.infinity, .nan] {
+            XCTAssertEqual(
+                DashboardStoppedControlAvailability.resolved(
+                    connection: .connected,
+                    speedKilometersPerHour: speed
+                ),
+                .speedUnavailable
+            )
+        }
+
+        for connection in [
+            VehicleConnectionState.disconnected,
+            .connecting,
+            .reconnecting
+        ] {
+            XCTAssertEqual(
+                DashboardStoppedControlAvailability.resolved(
+                    connection: connection,
+                    speedKilometersPerHour: 0
+                ),
+                .notConnected
+            )
+        }
+    }
+
     func testSimulationScenarioLaunchArgumentParsing() {
         let scenario = AppBootstrap.simulationScenario(
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
