@@ -89,7 +89,10 @@ That separation is intentional. Model rejection does not roll the assembler back
 - a transport-gap or incomplete-coverage candidate must not keep contaminating future clean evidence;
 - a statistically rejected efficiency outlier must not cause its distance to be replayed into the next sample;
 - a numerically unrepresentable efficiency candidate (for example one whose implied full-charge range overflows) must also close without replaying its distance;
+- if the model is called with a **stricter policy than the policy that just emitted the candidate**, an `insufficientSOCConsumption` or `insufficientDistance` rejection also does not roll back the assembler or replay that closed span;
 - a rejection never authorizes a higher layer to re-add the old span's distance merely to recover a training sample.
+
+A caller should normally use the same policy snapshot for candidate assembly and immediate model ingestion. The model deliberately revalidates policy thresholds anyway, so a policy change/race remains fail-closed rather than silently teaching under stale criteria.
 
 The next clean evidence span therefore begins at the rejected candidate's end SoC. Persisted learned history remains unchanged when the model rejects the candidate, while ephemeral assembly continuity moves forward.
 
