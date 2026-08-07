@@ -124,4 +124,74 @@ struct AdaptiveBatteryRangeWindowAssemblerPolicyTransitionTests {
         #expect(model.ingest(window, policy: strict).disposition == .accepted)
         #expect(model.acceptedWindowCount == 1)
     }
+
+    @Test("stricter model consumption policy cannot roll back an already-closed assembler span")
+    func stricterModelConsumptionPolicyDoesNotReplayClosedSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let loose = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 100
+        )
+        let strict = try policy(
+            minimumConsumedPercentagePoints: 4,
+            minimumDistanceMeters: 100
+        )
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
+        try assembler.recordDistance(deltaMeters: 200)
+        let looseCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: loose)
+        let looseWindow = try #require(looseCandidate)
+
+        #expect(model.ingest(looseWindow, policy: strict).disposition == .rejected(.insufficientSOCConsumption))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+
+        try assembler.recordDistance(deltaMeters: 200)
+        let strictCandidate = try assembler.ingestSOC(reading(73, uptime: 3), policy: strict)
+        let strictWindow = try #require(strictCandidate)
+        #expect(strictWindow.startSOC.percentage == 77)
+        #expect(strictWindow.endSOC.percentage == 73)
+        #expect(strictWindow.consumedPercentagePoints == 4)
+        #expect(strictWindow.distanceMeters == 200)
+        #expect(model.ingest(strictWindow, policy: strict).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
+    @Test("stricter model distance policy cannot roll back an already-closed assembler span")
+    func stricterModelDistancePolicyDoesNotReplayClosedSpan() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        var model = AdaptiveBatteryRangeModel()
+        let loose = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 100
+        )
+        let strict = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 300
+        )
+
+        _ = try assembler.ingestSOC(reading(80, uptime: 1), policy: loose)
+        try assembler.recordDistance(deltaMeters: 150)
+        let looseCandidate = try assembler.ingestSOC(reading(77, uptime: 2), policy: loose)
+        let looseWindow = try #require(looseCandidate)
+
+        #expect(model.ingest(looseWindow, policy: strict).disposition == .rejected(.insufficientDistance))
+        #expect(model.acceptedWindowCount == 0)
+        #expect(assembler.anchorSOC?.percentage == 77)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 77)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+
+        try assembler.recordDistance(deltaMeters: 300)
+        let strictCandidate = try assembler.ingestSOC(reading(74, uptime: 3), policy: strict)
+        let strictWindow = try #require(strictCandidate)
+        #expect(strictWindow.startSOC.percentage == 77)
+        #expect(strictWindow.endSOC.percentage == 74)
+        #expect(strictWindow.consumedPercentagePoints == 3)
+        #expect(strictWindow.distanceMeters == 300)
+        #expect(model.ingest(strictWindow, policy: strict).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+    }
 }
