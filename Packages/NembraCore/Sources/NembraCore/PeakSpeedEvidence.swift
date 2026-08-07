@@ -42,8 +42,13 @@ public struct PeakSpeedMeasurement: Equatable, Sendable {
         self.speedAccuracyMetersPerSecond = sample.speedAccuracyMetersPerSecond
     }
 
-    public var kilometersPerHour: Double {
-        metersPerSecond * 3.6
+    /// Convenience conversion only. The authoritative measurement remains SI.
+    /// A finite raw value can still overflow when multiplied by 3.6, so fail
+    /// closed instead of exposing infinity or inventing a scooter speed cap.
+    public var kilometersPerHour: Double? {
+        let converted = metersPerSecond * 3.6
+        guard converted.isFinite, converted >= 0 else { return nil }
+        return converted
     }
 }
 
