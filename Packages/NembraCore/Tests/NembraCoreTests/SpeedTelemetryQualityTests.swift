@@ -182,7 +182,9 @@ struct SpeedTelemetryQualityTests {
         let assessment = collector.summary.qualityAssessment(using: policy)
 
         #expect(collector.summary.deliveryLatencySampleCount == 1)
-        #expect(collector.summary.meanDeliveryLatencyMilliseconds == 50)
+        #expect(
+            collector.summary.meanDeliveryLatencyMilliseconds.map { abs($0 - 50) < 0.001 } == true
+        )
         #expect(assessment.failures == [
             .deliveryLatencySampleFractionBelowMinimum(minimum: 0.75, actual: 0.25)
         ])
