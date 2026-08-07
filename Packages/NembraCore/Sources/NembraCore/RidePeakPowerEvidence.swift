@@ -97,6 +97,7 @@ public enum CompletedRidePeakPowerEvidenceError: Error, Equatable, Sendable {
     case continuityMismatch
     case authorityMismatch
     case scopeMismatch
+    case unsupportedCheckpointSchema(Int)
     case invalidEvidence
 }
 
@@ -303,6 +304,9 @@ public struct CompletedRidePeakPowerEvidence: Equatable, Sendable {
 /// Simulator-QA evidence. Restoring verified-vehicle evidence is package-sealed
 /// and requires an independently trusted exact verified scope.
 public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 1
+
+    public let schemaVersion: Int
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
     public let beganAfterKnownObservationGap: Bool
@@ -318,6 +322,7 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     public let observationContinuity: PeakPowerObservationContinuity
 
     private enum CodingKeys: String, CodingKey {
+        case schemaVersion
         case sessionID
         case rideContinuity
         case beganAfterKnownObservationGap
@@ -343,6 +348,7 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
             throw CompletedRidePeakPowerEvidenceError.authorityMismatch
         }
 
+        schemaVersion = Self.currentSchemaVersion
         sessionID = evidence.sessionID
         rideContinuity = evidence.rideContinuity
         beganAfterKnownObservationGap = evidence.beganAfterKnownObservationGap
@@ -394,6 +400,11 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         do {
+            let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+            guard schemaVersion == Self.currentSchemaVersion else {
+                throw CompletedRidePeakPowerEvidenceError.unsupportedCheckpointSchema(schemaVersion)
+            }
+
             let identityRaw = try container.decode(String.self, forKey: .identityAuthority)
             let evidenceRaw = try container.decode(String.self, forKey: .evidenceAuthority)
             guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityRaw),
@@ -440,6 +451,7 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
                 observationContinuity: observationContinuity
             )
 
+            self.schemaVersion = schemaVersion
             self.sessionID = sessionID
             self.rideContinuity = rideContinuity
             self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
@@ -465,6 +477,7 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(sessionID, forKey: .sessionID)
         try container.encode(rideContinuity, forKey: .rideContinuity)
         try container.encode(beganAfterKnownObservationGap, forKey: .beganAfterKnownObservationGap)
