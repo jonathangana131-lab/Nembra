@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum NembraMetrics {
     static let compact: CGFloat = 8
@@ -11,13 +12,43 @@ enum NembraMetrics {
 }
 
 struct NembraGlassButtonStyle: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
+        let shape = RoundedRectangle(
+            cornerRadius: NembraMetrics.controlRadius,
+            style: .continuous
+        )
+
+        if reduceTransparency {
             content
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NembraMetrics.controlRadius))
+                .background(Color(uiColor: .secondarySystemBackground), in: shape)
+                .overlay {
+                    shape.stroke(
+                        .primary.opacity(colorSchemeContrast == .increased ? 0.34 : 0.14),
+                        lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                    )
+                }
+        } else if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.interactive(),
+                    in: .rect(cornerRadius: NembraMetrics.controlRadius)
+                )
+                .overlay {
+                    if colorSchemeContrast == .increased {
+                        shape.stroke(.primary.opacity(0.28), lineWidth: 1.25)
+                    }
+                }
         } else {
             content
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous))
+                .background(.thinMaterial, in: shape)
+                .overlay {
+                    if colorSchemeContrast == .increased {
+                        shape.stroke(.primary.opacity(0.28), lineWidth: 1.25)
+                    }
+                }
         }
     }
 }
