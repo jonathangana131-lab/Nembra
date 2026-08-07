@@ -48,6 +48,70 @@ enum RideApplicationSessionEvent: Equatable, Sendable {
     case ended(UUID)
 }
 
+/// The core checkpoint coordinator is an actor, but actor isolation alone does
+/// not make one async method non-reentrant across its durable-store awaits. This
+/// application gate keeps every coordinator mutation/read that matters to ride
+/// admission behind one explicit async mutex. It protects the existing core
+/// contract without modifying the independently owned NembraCore lane.
+private actor RideCheckpointCoordinatorAccessGate {
+    private let coordinator: RideCheckpointCoordinator
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(coordinator: RideCheckpointCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func ingest(_ observation: RideObservation) async throws -> RideEngineUpdate {
+        await acquire()
+        defer { release() }
+        return try await coordinator.ingest(observation)
+    }
+
+    func pendingCompletedRideEvidence() async -> CompletedRideEvidence? {
+        await acquire()
+        defer { release() }
+        return await coordinator.pendingCompletedRideEvidence()
+    }
+
+    func currentPhase() async -> RideEnginePhase {
+        await acquire()
+        defer { release() }
+        return await coordinator.currentPhase()
+    }
+
+    func commitPendingRide(historyStore: any RideHistoryStore) async throws {
+        await acquire()
+        defer { release() }
+        let commitCoordinator = RideHistoryCommitCoordinator(
+            recoveryCoordinator: coordinator,
+            historyStore: historyStore
+        )
+        _ = try await commitCoordinator.commitPendingRide()
+    }
+
+    private func acquire() async {
+        if !isLocked {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            isLocked = false
+            return
+        }
+        // `isLocked` intentionally stays true. Ownership transfers directly to
+        // the resumed waiter so no later caller can overtake it.
+        let next = waiters.removeFirst()
+        next.resume()
+    }
+}
+
 /// Root-owned application bridge from scooter evidence into the already-tested
 /// ride engine, crash-recovery journal, and completed-history handoff.
 ///
@@ -74,9 +138,10 @@ final class RideApplicationStore {
     private(set) var lastCompletedSessionID: UUID?
     private(set) var lastErrorMessage: String?
 
-    @ObservationIgnored private var coordinator: RideCheckpointCoordinator?
+    @ObservationIgnored private var coordinatorAccessGate: RideCheckpointCoordinatorAccessGate?
     @ObservationIgnored private var stateTask: Task<Void, Never>?
     @ObservationIgnored private var speedTask: Task<Void, Never>?
+    @ObservationIgnored private var completionFinalizationTask: Task<Bool, Never>?
     @ObservationIgnored private var sessionEventContinuation: AsyncStream<RideApplicationSessionEvent>.Continuation?
     @ObservationIgnored private var rideCompletionBarrier: RideCompletionBarrier?
     @ObservationIgnored private var isFinalizingCompletedRide = false
@@ -106,6 +171,7 @@ final class RideApplicationStore {
     deinit {
         stateTask?.cancel()
         speedTask?.cancel()
+        completionFinalizationTask?.cancel()
         sessionEventContinuation?.finish()
     }
 
@@ -196,20 +262,32 @@ final class RideApplicationStore {
                 recoveredAtUptimeNanoseconds: recoveredAtUptimeNanoseconds,
                 recoveredAtDate: recoveredAtDate
             )
-            coordinator = restored
+            let accessGate = RideCheckpointCoordinatorAccessGate(coordinator: restored)
+            coordinatorAccessGate = accessGate
             lastObservationUptimeNanoseconds = recoveredAtUptimeNanoseconds
 
-            if await restored.pendingCompletedRideEvidence() != nil {
-                try await commitPendingRide(
-                    using: restored,
-                    historyStore: historyStore,
-                    runCompletionBarrier: true
+            // Subscribe even when startup has a pending completion. If a
+            // transient route-outcome/history dependency fails, later live
+            // evidence can retry the exact pending handoff in the same process
+            // instead of requiring a relaunch. While the initial attempt runs,
+            // the finalization flag makes those streams fail closed.
+            let hasPendingCompletion = await accessGate.pendingCompletedRideEvidence() != nil
+            if hasPendingCompletion {
+                isFinalizingCompletedRide = true
+            }
+            await subscribeToEvidenceStreams()
+
+            if hasPendingCompletion {
+                let committed = await finalizePendingRide(
+                    using: accessGate,
+                    historyStore: historyStore
                 )
+                guard committed else { return }
             }
 
-            updatePublishedState(from: await restored.currentPhase())
-            await subscribeToEvidenceStreams()
+            updatePublishedState(from: await accessGate.currentPhase())
         } catch {
+            isFinalizingCompletedRide = false
             fail(error, persistence: true)
         }
     }
@@ -217,8 +295,10 @@ final class RideApplicationStore {
     func stop() {
         stateTask?.cancel()
         speedTask?.cancel()
+        completionFinalizationTask?.cancel()
         stateTask = nil
         speedTask = nil
+        completionFinalizationTask = nil
         pendingAuthoritativeSpeedSample = nil
         sessionEventContinuation?.finish()
         sessionEventContinuation = nil
@@ -259,12 +339,15 @@ final class RideApplicationStore {
     }
 
     /// One application-owned admission boundary for every screened location
-    /// point. First-anchor points carry no distance, but they still consult the
-    /// durable coordinator before admission. This closes the reentrancy window
-    /// where RideEngine may already have created `completedPendingCommit` while
-    /// MainActor has not yet published finalization state. Later points must
-    /// successfully enter RideEngine GPS evidence before their coordinate may
+    /// point. First-anchor and zero-distance points carry no movement evidence,
+    /// but they still serialize behind any in-flight checkpoint mutation and
+    /// consult the exact pending-completion UUID before route admission. Positive
+    /// GPS deltas must successfully enter RideEngine before their coordinate may
     /// become route evidence.
+    ///
+    /// Treating zero distance as identity-only is also a deadlock boundary: a
+    /// stationary location callback cannot itself end the ride and then wait for
+    /// a completion barrier that must drain the callback's own capture task.
     func admitQualityScreenedLocationEvidence(
         distanceDeltaMeters: Double?,
         receivedAtUptimeNanoseconds: UInt64,
@@ -272,19 +355,19 @@ final class RideApplicationStore {
     ) async -> Bool {
         guard !isFinalizingCompletedRide,
               activeSessionID == sessionID,
-              let coordinator else { return false }
+              let accessGate = coordinatorAccessGate else { return false }
 
-        if distanceDeltaMeters == nil {
-            // Querying the checkpoint actor is essential even for an anchor with
-            // no GPS delta. If a concurrent speed observation just ended the ride,
-            // this call queues behind that ingest and observes the exact pending
-            // completed UUID before route persistence is allowed to proceed.
-            if let pending = await coordinator.pendingCompletedRideEvidence(),
+        if let distanceDeltaMeters, distanceDeltaMeters < 0 {
+            return false
+        }
+
+        if distanceDeltaMeters == nil || distanceDeltaMeters == 0 {
+            if let pending = await accessGate.pendingCompletedRideEvidence(),
                pending.sessionID == sessionID {
                 return false
             }
-            // MainActor is reentrant across the actor hop above; re-check the
-            // published admission boundary before accepting the anchor.
+            // MainActor is reentrant across the gate hop above. Re-check the
+            // published boundary before admitting an anchor/stationary point.
             guard !isFinalizingCompletedRide,
                   activeSessionID == sessionID else { return false }
             return true
@@ -380,7 +463,8 @@ final class RideApplicationStore {
         qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
         minimumUptimeNanoseconds: UInt64 = 0
     ) async -> Bool {
-        guard let coordinator,
+        guard !isFinalizingCompletedRide,
+              let accessGate = coordinatorAccessGate,
               let historyStore,
               configuration != nil else { return false }
 
@@ -403,87 +487,89 @@ final class RideApplicationStore {
                 qualityScreenedGPSDistanceDeltaMeters: qualityScreenedGPSDistanceDeltaMeters,
                 motionIndicatesMovement: false
             )
-            let update = try await coordinator.ingest(observation)
+            let update = try await accessGate.ingest(observation)
             let completedSessionID = update.events.compactMap { event -> UUID? in
                 guard case let .rideEnded(evidence) = event else { return nil }
                 return evidence.sessionID
             }.first
 
-            // Keep the durable session identity valid while the completion
-            // barrier drains. New location admissions close immediately after
-            // RideEngine has declared this ride ended, but the published UUID is
-            // not released until route outcome/repair truth is durable.
-            if let completedSessionID {
-                isFinalizingCompletedRide = true
-                do {
-                    try await rideCompletionBarrier?(completedSessionID)
-                } catch {
-                    isFinalizingCompletedRide = false
-                    fail(error, persistence: true)
-                    return false
-                }
+            if completedSessionID != nil {
+                // The access gate is already released here. Buffered capture
+                // callbacks can now observe the durable pending-completion state
+                // and fail admission while the barrier drains them, avoiding a
+                // cyclic self-await between coordinator.finish() and its sink.
+                return await finalizePendingRide(
+                    using: accessGate,
+                    historyStore: historyStore
+                )
             }
 
             updatePublishedState(from: update.phase)
-            isFinalizingCompletedRide = false
-
-            if let completedSessionID {
-                setStatus(.saving)
-                try await commitPendingRide(
-                    using: coordinator,
-                    historyStore: historyStore,
-                    runCompletionBarrier: false
-                )
-                if lastCompletedSessionID != completedSessionID {
-                    lastCompletedSessionID = completedSessionID
-                }
-                updatePublishedState(from: await coordinator.currentPhase())
-            }
             return true
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
-            do {
-                isFinalizingCompletedRide = true
-                setStatus(.saving)
-                try await commitPendingRide(
-                    using: coordinator,
-                    historyStore: historyStore,
-                    runCompletionBarrier: true
-                )
-                isFinalizingCompletedRide = false
-                updatePublishedState(from: await coordinator.currentPhase())
-            } catch {
-                isFinalizingCompletedRide = false
-                fail(error, persistence: true)
+            // A second ingress may have queued behind the observation that ended
+            // the ride. Whichever MainActor task reaches this branch first owns
+            // the shared finalization Task; all others await the same result.
+            guard !isFinalizingCompletedRide || completionFinalizationTask != nil else {
+                return false
             }
-            // The observation that hit completedRideAwaitingCommit was not
-            // ingested into RideEngine, so a route coordinate paired with it
-            // must not be admitted either.
+            _ = await finalizePendingRide(
+                using: accessGate,
+                historyStore: historyStore
+            )
             return false
         } catch {
-            isFinalizingCompletedRide = false
             fail(error, persistence: false)
             return false
         }
     }
 
-    private func commitPendingRide(
-        using coordinator: RideCheckpointCoordinator,
-        historyStore: any RideHistoryStore,
-        runCompletionBarrier: Bool
-    ) async throws {
-        setStatus(.saving)
-        let pendingID = await coordinator.pendingCompletedRideEvidence()?.sessionID
-        if runCompletionBarrier, let pendingID {
-            try await rideCompletionBarrier?(pendingID)
+    /// Exactly one MainActor task owns the route-outcome/history handoff for the
+    /// current pending completion. Callers that raced behind the same checkpoint
+    /// ingest await that task instead of starting a second barrier/acknowledgment.
+    private func finalizePendingRide(
+        using accessGate: RideCheckpointCoordinatorAccessGate,
+        historyStore: any RideHistoryStore
+    ) async -> Bool {
+        if let completionFinalizationTask {
+            return await completionFinalizationTask.value
         }
 
-        let commitCoordinator = RideHistoryCommitCoordinator(
-            recoveryCoordinator: coordinator,
-            historyStore: historyStore
-        )
-        _ = try await commitCoordinator.commitPendingRide()
-        if let pendingID, lastCompletedSessionID != pendingID {
-            lastCompletedSessionID = pendingID
+        isFinalizingCompletedRide = true
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return false }
+            do {
+                try await self.commitPendingRide(
+                    using: accessGate,
+                    historyStore: historyStore
+                )
+                self.isFinalizingCompletedRide = false
+                self.updatePublishedState(from: await accessGate.currentPhase())
+                return true
+            } catch {
+                self.isFinalizingCompletedRide = false
+                self.fail(error, persistence: true)
+                return false
+            }
+        }
+        completionFinalizationTask = task
+        let result = await task.value
+        completionFinalizationTask = nil
+        return result
+    }
+
+    private func commitPendingRide(
+        using accessGate: RideCheckpointCoordinatorAccessGate,
+        historyStore: any RideHistoryStore
+    ) async throws {
+        setStatus(.saving)
+        let pendingID = await accessGate.pendingCompletedRideEvidence()?.sessionID
+        if let pendingID {
+            try await rideCompletionBarrier?(pendingID)
+            try await accessGate.commitPendingRide(historyStore: historyStore)
+            if lastCompletedSessionID != pendingID {
+                lastCompletedSessionID = pendingID
+            }
         }
     }
 
