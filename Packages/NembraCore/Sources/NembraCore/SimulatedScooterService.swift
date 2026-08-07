@@ -280,7 +280,16 @@ public actor SimulatedScooterService: ScooterService {
         state.connectionIssue = nil
         state.connection = .connecting
         publish()
-        try? await Task.sleep(nanoseconds: 220_000_000)
+        do {
+            try await Task.sleep(nanoseconds: 220_000_000)
+        } catch {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
+        guard !Task.isCancelled else {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
         guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
         state.connection = .connected
         hydrateMissingVehicleDataAfterSuccessfulConnection()
@@ -455,6 +464,13 @@ public actor SimulatedScooterService: ScooterService {
         if state.isCruiseEnabled == nil { state.isCruiseEnabled = fixture.isCruiseEnabled }
         if state.powerWatts == nil { state.powerWatts = fixture.powerWatts }
         if state.currentAmps == nil { state.currentAmps = fixture.currentAmps }
+    }
+
+    private func cancelConnectionAttemptIfCurrent(_ attemptGeneration: UInt64) {
+        guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
+        connectionGeneration &+= 1
+        state.connection = .disconnected
+        publish()
     }
 
     private func beginCommand() throws -> UInt64 {
