@@ -1,6 +1,40 @@
 import Testing
 @testable import NembraCore
 
+private actor SimulatorTruthCommandGate {
+    private var hasEntered = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForRelease() async {
+        hasEntered = true
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        if hasEntered { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
 @Suite("Simulator profile truth")
 struct SimulatorProfileTruthTests {
     @Test("default simulator service uses an explicitly synthetic profile")
@@ -77,6 +111,34 @@ struct SimulatorProfileTruthTests {
         #expect(cancelled.connection == .disconnected)
         #expect(cancelled.connectionIssue == nil)
         #expect((await service.snapshot()).connection == .disconnected)
+    }
+
+    @Test("lock confirmation revalidates stopped speed after acknowledgement")
+    func lockFailsIfVehicleStartsMovingWhilePending() async {
+        let gate = SimulatorTruthCommandGate()
+        var state = SimulatedScooterService.state(for: .connectedStopped)
+        state.speedKilometersPerHour = 0
+        state.isLocked = false
+        let service = SimulatedScooterService(
+            initialState: state,
+            commandAcknowledgementGate: {
+                await gate.waitForRelease()
+            }
+        )
+
+        let command = Task {
+            try await service.setLocked(true)
+        }
+        await gate.waitUntilEntered()
+        await service.simulateRide(speedKilometersPerHour: 18, elapsedSeconds: 1)
+        await gate.release()
+
+        await #expect(throws: ScooterCommandError.commandRejected) {
+            try await command.value
+        }
+        let snapshot = await service.snapshot()
+        #expect(snapshot.isLocked == false)
+        #expect(snapshot.speedKilometersPerHour == 18)
     }
 
     @Test("lock confirmation requires valid stopped speed evidence")
