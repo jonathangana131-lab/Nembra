@@ -35,20 +35,22 @@ public struct PeakSpeedMeasurement: Equatable, Sendable {
     public let receivedAtUptimeNanoseconds: UInt64
     public let speedAccuracyMetersPerSecond: Double?
 
-    init(sample: SpeedTelemetrySample) {
+    /// Keep construction inside this evidence file so every published peak also
+    /// has a finite product-facing speed conversion. The raw SI sample may be
+    /// finite while multiplication by 3.6 overflows; that is rejected by the
+    /// accumulator rather than hidden behind an arbitrary scooter speed cap.
+    fileprivate init?(sample: SpeedTelemetrySample) {
+        let converted = sample.kilometersPerHour
+        guard converted.isFinite, converted >= 0 else { return nil }
+
         self.source = sample.source
         self.metersPerSecond = sample.metersPerSecond
         self.receivedAtUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         self.speedAccuracyMetersPerSecond = sample.speedAccuracyMetersPerSecond
     }
 
-    /// Convenience conversion only. The authoritative measurement remains SI.
-    /// A finite raw value can still overflow when multiplied by 3.6, so fail
-    /// closed instead of exposing infinity or inventing a scooter speed cap.
-    public var kilometersPerHour: Double? {
-        let converted = metersPerSecond * 3.6
-        guard converted.isFinite, converted >= 0 else { return nil }
-        return converted
+    public var kilometersPerHour: Double {
+        metersPerSecond * 3.6
     }
 }
 
@@ -70,6 +72,7 @@ public enum PeakSpeedRecordRejection: Equatable, Sendable {
     case nonAuthoritativeSample
     case sourceMismatch
     case nonIncreasingTimestamp
+    case nonFiniteDerivedSpeed
     case speedAccuracyUnavailable
     case speedAccuracyExceeded(maximum: Double, actual: Double)
 }
@@ -97,7 +100,7 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
 
     private var peak: PeakSpeedMeasurement?
     /// Advances for every monotonic authoritative observation from the selected
-    /// source, including observations later rejected by accuracy policy. A low-
+    /// source, including observations later rejected by quality policy. A low-
     /// quality sample is still real ordering evidence and cannot be erased so an
     /// older callback can later masquerade as fresh.
     private var lastObservedUptimeNanoseconds: UInt64?
@@ -125,6 +128,11 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
         }
         lastObservedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
+        guard let measurement = PeakSpeedMeasurement(sample: sample) else {
+            qualityRejectedSampleCount += 1
+            return .rejected(.nonFiniteDerivedSpeed)
+        }
+
         if let maximum = policy.maximumSpeedAccuracyMetersPerSecond {
             guard let actual = sample.speedAccuracyMetersPerSecond else {
                 qualityRejectedSampleCount += 1
@@ -137,7 +145,6 @@ public struct PeakSpeedEvidenceAccumulator: Sendable {
         }
 
         acceptedSampleCount += 1
-        let measurement = PeakSpeedMeasurement(sample: sample)
 
         if peak.map({ measurement.metersPerSecond > $0.metersPerSecond }) ?? true {
             peak = measurement
