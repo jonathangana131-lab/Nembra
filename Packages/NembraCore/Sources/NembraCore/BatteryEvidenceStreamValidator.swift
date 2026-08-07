@@ -36,7 +36,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// Highest same-epoch raw callback identity observed by this validator, whether or not
     /// that callback ultimately produced accepted semantic evidence. This watermark prevents
     /// a rejected newer callback from reopening chronology for delayed older callbacks.
-    public private(set) var lastSeenReceiptIdentity: BatteryEvidenceReceiptIdentity?
+    private(set) var lastSeenReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
     private var lastSeenUptimeNanoseconds: UInt64?
     private var lastSeenReceiptContinuity: BatteryEvidenceContinuity?
