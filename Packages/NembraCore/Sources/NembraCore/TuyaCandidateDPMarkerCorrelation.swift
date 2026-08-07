@@ -381,17 +381,18 @@ public enum TuyaCandidateDPMarkerCorrelator {
         )
     }
 
-    /// Resolve nearest same-value alternatives as one bipartite assignment instead
-    /// of collapsing every marker to its first deterministic observation before
-    /// de-biasing. This preserves all independent physical support that can be
-    /// assigned without reusing an observation. Markers are considered in closer
-    /// distance order, then marker order, while augmenting paths may relocate an
-    /// already-matched marker to one of its equally-near alternatives.
+    /// Resolve nearest same-value alternatives by evidence priority rather than
+    /// marker order. Strictly closer proposals reserve their observations first.
+    /// Proposals at the same temporal distance are then split into connected
+    /// marker/observation components.
     ///
-    /// If capacity is genuinely insufficient, the previous conservative contract
-    /// remains: a uniquely closer holder keeps the observation and the farther
-    /// marker is shared; an unavoidable equal-distance conflict supports neither
-    /// side of that tie.
+    /// An equal-distance component produces marker-specific hits only when every
+    /// marker can be assigned an independent observation and that complete
+    /// assignment is unique. Deficient or multiply-matchable equal-priority
+    /// components are retained as shared/ambiguous evidence and reserve their
+    /// observations from farther markers. This prevents deterministic marker order
+    /// from manufacturing a displayed-reference association that timing does not
+    /// actually distinguish.
     private static func resolveSharedObservations(
         _ proposals: [MarkerHitProposal]
     ) -> ResolvedMarkerHits {
@@ -399,16 +400,153 @@ public enum TuyaCandidateDPMarkerCorrelator {
             return ResolvedMarkerHits(hits: [], sharedObservationMarkerIndices: [])
         }
 
-        let orderedProposals = proposals.sorted {
-            if $0.temporalDistanceNanoseconds != $1.temporalDistanceNanoseconds {
-                return $0.temporalDistanceNanoseconds < $1.temporalDistanceNanoseconds
-            }
-            return $0.markerIndex < $1.markerIndex
-        }
-        let proposalByMarker = Dictionary(
-            uniqueKeysWithValues: orderedProposals.map { ($0.markerIndex, $0) }
-        )
+        let distances = Set(proposals.map(\.temporalDistanceNanoseconds)).sorted()
+        var unavailableObservationIndices: Set<Int> = []
+        var occurrenceByMarker: [Int: CandidateOccurrence] = [:]
+        var proposalByMarker: [Int: MarkerHitProposal] = [:]
+        var sharedMarkerIndices: Set<Int> = []
 
+        for distance in distances {
+            let sameDistance = proposals
+                .filter { $0.temporalDistanceNanoseconds == distance }
+                .sorted { $0.markerIndex < $1.markerIndex }
+
+            var available: [MarkerHitProposal] = []
+            available.reserveCapacity(sameDistance.count)
+
+            for proposal in sameDistance {
+                proposalByMarker[proposal.markerIndex] = proposal
+                let occurrences = proposal.occurrences.filter {
+                    !unavailableObservationIndices.contains($0.observationIndex)
+                }
+                guard !occurrences.isEmpty else {
+                    sharedMarkerIndices.insert(proposal.markerIndex)
+                    continue
+                }
+                available.append(
+                    MarkerHitProposal(
+                        markerIndex: proposal.markerIndex,
+                        marker: proposal.marker,
+                        occurrences: occurrences,
+                        temporalDistanceNanoseconds: proposal.temporalDistanceNanoseconds
+                    )
+                )
+            }
+
+            for component in equalDistanceComponents(available) {
+                let componentObservationIndices = Set(
+                    component.flatMap { proposal in
+                        proposal.occurrences.map(\.observationIndex)
+                    }
+                )
+
+                guard let matching = fullMatching(component) else {
+                    sharedMarkerIndices.formUnion(component.map(\.markerIndex))
+                    unavailableObservationIndices.formUnion(componentObservationIndices)
+                    continue
+                }
+
+                var hasAlternativeCompleteMatching = false
+                for markerIndex in matching.keys.sorted() {
+                    guard let occurrence = matching[markerIndex] else { continue }
+                    if fullMatching(
+                        component,
+                        banningMarkerIndex: markerIndex,
+                        observationIndex: occurrence.observationIndex
+                    ) != nil {
+                        hasAlternativeCompleteMatching = true
+                        break
+                    }
+                }
+
+                guard !hasAlternativeCompleteMatching else {
+                    sharedMarkerIndices.formUnion(component.map(\.markerIndex))
+                    unavailableObservationIndices.formUnion(componentObservationIndices)
+                    continue
+                }
+
+                for (markerIndex, occurrence) in matching {
+                    occurrenceByMarker[markerIndex] = occurrence
+                    unavailableObservationIndices.insert(occurrence.observationIndex)
+                }
+            }
+        }
+
+        let hits = occurrenceByMarker.compactMap { markerIndex, occurrence in
+            proposalByMarker[markerIndex]?.makeHit(occurrence: occurrence)
+        }
+        .sorted { $0.markerIndex < $1.markerIndex }
+
+        return ResolvedMarkerHits(
+            hits: hits,
+            sharedObservationMarkerIndices: sharedMarkerIndices.sorted()
+        )
+    }
+
+    /// Connected components are computed only inside one equal-distance group
+    /// after observations already claimed/reserved by strictly closer evidence are
+    /// removed. Components are independent evidence decisions.
+    private static func equalDistanceComponents(
+        _ proposals: [MarkerHitProposal]
+    ) -> [[MarkerHitProposal]] {
+        guard !proposals.isEmpty else { return [] }
+
+        let proposalByMarker = Dictionary(
+            uniqueKeysWithValues: proposals.map { ($0.markerIndex, $0) }
+        )
+        var markersByObservation: [Int: [Int]] = [:]
+        for proposal in proposals {
+            for occurrence in proposal.occurrences {
+                markersByObservation[occurrence.observationIndex, default: []]
+                    .append(proposal.markerIndex)
+            }
+        }
+
+        var visitedMarkers: Set<Int> = []
+        var components: [[MarkerHitProposal]] = []
+
+        for seed in proposals.sorted(by: { $0.markerIndex < $1.markerIndex }) {
+            guard visitedMarkers.insert(seed.markerIndex).inserted else { continue }
+
+            var queue = [seed.markerIndex]
+            var nextIndex = 0
+            var markerIndices: [Int] = []
+
+            while nextIndex < queue.count {
+                let markerIndex = queue[nextIndex]
+                nextIndex += 1
+                markerIndices.append(markerIndex)
+
+                guard let proposal = proposalByMarker[markerIndex] else { continue }
+                for occurrence in proposal.occurrences {
+                    for neighbor in markersByObservation[occurrence.observationIndex, default: []] {
+                        if visitedMarkers.insert(neighbor).inserted {
+                            queue.append(neighbor)
+                        }
+                    }
+                }
+            }
+
+            components.append(
+                markerIndices.sorted().compactMap { proposalByMarker[$0] }
+            )
+        }
+
+        return components
+    }
+
+    /// Return one deterministic complete marker->observation assignment, or nil
+    /// when the component cannot independently support every marker. Supplying a
+    /// banned edge is used to prove whether the complete assignment is unique:
+    /// any different complete matching must omit at least one edge from the first.
+    private static func fullMatching(
+        _ component: [MarkerHitProposal],
+        banningMarkerIndex bannedMarkerIndex: Int? = nil,
+        observationIndex bannedObservationIndex: Int? = nil
+    ) -> [Int: CandidateOccurrence]? {
+        let proposalByMarker = Dictionary(
+            uniqueKeysWithValues: component.map { ($0.markerIndex, $0) }
+        )
         var markerByObservation: [Int: Int] = [:]
         var occurrenceByMarker: [Int: CandidateOccurrence] = [:]
 
@@ -420,6 +558,10 @@ public enum TuyaCandidateDPMarkerCorrelator {
 
             for occurrence in proposal.occurrences {
                 let observationIndex = occurrence.observationIndex
+                if markerIndex == bannedMarkerIndex,
+                   observationIndex == bannedObservationIndex {
+                    continue
+                }
                 guard visitedObservations.insert(observationIndex).inserted else {
                     continue
                 }
@@ -440,53 +582,18 @@ public enum TuyaCandidateDPMarkerCorrelator {
             return false
         }
 
-        for proposal in orderedProposals {
+        for proposal in component.sorted(by: { $0.markerIndex < $1.markerIndex }) {
             var visitedObservations: Set<Int> = []
-            _ = assign(
+            guard assign(
                 markerIndex: proposal.markerIndex,
                 visitedObservations: &visitedObservations
-            )
-        }
-
-        let unmatched = orderedProposals.filter {
-            occurrenceByMarker[$0.markerIndex] == nil
-        }
-        var sharedMarkerIndices = Set(unmatched.map(\.markerIndex))
-        var markersToDemote: Set<Int> = []
-
-        // A maximum-cardinality assignment must not turn an unavoidable equal-
-        // distance conflict into an arbitrary winner. Preserve the prior tie
-        // contract by demoting any assigned holder tied with an unmatched marker
-        // for the same physical observation. A uniquely closer holder remains a
-        // legitimate hit and only the farther unmatched marker stays shared.
-        for proposal in unmatched {
-            for occurrence in proposal.occurrences {
-                guard let holderMarkerIndex = markerByObservation[occurrence.observationIndex],
-                      let holder = proposalByMarker[holderMarkerIndex] else {
-                    continue
-                }
-                if holder.temporalDistanceNanoseconds == proposal.temporalDistanceNanoseconds {
-                    markersToDemote.insert(holderMarkerIndex)
-                    sharedMarkerIndices.insert(holderMarkerIndex)
-                }
+            ) else {
+                return nil
             }
         }
 
-        for markerIndex in markersToDemote {
-            if let occurrence = occurrenceByMarker.removeValue(forKey: markerIndex) {
-                markerByObservation.removeValue(forKey: occurrence.observationIndex)
-            }
-        }
-
-        let hits = occurrenceByMarker.compactMap { markerIndex, occurrence in
-            proposalByMarker[markerIndex]?.makeHit(occurrence: occurrence)
-        }
-        .sorted { $0.markerIndex < $1.markerIndex }
-
-        return ResolvedMarkerHits(
-            hits: hits,
-            sharedObservationMarkerIndices: sharedMarkerIndices.sorted()
-        )
+        guard occurrenceByMarker.count == component.count else { return nil }
+        return occurrenceByMarker
     }
 
     private static func validateMarkers(_ markers: [TuyaCandidateDPStockAppMarker]) throws {
