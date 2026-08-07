@@ -93,6 +93,37 @@ struct NavigationRouteRemainingCoherenceTests {
         )
     }
 
+    @Test("guidance bridge cannot promote contradictory progress marked confident")
+    func guidanceBridgeRechecksRawConsistency() throws {
+        let selectedRoute = try route()
+        var tracker = NavigationGuidanceProgressTracker()
+        let token = try tracker.select(route: selectedRoute)
+        let contradictoryMatch = NavigationRouteGeometryMatch(
+            receivedAtUptimeNanoseconds: 600,
+            stepIndex: 1,
+            distanceFromRouteMeters: 0,
+            distanceRemainingOnStepMeters: 75,
+            distanceRemainingOnRouteMeters: 50,
+            isProgressAssignmentConfident: true,
+            isDeviationAssessmentConfident: true,
+            startsNewRouteSegment: false
+        )
+
+        let observation = try contradictoryMatch.guidanceObservation(selectionToken: token)
+
+        #expect(observation.distanceRemainingOnStepMeters == 75)
+        #expect(observation.distanceRemainingOnRouteMeters == 75)
+        #expect(!observation.isProgressAssignmentConfident)
+        #expect(try tracker.observe(observation))
+        #expect(
+            tracker.state == .unavailable(
+                token: token,
+                route: selectedRoute,
+                reason: .ambiguousProgress
+            )
+        )
+    }
+
     @Test("session coordinator consumes incoherent projections transactionally")
     func sessionCoordinatorFailsProgressClosed() throws {
         let selectedRoute = try route()
