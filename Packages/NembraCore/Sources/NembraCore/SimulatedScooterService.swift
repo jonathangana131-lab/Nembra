@@ -25,8 +25,8 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
 public actor SimulatedScooterService: ScooterService {
     public nonisolated let profile: VehicleProfile
 
-    /// Representative values from the verified three-slot schema. These are
-    /// simulation fixtures, not a claim that a slot corresponds to a ride mode.
+    /// Synthetic QA values that exercise all three limiter slots without
+    /// attributing their ranges or mode relationship to any physical scooter.
     private static let representativeSpeedLimits: [SpeedLimitSlot: Int] = [
         .limit1: 12,
         .limit2: 18,
@@ -200,7 +200,7 @@ public actor SimulatedScooterService: ScooterService {
     private let commandAcknowledgementGate: (@Sendable () async throws -> Void)?
 
     public init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandLatencyNanoseconds: UInt64 = 120_000_000
     ) {
@@ -214,7 +214,7 @@ public actor SimulatedScooterService: ScooterService {
     /// on scheduler-sensitive wall-clock sleeps. Kept internal so production
     /// callers continue to use the real simulated latency contract above.
     init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandAcknowledgementGate: @escaping @Sendable () async throws -> Void
     ) {
@@ -280,7 +280,16 @@ public actor SimulatedScooterService: ScooterService {
         state.connectionIssue = nil
         state.connection = .connecting
         publish()
-        try? await Task.sleep(nanoseconds: 220_000_000)
+        do {
+            try await Task.sleep(nanoseconds: 220_000_000)
+        } catch {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
+        guard !Task.isCancelled else {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
         guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
         state.connection = .connected
         hydrateMissingVehicleDataAfterSuccessfulConnection()
@@ -312,8 +321,9 @@ public actor SimulatedScooterService: ScooterService {
         guard profile.capabilities.supportsLock else { throw ScooterCommandError.unsupportedCapability }
         let generation = try beginCommand()
         defer { finishCommand() }
-        guard (state.speedKilometersPerHour ?? 0) < 0.5 else { throw ScooterCommandError.commandRejected }
+        try ensureKnownStoppedSpeed()
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
+        try ensureKnownStoppedSpeed()
         state.isLocked = locked
         publish()
     }
@@ -366,9 +376,12 @@ public actor SimulatedScooterService: ScooterService {
 
     public func simulateRide(speedKilometersPerHour: Double, elapsedSeconds: Double) {
         guard state.connection == .connected, state.isLocked != true else { return }
-        guard speedKilometersPerHour.isFinite, elapsedSeconds.isFinite, elapsedSeconds >= 0 else { return }
+        guard speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              elapsedSeconds.isFinite,
+              elapsedSeconds >= 0 else { return }
 
-        let speed = max(0, speedKilometersPerHour)
+        let speed = speedKilometersPerHour
         let distance = speed * elapsedSeconds / 3600
         guard distance.isFinite else { return }
         state.speedKilometersPerHour = speed
@@ -452,6 +465,13 @@ public actor SimulatedScooterService: ScooterService {
         if state.currentAmps == nil { state.currentAmps = fixture.currentAmps }
     }
 
+    private func cancelConnectionAttemptIfCurrent(_ attemptGeneration: UInt64) {
+        guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
+        connectionGeneration &+= 1
+        state.connection = .disconnected
+        publish()
+    }
+
     private func beginCommand() throws -> UInt64 {
         guard !commandInFlight else { throw ScooterCommandError.commandInProgress }
         try ensureConnected()
@@ -465,6 +485,15 @@ public actor SimulatedScooterService: ScooterService {
 
     private func ensureConnected() throws {
         guard state.connection == .connected else { throw ScooterCommandError.disconnected }
+    }
+
+    private func ensureKnownStoppedSpeed() throws {
+        guard let speedKilometersPerHour = state.speedKilometersPerHour,
+              speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              speedKilometersPerHour < 0.5 else {
+            throw ScooterCommandError.commandRejected
+        }
     }
 
     private func acknowledgeLatency(expectedConnectionGeneration: UInt64) async throws {
