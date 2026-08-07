@@ -163,19 +163,20 @@ struct TuyaCandidateDPMarkerCorrelationAlternativeAssignmentTests {
         let report = try TuyaCandidateDPMarkerCorrelator.analyze(
             scope: scope(),
             markers: [
-                try marker(90, "A"),
-                try marker(110, "B")
+                try marker(110, "A"),
+                try marker(130, "B")
             ],
             observations: [
                 try observation(completionUptimeNanoseconds: 100),
-                try observation(completionUptimeNanoseconds: 100)
+                try observation(completionUptimeNanoseconds: 120),
+                try observation(completionUptimeNanoseconds: 140)
             ],
             policy: policy(distance: 10)
         )
 
-        // Equal observation completion uptimes are intentionally invalid under the
-        // parent chronology contract, so construct the equivalent unique-chronology
-        // ambiguity with three observations and two markers instead.
-        #expect(report.candidates.isEmpty)
+        let evidence = try #require(report.candidates.first)
+        #expect(evidence.matchedMarkerCount == 0)
+        #expect(evidence.hits.isEmpty)
+        #expect(evidence.sharedObservationMarkerIndices == [0, 1])
     }
 }
