@@ -1,8 +1,8 @@
 import Foundation
 
 /// Caller-assigned roles for one narrow electrical relationship hypothesis.
-/// Roles describe the stock-app anchors a researcher deliberately chose; they
-/// never assign AOVOPRO ES80 DP semantics to a candidate.
+/// Roles describe stock-app anchors chosen by a researcher; they never assign
+/// AOVOPRO ES80 DP semantics to a candidate.
 public enum TuyaCandidateDPElectricalRole: String, Equatable, Hashable, Sendable {
     case voltage
     case current
@@ -44,7 +44,7 @@ public struct TuyaCandidateDPElectricalEvidenceContextIdentity: Equatable, Hasha
 }
 
 /// Explicit per-role association between each numeric report and its capture
-/// context. All three identities must match before uptime-based span math occurs.
+/// context. All identities must match before uptime-based span math occurs.
 public struct TuyaCandidateDPElectricalEvidenceContextBindings: Equatable, Sendable {
     public let voltage: TuyaCandidateDPElectricalEvidenceContextIdentity
     public let current: TuyaCandidateDPElectricalEvidenceContextIdentity
@@ -62,9 +62,8 @@ public struct TuyaCandidateDPElectricalEvidenceContextBindings: Equatable, Senda
 }
 
 /// One explicit three-field stock-app anchor group. Marker indices are local to
-/// the three caller-supplied numeric-hypothesis reports. Reusing one marker
-/// within a role across multiple anchors is rejected so support cannot be
-/// inflated from one observation.
+/// the three caller-supplied numeric-hypothesis reports. Reusing one marker in a
+/// role across anchors is rejected so support cannot be inflated.
 public struct TuyaCandidateDPElectricalAnchor: Equatable, Hashable, Sendable {
     public let voltageMarkerIndex: Int
     public let currentMarkerIndex: Int
@@ -101,8 +100,8 @@ public struct TuyaCandidateDPElectricalAnchor: Equatable, Hashable, Sendable {
 
 /// Caller-owned bounds for the explicit research relationship
 /// `power = voltage × current`. Values are interpreted only in the caller's
-/// chosen display-space units after #280's explicit numeric transforms. There
-/// are intentionally no ES80 timing or tolerance defaults.
+/// chosen display-space units after the parent numeric transforms. There are no
+/// ES80 timing or tolerance defaults here.
 public struct TuyaCandidateDPElectricalCoherencePolicy: Equatable, Sendable {
     public let maximumAnchorCount: Int
     public let maximumEvidenceSpanNanoseconds: UInt64
@@ -160,13 +159,16 @@ public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
 }
 
 /// Exact candidate + transform selected by the caller for one research role.
-/// Selection remains evidence provenance only, never a decoded-field declaration.
+/// The exact parent numeric tolerance is retained because a bare
+/// `isWithinTolerance` flag is not auditable without the threshold that produced
+/// it. Selection remains evidence provenance only, never field authority.
 public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
     public let role: TuyaCandidateDPElectricalRole
     public let fieldLabel: String
     public let candidateIndex: Int
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let hypothesis: TuyaCandidateDPNumericTransformHypothesis
+    public let numericAbsoluteTolerance: Double
     public let evaluableSampleCount: Int
 
     fileprivate init(
@@ -179,6 +181,7 @@ public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
         candidateIndex = report.candidateIndex
         candidate = report.candidate
         hypothesis = evidence.hypothesis
+        numericAbsoluteTolerance = report.absoluteTolerance
         evaluableSampleCount = evidence.samples.count
     }
 }
@@ -214,7 +217,7 @@ public struct TuyaCandidateDPElectricalRejectedAnchor: Equatable, Sendable {
 ///
 /// Joint support requires:
 /// 1. stock-app references themselves are relationship-coherent;
-/// 2. all three #280 transforms individually match their numeric anchors;
+/// 2. all three parent numeric transforms individually match their anchors;
 /// 3. transformed candidate values are relationship-coherent.
 ///
 /// This is research prioritization evidence, never protocol confidence.
