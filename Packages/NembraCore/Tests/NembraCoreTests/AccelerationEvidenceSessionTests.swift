@@ -214,11 +214,11 @@ struct AccelerationEvidenceSessionTests {
         let readiness = snapshot.readiness()
         let result = try #require(readiness.result)
         let trace = try #require(snapshot.timingTraceBenchmark)
+        let quality = try #require(readiness.telemetryQuality)
 
         #expect(readiness.isReady)
         #expect(readiness.failures.isEmpty)
-        #expect(readiness.telemetryQuality.isQualified)
-        #expect(snapshot.attemptStreamBenchmark.acceptedSampleCount == 4)
+        #expect(quality.isQualified)
         #expect(trace.acceptedSampleCount == 4)
         #expect(trace.intervalCount == 3)
         #expect(result.source == .scooterBluetooth)
@@ -227,11 +227,11 @@ struct AccelerationEvidenceSessionTests {
         #expect(result.timingEvidenceSampleCount == 4)
     }
 
-    @Test("superseded stationary anchors do not enter completed-run quality")
+    @Test("superseded stationary anchors and long idle time do not enter completed-run quality")
     func traceStartsAtFinalStationaryAnchor() throws {
         var session = AccelerationEvidenceSession(policy: try policy())
         for evidence in try [
-            sample(metersPerSecond: 0, uptimeNanoseconds: 800_000_000),
+            sample(metersPerSecond: 0, uptimeNanoseconds: 100_000_000),
             sample(metersPerSecond: 0.1, uptimeNanoseconds: 1_000_000_000),
             sample(metersPerSecond: 4, uptimeNanoseconds: 1_200_000_000),
             sample(metersPerSecond: 8, uptimeNanoseconds: 1_400_000_000),
@@ -245,13 +245,13 @@ struct AccelerationEvidenceSessionTests {
         let result = try #require(readiness.result)
         let trace = try #require(snapshot.timingTraceBenchmark)
 
-        #expect(snapshot.attemptStreamBenchmark.acceptedSampleCount == 5)
         #expect(trace.acceptedSampleCount == 4)
+        #expect(trace.maximumIntervalMilliseconds == 200)
         #expect(result.launchObservationWindow.earliestUptimeNanoseconds == 1_000_000_000)
         #expect(readiness.isReady)
     }
 
-    @Test("green attempt statistics cannot hide a shallow retained timing trace")
+    @Test("a shallow retained timing trace cannot become reportable")
     func timingTraceMustMeetQualitySampleDepth() throws {
         var session = AccelerationEvidenceSession(policy: try policy())
         for evidence in try [
@@ -267,14 +267,11 @@ struct AccelerationEvidenceSessionTests {
         let readiness = snapshot.readiness()
         let result = try #require(readiness.result)
         let trace = try #require(snapshot.timingTraceBenchmark)
-        let attemptQuality = snapshot.attemptStreamBenchmark.qualityAssessment(
-            using: snapshot.policy.telemetry
-        )
+        let quality = try #require(readiness.telemetryQuality)
 
-        #expect(attemptQuality.isQualified)
         #expect(trace.acceptedSampleCount == 2)
         #expect(result.timingEvidenceSampleCount == 2)
-        #expect(!readiness.telemetryQuality.isQualified)
+        #expect(!quality.isQualified)
         #expect(!readiness.isReady)
         #expect(readiness.failures.contains(.insufficientTimingEvidenceSamples(
             required: 4,
@@ -344,9 +341,9 @@ struct AccelerationEvidenceSessionTests {
         let snapshot = session.snapshot
         let trace = try #require(snapshot.timingTraceBenchmark)
         let resolution = try #require(trace.empiricalMinimumNonzeroSpeedStepKilometersPerHour)
-        let attemptQuality = snapshot.attemptStreamBenchmark.qualityAssessment(using: telemetry)
         let readiness = snapshot.readiness()
-        let resolutionFailure = readiness.telemetryQuality.failures.first { failure in
+        let quality = try #require(readiness.telemetryQuality)
+        let resolutionFailure = quality.failures.first { failure in
             if case .speedResolutionStepExceeded = failure {
                 return true
             }
@@ -358,18 +355,16 @@ struct AccelerationEvidenceSessionTests {
             return
         }
 
-        #expect(attemptQuality.isQualified)
-        #expect(snapshot.attemptStreamBenchmark.acceptedSampleCount == 5)
         #expect(trace.acceptedSampleCount == 4)
         #expect(abs(resolution - 7.2) < 0.000_001)
-        #expect(!readiness.telemetryQuality.isQualified)
+        #expect(!quality.isQualified)
         #expect(maximum == 1)
         #expect(abs(actual - resolution) < 0.000_001)
         #expect(!readiness.isReady)
     }
 
-    @Test("foreign providers coexist without contaminating the selected-source benchmark")
-    func foreignSourceIsIgnoredBeforeBothEvidenceConsumers() throws {
+    @Test("foreign providers coexist without contaminating the selected-source trace")
+    func foreignSourceIsIgnoredBeforeTimingEvidence() throws {
         var session = AccelerationEvidenceSession(policy: try policy())
         let foreign = try sample(
             source: .gps,
@@ -384,10 +379,9 @@ struct AccelerationEvidenceSessionTests {
             actual: .gps
         ))
         #expect(session.snapshot.ignoredForeignSourceCallbackCount == 1)
-        #expect(session.snapshot.attemptStreamBenchmark.acceptedSampleCount == 0)
-        #expect(session.snapshot.attemptStreamBenchmark.rejectedSampleCount == 0)
         #expect(session.snapshot.timingTraceBenchmark == nil)
         #expect(session.state == .waitingForStandstill)
+        #expect(session.snapshot.readiness().telemetryQuality == nil)
     }
 
     @Test("post-completion packets cannot improve a completed attempt's quality")
@@ -429,6 +423,7 @@ struct AccelerationEvidenceSessionTests {
         #expect(snapshot.continuityWasBroken)
         #expect(snapshot.knownObservationInterruptionCount == 1)
         #expect(snapshot.timingTraceBenchmark == nil)
+        #expect(readiness.telemetryQuality == nil)
         #expect(readiness.failures.contains(.knownObservationInterruption(count: 1)))
         #expect(readiness.failures.contains(.runInvalidated(
             .interruption(.vehicleConnectionLost)
@@ -456,6 +451,7 @@ struct AccelerationEvidenceSessionTests {
         let readiness = session.snapshot.readiness()
         #expect(!readiness.isReady)
         #expect(readiness.result == nil)
+        #expect(readiness.telemetryQuality == nil)
         #expect(readiness.failures.contains(.runInvalidated(.measurementGapExceeded)))
     }
 
@@ -472,16 +468,18 @@ struct AccelerationEvidenceSessionTests {
             uptimeNanoseconds: 1_200_000_000
         ))
 
-        guard case .processed(.rejected(.nonFiniteDerivedSpeed), .completed) = record else {
-            Issue.record("Expected timing completion while the attempt benchmark rejects derived km/h evidence")
+        guard case .processed(runState: .completed) = record else {
+            Issue.record("Expected timing completion before retained benchmark readiness is assessed")
             return
         }
 
         let snapshot = session.snapshot
         let trace = try #require(snapshot.timingTraceBenchmark)
         let readiness = snapshot.readiness()
+        let quality = try #require(readiness.telemetryQuality)
 
         #expect(trace.rejectedSampleCount == 1)
+        #expect(!quality.isQualified)
         #expect(!readiness.isReady)
         #expect(readiness.result != nil)
         #expect(readiness.failures.contains(.selectedSourceBenchmarkRejectedSamples(count: 1)))
@@ -497,7 +495,7 @@ struct AccelerationEvidenceSessionTests {
             metersPerSecond: 0,
             uptimeNanoseconds: 1_000_000_000
         )) == .ignoredAfterTerminalEvidence)
-        #expect(session.snapshot.attemptStreamBenchmark.acceptedSampleCount == 0)
         #expect(session.snapshot.timingTraceBenchmark == nil)
+        #expect(session.snapshot.readiness().telemetryQuality == nil)
     }
 }
