@@ -24,7 +24,7 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
   --peripheral '<exact captured identifier>'
 ```
 
-Write the deterministic JSON report atomically to a file:
+Write the deterministic JSON report to a file:
 
 ```sh
 swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-report \
@@ -47,7 +47,9 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
   --force-output
 ```
 
-Without `--force-output`, the final Foundation write also uses `withoutOverwriting` in addition to the preflight path check so a newly appearing file cannot be silently replaced between validation and the atomic write.
+For protected output, Nembra writes the report to a uniquely named sibling first and then publishes it with a non-replacing `FileManager.moveItem`. If a destination appears after preflight, the move fails instead of replacing it, and the temporary sibling is cleaned. This avoids relying on the unsupported Foundation combination of atomic + without-overwriting write options.
+
+With `--force-output`, the source-capture identity check still runs first, then Foundation atomic replacement is allowed only for a distinct derived-report path.
 
 These protections are about preserving research evidence and prior derived artifacts. They are not physical-device safety claims.
 
