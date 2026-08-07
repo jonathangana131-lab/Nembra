@@ -3,10 +3,13 @@ import NembraCore
 public extension PassiveBluetoothTransportFingerprint {
     /// Conservative convenience for callers that do not yet have an explicit
     /// peripheral selection. It only returns transport evidence when exactly one
-    /// peripheral has produced connected/GATT evidence in the capture.
+    /// peripheral has produced GATT-path evidence in the capture.
     ///
-    /// Advertisement-only scans can contain unrelated nearby Tuya devices, so
-    /// they intentionally return an empty report rather than an aggregate guess.
+    /// Advertisement-only scans and connection-only records can contain unrelated
+    /// nearby devices or prove only link identity, so they intentionally return an
+    /// empty report rather than an aggregate transport guess. Structured
+    /// subscription evidence may count because it names an exact service and
+    /// characteristic path.
     static func analyze(
         _ session: PassiveBluetoothCaptureSession
     ) -> PassiveBluetoothTransportFingerprintReport {
@@ -36,9 +39,11 @@ public extension PassiveBluetoothTransportFingerprint {
                 identifiers.insert(observation.peripheralIdentifier)
             case let .descriptor(observation):
                 identifiers.insert(observation.peripheralIdentifier)
+            case let .subscription(observation):
+                identifiers.insert(observation.peripheralIdentifier)
             case let .value(observation):
                 identifiers.insert(observation.peripheralIdentifier)
-            case .advertisement, .stockAppState, .interruption:
+            case .advertisement, .connection, .stockAppState, .interruption:
                 break
             }
         }
