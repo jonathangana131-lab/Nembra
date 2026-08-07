@@ -141,6 +141,28 @@ struct RidePowerStatisticsTests {
         #expect(summary.highestAcceptedObservedPowerSessionID == nil)
     }
 
+    @Test("accepted zero watts remains real evidence instead of collapsing to unavailable")
+    func acceptedZeroWattsRemainsEvidence() throws {
+        let ride = try completedRide(sessionID: sessionA)
+        let peak = try completedPeak(
+            ride: ride,
+            scope: simulatorScope(),
+            watts: 0
+        )
+        let summary = try RidePowerStatisticsAggregator.summarize(
+            period: .allTime,
+            rides: [try statisticsRide(ride: ride, peak: peak)],
+            referenceDate: epoch,
+            calendar: calendar
+        )
+
+        #expect(summary.acceptedPeakPowerRideCount == 1)
+        #expect(summary.unavailablePeakPowerRideCount == 0)
+        #expect(summary.peakPowerAvailability == .complete)
+        #expect(summary.highestAcceptedObservedPowerWatts == 0)
+        #expect(summary.highestAcceptedObservedPowerSessionID == sessionA)
+    }
+
     @Test("gap-free same-vehicle peaks across modes produce a complete observed maximum")
     func gapFreePeaksAcrossModesRemainComparable() throws {
         let rideA = try completedRide(sessionID: sessionA)
