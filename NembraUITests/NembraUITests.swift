@@ -96,7 +96,7 @@ final class NembraUITests: XCTestCase {
             battery.tap()
         }
         XCTAssertTrue(
-            waitForValue("71 percent, last known vehicle data", element: battery),
+            waitForDashboardBatteryValue("71 percent, last known vehicle data", in: app),
             "Reconnect must not promote cached 71% charge into live battery truth before field-specific current evidence exists."
         )
         keepScreenshot(named: "Dashboard Reconnected Cached Battery Landscape")
@@ -146,16 +146,16 @@ final class NembraUITests: XCTestCase {
         // in a connected fixture until the accepted battery live-truth bridge exists.
         if (battery.value as? String)?.contains("Estimated range unavailable") == true {
             battery.tap()
-            XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: battery))
+            XCTAssertTrue(waitForDashboardBatteryValue("92 percent, last known vehicle data", in: app))
         } else {
-            XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: battery))
+            XCTAssertTrue(waitForDashboardBatteryValue("92 percent, last known vehicle data", in: app))
         }
 
-        battery.tap()
+        app.buttons["dashboard.battery"].tap()
         XCTAssertTrue(
-            waitForValue(
+            waitForDashboardBatteryValue(
                 "Estimated range unavailable, battery charge is last known vehicle data",
-                element: battery
+                in: app
             ),
             "Range mode must not synthesize mileage or promote unqualified battery data into live truth."
         )
@@ -177,9 +177,9 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(leftBattery.waitForExistence(timeout: 4))
         assertMinimumTouchTarget(leftBattery, named: "Dashboard battery in landscape left")
         XCTAssertTrue(
-            waitForValue(
+            waitForDashboardBatteryValue(
                 "Estimated range unavailable, battery charge is last known vehicle data",
-                element: leftBattery
+                in: app
             ),
             "The range preference and last-known charge qualification must survive portrait → opposite-landscape continuity."
         )
@@ -193,16 +193,16 @@ final class NembraUITests: XCTestCase {
         let relaunchedBattery = app.buttons["dashboard.battery"]
         XCTAssertTrue(relaunchedBattery.waitForExistence(timeout: 4))
         XCTAssertTrue(
-            waitForValue(
+            waitForDashboardBatteryValue(
                 "Estimated range unavailable, battery charge is last known vehicle data",
-                element: relaunchedBattery
+                in: app
             ),
             "The stored battery/range presentation preference must survive app relaunch without changing battery currentness."
         )
 
         // Restore the stable percentage preference for following UI tests.
-        relaunchedBattery.tap()
-        XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: relaunchedBattery))
+        app.buttons["dashboard.battery"].tap()
+        XCTAssertTrue(waitForDashboardBatteryValue("92 percent, last known vehicle data", in: app))
     }
 
     @MainActor
@@ -220,22 +220,22 @@ final class NembraUITests: XCTestCase {
             battery.tap()
         }
         XCTAssertTrue(
-            waitForValue("71 percent, last known vehicle data", element: battery),
+            waitForDashboardBatteryValue("71 percent, last known vehicle data", in: app),
             "Retained battery charge must never be announced as live telemetry."
         )
 
-        battery.tap()
+        app.buttons["dashboard.battery"].tap()
         XCTAssertTrue(
-            waitForValue(
+            waitForDashboardBatteryValue(
                 "Estimated range unavailable, battery charge is last known vehicle data",
-                element: battery
+                in: app
             ),
             "Range mode must preserve retained-battery provenance while remaining unavailable."
         )
 
         // Restore percentage for deterministic following tests.
-        battery.tap()
-        XCTAssertTrue(waitForValue("71 percent, last known vehicle data", element: battery))
+        app.buttons["dashboard.battery"].tap()
+        XCTAssertTrue(waitForDashboardBatteryValue("71 percent, last known vehicle data", in: app))
     }
 
     @MainActor
@@ -270,22 +270,22 @@ final class NembraUITests: XCTestCase {
             battery.tap()
         }
         XCTAssertTrue(
-            waitForValue("14 percent, last known vehicle data, low battery", element: battery),
+            waitForDashboardBatteryValue("14 percent, last known vehicle data, low battery", in: app),
             "The low-battery warning must remain accessible without promoting legacy VehicleState charge into verified-live truth."
         )
 
-        battery.tap()
+        app.buttons["dashboard.battery"].tap()
         XCTAssertTrue(
-            waitForValue(
+            waitForDashboardBatteryValue(
                 "Estimated range unavailable, battery charge is last known vehicle data, low battery",
-                element: battery
+                in: app
             ),
             "Range mode must retain both the fail-closed currentness qualifier and low-battery warning."
         )
         keepScreenshot(named: "Dashboard Low Battery Range Unavailable Landscape")
 
-        battery.tap()
-        XCTAssertTrue(waitForValue("14 percent, last known vehicle data, low battery", element: battery))
+        app.buttons["dashboard.battery"].tap()
+        XCTAssertTrue(waitForDashboardBatteryValue("14 percent, last known vehicle data, low battery", in: app))
     }
 
     @MainActor
@@ -412,6 +412,22 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func button(containing fragment: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
+    }
+
+    @MainActor
+    private func waitForDashboardBatteryValue(
+        _ value: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let currentBattery = app.buttons.matching(
+            NSPredicate(
+                format: "identifier == %@ AND value == %@",
+                "dashboard.battery",
+                value
+            )
+        ).firstMatch
+        return currentBattery.waitForExistence(timeout: timeout)
     }
 
     @MainActor
