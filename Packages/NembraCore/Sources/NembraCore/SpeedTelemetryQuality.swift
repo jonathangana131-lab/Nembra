@@ -197,7 +197,9 @@ public extension TelemetryBenchmarkSummary {
         }
 
         if let maximum = policy.maximumEmpiricalSpeedStepKilometersPerHour {
-            if let actual = empiricalMinimumNonzeroSpeedStepKilometersPerHour {
+            if let actual = empiricalMinimumNonzeroSpeedStepKilometersPerHour,
+               actual.isFinite,
+               actual >= 0 {
                 if actual > maximum {
                     failures.append(.speedResolutionStepExceeded(
                         maximumKilometersPerHour: maximum,
