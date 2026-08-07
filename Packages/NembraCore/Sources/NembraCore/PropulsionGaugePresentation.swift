@@ -7,22 +7,49 @@ public enum PropulsionPowerSampleAuthority: String, Codable, Sendable {
     case simulator
 }
 
+public enum PropulsionGaugeIdentityError: Error, Equatable, Sendable {
+    case invalidVehicleID
+    case invalidModeKey
+}
+
 public struct PropulsionGaugeIdentity: Hashable, Codable, Sendable {
     public let vehicleID: String
     public let modeKey: String?
 
-    public init(vehicleID: String, modeKey: String? = nil) {
+    private enum CodingKeys: String, CodingKey {
+        case vehicleID
+        case modeKey
+    }
+
+    public init(vehicleID: String, modeKey: String? = nil) throws {
+        guard !vehicleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PropulsionGaugeIdentityError.invalidVehicleID
+        }
+        if let modeKey,
+           modeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw PropulsionGaugeIdentityError.invalidModeKey
+        }
         self.vehicleID = vehicleID
         self.modeKey = modeKey
     }
 
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            vehicleID: container.decode(String.self, forKey: .vehicleID),
+            modeKey: container.decodeIfPresent(String.self, forKey: .modeKey)
+        )
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(vehicleID, forKey: .vehicleID)
+        try container.encodeIfPresent(modeKey, forKey: .modeKey)
+    }
+
     fileprivate var isStructurallyValid: Bool {
-        guard !vehicleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
-        }
-        return modeKey.map {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } ?? true
+        !vehicleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (modeKey.map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? true)
     }
 }
 
@@ -215,11 +242,13 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
     public static func observedEnvelope(
         _ calibration: ObservedPowerEnvelopeCalibration
     ) throws -> Self {
-        let identity = PropulsionGaugeIdentity(
-            vehicleID: calibration.scope.vehicleIdentityKey,
-            modeKey: calibration.scope.confirmedModeKey
-        )
-        guard identity.isStructurallyValid else {
+        let identity: PropulsionGaugeIdentity
+        do {
+            identity = try PropulsionGaugeIdentity(
+                vehicleID: calibration.scope.vehicleIdentityKey,
+                modeKey: calibration.scope.confirmedModeKey
+            )
+        } catch {
             throw PropulsionGaugeScaleError.invalidIdentity
         }
 
