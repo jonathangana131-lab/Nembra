@@ -244,8 +244,8 @@ struct LiveDistanceIntegrationTests {
         }
     }
 
-    @Test("distance overflow is rejected without advancing the valid anchor")
-    func overflowIsTransactional() throws {
+    @Test("distance overflow preserves accepted evidence but consumes authoritative chronology")
+    func overflowPreservesAcceptedEvidenceAndConsumesChronology() throws {
         var accumulator = LiveDistanceSegmentAccumulator(
             policy: try policy(maximumGap: 3_000_000_000),
             segmentStartUptimeNanoseconds: 0
@@ -259,11 +259,11 @@ struct LiveDistanceIntegrationTests {
         )
         #expect(accumulator.snapshot == before)
 
-        let retry = accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
-        guard case .integrated = retry else {
-            Issue.record("overflow rejection must not advance the integration anchor")
-            return
-        }
+        #expect(
+            accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
+                == .rejected(.nonIncreasingTimestamp)
+        )
+        #expect(accumulator.snapshot == before)
     }
 
     @Test("finalizing without an integrated interval remains unavailable rather than fake zero")
