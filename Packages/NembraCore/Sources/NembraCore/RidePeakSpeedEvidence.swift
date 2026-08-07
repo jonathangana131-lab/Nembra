@@ -114,7 +114,11 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
     public let knownInterruptionCount: Int
     public let observationContinuity: PeakSpeedObservationContinuity
 
-    public init(
+    /// Package-sealed until NembraCore has a mechanically bound completed-record
+    /// adapter. Session UUID + continuity are necessary identity evidence, but by
+    /// themselves do not prove that two independently supplied completed records
+    /// are the exact same immutable ride.
+    package init(
         completedRide: CompletedRideEvidence,
         ridePeak: RidePeakSpeedEvidence
     ) throws {
@@ -148,9 +152,10 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         )
     }
 
-    /// Verifies that this durable projection still belongs to the completed ride
-    /// a caller is about to join it with. This never consults wall-clock deltas.
-    public func validate(against completedRide: CompletedRideEvidence) throws {
+    /// Trusted package adapters may revalidate session + continuity before a
+    /// mechanically bound join. This is deliberately not a public proof that two
+    /// arbitrary same-UUID completed records are the same immutable ride.
+    package func validate(against completedRide: CompletedRideEvidence) throws {
         guard completedRide.sessionID == sessionID else {
             throw CompletedRidePeakSpeedEvidenceError.sessionMismatch
         }
