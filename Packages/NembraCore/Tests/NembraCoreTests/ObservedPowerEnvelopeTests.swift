@@ -325,8 +325,8 @@ struct ObservedPowerEnvelopeTests {
         )) == .acceptedLearningSample)
     }
 
-    @Test("receipt sequence and uptime both fail closed when evidence order regresses")
-    func orderingRegressionFailsClosed() throws {
+    @Test("backward uptime consumes fresh callback identity without lowering the uptime floor")
+    func rejectedUptimeStillConsumesImmutableReceiptIdentity() throws {
         var learner = try physicalLearner()
 
         #expect(learner.record(physicalObservation(
@@ -334,20 +334,41 @@ struct ObservedPowerEnvelopeTests {
             uptime: 100,
             sequence: 10
         )) == .acceptedLearningSample)
-        #expect(learner.record(physicalObservation(
-            watts: 510,
-            uptime: 200,
-            sequence: 9
-        )) == .rejected(.nonIncreasingObservationSequence))
+
+        // A genuinely newer callback is part of this scoped stream even when its
+        // immutable uptime metadata is invalid. Its sequence must remain consumed.
         #expect(learner.record(physicalObservation(
             watts: 520,
             uptime: 99,
-            sequence: 11
+            sequence: 12
         )) == .rejected(.nonIncreasingObservationTimestamp))
+
+        // Delayed lower sequence cannot re-enter after the rejected newer callback.
         #expect(learner.record(physicalObservation(
-            watts: 530,
+            watts: 510,
             uptime: 100,
             sequence: 11
+        )) == .rejected(.nonIncreasingObservationSequence))
+
+        // The same raw callback identity cannot be rewritten with a better uptime.
+        #expect(learner.record(physicalObservation(
+            watts: 520,
+            uptime: 100,
+            sequence: 12
+        )) == .rejected(.nonIncreasingObservationSequence))
+
+        // Repeated bad uptime does not lower the preserved 100 ns uptime floor.
+        #expect(learner.record(physicalObservation(
+            watts: 530,
+            uptime: 99,
+            sequence: 13
+        )) == .rejected(.nonIncreasingObservationTimestamp))
+
+        // A genuinely newer receipt can recover at the unchanged monotonic floor.
+        #expect(learner.record(physicalObservation(
+            watts: 540,
+            uptime: 100,
+            sequence: 14
         )) == .acceptedLearningSample)
     }
 
