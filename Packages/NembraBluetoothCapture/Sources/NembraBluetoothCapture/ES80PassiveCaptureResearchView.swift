@@ -23,6 +23,7 @@ public struct ES80PassiveCaptureResearchView: View {
     @State private var analysis: AnalysisSummary?
     @State private var exportDocument: PassiveCaptureJSONDocument?
     @State private var isExporting = false
+    @State private var artifactReadOperation: ArtifactReadOperation?
 
     public init(controller: ForegroundCoreBluetoothCaptureController) {
         self.controller = controller
@@ -46,9 +47,11 @@ public struct ES80PassiveCaptureResearchView: View {
             contentType: .json,
             defaultFilename: "Nembra-ES80-passive-capture"
         ) { result in
+            isExporting = false
+            exportDocument = nil
             switch result {
             case .success:
-                diagnosticMessage = "Capture JSON exported."
+                diagnosticMessage = "Capture JSON exported. Live capture may continue; prepare a new snapshot before the next export."
             case let .failure(error):
                 diagnosticMessage = "Export failed: \(error.localizedDescription)"
             }
@@ -80,8 +83,14 @@ public struct ES80PassiveCaptureResearchView: View {
             LabeledContent("Connection", value: connectionLabel)
             LabeledContent("Selected target", value: selectedTargetLabel)
 
+            if controller.isSelectedTargetAwaitingTerminalCallback {
+                Label("Waiting for Bluetooth to finish the selected target's cancellation", systemImage: "hourglass")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Toggle("Capture advertisement cadence", isOn: $captureAdvertisementCadence)
-                .disabled(controller.isScanning)
+                .disabled(controller.isScanning || artifactInteractionLocked)
 
             HStack {
                 Button(controller.isScanning ? "Stop scan" : "Start scan") {
@@ -93,9 +102,11 @@ public struct ES80PassiveCaptureResearchView: View {
                                 captureAdvertisementCadence: captureAdvertisementCadence
                             )
                         }
+                        analysis = nil
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(artifactInteractionLocked)
 
                 if case .idle = controller.connectionPhase {
                     EmptyView()
@@ -105,7 +116,14 @@ public struct ES80PassiveCaptureResearchView: View {
                         analysis = nil
                         exportDocument = nil
                     }
+                    .disabled(artifactInteractionLocked)
                 }
+            }
+
+            if artifactInteractionLocked {
+                Label(artifactInteractionStatus, systemImage: "doc.badge.clock")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if controller.captureFailed {
@@ -156,22 +174,28 @@ public struct ES80PassiveCaptureResearchView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
-                                Button(controller.selectedTargetIdentifier == peripheral.id ? "Reconnect target" : "Select & connect") {
+                                Button(connectionActionLabel(for: peripheral.id)) {
                                     perform {
                                         try controller.connect(to: peripheral.id)
                                         analysis = nil
                                         exportDocument = nil
                                     }
                                 }
-                                .disabled(!canStartConnection)
+                                .disabled(!canStartConnection(to: peripheral.id))
                             }
 
                             Spacer()
 
                             if controller.selectedTargetIdentifier == peripheral.id {
-                                Label("Selected target", systemImage: "scope")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if controller.isSelectedTargetAwaitingTerminalCallback {
+                                    Label("Cancellation pending", systemImage: "hourglass")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Label("Selected target", systemImage: "scope")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             } else if peripheral.isConnectable == true {
                                 Text("Connectable")
                                     .font(.caption)
@@ -192,11 +216,14 @@ public struct ES80PassiveCaptureResearchView: View {
                     Text(field.title).tag(field)
                 }
             }
+            .disabled(artifactInteractionLocked)
 
             TextField(markerField.placeholder, text: $markerValue)
+                .disabled(artifactInteractionLocked)
 
             TextField("Optional note", text: $markerNote, axis: .vertical)
                 .lineLimit(2...4)
+                .disabled(artifactInteractionLocked)
 
             Button("Record marker") {
                 perform {
@@ -207,12 +234,14 @@ public struct ES80PassiveCaptureResearchView: View {
                     )
                     markerValue = ""
                     markerNote = ""
-                    diagnosticMessage = "Recorded \(markerField.title) marker."
+                    analysis = nil
+                    diagnosticMessage = "Recorded \(markerField.title) marker. Refresh the evidence summary to include the new marker."
                 }
             }
             .disabled(
                 markerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || !targetSessionReady
+                    || artifactInteractionLocked
             )
 
             if !controller.hasTargetSession {
@@ -230,22 +259,23 @@ public struct ES80PassiveCaptureResearchView: View {
     private var analysisSection: some View {
         Section("Evidence summary") {
             Button("Refresh analysis") {
-                Task { @MainActor in
-                    do {
-                        let snapshot = try await controller.captureSnapshot()
-                        analysis = AnalysisSummary(session: snapshot)
-                        diagnosticMessage = nil
-                    } catch {
-                        diagnosticMessage = "Analysis failed: \(error.localizedDescription)"
-                    }
-                }
+                prepareAnalysisSnapshot()
             }
-            .disabled(!artifactEvidenceReady)
+            .disabled(!artifactEvidenceReady || artifactInteractionLocked)
+
+            if artifactReadOperation == .analysis {
+                ProgressView("Reading frozen evidence snapshot…")
+                    .font(.footnote)
+            }
 
             if let analysis {
                 LabeledContent("Records", value: "\(analysis.recordCount)")
                 LabeledContent("Raw value streams", value: "\(analysis.valueStreamCount)")
                 LabeledContent("Continuity breaks", value: "\(analysis.continuityBreakCount)")
+
+                Text("Snapshot from the last refresh. Later accepted Bluetooth evidence is not silently folded into these counts; refresh again for a newer cut.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 if analysis.transportCandidates.isEmpty {
                     Text("No researched Tuya transport candidate matched the captured identifiers yet.")
@@ -281,7 +311,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Analysis operates only on immutable capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry.")
+                Text("Analysis operates only on an immutable snapshot of capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -291,28 +321,60 @@ public struct ES80PassiveCaptureResearchView: View {
     private var exportSection: some View {
         Section("Export") {
             Button("Prepare capture JSON") {
-                Task { @MainActor in
-                    do {
-                        let data = try await controller.encodedCaptureJSON(prettyPrinted: true)
-                        exportDocument = PassiveCaptureJSONDocument(data: data)
-                        isExporting = true
-                        diagnosticMessage = nil
-                    } catch {
-                        diagnosticMessage = "Capture export failed: \(error.localizedDescription)"
-                    }
-                }
+                prepareExportSnapshot()
             }
-            .disabled(!artifactEvidenceReady)
+            .disabled(!artifactEvidenceReady || artifactInteractionLocked)
 
-            Text(exportExplanation)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            if artifactReadOperation == .export {
+                ProgressView("Preparing frozen JSON snapshot…")
+                    .font(.footnote)
+            }
+
+            if exportDocument != nil || isExporting {
+                Text("The prepared file is frozen at its evidence watermark. Evidence-changing controls stay paused until the exporter closes; later Bluetooth callbacks are not retroactively added to this file.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(exportExplanation)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    private var canStartConnection: Bool {
-        if case .idle = controller.connectionPhase { return !controller.captureFailed }
-        return false
+    private var artifactInteractionLocked: Bool {
+        artifactReadOperation != nil || exportDocument != nil || isExporting
+    }
+
+    private var artifactInteractionStatus: String {
+        if artifactReadOperation == .analysis {
+            return "Evidence controls paused while reading the analysis snapshot."
+        }
+        if artifactReadOperation == .export {
+            return "Evidence controls paused while preparing the export snapshot."
+        }
+        return "Prepared export is frozen; evidence controls resume when the exporter closes."
+    }
+
+    private func canStartConnection(to peripheralIdentifier: UUID) -> Bool {
+        guard !artifactInteractionLocked, !controller.captureFailed else { return false }
+        guard case .idle = controller.connectionPhase else { return false }
+
+        if controller.selectedTargetIdentifier == peripheralIdentifier,
+           controller.isSelectedTargetAwaitingTerminalCallback {
+            return false
+        }
+        return true
+    }
+
+    private func connectionActionLabel(for peripheralIdentifier: UUID) -> String {
+        guard controller.selectedTargetIdentifier == peripheralIdentifier else {
+            return "Select & connect"
+        }
+        if controller.isSelectedTargetAwaitingTerminalCallback {
+            return "Waiting for cancellation"
+        }
+        return "Reconnect target"
     }
 
     private var targetSessionReady: Bool {
@@ -328,9 +390,9 @@ public struct ES80PassiveCaptureResearchView: View {
             return "Select one research target before preparing a target-labeled capture artifact."
         }
         if !artifactEvidenceReady {
-            return "Export stays unavailable until finite passive acquisition is complete and no selected-target cancellation callback is pending."
+            return "Export stays unavailable until finite passive acquisition is complete and no selected-target cancellation callback blocks this capture boundary."
         }
-        return "The versioned JSON contains target-scoped raw evidence and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens."
+        return "The versioned JSON contains a frozen target-scoped evidence snapshot and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens."
     }
 
     private var bluetoothStateLabel: String {
@@ -348,11 +410,15 @@ public struct ES80PassiveCaptureResearchView: View {
     private var connectionLabel: String {
         switch controller.connectionPhase {
         case .idle:
-            "Idle"
+            if controller.isSelectedTargetAwaitingTerminalCallback,
+               let identifier = controller.selectedTargetIdentifier {
+                return "Cancellation pending · \(shortIdentifier(identifier))"
+            }
+            return "Idle"
         case let .connecting(identifier):
-            "Connecting · \(shortIdentifier(identifier))"
+            return "Connecting · \(shortIdentifier(identifier))"
         case let .connected(identifier):
-            "Connected · \(shortIdentifier(identifier))"
+            return "Connected · \(shortIdentifier(identifier))"
         }
     }
 
@@ -361,6 +427,39 @@ public struct ES80PassiveCaptureResearchView: View {
             return "None — scan catalog only"
         }
         return shortIdentifier(identifier)
+    }
+
+    private func prepareAnalysisSnapshot() {
+        guard artifactEvidenceReady, !artifactInteractionLocked else { return }
+        artifactReadOperation = .analysis
+
+        Task { @MainActor in
+            defer { artifactReadOperation = nil }
+            do {
+                let snapshot = try await controller.captureSnapshot()
+                analysis = AnalysisSummary(session: snapshot)
+                diagnosticMessage = nil
+            } catch {
+                diagnosticMessage = "Analysis failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func prepareExportSnapshot() {
+        guard artifactEvidenceReady, !artifactInteractionLocked else { return }
+        artifactReadOperation = .export
+
+        Task { @MainActor in
+            defer { artifactReadOperation = nil }
+            do {
+                let data = try await controller.encodedCaptureJSON(prettyPrinted: true)
+                exportDocument = PassiveCaptureJSONDocument(data: data)
+                isExporting = true
+                diagnosticMessage = nil
+            } catch {
+                diagnosticMessage = "Capture export failed: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func shortIdentifier(_ identifier: UUID) -> String {
@@ -399,6 +498,11 @@ public struct PassiveCaptureJSONDocument: FileDocument {
     public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
     }
+}
+
+private enum ArtifactReadOperation: Equatable {
+    case analysis
+    case export
 }
 
 private enum MarkerField: String, CaseIterable, Identifiable {
