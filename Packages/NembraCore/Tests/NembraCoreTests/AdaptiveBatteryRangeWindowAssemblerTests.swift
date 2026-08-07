@@ -253,6 +253,31 @@ struct AdaptiveBatteryRangeWindowAssemblerTests {
         #expect(model.acceptedWindowCount == 0)
     }
 
+    @Test("full normalized 100 to 0 consumption closes at the exact policy boundary")
+    func fullNormalizedConsumptionBoundary() throws {
+        var assembler = BatteryRangeLearningWindowAssembler()
+        let p = try policy(minimumConsumedPercentagePoints: 100, minimumDistanceMeters: 1_000)
+
+        #expect(try assembler.ingestSOC(reading(100, uptime: 1), policy: p) == nil)
+        try assembler.recordDistance(deltaMeters: 1_000, coverage: .complete)
+
+        let assembled = try assembler.ingestSOC(reading(0, uptime: 2), policy: p)
+        let window = try #require(assembled)
+        #expect(window.startSOC.percentage == 100)
+        #expect(window.endSOC.percentage == 0)
+        #expect(window.consumedPercentagePoints == 100)
+        #expect(window.distanceMeters == 1_000)
+        #expect(window.distanceCoverage == .complete)
+        #expect(window.transportGapOccurred == false)
+
+        var model = AdaptiveBatteryRangeModel()
+        #expect(model.ingest(window, policy: p).disposition == .accepted)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(assembler.anchorSOC?.percentage == 0)
+        #expect(assembler.latestAuthoritativeSOC?.percentage == 0)
+        #expect(assembler.accumulatedDistanceMeters == 0)
+    }
+
     @Test("invalid distance input and overflow fail without partial mutation")
     func invalidDistanceFailsAtomically() throws {
         var assembler = BatteryRangeLearningWindowAssembler()
