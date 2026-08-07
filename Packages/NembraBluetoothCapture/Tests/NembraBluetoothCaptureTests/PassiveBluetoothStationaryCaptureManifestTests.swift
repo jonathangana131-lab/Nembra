@@ -17,7 +17,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         let captureJSON = try makeCapture(includeStockAppMarker: true, includeDisconnect: true)
         let setup = PassiveBluetoothStationaryCaptureSetup(
             chargerState: .disconnected,
-            executionContext: .foregroundScreenOn,
+            executionContext: .foregroundUnlockedScreenOn,
             stockAppReferenceSetup: .sameDeviceBeforeCapture
         )
 
@@ -38,7 +38,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         #expect(manifest.sourceArtifact.byteCount == captureJSON.count)
         #expect(manifest.sourceArtifact.sha256 == SHA256.hash(data: captureJSON).map { String(format: "%02x", $0) }.joined())
         #expect(manifest.setup == setup)
-        #expect(manifest.setup.executionContext == .foregroundScreenOn)
+        #expect(manifest.setup.executionContext == .foregroundUnlockedScreenOn)
         #expect(manifest.evidenceSummary.targetGATTRecordCount == 3)
         #expect(manifest.evidenceSummary.targetValueRecordCount == 1)
         #expect(manifest.evidenceSummary.stockAppMarkerCount == 1)
@@ -170,9 +170,28 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
                 selectedPeripheralIdentifier: target,
                 setup: .init(
                     chargerState: .disconnected,
-                    executionContext: .foregroundScreenOn,
+                    executionContext: .foregroundUnlockedScreenOn,
                     stockAppReferenceSetup: .none
                 )
+            )
+        }
+    }
+
+    @Test
+    func missingRequiredExecutionContextFailsClosedDuringImport() throws {
+        let captureJSON = try makeCapture()
+        let manifest = try makeManifest(captureJSON: captureJSON)
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
+        var object = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        var setup = try #require(object["setup"] as? [String: Any])
+        setup.removeValue(forKey: "executionContext")
+        object["setup"] = setup
+        let changedManifestJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        #expect(throws: DecodingError.self) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+                manifestJSON: changedManifestJSON,
+                captureJSON: captureJSON
             )
         }
     }
@@ -203,7 +222,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             selectedPeripheralIdentifier: target,
             setup: .init(
                 chargerState: .disconnected,
-                executionContext: .foregroundScreenOn,
+                executionContext: .foregroundUnlockedScreenOn,
                 stockAppReferenceSetup: .none
             )
         )
