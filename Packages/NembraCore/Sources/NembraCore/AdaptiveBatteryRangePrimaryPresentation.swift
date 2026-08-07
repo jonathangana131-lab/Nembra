@@ -1,12 +1,3 @@
-/// Classifies whether the app is currently presenting live vehicle data or a retained
-/// snapshot. Retained data can still be useful elsewhere, but the current primary
-/// range readout has no qualifier surface that can truthfully label a retained value.
-public enum AdaptiveRangePrimaryVehicleAvailability: Equatable, Sendable {
-    case live
-    case retained
-    case unavailable
-}
-
 /// Explains why an adaptive-range estimate was intentionally withheld from the
 /// unqualified primary numeric readout.
 ///
@@ -53,8 +44,13 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// - based on learned history rather than a provisional cold-start seed;
 /// - normal/high confidence rather than learning/low confidence;
 /// - calculated from authoritative SoC rather than estimated SoC;
-/// - associated with live vehicle data rather than retained/offline data; and
+/// - associated with `.live` `VehicleDataAvailability` rather than retained/offline data; and
 /// - finite and non-negative after the adaptive model's own presentation smoothing.
+///
+/// This type deliberately consumes the existing vehicle-domain availability enum
+/// rather than defining a parallel live/retained/unavailable classification. That
+/// keeps range freshness tied to the same retained-data truth boundary already used
+/// by the rest of Nembra.
 ///
 /// This type is deliberately only a presentation policy. It does not establish that
 /// an upstream `.authoritativeMeasurement` claim is itself trustworthy. Production
@@ -70,7 +66,7 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
 
     public func resolve(
         estimate: AdaptiveBatteryRangeEstimate?,
-        vehicleAvailability: AdaptiveRangePrimaryVehicleAvailability
+        vehicleAvailability: VehicleDataAvailability
     ) -> AdaptiveRangePrimaryPresentationDecision {
         switch vehicleAvailability {
         case .unavailable:
