@@ -1,0 +1,30 @@
+name: ES80 Tuya Chronology Base 31809
+
+on:
+  push:
+    branches:
+      - qa/es80-tuya-chronology-base31809/chat-k8p3v
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable base mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable base parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_HEAD=31809bbaee2e668b219a42b2b2a56e878ecdd84e
+          test "$(git rev-parse HEAD^)" = "$BASE_HEAD"
+          changed="$(git diff --name-only "$BASE_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/es80-tuya-chronology-base31809.yml"
+
+      - name: Test base NembraCore with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
