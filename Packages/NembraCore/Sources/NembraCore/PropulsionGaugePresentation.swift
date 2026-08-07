@@ -126,24 +126,41 @@ public enum PropulsionGaugeScaleError: Error, Equatable, Sendable {
 }
 
 /// Presentation scale only. A learned observed ceiling is not a rated/certified motor or controller maximum.
+/// Every scale is bound to the same vehicle/mode identity as the observations that produced or exercise it.
 public struct PropulsionGaugeScale: Equatable, Sendable {
+    public let identity: PropulsionGaugeIdentity
     public let ceilingWatts: Double
     public let origin: PropulsionGaugeScaleOrigin
 
-    private init(ceilingWatts: Double, origin: PropulsionGaugeScaleOrigin) {
+    private init(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double,
+        origin: PropulsionGaugeScaleOrigin
+    ) {
+        self.identity = identity
         self.ceilingWatts = ceilingWatts
         self.origin = origin
     }
 
-    public static func simulator(ceilingWatts: Double) throws -> Self {
+    public static func simulator(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double
+    ) throws -> Self {
         guard ceilingWatts.isFinite, ceilingWatts > 0 else {
             throw PropulsionGaugeScaleError.invalidCeiling
         }
-        return Self(ceilingWatts: ceilingWatts, origin: .simulator)
+        return Self(identity: identity, ceilingWatts: ceilingWatts, origin: .simulator)
     }
 
-    fileprivate static func learnedObserved(ceilingWatts: Double) -> Self {
-        Self(ceilingWatts: ceilingWatts, origin: .learnedObservedPowerCeiling)
+    fileprivate static func learnedObserved(
+        identity: PropulsionGaugeIdentity,
+        ceilingWatts: Double
+    ) -> Self {
+        Self(
+            identity: identity,
+            ceilingWatts: ceilingWatts,
+            origin: .learnedObservedPowerCeiling
+        )
     }
 }
 
@@ -368,6 +385,8 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             || abs(displayWatts - latestAcceptedWatts) <= 1e-9
 
         let compatibleScale = scale.flatMap { candidate -> PropulsionGaugeScale? in
+            guard candidate.identity == identity else { return nil }
+
             switch (candidate.origin, latestAuthority) {
             case (.learnedObservedPowerCeiling, .verifiedVehicleMeasurement),
                  (.simulator, .simulator):
@@ -522,7 +541,9 @@ public struct LearnedObservedPowerEnvelope: Sendable {
     }
 
     public var currentScale: PropulsionGaugeScale? {
-        learnedCeilingWatts.map { .learnedObserved(ceilingWatts: $0) }
+        learnedCeilingWatts.map {
+            .learnedObserved(identity: identity, ceilingWatts: $0)
+        }
     }
 
     public var currentLearnedCeilingWatts: Double? {
