@@ -1,3 +1,5 @@
+import Foundation
+
 public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
     case missingReceiptIdentity
     case staleReceiptIdentity
@@ -17,12 +19,15 @@ public enum BatteryEvidenceStreamValidationError: Error, Equatable, Sendable {
 ///
 /// Uptime remains a chronology/age constraint inside one acquisition epoch: it may stay
 /// equal or increase across newer receipts but must never move backwards. Wall-clock dates
-/// are deliberately ignored for ordering because the system clock can move.
+/// are deliberately ignored for ordering because the system clock can move. The wall-clock
+/// date captured for one immutable raw receipt is still bound to that receipt, however, so
+/// sibling semantic fields cannot silently rewrite its recorded callback timestamp.
 ///
 /// Seen callback chronology is intentionally stronger than accepted semantic evidence.
 /// Once a newer trusted receipt is observed, a later lower sequence can never re-enter just
 /// because the newer receipt failed semantic/metadata admission. Likewise, one immutable
-/// receipt may not be retried with different uptime or continuity metadata after rejection.
+/// receipt may not be retried with different uptime, wall-clock, or continuity metadata
+/// after rejection.
 ///
 /// An explicit `.afterUnobservedInterval` observation starts a fresh continuity segment,
 /// but it does not switch an existing validator into a different acquisition epoch. A real
@@ -38,11 +43,13 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
     /// a rejected newer callback from reopening chronology for delayed older callbacks.
     private(set) var lastSeenReceiptIdentity: BatteryEvidenceReceiptIdentity?
 
-    /// Exact immutable metadata belonging to `lastSeenReceiptIdentity`. Keep this separate
+    /// Exact immutable metadata belonging to `lastSeenReceiptIdentity`. Keep these separate
     /// from `seenUptimeFloorNanoseconds`: a rejected callback with backward uptime still has
     /// one exact receipt timestamp, but it must never lower the floor enforced on later
-    /// callbacks.
+    /// callbacks. `receivedAtDate` participates only in same-receipt identity consistency;
+    /// it is never an ordering clock.
     private var lastSeenReceiptUptimeNanoseconds: UInt64?
+    private var lastSeenReceiptDate: Date?
     private var lastSeenReceiptContinuity: BatteryEvidenceContinuity?
 
     /// Greatest monotonic uptime accepted as raw callback chronology in this acquisition
@@ -56,6 +63,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         requiresContinuityBoundary = false
         lastSeenReceiptIdentity = nil
         lastSeenReceiptUptimeNanoseconds = nil
+        lastSeenReceiptDate = nil
         lastSeenReceiptContinuity = nil
         seenUptimeFloorNanoseconds = nil
     }
@@ -91,6 +99,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
 
             if receiptIdentity.sequenceNumber == lastSeenReceiptIdentity.sequenceNumber {
                 guard observation.receivedAtUptimeNanoseconds == lastSeenReceiptUptimeNanoseconds,
+                      observation.receivedAtDate == lastSeenReceiptDate,
                       observation.continuity == lastSeenReceiptContinuity else {
                     throw BatteryEvidenceStreamValidationError.inconsistentReceiptMetadata
                 }
@@ -115,6 +124,7 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         // sequence watermark first so delayed lower-sequence evidence can never become fresh.
         lastSeenReceiptIdentity = receiptIdentity
         lastSeenReceiptUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        lastSeenReceiptDate = observation.receivedAtDate
         lastSeenReceiptContinuity = observation.continuity
 
         // The monotonic uptime floor represents all prior same-epoch callbacks whose uptime
