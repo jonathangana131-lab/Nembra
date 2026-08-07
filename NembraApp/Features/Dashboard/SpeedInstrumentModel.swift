@@ -66,9 +66,11 @@ final class SpeedInstrumentModel {
     func stop() {
         streamTask?.cancel()
         streamTask = nil
-        animationEndTask?.cancel()
-        animationEndTask = nil
-        isAnimationActive = false
+        // Leaving the surface ends this model's raw observation continuity.
+        // VehicleStore may keep receiving confirmed state globally, so preserve
+        // fallback eligibility while dropping raw/interpolated anchors that can
+        // no longer be known current when the view returns.
+        clearRawPresentationContinuity()
     }
 
     /// Opens or closes raw-speed presentation continuity for the currently
@@ -89,13 +91,7 @@ final class SpeedInstrumentModel {
         guard !isActive else { return }
 
         permitsLiveConfirmedFallback = false
-        animationEndTask?.cancel()
-        animationEndTask = nil
-        isAnimationActive = false
-        interpolator = SpeedDisplayInterpolator()
-        previousMeasurementUptimeNanoseconds = nil
-        latestMeasurementSource = nil
-        latestMeasuredKilometersPerHour = nil
+        clearRawPresentationContinuity()
     }
 
     /// Internal so the iOS test target can prove display semantics without a
@@ -213,6 +209,16 @@ final class SpeedInstrumentModel {
             self?.isAnimationActive = false
             self?.animationEndTask = nil
         }
+    }
+
+    private func clearRawPresentationContinuity() {
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = false
+        interpolator = SpeedDisplayInterpolator()
+        previousMeasurementUptimeNanoseconds = nil
+        latestMeasurementSource = nil
+        latestMeasuredKilometersPerHour = nil
     }
 }
 

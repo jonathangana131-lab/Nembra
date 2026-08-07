@@ -285,6 +285,34 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testStoppingObservationDropsRawAnchorButKeepsConfirmedFallbackEligible() throws {
+        let model = SpeedInstrumentModel()
+        model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
+
+        let liveRaw = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 2_000_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(liveRaw.kilometersPerHour, 12, accuracy: 0.000_1)
+        XCTAssertEqual(liveRaw.origin, .measuredTelemetry)
+
+        model.stop()
+
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertFalse(model.isAnimationActive)
+        XCTAssertTrue(model.permitsLiveConfirmedFallback)
+        XCTAssertEqual(model.measurementRevision, 1)
+
+        let resumedFallback = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 3_000_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(resumedFallback.kilometersPerHour, 7, accuracy: 0.000_1)
+        XCTAssertEqual(resumedFallback.origin, .confirmedVehicleState)
+    }
+
+    @MainActor
     func testConnectionGapInvalidatesRawSpeedAndRejectsGapSamples() throws {
         let model = SpeedInstrumentModel()
         model.configureInterpolationPolicy(.simulatorQA)
