@@ -12,6 +12,30 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testAppIconIsVisibleOnSpringBoardInLightAndDarkAppearances() {
+        let device = XCUIDevice.shared
+        let originalAppearance = device.appearance
+        defer {
+            device.appearance = originalAppearance
+            device.orientation = .portrait
+        }
+
+        let app = launch(scenario: "cold-disconnected", orientation: .portrait)
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 4))
+
+        captureHomeScreenIcon(
+            appearance: .light,
+            screenshotName: "Nembra App Icon Home Screen Light",
+            app: app
+        )
+        captureHomeScreenIcon(
+            appearance: .dark,
+            screenshotName: "Nembra App Icon Home Screen Dark",
+            app: app
+        )
+    }
+
+    @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
@@ -165,6 +189,38 @@ final class NembraUITests: XCTestCase {
             "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
         )
         keepScreenshot(named: screenshotName)
+    }
+
+    @MainActor
+    private func captureHomeScreenIcon(
+        appearance: XCUIDevice.Appearance,
+        screenshotName: String,
+        app: XCUIApplication
+    ) {
+        let device = XCUIDevice.shared
+        device.appearance = appearance
+        device.press(.home)
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(
+            springboard.wait(for: .runningForeground, timeout: 4),
+            "SpringBoard must be foreground before app-icon capture."
+        )
+
+        let icon = springboard.icons["Nembra"]
+        XCTAssertTrue(
+            icon.waitForExistence(timeout: 4),
+            "The installed Nembra app icon must exist on the Simulator Home Screen."
+        )
+        XCTAssertGreaterThan(icon.frame.width, 0)
+        XCTAssertGreaterThan(icon.frame.height, 0)
+        keepScreenshot(named: screenshotName)
+
+        app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 4),
+            "Nembra must return to foreground after Home Screen icon capture."
+        )
     }
 
     @MainActor
