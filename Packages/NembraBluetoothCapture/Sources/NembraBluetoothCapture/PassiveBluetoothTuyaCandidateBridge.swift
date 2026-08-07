@@ -1,0 +1,261 @@
+import Foundation
+import NembraCore
+
+/// Fail-closed projection errors while adapting immutable passive-capture
+/// evidence into the public Tuya candidate analyzer. These are tooling errors
+/// or unsupported raw observations, never physical ES80 protocol claims.
+public enum PassiveBluetoothTuyaCandidateProjectionError: Error, Equatable, Sendable {
+    case emptyPeripheralIdentifier
+    case emptyValuePayload(
+        captureRecordIndex: Int,
+        captureSequenceNumber: UInt64,
+        serviceUUID: String,
+        characteristicUUID: String,
+        origin: PassiveBluetoothValueOrigin
+    )
+    case continuityGenerationOverflow(
+        captureRecordIndex: Int,
+        captureSequenceNumber: UInt64
+    )
+}
+
+/// Exact value-source identity used by the bridge. The candidate analyzer's
+/// GATT stream identity is preserved verbatim, while CoreBluetooth value origin
+/// is kept separate so read responses are never silently spliced together with
+/// subscription/notification evidence from the same characteristic.
+public struct PassiveBluetoothTuyaCandidateSourceStream: Equatable, Sendable {
+    public let valueStreamIdentity: TuyaCandidateValueStreamIdentity
+    public let origin: PassiveBluetoothValueOrigin
+
+    public init(
+        valueStreamIdentity: TuyaCandidateValueStreamIdentity,
+        origin: PassiveBluetoothValueOrigin
+    ) {
+        self.valueStreamIdentity = valueStreamIdentity
+        self.origin = origin
+    }
+}
+
+/// One lossless source mapping from a raw capture record into an analyzer
+/// observation. The original capture sequence number remains available even
+/// though transcript-event indices are stream-local.
+public struct PassiveBluetoothTuyaCandidateSourceFragment: Equatable, Sendable {
+    public let captureRecordIndex: Int
+    public let captureSequenceNumber: UInt64
+    public let observation: TuyaCandidateFragmentObservation
+
+    public init(
+        captureRecordIndex: Int,
+        captureSequenceNumber: UInt64,
+        observation: TuyaCandidateFragmentObservation
+    ) {
+        self.captureRecordIndex = captureRecordIndex
+        self.captureSequenceNumber = captureSequenceNumber
+        self.observation = observation
+    }
+}
+
+/// One exact GATT + value-origin transcript, kept in first-observed stream order.
+/// Interleaved callbacks from other streams are intentionally filtered instead
+/// of becoming fake stream-boundary evidence for this stream.
+public struct PassiveBluetoothTuyaCandidateStreamTranscript: Equatable, Sendable {
+    public let sourceStream: PassiveBluetoothTuyaCandidateSourceStream
+    public let fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
+
+    public init(
+        sourceStream: PassiveBluetoothTuyaCandidateSourceStream,
+        fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
+    ) {
+        self.sourceStream = sourceStream
+        self.fragments = fragments
+    }
+
+    public var observations: [TuyaCandidateFragmentObservation] {
+        fragments.map(\.observation)
+    }
+
+    /// Maps a stream-local analyzer observation index back to the exact raw
+    /// capture record from which that observation came.
+    public func sourceFragment(
+        atAnalysisObservationIndex index: Int
+    ) -> PassiveBluetoothTuyaCandidateSourceFragment? {
+        guard fragments.indices.contains(index) else { return nil }
+        return fragments[index]
+    }
+}
+
+/// Candidate-analysis events plus the exact source transcript they reference.
+/// The events remain hypotheses for a corroborated public Tuya family only.
+public struct PassiveBluetoothTuyaCandidateStreamAnalysis: Equatable, Sendable {
+    public let transcript: PassiveBluetoothTuyaCandidateStreamTranscript
+    public let events: [TuyaCandidateTranscriptEvent]
+
+    public init(
+        transcript: PassiveBluetoothTuyaCandidateStreamTranscript,
+        events: [TuyaCandidateTranscriptEvent]
+    ) {
+        self.transcript = transcript
+        self.events = events
+    }
+}
+
+/// Bridges Nembra's passive CoreBluetooth evidence artifact into the bounded
+/// public-family Tuya transcript analyzer without assigning any ES80 field,
+/// DP, unit, scale, signedness, cadence, encryption key, or command meaning.
+public enum PassiveBluetoothTuyaCandidateBridge {
+    /// Projects raw value evidence for one explicitly selected peripheral into
+    /// deterministic, origin-isolated candidate transcripts.
+    ///
+    /// Continuity generations advance only for gaps that are already explicit
+    /// in the capture domain:
+    /// - a structured disconnect for the selected peripheral; or
+    /// - a global capture interruption.
+    ///
+    /// An unrelated peripheral's disconnect does not break the selected target.
+    /// Empty raw value payloads fail the whole projection rather than being
+    /// dropped and accidentally allowing fragments on either side to splice.
+    public static func transcripts(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String
+    ) throws -> [PassiveBluetoothTuyaCandidateStreamTranscript] {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PassiveBluetoothTuyaCandidateProjectionError.emptyPeripheralIdentifier
+        }
+
+        var continuityGeneration: UInt64 = 0
+        var orderedKeys: [StreamKey] = []
+        var builders: [StreamKey: StreamBuilder] = [:]
+
+        for (recordIndex, record) in session.records.enumerated() {
+            switch record.event {
+            case let .connection(observation):
+                guard observation.state == .disconnected,
+                      observation.peripheralIdentifier == peripheralIdentifier else {
+                    continue
+                }
+                continuityGeneration = try advancedContinuityGeneration(
+                    continuityGeneration,
+                    recordIndex: recordIndex,
+                    sequenceNumber: record.sequenceNumber
+                )
+
+            case .interruption:
+                continuityGeneration = try advancedContinuityGeneration(
+                    continuityGeneration,
+                    recordIndex: recordIndex,
+                    sequenceNumber: record.sequenceNumber
+                )
+
+            case let .value(value):
+                guard value.peripheralIdentifier == peripheralIdentifier else { continue }
+                guard !value.payload.isEmpty else {
+                    throw PassiveBluetoothTuyaCandidateProjectionError.emptyValuePayload(
+                        captureRecordIndex: recordIndex,
+                        captureSequenceNumber: record.sequenceNumber,
+                        serviceUUID: value.serviceUUID,
+                        characteristicUUID: value.characteristicUUID,
+                        origin: value.origin
+                    )
+                }
+
+                let valueStreamIdentity = try TuyaCandidateValueStreamIdentity(
+                    peripheralIdentifier: value.peripheralIdentifier,
+                    serviceIdentifier: value.serviceUUID,
+                    characteristicIdentifier: value.characteristicUUID
+                )
+                let sourceStream = PassiveBluetoothTuyaCandidateSourceStream(
+                    valueStreamIdentity: valueStreamIdentity,
+                    origin: value.origin
+                )
+                let key = StreamKey(
+                    valueStreamIdentity: valueStreamIdentity,
+                    originRawValue: value.origin.rawValue
+                )
+                let candidateObservation = try TuyaCandidateFragmentObservation(
+                    streamIdentity: valueStreamIdentity,
+                    continuityGeneration: continuityGeneration,
+                    receiptUptimeNanoseconds: record.receivedAtUptimeNanoseconds,
+                    bytes: Array(value.payload)
+                )
+                let sourceFragment = PassiveBluetoothTuyaCandidateSourceFragment(
+                    captureRecordIndex: recordIndex,
+                    captureSequenceNumber: record.sequenceNumber,
+                    observation: candidateObservation
+                )
+
+                if builders[key] == nil {
+                    orderedKeys.append(key)
+                    builders[key] = StreamBuilder(
+                        sourceStream: sourceStream,
+                        fragments: []
+                    )
+                }
+                builders[key]?.fragments.append(sourceFragment)
+
+            case .advertisement,
+                 .service,
+                 .includedService,
+                 .characteristic,
+                 .descriptor,
+                 .subscription,
+                 .stockAppState:
+                continue
+            }
+        }
+
+        return orderedKeys.compactMap { key in
+            guard let builder = builders[key] else { return nil }
+            return PassiveBluetoothTuyaCandidateStreamTranscript(
+                sourceStream: builder.sourceStream,
+                fragments: builder.fragments
+            )
+        }
+    }
+
+    /// Runs the existing bounded candidate analyzer independently for every
+    /// exact GATT + origin transcript. Analyzer observation indices remain
+    /// stream-local and can be mapped back through `transcript.fragments`.
+    public static func analyze(
+        session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String,
+        policy: TuyaCandidateFragmentReassemblyPolicy
+    ) throws -> [PassiveBluetoothTuyaCandidateStreamAnalysis] {
+        try transcripts(
+            in: session,
+            peripheralIdentifier: peripheralIdentifier
+        ).map { transcript in
+            PassiveBluetoothTuyaCandidateStreamAnalysis(
+                transcript: transcript,
+                events: TuyaCandidateTranscriptAnalyzer.analyze(
+                    transcript.observations,
+                    policy: policy
+                )
+            )
+        }
+    }
+
+    private static func advancedContinuityGeneration(
+        _ generation: UInt64,
+        recordIndex: Int,
+        sequenceNumber: UInt64
+    ) throws -> UInt64 {
+        let advanced = generation.addingReportingOverflow(1)
+        guard !advanced.overflow else {
+            throw PassiveBluetoothTuyaCandidateProjectionError.continuityGenerationOverflow(
+                captureRecordIndex: recordIndex,
+                captureSequenceNumber: sequenceNumber
+            )
+        }
+        return advanced.partialValue
+    }
+
+    private struct StreamKey: Hashable {
+        let valueStreamIdentity: TuyaCandidateValueStreamIdentity
+        let originRawValue: String
+    }
+
+    private struct StreamBuilder {
+        let sourceStream: PassiveBluetoothTuyaCandidateSourceStream
+        var fragments: [PassiveBluetoothTuyaCandidateSourceFragment]
+    }
+}
