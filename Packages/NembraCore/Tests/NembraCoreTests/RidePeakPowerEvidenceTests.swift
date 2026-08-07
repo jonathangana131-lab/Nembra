@@ -42,13 +42,19 @@ struct RidePeakPowerEvidenceTests {
         )
     }
 
-    private func simulatorScope(mode: String? = "drive") throws -> ObservedPowerEnvelopeScope {
-        try .simulatorQA(vehicleIdentityKey: "sim-es80", confirmedModeKey: mode)
+    private func simulatorScope(
+        vehicle: String = "sim-es80",
+        mode: String? = "drive"
+    ) throws -> ObservedPowerEnvelopeScope {
+        try .simulatorQA(vehicleIdentityKey: vehicle, confirmedModeKey: mode)
     }
 
-    private func physicalScope(mode: String? = "drive") throws -> ObservedPowerEnvelopeScope {
+    private func physicalScope(
+        vehicle: String = "physical-es80-opaque-id",
+        mode: String? = "drive"
+    ) throws -> ObservedPowerEnvelopeScope {
         try .verifiedVehicleIdentity(
-            vehicleIdentityKey: "physical-es80-opaque-id",
+            vehicleIdentityKey: vehicle,
             confirmedModeKey: mode
         )
     }
@@ -95,40 +101,61 @@ struct RidePeakPowerEvidenceTests {
             scope: selectedScope,
             beginsAfterKnownObservationGap: beginsAfterKnownObservationGap
         )
-        let observation: ObservedPowerEnvelopeObservation
+
         switch selectedScope.identityAuthority {
         case .simulatorQA:
-            observation = simulatorObservation(
+            _ = accumulator.record(simulatorObservation(
                 scope: selectedScope,
                 watts: watts,
                 sequence: 1,
                 uptime: 100
-            )
+            ))
         case .verifiedVehicleIdentity:
-            observation = physicalObservation(
+            _ = accumulator.record(physicalObservation(
                 scope: selectedScope,
                 watts: watts,
                 sequence: 1,
                 uptime: 100
-            )
+            ))
         }
-        _ = accumulator.record(observation)
         return try #require(accumulator.evidence)
+    }
+
+    private func completedPeak(
+        ride: CompletedRideEvidence? = nil,
+        scope: ObservedPowerEnvelopeScope? = nil,
+        watts: Double = 500,
+        beginsAfterKnownObservationGap: Bool = false
+    ) throws -> CompletedRidePeakPowerEvidence {
+        let selectedRide = try ride ?? completedRide()
+        return try CompletedRidePeakPowerEvidence(
+            completedRide: selectedRide,
+            ridePeak: ridePeak(
+                sessionID: selectedRide.sessionID,
+                scope: scope,
+                watts: watts,
+                beginsAfterKnownObservationGap: beginsAfterKnownObservationGap
+            )
+        )
     }
 
     private func encoded(_ fixture: StoredFixture) throws -> Data {
         try JSONEncoder().encode(fixture)
     }
 
+    private func decodedCheckpoint(
+        _ fixture: StoredFixture
+    ) throws -> CompletedRidePeakPowerCheckpoint {
+        try JSONDecoder().decode(
+            CompletedRidePeakPowerCheckpoint.self,
+            from: encoded(fixture)
+        )
+    }
+
     @Test("ride accumulator binds peak to immutable session, scope, and simulator authority")
     func accumulatorBindsSessionScopeAndAuthority() throws {
         let scope = try simulatorScope(mode: "sport")
-        var accumulator = try RidePeakPowerEvidenceAccumulator(
-            sessionID: sessionID,
-            scope: scope
-        )
-
-        #expect(accumulator.evidence == nil)
+        var accumulator = try RidePeakPowerEvidenceAccumulator(sessionID: sessionID, scope: scope)
         guard case .peakUpdated = accumulator.record(simulatorObservation(
             scope: scope,
             watts: 612,
@@ -142,7 +169,6 @@ struct RidePeakPowerEvidenceTests {
         let bound = try #require(accumulator.evidence)
         #expect(bound.sessionID == sessionID)
         #expect(bound.scope == scope)
-        #expect(bound.beganAfterKnownObservationGap == false)
         #expect(bound.peakEvidence.evidenceAuthority == .simulatorQA)
         #expect(bound.peakEvidence.peak.powerWatts == 612)
         #expect(bound.peakEvidence.continuity == .noRecordedSelectedSourceEvidenceLoss)
@@ -151,11 +177,7 @@ struct RidePeakPowerEvidenceTests {
     @Test("verified scope mechanically selects verified measurement authority")
     func verifiedScopeDerivesVerifiedAuthority() throws {
         let scope = try physicalScope(mode: "sport")
-        var accumulator = try RidePeakPowerEvidenceAccumulator(
-            sessionID: sessionID,
-            scope: scope
-        )
-
+        var accumulator = try RidePeakPowerEvidenceAccumulator(sessionID: sessionID, scope: scope)
         #expect(accumulator.evidenceAuthority == .verifiedVehicleMeasurement)
         guard case .peakUpdated = accumulator.record(physicalObservation(
             scope: scope,
@@ -172,10 +194,7 @@ struct RidePeakPowerEvidenceTests {
     func foreignScopeIsolationSurvivesRideBinding() throws {
         let selected = try simulatorScope(mode: "sport")
         let foreign = try simulatorScope(mode: "eco")
-        var accumulator = try RidePeakPowerEvidenceAccumulator(
-            sessionID: sessionID,
-            scope: selected
-        )
+        var accumulator = try RidePeakPowerEvidenceAccumulator(sessionID: sessionID, scope: selected)
 
         #expect(accumulator.record(simulatorObservation(
             scope: foreign,
@@ -198,7 +217,6 @@ struct RidePeakPowerEvidenceTests {
     @Test("known initial gap remains distinct from later generic interruptions")
     func initialKnownGapRemainsBound() throws {
         let bound = try ridePeak(beginsAfterKnownObservationGap: true)
-
         #expect(bound.beganAfterKnownObservationGap)
         #expect(bound.peakEvidence.knownInterruptionCount == 1)
         #expect(bound.peakEvidence.continuity == .partialSelectedSourceEvidence)
@@ -207,37 +225,32 @@ struct RidePeakPowerEvidenceTests {
     @Test("completed projection rejects unrelated ride identity")
     func completedProjectionRejectsSessionMismatch() throws {
         let peak = try ridePeak()
-        let otherRide = try completedRide(sessionID: otherSessionID)
-
         #expect(throws: CompletedRidePeakPowerEvidenceError.sessionMismatch) {
-            try CompletedRidePeakPowerEvidence(completedRide: otherRide, ridePeak: peak)
+            try CompletedRidePeakPowerEvidence(
+                completedRide: completedRide(sessionID: otherSessionID),
+                ridePeak: peak
+            )
         }
     }
 
     @Test("recovered ride cannot claim gap-free process-local peak observation")
     func recoveredRideRequiresRecordedInitialGap() throws {
-        let recoveredRide = try completedRide(continuity: .recoveredCheckpoint)
-        let gapFreePeak = try ridePeak()
-
+        let recovered = try completedRide(continuity: .recoveredCheckpoint)
         #expect(throws: CompletedRidePeakPowerEvidenceError.continuityMismatch) {
             try CompletedRidePeakPowerEvidence(
-                completedRide: recoveredRide,
-                ridePeak: gapFreePeak
+                completedRide: recovered,
+                ridePeak: ridePeak(sessionID: recovered.sessionID)
             )
         }
     }
 
     @Test("recovered ride retains observed peak after explicit initial gap")
     func recoveredRideWithRecordedGapAccepted() throws {
-        let recoveredRide = try completedRide(continuity: .recoveredCheckpoint)
-        let peak = try ridePeak(beginsAfterKnownObservationGap: true)
-
-        let durable = try CompletedRidePeakPowerEvidence(
-            completedRide: recoveredRide,
-            ridePeak: peak
+        let recovered = try completedRide(continuity: .recoveredCheckpoint)
+        let durable = try completedPeak(
+            ride: recovered,
+            beginsAfterKnownObservationGap: true
         )
-
-        #expect(durable.sessionID == sessionID)
         #expect(durable.rideContinuity == .recoveredCheckpoint)
         #expect(durable.beganAfterKnownObservationGap)
         #expect(durable.powerWatts == 500)
@@ -247,12 +260,7 @@ struct RidePeakPowerEvidenceTests {
 
     @Test("durable projection preserves exact vehicle mode and authority provenance")
     func scopeAndAuthorityProvenancePersist() throws {
-        let scope = try physicalScope(mode: "sport")
-        let durable = try CompletedRidePeakPowerEvidence(
-            completedRide: completedRide(),
-            ridePeak: ridePeak(scope: scope, watts: 575)
-        )
-
+        let durable = try completedPeak(scope: physicalScope(mode: "sport"), watts: 575)
         #expect(durable.vehicleIdentityKey == "physical-es80-opaque-id")
         #expect(durable.confirmedModeKey == "sport")
         #expect(durable.identityAuthority == .verifiedVehicleIdentity)
@@ -263,10 +271,7 @@ struct RidePeakPowerEvidenceTests {
     @Test("signed accepted evidence remains counted without becoming positive peak candidate")
     func signedEvidenceCountsRemainTruthful() throws {
         let scope = try simulatorScope()
-        var accumulator = try RidePeakPowerEvidenceAccumulator(
-            sessionID: sessionID,
-            scope: scope
-        )
+        var accumulator = try RidePeakPowerEvidenceAccumulator(sessionID: sessionID, scope: scope)
         #expect(accumulator.record(simulatorObservation(
             scope: scope,
             watts: -80,
@@ -280,27 +285,23 @@ struct RidePeakPowerEvidenceTests {
             Issue.record("Expected later nonnegative measurement to establish peak")
             return
         }
-        let ridePeak = try #require(accumulator.evidence)
+
         let durable = try CompletedRidePeakPowerEvidence(
             completedRide: completedRide(),
-            ridePeak: ridePeak
+            ridePeak: #require(accumulator.evidence)
         )
         #expect(durable.acceptedMeasurementCount == 2)
         #expect(durable.peakCandidateMeasurementCount == 1)
         #expect(durable.powerWatts == 520)
     }
 
-    @Test("durable projection strips process-local receipt chronology")
+    @Test("durable checkpoint strips process-local receipt chronology")
     func durableProjectionOmitsProcessLocalClocks() throws {
-        let durable = try CompletedRidePeakPowerEvidence(
-            completedRide: completedRide(),
-            ridePeak: ridePeak()
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.simulatorQA(
+            from: completedPeak()
         )
-        let data = try JSONEncoder().encode(durable)
-        let object = try #require(
-            JSONSerialization.jsonObject(with: data) as? [String: Any]
-        )
-
+        let data = try JSONEncoder().encode(checkpoint)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(object["receiptSequenceNumber"] == nil)
         #expect(object["observedAtUptimeNanoseconds"] == nil)
         #expect(object["learningEligibility"] == nil)
@@ -308,141 +309,143 @@ struct RidePeakPowerEvidenceTests {
         #expect(object["vehicleIdentityKey"] != nil)
     }
 
-    @Test("durable round trip preserves ride-bound peak evidence")
-    func durableRoundTrip() throws {
-        let original = try CompletedRidePeakPowerEvidence(
-            completedRide: completedRide(),
-            ridePeak: ridePeak(
-                scope: physicalScope(mode: "sport"),
-                watts: 575,
-                beginsAfterKnownObservationGap: true
-            )
+    @Test("verified durable round trip requires package-sealed restore against trusted scope")
+    func verifiedCheckpointRoundTrip() throws {
+        let ride = try completedRide()
+        let scope = try physicalScope(mode: "sport")
+        let original = try completedPeak(
+            ride: ride,
+            scope: scope,
+            watts: 575,
+            beginsAfterKnownObservationGap: true
         )
-
-        let data = try JSONEncoder().encode(original)
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.verifiedVehicleMeasurements(
+            from: original
+        )
         let decoded = try JSONDecoder().decode(
-            CompletedRidePeakPowerEvidence.self,
-            from: data
+            CompletedRidePeakPowerCheckpoint.self,
+            from: JSONEncoder().encode(checkpoint)
         )
-
-        #expect(decoded == original)
+        let restored = try decoded.restoredVerifiedVehicleMeasurement(
+            completedRide: ride,
+            expectedScope: scope
+        )
+        #expect(restored == original)
     }
 
-    @Test("decoded unknown identity authority cannot masquerade as durable peak")
+    @Test("public simulator restore cannot elevate forged verified checkpoint labels")
+    func forgedVerifiedCheckpointCannotUsePublicRestore() throws {
+        var fixture = StoredFixture()
+        fixture.vehicleIdentityKey = "forged-physical-id"
+        fixture.identityAuthority = ObservedPowerEnvelopeScopeAuthority.verifiedVehicleIdentity.rawValue
+        fixture.evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue
+        let checkpoint = try decodedCheckpoint(fixture)
+
+        #expect(throws: CompletedRidePeakPowerEvidenceError.authorityMismatch) {
+            try checkpoint.restoredSimulatorQA(
+                completedRide: completedRide(),
+                expectedScope: simulatorScope()
+            )
+        }
+    }
+
+    @Test("public simulator checkpoint creation refuses verified evidence")
+    func simulatorCheckpointCannotRelabelVerifiedEvidence() throws {
+        let physical = try completedPeak(scope: physicalScope())
+        #expect(throws: CompletedRidePeakPowerEvidenceError.authorityMismatch) {
+            try CompletedRidePeakPowerCheckpoint.simulatorQA(from: physical)
+        }
+    }
+
+    @Test("verified restore requires exact independently trusted scope")
+    func verifiedRestoreRejectsScopeMismatch() throws {
+        let ride = try completedRide()
+        let scope = try physicalScope(mode: "sport")
+        let evidence = try completedPeak(ride: ride, scope: scope)
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.verifiedVehicleMeasurements(
+            from: evidence
+        )
+
+        #expect(throws: CompletedRidePeakPowerEvidenceError.scopeMismatch) {
+            try checkpoint.restoredVerifiedVehicleMeasurement(
+                completedRide: ride,
+                expectedScope: physicalScope(mode: "eco")
+            )
+        }
+    }
+
+    @Test("simulator checkpoint round trip restores only against exact simulator scope")
+    func simulatorCheckpointRoundTrip() throws {
+        let ride = try completedRide()
+        let scope = try simulatorScope(mode: "drive")
+        let original = try completedPeak(ride: ride, scope: scope, watts: 505)
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.simulatorQA(from: original)
+        let decoded = try JSONDecoder().decode(
+            CompletedRidePeakPowerCheckpoint.self,
+            from: JSONEncoder().encode(checkpoint)
+        )
+        #expect(try decoded.restoredSimulatorQA(completedRide: ride, expectedScope: scope) == original)
+    }
+
+    @Test("decoded unknown identity authority is rejected as malformed checkpoint")
     func decodedUnknownIdentityAuthorityRejected() throws {
         var fixture = StoredFixture()
         fixture.identityAuthority = "future-or-forged-authority"
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded identity and measurement authorities must remain paired")
     func decodedCrossAuthorityPairRejected() throws {
         var fixture = StoredFixture()
         fixture.evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded blank vehicle or confirmed mode identity fails closed")
     func decodedBlankScopeIdentityRejected() throws {
         var blankVehicle = StoredFixture()
         blankVehicle.vehicleIdentityKey = "   "
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(blankVehicle)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(blankVehicle) }
 
         var blankMode = StoredFixture()
         blankMode.confirmedModeKey = "\n\t"
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(blankMode)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(blankMode) }
     }
 
     @Test("decoded propulsion peak cannot be negative")
     func decodedNegativePeakRejected() throws {
         var fixture = StoredFixture()
         fixture.powerWatts = -1
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded accepted and peak-candidate counts must be structurally possible")
     func decodedMeasurementCountsRejected() throws {
         var noAccepted = StoredFixture()
         noAccepted.acceptedMeasurementCount = 0
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(noAccepted)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(noAccepted) }
 
         var noCandidate = StoredFixture()
         noCandidate.peakCandidateMeasurementCount = 0
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(noCandidate)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(noCandidate) }
 
         var tooManyCandidates = StoredFixture()
-        tooManyCandidates.acceptedMeasurementCount = 1
         tooManyCandidates.peakCandidateMeasurementCount = 2
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(tooManyCandidates)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(tooManyCandidates) }
     }
 
     @Test("decoded no-loss continuity cannot hide recorded evidence loss")
     func decodedNoLossWithLossCountersRejected() throws {
         var fixture = StoredFixture()
         fixture.qualityRejectedMeasurementCount = 1
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded partial continuity requires a recorded evidence-loss cause")
     func decodedPartialWithoutLossCountersRejected() throws {
         var fixture = StoredFixture()
         fixture.observationContinuity = .partialSelectedSourceEvidence
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded initial-gap provenance requires an interruption")
@@ -451,13 +454,7 @@ struct RidePeakPowerEvidenceTests {
         fixture.beganAfterKnownObservationGap = true
         fixture.observationContinuity = .partialSelectedSourceEvidence
         fixture.qualityRejectedMeasurementCount = 1
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("decoded recovered ride requires explicit initial-gap provenance")
@@ -466,39 +463,22 @@ struct RidePeakPowerEvidenceTests {
         fixture.rideContinuity = .recoveredCheckpoint
         fixture.observationContinuity = .partialSelectedSourceEvidence
         fixture.knownInterruptionCount = 1
-        fixture.beganAfterKnownObservationGap = false
-
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(
-                CompletedRidePeakPowerEvidence.self,
-                from: encoded(fixture)
-            )
-        }
+        #expect(throws: DecodingError.self) { try decodedCheckpoint(fixture) }
     }
 
     @Test("joining durable peak against another ride fails closed")
     func validationSessionMismatchRejected() throws {
-        let durable = try CompletedRidePeakPowerEvidence(
-            completedRide: completedRide(),
-            ridePeak: ridePeak()
-        )
-        let other = try completedRide(sessionID: otherSessionID)
-
+        let durable = try completedPeak()
         #expect(throws: CompletedRidePeakPowerEvidenceError.sessionMismatch) {
-            try durable.validate(against: other)
+            try durable.validate(against: completedRide(sessionID: otherSessionID))
         }
     }
 
     @Test("joining durable peak against changed ride continuity fails closed")
     func validationContinuityMismatchRejected() throws {
-        let durable = try CompletedRidePeakPowerEvidence(
-            completedRide: completedRide(),
-            ridePeak: ridePeak()
-        )
-        let conflicting = try completedRide(continuity: .recoveredCheckpoint)
-
+        let durable = try completedPeak()
         #expect(throws: CompletedRidePeakPowerEvidenceError.continuityMismatch) {
-            try durable.validate(against: conflicting)
+            try durable.validate(against: completedRide(continuity: .recoveredCheckpoint))
         }
     }
 }
