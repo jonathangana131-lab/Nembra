@@ -137,6 +137,19 @@ If an app consumer also persists learned range state, the accepted descendant of
 
 Any `project.pbxproj` wiring must be owned by the active Class-A integration worker. This Class-B range lane deliberately records the closure but does not race the shared project file.
 
+## Production authority boundary under the current app composition
+
+Package-module visibility and production-app authority are **not the same boundary** in Nembra's current build graph. The iOS target manually compiles selected NembraCore source files into the same `Nembra` Swift module as application code. Therefore changing a raw authority-bearing initializer or assembler from `public` to module-`internal` protects separate package clients but does **not** prevent ordinary same-module app code from calling it after those files are wired into the app target.
+
+This matters transitively:
+- sealing only raw `BatterySOCReading` construction does not stop same-module app code if that constructor remains `internal` in the same app module;
+- sealing only `BatteryRangeLearningWindow` construction does not stop same-module app code if the assembler itself remains callable and can combine leaked legitimate readings with caller-declared `.complete` distance;
+- a package-only negative compile probe is therefore insufficient evidence for the production app authority boundary.
+
+A real production seal must be architecture-aware. Acceptable directions include linking NembraCore as a separate module so `internal` becomes a meaningful app boundary, or a same-module capability/factory design whose authoritative inputs can only originate from file/private-sealed evidence that arbitrary app code cannot construct. The final architecture must include a negative **app-target** compile/behavior probe demonstrating ordinary Dashboard/app code cannot mint authoritative SoC, fabricate learning windows, or bypass the verified evidence→candidate path.
+
+The local Swift compatibility probes that make raw SoC/window constructors module-internal remain useful only to show #54 package tests/source do not require those APIs to remain public. They do **not** count as proof that the current same-module production app is authority-sealed.
+
 ## Explicit non-goals
 
 This slice does not:
