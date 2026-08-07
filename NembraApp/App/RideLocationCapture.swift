@@ -22,15 +22,22 @@ struct RideLocationSourceEvent: Equatable, Sendable {
     let sample: RideLocationSample?
     let issue: RideLocationSourceIssue?
     let isStationary: Bool
+    /// Process-local receipt ordering for diagnostics that may not carry a
+    /// CLLocation sample of their own. This is not scooter telemetry.
+    let receivedAtUptimeNanoseconds: UInt64
 
     init(
         sample: RideLocationSample?,
         issue: RideLocationSourceIssue?,
-        isStationary: Bool
+        isStationary: Bool,
+        receivedAtUptimeNanoseconds: UInt64? = nil
     ) {
         self.sample = sample
         self.issue = issue
         self.isStationary = isStationary
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+            ?? sample?.receivedAtUptimeNanoseconds
+            ?? DispatchTime.now().uptimeNanoseconds
     }
 }
 
@@ -41,6 +48,121 @@ protocol RideLocationSource: Sendable {
     func events() async -> AsyncStream<RideLocationSourceEvent>
     func start() async
     func stop() async
+}
+
+/// Explicit Simulator-only location transport used by the end-to-end completed
+/// ride fixture. It deliberately emits ordinary raw `RideLocationSample` values
+/// into the same source boundary as Core Location; no coordinate is written
+/// directly to route persistence and no GPS distance is injected by the fixture.
+///
+/// Receipt uptime and wall-clock dates are sampled at actual delivery time. The
+/// scripted path exists only to exercise software semantics and is not a claim
+/// about AOVOPRO ES80 motion, outdoor GPS quality, or production cadence.
+actor SimulatorRideLocationSource: RideLocationSource {
+    private struct Coordinate: Sendable {
+        let latitude: Double
+        let longitude: Double
+    }
+
+    private let coordinates: [Coordinate]
+    private let intervalNanoseconds: UInt64
+    private var continuation: AsyncStream<RideLocationSourceEvent>.Continuation?
+    private var deliveryTask: Task<Void, Never>?
+    private var activeGeneration: UUID?
+
+    /// The two approximately 45 m legs arrive two real seconds apart, keeping
+    /// implied speed below the injected Simulator QA ceiling while producing
+    /// enough screened distance to render visibly as roughly 0.1 mi in a US
+    /// locale. These values remain deterministic QA fixtures only.
+    static func completedRideQA() -> SimulatorRideLocationSource {
+        SimulatorRideLocationSource(
+            coordinates: [
+                Coordinate(latitude: 37.334900, longitude: -122.009020),
+                Coordinate(latitude: 37.335305, longitude: -122.009020),
+                Coordinate(latitude: 37.335710, longitude: -122.009020)
+            ],
+            intervalNanoseconds: 2_000_000_000
+        )
+    }
+
+    private init(
+        coordinates: [Coordinate],
+        intervalNanoseconds: UInt64
+    ) {
+        self.coordinates = coordinates
+        self.intervalNanoseconds = intervalNanoseconds
+    }
+
+    func events() -> AsyncStream<RideLocationSourceEvent> {
+        activeGeneration = nil
+        deliveryTask?.cancel()
+        deliveryTask = nil
+        continuation?.finish()
+
+        let pair = AsyncStream<RideLocationSourceEvent>.makeStream()
+        continuation = pair.continuation
+        return pair.stream
+    }
+
+    func start() {
+        guard deliveryTask == nil else { return }
+        let generation = UUID()
+        activeGeneration = generation
+        deliveryTask = Task { [weak self] in
+            await self?.deliverScript(generation: generation)
+        }
+    }
+
+    func stop() {
+        activeGeneration = nil
+        deliveryTask?.cancel()
+        deliveryTask = nil
+        continuation?.finish()
+        continuation = nil
+    }
+
+    private func deliverScript(generation: UUID) async {
+        for (index, coordinate) in coordinates.enumerated() {
+            guard !Task.isCancelled,
+                  activeGeneration == generation else { return }
+
+            let receivedAtDate = Date.now
+            do {
+                let sample = try RideLocationSample(
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude,
+                    sourceMeasurementDate: receivedAtDate,
+                    receivedAtDate: receivedAtDate,
+                    receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    horizontalAccuracyMeters: 4,
+                    isAccuracyLimited: false,
+                    isSimulatedBySoftware: true
+                )
+                continuation?.yield(
+                    RideLocationSourceEvent(
+                        sample: sample,
+                        issue: nil,
+                        isStationary: false
+                    )
+                )
+            } catch {
+                continuation?.yield(
+                    RideLocationSourceEvent(
+                        sample: nil,
+                        issue: .invalidLocation,
+                        isStationary: false
+                    )
+                )
+            }
+
+            guard index < coordinates.count - 1 else { continue }
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+
+        if activeGeneration == generation {
+            deliveryTask = nil
+        }
+    }
 }
 
 /// Foreground Core Location adapter for a scooter ride.
@@ -190,9 +312,18 @@ struct RideLocationCaptureSummary: Equatable, Sendable {
 /// later and promoted into ride distance. Both domains originate from the same
 /// screened samples but remain independently truthful after that boundary.
 actor RideLocationCaptureCoordinator {
-    /// Production lifecycle sink. Every GPS delta carries the exact ride UUID
-    /// this capture began with so the application layer can reject delayed
-    /// evidence after that ride ends or another ride becomes active.
+    /// Production lifecycle admission sink. Every screened point carries the
+    /// exact ride UUID this capture began with. Returning `false` means the ride
+    /// application has already closed that session's evidence boundary, so the
+    /// same point is excluded from route persistence as well as GPS distance.
+    /// A nil distance is an identity/continuity event (first anchor, stationary
+    /// duplicate, or source diagnostic) and must not manufacture movement.
+    typealias EvidenceAdmissionSink = @Sendable (
+        _ sessionID: UUID,
+        _ distanceDeltaMeters: Double?,
+        _ receivedAtUptimeNanoseconds: UInt64
+    ) async -> Bool
+
     typealias DistanceSink = @Sendable (
         _ sessionID: UUID,
         _ meters: Double,
@@ -202,7 +333,7 @@ actor RideLocationCaptureCoordinator {
     private let source: any RideLocationSource
     private let routeStore: (any RideRouteStore)?
     private let routeChunkSize: Int
-    private let distanceSink: DistanceSink
+    private let evidenceAdmissionSink: EvidenceAdmissionSink
     private var qualityScreen: RideLocationQualityScreen
     private var routeRecorder: RideRouteRecorder?
 
@@ -218,7 +349,7 @@ actor RideLocationCaptureCoordinator {
         qualityPolicy: RideLocationQualityPolicy,
         routeStore: (any RideRouteStore)?,
         routeChunkSize: Int = 8,
-        sessionScopedDistanceSink: @escaping DistanceSink
+        sessionScopedEvidenceAdmissionSink: @escaping EvidenceAdmissionSink
     ) throws {
         guard routeChunkSize > 0 else {
             throw RideRouteRecorderError.invalidChunkSize
@@ -227,12 +358,36 @@ actor RideLocationCaptureCoordinator {
         self.routeStore = routeStore
         self.routeChunkSize = routeChunkSize
         self.qualityScreen = RideLocationQualityScreen(policy: qualityPolicy)
-        self.distanceSink = sessionScopedDistanceSink
+        self.evidenceAdmissionSink = sessionScopedEvidenceAdmissionSink
+    }
+
+    /// Compatibility initializer for existing callers that already scope each
+    /// emitted nonzero delta to a ride UUID. The wrapper admits identity-only
+    /// events and preserves the old sink behavior for positive distance deltas.
+    init(
+        source: any RideLocationSource,
+        qualityPolicy: RideLocationQualityPolicy,
+        routeStore: (any RideRouteStore)?,
+        routeChunkSize: Int = 8,
+        sessionScopedDistanceSink: @escaping DistanceSink
+    ) throws {
+        try self.init(
+            source: source,
+            qualityPolicy: qualityPolicy,
+            routeStore: routeStore,
+            routeChunkSize: routeChunkSize,
+            sessionScopedEvidenceAdmissionSink: { sessionID, meters, uptime in
+                if let meters, meters > 0 {
+                    await sessionScopedDistanceSink(sessionID, meters, uptime)
+                }
+                return true
+            }
+        )
     }
 
     /// Transitional/test convenience for code that only observes emitted deltas
     /// and does not route them into application ride state. Production ride
-    /// lifecycle wiring should use `sessionScopedDistanceSink` instead.
+    /// lifecycle wiring should use `sessionScopedEvidenceAdmissionSink` instead.
     init(
         source: any RideLocationSource,
         qualityPolicy: RideLocationQualityPolicy,
@@ -307,7 +462,9 @@ actor RideLocationCaptureCoordinator {
         }
 
         // Finishing the source closes its AsyncStream. Await the consumer so all
-        // already-yielded evidence is screened before finalizing the route.
+        // already-yielded events reach the same ride-admission boundary before
+        // finalizing the route. Buffered points rejected by the application are
+        // excluded from both route persistence and GPS distance deterministically.
         await source.stop()
         if let eventsTask {
             await eventsTask.value
@@ -339,13 +496,23 @@ actor RideLocationCaptureCoordinator {
 
     private func consume(_ event: RideLocationSourceEvent) async {
         if event.issue != nil {
-            // An explicit Core Location diagnostic means continuity is no longer
-            // justified. Mark both evidence domains immediately. The recorder's
-            // gap marker is lazy: before the first point it only forces partial
-            // coverage, and after points exist it materializes a new segment only
-            // when another valid coordinate is later accepted.
+            // A source diagnostic is itself evidence that route continuity was
+            // interrupted. First ask the application whether this diagnostic is
+            // still inside the exact ride boundary. If so, materialize the gap
+            // immediately so a trailing issue followed by finish cannot retain
+            // a false `.complete` manifest. A buffered post-completion issue is
+            // rejected and therefore cannot rewrite pre-completion route truth.
+            if let sessionID {
+                let admittedIssue = await evidenceAdmissionSink(
+                    sessionID,
+                    nil,
+                    event.receivedAtUptimeNanoseconds
+                )
+                if admittedIssue {
+                    await markRouteGapIfAvailable()
+                }
+            }
             qualityScreen.markKnownCoverageGap()
-            await markRouteGapIfAvailable()
         }
 
         guard let sample = event.sample else { return }
@@ -354,24 +521,36 @@ actor RideLocationCaptureCoordinator {
         case .rejected:
             return
         case let .accepted(accepted):
+            guard let sessionID else { return }
+            // Exact zero displacement is not movement evidence. Route identity is
+            // still checked, but RideEngine is not fed a stationary GPS sample
+            // that could end the ride from inside this capture task and create a
+            // coordinator.finish() self-await cycle.
+            let movementDelta = accepted.distanceDeltaMeters.flatMap { $0 > 0 ? $0 : nil }
+            let admitted = await evidenceAdmissionSink(
+                sessionID,
+                movementDelta,
+                accepted.sample.receivedAtUptimeNanoseconds
+            )
+            guard admitted else {
+                // The quality screen already advanced its accepted baseline. If
+                // the application rejects this point, continuity to the next
+                // point is no longer proven for either GPS distance or route
+                // topology. Force the next accepted point to begin after a known
+                // gap instead of measuring from evidence the ride did not admit.
+                qualityScreen.markKnownCoverageGap()
+                return
+            }
+
             if accepted.startsNewRouteSegment {
-                // Repeating the marker is intentionally harmless; the route
-                // recorder collapses repeated gap notifications until a new
-                // accepted point actually exists.
                 await markRouteGapIfAvailable()
             }
 
             await appendRoutePointIfAvailable(accepted.sample)
             acceptedPointCount += 1
 
-            if let distanceDeltaMeters = accepted.distanceDeltaMeters,
-               let sessionID {
-                qualityScreenedDistanceMeters += distanceDeltaMeters
-                await distanceSink(
-                    sessionID,
-                    distanceDeltaMeters,
-                    accepted.sample.receivedAtUptimeNanoseconds
-                )
+            if let movementDelta {
+                qualityScreenedDistanceMeters += movementDelta
             }
         }
     }
@@ -411,5 +590,57 @@ actor RideLocationCaptureCoordinator {
         acceptedPointCount = 0
         qualityScreenedDistanceMeters = 0
         routePersistenceFailed = false
+    }
+}
+
+/// Finalizes durable route chunks that survived a process stop after RideEngine
+/// wrote `completedPendingCommit` but before the ride-scoped recorder could
+/// commit its manifest.
+///
+/// Recovery is deliberately conservative: surviving chunks prove that Nembra
+/// recorded geometry, but a process boundary means full coverage can no longer
+/// be claimed. A recovered draft therefore receives `.partial` coverage. No
+/// coordinate is invented, reordered, joined across an unknown gap, or measured
+/// later to manufacture GPS ride distance.
+struct RideRouteDraftFinalizer: Sendable {
+    enum FinalizationError: Error, Equatable, Sendable {
+        case durableVerificationFailed(UUID)
+    }
+
+    private let routeStore: any RideRouteStore
+
+    init(routeStore: any RideRouteStore) {
+        self.routeStore = routeStore
+    }
+
+    @discardableResult
+    func finalizePartialDraftIfNeeded(sessionID: UUID) async throws -> RideRouteManifest? {
+        if let existing = try await routeStore.manifest(sessionID: sessionID) {
+            return existing
+        }
+
+        let chunks = try await routeStore.chunks(sessionID: sessionID)
+        guard !chunks.isEmpty else { return nil }
+
+        let segmentIndices = Set(chunks.map(\.id.segmentIndex)).sorted()
+        let pointCount = chunks.reduce(0) { $0 + $1.points.count }
+        let manifest = try RideRouteManifest(
+            sessionID: sessionID,
+            coverage: .partial,
+            segmentCount: segmentIndices.count,
+            pointCount: pointCount,
+            knownGapCount: max(0, segmentIndices.count - 1)
+        )
+
+        // Reuse the accepted geometry validator before making a recovered
+        // manifest durable. It rejects mismatched sessions, non-contiguous
+        // segments/chunks, bad sequence ordering, and count mismatches.
+        _ = try RideRouteGeometry(manifest: manifest, chunks: chunks)
+        _ = try await routeStore.commit(manifest)
+
+        guard try await routeStore.manifest(sessionID: sessionID) == manifest else {
+            throw FinalizationError.durableVerificationFailed(sessionID)
+        }
+        return manifest
     }
 }

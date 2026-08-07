@@ -10,9 +10,14 @@ final class AppRuntime {
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
-    private let simulatorRouteRecorder: RideRouteRecorder?
+    private let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+    private let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
+    private let rideRouteOutcomeStore: AtomicRideRouteOutcomeStore?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
+    private var rideLocationLifecycleTask: Task<Void, Never>?
+    private var activeLocationCaptureSessionID: UUID?
+    private var pendingLocationCaptureSummary: RideLocationCaptureSummary?
 
     init(
         vehicleStore: VehicleStore,
@@ -22,7 +27,9 @@ final class AppRuntime {
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
-        simulatorRouteRecorder: RideRouteRecorder?
+        rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?,
+        rideRouteDraftFinalizer: RideRouteDraftFinalizer?,
+        rideRouteOutcomeStore: AtomicRideRouteOutcomeStore?
     ) {
         self.vehicleStore = vehicleStore
         self.rideStore = rideStore
@@ -31,20 +38,29 @@ final class AppRuntime {
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
-        self.simulatorRouteRecorder = simulatorRouteRecorder
+        self.rideLocationCaptureCoordinator = rideLocationCaptureCoordinator
+        self.rideRouteDraftFinalizer = rideRouteDraftFinalizer
+        self.rideRouteOutcomeStore = rideRouteOutcomeStore
     }
 
     deinit {
         simulatorRideDriverTask?.cancel()
+        rideLocationLifecycleTask?.cancel()
     }
 
     func start() async {
         guard !didStart else { return }
         didStart = true
 
+        // The completion barrier is installed before recovery starts so a
+        // durable `completedPendingCommit` ride cannot clear its checkpoint
+        // until route outcome/repair truth has also reached durable storage.
+        installRideCompletionBarrierIfAvailable()
+
         // Ride evidence subscribes first so explicit QA telemetry emitted after
         // launch cannot race past the automatic ride application layer.
         await rideStore.start()
+        startRideLocationLifecycleIfAvailable()
         await vehicleStore.start()
 
         guard simulationScenario == .riding,
@@ -80,47 +96,18 @@ final class AppRuntime {
                 elapsedSeconds: 60
             )
 
-            // The route fixture is also explicit Simulator-only evidence. It is
-            // written through RideRouteRecorder and the production route-store
-            // contract; it never mutates completed-history distance evidence and
-            // is classified partial because recording starts only after the ride
-            // has already reached confirmed active state.
-            if let sessionID = await waitForActiveRideSessionID(),
-               let simulatorRouteRecorder {
-                do {
-                    try await simulatorRouteRecorder.begin(
-                        sessionID: sessionID,
-                        coverageAlreadyPartial: true
-                    )
-                    let now = Date()
-                    let route = [
-                        (37.33490, -122.00902),
-                        (37.33535, -122.00840),
-                        (37.33586, -122.00773),
-                        (37.33642, -122.00712)
-                    ]
-                    for (index, coordinate) in route.enumerated() {
-                        try await simulatorRouteRecorder.append(
-                            latitude: coordinate.0,
-                            longitude: coordinate.1,
-                            capturedAtDate: now.addingTimeInterval(Double(index)),
-                            sourceMeasurementDate: now.addingTimeInterval(Double(index)),
-                            horizontalAccuracyMeters: 4
-                        )
-                    }
-                    _ = try await simulatorRouteRecorder.finish(requestedCoverage: .partial)
-                } catch {
-                    // The UI test requires route evidence for this opt-in QA
-                    // scenario, so a recorder failure remains observable as the
-                    // truthful no-route/error state instead of being fabricated.
-                }
-            }
+            // Location is no longer written directly into route persistence.
+            // The root-owned ride lifecycle starts the explicit Simulator source
+            // only after RideEngine owns a confirmed UUID. Give its two real-time
+            // intervals enough wall-clock time to reach the same quality screen,
+            // route recorder, and session-scoped GPS-distance sink before the
+            // fixture supplies authoritative ride-end evidence.
+            try? await Task.sleep(nanoseconds: 4_250_000_000)
+            guard !Task.isCancelled else { return }
 
             // Explicit end-to-end history fixture used only when a UI/QA launch
             // opts in through the Simulator environment. It drives the real ride
             // engine and persistence path instead of inserting a fake row.
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
             await simulatorService.simulateRide(
                 speedKilometersPerHour: 0,
                 elapsedSeconds: 0
@@ -135,15 +122,220 @@ final class AppRuntime {
         }
     }
 
-    private func waitForActiveRideSessionID() async -> UUID? {
-        for _ in 0..<20 {
-            if let sessionID = rideStore.activeSessionID {
-                return sessionID
+    /// Application/root lifetime owns location capture. SwiftUI navigation and
+    /// view appearance never start or stop it. The ride engine's durable session
+    /// UUID is the only lifecycle identity accepted by the coordinator.
+    private func startRideLocationLifecycleIfAvailable() {
+        guard rideLocationLifecycleTask == nil,
+              let rideLocationCaptureCoordinator else { return }
+
+        let stream = rideStore.rideSessionEvents()
+        rideLocationLifecycleTask = Task { [weak self] in
+            for await event in stream {
+                guard !Task.isCancelled else { break }
+                await self?.handleRideSessionEvent(
+                    event,
+                    coordinator: rideLocationCaptureCoordinator
+                )
             }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            if Task.isCancelled { return nil }
         }
-        return nil
+    }
+
+    /// Completed history is not allowed to publish before route outcome truth is
+    /// durable. The barrier is intentionally installed even if no active source
+    /// exists because startup recovery may need to salvage persisted chunks or
+    /// classify an unavailable route database before clearing the ride checkpoint.
+    private func installRideCompletionBarrierIfAvailable() {
+        guard rideRouteOutcomeStore != nil else { return }
+        rideStore.setRideCompletionBarrier { [weak self] sessionID in
+            guard let self else { return }
+            try await self.finishLocationCaptureBeforeRideCommit(sessionID: sessionID)
+        }
+    }
+
+    private func finishLocationCaptureBeforeRideCommit(sessionID: UUID) async throws {
+        if let pendingLocationCaptureSummary,
+           pendingLocationCaptureSummary.sessionID == sessionID {
+            try await persistRouteOutcome(for: pendingLocationCaptureSummary)
+            self.pendingLocationCaptureSummary = nil
+            activeLocationCaptureSessionID = nil
+            return
+        }
+
+        if activeLocationCaptureSessionID == sessionID,
+           let rideLocationCaptureCoordinator {
+            let summary = try await rideLocationCaptureCoordinator.finish()
+            // Keep the in-memory summary until its independent outcome ledger is
+            // durable. If that write fails, the ride checkpoint remains pending
+            // and a later retry can finish this exact obligation without asking
+            // an already-finished location source to replay evidence.
+            pendingLocationCaptureSummary = summary
+            try await persistRouteOutcome(for: summary)
+            pendingLocationCaptureSummary = nil
+            activeLocationCaptureSessionID = nil
+            return
+        }
+
+        // Recovery after a process boundary has no active source/summary. Only
+        // durable route evidence may improve the classification. A verified
+        // manifest promotes to recorded; surviving chunks are finalized partial;
+        // no chunks without a prior outcome remain explicitly unknown.
+        try await reconcileRecoveredRouteOutcome(sessionID: sessionID)
+    }
+
+    private func persistRouteOutcome(for summary: RideLocationCaptureSummary) async throws {
+        guard let rideRouteOutcomeStore else { return }
+
+        if !summary.routePersistenceFailed,
+           let manifest = summary.routeManifest {
+            try await commitRouteOutcome(
+                sessionID: summary.sessionID,
+                state: manifest.pointCount > 0 ? .recorded : .noRecordedGeometry,
+                acceptedPointCount: summary.acceptedPointCount,
+                store: rideRouteOutcomeStore
+            )
+            return
+        }
+
+        // A failed normal manifest write can still leave already-durable chunks.
+        // Salvage those immediately, before completed history is allowed to clear
+        // its checkpoint. If salvage fails, keep an explicit repair obligation.
+        if let rideRouteDraftFinalizer {
+            do {
+                if let manifest = try await rideRouteDraftFinalizer.finalizePartialDraftIfNeeded(
+                    sessionID: summary.sessionID
+                ) {
+                    try await commitRouteOutcome(
+                        sessionID: summary.sessionID,
+                        state: manifest.pointCount > 0 ? .recorded : .noRecordedGeometry,
+                        acceptedPointCount: summary.acceptedPointCount,
+                        store: rideRouteOutcomeStore
+                    )
+                    return
+                }
+            } catch {
+                // The durable outcome below preserves failure truth and remains
+                // repairable on a later launch; ride history stays independent.
+            }
+        }
+
+        try await commitRouteOutcome(
+            sessionID: summary.sessionID,
+            state: .storageFailed,
+            acceptedPointCount: summary.acceptedPointCount,
+            store: rideRouteOutcomeStore
+        )
+    }
+
+    private func reconcileRecoveredRouteOutcome(sessionID: UUID) async throws {
+        guard let rideRouteOutcomeStore else { return }
+        let existing = try await rideRouteOutcomeStore.record(sessionID: sessionID)
+
+        switch existing?.state {
+        case .recorded, .noRecordedGeometry:
+            return
+        case .storageFailed, .unknown, .none:
+            break
+        }
+
+        if let rideRouteDraftFinalizer {
+            do {
+                if let manifest = try await rideRouteDraftFinalizer.finalizePartialDraftIfNeeded(
+                    sessionID: sessionID
+                ) {
+                    try await commitRouteOutcome(
+                        sessionID: sessionID,
+                        state: manifest.pointCount > 0 ? .recorded : .noRecordedGeometry,
+                        acceptedPointCount: existing?.acceptedPointCount ?? manifest.pointCount,
+                        store: rideRouteOutcomeStore
+                    )
+                    return
+                }
+            } catch {
+                try await commitRouteOutcome(
+                    sessionID: sessionID,
+                    state: .storageFailed,
+                    acceptedPointCount: existing?.acceptedPointCount,
+                    store: rideRouteOutcomeStore
+                )
+                return
+            }
+
+            // A prior failure/unknown classification remains truthful when no
+            // salvageable chunks exist. For legacy pending checkpoints that have
+            // no outcome at all, do not invent "no route" after a process gap.
+            if existing != nil { return }
+            try await commitRouteOutcome(
+                sessionID: sessionID,
+                state: .unknown,
+                acceptedPointCount: nil,
+                store: rideRouteOutcomeStore
+            )
+            return
+        }
+
+        // If the optional route database cannot even open during recovery, that
+        // is explicit route-storage failure rather than evidence of zero geometry.
+        try await commitRouteOutcome(
+            sessionID: sessionID,
+            state: .storageFailed,
+            acceptedPointCount: existing?.acceptedPointCount,
+            store: rideRouteOutcomeStore
+        )
+    }
+
+    private func commitRouteOutcome(
+        sessionID: UUID,
+        state: RideRouteOutcomeState,
+        acceptedPointCount: Int?,
+        store: AtomicRideRouteOutcomeStore
+    ) async throws {
+        let record = try RideRouteOutcomeRecord(
+            sessionID: sessionID,
+            state: state,
+            acceptedPointCount: acceptedPointCount
+        )
+        _ = try await store.commit(record)
+    }
+
+    private func handleRideSessionEvent(
+        _ event: RideApplicationSessionEvent,
+        coordinator: RideLocationCaptureCoordinator
+    ) async {
+        switch event {
+        case let .becameActive(sessionID):
+            guard activeLocationCaptureSessionID != sessionID else { return }
+
+            if activeLocationCaptureSessionID != nil {
+                if let summary = try? await coordinator.finish() {
+                    try? await persistRouteOutcome(for: summary)
+                }
+                activeLocationCaptureSessionID = nil
+            }
+
+            do {
+                // Capture begins only after ride confirmation, so the candidate
+                // interval before this point is known missing coverage.
+                try await coordinator.begin(
+                    sessionID: sessionID,
+                    requestedCoverage: .partial
+                )
+                activeLocationCaptureSessionID = sessionID
+            } catch {
+                activeLocationCaptureSessionID = nil
+            }
+
+        case let .ended(sessionID):
+            // Normal completion already flushed through the awaited completion
+            // barrier before RideApplicationStore released this UUID. Keep this
+            // as a fail-safe for any non-completion transition that still ends a
+            // previously active session.
+            guard activeLocationCaptureSessionID == sessionID else { return }
+            if let summary = try? await coordinator.finish() {
+                try? await persistRouteOutcome(for: summary)
+            }
+            activeLocationCaptureSessionID = nil
+        }
     }
 }
 
@@ -213,6 +405,7 @@ enum AppBootstrap {
         )
         let rideRouteStore = RideRoutePresentationStore(
             routeStore: persistence?.routeStore,
+            outcomeStore: persistence?.routeOutcomeStore,
             startupPersistenceError: persistenceError
         )
 
@@ -264,15 +457,39 @@ enum AppBootstrap {
 
         let simulatorAutoCompletesRide = bootstrap.scenario == .riding
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
-        let simulatorRouteRecorder: RideRouteRecorder?
-        if bootstrap.scenario != nil,
-           let routeStore = persistence?.routeStore {
-            simulatorRouteRecorder = try? RideRouteRecorder(
-                store: routeStore,
-                chunkSize: 2
-            )
+
+        let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+        if simulatorAutoCompletesRide,
+           let persistence {
+            do {
+                let source = SimulatorRideLocationSource.completedRideQA()
+                let policy = try RideLocationQualityPolicy.simulatorQA()
+                rideLocationCaptureCoordinator = try RideLocationCaptureCoordinator(
+                    source: source,
+                    qualityPolicy: policy,
+                    routeStore: persistence.routeStore,
+                    routeChunkSize: 2,
+                    sessionScopedEvidenceAdmissionSink: { [weak rideStore] sessionID, meters, uptime in
+                        guard let rideStore else { return false }
+                        return await rideStore.admitQualityScreenedLocationEvidence(
+                            distanceDeltaMeters: meters,
+                            receivedAtUptimeNanoseconds: uptime,
+                            for: sessionID
+                        )
+                    }
+                )
+            } catch {
+                rideLocationCaptureCoordinator = nil
+            }
         } else {
-            simulatorRouteRecorder = nil
+            rideLocationCaptureCoordinator = nil
+        }
+
+        let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
+        if let routeStore = persistence?.routeStore {
+            rideRouteDraftFinalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+        } else {
+            rideRouteDraftFinalizer = nil
         }
 
         return AppRuntime(
@@ -283,7 +500,9 @@ enum AppBootstrap {
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
-            simulatorRouteRecorder: simulatorRouteRecorder
+            rideLocationCaptureCoordinator: rideLocationCaptureCoordinator,
+            rideRouteDraftFinalizer: rideRouteDraftFinalizer,
+            rideRouteOutcomeStore: persistence?.routeOutcomeStore
         )
     }
 
