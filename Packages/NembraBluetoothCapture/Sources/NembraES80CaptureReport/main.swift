@@ -65,6 +65,14 @@ struct NembraES80CaptureReportCommand {
     }
 
     private static func run(_ options: Options) throws {
+        if let outputURL = options.outputURL {
+            try PassiveBluetoothCaptureArtifactOutputPolicy.validate(
+                inputURL: options.inputURL,
+                outputURL: outputURL,
+                allowReplacingExistingOutput: options.forceOutput
+            )
+        }
+
         let artifactData = try Data(contentsOf: options.inputURL, options: [.mappedIfSafe])
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
             maximumEncryptedMessageBytes: options.maximumMessageBytes,
@@ -78,15 +86,12 @@ struct NembraES80CaptureReportCommand {
         let reportData = try artifactReport.jsonData(prettyPrinted: options.prettyPrinted)
 
         if let outputURL = options.outputURL {
-            try PassiveBluetoothCaptureArtifactOutputPolicy.validate(
+            try PassiveBluetoothCaptureArtifactOutputPolicy.writeDerivedReport(
+                reportData,
                 inputURL: options.inputURL,
                 outputURL: outputURL,
                 allowReplacingExistingOutput: options.forceOutput
             )
-            let writeOptions: Data.WritingOptions = options.forceOutput
-                ? [.atomic]
-                : [.atomic, .withoutOverwriting]
-            try reportData.write(to: outputURL, options: writeOptions)
             writeStderr(
                 "wrote framing-candidate report for " +
                 "\(artifactReport.analysis.capture.peripheralIdentifier) to \(outputURL.path) " +
@@ -198,8 +203,8 @@ struct NembraES80CaptureReportCommand {
     Options:
       --peripheral <id>          Exact captured peripheral identifier. Omit only
                                  when target-attributable evidence names one unique peripheral.
-      --output, -o <report.json> Write report atomically to a file instead of stdout.
-                                 Existing files are protected by default.
+      --output, -o <report.json> Write report to a file. Existing files are protected
+                                 by default; publication is non-replacing.
       --force-output             Replace an existing derived report. This never permits
                                  the output path to equal the raw capture input path.
       --max-message-bytes <n>    Offline analysis ceiling (default: 65536).
@@ -216,6 +221,7 @@ struct NembraES80CaptureReportCommand {
     Evidence preservation:
       The command refuses to overwrite its source capture even with --force-output.
       Existing derived reports are also protected unless --force-output is explicit.
+      Protected writes publish through a uniquely named sibling and a non-replacing move.
 
     Truth boundary:
       The output is PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY. It does not
