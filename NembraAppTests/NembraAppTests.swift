@@ -284,6 +284,36 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testConnectionGapInvalidatesRawSpeedAndRejectsGapSamples() throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        model.accept(try speedSample(kilometersPerHour: 12, uptimeNanoseconds: 2_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 12, accuracy: 0.000_1)
+
+        model.setConnectionContinuityActive(false)
+        XCTAssertNil(model.latestMeasurementSource)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+        XCTAssertFalse(model.isAnimationActive)
+
+        let retainedFallback = try XCTUnwrap(model.frame(
+            atUptimeNanoseconds: 2_100_000_000,
+            fallbackConfirmedKilometersPerHour: 7
+        ))
+        XCTAssertEqual(retainedFallback.kilometersPerHour, 7, accuracy: 0.000_1)
+        XCTAssertEqual(retainedFallback.origin, .confirmedVehicleState)
+
+        model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 3_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 1)
+        XCTAssertNil(model.latestMeasuredKilometersPerHour)
+
+        model.setConnectionContinuityActive(true)
+        model.accept(try speedSample(kilometersPerHour: 8, uptimeNanoseconds: 4_000_000_000))
+        XCTAssertEqual(model.measurementRevision, 2)
+        XCTAssertEqual(try XCTUnwrap(model.latestMeasuredKilometersPerHour), 8, accuracy: 0.000_1)
+    }
+
+    @MainActor
     func testDashboardSpeedDisplayRejectsMalformedValuesInsteadOfManufacturingZero() throws {
         XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: nil, usesMetric: true))
         XCTAssertNil(DashboardSpeedInstrumentView.displayedValue(kilometersPerHour: -0.01, usesMetric: true))
