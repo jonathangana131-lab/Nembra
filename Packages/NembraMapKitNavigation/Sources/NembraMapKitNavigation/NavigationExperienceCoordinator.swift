@@ -184,9 +184,12 @@ public final class NavigationExperienceCoordinator {
             throw NavigationExperienceError.noRouteOptions
         }
 
+        // Commit the throwing navigation-session selection first. If its
+        // generation counter ever exhausts, presentation state must remain on
+        // the previously accepted route rather than claiming an unaccepted one.
+        _ = try session.select(route: route)
         routeSelection = selection
         selectedRoute = route
-        _ = try session.select(route: route)
         return snapshot
     }
 
