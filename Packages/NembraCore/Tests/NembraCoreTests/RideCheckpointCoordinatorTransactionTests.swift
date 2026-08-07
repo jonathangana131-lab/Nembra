@@ -148,11 +148,12 @@ struct RideCheckpointCoordinatorTransactionTests {
             let store = TransactionTestCheckpointStore(
                 value: .inProgress(try recoveredCheckpoint(transportGapEvidence: initialEvidence))
             )
+            let firstRecoveryUptime: UInt64 = 50_000_000_000
             let firstRecovery = try await RideCheckpointCoordinator.restoring(
                 policy: try policy(),
                 store: store,
                 cadence: try cadence(),
-                recoveredAtUptimeNanoseconds: 50_000,
+                recoveredAtUptimeNanoseconds: firstRecoveryUptime,
                 recoveredAtDate: epoch.addingTimeInterval(50),
                 makeSessionID: { sessionID }
             )
@@ -163,7 +164,7 @@ struct RideCheckpointCoordinatorTransactionTests {
             // the long periodic cadence and reach the durable journal now.
             _ = try await firstRecovery.ingest(
                 observation(
-                    50_001,
+                    firstRecoveryUptime + 1,
                     connection: .reconnecting,
                     odometer: 100.5
                 )
@@ -179,17 +180,18 @@ struct RideCheckpointCoordinatorTransactionTests {
             // Model a second process loss immediately after that one observation.
             // The new coordinator must reconstruct the direct observation as
             // durable evidence rather than degrading it back to unknown.
+            let secondRecoveryUptime: UInt64 = 60_000_000_000
             let secondRecovery = try await RideCheckpointCoordinator.restoring(
                 policy: try policy(),
                 store: store,
                 cadence: try cadence(),
-                recoveredAtUptimeNanoseconds: 60_000,
+                recoveredAtUptimeNanoseconds: secondRecoveryUptime,
                 recoveredAtDate: epoch.addingTimeInterval(60),
                 makeSessionID: { sessionID }
             )
             _ = try await secondRecovery.ingest(
                 observation(
-                    60_001,
+                    secondRecoveryUptime + 1,
                     connection: .connected,
                     speedKPH: 8,
                     odometer: 100.6
