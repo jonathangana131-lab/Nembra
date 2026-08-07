@@ -110,14 +110,23 @@ public final class NavigationExperienceCoordinator {
     public func selectRoute(
         _ selectionID: NavigationRouteSelectionID
     ) throws -> NavigationExperienceSnapshot {
-        guard case let .available(currentToken, _, _) = planningService.state,
-              currentToken == selectionID.requestToken,
-              let selection = routeSelection,
-              selection.routes.indices.contains(selectionID.index),
-              selection.routes[selectionID.index] == selectionID.route else {
-            throw NavigationExperienceError.staleRouteOptions
-        }
-        return try selectCurrentRoute(index: selectionID.index)
+        try selectValidatedRoute(selectionID, receiptFence: nil)
+    }
+
+    /// Explicitly selects one route and binds it to the caller's process-local
+    /// selection receipt boundary. Use this overload when quality-screened
+    /// location delivery can already be queued while the user selects a route.
+    ///
+    /// `receiptFence` must come from the same monotonic receipt clock used by
+    /// `RideLocationSample.receivedAtUptimeNanoseconds`. It is delivery-order
+    /// evidence only: never GPS measurement time, route progress, ride duration,
+    /// or proof that the provider route is physically safe for a scooter.
+    @discardableResult
+    public func selectRoute(
+        _ selectionID: NavigationRouteSelectionID,
+        receiptFence: NavigationRouteSelectionReceiptFence
+    ) throws -> NavigationExperienceSnapshot {
+        try selectValidatedRoute(selectionID, receiptFence: receiptFence)
     }
 
     /// Package-internal convenience for deterministic tests/composition that
@@ -128,7 +137,7 @@ public final class NavigationExperienceCoordinator {
         guard case .available = planningService.state else {
             throw NavigationExperienceError.noRouteOptions
         }
-        return try selectCurrentRoute(index: index)
+        return try selectCurrentRoute(index: index, receiptFence: nil)
     }
 
     /// Feeds only quality-screened location evidence into the selected route's
@@ -174,8 +183,26 @@ public final class NavigationExperienceCoordinator {
         session.clearRoute()
     }
 
+    private func selectValidatedRoute(
+        _ selectionID: NavigationRouteSelectionID,
+        receiptFence: NavigationRouteSelectionReceiptFence?
+    ) throws -> NavigationExperienceSnapshot {
+        guard case let .available(currentToken, _, _) = planningService.state,
+              currentToken == selectionID.requestToken,
+              let selection = routeSelection,
+              selection.routes.indices.contains(selectionID.index),
+              selection.routes[selectionID.index] == selectionID.route else {
+            throw NavigationExperienceError.staleRouteOptions
+        }
+        return try selectCurrentRoute(
+            index: selectionID.index,
+            receiptFence: receiptFence
+        )
+    }
+
     private func selectCurrentRoute(
-        index: Int
+        index: Int,
+        receiptFence: NavigationRouteSelectionReceiptFence?
     ) throws -> NavigationExperienceSnapshot {
         guard var selection = routeSelection else {
             throw NavigationExperienceError.noRouteOptions
@@ -187,9 +214,13 @@ public final class NavigationExperienceCoordinator {
         }
 
         // Commit the throwing navigation-session selection first. If its
-        // generation counter ever exhausts, presentation state must remain on
+        // generation/fence validation fails, presentation state must remain on
         // the previously accepted route rather than claiming an unaccepted one.
-        _ = try session.select(route: route)
+        if let receiptFence {
+            _ = try session.select(route: route, receiptFence: receiptFence)
+        } else {
+            _ = try session.select(route: route)
+        }
         routeSelection = selection
         selectedRoute = route
         return snapshot
