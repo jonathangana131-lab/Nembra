@@ -16,7 +16,6 @@ struct BatteryAdaptiveRangeSameCallbackTests {
             estimateSmoothingFactor: 0.25,
             provisionalEfficiencyMetersPerPercentagePoint: nil,
             lowSOCCautionThresholdPercent: nil,
-            lowSOCEfficiencyMultiplier: nil,
             lowConfidenceConsumedPercentagePoints: 10,
             normalConfidenceConsumedPercentagePoints: 30,
             highConfidenceConsumedPercentagePoints: 60
@@ -43,19 +42,13 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         let p = try policy()
 
         _ = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(80),
-                uptime: 100
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(80), uptime: 100),
             policy: p
         )
         try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
 
         let voltageResult = try pipeline.acceptBatteryObservation(
-            observation(
-                value: try BatterySemanticValue.voltageVolts(40.0),
-                uptime: 200
-            ),
+            observation(value: try BatterySemanticValue.voltageVolts(40.0), uptime: 200),
             policy: p
         )
         #expect(voltageResult.disposition == .ignored)
@@ -65,10 +58,7 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 300)
 
         let socResult = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(77),
-                uptime: 200
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(77), uptime: 200),
             policy: p
         )
         let candidate = try #require(socResult.candidateLearningWindow)
@@ -86,16 +76,13 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
     }
 
-    @Test("verified non-SoC gap boundary can reset then accept verified SoC from the same callback uptime")
-    func voltageGapBoundaryThenSOCAtSameUptimeReanchorsCleanly() throws {
+    @Test("repeated boundary tags from one resumed callback reset once then accept same-uptime SoC")
+    func voltageGapBoundaryThenSOCBoundaryAtSameUptimeReanchorsCleanly() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
         let p = try policy()
 
         _ = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(80),
-                uptime: 100
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(80), uptime: 100),
             policy: p
         )
         try pipeline.recordDistance(deltaMeters: 500, coverage: .partial)
@@ -112,9 +99,8 @@ struct BatteryAdaptiveRangeSameCallbackTests {
 
         #expect(voltageBoundary.disposition == .continuityReset)
         #expect(voltageBoundary.candidateLearningWindow == nil)
-        #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 1)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
         #expect(pipeline.windowAssembler.anchorSOC == nil)
-        #expect(pipeline.windowAssembler.latestAuthoritativeSOC == nil)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
         #expect(pipeline.windowAssembler.distanceCoverage == .complete)
         #expect(pipeline.windowAssembler.transportGapOccurred == false)
@@ -122,7 +108,8 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         let socAtSameCallback = try pipeline.acceptBatteryObservation(
             observation(
                 value: BatterySemanticValue.stateOfChargePercent(59),
-                uptime: 1
+                uptime: 1,
+                continuity: .afterUnobservedInterval
             ),
             policy: p
         )
@@ -130,18 +117,14 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(socAtSameCallback.disposition == .authoritativeSOCIngested)
         #expect(socAtSameCallback.candidateLearningWindow == nil)
         #expect(pipeline.evidenceBridge.streamValidator.lastAcceptedUptimeNanoseconds == 1)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
         #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
         #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 59)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
-        #expect(pipeline.windowAssembler.distanceCoverage == .complete)
-        #expect(pipeline.windowAssembler.transportGapOccurred == false)
 
         try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
         let endResult = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(56),
-                uptime: 2
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(56), uptime: 2),
             policy: p
         )
         let candidate = try #require(endResult.candidateLearningWindow)
@@ -151,6 +134,7 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(candidate.distanceMeters == 300)
         #expect(candidate.distanceCoverage == .complete)
         #expect(candidate.transportGapOccurred == false)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == nil)
     }
 
     @Test("verified SoC first at one callback uptime is not disturbed by later verified voltage")
@@ -159,19 +143,13 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         let p = try policy()
 
         _ = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(80),
-                uptime: 100
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(80), uptime: 100),
             policy: p
         )
         try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
 
         let socResult = try pipeline.acceptBatteryObservation(
-            observation(
-                value: BatterySemanticValue.stateOfChargePercent(77),
-                uptime: 200
-            ),
+            observation(value: BatterySemanticValue.stateOfChargePercent(77), uptime: 200),
             policy: p
         )
         let candidate = try #require(socResult.candidateLearningWindow)
@@ -181,10 +159,7 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
 
         let voltageResult = try pipeline.acceptBatteryObservation(
-            observation(
-                value: try BatterySemanticValue.voltageVolts(40.0),
-                uptime: 200
-            ),
+            observation(value: try BatterySemanticValue.voltageVolts(40.0), uptime: 200),
             policy: p
         )
 
@@ -196,5 +171,94 @@ struct BatteryAdaptiveRangeSameCallbackTests {
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
         #expect(pipeline.windowAssembler.distanceCoverage == .complete)
         #expect(pipeline.windowAssembler.transportGapOccurred == false)
+    }
+
+    @Test("same-receipt non-SoC boundary after SoC boundary cannot erase the fresh anchor")
+    func SOCBoundaryThenVoltageBoundaryAtSameUptimePreservesAnchor() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(value: BatterySemanticValue.stateOfChargePercent(80), uptime: 100),
+            policy: p
+        )
+        try pipeline.recordDistance(deltaMeters: 500, coverage: .partial)
+        pipeline.recordTransportGap()
+
+        let socBoundary = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(59),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+        #expect(socBoundary.disposition == .continuityResetAndAuthoritativeSOCIngested)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
+
+        let voltageBoundary = try pipeline.acceptBatteryObservation(
+            observation(
+                value: try BatterySemanticValue.voltageVolts(39.5),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+        #expect(voltageBoundary.disposition == .ignored)
+        #expect(voltageBoundary.candidateLearningWindow == nil)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 59)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+        #expect(pipeline.windowAssembler.distanceCoverage == .complete)
+        #expect(pipeline.windowAssembler.transportGapOccurred == false)
+
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+        let endResult = try pipeline.acceptBatteryObservation(
+            observation(value: BatterySemanticValue.stateOfChargePercent(56), uptime: 2),
+            policy: p
+        )
+        let candidate = try #require(endResult.candidateLearningWindow)
+        #expect(candidate.startSOC.percentage == 59)
+        #expect(candidate.endSOC.percentage == 56)
+        #expect(candidate.distanceMeters == 300)
+        #expect(candidate.transportGapOccurred == false)
+    }
+
+    @Test("known new gap clears same-receipt boundary coalescing state")
+    func markUnobservedIntervalForcesNewBoundaryEvenAtSameNumericUptime() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        let p = try policy()
+
+        let firstBoundary = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(59),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+        #expect(firstBoundary.disposition == .continuityResetAndAuthoritativeSOCIngested)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 59)
+
+        pipeline.markUnobservedInterval()
+        #expect(pipeline.evidenceBridge.streamValidator.requiresContinuityBoundary)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == nil)
+        #expect(pipeline.windowAssembler.anchorSOC == nil)
+
+        let secondBoundary = try pipeline.acceptBatteryObservation(
+            observation(
+                value: BatterySemanticValue.stateOfChargePercent(58),
+                uptime: 1,
+                continuity: .afterUnobservedInterval
+            ),
+            policy: p
+        )
+
+        #expect(secondBoundary.disposition == .continuityResetAndAuthoritativeSOCIngested)
+        #expect(pipeline.evidenceBridge.lastContinuityResetReceiptUptimeNanoseconds == 1)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 58)
+        #expect(pipeline.windowAssembler.latestAuthoritativeSOC?.percentage == 58)
     }
 }
