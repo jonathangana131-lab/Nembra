@@ -31,6 +31,8 @@ The caller supplies:
 
 There are no ES80 defaults for timing, scale, signedness, unit, or tolerance. Field-label strings are preserved but never parsed to infer meaning.
 
+The child report retains the **exact validated electrical-coherence policy** that produced the result: anchor-count ceiling, accepted evidence-span ceiling, absolute relationship tolerance, and relative relationship tolerance. It also retains the original requested three-role anchor list in caller order. Accepted/rejected outcomes therefore do not become detached from their input policy or require reconstruction from partitions.
+
 Each #280 report carries the complete validated caller numeric-reference set and the exact caller-owned numeric `absoluteTolerance` that produced its samples' `isWithinTolerance` flags. This layer retains both separately for voltage, current, and power, including references whose candidate samples were excluded by the parent. The three roles may legitimately use different numeric tolerances.
 
 For each selected role, the child also retains the **complete source #280 report** and the **exact selected #280 evidence object**. That keeps parent unused/ambiguous/shared-reference indices, nonnumeric and transformation-failure counts, alternate hypothesis evidence, exact selected samples, and all parent timing/raw-byte provenance available from the child result. The electrical layer adds evidence; it does not compress away the evidence below it.
@@ -109,7 +111,8 @@ The report preserves:
 
 - exact shared evidence-context identity;
 - exact shared stream/generation/framing scope;
-- exact field labels;
+- exact caller electrical-coherence policy;
+- original requested three-role anchor list;
 - each role's complete source #280 numeric report;
 - each role's exact selected #280 evidence object;
 - each selected raw DP candidate identity;
