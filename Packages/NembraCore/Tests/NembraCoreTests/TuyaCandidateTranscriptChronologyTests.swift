@@ -66,10 +66,12 @@ struct TuyaCandidateTranscriptChronologyTests {
         )
 
         #expect(events.count == 2)
-        guard case .completed(startObservationIndex: 0, endObservationIndex: 0, _) = events[0] else {
+        guard case let .completed(startObservationIndex, endObservationIndex, _) = events[0] else {
             Issue.record("Expected first candidate to complete")
             return
         }
+        #expect(startObservationIndex == 0)
+        #expect(endObservationIndex == 0)
         #expect(events[1] == .rejectedCandidate(
             startObservationIndex: 1,
             lastAcceptedObservationIndex: nil,
