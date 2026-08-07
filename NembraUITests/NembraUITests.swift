@@ -159,7 +159,31 @@ final class NembraUITests: XCTestCase {
             ),
             "Range mode must not synthesize mileage or promote unqualified battery data into live truth."
         )
-        keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape")
+        keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape Right")
+
+        // Prove orientation is presentation-only: leave Dashboard through the
+        // live size-class switch, then return from the opposite landscape side.
+        // The stored range preference and battery currentness qualification must
+        // survive without creating a second per-orientation state model.
+        XCUIDevice.shared.orientation = .portrait
+        let portraitBattery = app.descendants(matching: .any)["home.metric.battery"]
+        XCTAssertTrue(
+            portraitBattery.waitForExistence(timeout: 4),
+            "Portrait rotation must actually return to Home before Dashboard continuity is evaluated."
+        )
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let leftBattery = app.buttons["dashboard.battery"]
+        XCTAssertTrue(leftBattery.waitForExistence(timeout: 4))
+        assertMinimumTouchTarget(leftBattery, named: "Dashboard battery in landscape left")
+        XCTAssertTrue(
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data",
+                element: leftBattery
+            ),
+            "The range preference and last-known charge qualification must survive portrait → opposite-landscape continuity."
+        )
+        keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape Left")
 
         // Prove the user-facing choice is actually durable, not merely local
         // SwiftUI state. Relaunching the same installed app must preserve range
