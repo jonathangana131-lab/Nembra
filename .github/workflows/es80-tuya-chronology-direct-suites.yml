@@ -1,0 +1,57 @@
+name: ES80 Tuya Chronology Direct Suites
+
+on:
+  push:
+    branches:
+      - qa/es80-tuya-chronology-direct-suites/chat-k8p3v-3388d48
+
+permissions:
+  contents: read
+
+jobs:
+  direct-suites:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable product mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_HEAD=3388d48f6e9e1e6d1fdccb56cf13d1d0b2a6b006
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          changed="$(git diff --name-only "$PRODUCT_HEAD" HEAD)"
+          test "$changed" = ".github/workflows/es80-tuya-chronology-direct-suites.yml"
+
+      - name: Direct receipt chronology suite
+        id: chronology
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter TuyaCandidateReceiptChronologyTests
+
+      - name: Direct receipt scope suite
+        id: scope
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter TuyaCandidateReceiptScopeTests
+
+      - name: Direct prebind stream suite
+        id: prebind
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter TuyaCandidatePrebindStreamTests
+
+      - name: Existing packet-zero restart suite
+        id: restart
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter TuyaCandidateTranscriptRestartTests
+
+      - name: Fail if any focused suite failed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ steps.chronology.outcome }}' = success
+          test '${{ steps.scope.outcome }}' = success
+          test '${{ steps.prebind.outcome }}' = success
+          test '${{ steps.restart.outcome }}' = success
