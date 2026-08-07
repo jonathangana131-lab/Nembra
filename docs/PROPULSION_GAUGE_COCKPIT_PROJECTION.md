@@ -57,7 +57,7 @@ The canonical model itself admits a scale only when vehicle/mode identity and Si
 
 The cockpit projection intentionally does **not** decide whether accepted power is near an observed scale edge and does not own wording such as **Near observed max**.
 
-That semantic responsibility belongs to the separate accepted-power `PropulsionObservedScaleRegion` lane / PR #317. That layer already owns:
+That semantic responsibility belongs to the separate accepted-power `PropulsionObservedScaleRegion` recovery lane / active PR #320, which recovers the product intent of closed, unmerged PR #317. The recovered layer owns:
 
 - accepted-power normalization against a compatible observed presentation scale;
 - the explicit near-edge presentation threshold;
