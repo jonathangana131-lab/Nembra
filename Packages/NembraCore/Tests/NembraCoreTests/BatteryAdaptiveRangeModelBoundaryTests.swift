@@ -17,10 +17,13 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         )
     }
 
-    private func policy() throws -> AdaptiveBatteryRangePolicy {
+    private func policy(
+        minimumConsumedPercentagePoints: Double = 3,
+        minimumDistanceMeters: Double = 300
+    ) throws -> AdaptiveBatteryRangePolicy {
         try AdaptiveBatteryRangePolicy(
-            minimumConsumedPercentagePoints: 3,
-            minimumDistanceMeters: 300,
+            minimumConsumedPercentagePoints: minimumConsumedPercentagePoints,
+            minimumDistanceMeters: minimumDistanceMeters,
             recentWindowCapacity: 3,
             recentWeight: 0.5,
             outlierLowerEfficiencyRatio: 0.4,
@@ -59,7 +62,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(77, uptime: 2),
             policy: p
         )
-        return (try #require(result.learningWindow), p)
+        return (try #require(result.candidateLearningWindow), p)
     }
 
     @Test("clean pipeline candidate is accepted by the adaptive model")
@@ -93,7 +96,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(77, uptime: 2),
             policy: p
         )
-        let window = try #require(result.learningWindow)
+        let window = try #require(result.candidateLearningWindow)
         let before = model
         let ingest = model.ingest(window, policy: p)
 
@@ -143,6 +146,106 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(model == before)
     }
 
+    @Test("numerical-overflow rejection closes the emitted span without replaying its distance")
+    func numericalOverflowSpanIsNotReplayed() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy()
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 1),
+            policy: p
+        )
+        try pipeline.recordDistance(
+            deltaMeters: .greatestFiniteMagnitude,
+            coverage: .complete
+        )
+
+        let overflowResult = try pipeline.acceptBatteryObservation(
+            observation(77, uptime: 2),
+            policy: p
+        )
+        let overflowWindow = try #require(overflowResult.candidateLearningWindow)
+        let before = model
+        let rejected = model.ingest(overflowWindow, policy: p)
+
+        #expect(overflowWindow.startSOC.percentage == 80)
+        #expect(overflowWindow.endSOC.percentage == 77)
+        #expect(overflowWindow.distanceMeters == .greatestFiniteMagnitude)
+        #expect(rejected.disposition == .rejected(.numericalOverflow))
+        #expect(rejected.sample == nil)
+        #expect(model == before)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+        let cleanResult = try pipeline.acceptBatteryObservation(
+            observation(74, uptime: 3),
+            policy: p
+        )
+        let cleanWindow = try #require(cleanResult.candidateLearningWindow)
+        let accepted = model.ingest(cleanWindow, policy: p)
+
+        #expect(cleanWindow.startSOC.percentage == 77)
+        #expect(cleanWindow.endSOC.percentage == 74)
+        #expect(cleanWindow.distanceMeters == 300)
+        #expect(accepted.disposition == .accepted)
+        #expect(accepted.sample?.metersPerPercentagePoint == 100)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
+    @Test("stricter model policy can reject an emitted candidate without reopening its span")
+    func modelPolicyRaceDoesNotReplayRejectedSpan() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+        let assemblyPolicy = try policy(
+            minimumConsumedPercentagePoints: 3,
+            minimumDistanceMeters: 300
+        )
+        let stricterModelPolicy = try policy(
+            minimumConsumedPercentagePoints: 4,
+            minimumDistanceMeters: 400
+        )
+
+        _ = try pipeline.acceptBatteryObservation(
+            observation(80, uptime: 1),
+            policy: assemblyPolicy
+        )
+        try pipeline.recordDistance(deltaMeters: 300, coverage: .complete)
+
+        let looseResult = try pipeline.acceptBatteryObservation(
+            observation(77, uptime: 2),
+            policy: assemblyPolicy
+        )
+        let looseWindow = try #require(looseResult.candidateLearningWindow)
+        let before = model
+        let rejected = model.ingest(looseWindow, policy: stricterModelPolicy)
+
+        #expect(looseWindow.startSOC.percentage == 80)
+        #expect(looseWindow.endSOC.percentage == 77)
+        #expect(looseWindow.distanceMeters == 300)
+        #expect(rejected.disposition == .rejected(.insufficientSOCConsumption))
+        #expect(rejected.sample == nil)
+        #expect(model == before)
+        #expect(pipeline.windowAssembler.anchorSOC?.percentage == 77)
+        #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 0)
+
+        try pipeline.recordDistance(deltaMeters: 400, coverage: .complete)
+        let cleanResult = try pipeline.acceptBatteryObservation(
+            observation(73, uptime: 3),
+            policy: assemblyPolicy
+        )
+        let cleanWindow = try #require(cleanResult.candidateLearningWindow)
+        let accepted = model.ingest(cleanWindow, policy: stricterModelPolicy)
+
+        #expect(cleanWindow.startSOC.percentage == 77)
+        #expect(cleanWindow.endSOC.percentage == 73)
+        #expect(cleanWindow.distanceMeters == 400)
+        #expect(accepted.disposition == .accepted)
+        #expect(accepted.sample?.metersPerPercentagePoint == 100)
+        #expect(model.acceptedWindowCount == 1)
+    }
+
     @Test("model outlier rejection never replays the emitted assembler span")
     func rejectedOutlierSpanIsNotReplayed() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
@@ -158,7 +261,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(77, uptime: 2),
             policy: p
         )
-        let baselineWindow = try #require(baselineResult.learningWindow)
+        let baselineWindow = try #require(baselineResult.candidateLearningWindow)
         let baselineIngest = model.ingest(baselineWindow, policy: p)
 
         #expect(baselineIngest.disposition == .accepted)
@@ -174,7 +277,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(74, uptime: 3),
             policy: p
         )
-        let outlierWindow = try #require(outlierResult.learningWindow)
+        let outlierWindow = try #require(outlierResult.candidateLearningWindow)
         let beforeOutlier = model
         let rejected = model.ingest(outlierWindow, policy: p)
 
@@ -197,7 +300,7 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
             observation(71, uptime: 4),
             policy: p
         )
-        let cleanWindow = try #require(cleanResult.learningWindow)
+        let cleanWindow = try #require(cleanResult.candidateLearningWindow)
         let accepted = model.ingest(cleanWindow, policy: p)
 
         #expect(cleanWindow.startSOC.percentage == 74)
