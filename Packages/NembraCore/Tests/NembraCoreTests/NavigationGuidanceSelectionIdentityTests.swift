@@ -99,4 +99,20 @@ struct NavigationGuidanceSelectionIdentityTests {
         #expect(secondToken.sequence == 2)
         #expect(firstToken != secondToken)
     }
+
+    @Test("sequence values are not globally ordered across tracker generations")
+    func sequenceOrderIsGenerationLocal() throws {
+        var highSequenceTracker = NavigationGuidanceProgressTracker(initialSelectionSequence: 99)
+        var freshTracker = NavigationGuidanceProgressTracker()
+        let selectedRoute = try route()
+
+        let highSequenceToken = try highSequenceTracker.select(route: selectedRoute)
+        let freshToken = try freshTracker.select(route: selectedRoute)
+
+        #expect(highSequenceToken.sequence == 100)
+        #expect(freshToken.sequence == 1)
+        #expect(highSequenceToken.sequence > freshToken.sequence)
+        #expect(!highSequenceToken.sharesTrackerGeneration(with: freshToken))
+        #expect(highSequenceToken != freshToken)
+    }
 }
