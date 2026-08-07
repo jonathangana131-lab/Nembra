@@ -56,6 +56,12 @@ public enum AdaptiveRangePrimaryPresentationDecision: Equatable, Sendable {
 /// - associated with live vehicle data rather than retained/offline data; and
 /// - finite and non-negative after the adaptive model's own presentation smoothing.
 ///
+/// This type is deliberately only a presentation policy. It does not establish that
+/// an upstream `.authoritativeMeasurement` claim is itself trustworthy. Production
+/// integration must consume an adaptive-range parent whose authoritative SoC
+/// construction/import boundary has been sealed by the accepted battery/range truth
+/// pipeline before this policy's numeric decision can be treated as production truth.
+///
 /// States that may become displayable later with an explicit qualifier remain
 /// withheld here until such a qualifier exists. This prevents UI integration from
 /// silently flattening stronger provenance/confidence semantics into one number.
@@ -84,12 +90,15 @@ public struct AdaptiveBatteryRangePrimaryPresentationPolicy: Equatable, Sendable
             return .unavailable(.invalidPresentedRange)
         }
 
-        guard estimate.basis == .learned else {
-            return .learning(.provisionalSeed)
-        }
-
+        // Estimated SoC is a stronger truth qualifier than whether the range model is
+        // provisional or learned. If both are true, fail closed as unavailable rather
+        // than presenting a generic "learning" state that hides the weaker SoC source.
         guard estimate.socProvenance == .authoritativeMeasurement else {
             return .unavailable(.estimatedSOCRequiresQualifier)
+        }
+
+        guard estimate.basis == .learned else {
+            return .learning(.provisionalSeed)
         }
 
         switch estimate.confidence {
