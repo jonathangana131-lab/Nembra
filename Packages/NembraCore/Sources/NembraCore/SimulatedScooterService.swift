@@ -376,9 +376,12 @@ public actor SimulatedScooterService: ScooterService {
 
     public func simulateRide(speedKilometersPerHour: Double, elapsedSeconds: Double) {
         guard state.connection == .connected, state.isLocked != true else { return }
-        guard speedKilometersPerHour.isFinite, elapsedSeconds.isFinite, elapsedSeconds >= 0 else { return }
+        guard speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              elapsedSeconds.isFinite,
+              elapsedSeconds >= 0 else { return }
 
-        let speed = max(0, speedKilometersPerHour)
+        let speed = speedKilometersPerHour
         let distance = speed * elapsedSeconds / 3600
         guard distance.isFinite else { return }
         state.speedKilometersPerHour = speed
