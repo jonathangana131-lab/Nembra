@@ -33,7 +33,7 @@ If the first observation later fails framing:
 - a callback from another continuity generation fails `.continuityGenerationChanged` before receipt chronology mutates;
 - a genuinely newer/same-tick admissible callback from the originally selected stream/generation may still recover the candidate according to the receipt-order policy.
 
-This does not promote bytes from the malformed callback. Source identity is transport provenance; candidate message state remains committed only after framing succeeds.
+This applies to both receipt-backed and legacy uptime-only ordering. It does not promote bytes from the malformed callback: source identity is transport provenance, while candidate message state remains committed only after framing succeeds.
 
 The transcript layer remains responsible for intentionally creating a fresh reassembler when it observes a real stream/generation boundary.
 
@@ -48,7 +48,7 @@ That means a numeric sequence is meaningful only inside the counter epoch that m
 1. legacy uptime-only evidence: both `receiptSequenceNumber` and `receiptSequenceScope` are absent;
 2. receipt-backed evidence: both fields are present, where `receiptSequenceScope` is the opaque identity of the source-owned counter epoch and `receiptSequenceNumber` is immutable callback order inside it.
 
-A scope without a sequence is invalid. A sequence without a scope is invalid. Blank scope identity is invalid. Once a receipt-backed candidate starts, a different scope fails closed **before** selected sequence or uptime watermarks mutate. A completed candidate retains that scope plus its first/last accepted sequence numbers.
+A scope without a sequence is invalid. A sequence without a scope is invalid. Blank scope identity is invalid. Receipt ordering authority and receipt scope bind on the first **seen** observation, even if that observation later fails framing. A different scope therefore fails closed before selected sequence or uptime watermarks mutate. A completed candidate retains the accepted scope plus its first/last accepted sequence numbers.
 
 For Nembra's passive-capture bridge, the correct source scope is the exact immutable capture session ID. A display/model string, peripheral name, wall-clock timestamp, or inferred epoch must not replace it. The scope is deliberately **non-secret provenance identity**: never place a Tuya local key, token, session secret, credential, or other authentication material in this field.
 
@@ -81,7 +81,7 @@ When the first observation carries neither sequence field:
 - equal uptime is rejected because no stronger receipt sequence exists to prove order;
 - legacy producers are not silently assigned synthetic receipt identities or timestamp precision.
 
-A candidate cannot switch between receipt-backed and legacy ordering midway. Mixed authority fails closed rather than silently changing chronology rules.
+A candidate cannot switch between receipt-backed and legacy ordering midway. Mixed authority fails closed rather than silently changing chronology rules, including when the first seen observation itself later fails framing.
 
 ## Why rejected callbacks consume source chronology
 
@@ -107,9 +107,9 @@ None substitutes for another.
 
 ## Transcript-wide dependency
 
-Active PR #272 owns transcript-wide chronology across candidate completion, rejection, and stream/continuity boundaries. Dependent PR #286 owns same-stream packet-zero restart recovery on top of that chronology. Their current uptime-only transcript gate and this receipt-backed reassembler must be reconciled before this lane can merge.
+Accepted PR #272 now owns transcript-wide chronology across candidate completion, rejection, and stream/continuity boundaries on `main`. Dependent PR #286 owns same-stream packet-zero restart recovery on top of that accepted chronology. Its transcript files remain actively owned by another worker, so this lane does not edit them before #286 is reconciled and accepted.
 
-Final composition must preserve the parent chain's behavior while using one shared receipt-order law:
+Final composition must preserve that parent chain while using one shared receipt-order law:
 
 - receipt-backed transcript: same scope, strict sequence, nondecreasing uptime;
 - legacy transcript: strict **seen** uptime;
@@ -120,9 +120,9 @@ Final composition must preserve the parent chain's behavior while using one shar
 - receipt chronology remains stronger than packet-zero restart, so replayed/stale packet zero cannot manufacture a new candidate;
 - a chronology-admitted packet-zero restart may start a fresh candidate without losing the exact immutable observation.
 
-The intended integration order is **#272 -> #286 -> this receipt-chronology lane**. This lane must not merge independently until that composition is implemented and revalidated on the accepted parent descendant.
+The intended integration order is **accepted #272 -> #286 -> this receipt-chronology lane**. This lane must not merge independently until #286 is accepted and the final transcript authority composition is implemented and revalidated on that descendant.
 
-A local composition prototype already extracts this exact receipt-order state machine into one internal helper consumed by both the bounded reassembler and transcript analyzer. That prototype exists only as validation until the incumbent transcript parents are accepted; it is not a competing GitHub edit.
+A local composition prototype already extracts this exact receipt-order state machine into one internal helper consumed by both the bounded reassembler and transcript analyzer. That prototype exists only as validation until the incumbent transcript parent is accepted; it is not a competing GitHub edit.
 
 ## Downstream bridge handoff
 
@@ -143,6 +143,7 @@ Focused branch regressions cover:
 - first/last receipt-sequence provenance on the completed message;
 - capture-scope provenance retained on a completed message;
 - foreign capture scope rejected before selected-scope chronology mutation;
+- rejected **first** framing observation binding receipt scope so another scope cannot replace it;
 - scope-without-sequence rejection;
 - sequence-without-scope rejection;
 - blank-scope rejection;
@@ -153,10 +154,11 @@ Focused branch regressions cover:
 - legacy equal-uptime rejection;
 - rejected newer legacy callback consuming uptime high-water so delayed older input is rejected and only genuinely newer input recovers;
 - foreign stream rejection after candidate acceptance without poisoning selected chronology;
-- malformed first observation binding exact stream before framing, rejecting a foreign stream before chronology, then recovering on the selected stream;
-- malformed first observation binding continuity generation before framing, rejecting a foreign generation before chronology, then recovering on the selected generation.
+- malformed first receipt-backed observation binding exact stream before framing, rejecting a foreign stream before chronology, then recovering on the selected stream;
+- malformed first receipt-backed observation binding continuity generation before framing, rejecting a foreign generation before chronology, then recovering on the selected generation;
+- malformed first **legacy** observation binding exact stream before framing, rejecting a foreign stream before chronology, then recovering only on genuinely newer selected-stream uptime.
 
-Local parent-composition testing additionally keeps #272 transcript-wide boundary/recovery regressions and #286 packet-zero restart regressions active while exercising same-tick receipt-backed ordering, cross-candidate scoped high-water, rejected-receipt consumption, authority switching, scope changes, restart precedence, and shared-helper reuse. Current supplemental Swift 6.2.1 results are **30/30 debug** and **30/30 release with warnings-as-errors**. Repository-native exact-head QA remains the acceptance gate after dependency reconciliation.
+Local parent-composition testing additionally keeps #272 transcript-wide boundary/recovery regressions and #286 packet-zero restart regressions active while exercising same-tick receipt-backed ordering, cross-candidate scoped high-water, rejected-receipt consumption, authority switching, scope changes, restart precedence, and shared-helper reuse. Current supplemental Swift 6.2.1 results are **32/32 debug** and **32/32 release with warnings-as-errors**. Repository-native exact-head QA remains the acceptance gate after dependency reconciliation.
 
 ## Truth boundary
 
