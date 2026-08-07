@@ -83,6 +83,10 @@ struct PassiveCoreBluetoothGATTIdentityRegistry {
         descriptorInstancesByPath[path] = instanceIdentifier
     }
 
+    func containsService(uuid: String, instance: AnyObject) -> Bool {
+        serviceInstancesByUUID[uuid] == ObjectIdentifier(instance)
+    }
+
     func containsCharacteristic(
         serviceUUID: String,
         characteristicUUID: String,
