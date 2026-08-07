@@ -2,6 +2,7 @@ import Foundation
 
 public enum SpeedDisplayInterpolationError: Error, Equatable, Sendable {
     case nonAuthoritativeInput
+    case nonFiniteDisplaySpeed
     case nonMonotonicMeasurement
 }
 
@@ -33,8 +34,8 @@ public struct SpeedDisplayFrame: Equatable, Sendable {
 /// It never predicts future speed and never emits telemetry evidence.
 ///
 /// Final visual timing is intentionally injected by the caller. Nembra will
-/// tune it from real MAXSHOT cadence + Simulator/device QA instead of assuming
-/// a fictional BLE notification rate in core logic.
+/// tune it from real AOVOPRO ES80 cadence + Simulator/device QA instead of
+/// assuming a fictional BLE notification rate in core logic.
 public struct SpeedDisplayInterpolator: Sendable {
     private var hasMeasurement = false
     private var anchorKilometersPerHour = 0.0
@@ -56,12 +57,21 @@ public struct SpeedDisplayInterpolator: Sendable {
         guard sample.isAuthoritativeMeasurement else {
             throw SpeedDisplayInterpolationError.nonAuthoritativeInput
         }
+
+        // `SpeedTelemetrySample` validates the raw m/s value, but multiplying a
+        // very large finite value by 3.6 can overflow the derived km/h display
+        // unit. Reject that derived value before it can enter interpolation math
+        // (`infinity - infinity` would otherwise produce a NaN render frame).
+        let newTarget = sample.kilometersPerHour
+        guard newTarget.isFinite, newTarget >= 0 else {
+            throw SpeedDisplayInterpolationError.nonFiniteDisplaySpeed
+        }
+
         if hasMeasurement,
            sample.receivedAtUptimeNanoseconds <= latestMeasurementUptimeNanoseconds {
             throw SpeedDisplayInterpolationError.nonMonotonicMeasurement
         }
 
-        let newTarget = sample.kilometersPerHour
         let hadMeasurement = hasMeasurement
         let currentVisualValue: Double
         if hadMeasurement {
