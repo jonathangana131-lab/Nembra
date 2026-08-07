@@ -29,6 +29,8 @@ struct NembraGlassButtonStyle: ViewModifier {
                         style: .continuous
                     )
                     .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
         } else if #available(iOS 26.0, *) {
             content
