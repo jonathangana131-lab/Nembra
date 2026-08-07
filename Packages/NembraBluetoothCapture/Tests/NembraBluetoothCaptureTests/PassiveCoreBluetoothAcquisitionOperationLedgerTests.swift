@@ -50,7 +50,7 @@ struct PassiveCoreBluetoothAcquisitionOperationLedgerTests {
     }
 
     @Test
-    func restartingAcquisitionRejectsOldGenerationOperations() throws {
+    func overlappingAcquisitionDoesNotErasePendingLedgerOperations() throws {
         let service = NSObject()
         let oldOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.characteristics(
             ObjectIdentifier(service)
@@ -60,6 +60,25 @@ struct PassiveCoreBluetoothAcquisitionOperationLedgerTests {
         try ledger.beginAcquisition()
         try ledger.complete(.services, starting: [oldOperation])
 
+        #expect(throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionAlreadyActive) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.isPending(oldOperation))
+        #expect(ledger.pendingOperationCount == 1)
+    }
+
+    @Test
+    func connectionBoundaryRejectsOldGenerationOperations() throws {
+        let service = NSObject()
+        let oldOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.characteristics(
+            ObjectIdentifier(service)
+        )
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+        ledger.beginTargetSession()
+        try ledger.beginAcquisition()
+        try ledger.complete(.services, starting: [oldOperation])
+
+        ledger.beginConnectionAttempt()
         try ledger.beginAcquisition()
         #expect(!ledger.isPending(oldOperation))
         #expect(ledger.isPending(.services))
