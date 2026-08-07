@@ -156,9 +156,12 @@ public enum TuyaCandidateFragmentReassemblyProgress: Equatable, Sendable {
 
 /// Stateful reconstruction for the candidate family documented by Nembra's
 /// public Tuya research. A single instance is permanently bound to one exact
-/// stream and one continuity generation after its first fragment.
+/// stream and one continuity generation from its first seen observation, even if
+/// that observation later fails candidate framing.
 public struct TuyaCandidateFragmentReassembler: Sendable {
     private let policy: TuyaCandidateFragmentReassemblyPolicy
+    private var boundStreamIdentity: TuyaCandidateValueStreamIdentity?
+    private var boundContinuityGeneration: UInt64?
     private var streamIdentity: TuyaCandidateValueStreamIdentity?
     private var continuityGeneration: UInt64?
     private var protocolVersionByte: UInt8?
@@ -187,11 +190,19 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
             throw TuyaCandidateOfflineAnalysisError.messageAlreadyComplete
         }
 
-        if let streamIdentity, streamIdentity != observation.streamIdentity {
-            throw TuyaCandidateOfflineAnalysisError.streamChanged
+        if let boundStreamIdentity {
+            guard boundStreamIdentity == observation.streamIdentity else {
+                throw TuyaCandidateOfflineAnalysisError.streamChanged
+            }
+        } else {
+            boundStreamIdentity = observation.streamIdentity
         }
-        if let continuityGeneration, continuityGeneration != observation.continuityGeneration {
-            throw TuyaCandidateOfflineAnalysisError.continuityGenerationChanged
+        if let boundContinuityGeneration {
+            guard boundContinuityGeneration == observation.continuityGeneration else {
+                throw TuyaCandidateOfflineAnalysisError.continuityGenerationChanged
+            }
+        } else {
+            boundContinuityGeneration = observation.continuityGeneration
         }
         try admitReceiptChronology(observation)
         guard fragmentCount < policy.maximumFragmentCount else {
