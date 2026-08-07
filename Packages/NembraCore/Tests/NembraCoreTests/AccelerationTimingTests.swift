@@ -34,8 +34,8 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .invalidated(.rollingStart))
     }
 
-    @Test("completed run keeps first-reach lower bound conservative on receive clock")
-    func reportsConservativeReceiveClockEnvelope() throws {
+    @Test("completed run reports only receive-clock observation interval")
+    func reportsReceiveClockObservationInterval() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 5)
         var evaluator = AccelerationRunEvaluator(policy: policy)
         evaluator.accept(try sample(metersPerSecond: 0, seconds: 1))
@@ -56,13 +56,11 @@ struct AccelerationTimingTests {
             earliestUptimeNanoseconds: 3_000_000_000,
             latestUptimeNanoseconds: 4_000_000_000
         ))
-        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
-        #expect(result.firstReachReceiveClockUpperBoundSeconds == 3)
-        #expect(result.firstReachReceiveClockEnvelopeWidthSeconds == 3)
+        #expect(result.stationaryToTargetObservationElapsedSeconds == 3)
         #expect(result.timingEvidenceSampleCount == 4)
     }
 
-    @Test("below-target samples do not manufacture a positive first-reach lower bound")
+    @Test("below-target samples do not become a first-reach timing claim")
     func earlierUnsampledTargetExcursionRemainsPossible() throws {
         let policy = try AccelerationRunPolicy(targetMetersPerSecond: 10)
         var evaluator = AccelerationRunEvaluator(policy: policy)
@@ -77,12 +75,16 @@ struct AccelerationTimingTests {
             return
         }
 
+        #expect(result.timingBasis == .receiveObservationUptime)
+        #expect(result.launchObservationWindow == AccelerationTimingWindow(
+            earliestUptimeNanoseconds: 0,
+            latestUptimeNanoseconds: 1_000_000_000
+        ))
         #expect(result.targetTransitionObservationWindow == AccelerationTimingWindow(
             earliestUptimeNanoseconds: 3_000_000_000,
             latestUptimeNanoseconds: 4_000_000_000
         ))
-        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
-        #expect(result.firstReachReceiveClockUpperBoundSeconds == 4)
+        #expect(result.stationaryToTargetObservationElapsedSeconds == 4)
     }
 
     @Test("measurement dates and delivery latency do not silently become the timing basis")
@@ -123,8 +125,7 @@ struct AccelerationTimingTests {
             earliestUptimeNanoseconds: 2_000_000_000,
             latestUptimeNanoseconds: 3_000_000_000
         ))
-        #expect(result.firstReachReceiveClockLowerBoundSeconds == 0)
-        #expect(result.firstReachReceiveClockUpperBoundSeconds == 2)
+        #expect(result.stationaryToTargetObservationElapsedSeconds == 2)
     }
 
     @Test("timing evidence count excludes superseded stationary anchors")
@@ -158,9 +159,7 @@ struct AccelerationTimingTests {
             Issue.record("Expected completed run")
             return
         }
-        #expect(abs(result.firstReachReceiveClockLowerBoundSeconds - 0) < 0.000_001)
-        #expect(abs(result.firstReachReceiveClockUpperBoundSeconds - 0.4) < 0.000_001)
-        #expect(abs(result.firstReachReceiveClockEnvelopeWidthSeconds - 0.4) < 0.000_001)
+        #expect(abs(result.stationaryToTargetObservationElapsedSeconds - 0.4) < 0.000_001)
         #expect(result.timingEvidenceSampleCount == 2)
     }
 
