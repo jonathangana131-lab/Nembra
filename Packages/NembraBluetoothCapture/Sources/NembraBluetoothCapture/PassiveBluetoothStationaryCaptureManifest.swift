@@ -263,8 +263,14 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             case .stockAppState:
                 stockAppMarkerCount += 1
             case let .connection(observation):
-                let peripheral = try canonicalCaptured(observation.peripheralIdentifier)
-                if peripheral == selectedPeripheral, observation.state == .disconnected {
+                // Connection-only callbacks do not establish target attribution.
+                // Nearby/non-target connection noise must not invalidate an otherwise
+                // clean selected-target GATT artifact. Only a canonical identifier
+                // equal to the selected target can contribute a continuity break.
+                if let peripheral = UUID(uuidString: observation.peripheralIdentifier
+                    .trimmingCharacters(in: .whitespacesAndNewlines))?.uuidString,
+                   peripheral == selectedPeripheral,
+                   observation.state == .disconnected {
                     continuityBreakCount += 1
                 }
             case .interruption:
