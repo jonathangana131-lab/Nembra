@@ -1,6 +1,6 @@
 # Speed telemetry quality gate
 
-Date: 2026-08-06
+Date: 2026-08-07
 Original worker: `chat-p7w3k`
 Recovery worker: `chat-b6q2y` (Swarm OS v7 epoch 2)
 Lane: `telemetry-quality-gate`
@@ -58,9 +58,11 @@ Examples:
 - a trace with no observed nonzero speed change cannot satisfy a requested resolution bound and reports `missingSpeedResolutionEvidence`;
 - a finite raw SI speed whose required km/h conversion overflows is rejected by `TelemetryBenchmarkCollector`, so it cannot become accepted cadence or resolution evidence.
 
-That last boundary matters even though `SpeedTelemetrySample` accepts only finite raw meters-per-second values. A finite public input can still overflow the derived `metersPerSecond * 3.6` conversion. The benchmark now validates that derived km/h value before mutating accepted-sample state and rejects the packet as `nonFiniteDerivedSpeed`; the next valid packet spans the missing-evidence gap rather than inheriting a poisoned `infinity`/`NaN` anchor. The quality gate still validates any requested resolution evidence as finite and nonnegative before comparing it with the caller's threshold, so missing or malformed evidence remains fail-closed at both boundaries.
+That last boundary matters even though `SpeedTelemetrySample` accepts only finite raw meters-per-second values. A finite public input can still overflow the derived `metersPerSecond * 3.6` conversion. The benchmark validates that derived km/h value before mutating accepted-sample statistics and rejects the packet as `nonFiniteDerivedSpeed`, while still retaining the fresh selected-source callback as receive-order evidence so delayed older/equal callbacks cannot later masquerade as fresh. Without an explicit pending observation interruption, the next accepted benchmark sample forms its cadence interval from the previous accepted benchmark anchor; with a pending known interruption, the next accepted sample begins a new observation segment and no interval is fabricated across the missing evidence. The quality gate still validates any requested resolution evidence as finite and nonnegative before comparing it with the caller's threshold, so missing or malformed evidence remains fail-closed at both boundaries.
 
 The quality gate never substitutes zero, advertised specifications, a different source, a display estimate, or a non-finite derived value for missing trustworthy evidence.
+
+`TelemetryBenchmarkSummary` may also retain explicit accepted-segment/interruption topology. Those fields describe recorded benchmark continuity evidence; this generic quality policy does not silently turn them into a pass/fail requirement. A feature that requires uninterrupted evidence must enforce that requirement explicitly at its own evidence boundary rather than assuming clean cadence statistics prove continuous observation.
 
 ## Representative latency evidence
 
