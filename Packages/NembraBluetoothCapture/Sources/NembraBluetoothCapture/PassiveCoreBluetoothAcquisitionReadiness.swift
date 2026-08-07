@@ -23,6 +23,7 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
         case generationExhausted
         case operationIdentifierExhausted
         case acquisitionNotActive
+        case acquisitionAlreadyActive
         case invalidChildOperationCount
     }
 
@@ -69,14 +70,18 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
     }
 
     /// Starts a fresh finite acquisition generation, for example after connect
-    /// or a GATT service invalidation. Callers should immediately register the
-    /// root service-discovery operation before invoking CoreBluetooth.
+    /// or a quiescent GATT service invalidation. CoreBluetooth does not attach a
+    /// request-generation identifier to service-discovery callbacks, so an
+    /// in-flight acquisition cannot be destructively replaced by another one and
+    /// still be attributed truthfully.
     mutating func startAcquisition() throws {
+        guard phase != .acquiring, pendingOperations.isEmpty else {
+            throw StateError.acquisitionAlreadyActive
+        }
         guard generation != UInt64.max else {
             throw StateError.generationExhausted
         }
         generation += 1
-        pendingOperations.removeAll()
         phase = .acquiring
     }
 
