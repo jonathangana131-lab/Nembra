@@ -21,15 +21,22 @@ A plausible normalized value is not enough to promote its role.
 - `derivedEstimate` — a calculated/estimated value. It remains an estimate and must not be persisted as measured telemetry.
 - `presentationOnly` — display-only/intermediate state such as animated progression. It never becomes telemetry evidence.
 
-## Authority construction is sealed
+## Authority construction is sealed for both build graphs
 
-The raw `BatteryEvidenceObservation` initializer is module-internal.
+The lowest-level role-selecting `BatteryEvidenceObservation` initializer is **file-scoped**, not merely module-internal.
 
-External modules may construct an observation only through `BatteryEvidenceObservation.nonAuthoritative(...)`, which rejects `verifiedVehicleMeasurement`. This keeps a normal app/view/service caller from promoting a plausible number into verified scooter telemetry merely by choosing an enum case.
+That distinction is required by Nembra's current build graph. The production iOS target does not currently link the `NembraCore` package product; it manually compiles selected files from `Packages/NembraCore/Sources/NembraCore` directly into the `Nembra` app target. If the raw verified initializer were plain `internal`, a future Dashboard/service file in that same app module could call it and self-assert `verifiedVehicleMeasurement`.
 
-The future physically verified vehicle adapter may use the internal trusted construction boundary only when the real target field has actually been proven. At the current project state, no external production API exists for manufacturing verified ES80 battery observations because the physical ES80 semantics are still unverified.
+The source therefore uses two deliberately different compilation paths:
 
-NembraCore's `@testable` tests can use the internal initializer to exercise future verified-path behavior; test access is not a production authority path.
+- **direct app-source compilation:** the role-selecting raw initializer remains file-scoped, so another app/service/view source file cannot manufacture verified authority;
+- **real Swift-package compilation (`SWIFT_PACKAGE`):** NembraCore receives a package-internal initializer. This keeps `@testable` package tests and trusted package-domain sources workable, while external package clients still cannot call the initializer because it is not public.
+
+External callers in either architecture may construct ordinary evidence only through `BatteryEvidenceObservation.nonAuthoritative(...)`, which rejects `verifiedVehicleMeasurement`.
+
+At the current project state there is intentionally no cross-file production API for manufacturing verified ES80 battery observations, because the physical ES80 source/semantics are still unverified. A future physical verifier must preserve this construction boundary. Safe integration may place the trusted verified conversion at this file-scoped boundary or deliberately link NembraCore as a separate module; it must not simply widen the raw initializer because app wiring happens to need it.
+
+This design also prevents package tests from dictating an unsafe app-target access level: package-only construction support is conditional on `SWIFT_PACKAGE`, which is present in SwiftPM debug and release builds but absent from the existing manual app-source composition.
 
 ## Generic Codable does not serialize authority
 
@@ -44,6 +51,8 @@ A serialized string saying `verifiedVehicleMeasurement` therefore cannot become 
 If Nembra later needs durable measured battery telemetry, that requires a separate explicit verified persistence design with its own vehicle identity, schema, provenance, and process/uptime semantics. It must not silently reuse the generic observation codec as a trust channel.
 
 This is also consistent with receipt uptime being process-local ordering evidence rather than a durable cross-process clock.
+
+The non-finite timestamp regression uses a non-authoritative role so it reaches timestamp validation independently; it does not merely pass because the verified-role import gate rejected the payload first.
 
 ## Semantic values
 
@@ -91,7 +100,9 @@ This is intentionally compatible with the adaptive-range rule that reconnect/cov
 
 This type is above raw passive capture. Raw BLE/GATT/Tuya bytes, advertisement evidence, characteristics, descriptors, and callback cadence remain immutable research evidence in the passive capture tooling.
 
-The future verified vehicle adapter may map a proven raw field into `BatterySemanticValue` and use the trusted internal verified construction path only after physical verification. Candidate DP IDs, public Tuya family behavior, timing similarity, stock-app correlation, or imported JSON alone do not authorize that promotion.
+A future verified vehicle adapter may map a proven raw field into `BatterySemanticValue` and cross the sealed verified construction boundary only after physical verification. Candidate DP IDs, public Tuya family behavior, timing similarity, stock-app correlation, or imported JSON alone do not authorize that promotion.
+
+If that adapter remains a Swift-package NembraCore source, package-internal construction is available without exposing authority to package clients. If the adapter is instead manually compiled into the app module under the current Xcode source-wiring model, the integration design must keep the verified conversion at a file-scoped/non-forgeable boundary rather than depending on `internal` access control.
 
 ## Scope deliberately not included
 
