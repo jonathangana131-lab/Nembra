@@ -41,6 +41,70 @@ public enum TuyaCandidateTranscriptEvent: Equatable, Sendable {
 /// repairs, reorders, merges, or drops raw observations. Each completed message,
 /// rejection, evidence boundary, and end-of-capture truncation remains explicit.
 public enum TuyaCandidateTranscriptAnalyzer {
+    /// Transcript chronology outlives any one framing candidate. A completed,
+    /// rejected, restarted, or boundary-truncated candidate must never reset the
+    /// source-owned receipt high-water and reopen older capture evidence.
+    private struct ReceiptChronologyState {
+        var orderingUsesSequence: Bool?
+        var sequenceScope: String?
+        var highestSeenSequence: UInt64?
+        var highestSeenUptimeNanoseconds: UInt64?
+
+        mutating func admit(_ observation: TuyaCandidateFragmentObservation) throws {
+            let usesSequence = observation.receiptSequenceNumber != nil
+
+            if let orderingUsesSequence {
+                guard orderingUsesSequence == usesSequence else {
+                    throw TuyaCandidateOfflineAnalysisError.receiptOrderingAuthorityChanged
+                }
+                if usesSequence,
+                   sequenceScope != observation.receiptSequenceScope {
+                    throw TuyaCandidateOfflineAnalysisError.receiptSequenceScopeChanged(
+                        expected: sequenceScope,
+                        actual: observation.receiptSequenceScope
+                    )
+                }
+            } else {
+                orderingUsesSequence = usesSequence
+                if usesSequence {
+                    sequenceScope = observation.receiptSequenceScope
+                }
+            }
+
+            if let sequence = observation.receiptSequenceNumber {
+                if let previous = highestSeenSequence {
+                    guard sequence > previous else {
+                        throw TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptSequence(
+                            previous: previous,
+                            actual: sequence
+                        )
+                    }
+                }
+
+                // Immutable callback order is stronger than later framing/clock
+                // admission. Consume the sequence first so a callback rejected for
+                // backward uptime cannot be replayed with rewritten metadata.
+                highestSeenSequence = sequence
+
+                if let uptimeFloor = highestSeenUptimeNanoseconds,
+                   observation.receiptUptimeNanoseconds < uptimeFloor {
+                    throw TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptUptime
+                }
+                highestSeenUptimeNanoseconds = observation.receiptUptimeNanoseconds
+                return
+            }
+
+            if let uptimeFloor = highestSeenUptimeNanoseconds,
+               observation.receiptUptimeNanoseconds <= uptimeFloor {
+                throw TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptUptime
+            }
+
+            // Legacy observations have no stronger source-order identity, so each
+            // newly seen uptime tick is consumed before candidate framing.
+            highestSeenUptimeNanoseconds = observation.receiptUptimeNanoseconds
+        }
+    }
+
     public static func analyze(
         _ observations: [TuyaCandidateFragmentObservation],
         policy: TuyaCandidateFragmentReassemblyPolicy
@@ -51,7 +115,7 @@ public enum TuyaCandidateTranscriptAnalyzer {
         var boundContinuityGeneration: UInt64?
         var startObservationIndex: Int?
         var lastAcceptedObservationIndex: Int?
-        var lastSeenReceiptUptimeNanoseconds: UInt64?
+        var receiptChronology = ReceiptChronologyState()
 
         for (index, observation) in observations.enumerated() {
             if let currentStreamIdentity = boundStreamIdentity,
@@ -88,18 +152,19 @@ public enum TuyaCandidateTranscriptAnalyzer {
                 }
             }
 
-            // Receipt uptime is process-local transcript ordering evidence, not
-            // candidate-local framing state. Preserve the newest observation seen
-            // even when its bytes are rejected so a later delayed observation cannot
-            // become a fresh candidate merely because the reassembler was reset.
-            if let lastSeenReceiptUptimeNanoseconds,
-               observation.receiptUptimeNanoseconds <= lastSeenReceiptUptimeNanoseconds {
+            // A real stream/generation boundary is classified first, but receipt
+            // chronology is transcript-wide and remains stronger than candidate
+            // restart/framing. Scope/authority/high-water survive every candidate
+            // completion, rejection, restart, and transport boundary.
+            do {
+                try receiptChronology.admit(observation)
+            } catch let error as TuyaCandidateOfflineAnalysisError {
                 events.append(
                     .rejectedCandidate(
                         startObservationIndex: startObservationIndex ?? index,
                         lastAcceptedObservationIndex: lastAcceptedObservationIndex,
                         failingObservationIndex: index,
-                        error: .nonMonotonicReceiptUptime
+                        error: error
                     )
                 )
                 reassembler = nil
@@ -110,8 +175,10 @@ public enum TuyaCandidateTranscriptAnalyzer {
                     lastAcceptedObservationIndex: &lastAcceptedObservationIndex
                 )
                 continue
+            } catch {
+                events.append(.unexpectedAnalyzerFailure(failingObservationIndex: index))
+                return events
             }
-            lastSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
 
             // Once transcript chronology has admitted this exact observation, a
             // packet-zero prefix is an explicit new-message marker under this
