@@ -82,13 +82,14 @@ struct TuyaCandidateDPAnalysisTests {
     @Test("known type with surprising length is reported without rewriting evidence")
     func flagsUnexpectedKnownLength() throws {
         let payload = try TuyaCandidateDPPayloadParser.parse(
-            dp2(5, 0x02, [0x12, 0x34]),
+            dp2(5, 0x01, [0x00, 0x01]),
             policy: policy()
         )
         let record = try #require(payload.records.first)
-        #expect(record.knownType == .value)
-        #expect(record.valueBytes == [0x12, 0x34])
-        #expect(record.shapeFinding == .unexpectedKnownTypeLength(.value, allowedLengths: [4], actualLength: 2))
+        #expect(record.knownType == .boolean)
+        #expect(record.valueBytes == [0x00, 0x01])
+        #expect(record.shapeFinding == .unexpectedKnownTypeLength(.boolean, allowedLengths: [1], actualLength: 2))
+        #expect(record.candidateBooleanValue == nil)
         #expect(record.candidateUnsignedBigEndianMagnitude == nil)
     }
 
@@ -137,13 +138,23 @@ struct TuyaCandidateDPAnalysisTests {
         }
     }
 
-    @Test("scalar magnitude preserves byte order without assigning sign scale or units")
+    @Test("scalar magnitude preserves documented VALUE widths without assigning sign scale or units")
     func projectsOnlyGenericUnsignedMagnitude() throws {
-        let bytes = dp2(1, 0x02, [0xFF, 0xFF, 0xFF, 0xFE])
-            + dp2(2, 0x05, [0x01, 0x02, 0x03, 0x04])
+        let bytes = dp2(1, 0x02, [0xFE])
+            + dp2(2, 0x02, [0x12, 0x34])
+            + dp2(3, 0x02, [0xFF, 0xFF, 0xFF, 0xFE])
+            + dp2(4, 0x05, [0x01, 0x02, 0x03, 0x04])
         let payload = try TuyaCandidateDPPayloadParser.parse(bytes, policy: policy())
-        #expect(payload.records[0].candidateUnsignedBigEndianMagnitude == 4_294_967_294)
-        #expect(payload.records[1].candidateUnsignedBigEndianMagnitude == 0x01020304)
+        #expect(payload.records.map(\.shapeFinding) == [
+            .fixedLengthKnownType(.value, allowedLengths: [1, 2, 4]),
+            .fixedLengthKnownType(.value, allowedLengths: [1, 2, 4]),
+            .fixedLengthKnownType(.value, allowedLengths: [1, 2, 4]),
+            .fixedLengthKnownType(.bitmap, allowedLengths: [1, 2, 4])
+        ])
+        #expect(payload.records[0].candidateUnsignedBigEndianMagnitude == 0xFE)
+        #expect(payload.records[1].candidateUnsignedBigEndianMagnitude == 0x1234)
+        #expect(payload.records[2].candidateUnsignedBigEndianMagnitude == 4_294_967_294)
+        #expect(payload.records[3].candidateUnsignedBigEndianMagnitude == 0x01020304)
     }
 
     @Test("logical packet bridge ignores command code and only parses caller-selected data")
