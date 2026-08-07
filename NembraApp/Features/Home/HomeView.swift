@@ -10,7 +10,16 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
-                vehicleHeader
+                VStack(alignment: .leading, spacing: 4) {
+                    vehicleHeader
+
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        VehicleHeroView(profile: vehicle.profile, state: vehicle.state)
+                            .frame(height: 148)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+
                 statusPanel
                 controlsSection
 
