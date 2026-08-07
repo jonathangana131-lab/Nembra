@@ -7,11 +7,14 @@
 /// from being accepted later.
 ///
 /// This wrapper does not mint measurement authority, derive watts, choose a physical ES80 source, or
-/// turn lifecycle events into zero-power samples. It binds source-owned authority/generation lifecycle
-/// evidence to the canonical accepted/display model, then forwards the already-accepted product
-/// projections so integration code does not recreate truth policy in SwiftUI.
+/// turn lifecycle events into zero-power samples. It binds exact source-session identity plus source-owned
+/// authority/generation lifecycle evidence to the canonical accepted/display model, then forwards the
+/// already-accepted product projections so integration code does not recreate truth policy in SwiftUI.
 public struct PropulsionGaugeSourceSession: Sendable {
     public enum InterruptionDisposition: String, Equatable, Sendable {
+        /// The lifecycle callback belongs to a different vehicle/mode identity and was ignored before
+        /// it could mutate this session's retirement history.
+        case ignoredForeignIdentity
         /// The source generation was fenced before this session had accepted any measurement.
         case fencedBeforeFirstMeasurement
         /// The interruption applies to the authority currently presented and is at least as new as
@@ -91,17 +94,27 @@ public struct PropulsionGaugeSourceSession: Sendable {
         )
     }
 
-    /// Records source-owned unavailability without allowing stale lifecycle callbacks to invalidate
-    /// newer accepted presentation.
+    /// Records source-owned unavailability without allowing stale or foreign lifecycle callbacks to
+    /// invalidate newer accepted presentation.
+    ///
+    /// `sourceIdentity` must be the exact vehicle/mode identity carried by the source lifecycle event.
+    /// A callback for another identity is rejected before any retirement floor is mutated. Integration
+    /// code must not substitute this session's current identity at delivery time for a callback whose
+    /// source identity is unknown.
     ///
     /// - Important: `continuityGeneration` belongs to the same source/authority namespace that mints
     ///   `PropulsionPowerSample.continuityGeneration`. Callers must not synthesize a new generation in
     ///   presentation code merely to force a state transition.
     @discardableResult
     public mutating func markUnavailable(
+        sourceIdentity: PropulsionGaugeIdentity,
         authority: PropulsionPowerSampleAuthority,
         continuityGeneration: UInt64
     ) -> InterruptionDisposition {
+        guard sourceIdentity == identity else {
+            return .ignoredForeignIdentity
+        }
+
         let existingRetiredGeneration = retiredGenerationByAuthority[authority]
         retiredGenerationByAuthority[authority] = max(
             existingRetiredGeneration ?? continuityGeneration,

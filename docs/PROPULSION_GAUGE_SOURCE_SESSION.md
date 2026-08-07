@@ -8,12 +8,23 @@ It exists because asynchronous transport lifecycle callbacks have their own chro
 
 This layer does **not** identify an ES80 GATT/DP field, derive watts, mint verified measurement authority, infer throttle, infer regen, choose a physical maximum, or convert disconnect into measured zero.
 
+## Exact lifecycle identity
+
+Accepted measurements and lifecycle interruptions must belong to the same exact `PropulsionGaugeIdentity` as the source session. That identity includes vehicle ID and optional confirmed-mode key.
+
+`markUnavailable(sourceIdentity:authority:continuityGeneration:)` requires the identity carried by the source lifecycle event. A foreign vehicle/mode callback returns `ignoredForeignIdentity` **before** any retirement floor or presentation state changes. Integration code must never substitute whichever identity happens to be current at callback-delivery time when the callback's source identity is unknown.
+
+This matters across asynchronous replacement/rebind. A delayed disconnect from scooter A must not hide accepted power from scooter B merely because both sources happen to use the same authority and continuity-generation number. The same rule prevents a stale callback from another confirmed-mode identity from poisoning a new mode-specific session.
+
+The production API deliberately has no identity-less interruption overload. Existing inherited generation-fencing tests use a test-target-only adapter that supplies the tested session identity; product/package clients must provide source identity explicitly.
+
 ## Generation fencing
 
-Retirement floors are tracked independently per `PropulsionPowerSampleAuthority`.
+Retirement floors are tracked independently per `PropulsionPowerSampleAuthority` inside one exact source-session identity.
 
 The session:
 - rejects cross-identity samples before consulting retirement history;
+- ignores cross-identity lifecycle callbacks before mutating retirement history;
 - rejects samples from a retired authority/generation;
 - ignores older same-authority interruptions for presentation while still remembering their retirement floor;
 - records inactive-authority interruptions without hiding the active authority;
@@ -45,7 +56,7 @@ Forwarding does not create new authority. In particular, Simulator near-edge QA 
 
 ## Product integration direction
 
-A later production read-only vehicle service should feed this session only after ES80 power semantics are physically verified and converted into the package-sealed verified measurement type. SwiftUI should then consume the forwarded product projections rather than owning source chronology, stale policy, accepted-vs-interpolated separation, or near-observed-max authority rules.
+A later production read-only vehicle service should feed this session only after ES80 power semantics are physically verified and converted into the package-sealed verified measurement type. That source bridge must retain exact identity on lifecycle callbacks as well as accepted samples. SwiftUI should then consume the forwarded product projections rather than owning source identity, chronology, stale policy, accepted-vs-interpolated separation, or near-observed-max authority rules.
 
 The production app target currently compiles only selected NembraCore source files manually. This package/domain slice is therefore not itself proof that the live Dashboard is wired to this source session.
 
