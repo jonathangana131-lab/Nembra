@@ -57,6 +57,28 @@ struct SimulatorProfileTruthTests {
         #expect(state.connectionIssue == nil)
     }
 
+    @Test("mid-flight connection cancellation publishes disconnected instead of connected")
+    func midFlightCancellationFailsClosed() async throws {
+        let service = SimulatedScooterService(commandLatencyNanoseconds: 0)
+        let stream = await service.stateUpdates()
+        var iterator = stream.makeAsyncIterator()
+
+        let initial = try #require(await iterator.next())
+        #expect(initial.connection == .disconnected)
+
+        let task = Task { await service.connect() }
+        let connecting = try #require(await iterator.next())
+        #expect(connecting.connection == .connecting)
+
+        task.cancel()
+        await task.value
+
+        let cancelled = try #require(await iterator.next())
+        #expect(cancelled.connection == .disconnected)
+        #expect(cancelled.connectionIssue == nil)
+        #expect((await service.snapshot()).connection == .disconnected)
+    }
+
     @Test("lock confirmation requires valid stopped speed evidence")
     func lockFailsClosedWithoutValidStoppedSpeed() async {
         let invalidSpeeds: [Double?] = [nil, .nan, .infinity, -.infinity, -0.1, 0.5, 18]
