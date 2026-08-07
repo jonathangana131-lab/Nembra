@@ -4,15 +4,15 @@
 
 The canonical propulsion gauge intentionally separates accepted power measurements from display-clock interpolation. That separation is correct but still leaves a product-integration hazard: `PropulsionGaugeFrame` contains both `displayWatts` and `latestAcceptedWatts`, so a future SwiftUI cockpit could accidentally bind its large numeric power readout to the interpolated render value.
 
-`PropulsionGaugeCockpitProjection` closes that seam without changing telemetry authority, learned-envelope policy, BLE/Tuya behavior, or the Dashboard layout.
+`PropulsionGaugeCockpitProjection` closes only that handoff seam. It does not own learned-envelope policy, observed-scale semantic regions, BLE/Tuya behavior, or Dashboard layout.
 
-It is a presentation handoff above the accepted gauge model:
+It maps one canonical frame into two deliberately different cockpit concerns:
 
 **accepted measurement -> typed cockpit numeric truth**
 
 **display frame -> render-only band position / accepted-peak marker**
 
-The projection deliberately exposes no `displayWatts` property. It also evaluates the canonical gauge frame only once per cockpit snapshot, avoiding duplicate interpolation work on a future 60 Hz render path.
+The projection deliberately exposes no `displayWatts` property. It evaluates the canonical gauge frame exactly once per cockpit snapshot, avoiding duplicate interpolation work inside this handoff on a future 60 Hz render path.
 
 ## Numeric truth
 
@@ -47,41 +47,27 @@ It is presentation only. Never use it as:
 - protocol evidence;
 - throttle position.
 
-The projection returns no live band fraction when evidence is retained/unavailable or when the observed presentation scale is incompatible with the accepted measurement.
+The canonical model itself admits a scale only when vehicle/mode identity and Simulator-vs-verified measurement authority are compatible. When no compatible scale is admitted, the cockpit receives no normalized band or peak marker.
 
 `recentAcceptedPeakMarkerFraction` is the canonical short-lived marker derived from accepted peak observations. It is still a normalized presentation position, not a second measurement or a perfect continuous-time maximum.
 
-## Accepted scale position
+`scaleOrigin` is presentation provenance for the compatible scale admitted by the canonical frame. It does not turn a render fraction into telemetry evidence.
 
-`acceptedObservedScaleFraction` is separate from the animated band. It is derived from the newest accepted measurement only after the same canonical `PropulsionGaugeFrame` has admitted the supplied presentation scale for the exact vehicle/mode identity and measurement authority.
+## Deliberate boundary with observed-scale semantics
 
-The cockpit layer does not reimplement those identity/authority matching rules. A non-nil `frame.scaleOrigin` is the admission result from the canonical gauge model; the accepted fraction then uses the accepted watts rather than `displayWatts`.
+The cockpit projection intentionally does **not** decide whether accepted power is near an observed scale edge and does not own wording such as **Near observed max**.
 
-This is the value used for near-observed-ceiling semantics. Interpolated band position and held peak position are never allowed to promote the wording state.
+That semantic responsibility belongs to the separate accepted-power `PropulsionObservedScaleRegion` lane / PR #317. That layer already owns:
 
-## Near observed max wording
+- accepted-power normalization against a compatible observed presentation scale;
+- the explicit near-edge presentation threshold;
+- accepted provenance for that semantic decision;
+- retained/unavailable behavior for the region;
+- protection against render interpolation entering/leaving the semantic state.
 
-`PropulsionGaugeCockpitPolicy.nearObservedCeilingFraction` is a visual/product threshold in `(0, 1]`. It does not learn a ceiling and does not define a motor/controller rating.
+Keeping that responsibility separate prevents two workers from shipping competing near-maximum policies. A future integration may compose the accepted semantic region with this cockpit render/readout projection after both dependencies are accepted, but it must not duplicate the policy in Dashboard code.
 
-`PropulsionGaugeNearObservedCeilingStatus` is intentionally authority-aware:
-
-- `.unavailable` — no compatible live accepted scale position exists;
-- `.belowThreshold` — compatible accepted evidence exists but is below the chosen presentation threshold;
-- `.simulatorNearObservedCeiling` — synthetic Simulator QA may exercise the visual state, but this is not production evidence;
-- `.verifiedNearObservedCeiling` — a verified accepted measurement is near a compatible verified observed-envelope scale.
-
-Only `.verifiedNearObservedCeiling` may justify user-facing **Near observed max** style wording in production.
-
-Even then, it means near Nembra's learned observed presentation ceiling. It does **not** mean:
-
-- full throttle;
-- rated/certified motor power;
-- rated/certified controller power;
-- a perfect physical maximum;
-- proof of a thumb-demand signal;
-- proof of regenerative braking semantics.
-
-The projection does not provide **FULL THROTTLE** or equivalent wording.
+Neither layer may relabel observed-scale proximity as full throttle, rated/certified motor/controller power, a perfect physical maximum, throttle position, or regen proof.
 
 ## Future SwiftUI integration
 
@@ -92,10 +78,10 @@ When the propulsion gauge is wired into the real cockpit:
 3. show no primary numeric watts for `.unavailable`;
 4. animate the propulsion band only from `visualPropulsionFraction`;
 5. draw the peak marker only from `recentAcceptedPeakMarkerFraction`;
-6. use `verifiedNearObservedCeiling` as the only production authority for near-observed-max wording;
+6. use the accepted observed-scale-region layer, not render fractions, for any near-observed-max semantics;
 7. never persist a cockpit snapshot or feed its render fractions back into ride, battery, range, statistics, calibration, or protocol layers.
 
-Actual SwiftUI layout, 60 Hz runtime behavior, VoiceOver announcement cadence, project source visibility, and physical iPhone performance remain later app/runtime acceptance work. This slice intentionally avoids contested `DashboardView.swift` and `project.pbxproj` integration surfaces.
+Actual SwiftUI layout, cross-layer composition, 60 Hz runtime behavior, VoiceOver announcement cadence, project source visibility, and physical iPhone performance remain later app/runtime acceptance work. This slice intentionally avoids contested `DashboardView.swift` and `project.pbxproj` integration surfaces.
 
 ## Hardware boundary
 
@@ -103,4 +89,4 @@ This is software presentation-domain work only.
 
 It does not verify any AOVOPRO ES80 power/current/voltage data point, GATT characteristic, scale, units, signedness, cadence, stable physical identity, motor/controller maximum, throttle signal, regen signal, battery/thermal limit, or physical full-power behavior.
 
-Simulator authority remains synthetic QA. A production verified near-observed-ceiling state can exist only after the upstream verified measurement + observed-envelope authority chain is legitimately available.
+Simulator authority remains synthetic QA. Physical ES80 power presentation stays gated on a legitimately verified upstream measurement source.
