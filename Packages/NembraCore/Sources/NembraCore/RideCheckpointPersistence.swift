@@ -185,7 +185,7 @@ public enum RideDurableCheckpoint: Codable, Equatable, Sendable {
             try container.encode(Kind.inProgress, forKey: .kind)
             try container.encode(checkpoint, forKey: .inProgress)
         case let .completedPendingCommit(evidence):
-            try container.encode(Kind.completedPendingCommit, forKey: .completedPendingCommit)
+            try container.encode(Kind.completedPendingCommit, forKey: .kind)
             try container.encode(evidence, forKey: .completedPendingCommit)
         }
     }
@@ -577,6 +577,14 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         try rejectUnsupportedSchema(a, b)
         try rejectConflictingGenerations(a, b)
 
+        // An unreadable slot cannot safely be ranked as older. It could contain
+        // the newest completion handoff while the readable slot is stale
+        // in-progress evidence. Deleting either file would risk making the older
+        // ride authoritative after restart, so preserve both forensic copies.
+        if a.isCorrupt || b.isCorrupt {
+            throw RideCheckpointError.corruptedCheckpoint
+        }
+
         let slots: [(url: URL, read: SlotRead)] = [
             (slotAURL, a),
             (slotBURL, b),
@@ -589,16 +597,12 @@ public actor AtomicRideCheckpointStore: RideCheckpointStore {
         guard let newest = validSlots.max(by: {
             $0.envelope.generation < $1.envelope.generation
         }) else {
-            // `clear()` is the explicit recovery path when no valid generation
-            // survives. Unsupported schemas and conflicting valid generations
-            // have already failed closed above.
-            for slot in slots where fileManager.fileExists(atPath: slot.url.path) {
-                try fileManager.removeItem(at: slot.url)
-            }
+            // Both slots are missing. Corrupt/unsupported/conflicting evidence
+            // has already failed closed before this point.
             return
         }
 
-        // Remove every non-authoritative fallback before the newest valid
+        // Remove every lower/equivalent fallback before the newest valid
         // generation. If deletion is interrupted, restart can still recover only
         // the newest checkpoint; an older in-progress ride can never be exposed
         // merely because completion acknowledgement partially cleared the journal.
