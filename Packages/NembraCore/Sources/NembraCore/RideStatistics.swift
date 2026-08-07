@@ -174,28 +174,32 @@ public enum RideStatisticsAggregator {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> RideStatisticsSummary {
-        guard referenceDate.timeIntervalSinceReferenceDate.isFinite,
-              isRepresentable(referenceDate, in: calendar) else {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else {
+            throw RideStatisticsError.invalidReferenceDate
+        }
+        if period != .allTime,
+           !isRepresentable(referenceDate, in: calendar) {
             throw RideStatisticsError.invalidReferenceDate
         }
 
-        let uniqueRides = try deduplicated(rides)
-        guard uniqueRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
-            throw RideStatisticsError.invalidRide
-        }
-
-        // Period boundaries depend only on the caller-supplied reference date
-        // and Calendar. Resolve them once rather than asking Foundation to
-        // rebuild the same day/week/month/year interval for every stored ride.
-        // Every finite calendar bucket is start-inclusive/end-exclusive so the
-        // first instant of the next bucket can never be counted twice.
+        // Resolve the requested bucket before reconciling the supplied history.
+        // A corrupt or calendar-unrepresentable ride wholly outside a bounded
+        // period must not make Today/Week/Month unavailable. Once any copy of a
+        // session touches the selected bucket, however, every supplied copy of
+        // that session remains relevant so conflicting identity/date/distance
+        // evidence still fails closed instead of being silently filtered away.
         let selectedWindow = try periodWindow(
             for: period,
             referenceDate: referenceDate,
             calendar: calendar
         )
-        let periodRides = uniqueRides.filter { ride in
-            selectedWindow.contains(ride.attributedDate)
+        let periodRides = try selectedAndDeduplicated(
+            rides,
+            selectedWindow: selectedWindow
+        )
+
+        guard periodRides.allSatisfy({ isRepresentable($0.attributedDate, in: calendar) }) else {
+            throw RideStatisticsError.invalidRide
         }
 
         var excludedDistanceRideCount = 0
@@ -348,6 +352,29 @@ public enum RideStatisticsAggregator {
             return true
         }
         return candidateSessionKey < currentSessionKey
+    }
+
+    private static func selectedAndDeduplicated(
+        _ rides: [RideStatisticsRide],
+        selectedWindow: PeriodWindow
+    ) throws -> [RideStatisticsRide] {
+        guard selectedWindow.interval != nil else {
+            return try deduplicated(rides)
+        }
+
+        let selectedSessionIDs = Set(
+            rides.lazy
+                .filter { selectedWindow.contains($0.attributedDate) }
+                .map(\.sessionID)
+        )
+        guard !selectedSessionIDs.isEmpty else {
+            return []
+        }
+
+        let relevantRides = rides.filter { selectedSessionIDs.contains($0.sessionID) }
+        return try deduplicated(relevantRides).filter {
+            selectedWindow.contains($0.attributedDate)
+        }
     }
 
     private static func deduplicated(
