@@ -63,6 +63,10 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     private var peakAccumulator: RidePeakSpeedEvidenceAccumulator
     private var benchmarkCollector: TelemetryBenchmarkCollector
     private var foreignSourceCallbackCount = 0
+    /// One logical source outage can produce repeated lifecycle callbacks. Keep
+    /// the outage pending until accepted selected-source benchmark evidence
+    /// resumes so duplicate notifications cannot inflate durable peak-loss counts.
+    private var selectedSourceInterruptionPending: Bool
 
     package init(
         sessionID: UUID,
@@ -78,6 +82,7 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
             beginsAfterKnownObservationGap: beginsAfterKnownObservationGap
         )
         self.benchmarkCollector = TelemetryBenchmarkCollector(source: peakPolicy.source)
+        self.selectedSourceInterruptionPending = beginsAfterKnownObservationGap
     }
 
     @discardableResult
@@ -87,8 +92,20 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
         let benchmarkResult = benchmarkCollector.record(sample)
         let peakResult = peakAccumulator.record(sample)
 
-        if case .rejected(.sourceMismatch) = benchmarkResult {
+        switch benchmarkResult {
+        case .accepted:
+            // The selected raw source has produced accepted benchmark evidence
+            // again, so a future interruption represents a new logical gap even
+            // if this exact sample failed a stricter peak-specific accuracy gate.
+            selectedSourceInterruptionPending = false
+
+        case .rejected(.sourceMismatch):
             foreignSourceCallbackCount += 1
+
+        case .rejected:
+            // Rejected selected-source evidence does not prove the source stream
+            // has resumed cleanly; preserve any pending logical interruption.
+            break
         }
 
         return RideSpeedEvidenceRecordResult(peak: peakResult, benchmark: benchmarkResult)
@@ -98,9 +115,16 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
     /// selected speed source itself was unavailable. This prevents an unrelated
     /// vehicle event (for example BLE disconnect while GPS remains healthy) from
     /// destroying otherwise valid GPS evidence.
+    ///
+    /// Repeated notifications while the same outage is still pending are a no-op.
+    /// The next accepted selected-source benchmark sample re-arms interruption
+    /// recording for a later distinct outage.
     package mutating func recordInterruption(
         _ interruption: RideSpeedEvidenceSessionInterruption
     ) {
+        guard !selectedSourceInterruptionPending else { return }
+        selectedSourceInterruptionPending = true
+
         let peakInterruption: PeakSpeedInterruption
         switch interruption {
         case .selectedSourceUnavailable:
