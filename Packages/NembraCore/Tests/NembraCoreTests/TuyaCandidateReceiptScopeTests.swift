@@ -148,6 +148,20 @@ struct TuyaCandidateReceiptScopeTests {
         }
     }
 
+    @Test("an immutable sequence without its counter scope is invalid")
+    func sequenceRequiresScope() throws {
+        #expect(throws: TuyaCandidateOfflineAnalysisError.receiptSequenceRequiresScope) {
+            _ = try observation(
+                packetIndex: 0,
+                payload: [1],
+                uptime: 100,
+                sequence: 1,
+                scope: nil,
+                totalLength: 1
+            )
+        }
+    }
+
     @Test("blank scoped provenance is rejected at construction")
     func blankScopeRejected() throws {
         #expect(throws: TuyaCandidateOfflineAnalysisError.emptyReceiptSequenceScope) {
@@ -160,33 +174,5 @@ struct TuyaCandidateReceiptScopeTests {
                 totalLength: 1
             )
         }
-    }
-
-    @Test("sequence-only generic research callers remain supported")
-    func unscopedSequenceCompatibility() throws {
-        var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
-        _ = try reassembler.ingest(
-            try observation(
-                packetIndex: 0,
-                payload: [1],
-                uptime: 100,
-                sequence: 1,
-                totalLength: 2
-            )
-        )
-        let result = try reassembler.ingest(
-            try observation(
-                packetIndex: 1,
-                payload: [2],
-                uptime: 100,
-                sequence: 2
-            )
-        )
-        let message = try #require({
-            if case let .complete(message) = result { return message }
-            return nil
-        }())
-        #expect(message.receiptSequenceScope == nil)
-        #expect(message.encryptedBytes == [1, 2])
     }
 }
