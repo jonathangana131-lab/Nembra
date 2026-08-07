@@ -232,6 +232,39 @@ struct ObservedPowerEnvelopeCheckpointStoreTests {
         }
     }
 
+    @Test("unknown inner calibration schema blocks fallback and overwrite")
+    func unsupportedCheckpointSchemaIsPreserved() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = AtomicObservedPowerEnvelopeCheckpointStore(directoryURL: dir)
+        let older = try checkpoint(watts: [400, 420, 410])
+        try await store.save(older)
+
+        let futureBase = try checkpoint(watts: [600, 630, 620])
+        let futureEnvelope = AtomicObservedPowerEnvelopeCheckpointStore.Envelope(
+            schemaVersion: AtomicObservedPowerEnvelopeCheckpointStore.schemaVersion,
+            generation: 2,
+            checkpoint: futureBase
+        )
+        var object = try #require(
+            JSONSerialization.jsonObject(with: encode(futureEnvelope)) as? [String: Any]
+        )
+        var inner = try #require(object["checkpoint"] as? [String: Any])
+        inner["schemaVersion"] = 999
+        object["checkpoint"] = inner
+        let slotB = slotURL(AtomicObservedPowerEnvelopeCheckpointStore.slotBFileName, in: dir)
+        let futureData = try JSONSerialization.data(withJSONObject: object)
+        try futureData.write(to: slotB)
+
+        await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedCheckpointSchema(999)) {
+            _ = try await store.load()
+        }
+        await #expect(throws: ObservedPowerEnvelopeCheckpointStoreError.unsupportedCheckpointSchema(999)) {
+            try await store.save(try checkpoint(watts: [800, 830, 820]))
+        }
+        #expect(try Data(contentsOf: slotB) == futureData)
+    }
+
     @Test("same generation with divergent valid calibrations is a journal conflict")
     func sameGenerationConflictIsRejected() async throws {
         let dir = try directory()

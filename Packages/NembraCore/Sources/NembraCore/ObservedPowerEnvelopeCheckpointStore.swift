@@ -4,6 +4,7 @@ public enum ObservedPowerEnvelopeCheckpointStoreError: Error, Equatable, Sendabl
     case corruptedCheckpoint
     case conflictingGenerations
     case unsupportedSchema(Int)
+    case unsupportedCheckpointSchema(Int)
     case generationOverflow
     case scopeMismatch
     case policyMismatch
@@ -45,8 +46,16 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
     static let slotAFileName = "observed-power-envelope-journal-a.json"
     static let slotBFileName = "observed-power-envelope-journal-b.json"
 
-    private struct SchemaProbe: Decodable {
+    private struct StoreSchemaProbe: Decodable {
         let schemaVersion: Int
+    }
+
+    private struct CheckpointSchemaProbe: Decodable {
+        struct Checkpoint: Decodable {
+            let schemaVersion: Int
+        }
+
+        let checkpoint: Checkpoint
     }
 
     struct Envelope: Codable, Equatable, Sendable {
@@ -59,7 +68,8 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         case missing
         case valid(Envelope)
         case corrupt
-        case unsupported(Int)
+        case unsupportedStoreSchema(Int)
+        case unsupportedCheckpointSchema(Int)
 
         var envelope: Envelope? {
             guard case let .valid(envelope) = self else { return nil }
@@ -255,10 +265,17 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
         }
 
         do {
-            let probe = try decoder.decode(SchemaProbe.self, from: data)
-            guard probe.schemaVersion == Self.schemaVersion else {
-                return .unsupported(probe.schemaVersion)
+            let storeProbe = try decoder.decode(StoreSchemaProbe.self, from: data)
+            guard storeProbe.schemaVersion == Self.schemaVersion else {
+                return .unsupportedStoreSchema(storeProbe.schemaVersion)
             }
+
+            let checkpointProbe = try decoder.decode(CheckpointSchemaProbe.self, from: data)
+            guard checkpointProbe.checkpoint.schemaVersion
+                    == ObservedPowerEnvelopeCalibrationCheckpoint.currentSchemaVersion else {
+                return .unsupportedCheckpointSchema(checkpointProbe.checkpoint.schemaVersion)
+            }
+
             return .valid(try decoder.decode(Envelope.self, from: data))
         } catch {
             return .corrupt
@@ -267,8 +284,13 @@ public actor AtomicObservedPowerEnvelopeCheckpointStore: ObservedPowerEnvelopeCh
 
     private func rejectUnsupportedSchema(_ slots: SlotRead...) throws {
         for slot in slots {
-            if case let .unsupported(version) = slot {
+            switch slot {
+            case let .unsupportedStoreSchema(version):
                 throw ObservedPowerEnvelopeCheckpointStoreError.unsupportedSchema(version)
+            case let .unsupportedCheckpointSchema(version):
+                throw ObservedPowerEnvelopeCheckpointStoreError.unsupportedCheckpointSchema(version)
+            default:
+                break
             }
         }
     }

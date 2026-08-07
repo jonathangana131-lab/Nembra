@@ -86,9 +86,10 @@ Each save writes a schema-versioned outer envelope with a monotonic persistence 
 The journal adds durable invariants above checkpoint decoding:
 
 - both slots corrupt -> fail closed until explicit recovery/clear;
-- unsupported outer schema -> never silently overwrite or downgrade;
+- unsupported **outer journal schema** -> never silently overwrite or downgrade;
+- unsupported **inner calibration-checkpoint schema** -> also fail closed, even when an older valid slot exists, so an older app cannot misclassify a future calibration format as corruption and overwrite it;
 - equal persistence generation with divergent payloads -> conflict;
-- a semantically invalid inner checkpoint -> corrupt journal data;
+- a semantically invalid inner checkpoint with the current schema -> corrupt journal data;
 - generation overflow -> fail without replacing retained calibration;
 - one corrupt slot plus one unused slot -> recover into the unused slot and preserve the only forensic copy;
 - a journal directory is bound to one exact vehicle/mode identity, authority pair, and learning policy until explicitly cleared;
