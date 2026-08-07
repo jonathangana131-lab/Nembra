@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Accepted adaptive battery range model")
 struct AcceptedAdaptiveBatteryRangeModelTests {
-    @Test("trusted same-segment receipt window teaches accepted production model")
+    @Test("trusted same-segment receipt window teaches only with evidence-backed first-window ceiling")
     func trustedWindowTeachesAcceptedModel() throws {
         let epoch = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
         var stream = AcceptedBatterySOCStream()
@@ -25,11 +25,14 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
             startSOC: start,
             endSOC: end
         )
+        let plausibility = try AcceptedAdaptiveRangePlausibilityPolicy(
+            maximumFullChargeEquivalentMeters: 20_000
+        )
         var model = AcceptedAdaptiveBatteryRangeModel()
         let result = model.ingest(
             window,
             policy: try policy(),
-            plausibilityPolicy: .deferredUntilVerifiedEvidence
+            plausibilityPolicy: plausibility
         )
 
         #expect(window.transportGapOccurred == false)
@@ -38,6 +41,92 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
         #expect(model.historicalConsumedPercentagePoints == 10)
         #expect(model.acceptedWindowCount == 1)
         #expect(model.typicalFullChargeRangeMeters(using: try policy()) == 12_000)
+    }
+
+    @Test("deferred plausibility policy never teaches from the lone first production window")
+    func firstWindowDefersWithoutPlausibilityEvidence() throws {
+        let epoch = UUID(uuidString: "77777777-7777-7777-7777-777777777778")!
+        var stream = AcceptedBatterySOCStream()
+        let start = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        let end = try #require(stream.accept(
+            try verifiedSOC(percent: 70, epoch: epoch, sequence: 2, uptime: 2_000)
+        ))
+        let window = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: 1_200,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: start,
+            endSOC: end
+        )
+        var model = AcceptedAdaptiveBatteryRangeModel()
+
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: .deferredUntilVerifiedEvidence
+        )
+
+        #expect(result.disposition == .deferred(.firstWindowPlausibilityUnverified))
+        #expect(result.sample == nil)
+        #expect(result.confidence == .learning)
+        #expect(model.hasLearnedEfficiency == false)
+        #expect(model.historicalConsumedPercentagePoints == 0)
+        #expect(model.acceptedWindowCount == 0)
+        #expect(model.typicalFullChargeRangeMeters(using: try policy()) == nil)
+    }
+
+    @Test("deferred absolute ceiling is allowed after accepted history exists")
+    func learnedHistoryCanContinueWithRelativeOutlierPolicy() throws {
+        let epoch = UUID(uuidString: "77777777-7777-7777-7777-777777777779")!
+        var stream = AcceptedBatterySOCStream()
+        let firstStart = try #require(stream.accept(
+            try verifiedSOC(percent: 90, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        let firstEnd = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 2, uptime: 2_000)
+        ))
+        let firstWindow = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: 1_000,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: firstStart,
+            endSOC: firstEnd
+        )
+        let initialCeiling = try AcceptedAdaptiveRangePlausibilityPolicy(
+            maximumFullChargeEquivalentMeters: 20_000
+        )
+        var model = AcceptedAdaptiveBatteryRangeModel()
+        #expect(model.ingest(
+            firstWindow,
+            policy: try policy(),
+            plausibilityPolicy: initialCeiling
+        ).disposition == .accepted)
+
+        let secondStart = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 3, uptime: 3_000)
+        ))
+        let secondEnd = try #require(stream.accept(
+            try verifiedSOC(percent: 70, epoch: epoch, sequence: 4, uptime: 4_000)
+        ))
+        let secondWindow = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: 1_050,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: secondStart,
+            endSOC: secondEnd
+        )
+
+        let result = model.ingest(
+            secondWindow,
+            policy: try policy(),
+            plausibilityPolicy: .deferredUntilVerifiedEvidence
+        )
+
+        #expect(result.disposition == .accepted)
+        #expect(model.acceptedWindowCount == 2)
+        #expect(model.historicalConsumedPercentagePoints == 20)
     }
 
     @Test("evidence-backed plausibility ceiling rejects an absurd first window before baseline learning")
