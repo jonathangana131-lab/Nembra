@@ -164,6 +164,7 @@ struct TuyaCandidateDPMarkerCorrelationTests {
         #expect(evidence.hits.count == 1)
         #expect(evidence.hits[0].observationIndex == 1)
         #expect(evidence.hits[0].temporalDistanceNanoseconds == 5)
+        #expect(evidence.hits[0].temporalRelation == .messageBeforeMarker)
     }
 
     @Test("equally near conflicting raw values stay ambiguous instead of cherry-picking")
@@ -204,8 +205,8 @@ struct TuyaCandidateDPMarkerCorrelationTests {
         #expect(evidence.sameReferencePairCount == 0)
     }
 
-    @Test("message receipt interval is used without inventing a midpoint measurement")
-    func markerInsideMessageIntervalHasZeroDistance() throws {
+    @Test("correlation uses accepted message completion receipt instead of looking through the interval")
+    func usesMessageCompletionReceipt() throws {
         let report = try TuyaCandidateDPMarkerCorrelator.analyze(
             scope: scope(),
             markers: [try marker(105, "anchor")],
@@ -216,10 +217,11 @@ struct TuyaCandidateDPMarkerCorrelationTests {
                     records: [record(id: 1, value: [9])]
                 )
             ],
-            policy: policy(distance: 0)
+            policy: policy(distance: 5)
         )
         let hit = try #require(report.candidates.first?.hits.first)
-        #expect(hit.temporalDistanceNanoseconds == 0)
+        #expect(hit.temporalDistanceNanoseconds == 5)
+        #expect(hit.temporalRelation == .messageAfterMarker)
         #expect(hit.observationFirstReceiptUptimeNanoseconds == 100)
         #expect(hit.observationLastReceiptUptimeNanoseconds == 110)
     }
