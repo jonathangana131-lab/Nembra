@@ -37,7 +37,7 @@ This ordering intentionally prefers a temporarily missing optional duration atta
 
 ## Trusted statistics bridge
 
-`RideDurationStatisticsRide` deliberately keeps its independent completed-ride + duration constructor package-scoped so app code cannot bypass the cross-record trust boundary. `RideHistoryDurationStatisticsAdapter.swift` supplies the public production bridge from a `RideHistoryDurationJoinedRecord` that app code can receive from the coordinator but cannot forge directly.
+`RideDurationStatisticsRide` now owns the trusted history-duration bridge in its existing source file. Independent completed-ride + duration construction remains `package`-scoped under SwiftPM and becomes `fileprivate` in Nembra.app's direct-source composition. The public production initializer instead accepts `RideHistoryDurationJoinedRecord`, which app code can receive from the coordinator but cannot forge directly.
 
 The bridge preserves the existing statistics semantics exactly:
 
@@ -46,15 +46,15 @@ The bridge preserves the existing statistics semantics exactly:
 - partial recovered duration remains partial and never fills missing intervals;
 - the caller must still explicitly choose `.rideBegan` or `.rideEnded` calendar attribution for rides that cross a bucket boundary.
 
-This makes the durable history join usable by the existing duration-statistics domain without reopening a raw-record construction path.
+This makes the durable history join usable by the existing duration-statistics domain without reopening a raw-record construction path or requiring a second adapter source file.
 
 ## App-target visibility boundary
 
-The current iOS target manually compiles selected NembraCore source files rather than linking the full Swift package product. These new duration files remain package/domain-only until a Class-A integration owner deliberately adds their complete source dependency closure to the app target. Package acceptance therefore proves the core layer, not current production-app visibility. The dual-mode initializer seal above is designed so future direct-source wiring does not weaken the trust boundary or fail merely because `package` access is unavailable outside SwiftPM.
+The current iOS target manually compiles selected NembraCore source files rather than linking the full Swift package product. The new history-duration source remains package/domain-only until a Class-A integration owner deliberately adds its complete source dependency closure to the app target. `RideDurationStatistics.swift` also now compiles safely in both SwiftPM and direct-source modes, but current package acceptance still does not prove production-app visibility until that wiring exists.
 
 ## Parallel ownership boundary
 
-This slice is additive and does not modify `RideHistoryCommit.swift`, `RideApplicationStore.swift`, `RidePersistence.swift`, `AppBootstrap.swift`, Dashboard/Home views, the Xcode project, or global project-memory files. That avoids active ownership in the compact-history and ride-location lifecycle lanes.
+This slice does not modify `RideHistoryCommit.swift`, `RideApplicationStore.swift`, `RidePersistence.swift`, `AppBootstrap.swift`, Dashboard/Home views, the Xcode project, or global project-memory files. It makes one focused change to the previously unowned `RideDurationStatistics.swift` trust/build boundary and otherwise adds isolated duration history/tests/docs. This avoids active ownership in the compact-history and ride-location lifecycle lanes.
 
 The next production step, after those owners are clear, is a concrete app persistence implementation for `RideHistoryDurationStore` plus completion-handoff wiring from the authoritative `RideDurationObservationOwner`. Only after that durable app storage/handoff exists should Ride Details/Home/Statistics display completed observed duration; the statistics conversion boundary itself is now available once a validated joined record can be loaded.
 
