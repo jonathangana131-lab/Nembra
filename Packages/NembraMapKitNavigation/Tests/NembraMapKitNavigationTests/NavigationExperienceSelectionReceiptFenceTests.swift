@@ -96,7 +96,9 @@ struct NavigationExperienceSelectionReceiptFenceTests {
         }
         #expect(experience.snapshot.guidanceState == awaiting)
 
-        let update = try #require(experience.process(location: location(uptime: 101)))
+        let freshLocation = try location(uptime: 101)
+        let updateValue = try experience.process(location: freshLocation)
+        let update = try #require(updateValue)
         guard case .active = update.guidanceState else {
             Issue.record("Expected a post-selection receipt to activate guidance")
             return
