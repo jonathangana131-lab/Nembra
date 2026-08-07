@@ -17,17 +17,17 @@ Two separate limits matter:
 1. **sampling limit** — accepted below-target packets do not prove the scooter never reached target and fell back between packets;
 2. **clock/latency limit** — `SpeedTelemetrySample.receivedAtUptimeNanoseconds` is the app's monotonic packet-receipt clock, not necessarily the physical source-measurement or threshold-crossing clock.
 
-The current evaluator therefore produces **receive-observation evidence**, not a physical 0-to-target time.
+The current evaluator therefore produces **receive-observation evidence**, not a physical 0-to-target time and not a first-reach bound.
 
 ## Evidence model
 
 The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurement` provenance.
 
 - visual/interpolated Dashboard frames never enter the evaluator;
-- `motionAssist` short-horizon estimates cannot arm or advance a run;
+- `motionAssist` short-horizon estimates cannot arm or advance a trace;
 - `requiredSource: .motionAssist` is rejected at policy construction because that source can never provide `absoluteMeasurement` provenance under Nembra's telemetry contract;
 - a configured authoritative source can be required explicitly;
-- if no source is required, the first usable authoritative source becomes locked for that run and a later source change invalidates the trace;
+- if no source is required, the first usable authoritative source becomes locked for that trace and a later source change invalidates it;
 - optional speed-accuracy gating is available for sources such as GPS;
 - an optional maximum accepted sample interval can reject a trace when usable measurement cadence becomes too sparse for the requested evidence quality;
 - that interval is injected policy, not a guessed ES80 constant; leaving it unset makes no cadence claim;
@@ -51,7 +51,7 @@ That basis means:
 
 For example, a source measurement may physically occur at 1.0 s and arrive at the app at 1.5 s. A later measurement may physically occur at 2.0 s and arrive at 2.1 s. The receive interval `[1.5, 2.1]` is truthful about app observations, but it does not prove a physical threshold crossing happened inside that receive interval.
 
-A future physical timing basis would need stronger evidence, such as a validated source-side monotonic timestamp and/or a measured latency envelope that can be propagated into the result conservatively.
+A future physical timing basis would need stronger evidence, such as a validated source-side monotonic timestamp and/or a measured latency envelope that can be propagated conservatively.
 
 ## Two monotonic anchors: observed vs accepted
 
@@ -61,15 +61,15 @@ Once a source is locked—or when policy explicitly requires one source—the ev
 
 Every authoritative callback from the locked/required source advances `lastObservedUptimeNanoseconds` before optional accuracy screening. A low-quality GPS sample is still a real callback with chronology.
 
-If a GPS sample at uptime 300 fails the accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the run invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
+If a GPS sample at uptime 300 fails the accuracy ceiling and a later call supplies a supposedly good sample stamped uptime 200, the trace invalidates as non-monotonic. Quality rejection cannot erase the callback at 300 and let older evidence masquerade as fresh.
 
-When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose or poison the future run source.
+When no source is explicitly required and no usable source has been selected yet, low-quality provider traffic does not choose or poison the future trace source.
 
 ### Accepted timing evidence
 
-`lastAcceptedUptimeNanoseconds` advances only when a measurement passes the source/accuracy gates and is usable by the timing state machine.
+`lastAcceptedUptimeNanoseconds` advances only when a measurement passes the source/accuracy gates and is usable by the state machine.
 
-The optional `maximumSampleIntervalNanoseconds` is evidence-critical only when the latest stationary anchor transitions to movement and while a run is already moving. Long idle time while the scooter remains stationary does not weaken a future run: a newer accepted stationary sample simply replaces the older launch anchor.
+The optional `maximumSampleIntervalNanoseconds` is evidence-critical only when the latest stationary anchor transitions to movement and while a trace is already moving. Long idle time while the scooter remains stationary does not weaken a future attempt: a newer accepted stationary sample simply replaces the older launch anchor.
 
 Therefore:
 
@@ -88,12 +88,13 @@ A trace requires a verified stationary observation anchor.
 - The first measurement above the stationary ceiling creates `launchObservationWindow`, spanning the last accepted stationary receipt and the first accepted moving receipt.
 - The first accepted measurement at or above the requested target creates `targetTransitionObservationWindow`, spanning the immediately preceding accepted below-target receipt and that target-reaching receipt.
 - `targetTransitionObservationWindow` describes the final observed below→at/above pair. It does **not** prove that pair contains the scooter's first physical target reach.
+- `stationaryToTargetObservationElapsedSeconds` is only the monotonic receive-clock interval from the latest stationary packet receipt to the first accepted at/above-target packet receipt.
 
 Timing-window construction is evaluator-owned. Callers receive immutable observation evidence but cannot publicly construct contradictory/reversed windows and trigger a precondition through the public API.
 
-## Why first-reach lower bound is zero
+## Why there is no first-reach bound API
 
-Conventional 0-to-target timing means the **first** time the scooter reaches the target after launch.
+Conventional 0-to-target timing means the **first** time the scooter physically reaches the target after physical launch.
 
 Consider accepted samples for a 10 m/s target:
 
@@ -105,16 +106,11 @@ Consider accepted samples for a 10 m/s target:
 
 The final observed below→at-target pair is `[3 s, 4 s]`. But the accepted samples do not rule out an unsampled excursion above 10 m/s between 1 s and 2 s followed by a drop back below target before the 2 s observation.
 
-Therefore a positive first-reach lower bound derived from the last sampled below-target packet would be fabricated precision.
+A positive first-reach lower bound derived from the last sampled below-target packet would therefore be fabricated precision. A receive-span “upper bound” would also invite a stronger physical-time interpretation than variable delivery latency supports.
 
-The current result exposes:
+For that reason the public result intentionally exposes **no first-reach lower/upper bound fields at all**. It exposes only the two observation windows and the directly measured app-timeline interval `stationaryToTargetObservationElapsedSeconds`.
 
-- `firstReachReceiveClockLowerBoundSeconds == 0`;
-- `firstReachReceiveClockUpperBoundSeconds` equal to the receive-clock span from the last stationary observation to the first accepted at/above-target observation.
-
-That upper value is a conservative **receive-observation span**, not a physical acceleration-time upper bound. Variable delivery latency can still separate receipt timing from physical scooter timing.
-
-A future nonzero physical lower bound would require an evidence contract capable of ruling out earlier target excursions, such as separately validated dynamics/source sampling guarantees. Sample monotonicity alone is insufficient.
+That interval is not a physical acceleration time, not a physical upper bound, and not proof of first reach. A future physical timing result must use a separately validated evidence contract capable of addressing both unsampled excursions and source-to-app latency.
 
 ## Retained timing-evidence sample count
 
@@ -133,7 +129,7 @@ Example: stationary samples at 1.0 s and 2.0 s, first movement at 3.0 s, and fir
 An active trace fails closed when evidence continuity is no longer trustworthy:
 
 - non-monotonic locked/required-source observation;
-- configured maximum accepted-measurement interval exceeded on the launch transition or during a moving run;
+- configured maximum accepted-measurement interval exceeded on the launch transition or during a moving trace;
 - measurement source changes mid-trace;
 - vehicle/app interruption explicitly reported by the caller;
 - the scooter returns to stationary after launch observation;
@@ -146,6 +142,7 @@ An active trace fails closed when evidence continuity is no longer trustworthy:
 This slice does **not**:
 
 - produce a physical 0-to-target acceleration time;
+- expose a first-reach acceleration lower/upper bound;
 - claim packet receive timestamps equal source measurement timestamps;
 - compensate for variable source-to-app delivery latency;
 - prove the final observed below→target pair contains the first physical target reach;
@@ -163,11 +160,11 @@ This slice does **not**:
 
 ## Deterministic software verification
 
-The focused test matrix now contains **19 deterministic tests across 2 suites** covering:
+The focused test matrix contains **19 deterministic tests across 2 suites** covering:
 
 - rolling-start rejection;
 - explicit receive-observation timing basis;
-- conservative zero first-reach lower bound;
+- direct stationary-receipt → target-receipt observation interval;
 - regression for a decreasing-but-still-moving sampled sequence where an earlier unsampled target excursion cannot be ruled out;
 - regression proving `measurementDate` / delivery latency does not silently become the timing basis;
 - launch and target-transition observation windows;
@@ -187,7 +184,7 @@ The focused test matrix now contains **19 deterministic tests across 2 suites** 
 - return-to-stationary invalidation;
 - reset and malformed-policy behavior.
 
-Repository-wide exact-head NembraCore + Xcode 27 Simulator QA remains required on the final PR head. Deterministic tests are software evidence only.
+Repository-wide exact-head NembraCore + Xcode 27 Simulator QA remains required on the final PR head. Deterministic tests are software evidence only until that exact head reports a passing run.
 
 ## Hardware validation still required
 
