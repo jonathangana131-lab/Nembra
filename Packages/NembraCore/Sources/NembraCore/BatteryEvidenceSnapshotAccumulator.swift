@@ -3,6 +3,10 @@ public enum BatteryEvidenceSnapshotError: Error, Equatable, Sendable {
     case conflictingSameUptimeFieldEvidence
 }
 
+fileprivate enum BatteryEvidenceSnapshotConstructionBoundary {
+    case validatedAccumulator
+}
+
 /// Latest normalized battery observations that are known to belong to the same
 /// uninterrupted evidence segment.
 ///
@@ -12,12 +16,28 @@ public enum BatteryEvidenceSnapshotError: Error, Equatable, Sendable {
 public struct BatteryEvidenceCurrentSegmentSnapshot: Equatable, Sendable {
     public let observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]
 
-    /// Raw snapshot construction stays inside NembraCore. External consumers receive
-    /// snapshots only from `BatteryEvidenceSnapshotAccumulator.currentSnapshot`, so they
-    /// cannot bypass stream ordering/continuity by assembling arbitrary field mixtures.
-    init(observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]) {
+    /// Production construction is file-scoped because current Nembra app integration may
+    /// compile package-domain source files directly into the app Swift module. Plain
+    /// `internal` access would therefore let unrelated app code bypass stream ordering and
+    /// continuity by manufacturing an arbitrary current segment.
+    fileprivate init(
+        observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation],
+        constructionBoundary: BatteryEvidenceSnapshotConstructionBoundary
+    ) {
+        _ = constructionBoundary
         self.observationsByField = observationsByField
     }
+
+#if SWIFT_PACKAGE
+    /// Package-only fixture seam for NembraCore tests and dependent package-domain tests.
+    /// This spelling is absent when the source is manually compiled into the app target.
+    init(observationsByField: [BatteryEvidenceField: BatteryEvidenceObservation]) {
+        self.init(
+            observationsByField: observationsByField,
+            constructionBoundary: .validatedAccumulator
+        )
+    }
+#endif
 
     public var isEmpty: Bool {
         observationsByField.isEmpty
@@ -53,7 +73,10 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
     }
 
     public var currentSnapshot: BatteryEvidenceCurrentSegmentSnapshot {
-        BatteryEvidenceCurrentSegmentSnapshot(observationsByField: latestByField)
+        BatteryEvidenceCurrentSegmentSnapshot(
+            observationsByField: latestByField,
+            constructionBoundary: .validatedAccumulator
+        )
     }
 
     public var lastAcceptedUptimeNanoseconds: UInt64? {
