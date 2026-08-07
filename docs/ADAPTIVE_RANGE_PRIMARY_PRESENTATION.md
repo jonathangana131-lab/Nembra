@@ -29,6 +29,8 @@ This lane prevents integration code from flattening every non-nil range estimate
 
 The policy consumes the existing `VehicleDataAvailability` classification from `VehicleDomain.swift` directly. It deliberately does not define a second live/retained/unavailable enum. This keeps range freshness on the same canonical retained-data boundary already used by Dashboard and other vehicle presentation code and removes a mapping seam where retained data could accidentally be reclassified as live.
 
+Future Dashboard integration should pass `vehicle.state.dataAvailability` directly to the policy. It must not recreate availability from connection state at the call site: `VehicleState.dataAvailability` already encodes the important rule that confirmed values become `.retained` whenever the vehicle is not currently connected, while a state with no confirmed vehicle values is `.unavailable`.
+
 The output preserves a detailed withholding reason while separately projecting into the existing `BatteryEstimatedRangeDisplay` contract.
 
 ### Current fail-closed mapping
