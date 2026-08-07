@@ -21,11 +21,13 @@ The current evaluator therefore produces **receive-observation evidence**, not a
 
 ## Evidence model
 
-The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurement` provenance.
+The evaluator consumes `SpeedTelemetrySample` and accepts only evidence that can legitimately act as an authoritative absolute speed measurement for this slice.
 
 - visual/interpolated Dashboard frames never enter the evaluator;
 - `motionAssist` short-horizon estimates cannot arm or advance a trace;
-- `requiredSource: .motionAssist` is rejected at policy construction because that source can never provide `absoluteMeasurement` provenance under Nembra's telemetry contract;
+- `requiredSource: .motionAssist` is rejected at policy construction;
+- the evaluator independently rejects `.motionAssist` regardless of decoded provenance as defense in depth, because the current upstream `SpeedTelemetrySample` synthesized `Codable` boundary can deserialize an impossible source/provenance pair without invoking its validating initializer;
+- this defense does not claim the normal live telemetry path currently emits malformed samples; upstream Codable validation remains the cleaner trust-boundary fix;
 - a configured authoritative source can be required explicitly;
 - if no source is required, the first usable authoritative source becomes locked for that trace and a later source change invalidates it;
 - optional speed-accuracy gating is available for sources such as GPS;
@@ -34,6 +36,18 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurem
 - monotonic process uptime, not wall-clock time, defines observation ordering and receive-interval calculations.
 
 No claim is made here about whether ES80 Bluetooth or GPS will be the accepted production acceleration source. That requires physical measurement of cadence, latency, jitter, resolution, and accuracy.
+
+## Stationary policy has no hardware-default value
+
+`stationaryMaximumMetersPerSecond` is required when constructing `AccelerationRunPolicy`.
+
+There is intentionally **no public default** such as `0.5 m/s`, because that threshold changes real behavior:
+
+- whether the first accepted sample is a valid stationary anchor or a rolling start;
+- when a launch observation begins;
+- whether a moving trace later invalidates as returned to stationary.
+
+Until physical ES80/iPhone evidence establishes a production threshold, callers must make that policy choice explicitly. Deterministic tests use `0.5 m/s` only as a labeled synthetic fixture value; it is not an ES80 fact and must not silently become one through an initializer default.
 
 ## Receive-observation timing basis
 
@@ -81,9 +95,9 @@ This separation lets chronology stay truthful without pretending rejected data i
 
 ## Observation semantics
 
-A trace requires a verified stationary observation anchor.
+A trace requires a verified stationary observation anchor under the caller-supplied stationary policy.
 
-- If the first eligible measurement is already moving above the stationary ceiling, the evaluator reports an invalid rolling start.
+- If the first eligible measurement is already moving above the supplied stationary ceiling, the evaluator reports an invalid rolling start.
 - Repeated stationary measurements refresh the most recent launch anchor, even after a long idle interval.
 - The first measurement above the stationary ceiling creates `launchObservationWindow`, spanning the last accepted stationary receipt and the first accepted moving receipt.
 - The first accepted measurement at or above the requested target creates `targetTransitionObservationWindow`, spanning the immediately preceding accepted below-target receipt and that target-reaching receipt.
@@ -112,6 +126,18 @@ For that reason the public result intentionally exposes **no first-reach lower/u
 
 That interval is not a physical acceleration time, not a physical upper bound, and not proof of first reach. A future physical timing result must use a separately validated evidence contract capable of addressing both unsampled excursions and source-to-app latency.
 
+## Cancellation and interruption semantics
+
+An operator cancelling an attempt is a deliberate terminal action even if the evaluator is still waiting for its first stationary anchor. `.operatorCancelled` therefore invalidates every nonterminal attempt state:
+
+- `.waitingForStandstill`;
+- `.armed`;
+- `.running`.
+
+Later samples cannot resurrect that cancelled attempt. The caller must explicitly `reset()` to begin a new one.
+
+Connection loss and application lifecycle interruption remain evidence invalidators only once a trace is armed/running. If no evidence exists yet and the evaluator is merely waiting for standstill, those non-operator interruptions do not manufacture a failed timing trace.
+
 ## Retained timing-evidence sample count
 
 `AccelerationRunResult.timingEvidenceSampleCount` counts accepted measurements retained by the final evidence trace:
@@ -131,7 +157,8 @@ An active trace fails closed when evidence continuity is no longer trustworthy:
 - non-monotonic locked/required-source observation;
 - configured maximum accepted-measurement interval exceeded on the launch transition or during a moving trace;
 - measurement source changes mid-trace;
-- vehicle/app interruption explicitly reported by the caller;
+- vehicle/app interruption after the trace is armed;
+- explicit operator cancellation in any nonterminal attempt state;
 - the scooter returns to stationary after launch observation;
 - initial rolling start.
 
@@ -146,6 +173,7 @@ This slice does **not**:
 - claim packet receive timestamps equal source measurement timestamps;
 - compensate for variable source-to-app delivery latency;
 - prove the final observed below→target pair contains the first physical target reach;
+- provide a verified production ES80 stationary threshold;
 - select the production ES80 speed source;
 - infer threshold crossing from interpolated display values;
 - use Core Motion as absolute speed;
@@ -160,7 +188,7 @@ This slice does **not**:
 
 ## Deterministic software verification
 
-The focused test matrix contains **19 deterministic tests across 2 suites** covering:
+The focused test matrix contains **21 deterministic tests across 2 suites** covering:
 
 - rolling-start rejection;
 - explicit receive-observation timing basis;
@@ -170,7 +198,8 @@ The focused test matrix contains **19 deterministic tests across 2 suites** cove
 - launch and target-transition observation windows;
 - retained timing-evidence count excluding superseded stationary anchors;
 - sparse immediate target observation;
-- motion-estimate rejection;
+- ordinary motion-estimate rejection;
+- decoded impossible `.motionAssist + .absoluteMeasurement` defense-in-depth rejection;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
 - impossible `.motionAssist` authoritative required-source policy rejection;
@@ -180,9 +209,12 @@ The focused test matrix contains **19 deterministic tests across 2 suites** cove
 - rejected-quality callbacks not hiding an overlong usable-measurement gap;
 - long stationary idle refreshing the launch anchor without false gap invalidation;
 - movement still failing when it arrives too long after that newest stationary anchor;
-- explicit interruption;
+- connection interruption after launch evidence exists;
+- operator cancellation while still waiting and no resurrection before reset;
 - return-to-stationary invalidation;
 - reset and malformed-policy behavior.
+
+The tests use an explicit synthetic `0.5 m/s` stationary fixture threshold only to exercise software state transitions. They do not claim that threshold is appropriate for the physical ES80.
 
 Repository-wide exact-head NembraCore + Xcode 27 Simulator QA remains required on the final PR head. Deterministic tests are software evidence only until that exact head reports a passing run.
 
@@ -195,7 +227,7 @@ Before production acceleration timing can make a physical-time claim on the AOVO
 3. determine whether either source supplies a trustworthy source-side timing basis;
 4. quantify source-to-app latency and its variability rather than assuming packet receipt equals measurement time;
 5. determine what evidence, if any, can rule out earlier unsampled target excursions;
-6. choose stationary, maximum-gap, and target policies from measured traces rather than Simulator convenience;
+6. choose the actual stationary, maximum-gap, and target policies from measured traces rather than Simulator/test convenience;
 7. validate interruption/reconnect behavior on real rides;
 8. decide user-facing precision from observed uncertainty instead of arbitrary decimal places.
 
