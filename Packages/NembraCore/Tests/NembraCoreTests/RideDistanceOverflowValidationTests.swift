@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraCore
 
@@ -11,6 +12,32 @@ struct RideDistanceOverflowValidationTests {
                 endingOdometerKilometers: .greatestFiniteMagnitude,
                 odometerCoverage: .complete,
                 gpsRouteDistanceMeters: nil,
+                gpsRouteCoverage: .unknown,
+                liveIntegratedDistanceMeters: nil,
+                liveIntegratedCoverage: .unknown,
+                transportGapOccurred: false
+            )
+        }
+    }
+
+    @Test("completed ride bridge rejects meter overflow without rewriting raw ODO evidence")
+    func completedRideBridgeRejectsMeterOverflow() throws {
+        let completedRide = try CompletedRideEvidence(
+            sessionID: UUID(),
+            beganAtDate: Date(timeIntervalSinceReferenceDate: 100),
+            confirmedAtDate: Date(timeIntervalSinceReferenceDate: 101),
+            endedAtDate: Date(timeIntervalSinceReferenceDate: 200),
+            startingOdometerKilometers: 0,
+            endingOdometerKilometers: .greatestFiniteMagnitude,
+            qualityScreenedGPSDistanceMeters: 0,
+            continuity: .uninterruptedProcess
+        )
+
+        #expect(completedRide.odometerDeltaKilometers?.isFinite == true)
+        #expect(throws: RideDistanceReconciliationError.invalidEvidence) {
+            _ = try RideDistanceEvidence(
+                completedRide: completedRide,
+                odometerCoverage: .complete,
                 gpsRouteCoverage: .unknown,
                 liveIntegratedDistanceMeters: nil,
                 liveIntegratedCoverage: .unknown,
