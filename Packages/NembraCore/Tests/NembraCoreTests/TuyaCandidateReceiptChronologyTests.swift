@@ -241,7 +241,7 @@ struct TuyaCandidateReceiptChronologyTests {
         }
     }
 
-    @Test("legacy observations preserve strict accepted-uptime ordering")
+    @Test("legacy observations preserve strict seen-uptime ordering")
     func legacyModeStillRejectsEqualUptime() throws {
         var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
         _ = try reassembler.ingest(
@@ -278,6 +278,58 @@ struct TuyaCandidateReceiptChronologyTests {
         } else {
             Issue.record("Expected legacy strict-uptime retry to complete")
         }
+    }
+
+    @Test("legacy rejected newer callback consumes seen uptime before framing")
+    func legacyRejectedNewerCallbackBlocksDelayedOlderUptime() throws {
+        var reassembler = TuyaCandidateFragmentReassembler(policy: try policy())
+        _ = try reassembler.ingest(
+            try observation(
+                payload: [1],
+                packetIndex: 0,
+                uptime: 100,
+                sequence: nil,
+                totalLength: 2
+            )
+        )
+
+        #expect(throws: TuyaCandidateOfflineAnalysisError.unexpectedPacketIndex(expected: 1, actual: 2)) {
+            try reassembler.ingest(
+                try observation(
+                    payload: [9],
+                    packetIndex: 2,
+                    uptime: 300,
+                    sequence: nil
+                )
+            )
+        }
+
+        #expect(throws: TuyaCandidateOfflineAnalysisError.nonMonotonicReceiptUptime) {
+            try reassembler.ingest(
+                try observation(
+                    payload: [2],
+                    packetIndex: 1,
+                    uptime: 200,
+                    sequence: nil
+                )
+            )
+        }
+
+        let completion = try reassembler.ingest(
+            try observation(
+                payload: [2],
+                packetIndex: 1,
+                uptime: 301,
+                sequence: nil
+            )
+        )
+        let message = try #require({
+            if case let .complete(message) = completion { return message }
+            return nil
+        }())
+        #expect(message.encryptedBytes == [1, 2])
+        #expect(message.firstReceiptUptimeNanoseconds == 100)
+        #expect(message.lastReceiptUptimeNanoseconds == 301)
     }
 
     @Test("foreign stream rejection cannot poison selected-stream receipt chronology")
