@@ -69,12 +69,12 @@ public actor UnverifiedScooterService: ScooterService {
         publish()
     }
 
-    public func setHeadlight(_ enabled: Bool) async throws { throw ScooterCommandError.unsupportedConfiguration }
-    public func setLocked(_ locked: Bool) async throws { throw ScooterCommandError.unsupportedConfiguration }
-    public func setCruise(_ enabled: Bool) async throws { throw ScooterCommandError.unsupportedConfiguration }
-    public func setRideMode(_ mode: RideMode) async throws { throw ScooterCommandError.unsupportedConfiguration }
-    public func setStartMode(_ mode: StartMode) async throws { throw ScooterCommandError.unsupportedConfiguration }
-    public func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws { throw ScooterCommandError.unsupportedConfiguration }
+    public func setHeadlight(_ enabled: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setLocked(_ locked: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setCruise(_ enabled: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setRideMode(_ mode: RideMode) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setStartMode(_ mode: StartMode) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws { throw ScooterCommandError.unverifiedConfiguration }
 
     private func publish() {
         state.lastUpdated = .now
