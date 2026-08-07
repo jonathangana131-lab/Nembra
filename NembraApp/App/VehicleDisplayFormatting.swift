@@ -11,7 +11,7 @@ enum VehicleDisplayFormatting {
         }
         let value = usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
         let unit = usesMetric ? "km/h" : "mph"
-        return String(format: "%.*f %@", decimals, value, unit)
+        return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
 
     static func speed(kilometersPerHour: Int?) -> String {
@@ -25,6 +25,6 @@ enum VehicleDisplayFormatting {
         }
         let value = usesMetric ? kilometers : kilometers * 0.621_371
         let unit = usesMetric ? "km" : "mi"
-        return String(format: "%.*f %@", decimals, value, unit)
+        return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
 }
