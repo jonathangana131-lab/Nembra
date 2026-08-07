@@ -12,32 +12,54 @@ enum NembraMetrics {
 
 struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     func body(content: Content) -> some View {
-        if reduceTransparency {
-            content
-                .background(
-                    Color(uiColor: .secondarySystemBackground),
-                    in: RoundedRectangle(
-                        cornerRadius: NembraMetrics.controlRadius,
-                        style: .continuous
+        Group {
+            if reduceTransparency {
+                content
+                    .background(
+                        Color(uiColor: .secondarySystemBackground),
+                        in: RoundedRectangle(
+                            cornerRadius: NembraMetrics.controlRadius,
+                            style: .continuous
+                        )
                     )
-                )
-                .overlay {
-                    RoundedRectangle(
-                        cornerRadius: NembraMetrics.controlRadius,
-                        style: .continuous
+            } else if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(
+                        .regular.interactive(),
+                        in: .rect(cornerRadius: NembraMetrics.controlRadius)
                     )
-                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-        } else if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: NembraMetrics.controlRadius))
-        } else {
-            content
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous))
+            } else {
+                content
+                    .background(
+                        .thinMaterial,
+                        in: RoundedRectangle(
+                            cornerRadius: NembraMetrics.controlRadius,
+                            style: .continuous
+                        )
+                    )
+            }
+        }
+        .overlay {
+            controlBoundary
+        }
+    }
+
+    @ViewBuilder
+    private var controlBoundary: some View {
+        if reduceTransparency || colorSchemeContrast == .increased {
+            RoundedRectangle(
+                cornerRadius: NembraMetrics.controlRadius,
+                style: .continuous
+            )
+            .strokeBorder(
+                Color.primary.opacity(colorSchemeContrast == .increased ? 0.42 : 0.16),
+                lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
