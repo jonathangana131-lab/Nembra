@@ -54,9 +54,11 @@ struct PassiveBluetoothTuyaCaptureReportTests {
     @Test("completed framing summary retains exact source provenance without raw byte duplication")
     func completedReportRetainsProvenance() throws {
         var session = try makeSession()
+        let rawCallbackPayload: [UInt8] = [0x00, 0x02, 0x30, 0xAA, 0xBB]
+        let candidateEncryptedPayload: [UInt8] = [0xAA, 0xBB]
         try appendValue(
             to: &session,
-            payload: [0x00, 0x02, 0x30, 0xAA, 0xBB],
+            payload: rawCallbackPayload,
             sequence: 7,
             uptime: 700
         )
@@ -90,7 +92,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
                 receivedAtUptimeNanoseconds: 700,
                 receivedAtDate: Date(timeIntervalSince1970: 7),
                 continuityGeneration: 0,
-                payloadByteCount: 5
+                payloadByteCount: rawCallbackPayload.count
             )
         ])
         #expect(stream.events.count == 1)
@@ -107,7 +109,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
             continuityGeneration: 0,
             protocolVersionByte: 0x30,
             protocolVersionHighNibble: 0x03,
-            encryptedByteCount: 2,
+            encryptedByteCount: candidateEncryptedPayload.count,
             fragmentCount: 1,
             firstReceiptUptimeNanoseconds: 700,
             lastReceiptUptimeNanoseconds: 700
@@ -117,7 +119,10 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         #expect(try decoder.decode(PassiveBluetoothTuyaCaptureReport.self, from: data) == report)
-        #expect(String(decoding: data, as: UTF8.self).contains("AABB") == false)
+
+        let encodedJSON = String(decoding: data, as: UTF8.self)
+        #expect(encodedJSON.contains(Data(rawCallbackPayload).base64EncodedString()) == false)
+        #expect(encodedJSON.contains(Data(candidateEncryptedPayload).base64EncodedString()) == false)
     }
 
     @Test("rejected candidates remain explicit and map back to the failing capture record")
