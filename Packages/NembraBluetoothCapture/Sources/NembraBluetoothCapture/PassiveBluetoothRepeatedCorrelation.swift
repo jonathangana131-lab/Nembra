@@ -53,6 +53,12 @@ public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
 /// most one human marker in this report. `rawCandidateCount` is the number of
 /// distinct raw callback sequence identities observed for the stream across all
 /// marker windows, not the number of window incidences.
+///
+/// The `medianNearest...` / `maximumNearest...` fields remain literal nearest-
+/// candidate proximity summaries: for every marker window containing this stream,
+/// they use that window's nearest raw callback before one-to-one support allocation.
+/// An independently assigned hit may therefore be farther away after augmenting
+/// reassignment. Its exact assigned offset remains on the hit itself.
 public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Sendable, Identifiable {
     public let key: PassiveBluetoothValueStreamKey
     public let totalMarkerCount: Int
@@ -250,7 +256,10 @@ public enum PassiveBluetoothRepeatedCorrelation {
             totalMarkerCount: Int
         ) -> PassiveBluetoothRepeatedCorrelationStreamEvidence {
             let hits = PassiveBluetoothRepeatedCorrelation.independentHits(from: windows)
-            let absoluteOffsets = hits.map(\.absoluteOffsetSeconds).sorted()
+            let nearestAbsoluteOffsets = windows.compactMap { window in
+                window.candidates.first.map { abs($0.offsetSecondsFromMarker) }
+            }
+            .sorted()
 
             return PassiveBluetoothRepeatedCorrelationStreamEvidence(
                 key: key,
@@ -258,8 +267,8 @@ public enum PassiveBluetoothRepeatedCorrelation {
                 rawCandidateCount: rawCandidateSequenceNumbers.count,
                 hits: hits,
                 representedDisplayedValues: Set(hits.map(\.markerDisplayedValue)),
-                medianNearestAbsoluteOffsetSeconds: PassiveBluetoothRepeatedCorrelation.median(absoluteOffsets),
-                maximumNearestAbsoluteOffsetSeconds: absoluteOffsets.last
+                medianNearestAbsoluteOffsetSeconds: PassiveBluetoothRepeatedCorrelation.median(nearestAbsoluteOffsets),
+                maximumNearestAbsoluteOffsetSeconds: nearestAbsoluteOffsets.last
             )
         }
     }
