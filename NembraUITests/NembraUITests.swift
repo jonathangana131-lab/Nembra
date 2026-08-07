@@ -110,22 +110,29 @@ final class NembraUITests: XCTestCase {
         let battery = app.buttons["dashboard.battery"]
         XCTAssertTrue(battery.waitForExistence(timeout: 4))
         assertMinimumTouchTarget(battery, named: "Dashboard battery")
+        XCTAssertTrue(
+            app.staticTexts["LAST KNOWN CHARGE"].waitForExistence(timeout: 2),
+            "Legacy VehicleState battery data must carry a visible currentness qualifier until the field-specific live-truth bridge is accepted."
+        )
 
         // AppStorage deliberately remembers this user-facing preference across
         // launches. Normalize the starting presentation without assuming test
         // execution order, then prove range mode fails closed when no estimate
         // has been supplied by the app integration.
-        if (battery.value as? String) == "Estimated range unavailable" {
+        if (battery.value as? String)?.contains("Estimated range unavailable") == true {
             battery.tap()
-            XCTAssertTrue(waitForValue("92 percent", element: battery))
+            XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: battery))
         } else {
-            XCTAssertTrue(waitForValue("92 percent", element: battery))
+            XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: battery))
         }
 
         battery.tap()
         XCTAssertTrue(
-            waitForValue("Estimated range unavailable", element: battery),
-            "Range mode must not synthesize a mileage estimate from battery percentage."
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data",
+                element: battery
+            ),
+            "Range mode must not synthesize a mileage estimate or promote unqualified battery data into live truth."
         )
         keepScreenshot(named: "Dashboard Estimated Range Unavailable Landscape")
 
@@ -137,13 +144,16 @@ final class NembraUITests: XCTestCase {
         let relaunchedBattery = app.buttons["dashboard.battery"]
         XCTAssertTrue(relaunchedBattery.waitForExistence(timeout: 4))
         XCTAssertTrue(
-            waitForValue("Estimated range unavailable", element: relaunchedBattery),
-            "The stored battery/range presentation preference must survive app relaunch."
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data",
+                element: relaunchedBattery
+            ),
+            "The stored battery/range presentation preference must survive app relaunch without changing battery currentness."
         )
 
         // Restore the stable percentage preference for following UI tests.
         relaunchedBattery.tap()
-        XCTAssertTrue(waitForValue("92 percent", element: relaunchedBattery))
+        XCTAssertTrue(waitForValue("92 percent, last known vehicle data", element: relaunchedBattery))
     }
 
     @MainActor
@@ -196,6 +206,10 @@ final class NembraUITests: XCTestCase {
             value == "Unavailable" || value == "Estimated range unavailable",
             "A no-SoC state must remain explicitly unavailable regardless of the persisted presentation preference."
         )
+        XCTAssertFalse(
+            app.staticTexts["LAST KNOWN CHARGE"].exists,
+            "The currentness qualifier must not imply retained charge when no charge value exists."
+        )
         keepScreenshot(named: "Dashboard Battery Unavailable Landscape")
     }
 
@@ -211,19 +225,22 @@ final class NembraUITests: XCTestCase {
             battery.tap()
         }
         XCTAssertTrue(
-            waitForValue("14 percent, low battery", element: battery),
-            "The red low-battery treatment must have an equivalent accessible warning."
+            waitForValue("14 percent, last known vehicle data, low battery", element: battery),
+            "The low-battery warning must remain accessible without promoting legacy VehicleState charge into verified-live truth."
         )
 
         battery.tap()
         XCTAssertTrue(
-            waitForValue("Estimated range unavailable, low battery", element: battery),
-            "Range mode must retain the low-battery warning even when range itself is unavailable."
+            waitForValue(
+                "Estimated range unavailable, battery charge is last known vehicle data, low battery",
+                element: battery
+            ),
+            "Range mode must retain both the fail-closed currentness qualifier and low-battery warning."
         )
         keepScreenshot(named: "Dashboard Low Battery Range Unavailable Landscape")
 
         battery.tap()
-        XCTAssertTrue(waitForValue("14 percent, low battery", element: battery))
+        XCTAssertTrue(waitForValue("14 percent, last known vehicle data, low battery", element: battery))
     }
 
     @MainActor
