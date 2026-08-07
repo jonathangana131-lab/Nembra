@@ -8,16 +8,20 @@ struct RideSessionDurationEvidenceTests {
     private let sessionID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
     private let firstProcessID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     private let secondProcessID = UUID(uuidString: "66666666-7777-8888-9999-AAAAAAAAAAAA")!
+    private let firstSegmentID = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
+    private let secondSegmentID = UUID(uuidString: "20000000-0000-0000-0000-000000000002")!
 
     private func segment(
+        segmentID: UUID,
         processID: UUID,
         sequence: UInt64,
         from start: UInt64 = 100,
         through end: UInt64,
         followsGap: Bool
-    ) throws -> RideSessionDurationProcessSegment {
-        try RideSessionDurationProcessSegment(
+    ) throws -> RideSessionDurationObservedSegment {
+        try RideSessionDurationObservedSegment(
             sessionID: sessionID,
+            segmentID: segmentID,
             processGenerationID: processID,
             sequenceNumber: sequence,
             observedFromUptimeNanoseconds: start,
@@ -31,7 +35,7 @@ struct RideSessionDurationEvidenceTests {
         let accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         #expect(accumulator.snapshot.observedDurationNanoseconds == nil)
         #expect(accumulator.snapshot.coverage == .unknown)
-        #expect(accumulator.snapshot.processSegmentCount == 0)
+        #expect(accumulator.snapshot.observationSegmentCount == 0)
     }
 
     @Test("an observed zero duration remains real zero evidence")
@@ -39,6 +43,7 @@ struct RideSessionDurationEvidenceTests {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         let result = try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 100,
@@ -49,14 +54,15 @@ struct RideSessionDurationEvidenceTests {
         #expect(result == .inserted)
         #expect(accumulator.snapshot.observedDurationNanoseconds == 0)
         #expect(accumulator.snapshot.coverage == .complete)
-        #expect(accumulator.snapshot.processSegmentCount == 1)
+        #expect(accumulator.snapshot.observationSegmentCount == 1)
     }
 
-    @Test("same-process checkpoints extend only by newly observed monotonic time")
-    func processCheckpointExtensionIsDeltaOnly() throws {
+    @Test("same observation segment checkpoints extend only by newly observed time")
+    func segmentCheckpointExtensionIsDeltaOnly() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 1_000,
@@ -66,6 +72,7 @@ struct RideSessionDurationEvidenceTests {
 
         let result = try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 1_600,
@@ -75,13 +82,14 @@ struct RideSessionDurationEvidenceTests {
 
         #expect(result == .extended(additionalNanoseconds: 600))
         #expect(accumulator.snapshot.observedDurationNanoseconds == 1_500)
-        #expect(accumulator.snapshot.processSegmentCount == 1)
+        #expect(accumulator.snapshot.observationSegmentCount == 1)
     }
 
     @Test("identical retry is idempotent and an older retry cannot roll duration back")
     func retriesAreMonotonic() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         let current = try segment(
+            segmentID: firstSegmentID,
             processID: firstProcessID,
             sequence: 0,
             through: 1_600,
@@ -93,6 +101,7 @@ struct RideSessionDurationEvidenceTests {
         let identicalResult = try accumulator.upsert(current)
         let staleResult = try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 1_200,
@@ -105,11 +114,12 @@ struct RideSessionDurationEvidenceTests {
         #expect(accumulator.snapshot == before)
     }
 
-    @Test("recovery process adds only observed time and marks coverage partial")
-    func recoveryDoesNotInventMissingTime() throws {
+    @Test("an in-process interruption becomes a new partial observation segment")
+    func inProcessGapDoesNotRequireFakeProcessIdentity() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 1_100,
@@ -118,7 +128,8 @@ struct RideSessionDurationEvidenceTests {
         )
         try accumulator.upsert(
             segment(
-                processID: secondProcessID,
+                segmentID: secondSegmentID,
+                processID: firstProcessID,
                 sequence: 1,
                 from: 5_000,
                 through: 5_400,
@@ -129,14 +140,43 @@ struct RideSessionDurationEvidenceTests {
         #expect(accumulator.snapshot.observedDurationNanoseconds == 1_400)
         #expect(accumulator.snapshot.coverage == .partial)
         #expect(accumulator.snapshot.hasUnobservedInterval)
-        #expect(accumulator.snapshot.processSegmentCount == 2)
+        #expect(accumulator.snapshot.observationSegmentCount == 2)
     }
 
-    @Test("new process generation must explicitly acknowledge the unobserved interval")
-    func recoveryGapIsMandatory() throws {
+    @Test("relaunch recovery adds only observed time and marks coverage partial")
+    func recoveryDoesNotInventMissingTime() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
+                processID: firstProcessID,
+                sequence: 0,
+                through: 1_100,
+                followsGap: false
+            )
+        )
+        try accumulator.upsert(
+            segment(
+                segmentID: secondSegmentID,
+                processID: secondProcessID,
+                sequence: 1,
+                from: 5_000,
+                through: 5_400,
+                followsGap: true
+            )
+        )
+
+        #expect(accumulator.snapshot.observedDurationNanoseconds == 1_400)
+        #expect(accumulator.snapshot.coverage == .partial)
+        #expect(accumulator.snapshot.observationSegmentCount == 2)
+    }
+
+    @Test("a later segment must explicitly acknowledge its unobserved interval")
+    func laterGapIsMandatory() throws {
+        var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
+        try accumulator.upsert(
+            segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 200,
@@ -145,10 +185,11 @@ struct RideSessionDurationEvidenceTests {
         )
         let before = accumulator.snapshot
 
-        #expect(throws: RideSessionDurationEvidenceError.missingRecoveryGap) {
+        #expect(throws: RideSessionDurationEvidenceError.invalidGapClassification) {
             try accumulator.upsert(
                 segment(
-                    processID: secondProcessID,
+                    segmentID: secondSegmentID,
+                    processID: firstProcessID,
                     sequence: 1,
                     through: 300,
                     followsGap: false
@@ -158,12 +199,13 @@ struct RideSessionDurationEvidenceTests {
         #expect(accumulator.snapshot == before)
     }
 
-    @Test("first process cannot falsely claim it followed a recovery gap")
-    func firstProcessGapFlagRejected() throws {
+    @Test("first segment cannot falsely claim a preceding observation gap")
+    func firstSegmentGapFlagRejected() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
-        #expect(throws: RideSessionDurationEvidenceError.missingRecoveryGap) {
+        #expect(throws: RideSessionDurationEvidenceError.invalidGapClassification) {
             try accumulator.upsert(
                 segment(
+                    segmentID: firstSegmentID,
                     processID: firstProcessID,
                     sequence: 0,
                     through: 200,
@@ -174,11 +216,12 @@ struct RideSessionDurationEvidenceTests {
         #expect(accumulator.snapshot.coverage == .unknown)
     }
 
-    @Test("same sequence cannot change its recovery-gap classification")
-    func replayCannotChangeGapClassification() throws {
+    @Test("same sequence cannot change segment or gap identity")
+    func replayCannotChangeSegmentIdentity() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 200,
@@ -186,23 +229,51 @@ struct RideSessionDurationEvidenceTests {
             )
         )
 
-        #expect(throws: RideSessionDurationEvidenceError.conflictingProcessGeneration) {
+        #expect(throws: RideSessionDurationEvidenceError.conflictingSegmentIdentity) {
             try accumulator.upsert(
                 segment(
+                    segmentID: secondSegmentID,
                     processID: firstProcessID,
                     sequence: 0,
                     through: 250,
-                    followsGap: true
+                    followsGap: false
                 )
             )
         }
     }
 
-    @Test("sequence gaps fail closed instead of silently losing a process interval")
+    @Test("same sequence cannot change its process generation")
+    func replayCannotChangeProcessGeneration() throws {
+        var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
+        try accumulator.upsert(
+            segment(
+                segmentID: firstSegmentID,
+                processID: firstProcessID,
+                sequence: 0,
+                through: 200,
+                followsGap: false
+            )
+        )
+
+        #expect(throws: RideSessionDurationEvidenceError.conflictingSegmentIdentity) {
+            try accumulator.upsert(
+                segment(
+                    segmentID: firstSegmentID,
+                    processID: secondProcessID,
+                    sequence: 0,
+                    through: 250,
+                    followsGap: false
+                )
+            )
+        }
+    }
+
+    @Test("sequence gaps fail closed instead of silently losing an interval")
     func sequenceGapRejected() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 200,
@@ -213,6 +284,7 @@ struct RideSessionDurationEvidenceTests {
         #expect(throws: RideSessionDurationEvidenceError.unexpectedSequence) {
             try accumulator.upsert(
                 segment(
+                    segmentID: secondSegmentID,
                     processID: secondProcessID,
                     sequence: 2,
                     through: 300,
@@ -222,11 +294,12 @@ struct RideSessionDurationEvidenceTests {
         }
     }
 
-    @Test("a process generation cannot be counted twice under different sequences")
-    func processGenerationReuseRejected() throws {
+    @Test("one segment identity cannot be counted under two sequence numbers")
+    func segmentIdentityReuseRejected() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 200,
@@ -234,9 +307,10 @@ struct RideSessionDurationEvidenceTests {
             )
         )
 
-        #expect(throws: RideSessionDurationEvidenceError.processGenerationReused) {
+        #expect(throws: RideSessionDurationEvidenceError.segmentIdentityReused) {
             try accumulator.upsert(
                 segment(
+                    segmentID: firstSegmentID,
                     processID: firstProcessID,
                     sequence: 1,
                     through: 300,
@@ -246,35 +320,12 @@ struct RideSessionDurationEvidenceTests {
         }
     }
 
-    @Test("same sequence with different process identity is conflicting replay")
-    func conflictingSequenceRejected() throws {
-        var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
-        try accumulator.upsert(
-            segment(
-                processID: firstProcessID,
-                sequence: 0,
-                through: 200,
-                followsGap: false
-            )
-        )
-
-        #expect(throws: RideSessionDurationEvidenceError.conflictingProcessGeneration) {
-            try accumulator.upsert(
-                segment(
-                    processID: secondProcessID,
-                    sequence: 0,
-                    through: 200,
-                    followsGap: false
-                )
-            )
-        }
-    }
-
     @Test("foreign ride session cannot enter the accumulator")
     func sessionMixingRejected() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
-        let foreign = try RideSessionDurationProcessSegment(
+        let foreign = try RideSessionDurationObservedSegment(
             sessionID: UUID(),
+            segmentID: firstSegmentID,
             processGenerationID: firstProcessID,
             sequenceNumber: 0,
             observedFromUptimeNanoseconds: 0,
@@ -289,9 +340,10 @@ struct RideSessionDurationEvidenceTests {
 
     @Test("process-local monotonic segment cannot run backwards")
     func backwardsUptimeRejected() {
-        #expect(throws: RideSessionDurationEvidenceError.invalidProcessSegment) {
-            try RideSessionDurationProcessSegment(
+        #expect(throws: RideSessionDurationEvidenceError.invalidObservationSegment) {
+            try RideSessionDurationObservedSegment(
                 sessionID: sessionID,
+                segmentID: firstSegmentID,
                 processGenerationID: firstProcessID,
                 sequenceNumber: 0,
                 observedFromUptimeNanoseconds: 200,
@@ -306,6 +358,7 @@ struct RideSessionDurationEvidenceTests {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 from: 0,
@@ -318,6 +371,7 @@ struct RideSessionDurationEvidenceTests {
         #expect(throws: RideSessionDurationEvidenceError.durationOverflow) {
             try accumulator.upsert(
                 segment(
+                    segmentID: secondSegmentID,
                     processID: secondProcessID,
                     sequence: 1,
                     from: 0,
@@ -329,11 +383,12 @@ struct RideSessionDurationEvidenceTests {
         #expect(accumulator.snapshot == before)
     }
 
-    @Test("Codable round trip preserves only checked observed duration evidence")
+    @Test("Codable round trip preserves checked observed duration evidence")
     func codableRoundTrip() throws {
         var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
         try accumulator.upsert(
             segment(
+                segmentID: firstSegmentID,
                 processID: firstProcessID,
                 sequence: 0,
                 through: 1_100,
@@ -342,6 +397,7 @@ struct RideSessionDurationEvidenceTests {
         )
         try accumulator.upsert(
             segment(
+                segmentID: secondSegmentID,
                 processID: secondProcessID,
                 sequence: 1,
                 from: 4_000,
@@ -367,9 +423,10 @@ struct RideSessionDurationEvidenceTests {
             """
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "processSegments": [
+              "observationSegments": [
                 {
                   "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+                  "segmentID": "20000000-0000-0000-0000-000000000002",
                   "processGenerationID": "66666666-7777-8888-9999-AAAAAAAAAAAA",
                   "sequenceNumber": 1,
                   "observedDurationNanoseconds": 50,
@@ -391,9 +448,10 @@ struct RideSessionDurationEvidenceTests {
             """
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-              "processSegments": [
+              "observationSegments": [
                 {
                   "sessionID": "00000000-0000-0000-0000-000000000001",
+                  "segmentID": "10000000-0000-0000-0000-000000000001",
                   "processGenerationID": "11111111-2222-3333-4444-555555555555",
                   "sequenceNumber": 0,
                   "observedDurationNanoseconds": 50,
