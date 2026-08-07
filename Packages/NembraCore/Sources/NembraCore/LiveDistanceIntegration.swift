@@ -89,6 +89,67 @@ public struct FinalizedLiveDistanceSegment: Equatable, Sendable {
     public let acceptedSampleCount: Int
     public let integratedIntervalCount: Int
     public let knownCoverageGapCount: Int
+
+#if SWIFT_PACKAGE
+    /// Package-only construction keeps deterministic NembraCore fixtures able to
+    /// model finalized evidence while preventing normal package clients from
+    /// minting it directly.
+    package init(
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        segmentStartUptimeNanoseconds: UInt64,
+        segmentEndUptimeNanoseconds: UInt64,
+        firstAcceptedSampleUptimeNanoseconds: UInt64?,
+        lastAcceptedSampleUptimeNanoseconds: UInt64?,
+        distanceMeters: Double?,
+        coverage: RideDistanceCoverage,
+        acceptedSampleCount: Int,
+        integratedIntervalCount: Int,
+        knownCoverageGapCount: Int
+    ) {
+        self.source = source
+        self.method = method
+        self.segmentStartUptimeNanoseconds = segmentStartUptimeNanoseconds
+        self.segmentEndUptimeNanoseconds = segmentEndUptimeNanoseconds
+        self.firstAcceptedSampleUptimeNanoseconds = firstAcceptedSampleUptimeNanoseconds
+        self.lastAcceptedSampleUptimeNanoseconds = lastAcceptedSampleUptimeNanoseconds
+        self.distanceMeters = distanceMeters
+        self.coverage = coverage
+        self.acceptedSampleCount = acceptedSampleCount
+        self.integratedIntervalCount = integratedIntervalCount
+        self.knownCoverageGapCount = knownCoverageGapCount
+    }
+#else
+    /// `LiveDistanceIntegration.swift` is also compiled directly into Nembra.app.
+    /// Keep finalized distance evidence file-owned there so same-module UI/app
+    /// code cannot bypass `LiveDistanceSegmentAccumulator.finalize` by using an
+    /// otherwise synthesized internal memberwise initializer.
+    fileprivate init(
+        source: SpeedTelemetrySource,
+        method: LiveDistanceIntegrationMethod,
+        segmentStartUptimeNanoseconds: UInt64,
+        segmentEndUptimeNanoseconds: UInt64,
+        firstAcceptedSampleUptimeNanoseconds: UInt64?,
+        lastAcceptedSampleUptimeNanoseconds: UInt64?,
+        distanceMeters: Double?,
+        coverage: RideDistanceCoverage,
+        acceptedSampleCount: Int,
+        integratedIntervalCount: Int,
+        knownCoverageGapCount: Int
+    ) {
+        self.source = source
+        self.method = method
+        self.segmentStartUptimeNanoseconds = segmentStartUptimeNanoseconds
+        self.segmentEndUptimeNanoseconds = segmentEndUptimeNanoseconds
+        self.firstAcceptedSampleUptimeNanoseconds = firstAcceptedSampleUptimeNanoseconds
+        self.lastAcceptedSampleUptimeNanoseconds = lastAcceptedSampleUptimeNanoseconds
+        self.distanceMeters = distanceMeters
+        self.coverage = coverage
+        self.acceptedSampleCount = acceptedSampleCount
+        self.integratedIntervalCount = integratedIntervalCount
+        self.knownCoverageGapCount = knownCoverageGapCount
+    }
+#endif
 }
 
 /// Integrates one explicitly selected authoritative speed source without ever
