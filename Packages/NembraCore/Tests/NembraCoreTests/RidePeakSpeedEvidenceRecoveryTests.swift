@@ -59,6 +59,7 @@ struct RidePeakSpeedEvidenceRecoveryTests {
         ))
 
         let peak = try #require(accumulator.evidence)
+        #expect(!peak.beganAfterKnownObservationGap)
         #expect(peak.peakEvidence.continuity == .partialSelectedSourceEvidence)
         #expect(peak.peakEvidence.qualityRejectedSampleCount == 1)
         #expect(peak.peakEvidence.knownInterruptionCount == 0)
@@ -71,13 +72,42 @@ struct RidePeakSpeedEvidenceRecoveryTests {
         }
     }
 
-    @Test("decoded recovered evidence requires an explicit interruption counter")
+    @Test("later disconnect cannot masquerade as the initial recovery gap")
+    func laterInterruptionDoesNotSatisfyInitialGapProvenance() throws {
+        let policy = try PeakSpeedPolicy(source: .gps)
+        var accumulator = RidePeakSpeedEvidenceAccumulator(
+            sessionID: sessionID,
+            policy: policy
+        )
+
+        _ = accumulator.record(try gpsSample(
+            metersPerSecond: 6,
+            uptime: 100,
+            accuracy: 0.4
+        ))
+        accumulator.recordInterruption(.vehicleConnectionLost)
+
+        let peak = try #require(accumulator.evidence)
+        #expect(!peak.beganAfterKnownObservationGap)
+        #expect(peak.peakEvidence.knownInterruptionCount == 1)
+        #expect(peak.peakEvidence.continuity == .partialSelectedSourceEvidence)
+
+        #expect(throws: CompletedRidePeakSpeedEvidenceError.continuityMismatch) {
+            try CompletedRidePeakSpeedEvidence(
+                completedRide: recoveredRide(),
+                ridePeak: peak
+            )
+        }
+    }
+
+    @Test("decoded recovered evidence requires explicit initial-gap provenance")
     func decodedRecoveredQualityOnlyEvidenceRejected() {
         let data = Data(
             """
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
               "rideContinuity": "recoveredCheckpoint",
+              "beganAfterKnownObservationGap": false,
               "source": "gps",
               "metersPerSecond": 6,
               "speedAccuracyMetersPerSecond": 0.4,
