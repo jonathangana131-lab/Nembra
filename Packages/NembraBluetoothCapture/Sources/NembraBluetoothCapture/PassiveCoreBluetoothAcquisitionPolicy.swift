@@ -44,6 +44,12 @@ public enum PassiveCoreBluetoothAcquisitionPolicy {
             : [:]
     }
 
+    /// A finite discovery/read/subscription pass should either make progress or
+    /// terminate explicitly. This deadline is restarted only when one tracked
+    /// finite operation completes; it never watches ordinary notification quiet
+    /// periods after the acquisition ledger reaches ready.
+    public static let defaultAcquisitionProgressTimeout: TimeInterval = 15
+
     /// Converts a user/research deadline to the nanosecond domain accepted by
     /// Task.sleep without overflowing or trapping on Double→UInt64 conversion.
     /// No arbitrary product timeout is imposed here; representability is the
@@ -51,6 +57,20 @@ public enum PassiveCoreBluetoothAcquisitionPolicy {
     public static func connectionTimeoutNanoseconds(
         _ timeout: TimeInterval
     ) -> UInt64? {
+        timeoutNanoseconds(timeout)
+    }
+
+    /// Uses the same strict deadline conversion for the finite GATT acquisition
+    /// progress watchdog. Keeping this separate from the connection API makes the
+    /// two lifecycle deadlines explicit even though their numeric conversion is
+    /// identical.
+    public static func acquisitionProgressTimeoutNanoseconds(
+        _ timeout: TimeInterval
+    ) -> UInt64? {
+        timeoutNanoseconds(timeout)
+    }
+
+    private static func timeoutNanoseconds(_ timeout: TimeInterval) -> UInt64? {
         guard timeout.isFinite, timeout > 0 else { return nil }
         let nanoseconds = timeout * 1_000_000_000
         guard nanoseconds.isFinite,
