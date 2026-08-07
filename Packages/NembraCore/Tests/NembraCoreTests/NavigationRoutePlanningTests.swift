@@ -22,7 +22,11 @@ struct NavigationRoutePlanningTests {
         )
     }
 
-    private func route(name: String = "Route A") throws -> NavigationRouteSnapshot {
+    private func route(
+        name: String = "Route A",
+        requestedTransportMode: NavigationRouteTransportMode = .cycling,
+        returnedTransportMode: NavigationRouteTransportMode = .cycling
+    ) throws -> NavigationRouteSnapshot {
         let start = try coordinate(45.6380, -122.6615)
         let end = try coordinate(45.6500, -122.6750)
         let step = try NavigationRouteStepSnapshot(
@@ -33,7 +37,11 @@ struct NavigationRoutePlanningTests {
             transportMode: .cycling
         )
         return try NavigationRouteSnapshot(
-            provenance: .appleMapKitCycling(),
+            provenance: NavigationRouteProvenance(
+                provider: .appleMapKit,
+                requestedTransportMode: requestedTransportMode,
+                returnedTransportMode: returnedTransportMode
+            ),
             name: name,
             geometry: [start, end],
             steps: [step],
@@ -143,6 +151,52 @@ struct NavigationRoutePlanningTests {
 
         #expect(accepted)
         #expect(coordinator.state == .available(token: start.token, request: request, routes: routes))
+    }
+
+    @Test("provider route requested transport must match active request")
+    func contradictoryRequestedTransportFailsClosed() throws {
+        var coordinator = NavigationRoutePlanningCoordinator()
+        let request = try request()
+        let start = try coordinator.begin(request)
+        let contradictory = try route(
+            name: "Contradictory",
+            requestedTransportMode: .automobile,
+            returnedTransportMode: .cycling
+        )
+
+        let accepted = coordinator.complete(token: start.token, routes: [contradictory])
+
+        #expect(accepted)
+        #expect(
+            coordinator.state == .failed(
+                token: start.token,
+                request: request,
+                reason: .invalidProviderResponse
+            )
+        )
+    }
+
+    @Test("provider returned transport may differ from requested transport")
+    func returnedTransportDifferenceIsPreserved() throws {
+        var coordinator = NavigationRoutePlanningCoordinator()
+        let request = try request()
+        let start = try coordinator.begin(request)
+        let walkingSegment = try route(
+            name: "Mixed provider route",
+            requestedTransportMode: .cycling,
+            returnedTransportMode: .walking
+        )
+
+        let accepted = coordinator.complete(token: start.token, routes: [walkingSegment])
+
+        #expect(accepted)
+        #expect(
+            coordinator.state == .available(
+                token: start.token,
+                request: request,
+                routes: [walkingSegment]
+            )
+        )
     }
 
     @Test("empty provider response fails closed")
