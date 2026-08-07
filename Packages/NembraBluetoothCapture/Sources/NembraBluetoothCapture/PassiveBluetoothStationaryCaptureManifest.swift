@@ -16,6 +16,7 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case noTargetGATTEvidence
     case selectedPeripheralNotPresent(requested: String, available: [String])
     case ambiguousTargetGATTEvidence([String])
+    case stockAppMarkersWithoutDeclaredReference(markerCount: Int)
     case unsupportedSchemaVersion(Int)
     case manifestDoesNotMatchCapture
 }
@@ -43,15 +44,26 @@ public enum PassiveBluetoothStationaryCaptureChargerState: String, Codable, Send
     case connected
 }
 
+/// Operator-declared execution conditions for this experiment. This is setup
+/// provenance only; it is not an iOS attestation that the condition held without
+/// interruption. Add new cases only when Nembra legitimately supports a different
+/// lifecycle for physical capture.
+public enum PassiveBluetoothStationaryCaptureExecutionContext: String, Codable, Sendable {
+    case foregroundScreenOn
+}
+
 public struct PassiveBluetoothStationaryCaptureSetup: Equatable, Codable, Sendable {
     public let chargerState: PassiveBluetoothStationaryCaptureChargerState
+    public let executionContext: PassiveBluetoothStationaryCaptureExecutionContext
     public let stockAppReferenceSetup: PassiveBluetoothStationaryCaptureReferenceSetup
 
     public init(
         chargerState: PassiveBluetoothStationaryCaptureChargerState,
+        executionContext: PassiveBluetoothStationaryCaptureExecutionContext,
         stockAppReferenceSetup: PassiveBluetoothStationaryCaptureReferenceSetup
     ) {
         self.chargerState = chargerState
+        self.executionContext = executionContext
         self.stockAppReferenceSetup = stockAppReferenceSetup
     }
 }
@@ -160,6 +172,10 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         )
         let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
         let summary = try summarize(session: session, selectedPeripheral: selectedPeripheral)
+        if setup.stockAppReferenceSetup == .none, summary.stockAppMarkerCount > 0 {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .stockAppMarkersWithoutDeclaredReference(markerCount: summary.stockAppMarkerCount)
+        }
 
         return PassiveBluetoothStationaryCaptureManifest(
             schemaVersion: PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion,
