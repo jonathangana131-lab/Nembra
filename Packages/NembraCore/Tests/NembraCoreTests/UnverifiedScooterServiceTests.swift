@@ -31,12 +31,35 @@ struct UnverifiedScooterServiceTests {
         #expect(await iterator.next() == nil)
     }
 
-    @Test("commands remain unavailable while hardware protocol is unverified")
-    func commandsStayUnavailable() async {
+    @Test("commands report unverified configuration rather than a fake disconnect")
+    func commandsStayUnavailableForTruthfulReason() async {
         let service = UnverifiedScooterService()
-        await #expect(throws: ScooterCommandError.disconnected) {
+
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
             try await service.setHeadlight(true)
         }
-        #expect((await service.snapshot()).isHeadlightOn == nil)
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+            try await service.setLocked(true)
+        }
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+            try await service.setCruise(true)
+        }
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+            try await service.setRideMode(.sport)
+        }
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+            try await service.setStartMode(.zeroStart)
+        }
+        await #expect(throws: ScooterCommandError.unsupportedConfiguration) {
+            try await service.setSpeedLimit(kilometersPerHour: 20, slot: .limit1)
+        }
+
+        let state = await service.snapshot()
+        #expect(state.isHeadlightOn == nil)
+        #expect(state.isLocked == nil)
+        #expect(state.isCruiseEnabled == nil)
+        #expect(state.rideMode == nil)
+        #expect(state.startMode == nil)
+        #expect(state.speedLimitsKilometersPerHour.isEmpty)
     }
 }
