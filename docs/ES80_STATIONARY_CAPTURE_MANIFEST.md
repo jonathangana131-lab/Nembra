@@ -21,6 +21,8 @@ Those facts should not be shoved into the raw evidence stream after capture, and
 
 `PassiveBluetoothStationaryCaptureManifest` is a separate versioned sidecar for the **first/smallest stationary physical experiment**. It does not alter `PassiveBluetoothCaptureSession` or its JSON bytes.
 
+The wire format serializes `experimentKind: stationaryBaseline` so a copied sidecar remains self-describing outside the Swift type system. This identifies the intended experiment procedure; it is **not** telemetry evidence proving the scooter was physically stationary. Physical execution still has to establish that condition.
+
 The builder requires:
 
 - a decodable versioned passive capture artifact;
@@ -40,6 +42,7 @@ There is deliberately no “simultaneous same-phone stock-app observation” sta
 
 The sidecar stores:
 
+- the serialized stationary-baseline experiment kind;
 - SHA-256 of the **exact capture JSON bytes**;
 - exact byte count;
 - capture session UUID decoded from those bytes;
@@ -63,7 +66,9 @@ The builder fails closed when:
 - more than one GATT peripheral appears in the artifact;
 - a captured target-attributable peripheral identifier is not a valid CoreBluetooth UUID.
 
-This keeps a broad-scan candidate or mixed-target artifact from silently becoming “the ES80” merely because a caller supplied a label.
+Connection-only noise is deliberately weaker. A connection/disconnection callback never establishes target identity. An unrelated or legacy/non-UUID connection-only record does not invalidate an otherwise clean selected-target GATT artifact, and only a canonical connection identifier equal to the selected target can add a disconnect continuity break.
+
+This keeps a broad-scan candidate, connection-only neighbor, or mixed-target GATT artifact from silently becoming “the ES80” merely because a caller supplied a label.
 
 ## Derived summary semantics
 
@@ -95,6 +100,7 @@ No manual hex interpretation is required from the rider. The sidecar exists so N
 
 This lane does **not** verify or enable:
 
+- that a physical session actually remained stationary merely because its sidecar declares `stationaryBaseline`;
 - physical AOVOPRO ES80 identity;
 - stable per-scooter identity across relaunch/reboot/rebind;
 - Tuya framing, encryption, DP IDs/types/scales/signedness;
