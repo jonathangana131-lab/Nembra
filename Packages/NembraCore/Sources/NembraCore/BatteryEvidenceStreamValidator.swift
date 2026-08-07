@@ -100,6 +100,8 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
             }
         }
 
+        let previousSeenUptimeNanoseconds = lastSeenUptimeNanoseconds
+
         // The receipt identity is trusted callback-order evidence even if later metadata or
         // continuity checks reject its semantic observation. Consume the callback watermark
         // first so delayed lower-sequence evidence can never become fresh afterward.
@@ -107,14 +109,21 @@ public struct BatteryEvidenceStreamValidator: Equatable, Sendable {
         lastSeenUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
         lastSeenReceiptContinuity = observation.continuity
 
-        if let lastAcceptedReceiptIdentity {
-            // A different same-epoch sequence has already passed the seen-watermark checks.
-            // Its uptime still must not move behind accepted evidence chronology.
-            if let lastAcceptedUptimeNanoseconds,
-               observation.receivedAtUptimeNanoseconds < lastAcceptedUptimeNanoseconds {
-                throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
-            }
+        // Uptime is also immutable callback metadata. Compare against both the immediately
+        // prior seen callback and the last accepted evidence baseline. The latter can be
+        // stronger when a previously seen callback was itself rejected for moving uptime
+        // backwards; the former prevents a later callback from moving behind a newer seen
+        // callback that failed only a semantic/continuity admission check.
+        if let previousSeenUptimeNanoseconds,
+           observation.receivedAtUptimeNanoseconds < previousSeenUptimeNanoseconds {
+            throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
+        }
+        if let lastAcceptedUptimeNanoseconds,
+           observation.receivedAtUptimeNanoseconds < lastAcceptedUptimeNanoseconds {
+            throw BatteryEvidenceStreamValidationError.nonMonotonicUptime
+        }
 
+        if let lastAcceptedReceiptIdentity {
             // Defensive consistency: accepted and seen identities should remain in one epoch.
             guard receiptIdentity.acquisitionEpoch == lastAcceptedReceiptIdentity.acquisitionEpoch else {
                 throw BatteryEvidenceStreamValidationError.acquisitionEpochChanged
