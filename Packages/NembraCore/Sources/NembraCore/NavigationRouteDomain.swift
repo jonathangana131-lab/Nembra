@@ -146,6 +146,9 @@ public struct NavigationRouteSnapshot: Equatable, Sendable {
         guard expectedTravelTimeSeconds.isFinite, expectedTravelTimeSeconds >= 0 else {
             throw NavigationRouteDomainError.invalidExpectedTravelTime
         }
+        guard steps.allSatisfy({ $0.distanceMeters <= distanceMeters }) else {
+            throw NavigationRouteDomainError.invalidDistance
+        }
 
         self.provenance = provenance
         self.name = name
