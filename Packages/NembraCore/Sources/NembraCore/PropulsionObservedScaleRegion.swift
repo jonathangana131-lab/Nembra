@@ -87,11 +87,22 @@ public extension PropulsionGaugeDisplayModel {
         scale: PropulsionGaugeScale?,
         policy: PropulsionObservedScaleRegionPolicy
     ) -> PropulsionObservedScaleRegionSnapshot {
-        let accepted = accessibilitySnapshot(
-            atUptimeNanoseconds: now,
-            scale: scale
+        observedScaleRegionSnapshot(
+            from: accessibilitySnapshot(
+                atUptimeNanoseconds: now,
+                scale: scale
+            ),
+            policy: policy
         )
+    }
 
+    /// Internal composition seam for a previously projected accepted-only
+    /// accessibility snapshot. The semantic region therefore remains tied to the
+    /// exact same accepted receipt while a cockpit may render at display cadence.
+    internal func observedScaleRegionSnapshot(
+        from accepted: PropulsionGaugeAccessibilitySnapshot,
+        policy: PropulsionObservedScaleRegionPolicy
+    ) -> PropulsionObservedScaleRegionSnapshot {
         let region: PropulsionObservedScaleRegion
         switch accepted.availability {
         case .unavailable:
