@@ -21,9 +21,9 @@ This slice adds the identity/provenance boundary before any History, Statistics,
 - `recordInterruption` preserves known selected-source evidence loss;
 - `beginsAfterKnownObservationGap` records an initial application-lifecycle gap immediately instead of pretending the observer saw the whole ride;
 - that initial-gap fact is retained separately as `beganAfterKnownObservationGap`, so a later disconnect or unrelated quality rejection cannot masquerade as proof that recovery started after an unobserved interval;
-- there is deliberately no reset API on the ride-bound wrapper. A new ride should create a new accumulator rather than erase the old ride's evidence-loss history.
+- there is deliberately no reset API, and accumulator construction is package-scoped until a trusted ride-lifecycle adapter can mechanically guarantee one observer lifetime per immutable ride identity. A caller-chosen UUID alone is not authority to restart observation and erase prior evidence-loss history.
 
-`RidePeakSpeedEvidence` has no public free-form initializer. External callers obtain it from the ride-bound accumulator rather than pairing an arbitrary bare `PeakSpeedEvidence` with a UUID after the fact.
+`RidePeakSpeedEvidence` has no public free-form initializer. The ride-bound accumulator is also package-constructed: trusted NembraCore lifecycle adapters may create it, while ordinary external clients cannot start or restart arbitrary same-UUID observers. External clients may consume evidence that a trusted production path later emits; they cannot manufacture a fresh observation lifetime themselves.
 
 ## Completed-ride projection
 
