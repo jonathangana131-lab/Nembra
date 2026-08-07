@@ -63,13 +63,24 @@ public struct RideDurationObservationOwner: Sendable {
         )
         activeSegment = nil
         nextSegmentFollowsGap = beginsAfterUnobservedInterval
-        lastSeenUptimeNanoseconds = uptime
+        lastSeenUptimeNanoseconds = nil
 
-        try startSegment(
-            sessionID: sessionID,
-            processGenerationID: processGenerationID,
-            atUptimeNanoseconds: uptime
-        )
+        do {
+            try startSegment(
+                sessionID: sessionID,
+                processGenerationID: processGenerationID,
+                atUptimeNanoseconds: uptime
+            )
+            lastSeenUptimeNanoseconds = uptime
+        } catch {
+            // Beginning a new authority is transactional. A construction/upsert
+            // failure must not leave a half-active session that blocks retry.
+            accumulator = nil
+            activeSegment = nil
+            nextSegmentFollowsGap = false
+            lastSeenUptimeNanoseconds = nil
+            throw error
+        }
     }
 
     /// Extends the current contiguous observation segment through an authoritative
@@ -79,23 +90,29 @@ public struct RideDurationObservationOwner: Sendable {
         sessionID: UUID,
         atUptimeNanoseconds uptime: UInt64
     ) throws {
-        guard let accumulator else {
+        guard var candidateAccumulator = accumulator else {
             throw RideDurationObservationOwnerError.noActiveSession
         }
-        guard accumulator.sessionID == sessionID else {
+        guard candidateAccumulator.sessionID == sessionID else {
             throw RideDurationObservationOwnerError.sessionMismatch
         }
-        guard var segment = activeSegment else {
+        guard var candidateSegment = activeSegment else {
             // A rejected callback inside an explicit observation gap must not
             // advance the chronology floor. The same timestamp may be the first
             // legitimate boundary supplied to `resumeObservation` afterward.
             throw RideDurationObservationOwnerError.noActiveSession
         }
-        try admitMonotonic(uptime)
+        try validateMonotonic(uptime)
 
-        segment.observedThroughUptimeNanoseconds = uptime
-        activeSegment = segment
-        try upsertActiveSegment()
+        candidateSegment.observedThroughUptimeNanoseconds = uptime
+        let evidence = try evidence(for: candidateSegment)
+        _ = try candidateAccumulator.upsert(evidence)
+
+        // Commit all owner state only after the evidence layer accepts the
+        // candidate. Overflow or structural rejection therefore remains retryable.
+        accumulator = candidateAccumulator
+        activeSegment = candidateSegment
+        lastSeenUptimeNanoseconds = uptime
     }
 
     /// Ends the current contiguous segment at a known observation boundary and
@@ -124,12 +141,13 @@ public struct RideDurationObservationOwner: Sendable {
         guard activeSegment == nil else {
             throw RideDurationObservationOwnerError.sessionAlreadyActive
         }
-        try admitMonotonic(uptime)
+        try validateMonotonic(uptime)
         try startSegment(
             sessionID: sessionID,
             processGenerationID: processGenerationID,
             atUptimeNanoseconds: uptime
         )
+        lastSeenUptimeNanoseconds = uptime
     }
 
     /// Finalizes the currently observed boundary and releases this owner for the
@@ -148,7 +166,7 @@ public struct RideDurationObservationOwner: Sendable {
         if activeSegment != nil {
             try observe(sessionID: sessionID, atUptimeNanoseconds: uptime)
         } else {
-            try admitMonotonic(uptime)
+            try validateMonotonic(uptime)
         }
 
         guard let result = self.accumulator?.snapshot else {
@@ -166,15 +184,15 @@ public struct RideDurationObservationOwner: Sendable {
         processGenerationID: UUID,
         atUptimeNanoseconds uptime: UInt64
     ) throws {
-        guard let accumulator else {
+        guard var candidateAccumulator = accumulator else {
             throw RideDurationObservationOwnerError.noActiveSession
         }
-        let sequence = UInt64(accumulator.snapshot.observationSegmentCount)
+        let sequence = UInt64(candidateAccumulator.snapshot.observationSegmentCount)
         guard sequence < UInt64.max else {
             throw RideDurationObservationOwnerError.sequenceExhausted
         }
 
-        activeSegment = ActiveSegment(
+        let candidateSegment = ActiveSegment(
             sessionID: sessionID,
             segmentID: UUID(),
             processGenerationID: processGenerationID,
@@ -183,17 +201,20 @@ public struct RideDurationObservationOwner: Sendable {
             observedThroughUptimeNanoseconds: uptime,
             followsUnobservedInterval: nextSegmentFollowsGap
         )
+        let candidateEvidence = try evidence(for: candidateSegment)
+        _ = try candidateAccumulator.upsert(candidateEvidence)
+
+        // Do not publish the candidate segment or consume the pending gap until
+        // the accumulator has accepted its identity/provenance.
+        accumulator = candidateAccumulator
+        activeSegment = candidateSegment
         nextSegmentFollowsGap = false
-        try upsertActiveSegment()
     }
 
-    private mutating func upsertActiveSegment() throws {
-        guard let segment = activeSegment,
-              var accumulator else {
-            throw RideDurationObservationOwnerError.noActiveSession
-        }
-
-        let evidence = try RideSessionDurationObservedSegment(
+    private func evidence(
+        for segment: ActiveSegment
+    ) throws -> RideSessionDurationObservedSegment {
+        try RideSessionDurationObservedSegment(
             sessionID: segment.sessionID,
             segmentID: segment.segmentID,
             processGenerationID: segment.processGenerationID,
@@ -202,15 +223,12 @@ public struct RideDurationObservationOwner: Sendable {
             observedThroughUptimeNanoseconds: segment.observedThroughUptimeNanoseconds,
             followsUnobservedInterval: segment.followsUnobservedInterval
         )
-        _ = try accumulator.upsert(evidence)
-        self.accumulator = accumulator
     }
 
-    private mutating func admitMonotonic(_ uptime: UInt64) throws {
+    private func validateMonotonic(_ uptime: UInt64) throws {
         if let lastSeenUptimeNanoseconds,
            uptime <= lastSeenUptimeNanoseconds {
             throw RideDurationObservationOwnerError.nonMonotonicObservation
         }
-        lastSeenUptimeNanoseconds = uptime
     }
 }
