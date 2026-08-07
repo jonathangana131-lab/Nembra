@@ -92,4 +92,32 @@ struct SpeedDisplayInterpolationNumericTruthTests {
         #expect(after.latestMeasuredKilometersPerHour.isFinite)
         #expect(after.latestMeasurementUptimeNanoseconds == 1_000)
     }
+
+    @Test("stale overflowing sample preserves non-monotonic rejection precedence")
+    func staleOverflowingSampleStillRejectsAsNonMonotonic() throws {
+        var interpolator = SpeedDisplayInterpolator()
+        let valid = try sample(
+            metersPerSecond: 10 / 3.6,
+            uptimeNanoseconds: 2_000
+        )
+        try interpolator.accept(valid, transitionDurationNanoseconds: 0)
+        let before = try #require(
+            interpolator.frame(atUptimeNanoseconds: 2_000)
+        )
+
+        let staleOverflowing = try sample(
+            metersPerSecond: Double.greatestFiniteMagnitude,
+            uptimeNanoseconds: 1_500
+        )
+        #expect(throws: SpeedDisplayInterpolationError.nonMonotonicMeasurement) {
+            try interpolator.accept(
+                staleOverflowing,
+                transitionDurationNanoseconds: 500
+            )
+        }
+
+        #expect(
+            interpolator.frame(atUptimeNanoseconds: 2_100) == before
+        )
+    }
 }
