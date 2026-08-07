@@ -237,8 +237,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     /// True only while the selected target's most recently cancelled/retired
     /// CoreBluetooth attempt is still quarantined awaiting its terminal callback.
-    /// Central invalidation also clears this state because those transport objects
-    /// no longer survive as callbacks that could be confused with a retry.
+    /// Central availability changes alone do not clear this UUID-only quarantine;
+    /// the real terminal callback releases it. If that callback never arrives,
+    /// relaunch is the fail-closed recovery rather than risking a fresh attempt
+    /// being terminated by an older same-identifier callback.
     public var isSelectedTargetAwaitingTerminalCallback: Bool {
         guard let identifier = targetState.selectedTargetIdentifier else { return false }
         return targetState.isAwaitingTerminalCallback(for: identifier)
