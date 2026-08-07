@@ -36,8 +36,8 @@ struct TelemetryBenchmarkContinuityTests {
         let summary = collector.summary
         #expect(summary.acceptedSampleCount == 4)
         #expect(summary.rejectedSampleCount == 0)
-        #expect(summary.continuitySegmentCount == 2)
-        #expect(summary.continuityInterruptionCount == 1)
+        #expect(summary.observationSegmentCount == 2)
+        #expect(summary.knownObservationInterruptionCount == 1)
         #expect(summary.intervalCount == 2)
         #expect(abs(summary.observedDurationSeconds - 0.2) < 0.000_001)
         #expect(abs((summary.effectiveSampleRateHertz ?? 0) - 10) < 0.000_001)
@@ -65,8 +65,8 @@ struct TelemetryBenchmarkContinuityTests {
         let afterReconnect = collector.summary
         #expect(afterReconnect.acceptedSampleCount == 2)
         #expect(afterReconnect.rejectedSampleCount == 1)
-        #expect(afterReconnect.continuitySegmentCount == 2)
-        #expect(afterReconnect.continuityInterruptionCount == 1)
+        #expect(afterReconnect.observationSegmentCount == 2)
+        #expect(afterReconnect.knownObservationInterruptionCount == 1)
         #expect(afterReconnect.intervalCount == 0)
         #expect(afterReconnect.observedDurationSeconds == 0)
         #expect(afterReconnect.effectiveSampleRateHertz == nil)
@@ -83,26 +83,26 @@ struct TelemetryBenchmarkContinuityTests {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
 
         collector.markContinuityInterruption()
-        #expect(collector.summary.continuityInterruptionCount == 0)
-        #expect(collector.summary.continuitySegmentCount == 0)
+        #expect(collector.summary.knownObservationInterruptionCount == 0)
+        #expect(collector.summary.observationSegmentCount == 0)
 
         #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 1)) == .accepted)
         collector.markContinuityInterruption()
         collector.markContinuityInterruption()
 
         var summary = collector.summary
-        #expect(summary.continuityInterruptionCount == 1)
-        #expect(summary.continuitySegmentCount == 1)
+        #expect(summary.knownObservationInterruptionCount == 1)
+        #expect(summary.observationSegmentCount == 1)
         #expect(summary.intervalCount == 0)
 
         #expect(collector.record(try sample(milliseconds: 200, speedKilometersPerHour: 2)) == .accepted)
         summary = collector.summary
-        #expect(summary.continuityInterruptionCount == 1)
-        #expect(summary.continuitySegmentCount == 2)
+        #expect(summary.knownObservationInterruptionCount == 1)
+        #expect(summary.observationSegmentCount == 2)
 
         collector.markContinuityInterruption()
         summary = collector.summary
-        #expect(summary.continuityInterruptionCount == 2)
-        #expect(summary.continuitySegmentCount == 2)
+        #expect(summary.knownObservationInterruptionCount == 2)
+        #expect(summary.observationSegmentCount == 2)
     }
 }
