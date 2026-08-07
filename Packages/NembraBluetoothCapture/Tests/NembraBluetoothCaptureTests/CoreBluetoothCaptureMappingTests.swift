@@ -58,6 +58,36 @@ struct CoreBluetoothCaptureMappingTests {
         #expect(mapped.txPowerLevel == nil)
     }
 
+    @Test("connection mapping preserves stable error and disconnect platform metadata")
+    func connectionMapping() throws {
+        let peripheralID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let error = NSError(domain: "CBErrorDomain", code: 7)
+
+        let mapped = try CoreBluetoothCaptureMapping.connection(
+            peripheralIdentifier: peripheralID,
+            state: .disconnected,
+            platformEventTimestamp: 1234.5,
+            isReconnecting: true,
+            error: error
+        )
+
+        #expect(mapped.peripheralIdentifier == peripheralID.uuidString)
+        #expect(mapped.state == .disconnected)
+        #expect(mapped.platformEventTimestamp == 1234.5)
+        #expect(mapped.isReconnecting == true)
+        #expect(mapped.error == try PassiveBluetoothErrorObservation(domain: "CBErrorDomain", code: 7))
+    }
+
+    @Test("error mapping keeps absence absent and NSError domain/code stable")
+    func errorMapping() throws {
+        #expect(try CoreBluetoothCaptureMapping.errorObservation(nil) == nil)
+        #expect(
+            try CoreBluetoothCaptureMapping.errorObservation(
+                NSError(domain: "example.transport", code: -42)
+            ) == PassiveBluetoothErrorObservation(domain: "example.transport", code: -42)
+        )
+    }
+
     @Test("characteristic property mapping preserves read write notify indicate and security metadata")
     func characteristicProperties() {
         let properties: CBCharacteristicProperties = [
@@ -128,6 +158,33 @@ struct CoreBluetoothCaptureMappingTests {
         #expect(mappedDescriptor.serviceUUID == "A201")
         #expect(mappedDescriptor.characteristicUUID == "2B10")
         #expect(mappedDescriptor.descriptorUUID == CBUUIDCharacteristicUserDescriptionString.uppercased())
+    }
+
+    @Test("subscription mapping preserves requested state without treating it as protocol acknowledgement")
+    func subscriptionMapping() throws {
+        let peripheralID = UUID()
+        let service = CBMutableService(type: CBUUID(string: "FD50"), primary: true)
+        let characteristic = CBMutableCharacteristic(
+            type: CBUUID(string: "00000002-0000-1001-8001-00805F9B07D0"),
+            properties: [.notify],
+            value: nil,
+            permissions: []
+        )
+        service.characteristics = [characteristic]
+
+        let mapped = try CoreBluetoothCaptureMapping.subscription(
+            peripheralIdentifier: peripheralID,
+            characteristic: characteristic,
+            requestedEnabled: true,
+            error: nil
+        )
+
+        #expect(mapped.peripheralIdentifier == peripheralID.uuidString)
+        #expect(mapped.serviceUUID == "FD50")
+        #expect(mapped.characteristicUUID == "00000002-0000-1001-8001-00805F9B07D0")
+        #expect(mapped.requestedEnabled == true)
+        #expect(mapped.resultingIsNotifying == characteristic.isNotifying)
+        #expect(mapped.error == nil)
     }
 
     @Test("value mapping preserves raw bytes without interpreting Tuya framing")
