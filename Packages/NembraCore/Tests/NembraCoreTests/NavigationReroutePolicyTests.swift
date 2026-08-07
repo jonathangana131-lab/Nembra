@@ -7,12 +7,14 @@ struct NavigationReroutePolicyTests {
         minimumDeviationDistanceMeters: Double = 25,
         requiredConsecutiveAcceptedSamples: Int = 3,
         minimumConsecutiveDeviationDurationNanoseconds: UInt64 = 1,
+        maximumAcceptedObservationGapNanoseconds: UInt64 = 1_000_000_000,
         rerouteCooldownNanoseconds: UInt64 = 10_000_000_000
     ) throws -> NavigationReroutePolicy {
         try NavigationReroutePolicy(
             minimumDeviationDistanceMeters: minimumDeviationDistanceMeters,
             requiredConsecutiveAcceptedSamples: requiredConsecutiveAcceptedSamples,
             minimumConsecutiveDeviationDurationNanoseconds: minimumConsecutiveDeviationDurationNanoseconds,
+            maximumAcceptedObservationGapNanoseconds: maximumAcceptedObservationGapNanoseconds,
             rerouteCooldownNanoseconds: rerouteCooldownNanoseconds
         )
     }
@@ -36,6 +38,7 @@ struct NavigationReroutePolicyTests {
                 minimumDeviationDistanceMeters: 25,
                 requiredConsecutiveAcceptedSamples: 1,
                 minimumConsecutiveDeviationDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 1,
                 rerouteCooldownNanoseconds: 1
             )
         }
@@ -50,6 +53,7 @@ struct NavigationReroutePolicyTests {
                     minimumDeviationDistanceMeters: distance,
                     requiredConsecutiveAcceptedSamples: 2,
                     minimumConsecutiveDeviationDurationNanoseconds: 1,
+                    maximumAcceptedObservationGapNanoseconds: 1,
                     rerouteCooldownNanoseconds: 1
                 )
             }
@@ -60,6 +64,7 @@ struct NavigationReroutePolicyTests {
                 minimumDeviationDistanceMeters: 25,
                 requiredConsecutiveAcceptedSamples: 2,
                 minimumConsecutiveDeviationDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 1,
                 rerouteCooldownNanoseconds: 0
             )
         }
@@ -68,6 +73,16 @@ struct NavigationReroutePolicyTests {
                 minimumDeviationDistanceMeters: 25,
                 requiredConsecutiveAcceptedSamples: 2,
                 minimumConsecutiveDeviationDurationNanoseconds: 0,
+                maximumAcceptedObservationGapNanoseconds: 1,
+                rerouteCooldownNanoseconds: 1
+            )
+        }
+        #expect(throws: NavigationReroutePolicyError.invalidPolicy) {
+            _ = try NavigationReroutePolicy(
+                minimumDeviationDistanceMeters: 25,
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 0,
                 rerouteCooldownNanoseconds: 1
             )
         }
@@ -129,6 +144,49 @@ struct NavigationReroutePolicyTests {
         #expect(evaluator.consecutiveDeviationSamples == 2)
         #expect(evaluator.deviationRunStartUptimeNanoseconds == 100)
         #expect(evaluator.lastRerouteRequestUptimeNanoseconds == nil)
+    }
+
+    @Test("silent accepted-observation gap cannot become sustained deviation evidence")
+    func wideObservationGapStartsFreshDeviationRun() throws {
+        var evaluator = NavigationRerouteEvaluator(
+            policy: try policy(
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 5,
+                maximumAcceptedObservationGapNanoseconds: 10,
+                rerouteCooldownNanoseconds: 100
+            )
+        )
+
+        let first = try evaluator.observe(observation(uptime: 100, distance: 40))
+        let afterSilence = try evaluator.observe(observation(uptime: 120, distance: 40))
+
+        #expect(first == .keepCurrentRoute)
+        #expect(afterSilence == .keepCurrentRoute)
+        #expect(evaluator.consecutiveDeviationSamples == 1)
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == 120)
+        #expect(evaluator.lastAcceptedObservationUptimeNanoseconds == 120)
+        #expect(evaluator.lastRerouteRequestUptimeNanoseconds == nil)
+
+        let freshContinuousEvidence = try evaluator.observe(observation(uptime: 125, distance: 40))
+        #expect(freshContinuousEvidence == .requestReroute)
+        #expect(evaluator.lastRerouteRequestUptimeNanoseconds == 125)
+    }
+
+    @Test("exact maximum observation gap remains evidence-contiguous")
+    func exactMaximumObservationGapPreservesRun() throws {
+        var evaluator = NavigationRerouteEvaluator(
+            policy: try policy(
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 10,
+                maximumAcceptedObservationGapNanoseconds: 10
+            )
+        )
+
+        _ = try evaluator.observe(observation(uptime: 100, distance: 40))
+        let boundary = try evaluator.observe(observation(uptime: 110, distance: 40))
+
+        #expect(boundary == .requestReroute)
+        #expect(evaluator.lastRerouteRequestUptimeNanoseconds == 110)
     }
 
     @Test("exact injected deviation duration boundary can request reroute")
