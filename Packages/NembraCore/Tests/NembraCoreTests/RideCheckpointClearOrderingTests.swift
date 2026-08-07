@@ -93,7 +93,8 @@ struct RideCheckpointClearOrderingTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let sessionID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let completion = try completed(id: sessionID, endingODO: 101, gpsMeters: 1_000)
-        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2)
+        let recorder = RemovalRecorder()
+        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2, recorder: recorder)
         let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
 
         try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.4, gpsMeters: 400)))
@@ -102,7 +103,7 @@ struct RideCheckpointClearOrderingTests {
         await #expect(throws: FailOnNthRemovalFileManager.InjectedFailure.removal(2)) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames == [AtomicRideCheckpointStore.slotAFileName])
+        #expect(recorder.removedFileNames == [AtomicRideCheckpointStore.slotAFileName])
 
         let fresh = AtomicRideCheckpointStore(directoryURL: dir)
         #expect(try await fresh.load() == .completedPendingCommit(completion))
@@ -116,7 +117,8 @@ struct RideCheckpointClearOrderingTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let sessionID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let completion = try completed(id: sessionID, endingODO: 101.4, gpsMeters: 1_400)
-        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2)
+        let recorder = RemovalRecorder()
+        let fileManager = FailOnNthRemovalFileManager(failOnRemoval: 2, recorder: recorder)
         let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
 
         try await store.save(.inProgress(try checkpoint(id: sessionID, latestODO: 100.3, gpsMeters: 300)))
@@ -126,7 +128,7 @@ struct RideCheckpointClearOrderingTests {
         await #expect(throws: FailOnNthRemovalFileManager.InjectedFailure.removal(2)) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames == [AtomicRideCheckpointStore.slotBFileName])
+        #expect(recorder.removedFileNames == [AtomicRideCheckpointStore.slotBFileName])
 
         let fresh = AtomicRideCheckpointStore(directoryURL: dir)
         #expect(try await fresh.load() == .completedPendingCommit(completion))
@@ -343,17 +345,35 @@ private actor ClearOrderingHistoryStore: RideHistoryStore {
     }
 }
 
+private final class RemovalRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fileNames: [String] = []
+
+    func record(_ fileName: String) {
+        lock.lock()
+        fileNames.append(fileName)
+        lock.unlock()
+    }
+
+    var removedFileNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return fileNames
+    }
+}
+
 private final class FailOnNthRemovalFileManager: FileManager, @unchecked Sendable {
     enum InjectedFailure: Error, Equatable {
         case removal(Int)
     }
 
     private let failOnRemoval: Int
+    private let recorder: RemovalRecorder
     private var removalCount = 0
-    private(set) var removedFileNames: [String] = []
 
-    init(failOnRemoval: Int) {
+    init(failOnRemoval: Int, recorder: RemovalRecorder = RemovalRecorder()) {
         self.failOnRemoval = failOnRemoval
+        self.recorder = recorder
         super.init()
     }
 
@@ -363,6 +383,6 @@ private final class FailOnNthRemovalFileManager: FileManager, @unchecked Sendabl
             throw InjectedFailure.removal(removalCount)
         }
         try super.removeItem(at: URL)
-        removedFileNames.append(URL.lastPathComponent)
+        recorder.record(URL.lastPathComponent)
     }
 }
