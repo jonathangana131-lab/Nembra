@@ -47,28 +47,43 @@ This type split prevents an in-progress snapshot that is merely current through 
 
 ## Ride-level aggregation across process segments
 
-`RideLiveDistanceSegmentEvidence` is the durable projection of one finalized process-local segment. It deliberately omits monotonic uptime because uptime from a previous process or boot is not valid ordering evidence after recovery. Instead it carries the ride session UUID, a durable segment UUID, source/method, known distance versus unavailable distance, coverage, known gap count, and an explicit `followsUnobservedInterval` recovery boundary.
+`RideLiveDistanceSegmentEvidence` is the durable projection of one finalized process-local segment. It deliberately omits monotonic uptime because uptime from a previous process or boot is not valid ordering evidence after recovery. Instead it carries:
 
-`RideLiveDistanceAggregator` combines only records for one declared ride/source/method. It:
+- ride session UUID;
+- durable segment UUID for idempotent replay;
+- `processSegmentSequence`, assigned by the ride/recovery layer starting at zero and incremented for every new monotonic process epoch;
+- source/method;
+- known distance versus unavailable distance;
+- segment-local coverage and known gap count.
 
-- deduplicates equivalent replay by segment UUID so retrying a durable commit cannot double mileage;
-- rejects conflicting same-ID records rather than choosing one;
-- never mixes scooter/GPS sources or motion-assisted estimates;
-- sums only finite integrated segment distance;
-- preserves recovery/process gaps as `partial` coverage without adding guessed meters;
-- keeps all-unavailable evidence as `nil/.unknown` while preserving a real integrated zero-meter segment as measured zero;
-- uses segment UUID ordering only to make floating-point summation deterministic, never as ride chronology.
+`RideLiveDistanceAggregator` requires a complete contiguous sequence `0...N-1`. Duplicate replay of the same durable segment is ignored; two different segment IDs cannot claim the same process sequence; a missing earlier sequence fails closed. UUID order has no chronological meaning.
 
-The ride/recovery layer remains responsible for assigning stable segment IDs and explicitly marking unobserved intervals. The aggregate is derived evidence; it does not reconstruct what happened inside a gap or promote integrated speed distance into scooter ODO/GPS truth.
+Every transition from process segment `N` to `N+1` is automatically counted as one unobserved interval. There is no caller-controlled “gap happened” Boolean to forget. Therefore:
+
+- one complete process segment can remain `complete`;
+- two or more process segments are necessarily `partial`, even if each individual segment is internally complete;
+- the known distance still sums across segments, but no meters are invented inside process/recovery gaps;
+- all-unavailable evidence remains `nil/.unknown`;
+- a real integrated zero-meter segment remains measured zero rather than becoming unavailable.
+
+The aggregator also rejects ride-session/source/method mixing, conflicting replay, non-finite total distance, and gap-count overflow.
+
+## Reconciliation bridge is session-bound
+
+`RideDistanceEvidence` can consume a `RideLiveDistanceAggregate` directly. That bridge requires the aggregate ride UUID to equal the `CompletedRideEvidence.sessionID` before copying the aggregate distance and coverage into reconciliation evidence. Valid scalar distance from one ride therefore cannot be paired with another ride merely because both values look numerically plausible.
+
+A missing aggregate remains `nil/.unknown`; it is never converted to zero distance.
+
+This binding applies only to live-distance aggregation. It does not solve unrelated identity/provenance work in statistics or other consumers.
 
 ## Process recovery boundary
 
-Monotonic uptime is process/boot-local and must not be persisted as if it survives relaunch or reboot. A recovered ride therefore starts a **new integration segment** in the new monotonic epoch. The durable segment projection above can carry already integrated distance across that boundary without replaying or comparing stale uptime.
+Monotonic uptime is process/boot-local and must not be persisted as if it survives relaunch or reboot. A recovered ride therefore starts a **new integration segment** in the new monotonic epoch and increments the durable process segment sequence. The aggregate preserves already integrated distance while automatically preserving the intervening unobserved interval as partial coverage.
 
 ## Still pending
 
-- app/ride-coordinator wiring of durable live-distance segment records;
-- persistence implementation for those records and aggregate reconstruction at launch;
+- app/ride-coordinator wiring that assigns/persists stable process segment IDs and contiguous sequences;
+- persistence implementation for durable segment records and aggregate reconstruction at launch;
 - production source selection and gap threshold from real AOVOPRO ES80 telemetry benchmarks;
 - GPS quality-screening policy before choosing GPS as an integration source;
 - real iOS background and hardware validation;
