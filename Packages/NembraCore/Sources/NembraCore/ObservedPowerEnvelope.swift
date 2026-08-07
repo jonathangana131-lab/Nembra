@@ -348,7 +348,7 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
     public let policy: ObservedPowerEnvelopePolicy
     public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
-    private var lastReceiptSequenceNumber: UInt64?
+    private var lastSeenReceiptSequenceNumber: UInt64?
     private var lastObservedUptimeNanoseconds: UInt64?
     private var eligiblePowerWindow: [Double] = []
     private var calibrationStorage: ObservedPowerEnvelopeCalibration?
@@ -420,21 +420,23 @@ public struct ObservedPowerEnvelopeLearner: Sendable {
             ))
         }
 
-        if let lastReceiptSequenceNumber,
-           observation.receiptSequenceNumber <= lastReceiptSequenceNumber {
+        if let lastSeenReceiptSequenceNumber,
+           observation.receiptSequenceNumber <= lastSeenReceiptSequenceNumber {
             return .rejected(.nonIncreasingObservationSequence)
         }
+
+        // Scope + authority select this learner's immutable callback stream. Once
+        // a genuinely newer receipt identity is seen, consume that identity before
+        // validating its uptime/value metadata so the same callback cannot be
+        // rewritten and a delayed lower sequence cannot re-enter afterward.
+        lastSeenReceiptSequenceNumber = observation.receiptSequenceNumber
+
         if let lastObservedUptimeNanoseconds,
            observation.observedAtUptimeNanoseconds < lastObservedUptimeNanoseconds {
+            // Preserve the prior monotonic uptime floor. A bad newer callback may
+            // consume sequence chronology, but it must never move time backward.
             return .rejected(.nonIncreasingObservationTimestamp)
         }
-
-        // A fresh callback from the selected authority is ordering evidence even
-        // if its numeric payload later proves unusable. Sequence provides the
-        // strict total order; uptime is allowed to tie but never move backward.
-        // Advancing both prevents an older delayed value from entering after a
-        // fresh invalid numeric observation.
-        lastReceiptSequenceNumber = observation.receiptSequenceNumber
         lastObservedUptimeNanoseconds = observation.observedAtUptimeNanoseconds
 
         guard observation.powerWatts.isFinite else {
