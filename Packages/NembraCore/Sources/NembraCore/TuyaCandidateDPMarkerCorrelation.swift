@@ -61,6 +61,10 @@ public struct TuyaCandidateDPStockAppMarker: Equatable, Sendable {
 /// Caller-owned resource and timing bounds. These values are analysis policy,
 /// never AOVOPRO ES80 protocol defaults.
 public struct TuyaCandidateDPMarkerCorrelationPolicy: Equatable, Sendable {
+    /// Maximum absolute distance from a marker to the accepted completion receipt
+    /// of a candidate message. The message's earlier fragment interval remains
+    /// provenance only and is never treated as if the completed DP value existed
+    /// throughout that interval.
     public let maximumMarkerDistanceNanoseconds: UInt64
     public let maximumMarkerCount: Int
     public let maximumObservationCount: Int
@@ -130,6 +134,12 @@ public struct TuyaCandidateDPCorrelationCandidate: Equatable, Sendable {
     }
 }
 
+public enum TuyaCandidateDPMarkerTemporalRelation: Equatable, Sendable {
+    case messageBeforeMarker
+    case sameReceipt
+    case messageAfterMarker
+}
+
 /// One unambiguous nearest raw-value match for one stock-app marker.
 public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
     public let markerIndex: Int
@@ -139,6 +149,7 @@ public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
     public let observationFirstReceiptUptimeNanoseconds: UInt64
     public let observationLastReceiptUptimeNanoseconds: UInt64
     public let temporalDistanceNanoseconds: UInt64
+    public let temporalRelation: TuyaCandidateDPMarkerTemporalRelation
     public let headerByteOffset: Int
     public let valueByteOffset: Int
     public let endByteOffsetExclusive: Int
@@ -157,6 +168,13 @@ public struct TuyaCandidateDPMarkerHit: Equatable, Sendable {
         observationFirstReceiptUptimeNanoseconds = occurrence.firstReceiptUptimeNanoseconds
         observationLastReceiptUptimeNanoseconds = occurrence.lastReceiptUptimeNanoseconds
         self.temporalDistanceNanoseconds = temporalDistanceNanoseconds
+        if occurrence.lastReceiptUptimeNanoseconds < marker.receiptUptimeNanoseconds {
+            temporalRelation = .messageBeforeMarker
+        } else if occurrence.lastReceiptUptimeNanoseconds == marker.receiptUptimeNanoseconds {
+            temporalRelation = .sameReceipt
+        } else {
+            temporalRelation = .messageAfterMarker
+        }
         headerByteOffset = occurrence.headerByteOffset
         valueByteOffset = occurrence.valueByteOffset
         endByteOffsetExclusive = occurrence.endByteOffsetExclusive
@@ -284,7 +302,11 @@ public enum TuyaCandidateDPMarkerCorrelator {
                     )
                 }
                 occurrencesByCandidate[CandidateKey(record: record), default: []].append(
-                    CandidateOccurrence(observationIndex: observationIndex, observation: observation, record: record)
+                    CandidateOccurrence(
+                        observationIndex: observationIndex,
+                        observation: observation,
+                        record: record
+                    )
                 )
             }
         }
@@ -398,8 +420,7 @@ public enum TuyaCandidateDPMarkerCorrelator {
         for occurrence in occurrences {
             let distance = temporalDistance(
                 markerUptimeNanoseconds,
-                intervalStart: occurrence.firstReceiptUptimeNanoseconds,
-                intervalEnd: occurrence.lastReceiptUptimeNanoseconds
+                acceptedReceiptUptimeNanoseconds: occurrence.lastReceiptUptimeNanoseconds
             )
             guard distance <= maximumDistanceNanoseconds else { continue }
 
@@ -410,23 +431,35 @@ public enum TuyaCandidateDPMarkerCorrelator {
                 nearest.append(occurrence)
             }
         }
-        return NearestOccurrences(minimumDistanceNanoseconds: minimumDistance, occurrences: nearest)
+        return NearestOccurrences(
+            minimumDistanceNanoseconds: minimumDistance,
+            occurrences: nearest
+        )
     }
 
     private static func temporalDistance(
         _ marker: UInt64,
-        intervalStart: UInt64,
-        intervalEnd: UInt64
+        acceptedReceiptUptimeNanoseconds: UInt64
     ) -> UInt64 {
-        if marker < intervalStart { return intervalStart - marker }
-        if marker > intervalEnd { return marker - intervalEnd }
-        return 0
+        if marker >= acceptedReceiptUptimeNanoseconds {
+            return marker - acceptedReceiptUptimeNanoseconds
+        }
+        return acceptedReceiptUptimeNanoseconds - marker
     }
 
-    private static func deterministicOccurrenceOrder(_ lhs: CandidateOccurrence, _ rhs: CandidateOccurrence) -> Bool {
-        if lhs.observationIndex != rhs.observationIndex { return lhs.observationIndex < rhs.observationIndex }
-        if lhs.headerByteOffset != rhs.headerByteOffset { return lhs.headerByteOffset < rhs.headerByteOffset }
-        if lhs.valueByteOffset != rhs.valueByteOffset { return lhs.valueByteOffset < rhs.valueByteOffset }
+    private static func deterministicOccurrenceOrder(
+        _ lhs: CandidateOccurrence,
+        _ rhs: CandidateOccurrence
+    ) -> Bool {
+        if lhs.observationIndex != rhs.observationIndex {
+            return lhs.observationIndex < rhs.observationIndex
+        }
+        if lhs.headerByteOffset != rhs.headerByteOffset {
+            return lhs.headerByteOffset < rhs.headerByteOffset
+        }
+        if lhs.valueByteOffset != rhs.valueByteOffset {
+            return lhs.valueByteOffset < rhs.valueByteOffset
+        }
         return lhs.endByteOffsetExclusive < rhs.endByteOffsetExclusive
     }
 
@@ -447,10 +480,14 @@ public enum TuyaCandidateDPMarkerCorrelator {
             return lhs.ambiguousNearestMarkerIndices.count < rhs.ambiguousNearestMarkerIndices.count
         }
         switch (lhs.maximumTemporalDistanceNanoseconds, rhs.maximumTemporalDistanceNanoseconds) {
-        case let (left?, right?) where left != right: return left < right
-        case (_?, nil): return true
-        case (nil, _?): return false
-        default: break
+        case let (left?, right?) where left != right:
+            return left < right
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        default:
+            break
         }
         if lhs.candidate.identifier != rhs.candidate.identifier {
             return lhs.candidate.identifier < rhs.candidate.identifier
