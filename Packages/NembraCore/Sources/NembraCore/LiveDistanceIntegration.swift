@@ -53,7 +53,9 @@ public enum LiveDistanceRecordResult: Equatable, Sendable {
     /// The two valid samples were too far apart to integrate honestly. The new
     /// sample becomes the next anchor, but no distance is invented across the gap.
     case gapDetected(intervalNanoseconds: UInt64)
-    /// Invalid evidence never mutates the accumulator.
+    /// Rejection never mutates accepted distance/anchor evidence. A fresh
+    /// source-selected authoritative callback may still consume chronology so a
+    /// delayed older callback cannot become fresh after numeric rejection.
     case rejected(LiveDistanceSampleRejection)
 }
 
@@ -164,6 +166,10 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
 
     private var firstAcceptedSample: SpeedTelemetrySample?
     private var lastAcceptedSample: SpeedTelemetrySample?
+    /// Monotonic chronology of source-selected authoritative callbacks is kept
+    /// separately from accepted integration anchors. Numeric rejection must not
+    /// reopen the stream to an older delayed callback.
+    private var lastSeenAuthoritativeSampleUptimeNanoseconds: UInt64?
     private var accumulatedDistanceMeters = 0.0
     private var acceptedSampleCount = 0
     private var integratedIntervalCount = 0
@@ -188,6 +194,16 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
         guard sample.receivedAtUptimeNanoseconds >= segmentStartUptimeNanoseconds else {
             return .rejected(.beforeSegmentStart)
         }
+        if let lastSeenAuthoritativeSampleUptimeNanoseconds,
+           sample.receivedAtUptimeNanoseconds <= lastSeenAuthoritativeSampleUptimeNanoseconds {
+            return .rejected(.nonIncreasingTimestamp)
+        }
+
+        // Once a fresh callback belongs to this selected authoritative stream,
+        // consume its immutable chronology before numeric integration. If the
+        // interval later overflows, that callback remains seen; an older delayed
+        // callback cannot be admitted by falling back to the last accepted anchor.
+        lastSeenAuthoritativeSampleUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
 
         guard let previous = lastAcceptedSample else {
             firstAcceptedSample = sample
@@ -197,10 +213,6 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
                 knownCoverageGapCount = 1
             }
             return .anchored
-        }
-
-        guard sample.receivedAtUptimeNanoseconds > previous.receivedAtUptimeNanoseconds else {
-            return .rejected(.nonIncreasingTimestamp)
         }
 
         let intervalNanoseconds =
@@ -265,8 +277,8 @@ public struct LiveDistanceSegmentAccumulator: Sendable {
         guard segmentEndUptimeNanoseconds >= segmentStartUptimeNanoseconds else {
             throw LiveDistanceIntegrationError.invalidSegmentEnd
         }
-        if let lastAcceptedSample,
-            segmentEndUptimeNanoseconds < lastAcceptedSample.receivedAtUptimeNanoseconds
+        if let lastSeenAuthoritativeSampleUptimeNanoseconds,
+           segmentEndUptimeNanoseconds < lastSeenAuthoritativeSampleUptimeNanoseconds
         {
             throw LiveDistanceIntegrationError.invalidSegmentEnd
         }
