@@ -41,14 +41,42 @@ public enum RideHistoryDurationJoinError: Error, Equatable, Sendable {
 /// A validated runtime join between base completed-ride history and its duration attachment.
 ///
 /// The join is intentionally not `Codable`: durable storage remains two independently valid
-/// records. Construction is package-scoped so app code cannot manufacture a trusted join from
-/// arbitrary matching records; production consumers receive one only after a core coordinator
-/// re-establishes the session/continuity relationship from its stores.
+/// records. Construction is sealed so app code cannot manufacture a trusted join from arbitrary
+/// matching records; production consumers receive one only after a core coordinator re-establishes
+/// the session/continuity relationship from its stores.
 public struct RideHistoryDurationJoinedRecord: Equatable, Sendable {
     public let historyRecord: RideHistoryRecord
     public let durationRecord: RideHistoryDurationRecord
 
+#if SWIFT_PACKAGE
+    /// Package tests and trusted NembraCore adapters may construct a joined fixture directly.
+    /// Normal package clients cannot bypass the history coordinator because this remains
+    /// package-scoped.
     package init(
+        historyRecord: RideHistoryRecord,
+        durationRecord: RideHistoryDurationRecord
+    ) throws {
+        try self.initValidated(
+            historyRecord: historyRecord,
+            durationRecord: durationRecord
+        )
+    }
+#else
+    /// These core files are also compiled directly into Nembra.app rather than linked as a
+    /// package product. Keep construction file-owned in that build so same-module app/UI code
+    /// cannot mint a trusted join directly.
+    fileprivate init(
+        historyRecord: RideHistoryRecord,
+        durationRecord: RideHistoryDurationRecord
+    ) throws {
+        try self.initValidated(
+            historyRecord: historyRecord,
+            durationRecord: durationRecord
+        )
+    }
+#endif
+
+    private initValidated(
         historyRecord: RideHistoryRecord,
         durationRecord: RideHistoryDurationRecord
     ) throws {
