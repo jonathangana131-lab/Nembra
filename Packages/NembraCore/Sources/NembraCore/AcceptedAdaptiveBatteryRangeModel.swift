@@ -4,6 +4,7 @@ public enum AcceptedAdaptiveRangeValidationError: Error, Equatable, Sendable {
     case invalidDistance
     case invalidReceiptOrder
     case acquisitionEpochChanged
+    case missingContinuitySegmentIdentity
 }
 
 /// A receipt-bound range-learning window whose trusted construction is unavailable to ordinary
@@ -13,6 +14,12 @@ public enum AcceptedAdaptiveRangeValidationError: Error, Equatable, Sendable {
 /// The explicit private initializer is important for Nembra's current direct-source app
 /// composition: without it Swift could synthesize a same-module memberwise initializer and
 /// accidentally reopen the exact distance/coverage authority bypass this type is meant to seal.
+///
+/// Endpoint continuity metadata is not enough to prove a whole learning span stayed observed:
+/// `R1 -> gap -> boundary R2 -> continuous R3` would otherwise let R1->R3 look continuous. Both
+/// anchors must therefore carry continuity-segment identity minted by `AcceptedBatterySOCStream`.
+/// A segment change automatically taints the window as a transport gap even when a higher layer
+/// incorrectly supplies `transportGapOccurred: false`.
 public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
     public let distanceMeters: Double
     public let distanceCoverage: BatteryRangeDistanceCoverage
@@ -41,19 +48,26 @@ public struct AcceptedBatteryRangeLearningWindow: Equatable, Sendable {
               endSOC.receivedAtUptimeNanoseconds > startSOC.receivedAtUptimeNanoseconds else {
             throw AcceptedAdaptiveRangeValidationError.invalidReceiptOrder
         }
+        guard let startSegment = startSOC.continuitySegmentStartReceiptIdentity,
+              let endSegment = endSOC.continuitySegmentStartReceiptIdentity else {
+            throw AcceptedAdaptiveRangeValidationError.missingContinuitySegmentIdentity
+        }
+        guard startSegment.acquisitionEpoch == startSOC.sourceReceiptIdentity.acquisitionEpoch,
+              endSegment.acquisitionEpoch == endSOC.sourceReceiptIdentity.acquisitionEpoch else {
+            throw AcceptedAdaptiveRangeValidationError.acquisitionEpochChanged
+        }
 
         self.distanceMeters = distanceMeters
         self.distanceCoverage = distanceCoverage
-        // An explicit post-gap battery boundary proves continuity was unobserved between the
-        // two anchors even if a trusted higher layer accidentally supplies `false` here.
         self.transportGapOccurred = transportGapOccurred
+            || startSegment != endSegment
             || endSOC.continuity == .afterUnobservedInterval
         self.startSOC = startSOC
         self.endSOC = endSOC
     }
 
 #if SWIFT_PACKAGE
-    /// Package-trusted construction for the future ride-distance evidence bridge and tests.
+    /// Package-trusted construction for the ride-distance evidence bridge and tests.
     /// Direct app source does not receive this initializer.
     package init(
         distanceMeters: Double,
