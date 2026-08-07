@@ -23,10 +23,11 @@ struct PropulsionGaugePresentationTests {
     private func simulatorSample(
         watts: Double,
         uptime: UInt64,
-        generation: UInt64 = 1
+        generation: UInt64 = 1,
+        identity: PropulsionGaugeIdentity? = nil
     ) throws -> PropulsionPowerSample {
         try .simulator(
-            identity: identity,
+            identity: identity ?? self.identity,
             watts: watts,
             receivedAtUptimeNanoseconds: uptime,
             continuityGeneration: generation
@@ -44,6 +45,16 @@ struct PropulsionGaugePresentationTests {
             watts: watts,
             receivedAtUptimeNanoseconds: uptime,
             continuityGeneration: generation
+        )
+    }
+
+    private func simulatorScale(
+        ceilingWatts: Double,
+        identity: PropulsionGaugeIdentity? = nil
+    ) throws -> PropulsionGaugeScale {
+        try .simulator(
+            identity: identity ?? self.identity,
+            ceilingWatts: ceilingWatts
         )
     }
 
@@ -110,7 +121,7 @@ struct PropulsionGaugePresentationTests {
     @Test("display clock interpolates without becoming accepted measurement evidence")
     func displayClockStaysSeparateFromMeasurementClock() throws {
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
-        let scale = try PropulsionGaugeScale.simulator(ceilingWatts: 1_000)
+        let scale = try simulatorScale(ceilingWatts: 1_000)
 
         try model.accept(simulatorSample(watts: 100, uptime: 1_000_000_000))
         try model.accept(simulatorSample(watts: 500, uptime: 1_100_000_000))
@@ -168,7 +179,7 @@ struct PropulsionGaugePresentationTests {
     @Test("stale evidence retains the accepted number but removes active gauge motion")
     func staleEvidenceStopsActiveGauge() throws {
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy(stale: 1_000_000_000))
-        let scale = try PropulsionGaugeScale.simulator(ceilingWatts: 600)
+        let scale = try simulatorScale(ceilingWatts: 600)
         try model.accept(simulatorSample(watts: 300, uptime: 1_000_000_000))
 
         let frame = model.frame(atUptimeNanoseconds: 2_000_000_001, scale: scale)
@@ -225,7 +236,7 @@ struct PropulsionGaugePresentationTests {
     @Test("accepted peak marker comes from measurements rather than interpolated display frames")
     func peakHoldUsesAcceptedMeasurements() throws {
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy(peakHold: 400_000_000))
-        let scale = try PropulsionGaugeScale.simulator(ceilingWatts: 1_000)
+        let scale = try simulatorScale(ceilingWatts: 1_000)
         try model.accept(simulatorSample(watts: 100, uptime: 1_000_000_000))
         try model.accept(simulatorSample(watts: 800, uptime: 1_100_000_000))
 
@@ -253,13 +264,45 @@ struct PropulsionGaugePresentationTests {
         try verifiedModel.accept(verifiedSample(watts: 250, uptime: 1_000))
         let verifiedWithSimulatorScale = verifiedModel.frame(
             atUptimeNanoseconds: 1_000,
-            scale: try PropulsionGaugeScale.simulator(ceilingWatts: 500)
+            scale: try simulatorScale(ceilingWatts: 500)
         )
 
         #expect(simulatorWithLearnedScale.normalizedPropulsion == nil)
         #expect(simulatorWithLearnedScale.scaleOrigin == nil)
         #expect(verifiedWithSimulatorScale.normalizedPropulsion == nil)
         #expect(verifiedWithSimulatorScale.scaleOrigin == nil)
+    }
+
+    @Test("visual scale cannot cross vehicle identity even within one authority domain")
+    func scaleCannotCrossVehicleIdentity() throws {
+        let otherIdentity = PropulsionGaugeIdentity(vehicleID: "another-es80")
+        let foreignScale = try simulatorScale(ceilingWatts: 500, identity: otherIdentity)
+        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
+        try model.accept(simulatorSample(watts: 250, uptime: 1_000))
+
+        let frame = model.frame(atUptimeNanoseconds: 1_000, scale: foreignScale)
+
+        #expect(foreignScale.identity == otherIdentity)
+        #expect(frame.normalizedPropulsion == nil)
+        #expect(frame.acceptedPeakNormalized == nil)
+        #expect(frame.scaleOrigin == nil)
+    }
+
+    @Test("learned observed scale preserves the vehicle and mode identity that trained it")
+    func learnedScalePreservesCalibrationIdentity() throws {
+        let sportIdentity = PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "confirmed-sport")
+        var envelope = LearnedObservedPowerEnvelope(
+            identity: sportIdentity,
+            policy: try envelopePolicy(minimum: 2, capacity: 2, percentile: 1)
+        )
+        try envelope.observe(verifiedSample(watts: 400, uptime: 1_000, identity: sportIdentity))
+        try envelope.observe(verifiedSample(watts: 500, uptime: 2_000, identity: sportIdentity))
+
+        let scale = try #require(envelope.currentScale)
+
+        #expect(scale.identity == sportIdentity)
+        #expect(scale.ceilingWatts == 500)
+        #expect(scale.origin == .learnedObservedPowerCeiling)
     }
 
     @Test("learned observed ceiling rejects simulator evidence")
