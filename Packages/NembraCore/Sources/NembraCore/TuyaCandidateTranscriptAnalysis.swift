@@ -2,6 +2,11 @@ public enum TuyaCandidateTranscriptBoundary: Equatable, Sendable {
     case streamIdentityChanged
     case continuityGenerationChanged
     case streamIdentityAndContinuityGenerationChanged
+    /// Under the candidate framing hypothesis, packet index zero is an explicit
+    /// new-message start. If it arrives while a prior candidate is incomplete on
+    /// the same stream/generation, preserve the old candidate as truncated and
+    /// let this exact observation start the new candidate instead of discarding it.
+    case candidatePacketZeroRestart
 }
 
 /// Lossless analysis outcomes for an ordered capture transcript. Candidate
@@ -108,6 +113,33 @@ public enum TuyaCandidateTranscriptAnalyzer {
             }
             lastSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
 
+            // Once transcript chronology has admitted this exact observation, a
+            // packet-zero prefix is an explicit new-message marker under this
+            // candidate framing hypothesis. Preserve an unfinished candidate as a
+            // truncation boundary, then let the same immutable observation seed a
+            // fresh reassembler. Chronology and real stream/generation boundaries
+            // remain stronger because both are evaluated before this recovery path.
+            if reassembler != nil,
+               beginsWithCandidatePacketZero(observation),
+               let priorStartObservationIndex = startObservationIndex,
+               let priorLastAcceptedObservationIndex = lastAcceptedObservationIndex {
+                events.append(
+                    .incompleteAtBoundary(
+                        startObservationIndex: priorStartObservationIndex,
+                        lastAcceptedObservationIndex: priorLastAcceptedObservationIndex,
+                        nextObservationIndex: index,
+                        boundary: .candidatePacketZeroRestart
+                    )
+                )
+                reassembler = nil
+                resetState(
+                    streamIdentity: &boundStreamIdentity,
+                    continuityGeneration: &boundContinuityGeneration,
+                    startObservationIndex: &startObservationIndex,
+                    lastAcceptedObservationIndex: &lastAcceptedObservationIndex
+                )
+            }
+
             if reassembler == nil {
                 reassembler = TuyaCandidateFragmentReassembler(policy: policy)
                 boundStreamIdentity = observation.streamIdentity
@@ -178,6 +210,16 @@ public enum TuyaCandidateTranscriptAnalyzer {
         }
 
         return events
+    }
+
+    private static func beginsWithCandidatePacketZero(
+        _ observation: TuyaCandidateFragmentObservation
+    ) -> Bool {
+        var cursor = 0
+        return (try? TuyaCandidateFragmentReassembler.decodeCandidateVarint(
+            observation.bytes,
+            cursor: &cursor
+        )) == 0
     }
 
     private static func resetState(
