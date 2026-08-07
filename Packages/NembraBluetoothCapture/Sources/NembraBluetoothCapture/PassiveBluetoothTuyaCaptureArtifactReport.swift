@@ -11,6 +11,19 @@ public enum PassiveBluetoothTuyaCaptureArtifactReportError: Error, Equatable, Se
     case requestedPeripheralNotPresent(requested: String, available: [String])
 }
 
+extension PassiveBluetoothTuyaCaptureArtifactReportError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .noAttributablePeripheral:
+            "capture contains no target-attributable connection/GATT/value peripheral evidence"
+        case let .ambiguousPeripherals(identifiers):
+            "capture contains multiple attributable peripherals; pass --peripheral with one exact identifier: \(identifiers.joined(separator: ", "))"
+        case let .requestedPeripheralNotPresent(requested, available):
+            "requested peripheral \(requested) is not present in target-attributable capture evidence; available: \(available.joined(separator: ", "))"
+        }
+    }
+}
+
 /// Durable wrapper that cryptographically binds a deterministic framing report
 /// to the exact capture JSON bytes that produced it.
 ///
