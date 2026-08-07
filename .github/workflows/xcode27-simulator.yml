@@ -37,6 +37,10 @@ jobs:
         working-directory: Packages/NembraCore
         run: swift test
 
+      - name: Validate MapKit navigation package
+        working-directory: Packages/NembraMapKitNavigation
+        run: swift test -Xswiftc -warnings-as-errors
+
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 
