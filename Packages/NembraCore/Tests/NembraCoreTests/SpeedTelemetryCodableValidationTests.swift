@@ -68,6 +68,35 @@ struct SpeedTelemetryCodableValidationTests {
         }
     }
 
+    @Test("import rejects nonfinite speed just like live construction")
+    func rejectsNonfiniteSpeed() throws {
+        let encoder = JSONEncoder()
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "+INF",
+            negativeInfinity: "-INF",
+            nan: "NaN"
+        )
+        let data = try encoder.encode(UncheckedPayload(
+            source: .scooterBluetooth,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: .infinity,
+            receivedAtUptimeNanoseconds: 2_500,
+            receivedAtDate: epoch,
+            measurementDate: nil,
+            speedAccuracyMetersPerSecond: nil
+        ))
+
+        let decoder = JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "+INF",
+            negativeInfinity: "-INF",
+            nan: "NaN"
+        )
+        #expect(throws: SpeedTelemetryValidationError.invalidSpeed) {
+            try decoder.decode(SpeedTelemetrySample.self, from: data)
+        }
+    }
+
     @Test("import rejects negative accuracy just like live construction")
     func rejectsNegativeAccuracy() throws {
         let data = try JSONEncoder().encode(UncheckedPayload(
@@ -82,6 +111,35 @@ struct SpeedTelemetryCodableValidationTests {
 
         #expect(throws: SpeedTelemetryValidationError.invalidAccuracy) {
             try JSONDecoder().decode(SpeedTelemetrySample.self, from: data)
+        }
+    }
+
+    @Test("import rejects nonfinite accuracy just like live construction")
+    func rejectsNonfiniteAccuracy() throws {
+        let encoder = JSONEncoder()
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "+INF",
+            negativeInfinity: "-INF",
+            nan: "NaN"
+        )
+        let data = try encoder.encode(UncheckedPayload(
+            source: .gps,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 3,
+            receivedAtUptimeNanoseconds: 3_500,
+            receivedAtDate: epoch,
+            measurementDate: epoch,
+            speedAccuracyMetersPerSecond: .nan
+        ))
+
+        let decoder = JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "+INF",
+            negativeInfinity: "-INF",
+            nan: "NaN"
+        )
+        #expect(throws: SpeedTelemetryValidationError.invalidAccuracy) {
+            try decoder.decode(SpeedTelemetrySample.self, from: data)
         }
     }
 }
