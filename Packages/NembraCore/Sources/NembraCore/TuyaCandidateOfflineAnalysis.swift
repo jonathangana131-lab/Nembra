@@ -243,27 +243,32 @@ public struct TuyaCandidateFragmentReassembler: Sendable {
         _ bytes: [UInt8],
         cursor: inout Int
     ) throws -> UInt64 {
+        let initialCursor = cursor
+        var position = cursor
         var result: UInt64 = 0
         var shift: UInt64 = 0
         var count = 0
 
         while count < 4 {
-            guard cursor < bytes.count else {
+            guard position < bytes.count else {
+                cursor = initialCursor
                 throw TuyaCandidateOfflineAnalysisError.malformedVarint
             }
-            let byte = bytes[cursor]
-            cursor += 1
+            let byte = bytes[position]
+            position += 1
             count += 1
 
             let payload = UInt64(byte & 0x7F)
             result |= payload << shift
 
             if byte & 0x80 == 0 {
+                cursor = position
                 return result
             }
             shift += 7
         }
 
+        cursor = initialCursor
         throw TuyaCandidateOfflineAnalysisError.varintOverflow
     }
 }
