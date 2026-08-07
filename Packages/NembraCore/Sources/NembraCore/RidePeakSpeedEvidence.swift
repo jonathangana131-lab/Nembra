@@ -111,10 +111,12 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         }
 
         // Checkpoint recovery proves at least one interval of the ride existed
-        // outside this process-local peak observer. A recovered ride may retain a
-        // numeric observed peak, but it cannot claim no recorded evidence loss.
+        // outside this process-local peak observer. A generic quality rejection
+        // is not proof that this gap was recorded, so recovery requires an
+        // explicit interruption as well as partial selected-source continuity.
         if completedRide.continuity == .recoveredCheckpoint,
-           ridePeak.peakEvidence.continuity != .partialSelectedSourceEvidence {
+           (ridePeak.peakEvidence.knownInterruptionCount == 0 ||
+            ridePeak.peakEvidence.continuity != .partialSelectedSourceEvidence) {
             throw CompletedRidePeakSpeedEvidenceError.continuityMismatch
         }
 
@@ -206,7 +208,8 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         }
 
         if rideContinuity == .recoveredCheckpoint,
-           observationContinuity != .partialSelectedSourceEvidence {
+           (observationContinuity != .partialSelectedSourceEvidence ||
+            knownInterruptionCount == 0) {
             throw CompletedRidePeakSpeedEvidenceError.invalidEvidence
         }
 
