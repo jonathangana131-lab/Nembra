@@ -8,12 +8,35 @@ public enum AcceptedAdaptiveRangeValidationError: Error, Equatable, Sendable {
     case invalidPlausibilityPolicy
 }
 
+public enum AcceptedBatteryRangeLearningDeferralReason: Equatable, Sendable {
+    /// No absolute plausibility ceiling is yet justified for a brand-new accepted model.
+    /// Higher layers should retain candidate evidence and wait for repeated/trusted evidence,
+    /// not invent an ES80 range ceiling or silently teach from the lone first window.
+    case firstWindowPlausibilityUnverified
+}
+
+public enum AcceptedBatteryRangeLearningDisposition: Equatable, Sendable {
+    case accepted
+    case deferred(AcceptedBatteryRangeLearningDeferralReason)
+    case rejected(BatteryRangeLearningRejectionReason)
+}
+
+/// Production-facing learning result. Deferral is distinct from rejection: the candidate may be
+/// structurally trustworthy, but accepted learned history remains unchanged until the evidence
+/// needed for a first-baseline plausibility decision exists.
+public struct AcceptedBatteryRangeLearningResult: Equatable, Sendable {
+    public let disposition: AcceptedBatteryRangeLearningDisposition
+    public let sample: BatteryRangeEfficiencySample?
+    public let confidence: AdaptiveRangeConfidence
+}
+
 /// Optional production plausibility screen for learned range windows.
 ///
 /// This is deliberately separate from `AdaptiveBatteryRangePolicy` because it is a truth gate,
 /// not a presentation/tuning default. Nembra does not currently know a verified ES80 full-charge
 /// range ceiling. Production integration must therefore choose explicitly between:
-/// - `deferredUntilVerifiedEvidence`, which makes no physical ceiling claim; or
+/// - `deferredUntilVerifiedEvidence`, which makes no physical ceiling claim and deliberately
+///   defers the first accepted learning window; or
 /// - a finite positive maximum supplied only after a higher layer has legitimate evidence for a
 ///   conservative plausibility bound.
 ///
@@ -26,7 +49,10 @@ public struct AcceptedAdaptiveRangePlausibilityPolicy: Equatable, Sendable {
         self.maximumFullChargeEquivalentMeters = maximumFullChargeEquivalentMeters
     }
 
-    /// Explicitly leaves the absolute first-window ceiling unavailable until evidence exists.
+    /// Leaves the absolute first-window ceiling unavailable until evidence exists.
+    /// On an empty accepted model, an otherwise-valid learning window is returned as deferred
+    /// without mutating history. Once accepted history already exists, relative outlier policy can
+    /// continue operating with this value if an absolute ceiling is still legitimately unknown.
     public static let deferredUntilVerifiedEvidence = Self(
         maximumFullChargeEquivalentMeters: nil
     )
@@ -174,16 +200,23 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
     /// Trusted package integration is the only mutation path into accepted learned history.
     /// The sealed anchors are converted to raw algorithm inputs only inside this boundary.
     ///
-    /// The absolute plausibility policy is required explicitly. With no verified ES80 ceiling,
-    /// callers pass `.deferredUntilVerifiedEvidence`; they must not invent a number just to make
-    /// this guard active. Once legitimate evidence provides a conservative maximum, the screen
-    /// rejects even the first otherwise-valid extreme window before it can poison the baseline.
+    /// On a brand-new accepted model, `.deferredUntilVerifiedEvidence` does **not** teach from the
+    /// first lone window: an otherwise-valid candidate is returned as `.deferred` with no model
+    /// mutation. A higher layer may collect repeated span-proven candidates and later supply a
+    /// conservative evidence-backed ceiling. Do not invent a number merely to leave deferral.
+    ///
+    /// Once accepted history already exists, a missing absolute ceiling no longer blocks every
+    /// future update; the raw model's learned relative-outlier policy remains available. If an
+    /// absolute evidence-backed ceiling is supplied, it is applied to every otherwise-valid
+    /// window as an additional fail-closed bound.
     @discardableResult
     package mutating func ingest(
         _ window: AcceptedBatteryRangeLearningWindow,
         policy: AdaptiveBatteryRangePolicy,
         plausibilityPolicy: AcceptedAdaptiveRangePlausibilityPolicy
-    ) -> BatteryRangeLearningResult {
+    ) -> AcceptedBatteryRangeLearningResult {
+        let confidenceBefore = model.confidence(using: policy)
+
         guard let start = try? BatterySOCReading(
             percentage: window.startSOC.percentage,
             provenance: .authoritativeMeasurement,
@@ -201,10 +234,10 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
             startSOC: start,
             endSOC: end
         ) else {
-            return BatteryRangeLearningResult(
+            return AcceptedBatteryRangeLearningResult(
                 disposition: .rejected(.numericalOverflow),
                 sample: nil,
-                confidence: model.confidence(using: policy)
+                confidence: confidenceBefore
             )
         }
 
@@ -213,28 +246,51 @@ public struct AcceptedAdaptiveBatteryRangeModel: Equatable, Sendable {
             let consumed = window.startSOC.percentage - window.endSOC.percentage
             if consumed > 0,
                consumed >= policy.minimumConsumedPercentagePoints,
-               window.distanceMeters >= policy.minimumDistanceMeters,
-               let maximum = plausibilityPolicy.maximumFullChargeEquivalentMeters {
+               window.distanceMeters >= policy.minimumDistanceMeters {
                 let metersPerPercentagePoint = window.distanceMeters / consumed
                 let fullChargeEquivalentMeters = metersPerPercentagePoint * 100
                 guard fullChargeEquivalentMeters.isFinite else {
-                    return BatteryRangeLearningResult(
+                    return AcceptedBatteryRangeLearningResult(
                         disposition: .rejected(.numericalOverflow),
                         sample: nil,
-                        confidence: model.confidence(using: policy)
+                        confidence: confidenceBefore
                     )
                 }
-                guard fullChargeEquivalentMeters <= maximum else {
-                    return BatteryRangeLearningResult(
+
+                if model.hasLearnedEfficiency == false,
+                   plausibilityPolicy.maximumFullChargeEquivalentMeters == nil {
+                    return AcceptedBatteryRangeLearningResult(
+                        disposition: .deferred(.firstWindowPlausibilityUnverified),
+                        sample: nil,
+                        confidence: confidenceBefore
+                    )
+                }
+
+                if let maximum = plausibilityPolicy.maximumFullChargeEquivalentMeters,
+                   fullChargeEquivalentMeters > maximum {
+                    return AcceptedBatteryRangeLearningResult(
                         disposition: .rejected(.efficiencyOutlier),
                         sample: nil,
-                        confidence: model.confidence(using: policy)
+                        confidence: confidenceBefore
                     )
                 }
             }
         }
 
-        return model.ingest(rawWindow, policy: policy)
+        let rawResult = model.ingest(rawWindow, policy: policy)
+        let disposition: AcceptedBatteryRangeLearningDisposition
+        switch rawResult.disposition {
+        case .accepted:
+            disposition = .accepted
+        case let .rejected(reason):
+            disposition = .rejected(reason)
+        }
+
+        return AcceptedBatteryRangeLearningResult(
+            disposition: disposition,
+            sample: rawResult.sample,
+            confidence: rawResult.confidence
+        )
     }
 #endif
 
