@@ -53,12 +53,27 @@ public struct AccelerationRunPolicy: Equatable, Sendable {
     }
 }
 
+/// Identifies the clock/evidence basis of an acceleration result.
+///
+/// `receiveObservationUptime` means the result is expressed only in the app's
+/// monotonic packet-receipt timeline. It is not a physical scooter crossing-time
+/// clock and does not compensate for source-to-app delivery latency.
+public enum AccelerationTimingBasis: Equatable, Sendable {
+    case receiveObservationUptime
+}
+
+/// A span between two accepted observations on the app's monotonic receive clock.
+///
+/// This is an observation-evidence window, not a guarantee that the scooter's
+/// physical threshold crossing occurred inside the same uptime interval. Variable
+/// delivery latency can move physical measurement/crossing time outside a receive
+/// interval, and an unsampled excursion can precede a later observed transition.
 public struct AccelerationTimingWindow: Equatable, Sendable {
     public let earliestUptimeNanoseconds: UInt64
     public let latestUptimeNanoseconds: UInt64
 
     /// Timing windows are output evidence created only from accepted monotonic
-    /// measurements. Keep construction internal so external callers cannot
+    /// observations. Keep construction internal so external callers cannot
     /// manufacture impossible windows or trigger a public precondition trap.
     init(earliestUptimeNanoseconds: UInt64, latestUptimeNanoseconds: UInt64) {
         precondition(latestUptimeNanoseconds >= earliestUptimeNanoseconds)
@@ -74,18 +89,37 @@ public struct AccelerationTimingWindow: Equatable, Sendable {
 public struct AccelerationRunResult: Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let targetMetersPerSecond: Double
-    public let launchWindow: AccelerationTimingWindow
-    public let targetCrossingWindow: AccelerationTimingWindow
-    public let elapsedLowerBoundSeconds: Double
-    public let elapsedUpperBoundSeconds: Double
+    public let timingBasis: AccelerationTimingBasis
+
+    /// Last accepted stationary observation -> first accepted moving observation.
+    /// This brackets the change in observed samples, not physical scooter launch.
+    public let launchObservationWindow: AccelerationTimingWindow
+
+    /// Last accepted below-target observation -> first accepted at/above-target
+    /// observation. This is the final observed below->at/above pair and does not
+    /// prove that the scooter never reached target earlier between samples.
+    public let targetTransitionObservationWindow: AccelerationTimingWindow
+
+    /// Conservative first-reach envelope on the receive-observation timeline.
+    ///
+    /// The lower bound remains zero because accepted below-target samples cannot
+    /// rule out an earlier unsampled target excursion without a separately
+    /// validated physical dynamics/source-timestamp contract.
+    public let firstReachReceiveClockLowerBoundSeconds: Double
+
+    /// Span from the last stationary receive observation to the first accepted
+    /// target-reaching receive observation. This is an observation-clock ceiling,
+    /// not a physical acceleration-time upper bound when delivery latency varies.
+    public let firstReachReceiveClockUpperBoundSeconds: Double
+
     /// Count of accepted measurements actually retained by the final timing
     /// trace: the last stationary launch anchor plus accepted post-launch samples.
     /// Earlier stationary samples that were superseded by a newer anchor are not
     /// represented in this count.
     public let timingEvidenceSampleCount: Int
 
-    public var timingUncertaintySeconds: Double {
-        max(0, elapsedUpperBoundSeconds - elapsedLowerBoundSeconds)
+    public var firstReachReceiveClockEnvelopeWidthSeconds: Double {
+        max(0, firstReachReceiveClockUpperBoundSeconds - firstReachReceiveClockLowerBoundSeconds)
     }
 }
 
@@ -107,7 +141,7 @@ public enum AccelerationRunInvalidationReason: Equatable, Sendable {
 public struct AccelerationRunProgress: Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let targetMetersPerSecond: Double
-    public let launchWindow: AccelerationTimingWindow
+    public let launchObservationWindow: AccelerationTimingWindow
     public let latestMeasuredMetersPerSecond: Double
     /// Same retained timing-evidence count used by the eventual completed result.
     public let timingEvidenceSampleCount: Int
@@ -121,13 +155,13 @@ public enum AccelerationRunState: Equatable, Sendable {
     case invalidated(AccelerationRunInvalidationReason)
 }
 
-/// Measurement-bounded acceleration timing.
+/// Measurement-bounded acceleration observation evidence.
 ///
 /// The evaluator consumes only authoritative absolute speed measurements and
 /// never converts display interpolation or motion-assisted estimates into run
-/// evidence. Because threshold crossings occur between packets, completed runs
-/// report an elapsed-time interval rather than pretending the crossing happened
-/// at an exact stopwatch instant.
+/// evidence. It records accepted transitions on the monotonic packet-receipt
+/// clock. It deliberately does not claim those receive timestamps are physical
+/// scooter threshold-crossing times.
 public struct AccelerationRunEvaluator: Sendable {
     public let policy: AccelerationRunPolicy
     public private(set) var state: AccelerationRunState = .waitingForStandstill
@@ -144,7 +178,7 @@ public struct AccelerationRunEvaluator: Sendable {
     private var lastAcceptedUptimeNanoseconds: UInt64?
     private var lastStationarySample: SpeedTelemetrySample?
     private var previousRunningSample: SpeedTelemetrySample?
-    private var launchWindow: AccelerationTimingWindow?
+    private var launchObservationWindow: AccelerationTimingWindow?
     private var timingEvidenceSampleCount = 0
 
     public init(policy: AccelerationRunPolicy) {
@@ -158,7 +192,7 @@ public struct AccelerationRunEvaluator: Sendable {
         lastAcceptedUptimeNanoseconds = nil
         lastStationarySample = nil
         previousRunningSample = nil
-        launchWindow = nil
+        launchObservationWindow = nil
         timingEvidenceSampleCount = 0
     }
 
@@ -291,20 +325,20 @@ public struct AccelerationRunEvaluator: Sendable {
             return
         }
 
-        let launch = AccelerationTimingWindow(
+        let launchObservation = AccelerationTimingWindow(
             earliestUptimeNanoseconds: lastStationarySample.receivedAtUptimeNanoseconds,
             latestUptimeNanoseconds: sample.receivedAtUptimeNanoseconds
         )
-        launchWindow = launch
+        launchObservationWindow = launchObservation
         previousRunningSample = sample
         // Only the latest stationary sample and the first moving sample are
-        // retained by the final launch timing window.
+        // retained by the final launch observation window.
         timingEvidenceSampleCount = 2
 
         if sample.metersPerSecond >= policy.targetMetersPerSecond {
             complete(
                 source: sample.source,
-                targetCrossingWindow: launch,
+                targetTransitionObservationWindow: launchObservation,
                 timingEvidenceSampleCount: timingEvidenceSampleCount
             )
             return
@@ -313,7 +347,7 @@ public struct AccelerationRunEvaluator: Sendable {
         state = .running(AccelerationRunProgress(
             source: sample.source,
             targetMetersPerSecond: policy.targetMetersPerSecond,
-            launchWindow: launch,
+            launchObservationWindow: launchObservation,
             latestMeasuredMetersPerSecond: sample.metersPerSecond,
             timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
@@ -324,7 +358,7 @@ public struct AccelerationRunEvaluator: Sendable {
             invalidate(.returnedToStationary)
             return
         }
-        guard let previousRunningSample, let launchWindow else {
+        guard let previousRunningSample, let launchObservationWindow else {
             invalidate(.rollingStart)
             return
         }
@@ -332,13 +366,13 @@ public struct AccelerationRunEvaluator: Sendable {
         timingEvidenceSampleCount += 1
 
         if sample.metersPerSecond >= policy.targetMetersPerSecond {
-            let crossing = AccelerationTimingWindow(
+            let targetTransitionObservation = AccelerationTimingWindow(
                 earliestUptimeNanoseconds: previousRunningSample.receivedAtUptimeNanoseconds,
                 latestUptimeNanoseconds: sample.receivedAtUptimeNanoseconds
             )
             complete(
                 source: sample.source,
-                targetCrossingWindow: crossing,
+                targetTransitionObservationWindow: targetTransitionObservation,
                 timingEvidenceSampleCount: timingEvidenceSampleCount
             )
             return
@@ -348,7 +382,7 @@ public struct AccelerationRunEvaluator: Sendable {
         state = .running(AccelerationRunProgress(
             source: sample.source,
             targetMetersPerSecond: policy.targetMetersPerSecond,
-            launchWindow: launchWindow,
+            launchObservationWindow: launchObservationWindow,
             latestMeasuredMetersPerSecond: sample.metersPerSecond,
             timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
@@ -356,29 +390,30 @@ public struct AccelerationRunEvaluator: Sendable {
 
     private mutating func complete(
         source: SpeedTelemetrySource,
-        targetCrossingWindow: AccelerationTimingWindow,
+        targetTransitionObservationWindow: AccelerationTimingWindow,
         timingEvidenceSampleCount: Int
     ) {
-        guard let launchWindow else {
+        guard let launchObservationWindow else {
             invalidate(.rollingStart)
             return
         }
 
-        let lowerBoundNanoseconds: UInt64
-        if targetCrossingWindow.earliestUptimeNanoseconds > launchWindow.latestUptimeNanoseconds {
-            lowerBoundNanoseconds = targetCrossingWindow.earliestUptimeNanoseconds - launchWindow.latestUptimeNanoseconds
-        } else {
-            lowerBoundNanoseconds = 0
-        }
-        let upperBoundNanoseconds = targetCrossingWindow.latestUptimeNanoseconds - launchWindow.earliestUptimeNanoseconds
+        // Accepted below-target samples cannot prove that the physical scooter did
+        // not briefly reach target and fall back between callbacks. Therefore the
+        // truthful first-reach lower bound on this receive-observation basis is 0.
+        // The receive span is retained as a conservative observation-clock ceiling,
+        // not promoted into a physical acceleration-time upper bound.
+        let upperBoundNanoseconds = targetTransitionObservationWindow.latestUptimeNanoseconds
+            - launchObservationWindow.earliestUptimeNanoseconds
 
         state = .completed(AccelerationRunResult(
             source: source,
             targetMetersPerSecond: policy.targetMetersPerSecond,
-            launchWindow: launchWindow,
-            targetCrossingWindow: targetCrossingWindow,
-            elapsedLowerBoundSeconds: Double(lowerBoundNanoseconds) / 1_000_000_000,
-            elapsedUpperBoundSeconds: Double(upperBoundNanoseconds) / 1_000_000_000,
+            timingBasis: .receiveObservationUptime,
+            launchObservationWindow: launchObservationWindow,
+            targetTransitionObservationWindow: targetTransitionObservationWindow,
+            firstReachReceiveClockLowerBoundSeconds: 0,
+            firstReachReceiveClockUpperBoundSeconds: Double(upperBoundNanoseconds) / 1_000_000_000,
             timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
     }
