@@ -10,12 +10,23 @@ public struct RideSpeedEvidenceRecordResult: Equatable, Sendable {
     }
 }
 
+/// A gap in the selected speed-evidence source, not an arbitrary ride/vehicle event.
+///
+/// This intentionally omits `vehicleConnectionLost`: a scooter disconnect is a
+/// selected-source gap only when scooter BLE is the selected speed source. A
+/// caller must translate the physical event to `.selectedSourceUnavailable` only
+/// after making that source-specific determination.
+public enum RideSpeedEvidenceSessionInterruption: Equatable, Sendable {
+    case selectedSourceUnavailable
+    case applicationLifecycleInterrupted
+}
+
 public struct RideSpeedEvidenceSessionSnapshot: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
     public let beganAfterKnownObservationGap: Bool
-    /// Foreign authoritative callbacks are source-switch/mixing evidence. They
-    /// block peak reporting independently of a generic rejection-fraction policy.
+    /// Callbacks from any source other than this session's selected source are
+    /// source-switch/mixing evidence and independently block peak reporting.
     public let foreignSourceCallbackCount: Int
     public let peakEvidence: RidePeakSpeedEvidence?
     public let telemetryBenchmark: TelemetryBenchmarkSummary
@@ -77,11 +88,20 @@ public struct RideSpeedEvidenceSessionAccumulator: Sendable {
         return RideSpeedEvidenceRecordResult(peak: peakResult, benchmark: benchmarkResult)
     }
 
-    /// The benchmark starts a new segment only after accepted evidence; an
-    /// initial pre-observation recovery gap is separately retained by the ride
-    /// peak accumulator and `beganAfterKnownObservationGap`.
-    public mutating func recordInterruption(_ interruption: PeakSpeedInterruption) {
-        peakAccumulator.recordInterruption(interruption)
+    /// Records a gap only after the caller has determined the selected speed
+    /// source itself was unavailable. This prevents an unrelated vehicle event
+    /// (for example BLE disconnect while GPS remains healthy) from destroying
+    /// otherwise valid GPS evidence.
+    public mutating func recordInterruption(_ interruption: RideSpeedEvidenceSessionInterruption) {
+        let peakInterruption: PeakSpeedInterruption
+        switch interruption {
+        case .selectedSourceUnavailable:
+            peakInterruption = .sourceUnavailable
+        case .applicationLifecycleInterrupted:
+            peakInterruption = .applicationLifecycleInterrupted
+        }
+
+        peakAccumulator.recordInterruption(peakInterruption)
         benchmarkCollector.markKnownObservationInterruption()
     }
 
