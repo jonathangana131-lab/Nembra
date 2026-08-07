@@ -97,6 +97,10 @@ public struct PeakPowerEvidenceAccumulator: Sendable {
     public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
 
     private var peakStorage: PeakPowerMeasurement?
+    /// Replay protection belongs to the selected immutable source stream, not to
+    /// the current product-facing peak accumulation window. These high-water
+    /// marks therefore survive `reset()` unless a future source-generation
+    /// identity provides a mechanically provable new chronology domain.
     private var lastSeenReceiptSequenceNumber: UInt64?
     private var lastObservedUptimeNanoseconds: UInt64?
     private var acceptedMeasurementCount = 0
@@ -236,12 +240,13 @@ public struct PeakPowerEvidenceAccumulator: Sendable {
         )
     }
 
-    /// Starts a fresh local accumulation epoch while preserving the immutable
-    /// scope/authority selected when this accumulator was created.
+    /// Clears only the product-facing accumulation window. Replay high-water
+    /// marks intentionally survive: `ObservedPowerEnvelopeObservation` does not
+    /// yet carry an acquisition/source generation that could prove a restarted
+    /// sequence belongs to a genuinely new immutable callback stream. A delayed
+    /// pre-reset callback must therefore remain unable to re-enter after reset.
     public mutating func reset() {
         peakStorage = nil
-        lastSeenReceiptSequenceNumber = nil
-        lastObservedUptimeNanoseconds = nil
         acceptedMeasurementCount = 0
         peakCandidateMeasurementCount = 0
         qualityRejectedMeasurementCount = 0
