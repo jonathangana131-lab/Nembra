@@ -95,14 +95,24 @@ public enum PassiveBluetoothCorrelation {
     /// Builds correlation windows for an explicitly selected peripheral in an
     /// imported/mixed session. Only raw value evidence from that exact target is
     /// eligible; the marker itself remains a human observation, not telemetry.
+    ///
+    /// Returns `nil` when the requested identifier has no correlation-attributable
+    /// connection/GATT/value evidence in the artifact. This keeps a typo or stale
+    /// identifier distinct from an observed target that legitimately has zero
+    /// nearby candidate values. Advertisement-only observations do not establish
+    /// marker attribution for this API.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String,
         field: String? = nil,
         lookbackNanoseconds: UInt64 = 2_000_000_000,
         lookaheadNanoseconds: UInt64 = 2_000_000_000
-    ) -> [PassiveBluetoothCorrelationWindow] {
-        buildWindows(
+    ) -> [PassiveBluetoothCorrelationWindow]? {
+        guard correlationPeripheralIdentifiers(in: session).contains(peripheralIdentifier) else {
+            return nil
+        }
+
+        return buildWindows(
             in: session,
             peripheralIdentifier: peripheralIdentifier,
             field: field,
