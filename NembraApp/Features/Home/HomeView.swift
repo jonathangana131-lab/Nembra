@@ -4,6 +4,7 @@ import UIKit
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
@@ -67,9 +68,12 @@ struct HomeView: View {
 
     private var vehicleHeader: some View {
         let needsAttention = vehicle.state.connection != .connected
+        let identityLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 16))
 
         return VStack(alignment: .leading, spacing: needsAttention ? 12 : 0) {
-            HStack(alignment: .center, spacing: 16) {
+            identityLayout {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(vehicle.profile.identity.displayName)
                         .font(.title2.weight(.bold))
@@ -87,7 +91,9 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                Spacer(minLength: 12)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 12)
+                }
 
                 if let isLocked = vehicle.state.isLocked {
                     Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
@@ -399,8 +405,11 @@ struct HomeView: View {
 
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
+        let recoveryLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
 
-        return HStack(alignment: .center, spacing: 12) {
+        return recoveryLayout {
             Image(systemName: presentation.icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(connectionAttentionTint)
@@ -417,7 +426,9 @@ struct HomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer(minLength: 8)
+            }
 
             switch presentation.action {
             case .progress:
