@@ -175,10 +175,14 @@ public struct ES80PassiveCaptureResearchView: View {
                                     .foregroundStyle(.secondary)
                             } else {
                                 Button(connectionActionLabel(for: peripheral.id)) {
-                                    perform {
+                                    let previousTargetIdentifier = controller.selectedTargetIdentifier
+                                    if perform({
                                         try controller.connect(to: peripheral.id)
                                         analysis = nil
                                         exportDocument = nil
+                                    }), previousTargetIdentifier != peripheral.id {
+                                        markerValue = ""
+                                        markerNote = ""
                                     }
                                 }
                                 .disabled(!canStartConnection(to: peripheral.id))
@@ -237,7 +241,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     markerNote = ""
                     analysis = nil
                 }) {
-                    diagnosticMessage = "Recorded \(recordedFieldTitle) marker. Refresh the evidence summary to include the new marker."
+                    diagnosticMessage = "Accepted \(recordedFieldTitle) marker into the live capture queue. Refresh the evidence summary to include it."
                 }
             }
             .disabled(
@@ -252,7 +256,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Only record what is actually visible in the stock app or other legitimate reference setup. Timing proximity is not a decoded DP claim.")
+            Text("Only record what is actually visible in the stock app or other legitimate reference setup. The marker timestamp is when Nembra receives your Record marker action; it does not prove when the stock app refreshed or changed, and timing proximity is not a decoded DP claim.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
