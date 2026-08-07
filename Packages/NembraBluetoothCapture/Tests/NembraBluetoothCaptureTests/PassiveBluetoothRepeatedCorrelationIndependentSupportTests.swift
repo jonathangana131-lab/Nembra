@@ -99,6 +99,12 @@ struct PassiveBluetoothRepeatedCorrelationIndependentSupportTests {
         #expect(evidence.representedDisplayedValues == ["73%", "72%"])
         #expect(evidence.isRepeatedAcrossMarkers)
         #expect(evidence.isRepeatedAcrossDisplayedValues)
+
+        let assignedOffsets = evidence.hits.map(\.absoluteOffsetSeconds)
+        #expect(abs(assignedOffsets[0] - 0.2) < 0.000_000_001)
+        #expect(abs(assignedOffsets[1] - 0.1) < 0.000_000_001)
+        #expect(abs((evidence.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+        #expect(abs((evidence.maximumNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
     }
 
     @Test("structured connection identity participates in unscoped ambiguity")
