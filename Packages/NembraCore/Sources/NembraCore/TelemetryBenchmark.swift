@@ -53,7 +53,14 @@ public struct TelemetryBenchmarkCollector: Sendable {
 
     private var acceptedSampleCount = 0
     private var rejectedSampleCount = 0
-    private var lastAcceptedUptimeNanoseconds: UInt64?
+
+    /// Global selected-source callback chronology. A source-matching callback is
+    /// observed even when it is later rejected from benchmark statistics (for
+    /// example because derived km/h overflows). Advancing this watermark before
+    /// representational admission prevents a delayed older callback from becoming
+    /// "fresh" merely because the newer callback was not accepted as evidence.
+    private var lastSeenUptimeNanoseconds: UInt64?
+
     private var previousSegmentUptimeNanoseconds: UInt64?
     private var previousSegmentSpeedKilometersPerHour: Double?
     private var observationSegmentCount = 0
@@ -73,10 +80,11 @@ public struct TelemetryBenchmarkCollector: Sendable {
     /// subscription interruption, or other source-lifecycle gap.
     ///
     /// The next accepted sample begins a new observation segment. No interval or
-    /// speed-step comparison is fabricated across the missing evidence. The
-    /// last accepted uptime remains the chronology anchor, so a delayed stale
-    /// callback cannot become fresh merely because observation was interrupted.
-    /// Repeated marks before new accepted evidence are idempotent.
+    /// speed-step comparison is fabricated across the missing evidence. Global
+    /// selected-source callback chronology remains intact, so a delayed stale
+    /// callback cannot become fresh merely because observation was interrupted or
+    /// because a newer callback was rejected from benchmark statistics. Repeated
+    /// marks before new accepted evidence are idempotent.
     public mutating func markKnownObservationInterruption() {
         guard acceptedSampleCount > 0, !observationInterruptionPending else { return }
 
@@ -93,17 +101,25 @@ public struct TelemetryBenchmarkCollector: Sendable {
             return .rejected(.sourceMismatch)
         }
 
-        if let lastAcceptedUptimeNanoseconds,
-           sample.receivedAtUptimeNanoseconds <= lastAcceptedUptimeNanoseconds {
+        if let lastSeenUptimeNanoseconds,
+           sample.receivedAtUptimeNanoseconds <= lastSeenUptimeNanoseconds {
             rejectedSampleCount += 1
             return .rejected(.nonMonotonicTimestamp)
         }
 
+        // This is callback-order evidence, not benchmark acceptance. Preserve the
+        // fact that a newer selected-source callback was observed before any later
+        // representation-specific rejection can occur. Foreign-source callbacks
+        // never reach this mutation and therefore cannot move this watermark.
+        lastSeenUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+
         // `SpeedTelemetrySample` correctly stores SI speed and only requires the
         // raw meters/second value to be finite. This benchmark additionally uses
         // km/h for empirical resolution, so validate that derived representation
-        // before mutating accepted-sample or observation-segment state. A rejected
-        // overflow therefore cannot consume a pending interruption marker.
+        // before mutating accepted-sample or observation-segment statistics. A
+        // rejected overflow therefore remains missing benchmark evidence and
+        // cannot consume a pending interruption marker, while its callback order
+        // still prevents delayed older selected-source packets from being replayed.
         let speedKPH = sample.kilometersPerHour
         guard speedKPH.isFinite, speedKPH >= 0 else {
             rejectedSampleCount += 1
@@ -135,7 +151,6 @@ public struct TelemetryBenchmarkCollector: Sendable {
         }
 
         acceptedSampleCount += 1
-        lastAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         previousSegmentUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         previousSegmentSpeedKilometersPerHour = speedKPH
         return .accepted
