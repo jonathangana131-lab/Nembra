@@ -60,12 +60,24 @@ This layer depends on the benchmark-continuity behavior from PR #185:
 
 - a known observation break starts a new benchmark segment after accepted evidence resumes;
 - cadence/jitter/speed-step math never bridges that known missing interval;
-- the prior accepted uptime remains the chronology anchor, so delayed stale callbacks cannot become fresh;
+- the accepted-sample chronology anchor remains global across explicit gaps;
 - a rejected callback does not consume a pending observation-gap marker.
 
 The ride peak pipeline separately records the same selected-source interruption as evidence loss. Therefore a benchmark may remain useful for within-segment source characterization while the observed peak is still correctly rejected for reportable use because its ride observation was partial.
 
 An initial recovery gap before the first accepted benchmark packet cannot be represented as a fictitious benchmark segment. Instead it remains explicit through `beganAfterKnownObservationGap` and through the ride peak's partial continuity.
+
+### Unresolved dependency chronology question
+
+PR #185 currently advances chronology only when a selected-source benchmark sample is **accepted**. A read-only review found an uncovered adversarial trace:
+
+1. accepted selected-source callback at uptime 100;
+2. newer selected-source callback at uptime 300 rejected because its required derived km/h overflows;
+3. delayed valid callback at uptime 200.
+
+With only `lastAcceptedUptimeNanoseconds`, callback 200 can appear newer than accepted 100 even though callback 300 was already observed. That can also make this ride-speed session clear a pending source interruption because the benchmark says `accepted` while the peak accumulator, which tracks selected-source observation chronology more strictly, rejects the callback as stale.
+
+The dependency owner has the exact trace in PR #185 comment `5215568271`; follow-up `5215774811` records that #185's green exact-head Xcode run does not by itself disposition the missing regression. This lane does not edit #185's owned files. Final #208 acceptance waits for the dependency to either harden this chronology or explicitly define an accepted-only chronology contract that this layer can safely consume.
 
 ## One physical outage remains one logical gap
 
@@ -98,12 +110,14 @@ This prevents a permissive quality policy from silently authorizing a mixed-sour
 `RideObservedPeakQualityPolicy` chooses **no ES80-specific numeric constants**. Instead, it refuses to exist unless the caller supplies the evidence dimensions peak reporting must not silently omit:
 
 - an explicit required authoritative source;
-- at least three accepted samples;
 - a maximum rejected-sample fraction;
 - maximum mean arrival interval;
 - maximum observed arrival interval;
 - maximum interval jitter;
-- maximum empirical nonzero speed step / resolution.
+- maximum empirical nonzero speed step / resolution;
+- at least three accepted samples.
+
+Missing required dimensions are diagnosed before the statistical sample floor. A caller that omitted jitter or rejected-fraction requirements receives that missing-requirement error rather than a misleading sample-floor error for evidence it never asked to measure.
 
 The three-sample construction floor is a statistical shape invariant, not an ES80 quality threshold. Jitter is variation between intervals. Two accepted samples provide only one interval, whose population standard deviation is trivially zero and therefore is not meaningful jitter evidence.
 
@@ -117,6 +131,26 @@ For GPS, the policy additionally requires:
 GPS peak evidence itself must also use an explicit `maximumSpeedAccuracyMetersPerSecond` in `PeakSpeedPolicy` before it can become reportable under this layer.
 
 The actual threshold values must come from legitimate feature requirements and physical evidence. This package does not guess them.
+
+## Readiness is self-describing audit evidence
+
+A later caller must not receive only an opaque boolean such as `isReady == true` after the thresholds and raw evidence that produced it have disappeared.
+
+`RideObservedPeakReadiness` therefore retains the exact immutable inputs and outputs of the decision:
+
+- ride `sessionID`;
+- selected source;
+- `beganAfterKnownObservationGap`;
+- `foreignSourceCallbackCount`;
+- ride-bound peak evidence, if one exists;
+- the exact same-ride `TelemetryBenchmarkSummary`;
+- the exact `RideObservedPeakQualityPolicy` supplied by the caller;
+- the resulting `SpeedTelemetryQualityAssessment`;
+- all peak-feature readiness failures.
+
+This matters especially for failed/no-peak decisions. If a recovered observer starts after a known gap and then sees only a foreign-source callback, `peakEvidence` is still nil—but the readiness result retains the initial-gap flag, foreign-source count, benchmark summary, policy and failures rather than collapsing the session into a generic `peakUnavailable` result.
+
+`RideObservedPeakReadiness` is intentionally not `Codable`. This slice is runtime/domain audit evidence, not a persistence migration or a claim that caller-injected thresholds have been physically validated for ES80.
 
 ## Reportability failures remain distinct
 
@@ -152,29 +186,30 @@ This slice does not:
 
 While PR #185 is open, this lane is explicitly dependent on its exact benchmark-continuity feature blobs and must not be merged as a competing implementation.
 
-After #185 merges:
+After #185 merges with a resolved chronology contract:
 
 1. refresh current main;
-2. rebuild this branch from current main plus only this lane's own files;
+2. rebuild this branch from current main plus only this lane's eight owned files;
 3. verify the effective diff no longer contains `TelemetryBenchmark.swift` or `TelemetryBenchmarkContinuityTests.swift`;
 4. rerun focused package tests on the exact final head;
 5. refresh reviews, overlap, and mergeability;
-6. merge only after the dependency is part of main and same-ride tests remain green.
+6. mark ready only after the exact-head package gate is green;
+7. merge only with expected-head protection.
 
 ## Verification
 
-Before the lifecycle-authority and minimum-jitter-sample hardening, focused Swift 6.2.1 warnings-as-errors debug and release harnesses passed **18/18 tests in both configurations** against the #185 benchmark-continuity contract plus the merged ride-bound peak contract. Those results are supporting evidence only after the newer source changes.
+Before the lifecycle-authority and later evidence hardening, focused Swift 6.2.1 warnings-as-errors debug and release harnesses passed **18/18 tests in both configurations** against the #185 benchmark-continuity contract plus the merged ride-bound peak contract. Those results are supporting evidence only after the newer source changes.
 
 Additional post-hardening evidence currently includes:
 
 - same-package `package` access compile: pass with warnings-as-errors;
 - external-package fresh observer construction: rejected at compile time as intended;
-- deterministic policy regressions reject minimum accepted sample counts of 1 and 2 and accept 3: **3/3 debug + 3/3 release**;
+- policy/sample-floor and validation-precedence focused checks: green in debug + release;
 - logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors, covering repeated-gap deduplication, recovery-start deduplication, rejected-source evidence preserving a pending gap, and GPS raw resumption re-arming a later gap even when peak-specific accuracy rejects that sample;
-- observed-interval readiness probe: **2/2 debug + 2/2 release** with warnings-as-errors, proving a 3-sample 2+1 segmented stream fails the two-interval jitter floor while a clean two-interval snapshot passes.
+- observed-interval readiness probe: **2/2 debug + 2/2 release** with warnings-as-errors, proving a three-sample 2+1 segmented stream fails the two-interval jitter floor while a clean two-interval snapshot passes;
+- readiness audit-provenance probe: **2/2 debug + 2/2 release** with warnings-as-errors, including failed/no-peak initial-gap and foreign-source provenance retention;
+- deterministic logical-gap reference model: **100,000 mixed operations** passes debug + release.
 
-A separate read-only dependency review identified a possible rejected-newer/stale-replay chronology edge in #185 and recorded it in PR #185 comment `5215568271`; after #185's exact-head CI turned green, follow-up `5215774811` records that the green run does not disposition that uncovered trace. This lane does not modify the dependency's owned files.
-
-Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
+These are supplemental local proofs. Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
 
 Software verification is not physical AOVOPRO ES80 validation.
