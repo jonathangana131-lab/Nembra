@@ -57,6 +57,10 @@ public struct SpeedDisplayInterpolator: Sendable {
         guard sample.isAuthoritativeMeasurement else {
             throw SpeedDisplayInterpolationError.nonAuthoritativeInput
         }
+        if hasMeasurement,
+           sample.receivedAtUptimeNanoseconds <= latestMeasurementUptimeNanoseconds {
+            throw SpeedDisplayInterpolationError.nonMonotonicMeasurement
+        }
 
         // `SpeedTelemetrySample` validates the raw m/s value, but multiplying a
         // very large finite value by 3.6 can overflow the derived km/h display
@@ -65,11 +69,6 @@ public struct SpeedDisplayInterpolator: Sendable {
         let newTarget = sample.kilometersPerHour
         guard newTarget.isFinite, newTarget >= 0 else {
             throw SpeedDisplayInterpolationError.nonFiniteDisplaySpeed
-        }
-
-        if hasMeasurement,
-           sample.receivedAtUptimeNanoseconds <= latestMeasurementUptimeNanoseconds {
-            throw SpeedDisplayInterpolationError.nonMonotonicMeasurement
         }
 
         let hadMeasurement = hasMeasurement
