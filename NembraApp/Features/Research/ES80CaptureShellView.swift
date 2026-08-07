@@ -26,6 +26,8 @@ struct ES80CaptureShellView: View {
 
     let controller: ForegroundCoreBluetoothCaptureController
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var selectedCandidateIdentifier: UUID?
     @State private var diagnosticMessage: String?
     @State private var exportDocument: PassiveCaptureJSONDocument?
@@ -299,10 +301,12 @@ struct ES80CaptureShellView: View {
                         guard peripheral.isConnectable != false else { return }
                         selectedCandidateIdentifier = peripheral.id
                     }
-                    .accessibilityAddTraits(selectedCandidateIdentifier == peripheral.id ? .isSelected : [])
             }
         }
-        .animation(.snappy(duration: 0.2), value: controller.discoveredPeripherals)
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.2),
+            value: controller.discoveredPeripherals
+        )
     }
 
     private func candidateRow(
@@ -322,7 +326,7 @@ struct ES80CaptureShellView: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(peripheral.localName?.isEmpty == false ? peripheral.localName! : "Nearby Bluetooth candidate")
+                Text(candidateName(peripheral))
                     .font(.headline)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -449,7 +453,7 @@ struct ES80CaptureShellView: View {
         _ title: String,
         systemImage: String,
         disabled: Bool = false,
-        action: @escaping @MainActor () -> Void
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
@@ -470,7 +474,7 @@ struct ES80CaptureShellView: View {
     private func secondaryButton(
         _ title: String,
         systemImage: String,
-        action: @escaping @MainActor () -> Void
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
@@ -625,13 +629,21 @@ struct ES80CaptureShellView: View {
         isPreparingExport = false
     }
 
+    private func candidateName(
+        _ peripheral: ForegroundCoreBluetoothCaptureController.DiscoveredPeripheral
+    ) -> String {
+        guard let localName = peripheral.localName, !localName.isEmpty else {
+            return "Nearby Bluetooth candidate"
+        }
+        return localName
+    }
+
     private func candidateAccessibilityLabel(
         _ peripheral: ForegroundCoreBluetoothCaptureController.DiscoveredPeripheral,
         selected: Bool
     ) -> String {
-        let name = peripheral.localName?.isEmpty == false ? peripheral.localName! : "Nearby Bluetooth candidate"
         let connection = peripheral.isConnectable == false ? "not connectable" : "candidate"
         let selection = selected ? ", selected" : ""
-        return "\(name), \(peripheral.rssiDescription), \(connection)\(selection)."
+        return "\(candidateName(peripheral)), \(peripheral.rssiDescription), \(connection)\(selection)."
     }
 }
