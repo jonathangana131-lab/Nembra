@@ -47,10 +47,11 @@ public struct RideStatisticsRide: Equatable, Sendable {
     public let distanceMeters: Double?
     public let distanceDisposition: RideStatisticsDistanceDisposition
 
-    /// Module-internal construction is reserved for core tests and trusted
-    /// adapters. App code must not bypass reconciliation by self-declaring an
-    /// arbitrary distance as included evidence.
-    init(
+    /// Package-only construction is reserved for NembraCore tests and trusted
+    /// package adapters. Ordinary clients cannot manufacture included mileage,
+    /// and direct-app source composition fails closed instead of silently gaining
+    /// same-module access to this constructor.
+    package init(
         sessionID: UUID,
         attributedDate: Date,
         distanceMeters: Double?,
@@ -76,11 +77,13 @@ public struct RideStatisticsRide: Equatable, Sendable {
         self.distanceDisposition = distanceDisposition
     }
 
-    /// Bridges the existing completed-ride and reconciliation domains without
-    /// treating incomplete/conflicting evidence as trustworthy mileage. The
-    /// calendar attribution rule is explicit so this domain does not invent a
+    /// Package-only bridge between completed-ride and reconciliation domains.
+    /// `ReconciledRideDistance` does not yet carry durable ride identity, so this
+    /// two-value composition must not be exposed as public production API until
+    /// a future adapter mechanically binds both values to the same ride.
+    /// Calendar attribution stays explicit so the domain does not invent a
     /// start-vs-end-date product decision for rides that cross midnight.
-    public init(
+    package init(
         completedRide: CompletedRideEvidence,
         reconciledDistance: ReconciledRideDistance,
         calendarAttribution: RideStatisticsCalendarAttribution
