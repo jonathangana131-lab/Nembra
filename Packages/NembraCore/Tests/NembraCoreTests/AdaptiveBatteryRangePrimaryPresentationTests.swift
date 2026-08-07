@@ -280,6 +280,19 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
         #expect(nonFinite == .unavailable(.invalidEstimateStructure))
     }
 
+    @Test("finite efficiency whose full-charge equivalent overflows is structurally invalid")
+    func fullChargeEquivalentOverflowIsUnavailable() {
+        let decision = policy.resolve(
+            estimate: estimate(
+                metersPerPercentagePoint: .greatestFiniteMagnitude,
+                confidence: .high
+            ),
+            vehicleState: liveState
+        )
+
+        #expect(decision == .unavailable(.invalidEstimateStructure))
+    }
+
     @Test("raw range cannot exceed the current full-charge equivalent")
     func rawRangeAboveFullChargeEquivalentIsUnavailable() {
         let decision = policy.resolve(
