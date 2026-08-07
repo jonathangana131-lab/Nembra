@@ -80,6 +80,7 @@ public actor RideHistoryCommitCoordinator {
 
 public enum RideRouteEvidenceError: Error, Equatable, Sendable {
     case invalidCoordinate
+    case invalidDate
     case invalidHorizontalAccuracy
     case emptyChunk
     case nonMonotonicPointSequence
@@ -125,6 +126,11 @@ public struct RideRoutePoint: Codable, Equatable, Sendable {
               (-90...90).contains(latitude),
               (-180...180).contains(longitude) else {
             throw RideRouteEvidenceError.invalidCoordinate
+        }
+
+        guard capturedAtDate.timeIntervalSinceReferenceDate.isFinite,
+              sourceMeasurementDate.map({ $0.timeIntervalSinceReferenceDate.isFinite }) ?? true else {
+            throw RideRouteEvidenceError.invalidDate
         }
 
         if let horizontalAccuracyMeters {
