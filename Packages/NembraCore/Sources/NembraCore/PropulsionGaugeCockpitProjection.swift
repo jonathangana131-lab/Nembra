@@ -65,7 +65,18 @@ public extension PropulsionGaugeDisplayModel {
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
     ) -> PropulsionGaugeCockpitSnapshot {
-        let frame = frame(atUptimeNanoseconds: now, scale: scale)
+        cockpitSnapshot(
+            from: frame(atUptimeNanoseconds: now, scale: scale)
+        )
+    }
+
+    /// Internal composition seam for callers that already evaluated the canonical
+    /// gauge frame for this display tick. This keeps the cockpit's numeric truth
+    /// and render-only motion on one presentation cut without re-running display
+    /// interpolation.
+    internal func cockpitSnapshot(
+        from frame: PropulsionGaugeFrame
+    ) -> PropulsionGaugeCockpitSnapshot {
         let measurement = cockpitMeasurement(from: frame)
 
         // A live/retained frame must carry complete accepted provenance. If it does not, fail the whole
