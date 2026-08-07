@@ -30,12 +30,53 @@ public struct RideDurationStatisticsRide: Equatable, Sendable {
     public let observedDurationNanoseconds: UInt64?
     public let coverage: RideSessionDurationCoverage
 
-    /// Package-only because `CompletedRideDurationEvidence` currently proves
-    /// session + continuity identity, not the full immutable completed record.
-    /// Trusted package adapters must mechanically join both values from the same
-    /// completed-ride record before constructing statistics input.
+#if SWIFT_PACKAGE
+    /// Package-only because independent completed + duration records are not a
+    /// production trust boundary. NembraCore tests and trusted package adapters
+    /// may construct fixtures directly after the validation below.
     package init(
         completedRide: CompletedRideEvidence,
+        durationEvidence: CompletedRideDurationEvidence,
+        calendarAttribution: RideStatisticsCalendarAttribution
+    ) throws {
+        try self.init(
+            validating: completedRide,
+            durationEvidence: durationEvidence,
+            calendarAttribution: calendarAttribution
+        )
+    }
+#else
+    /// `RideDurationStatistics.swift` can be compiled directly into Nembra.app.
+    /// Keep the raw cross-record constructor file-owned there so same-module app
+    /// code cannot bypass the sealed history-duration join.
+    fileprivate init(
+        completedRide: CompletedRideEvidence,
+        durationEvidence: CompletedRideDurationEvidence,
+        calendarAttribution: RideStatisticsCalendarAttribution
+    ) throws {
+        try self.init(
+            validating: completedRide,
+            durationEvidence: durationEvidence,
+            calendarAttribution: calendarAttribution
+        )
+    }
+#endif
+
+    /// Production bridge from a history-duration join that has already been
+    /// revalidated against the two durable stores by NembraCore.
+    public init(
+        historyDurationRecord record: RideHistoryDurationJoinedRecord,
+        calendarAttribution: RideStatisticsCalendarAttribution
+    ) throws {
+        try self.init(
+            validating: record.historyRecord.evidence,
+            durationEvidence: record.durationRecord.evidence,
+            calendarAttribution: calendarAttribution
+        )
+    }
+
+    private init(
+        validating completedRide: CompletedRideEvidence,
         durationEvidence: CompletedRideDurationEvidence,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
