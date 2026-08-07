@@ -1,8 +1,8 @@
 import Foundation
 
-/// Codable restore must cross the same validation boundary as live normalized
-/// battery evidence. Synthesized decoding would otherwise assign stored values
-/// directly and bypass the throwing initializer.
+/// Codable restore must cross the same validation boundary as live normalized battery evidence.
+/// Generic persistence is deliberately non-authoritative: process-local accepted vehicle SoC
+/// cannot be reconstructed from JSON by replaying an enum case and uptime value.
 extension BatterySOCReading {
     private enum CodableValidationKeys: String, CodingKey {
         case percentage
@@ -15,6 +15,14 @@ extension BatterySOCReading {
         let percentage = try container.decode(Double.self, forKey: .percentage)
         let provenance = try container.decode(BatterySOCProvenance.self, forKey: .provenance)
         let uptime = try container.decode(UInt64.self, forKey: .receivedAtUptimeNanoseconds)
+
+        guard provenance != .authoritativeMeasurement else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .provenance,
+                in: container,
+                debugDescription: "Generic SoC import cannot restore accepted vehicle authority."
+            )
+        }
 
         do {
             try self.init(
@@ -32,6 +40,16 @@ extension BatterySOCReading {
     }
 
     public func encode(to encoder: any Encoder) throws {
+        guard provenance != .authoritativeMeasurement else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "Generic SoC encoding cannot serialize accepted vehicle authority."
+                )
+            )
+        }
+
         var container = encoder.container(keyedBy: CodableValidationKeys.self)
         try container.encode(percentage, forKey: .percentage)
         try container.encode(provenance, forKey: .provenance)
@@ -39,8 +57,9 @@ extension BatterySOCReading {
     }
 }
 
-/// Persisted/imported learning windows must not bypass distance or monotonic-time
-/// validation merely because their JSON shape is syntactically valid.
+/// Persisted/imported learning windows must not bypass distance or monotonic-time validation.
+/// Any window containing authoritative SoC also fails generic Codable transit because the SoC
+/// codec above refuses to serialize/import live authority.
 extension BatteryRangeLearningWindow {
     private enum CodableValidationKeys: String, CodingKey {
         case distanceMeters
@@ -88,9 +107,8 @@ extension BatteryRangeLearningWindow {
     }
 }
 
-/// Policy is configuration rather than telemetry, but invalid restored policy can
-/// still crash or corrupt range behavior (for example a non-positive recent
-/// capacity). Decode through the validated initializer instead of assigning
+/// Policy is configuration rather than telemetry, but invalid restored policy can still crash
+/// or corrupt range behavior. Decode through the validated initializer instead of assigning
 /// stored properties directly.
 extension AdaptiveBatteryRangePolicy {
     private enum CodableValidationKeys: String, CodingKey {
@@ -205,9 +223,9 @@ extension AdaptiveBatteryRangePolicy {
     }
 }
 
-/// Range estimates are derived presentation/domain output rather than telemetry,
-/// but they are Codable. Decoding must therefore reject impossible values instead
-/// of allowing malformed storage/imports to create believable-looking range.
+/// Generic persisted/imported range estimates are derived values, never live evidence. A live
+/// estimate whose source SoC was authoritative is intentionally non-Codable because its
+/// receipt/currentness binding lives in `AdaptiveBatteryRangeLiveEstimate` and is process-local.
 extension AdaptiveBatteryRangeEstimate {
     private enum CodableValidationKeys: String, CodingKey {
         case rawRemainingMeters
@@ -228,6 +246,14 @@ extension AdaptiveBatteryRangeEstimate {
         let confidence = try container.decode(AdaptiveRangeConfidence.self, forKey: .confidence)
         let socProvenance = try container.decode(BatterySOCProvenance.self, forKey: .socProvenance)
         let lowSOCConservatismApplied = try container.decode(Bool.self, forKey: .lowSOCConservatismApplied)
+
+        guard socProvenance != .authoritativeMeasurement else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .socProvenance,
+                in: container,
+                debugDescription: "Generic range-estimate import cannot restore live SoC authority/currentness."
+            )
+        }
 
         let fullChargeRange = metersPerPercentagePoint * 100
         let tolerance = max(1, abs(fullChargeRange)) * 1e-12
@@ -259,6 +285,16 @@ extension AdaptiveBatteryRangeEstimate {
     }
 
     public func encode(to encoder: any Encoder) throws {
+        guard socProvenance != .authoritativeMeasurement else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "Generic range-estimate encoding cannot serialize live SoC authority/currentness."
+                )
+            )
+        }
+
         var container = encoder.container(keyedBy: CodableValidationKeys.self)
         try container.encode(rawRemainingMeters, forKey: .rawRemainingMeters)
         try container.encode(presentedRemainingMeters, forKey: .presentedRemainingMeters)
