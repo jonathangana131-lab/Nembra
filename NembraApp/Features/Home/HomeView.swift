@@ -321,6 +321,7 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .nembraGlassControl()
+        .accessibilityValue(pending ? "Requesting confirmation" : "")
         .disabled(
             vehicle.state.connection != .connected ||
             vehicle.isVehicleCommandPending ||
@@ -367,6 +368,7 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending)
                     .accessibilityLabel(mode.displayName)
+                    .accessibilityValue(vehicle.pendingRideMode == mode ? "Requesting confirmation" : "")
                     .accessibilityAddTraits(vehicle.state.rideMode == mode ? .isSelected : [])
                     .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
                 }
