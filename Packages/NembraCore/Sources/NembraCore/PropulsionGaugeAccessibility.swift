@@ -54,13 +54,14 @@ public extension PropulsionGaugeDisplayModel {
     ) -> PropulsionGaugeAccessibilitySnapshot {
         let frame = frame(atUptimeNanoseconds: now, scale: scale)
 
+        // The accepted presentation frame remains the single authority for scale
+        // compatibility. Accessibility must not duplicate vehicle/mode/authority
+        // admission rules that could later diverge from the visual model.
         guard frame.availability == .live,
               let latestAcceptedWatts = frame.latestAcceptedWatts,
-              let latestAuthority = frame.latestAuthority,
-              let compatibleScale = compatibleAccessibilityScale(
-                scale,
-                authority: latestAuthority
-              ) else {
+              let compatibleScale = scale,
+              let scaleOrigin = frame.scaleOrigin,
+              compatibleScale.origin == scaleOrigin else {
             return PropulsionGaugeAccessibilitySnapshot(
                 availability: frame.availability,
                 latestAcceptedWatts: frame.latestAcceptedWatts,
@@ -82,26 +83,9 @@ public extension PropulsionGaugeDisplayModel {
             latestAcceptedWatts: latestAcceptedWatts,
             latestAcceptedReceiptSequenceNumber: frame.latestAcceptedReceiptSequenceNumber,
             latestAcceptedUptimeNanoseconds: frame.latestAcceptedUptimeNanoseconds,
-            latestAuthority: latestAuthority,
+            latestAuthority: frame.latestAuthority,
             acceptedObservedScaleFraction: acceptedFraction,
-            scaleOrigin: compatibleScale.origin
+            scaleOrigin: scaleOrigin
         )
-    }
-
-    private func compatibleAccessibilityScale(
-        _ scale: PropulsionGaugeScale?,
-        authority: PropulsionPowerSampleAuthority
-    ) -> PropulsionGaugeScale? {
-        guard let scale, scale.identity == identity else {
-            return nil
-        }
-
-        switch (scale.origin, authority) {
-        case (.verifiedObservedEnvelope, .verifiedVehicleMeasurement),
-             (.simulator, .simulator):
-            return scale
-        default:
-            return nil
-        }
     }
 }
