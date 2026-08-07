@@ -75,7 +75,8 @@ public enum AppleMapKitErrorProjection {
     public static func failure(from error: Error) -> NavigationRoutePlanFailure {
         let nsError = error as NSError
         guard nsError.domain == MKErrorDomain,
-              let code = MKError.Code(rawValue: nsError.code) else {
+              let rawCode = UInt(exactly: nsError.code),
+              let code = MKError.Code(rawValue: rawCode) else {
             return .unknown
         }
 
