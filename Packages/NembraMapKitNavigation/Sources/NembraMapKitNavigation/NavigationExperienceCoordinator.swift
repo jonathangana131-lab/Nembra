@@ -111,11 +111,15 @@ public final class NavigationExperienceCoordinator {
 
     /// Cancels only the current planning request. Existing selected navigation
     /// remains active and any racing plan return is ignored by workflow identity.
+    /// If no request is in flight, existing completed alternatives are preserved.
     @discardableResult
     public func cancelPlanning() throws -> Bool {
         _ = try nextWorkflowGeneration()
-        routeSelection = nil
-        return planningService.cancelCurrent()
+        let cancelled = planningService.cancelCurrent()
+        if cancelled {
+            routeSelection = nil
+        }
+        return cancelled
     }
 
     /// Clears active guidance explicitly while preserving the current provider
