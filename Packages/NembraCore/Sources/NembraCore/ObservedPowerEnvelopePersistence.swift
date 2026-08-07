@@ -1,0 +1,482 @@
+import Foundation
+
+public enum ObservedPowerEnvelopeCheckpointError: Error, Equatable, Sendable {
+    case calibrationUnavailable
+    case authorityMismatch
+    case unsupportedSchemaVersion(Int)
+    case invalidVehicleIdentityKey
+    case invalidConfirmedModeKey
+    case invalidPolicy
+    case invalidLearnedObservedCeilingWatts
+    case invalidLearningSampleCount
+    case invalidUpperBandSupportCount
+    case derivedGaugeScaleOverflow
+    case scopeMismatch
+    case policyMismatch
+    case currentSessionLearnerMismatch
+}
+
+/// Codable copy of the exact software policy that produced a retained calibration.
+///
+/// The snapshot is persisted so a calibration is never silently restored under a
+/// different percentile/support/headroom policy after an app update.
+public struct ObservedPowerEnvelopePolicyCheckpoint: Codable, Equatable, Sendable {
+    public let windowCapacity: Int
+    public let minimumLearningSampleCount: Int
+    public let minimumUpperBandSupportCount: Int
+    public let upperPercentile: Double
+    public let upperBandFraction: Double
+    public let headroomFraction: Double
+    public let upwardHysteresisFraction: Double
+
+    fileprivate init(_ policy: ObservedPowerEnvelopePolicy) {
+        windowCapacity = policy.windowCapacity
+        minimumLearningSampleCount = policy.minimumLearningSampleCount
+        minimumUpperBandSupportCount = policy.minimumUpperBandSupportCount
+        upperPercentile = policy.upperPercentile
+        upperBandFraction = policy.upperBandFraction
+        headroomFraction = policy.headroomFraction
+        upwardHysteresisFraction = policy.upwardHysteresisFraction
+    }
+
+    fileprivate func validatedPolicy() throws -> ObservedPowerEnvelopePolicy {
+        do {
+            return try ObservedPowerEnvelopePolicy(
+                windowCapacity: windowCapacity,
+                minimumLearningSampleCount: minimumLearningSampleCount,
+                minimumUpperBandSupportCount: minimumUpperBandSupportCount,
+                upperPercentile: upperPercentile,
+                upperBandFraction: upperBandFraction,
+                headroomFraction: headroomFraction,
+                upwardHysteresisFraction: upwardHysteresisFraction
+            )
+        } catch {
+            throw ObservedPowerEnvelopeCheckpointError.invalidPolicy
+        }
+    }
+
+    fileprivate func matches(_ policy: ObservedPowerEnvelopePolicy) -> Bool {
+        self == Self(policy)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        windowCapacity = try container.decode(Int.self, forKey: .windowCapacity)
+        minimumLearningSampleCount = try container.decode(Int.self, forKey: .minimumLearningSampleCount)
+        minimumUpperBandSupportCount = try container.decode(Int.self, forKey: .minimumUpperBandSupportCount)
+        upperPercentile = try container.decode(Double.self, forKey: .upperPercentile)
+        upperBandFraction = try container.decode(Double.self, forKey: .upperBandFraction)
+        headroomFraction = try container.decode(Double.self, forKey: .headroomFraction)
+        upwardHysteresisFraction = try container.decode(Double.self, forKey: .upwardHysteresisFraction)
+        _ = try validatedPolicy()
+    }
+}
+
+public enum ObservedPowerEnvelopeEffectiveCalibrationOrigin: String, Equatable, Sendable {
+    /// A previously learned calibration restored from validated durable state.
+    case retainedCheckpoint
+    /// A stronger calibration learned again during the current process/session.
+    case currentSession
+}
+
+/// Calibration selected for presentation after reconciling retained history with
+/// current-session learning. The origin is kept explicit so persistence never
+/// masquerades as a fresh measurement or fresh learning event.
+public struct ObservedPowerEnvelopeEffectiveCalibration: Equatable, Sendable {
+    public let calibration: ObservedPowerEnvelopeCalibration
+    public let origin: ObservedPowerEnvelopeEffectiveCalibrationOrigin
+}
+
+/// Durable, validation-first representation of one learned observed power ceiling.
+///
+/// Intentionally NOT persisted:
+/// - process uptime / receipt chronology;
+/// - the rolling eligible-power window;
+/// - individual physical measurements;
+/// - display/interpolated frames.
+///
+/// Those values cannot safely survive process relaunch as fresh evidence. A new
+/// learner starts with a fresh chronology/window; this checkpoint only retains the
+/// previously established presentation floor for the exact same scope + policy.
+public struct ObservedPowerEnvelopeCalibrationCheckpoint: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 1
+
+    public let schemaVersion: Int
+    public let vehicleIdentityKey: String
+    public let confirmedModeKey: String?
+    public let identityAuthority: ObservedPowerEnvelopeScopeAuthority
+    public let evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    public let policy: ObservedPowerEnvelopePolicyCheckpoint
+    public let learnedObservedCeilingWatts: Double
+    public let learningSampleCount: Int
+    public let upperBandSupportCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case vehicleIdentityKey
+        case confirmedModeKey
+        case identityAuthority
+        case evidenceAuthority
+        case policy
+        case learnedObservedCeilingWatts
+        case learningSampleCount
+        case upperBandSupportCount
+    }
+
+    private init(
+        learner: ObservedPowerEnvelopeLearner,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws {
+        guard learner.scope.identityAuthority == requiredScopeAuthority,
+              learner.evidenceAuthority == requiredEvidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+        guard let calibration = learner.calibration else {
+            throw ObservedPowerEnvelopeCheckpointError.calibrationUnavailable
+        }
+        guard calibration.scope == learner.scope,
+              calibration.evidenceAuthority == learner.evidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+
+        let checkpointPolicy = ObservedPowerEnvelopePolicyCheckpoint(learner.policy)
+        try Self.validateCalibrationFields(
+            learnedObservedCeilingWatts: calibration.learnedObservedCeilingWatts,
+            learningSampleCount: calibration.learningSampleCount,
+            upperBandSupportCount: calibration.upperBandSupportCount,
+            policy: checkpointPolicy
+        )
+
+        let expectedScale = try Self.derivedGaugeScale(
+            ceilingWatts: calibration.learnedObservedCeilingWatts,
+            policy: checkpointPolicy
+        )
+        guard calibration.learnedGaugeScaleWatts == expectedScale else {
+            throw ObservedPowerEnvelopeCheckpointError.invalidLearnedObservedCeilingWatts
+        }
+
+        schemaVersion = Self.currentSchemaVersion
+        vehicleIdentityKey = learner.scope.vehicleIdentityKey
+        confirmedModeKey = learner.scope.confirmedModeKey
+        identityAuthority = learner.scope.identityAuthority
+        evidenceAuthority = learner.evidenceAuthority
+        policy = checkpointPolicy
+        learnedObservedCeilingWatts = calibration.learnedObservedCeilingWatts
+        learningSampleCount = calibration.learningSampleCount
+        upperBandSupportCount = calibration.upperBandSupportCount
+    }
+
+    /// Public Simulator/runtime-QA persistence. This can never snapshot a package-
+    /// sealed verified-physical learner as Simulator evidence.
+    public static func simulatorQA(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed physical persistence so generic clients cannot create a
+    /// durable "verified physical" checkpoint by selecting an authority enum.
+    package static func verifiedVehicleMeasurements(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#else
+    fileprivate static func verifiedVehicleMeasurements(
+        from learner: ObservedPowerEnvelopeLearner
+    ) throws -> Self {
+        try Self(
+            learner: learner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#endif
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == Self.currentSchemaVersion else {
+            throw ObservedPowerEnvelopeCheckpointError.unsupportedSchemaVersion(schemaVersion)
+        }
+
+        let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
+        guard !vehicleIdentityKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ObservedPowerEnvelopeCheckpointError.invalidVehicleIdentityKey
+        }
+
+        let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
+        if let confirmedModeKey,
+           confirmedModeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ObservedPowerEnvelopeCheckpointError.invalidConfirmedModeKey
+        }
+
+        let identityAuthorityRaw = try container.decode(String.self, forKey: .identityAuthority)
+        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityAuthorityRaw) else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+        let evidenceAuthorityRaw = try container.decode(String.self, forKey: .evidenceAuthority)
+        guard let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: evidenceAuthorityRaw) else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+        guard Self.authoritiesMatch(
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority
+        ) else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+
+        let policy = try container.decode(ObservedPowerEnvelopePolicyCheckpoint.self, forKey: .policy)
+        let learnedObservedCeilingWatts = try container.decode(Double.self, forKey: .learnedObservedCeilingWatts)
+        let learningSampleCount = try container.decode(Int.self, forKey: .learningSampleCount)
+        let upperBandSupportCount = try container.decode(Int.self, forKey: .upperBandSupportCount)
+        try Self.validateCalibrationFields(
+            learnedObservedCeilingWatts: learnedObservedCeilingWatts,
+            learningSampleCount: learningSampleCount,
+            upperBandSupportCount: upperBandSupportCount,
+            policy: policy
+        )
+        _ = try Self.derivedGaugeScale(ceilingWatts: learnedObservedCeilingWatts, policy: policy)
+
+        self.schemaVersion = schemaVersion
+        self.vehicleIdentityKey = vehicleIdentityKey
+        self.confirmedModeKey = confirmedModeKey
+        self.identityAuthority = identityAuthority
+        self.evidenceAuthority = evidenceAuthority
+        self.policy = policy
+        self.learnedObservedCeilingWatts = learnedObservedCeilingWatts
+        self.learningSampleCount = learningSampleCount
+        self.upperBandSupportCount = upperBandSupportCount
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(vehicleIdentityKey, forKey: .vehicleIdentityKey)
+        try container.encodeIfPresent(confirmedModeKey, forKey: .confirmedModeKey)
+        try container.encode(identityAuthority.rawValue, forKey: .identityAuthority)
+        try container.encode(evidenceAuthority.rawValue, forKey: .evidenceAuthority)
+        try container.encode(policy, forKey: .policy)
+        try container.encode(learnedObservedCeilingWatts, forKey: .learnedObservedCeilingWatts)
+        try container.encode(learningSampleCount, forKey: .learningSampleCount)
+        try container.encode(upperBandSupportCount, forKey: .upperBandSupportCount)
+    }
+
+    /// Restore a retained Simulator calibration only after exact scope + policy
+    /// validation. This does not restore process chronology or the learning window.
+    public func restoredSimulatorQA(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy
+    ) throws -> ObservedPowerEnvelopeCalibration {
+        try restoredCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed physical restore. The caller must already possess the exact
+    /// verified vehicle/mode scope minted by the trusted production integration.
+    package func restoredVerifiedVehicleMeasurement(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy
+    ) throws -> ObservedPowerEnvelopeCalibration {
+        try restoredCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#else
+    fileprivate func restoredVerifiedVehicleMeasurement(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy
+    ) throws -> ObservedPowerEnvelopeCalibration {
+        try restoredCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#endif
+
+    /// Keep the retained ceiling as a floor across relaunch. A fresh session can
+    /// replace it only after the same exact scope + policy learns a strictly higher
+    /// scale. Lower current-session output cannot silently shrink historical full-
+    /// power presentation.
+    public func effectiveSimulatorQACalibration(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy,
+        currentSessionLearner: ObservedPowerEnvelopeLearner
+    ) throws -> ObservedPowerEnvelopeEffectiveCalibration {
+        try effectiveCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            currentSessionLearner: currentSessionLearner,
+            requiredScopeAuthority: .simulatorQA,
+            requiredEvidenceAuthority: .simulatorQA
+        )
+    }
+
+#if SWIFT_PACKAGE
+    package func effectiveVerifiedVehicleCalibration(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy,
+        currentSessionLearner: ObservedPowerEnvelopeLearner
+    ) throws -> ObservedPowerEnvelopeEffectiveCalibration {
+        try effectiveCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            currentSessionLearner: currentSessionLearner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#else
+    fileprivate func effectiveVerifiedVehicleCalibration(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy,
+        currentSessionLearner: ObservedPowerEnvelopeLearner
+    ) throws -> ObservedPowerEnvelopeEffectiveCalibration {
+        try effectiveCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            currentSessionLearner: currentSessionLearner,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+    }
+#endif
+
+    private func restoredCalibration(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws -> ObservedPowerEnvelopeCalibration {
+        guard expectedScope.identityAuthority == requiredScopeAuthority,
+              identityAuthority == requiredScopeAuthority,
+              evidenceAuthority == requiredEvidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointError.authorityMismatch
+        }
+        guard expectedScope.vehicleIdentityKey == vehicleIdentityKey,
+              expectedScope.confirmedModeKey == confirmedModeKey else {
+            throw ObservedPowerEnvelopeCheckpointError.scopeMismatch
+        }
+        guard policy.matches(expectedPolicy) else {
+            throw ObservedPowerEnvelopeCheckpointError.policyMismatch
+        }
+
+        let scale = try Self.derivedGaugeScale(
+            ceilingWatts: learnedObservedCeilingWatts,
+            policy: policy
+        )
+        return ObservedPowerEnvelopeCalibration(
+            scope: expectedScope,
+            evidenceAuthority: requiredEvidenceAuthority,
+            learnedObservedCeilingWatts: learnedObservedCeilingWatts,
+            learnedGaugeScaleWatts: scale,
+            learningSampleCount: learningSampleCount,
+            upperBandSupportCount: upperBandSupportCount
+        )
+    }
+
+    private func effectiveCalibration(
+        expectedScope: ObservedPowerEnvelopeScope,
+        expectedPolicy: ObservedPowerEnvelopePolicy,
+        currentSessionLearner: ObservedPowerEnvelopeLearner,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws -> ObservedPowerEnvelopeEffectiveCalibration {
+        let retained = try restoredCalibration(
+            expectedScope: expectedScope,
+            expectedPolicy: expectedPolicy,
+            requiredScopeAuthority: requiredScopeAuthority,
+            requiredEvidenceAuthority: requiredEvidenceAuthority
+        )
+        guard currentSessionLearner.scope == expectedScope,
+              currentSessionLearner.policy == expectedPolicy,
+              currentSessionLearner.evidenceAuthority == requiredEvidenceAuthority else {
+            throw ObservedPowerEnvelopeCheckpointError.currentSessionLearnerMismatch
+        }
+
+        guard let current = currentSessionLearner.calibration,
+              current.scope == expectedScope,
+              current.evidenceAuthority == requiredEvidenceAuthority else {
+            return ObservedPowerEnvelopeEffectiveCalibration(
+                calibration: retained,
+                origin: .retainedCheckpoint
+            )
+        }
+
+        if current.learnedGaugeScaleWatts > retained.learnedGaugeScaleWatts {
+            return ObservedPowerEnvelopeEffectiveCalibration(
+                calibration: current,
+                origin: .currentSession
+            )
+        }
+        return ObservedPowerEnvelopeEffectiveCalibration(
+            calibration: retained,
+            origin: .retainedCheckpoint
+        )
+    }
+
+    private static func authoritiesMatch(
+        identityAuthority: ObservedPowerEnvelopeScopeAuthority,
+        evidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) -> Bool {
+        switch (identityAuthority, evidenceAuthority) {
+        case (.verifiedVehicleIdentity, .verifiedVehicleMeasurement),
+             (.simulatorQA, .simulatorQA):
+            true
+        default:
+            false
+        }
+    }
+
+    private static func validateCalibrationFields(
+        learnedObservedCeilingWatts: Double,
+        learningSampleCount: Int,
+        upperBandSupportCount: Int,
+        policy: ObservedPowerEnvelopePolicyCheckpoint
+    ) throws {
+        _ = try policy.validatedPolicy()
+        guard learnedObservedCeilingWatts.isFinite,
+              learnedObservedCeilingWatts > 0 else {
+            throw ObservedPowerEnvelopeCheckpointError.invalidLearnedObservedCeilingWatts
+        }
+        guard learningSampleCount >= policy.minimumLearningSampleCount,
+              learningSampleCount <= policy.windowCapacity else {
+            throw ObservedPowerEnvelopeCheckpointError.invalidLearningSampleCount
+        }
+        guard upperBandSupportCount >= policy.minimumUpperBandSupportCount,
+              upperBandSupportCount <= learningSampleCount else {
+            throw ObservedPowerEnvelopeCheckpointError.invalidUpperBandSupportCount
+        }
+    }
+
+    private static func derivedGaugeScale(
+        ceilingWatts: Double,
+        policy: ObservedPowerEnvelopePolicyCheckpoint
+    ) throws -> Double {
+        let scale = ceilingWatts * (1 + policy.headroomFraction)
+        guard scale.isFinite, scale > 0 else {
+            throw ObservedPowerEnvelopeCheckpointError.derivedGaugeScaleOverflow
+        }
+        return scale
+    }
+}
