@@ -74,24 +74,24 @@ public struct BatteryEvidenceSnapshotAccumulator: Equatable, Sendable {
 
     /// Validates and atomically incorporates one observation into the current segment.
     public mutating func ingest(_ observation: BatteryEvidenceObservation) throws {
-        var candidateValidator = streamValidator
-        do {
-            try candidateValidator.accept(observation)
-        } catch let error as BatteryEvidenceStreamValidationError {
-            throw BatteryEvidenceSnapshotError.stream(error)
-        }
-
-        // Check same-field/same-uptime idempotency before applying a continuity reset.
-        // Replaying an already-accepted boundary observation must not erase other fields
-        // subsequently decoded at the same receipt uptime in this current segment.
+        // Exact same-field/same-uptime evidence is globally idempotent. Check this before
+        // touching the stream validator: replaying an old accepted boundary after newer
+        // fields arrived must not rewind the process-local ordering baseline. A caller
+        // that actually knows a new gap occurred uses `markUnobservedInterval()`, which
+        // clears the old snapshot and therefore removes this duplicate ambiguity.
         if let existing = latestByField[observation.value.field],
            existing.receivedAtUptimeNanoseconds == observation.receivedAtUptimeNanoseconds {
             guard existing == observation else {
                 throw BatteryEvidenceSnapshotError.conflictingSameUptimeFieldEvidence
             }
-
-            streamValidator = candidateValidator
             return
+        }
+
+        var candidateValidator = streamValidator
+        do {
+            try candidateValidator.accept(observation)
+        } catch let error as BatteryEvidenceStreamValidationError {
+            throw BatteryEvidenceSnapshotError.stream(error)
         }
 
         var candidateLatest = latestByField
