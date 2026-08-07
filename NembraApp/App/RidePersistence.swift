@@ -119,15 +119,35 @@ actor AtomicRideRouteOutcomeStore {
         do {
             let data = try Data(contentsOf: url)
             let record = try decoder.decode(RideRouteOutcomeRecord.self, from: data)
-            guard record.sessionID == sessionID else {
+            // Synthesized Decodable does not call RideRouteOutcomeRecord's
+            // validating memberwise initializer. Re-assert every persisted
+            // invariant at the trust boundary before the file can influence UI
+            // or recovery decisions.
+            guard record.sessionID == sessionID,
+                  record.acceptedPointCount.map({ $0 >= 0 }) ?? true else {
                 throw RideRouteOutcomeStoreError.corruptRecord(sessionID)
             }
             return record
-        } catch let error as RideRouteOutcomeStoreError {
-            throw error
         } catch {
             throw RideRouteOutcomeStoreError.corruptRecord(sessionID)
         }
+    }
+
+    /// Enumerates durable session keys without trusting payload contents. This is
+    /// used only to discover repair obligations at startup. Each payload is still
+    /// decoded and validated independently through `record(sessionID:)` before
+    /// any recovery decision is made.
+    func sessionIDs() throws -> [UUID] {
+        guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
+        let urls = try fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        return urls.compactMap { url -> UUID? in
+            guard url.pathExtension == "json" else { return nil }
+            return UUID(uuidString: url.deletingPathExtension().lastPathComponent)
+        }.sorted { $0.uuidString < $1.uuidString }
     }
 
     @discardableResult
@@ -764,10 +784,20 @@ final class RideRoutePresentationStore {
 
         guard let routeStore else {
             geometries.removeValue(forKey: sessionID)
-            if outcome?.state == .storageFailed {
+            switch outcome?.state {
+            case .storageFailed:
                 statuses[sessionID] = .failed
                 errors[sessionID] = "Route recording or storage failed for this ride."
-            } else {
+            case .recorded:
+                statuses[sessionID] = .failed
+                errors[sessionID] = "Recorded route geometry is unavailable or could not be opened."
+            case .unknown:
+                statuses[sessionID] = .unavailable
+                errors[sessionID] = "Route recording outcome is unknown for this recovered ride."
+            case .noRecordedGeometry:
+                statuses[sessionID] = .unavailable
+                errors.removeValue(forKey: sessionID)
+            case .none:
                 statuses[sessionID] = .unavailable
                 errors[sessionID] = startupPersistenceError ?? "Local route storage is unavailable."
             }
