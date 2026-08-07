@@ -4,8 +4,15 @@ import Testing
 
 @Suite("Observed power envelope")
 struct ObservedPowerEnvelopeTests {
-    private func scope(mode: String? = nil) throws -> ObservedPowerEnvelopeScope {
-        try ObservedPowerEnvelopeScope(vehicleIdentityKey: "physical-es80-opaque-id", confirmedModeKey: mode)
+    private func physicalScope(mode: String? = nil) throws -> ObservedPowerEnvelopeScope {
+        try .verifiedVehicleIdentity(
+            vehicleIdentityKey: "physical-es80-opaque-id",
+            confirmedModeKey: mode
+        )
+    }
+
+    private func simulatorScope(mode: String? = nil) throws -> ObservedPowerEnvelopeScope {
+        try .simulatorQA(vehicleIdentityKey: "sim-es80", confirmedModeKey: mode)
     }
 
     private func policy(
@@ -41,21 +48,50 @@ struct ObservedPowerEnvelopeTests {
     }
 
     private func physicalLearner() throws -> ObservedPowerEnvelopeLearner {
-        .verifiedVehicleMeasurements(scope: try scope(), policy: try policy())
+        try .verifiedVehicleMeasurements(scope: physicalScope(), policy: policy())
     }
 
-    @Test("scope requires an explicit nonempty vehicle key and trustworthy mode key")
+    @Test("scope requires explicit nonempty keys and preserves identity provenance")
     func scopeValidation() throws {
         #expect(throws: ObservedPowerEnvelopeScopeError.emptyVehicleIdentityKey) {
-            try ObservedPowerEnvelopeScope(vehicleIdentityKey: "  ")
+            try ObservedPowerEnvelopeScope.simulatorQA(vehicleIdentityKey: "  ")
         }
         #expect(throws: ObservedPowerEnvelopeScopeError.emptyConfirmedModeKey) {
-            try ObservedPowerEnvelopeScope(vehicleIdentityKey: "es80", confirmedModeKey: "\n")
+            try ObservedPowerEnvelopeScope.simulatorQA(vehicleIdentityKey: "es80", confirmedModeKey: "\n")
         }
 
-        let scoped = try scope(mode: "sport-confirmed")
-        #expect(scoped.vehicleIdentityKey == "physical-es80-opaque-id")
-        #expect(scoped.confirmedModeKey == "sport-confirmed")
+        let physical = try physicalScope(mode: "sport-confirmed")
+        #expect(physical.vehicleIdentityKey == "physical-es80-opaque-id")
+        #expect(physical.confirmedModeKey == "sport-confirmed")
+        #expect(physical.identityAuthority == .verifiedVehicleIdentity)
+
+        let simulator = try simulatorScope()
+        #expect(simulator.identityAuthority == .simulatorQA)
+    }
+
+    @Test("learner rejects an identity scope from the wrong authority")
+    func learnerScopeAuthorityMismatchFailsClosed() throws {
+        let p = try policy()
+
+        #expect(throws: ObservedPowerEnvelopeLearnerError.scopeAuthorityMismatch(
+            expected: .verifiedVehicleIdentity,
+            actual: .simulatorQA
+        )) {
+            try ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
+                scope: simulatorScope(),
+                policy: p
+            )
+        }
+
+        #expect(throws: ObservedPowerEnvelopeLearnerError.scopeAuthorityMismatch(
+            expected: .simulatorQA,
+            actual: .verifiedVehicleIdentity
+        )) {
+            try ObservedPowerEnvelopeLearner.simulatorQA(
+                scope: physicalScope(),
+                policy: p
+            )
+        }
     }
 
     @Test("policy rejects shapes that cannot provide repeated upper-envelope evidence")
@@ -76,7 +112,7 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("simulator learner produces explicitly simulator-only calibration")
     func simulatorCalibrationKeepsProvenance() throws {
-        var learner = ObservedPowerEnvelopeLearner.simulatorQA(scope: try scope(), policy: try policy())
+        var learner = try ObservedPowerEnvelopeLearner.simulatorQA(scope: simulatorScope(), policy: policy())
 
         for index in 1...10 {
             _ = learner.record(.simulatorQA(
@@ -88,6 +124,7 @@ struct ObservedPowerEnvelopeTests {
 
         let calibration = try #require(learner.calibration)
         #expect(calibration.evidenceAuthority == .simulatorQA)
+        #expect(calibration.scope.identityAuthority == .simulatorQA)
         #expect(learner.evidenceAuthority == .simulatorQA)
     }
 
@@ -135,6 +172,7 @@ struct ObservedPowerEnvelopeTests {
 
         let calibration = try #require(learner.calibration)
         #expect(calibration.evidenceAuthority == .verifiedVehicleMeasurement)
+        #expect(calibration.scope.identityAuthority == .verifiedVehicleIdentity)
         #expect(calibration.learnedObservedCeilingWatts < 510)
         #expect(calibration.learnedGaugeScaleWatts < 531)
         #expect(calibration.upperBandSupportCount >= 3)
@@ -189,6 +227,15 @@ struct ObservedPowerEnvelopeTests {
         #expect(learner.calibration == initial)
     }
 
+    @Test("finite negative physical power is preserved as measurement-only rather than called invalid")
+    func negativePowerDoesNotBecomePropulsionOrFakeInvalidTelemetry() throws {
+        var learner = try physicalLearner()
+
+        #expect(learner.record(physicalObservation(watts: -120, uptime: 100)) == .acceptedMeasurementOnly)
+        #expect(learner.calibration == nil)
+        #expect(learner.record(physicalObservation(watts: 500, uptime: 200)) == .acceptedLearningSample)
+    }
+
     @Test("fresh invalid physical numeric evidence closes chronology to delayed callbacks")
     func invalidFreshSampleStillAdvancesChronology() throws {
         var learner = try physicalLearner()
@@ -201,9 +248,9 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("presentation normalization reaches the edge near learned observed output and never rewrites watts")
     func normalizedPresentationPositionIsRenderOnly() throws {
-        var learner = ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
-            scope: try scope(),
-            policy: try policy(headroomFraction: 0.02)
+        var learner = try ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
+            scope: physicalScope(),
+            policy: policy(headroomFraction: 0.02)
         )
 
         for index in 1...10 {
@@ -226,9 +273,9 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("extreme finite physical power stays accepted even when headroom math cannot produce a finite scale")
     func extremeFinitePowerDoesNotInventHardwareCap() throws {
-        var learner = ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
-            scope: try scope(),
-            policy: try policy(
+        var learner = try ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
+            scope: physicalScope(),
+            policy: policy(
                 windowCapacity: 3,
                 minimumLearningSampleCount: 3,
                 minimumUpperBandSupportCount: 2,
