@@ -12,7 +12,7 @@ struct CoreBluetoothCaptureMappingTests {
         let serviceDataUUID = CBUUID(string: "FD50")
         let advertisement: [String: Any] = [
             CBAdvertisementDataLocalNameKey: "ES80-test",
-            CBAdvertisementDataIsConnectableKey: NSNumber(value: true),
+            CBAdvertisementDataIsConnectable: NSNumber(value: true),
             CBAdvertisementDataManufacturerDataKey: Data([0xD0, 0x07, 0x01, 0x02]),
             CBAdvertisementDataServiceUUIDsKey: [CBUUID(string: "FD50")],
             CBAdvertisementDataOverflowServiceUUIDsKey: [CBUUID(string: "A201")],
