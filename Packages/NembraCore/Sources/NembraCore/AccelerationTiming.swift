@@ -210,11 +210,12 @@ public struct AccelerationRunEvaluator: Sendable {
 
     public mutating func accept(_ sample: SpeedTelemetrySample) {
         guard canAcceptMoreEvidence else { return }
-        // Defense in depth: this evidence consumer never accepts motion-assisted
-        // data as authoritative, even if an import or persistence boundary is
-        // malformed. A hardened upstream decoder may reject that sample earlier;
-        // this guard remains safe redundancy rather than relying on decode policy.
-        guard sample.source != .motionAssist else { return }
+        // Imported/persisted evidence is revalidated through the same public
+        // constructor contract used by live producers. This keeps the evaluator
+        // fail-closed even while an older Codable boundary can deserialize values
+        // that bypass that constructor. A hardened decoder may reject them sooner;
+        // this remains safe defense in depth without duplicating validation rules.
+        guard sampleSatisfiesTelemetryValidationContract(sample) else { return }
         guard sample.isAuthoritativeMeasurement else { return }
         guard sourceMatchesPolicy(sample.source) else { return }
 
@@ -274,6 +275,18 @@ public struct AccelerationRunEvaluator: Sendable {
         case .waitingForStandstill, .armed, .running:
             true
         }
+    }
+
+    private func sampleSatisfiesTelemetryValidationContract(_ sample: SpeedTelemetrySample) -> Bool {
+        (try? SpeedTelemetrySample(
+            source: sample.source,
+            provenance: sample.provenance,
+            metersPerSecond: sample.metersPerSecond,
+            receivedAtUptimeNanoseconds: sample.receivedAtUptimeNanoseconds,
+            receivedAtDate: sample.receivedAtDate,
+            measurementDate: sample.measurementDate,
+            speedAccuracyMetersPerSecond: sample.speedAccuracyMetersPerSecond
+        )) != nil
     }
 
     private func sourceMatchesPolicy(_ source: SpeedTelemetrySource) -> Bool {
