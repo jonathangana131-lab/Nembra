@@ -357,16 +357,19 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
             evaluations.map(\.candidateAbsolutePowerError).max()
     }
 
-    /// Normalize every finite term before accumulation so repeated extreme
-    /// finite errors cannot overflow only because an intermediate raw sum did.
+    /// Compute the mean of finite nonnegative errors without forming a raw sum
+    /// or a sum of rounded `value / count` terms. The online update stays inside
+    /// the convex hull of the observed errors, so even three
+    /// `Double.greatestFiniteMagnitude` values retain that finite mean.
     private static func stableMean(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
-        let count = Double(values.count)
         var mean = 0.0
-        for value in values {
-            mean += value / count
+        for (index, value) in values.enumerated() {
+            let divisor = Double(index + 1)
+            mean += (value - mean) / divisor
+            guard mean.isFinite else { return nil }
         }
-        return mean.isFinite ? mean : nil
+        return mean
     }
 }
 
