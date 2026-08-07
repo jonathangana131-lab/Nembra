@@ -105,4 +105,41 @@ struct TelemetryBenchmarkContinuityTests {
         #expect(summary.knownObservationInterruptionCount == 2)
         #expect(summary.observationSegmentCount == 2)
     }
+
+    @Test("rejected derived speed cannot consume a pending interruption")
+    func derivedSpeedOverflowPreservesPendingInterruption() throws {
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+
+        #expect(collector.record(try sample(milliseconds: 100, speedKilometersPerHour: 3.6)) == .accepted)
+        collector.markContinuityInterruption()
+
+        let overflowing = try SpeedTelemetrySample(
+            source: .scooterBluetooth,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: Double.greatestFiniteMagnitude / 2,
+            receivedAtUptimeNanoseconds: 200_000_000,
+            receivedAtDate: epoch.addingTimeInterval(0.2)
+        )
+        #expect(overflowing.kilometersPerHour.isFinite == false)
+        #expect(collector.record(overflowing) == .rejected(.nonFiniteDerivedSpeed))
+
+        var summary = collector.summary
+        #expect(summary.acceptedSampleCount == 1)
+        #expect(summary.rejectedSampleCount == 1)
+        #expect(summary.observationSegmentCount == 1)
+        #expect(summary.knownObservationInterruptionCount == 1)
+        #expect(summary.intervalCount == 0)
+
+        #expect(collector.record(try sample(milliseconds: 300, speedKilometersPerHour: 7.2)) == .accepted)
+        summary = collector.summary
+        #expect(summary.observationSegmentCount == 2)
+        #expect(summary.knownObservationInterruptionCount == 1)
+        #expect(summary.intervalCount == 0)
+
+        #expect(collector.record(try sample(milliseconds: 400, speedKilometersPerHour: 10.8)) == .accepted)
+        summary = collector.summary
+        #expect(summary.intervalCount == 1)
+        #expect(abs(summary.observedDurationSeconds - 0.1) < 0.000_001)
+        #expect(abs((summary.meanIntervalMilliseconds ?? 0) - 100) < 0.000_001)
+    }
 }
