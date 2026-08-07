@@ -90,17 +90,18 @@ struct RideSessionDurationEvidenceTests {
         try accumulator.upsert(current)
         let before = accumulator.snapshot
 
-        #expect(try accumulator.upsert(current) == .idempotentReplay)
-        #expect(
-            try accumulator.upsert(
-                segment(
-                    processID: firstProcessID,
-                    sequence: 0,
-                    through: 1_200,
-                    followsGap: false
-                )
-            ) == .staleReplayIgnored
+        let identicalResult = try accumulator.upsert(current)
+        let staleResult = try accumulator.upsert(
+            segment(
+                processID: firstProcessID,
+                sequence: 0,
+                through: 1_200,
+                followsGap: false
+            )
         )
+
+        #expect(identicalResult == .idempotentReplay)
+        #expect(staleResult == .staleReplayIgnored)
         #expect(accumulator.snapshot == before)
     }
 
@@ -171,6 +172,30 @@ struct RideSessionDurationEvidenceTests {
             )
         }
         #expect(accumulator.snapshot.coverage == .unknown)
+    }
+
+    @Test("same sequence cannot change its recovery-gap classification")
+    func replayCannotChangeGapClassification() throws {
+        var accumulator = RideSessionDurationEvidenceAccumulator(sessionID: sessionID)
+        try accumulator.upsert(
+            segment(
+                processID: firstProcessID,
+                sequence: 0,
+                through: 200,
+                followsGap: false
+            )
+        )
+
+        #expect(throws: RideSessionDurationEvidenceError.conflictingProcessGeneration) {
+            try accumulator.upsert(
+                segment(
+                    processID: firstProcessID,
+                    sequence: 0,
+                    through: 250,
+                    followsGap: true
+                )
+            )
+        }
     }
 
     @Test("sequence gaps fail closed instead of silently losing a process interval")
@@ -337,7 +362,7 @@ struct RideSessionDurationEvidenceTests {
     }
 
     @Test("malformed persisted sequence is rejected during decode")
-    func malformedPersistenceRejected() throws {
+    func malformedSequencePersistenceRejected() {
         let data = Data(
             """
             {
@@ -349,6 +374,30 @@ struct RideSessionDurationEvidenceTests {
                   "sequenceNumber": 1,
                   "observedDurationNanoseconds": 50,
                   "followsUnobservedInterval": true
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(RideSessionDurationEvidenceAccumulator.self, from: data)
+        }
+    }
+
+    @Test("persisted child segment cannot claim a different ride session")
+    func malformedSessionPersistenceRejected() {
+        let data = Data(
+            """
+            {
+              "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+              "processSegments": [
+                {
+                  "sessionID": "00000000-0000-0000-0000-000000000001",
+                  "processGenerationID": "11111111-2222-3333-4444-555555555555",
+                  "sequenceNumber": 0,
+                  "observedDurationNanoseconds": 50,
+                  "followsUnobservedInterval": false
                 }
               ]
             }
