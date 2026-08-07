@@ -56,6 +56,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case unattributedCharacteristicValue
     }
 
+    private struct CandidateAdvertisement {
+        let observation: PassiveBluetoothAdvertisementObservation
+        let receivedAtUptimeNanoseconds: UInt64
+        let receivedAtDate: Date
+    }
+
     public private(set) var bluetoothState: CBManagerState = .unknown
     public private(set) var isScanning = false
     public private(set) var connectionPhase: ConnectionPhase = .idle
@@ -73,7 +79,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     private let vehicleIdentity: VehicleIdentity
     private let initialSessionID: UUID
-    private let initialStartedAt: Date
+    private let firstSessionStartedAtOverride: Date?
     private var hasUsedInitialSessionIdentity = false
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
@@ -82,7 +88,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var centralManager: CBCentralManager!
     private var peripheralByIdentifier: [UUID: CBPeripheral] = [:]
     private var latestDiscoveryByIdentifier: [UUID: DiscoveredPeripheral] = [:]
-    private var latestAdvertisementByIdentifier: [UUID: PassiveBluetoothAdvertisementObservation] = [:]
+    private var latestAdvertisementByIdentifier: [UUID: CandidateAdvertisement] = [:]
     private var activePeripheral: CBPeripheral?
     private var connectionTimeoutTask: Task<Void, Never>?
     private var discoveredIncludedServiceObjectIDs: Set<ObjectIdentifier> = []
@@ -107,12 +113,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     public init(
         vehicleIdentity: VehicleIdentity,
         sessionID: UUID = UUID(),
-        startedAt: Date = Date(),
+        startedAt: Date? = nil,
         centralManagerOptions: [String: Any]? = nil
     ) throws {
         self.vehicleIdentity = vehicleIdentity
         initialSessionID = sessionID
-        initialStartedAt = startedAt
+        firstSessionStartedAtOverride = startedAt
         super.init()
         centralManager = CBCentralManager(
             delegate: self,
@@ -270,23 +276,31 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.captureFailed
         }
 
-        targetState.selectTarget(identifier)
+        let latestAdvertisement = latestAdvertisementByIdentifier[identifier]
+        let startedAt = latestAdvertisement?.receivedAtDate
+            ?? (!hasUsedInitialSessionIdentity ? firstSessionStartedAtOverride : nil)
+            ?? Date()
         let sessionID = hasUsedInitialSessionIdentity ? UUID() : initialSessionID
-        let startedAt = hasUsedInitialSessionIdentity ? Date() : initialStartedAt
         let newRecorder = try PassiveCoreBluetoothCaptureRecorder(
             id: sessionID,
             vehicleIdentity: vehicleIdentity,
             startedAt: startedAt
         )
+
+        targetState.selectTarget(identifier)
         hasUsedInitialSessionIdentity = true
         targetSessionGeneration += 1
         recorder = newRecorder
 
-        // Preserve at most the selected candidate's latest advertisement as the
-        // first target-scoped evidence. Other broad-scan devices remain catalog
-        // entries only and can never enter this recorder.
-        if let advertisement = latestAdvertisementByIdentifier[identifier] {
-            enqueue(.advertisement(advertisement))
+        // Preserve at most the selected candidate's latest already-observed
+        // advertisement, with the exact callback clocks from when it was actually
+        // received. Other broad-scan devices remain candidate-catalog entries only.
+        if let latestAdvertisement {
+            enqueue(
+                .advertisement(latestAdvertisement.observation),
+                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+                receivedAtDate: latestAdvertisement.receivedAtDate
+            )
         }
     }
 
@@ -384,14 +398,26 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     private func enqueue(_ event: PassiveBluetoothCaptureEvent) {
+        enqueue(
+            event,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            receivedAtDate: Date()
+        )
+    }
+
+    private func enqueue(
+        _ event: PassiveBluetoothCaptureEvent,
+        receivedAtUptimeNanoseconds: UInt64,
+        receivedAtDate: Date
+    ) {
         guard !captureFailed, let recorder else { return }
         pendingEvents.append(
             PendingEvent(
                 recorder: recorder,
                 sessionGeneration: targetSessionGeneration,
                 event: event,
-                uptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-                date: Date()
+                uptimeNanoseconds: receivedAtUptimeNanoseconds,
+                date: receivedAtDate
             )
         )
         startDrainIfNeeded()
@@ -477,6 +503,13 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             if lhs.rssi != rhs.rssi { return lhs.rssi > rhs.rssi }
             return lhs.id.uuidString < rhs.id.uuidString
         }
+    }
+
+    private func clearCandidateCatalog() {
+        peripheralByIdentifier.removeAll()
+        latestDiscoveryByIdentifier.removeAll()
+        latestAdvertisementByIdentifier.removeAll()
+        updateDiscoveryList()
     }
 
     private func clearAcquisitionObjects() {
@@ -580,6 +613,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                 clearAcquisitionObjects()
             }
             targetState.resetForCentralInvalidation()
+            // CoreBluetooth transport objects discovered before this central
+            // invalidation are not treated as fresh candidates afterward.
+            clearCandidateCatalog()
             return
         }
     }
@@ -590,6 +626,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        let receivedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let receivedAtDate = Date()
+
         peripheralByIdentifier[peripheral.identifier] = peripheral
         let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         let discovery = DiscoveredPeripheral(
@@ -607,9 +646,17 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                 advertisementData: advertisementData,
                 rssi: RSSI
             )
-            latestAdvertisementByIdentifier[peripheral.identifier] = observation
+            latestAdvertisementByIdentifier[peripheral.identifier] = CandidateAdvertisement(
+                observation: observation,
+                receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+                receivedAtDate: receivedAtDate
+            )
             if targetState.selectedTargetIdentifier == peripheral.identifier, recorder != nil {
-                enqueue(.advertisement(observation))
+                enqueue(
+                    .advertisement(observation),
+                    receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+                    receivedAtDate: receivedAtDate
+                )
             }
         } catch {
             // Broad discovery remains a candidate catalog before target selection.
