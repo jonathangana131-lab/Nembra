@@ -77,7 +77,7 @@ PR #185 currently advances chronology only when a selected-source benchmark samp
 
 With only `lastAcceptedUptimeNanoseconds`, callback 200 can appear newer than accepted 100 even though callback 300 was already observed. That can also make this ride-speed session clear a pending source interruption because the benchmark says `accepted` while the peak accumulator, which tracks selected-source observation chronology more strictly, rejects the callback as stale.
 
-The dependency owner has the exact trace in PR #185 comment `5215568271`; follow-up `5215774811` records that #185's green exact-head Xcode run does not by itself disposition the missing regression. This lane does not edit #185's owned files. Final #208 acceptance waits for the dependency to either harden this chronology or explicitly define an accepted-only chronology contract that this layer can safely consume.
+The dependency owner has independently promoted this trace to a **V13 merge blocker** in #185 comment `5215805753`. The earlier exact-head green run is therefore supporting evidence only; #185 must move to a fixed head and be re-gated before #208 can accept its chronology contract. This lane does not edit #185's owned files.
 
 ## One physical outage remains one logical gap
 
@@ -85,15 +85,38 @@ A single selected-source outage can produce repeated lifecycle notifications. Th
 
 `selectedSourceInterruptionPending` stays true from the first recorded gap until accepted raw evidence from the selected benchmark source arrives again. While it is pending, repeated selected-source/application interruption notifications are ignored rather than inflating durable peak-loss counts.
 
+The session also retains `knownSelectedSourceInterruptionCount`, a deduplicated logical gap count that is independent of whether a peak has been accepted or whether the benchmark had an observation segment available to break.
+
+That matters before first evidence. For example, a clean observer can experience a selected-source outage before any accepted callback. The peak accumulator records the interruption internally but cannot publish `RidePeakSpeedEvidence` yet, and the benchmark correctly has no segment to mark. Without the ride-session count, that real known gap would disappear from the snapshot. The session therefore records it immediately.
+
 Important distinctions:
 
+- `beginsAfterKnownObservationGap` starts with logical interruption count 1;
+- repeated startup/lifecycle notifications while that initial gap is pending do not increment the count;
 - a first accepted selected-source benchmark sample after the outage re-arms interruption recording for a later distinct gap;
 - a wrong-source callback does not end the selected-source outage;
 - a selected-source callback rejected by the benchmark does not end the outage;
 - an accepted GPS callback does prove the raw GPS source resumed even if the stricter peak-specific GPS accuracy gate rejects that same sample;
-- `beginsAfterKnownObservationGap` starts with a logical gap already pending, so repeated startup/lifecycle notifications cannot double-count the known recovery gap before first accepted evidence.
+- whenever `RidePeakSpeedEvidence` exists, its known interruption count is expected to agree with the session's logical count; the session count simply remains available earlier than optional peak evidence.
 
 This keeps peak and benchmark provenance describing the same logical outage topology rather than one counter reflecting notification multiplicity.
+
+## Peak rejections remain visible before a peak exists
+
+`RidePeakSpeedEvidence` is optional until at least one selected-source sample passes all peak-specific gates. That means an all-rejected session would otherwise lose the peak accumulator's reason/count information exactly when a caller needs to understand why no peak exists.
+
+The session therefore retains a constant-memory `RideSpeedEvidencePeakRejectionSummary` with counts for:
+
+- non-authoritative samples;
+- source mismatches;
+- non-increasing selected-source timestamps;
+- finite raw SI values whose required derived speed is non-finite;
+- missing required speed accuracy;
+- speed accuracy worse than the caller's peak ceiling.
+
+The summary deliberately stores counts rather than an unbounded event list. `selectedSourceQualityRejectedSampleCount` groups the same selected-source quality categories represented by `PeakSpeedEvidence.qualityRejectedSampleCount` once a peak exists, while foreign/non-authoritative traffic remains separate provenance.
+
+This closes an important GPS case: three raw GPS callbacks can all be benchmark-accepted yet all fail a stricter peak accuracy ceiling. The benchmark may legitimately be clean while `peakEvidence == nil`; the snapshot/readiness still shows exactly how many peak callbacks were rejected for accuracy instead of collapsing the result to an unexplained `peakUnavailable`.
 
 ## Source switching / mixing fails closed
 
@@ -103,7 +126,7 @@ The ride session therefore also keeps `foreignSourceCallbackCount`.
 
 Any callback from a source other than the session's selected source increments that count, including a motion-assist estimate. Any nonzero count is an unconditional `foreignSourceTraffic` readiness failure, even if the caller's generic `maximumRejectedSampleFraction` would otherwise pass the benchmark.
 
-This prevents a permissive quality policy from silently authorizing a mixed-source peak or making display-assist estimates disappear from the evidence trail.
+The peak-rejection summary keeps the distinction as well: a foreign authoritative GPS/BLE callback is a peak `sourceMismatch`, while motion assist is rejected as `nonAuthoritativeSample`. Both remain visible rather than being collapsed into one generic foreign boolean.
 
 ## Feature-level observed-peak quality policy
 
@@ -141,14 +164,16 @@ A later caller must not receive only an opaque boolean such as `isReady == true`
 - ride `sessionID`;
 - selected source;
 - `beganAfterKnownObservationGap`;
+- `knownSelectedSourceInterruptionCount`;
 - `foreignSourceCallbackCount`;
+- `RideSpeedEvidencePeakRejectionSummary`;
 - ride-bound peak evidence, if one exists;
 - the exact same-ride `TelemetryBenchmarkSummary`;
 - the exact `RideObservedPeakQualityPolicy` supplied by the caller;
 - the resulting `SpeedTelemetryQualityAssessment`;
 - all peak-feature readiness failures.
 
-This matters especially for failed/no-peak decisions. If a recovered observer starts after a known gap and then sees only a foreign-source callback, `peakEvidence` is still nil—but the readiness result retains the initial-gap flag, foreign-source count, benchmark summary, policy and failures rather than collapsing the session into a generic `peakUnavailable` result.
+This matters especially for failed/no-peak decisions. If a recovered observer starts after a known gap and then sees only foreign or peak-rejected callbacks, `peakEvidence` can stay nil—but the readiness result still preserves the initial-gap fact, logical interruption count, rejection reasons, foreign-source count, benchmark summary, policy and failures rather than collapsing the session into a generic `peakUnavailable` result.
 
 `RideObservedPeakReadiness` is intentionally not `Codable`. This slice is runtime/domain audit evidence, not a persistence migration or a claim that caller-injected thresholds have been physically validated for ES80.
 
@@ -189,7 +214,7 @@ While PR #185 is open, this lane is explicitly dependent on its exact benchmark-
 After #185 merges with a resolved chronology contract:
 
 1. refresh current main;
-2. rebuild this branch from current main plus only this lane's eight owned files;
+2. rebuild this branch from current main plus only this lane's owned files;
 3. verify the effective diff no longer contains `TelemetryBenchmark.swift` or `TelemetryBenchmarkContinuityTests.swift`;
 4. rerun focused package tests on the exact final head;
 5. refresh reviews, overlap, and mergeability;
@@ -205,10 +230,14 @@ Additional post-hardening evidence currently includes:
 - same-package `package` access compile: pass with warnings-as-errors;
 - external-package fresh observer construction: rejected at compile time as intended;
 - policy/sample-floor and validation-precedence focused checks: green in debug + release;
-- logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors, covering repeated-gap deduplication, recovery-start deduplication, rejected-source evidence preserving a pending gap, and GPS raw resumption re-arming a later gap even when peak-specific accuracy rejects that sample;
-- observed-interval readiness probe: **2/2 debug + 2/2 release** with warnings-as-errors, proving a three-sample 2+1 segmented stream fails the two-interval jitter floor while a clean two-interval snapshot passes;
-- readiness audit-provenance probe: **2/2 debug + 2/2 release** with warnings-as-errors, including failed/no-peak initial-gap and foreign-source provenance retention;
+- logical interruption normalization probe: **4/4 debug + 4/4 release** with warnings-as-errors;
+- extended logical interruption-count topology probe: **5/5 debug + 5/5 release** with warnings-as-errors, including pre-first-evidence and initial recovery gaps;
+- observed-interval readiness probe: **2/2 debug + 2/2 release** with warnings-as-errors;
+- readiness audit-provenance probe: **2/2 debug + 2/2 release** with warnings-as-errors;
+- rejection-summary category probe: all six categories compile/account correctly in debug + release;
 - deterministic logical-gap reference model: **100,000 mixed operations** passes debug + release.
+
+Repository tests additionally cover all-rejected GPS peak accuracy provenance, foreign authoritative versus motion-assist peak rejection reasons, rejection-summary agreement once a peak exists, readiness retaining the summary when no peak exists, and a pre-first-peak interruption remaining visible when the benchmark has no segment to break.
 
 These are supplemental local proofs. Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
 
