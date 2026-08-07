@@ -311,7 +311,6 @@ struct DashboardView: View {
         }
         .buttonStyle(.plain)
         .disabled(batteryReadoutPresentation.batteryFillPercent == nil)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Battery")
         .accessibilityValue(batteryReadoutAccessibilityValue)
         .accessibilityHint(batteryReadoutAccessibilityHint)
