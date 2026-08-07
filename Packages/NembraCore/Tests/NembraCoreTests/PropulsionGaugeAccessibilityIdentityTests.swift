@@ -72,6 +72,33 @@ struct PropulsionGaugeAccessibilityIdentityTests {
         #expect(snapshot.scaleOrigin == nil)
     }
 
+    @Test("retained accepted evidence keeps its originating confirmed-mode scope")
+    func retainedEvidenceKeepsIdentity() throws {
+        let identity = try PropulsionGaugeIdentity(vehicleID: "es80-retained", modeKey: "sport")
+        var model = PropulsionGaugeDisplayModel(identity: identity, policy: try policy())
+        try model.accept(.simulator(
+            identity: identity,
+            watts: 280,
+            receiptSequenceNumber: 12,
+            receivedAtUptimeNanoseconds: 1_000,
+            continuityGeneration: 3
+        ))
+
+        let snapshot = model.accessibilitySnapshot(
+            atUptimeNanoseconds: 2_000_001_001,
+            scale: try .simulator(identity: identity, ceilingWatts: 500)
+        )
+
+        #expect(snapshot.identity == identity)
+        #expect(snapshot.availability == .retained)
+        #expect(snapshot.latestAcceptedWatts == 280)
+        #expect(snapshot.latestAcceptedReceiptSequenceNumber == 12)
+        #expect(snapshot.latestAcceptedUptimeNanoseconds == 1_000)
+        #expect(snapshot.latestAuthority == .simulator)
+        #expect(snapshot.acceptedObservedScaleFraction == nil)
+        #expect(snapshot.scaleOrigin == nil)
+    }
+
     @Test("unavailable accessibility state keeps session scope without inventing telemetry")
     func unavailableStateRetainsOnlyContextIdentity() throws {
         let identity = try PropulsionGaugeIdentity(vehicleID: "es80-unavailable", modeKey: "sport")
