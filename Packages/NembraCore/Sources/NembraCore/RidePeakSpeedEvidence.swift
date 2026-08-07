@@ -8,15 +8,18 @@ import Foundation
 public struct RidePeakSpeedEvidence: Equatable, Sendable {
     public let sessionID: UUID
     public let policy: PeakSpeedPolicy
+    public let beganAfterKnownObservationGap: Bool
     public let peakEvidence: PeakSpeedEvidence
 
     fileprivate init(
         sessionID: UUID,
         policy: PeakSpeedPolicy,
+        beganAfterKnownObservationGap: Bool,
         peakEvidence: PeakSpeedEvidence
     ) {
         self.sessionID = sessionID
         self.policy = policy
+        self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
         self.peakEvidence = peakEvidence
     }
 }
@@ -28,6 +31,7 @@ public struct RidePeakSpeedEvidence: Equatable, Sendable {
 /// reusing an old binding.
 public struct RidePeakSpeedEvidenceAccumulator: Sendable {
     public let sessionID: UUID
+    public let beganAfterKnownObservationGap: Bool
     private var peakAccumulator: PeakSpeedEvidenceAccumulator
 
     /// - Parameter beginsAfterKnownObservationGap: Set only when this ride-bound
@@ -40,6 +44,7 @@ public struct RidePeakSpeedEvidenceAccumulator: Sendable {
         beginsAfterKnownObservationGap: Bool = false
     ) {
         self.sessionID = sessionID
+        self.beganAfterKnownObservationGap = beginsAfterKnownObservationGap
 
         var accumulator = PeakSpeedEvidenceAccumulator(policy: policy)
         if beginsAfterKnownObservationGap {
@@ -69,6 +74,7 @@ public struct RidePeakSpeedEvidenceAccumulator: Sendable {
         return RidePeakSpeedEvidence(
             sessionID: sessionID,
             policy: peakAccumulator.policy,
+            beganAfterKnownObservationGap: beganAfterKnownObservationGap,
             peakEvidence: peakEvidence
         )
     }
@@ -93,6 +99,7 @@ public enum CompletedRidePeakSpeedEvidenceError: Error, Equatable, Sendable {
 public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
+    public let beganAfterKnownObservationGap: Bool
     public let source: SpeedTelemetrySource
     public let metersPerSecond: Double
     public let speedAccuracyMetersPerSecond: Double?
@@ -110,12 +117,12 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
             throw CompletedRidePeakSpeedEvidenceError.sessionMismatch
         }
 
-        // Checkpoint recovery proves at least one interval of the ride existed
-        // outside this process-local peak observer. A generic quality rejection
-        // is not proof that this gap was recorded, so recovery requires an
-        // explicit interruption as well as partial selected-source continuity.
+        // Checkpoint recovery proves this observer necessarily began after an
+        // unobserved process interval. A generic quality rejection or a later
+        // disconnect is not proof that this specific initial gap was recorded.
         if completedRide.continuity == .recoveredCheckpoint,
-           (ridePeak.peakEvidence.knownInterruptionCount == 0 ||
+           (!ridePeak.beganAfterKnownObservationGap ||
+            ridePeak.peakEvidence.knownInterruptionCount == 0 ||
             ridePeak.peakEvidence.continuity != .partialSelectedSourceEvidence) {
             throw CompletedRidePeakSpeedEvidenceError.continuityMismatch
         }
@@ -123,6 +130,7 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         try self.init(
             sessionID: completedRide.sessionID,
             rideContinuity: completedRide.continuity,
+            beganAfterKnownObservationGap: ridePeak.beganAfterKnownObservationGap,
             source: ridePeak.policy.source,
             metersPerSecond: ridePeak.peakEvidence.peak.metersPerSecond,
             speedAccuracyMetersPerSecond: ridePeak.peakEvidence.peak.speedAccuracyMetersPerSecond,
@@ -153,6 +161,7 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
     private init(
         sessionID: UUID,
         rideContinuity: RideSessionContinuity,
+        beganAfterKnownObservationGap: Bool,
         source: SpeedTelemetrySource,
         metersPerSecond: Double,
         speedAccuracyMetersPerSecond: Double?,
@@ -198,7 +207,8 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         switch observationContinuity {
         case .noRecordedSelectedSourceEvidenceLoss:
             guard qualityRejectedSampleCount == 0,
-                  knownInterruptionCount == 0 else {
+                  knownInterruptionCount == 0,
+                  !beganAfterKnownObservationGap else {
                 throw CompletedRidePeakSpeedEvidenceError.invalidEvidence
             }
         case .partialSelectedSourceEvidence:
@@ -207,14 +217,21 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
             }
         }
 
+        if beganAfterKnownObservationGap,
+           knownInterruptionCount == 0 {
+            throw CompletedRidePeakSpeedEvidenceError.invalidEvidence
+        }
+
         if rideContinuity == .recoveredCheckpoint,
-           (observationContinuity != .partialSelectedSourceEvidence ||
+           (!beganAfterKnownObservationGap ||
+            observationContinuity != .partialSelectedSourceEvidence ||
             knownInterruptionCount == 0) {
             throw CompletedRidePeakSpeedEvidenceError.invalidEvidence
         }
 
         self.sessionID = sessionID
         self.rideContinuity = rideContinuity
+        self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
         self.source = source
         self.metersPerSecond = metersPerSecond
         self.speedAccuracyMetersPerSecond = speedAccuracyMetersPerSecond
@@ -229,6 +246,7 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case rideContinuity
+        case beganAfterKnownObservationGap
         case source
         case metersPerSecond
         case speedAccuracyMetersPerSecond
@@ -245,6 +263,10 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
             try self.init(
                 sessionID: container.decode(UUID.self, forKey: .sessionID),
                 rideContinuity: container.decode(RideSessionContinuity.self, forKey: .rideContinuity),
+                beganAfterKnownObservationGap: container.decode(
+                    Bool.self,
+                    forKey: .beganAfterKnownObservationGap
+                ),
                 source: container.decode(SpeedTelemetrySource.self, forKey: .source),
                 metersPerSecond: container.decode(Double.self, forKey: .metersPerSecond),
                 speedAccuracyMetersPerSecond: container.decodeIfPresent(
@@ -280,6 +302,7 @@ public struct CompletedRidePeakSpeedEvidence: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(sessionID, forKey: .sessionID)
         try container.encode(rideContinuity, forKey: .rideContinuity)
+        try container.encode(beganAfterKnownObservationGap, forKey: .beganAfterKnownObservationGap)
         try container.encode(source, forKey: .source)
         try container.encode(metersPerSecond, forKey: .metersPerSecond)
         try container.encodeIfPresent(
