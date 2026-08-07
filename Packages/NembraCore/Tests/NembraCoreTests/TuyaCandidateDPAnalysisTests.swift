@@ -188,12 +188,12 @@ struct TuyaCandidateDPAnalysisTests {
         #expect(payload.records[1].endByteOffsetExclusive == 10)
     }
 
-    @Test("public variable-length bounds are findings rather than parser rewrites")
+    @Test("public variable-length evidence stays distinct from caller resource policy")
     func preservesVariableLengthShapeFindings() throws {
         let rawEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(1, 0x00, []), policy: policy())
         #expect(
             rawEmpty.records[0].shapeFinding
-                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...255, actualLength: 0)
+                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...256, actualLength: 0)
         )
 
         let stringEmpty = try TuyaCandidateDPPayloadParser.parse(dp2(2, 0x03, []), policy: policy())
@@ -202,15 +202,34 @@ struct TuyaCandidateDPAnalysisTests {
                 == .variableLengthKnownType(.string, allowedLengthRange: 0...255)
         )
 
-        let oversizedRaw = try TuyaCandidateDPPayloadParser.parse(
+        let raw256 = try TuyaCandidateDPPayloadParser.parse(
             dp2(3, 0x00, Array(repeating: 0xAA, count: 256)),
             policy: policy(maximumValueBytes: 300)
         )
         #expect(
-            oversizedRaw.records[0].shapeFinding
-                == .unexpectedVariableKnownTypeLength(.raw, allowedLengthRange: 1...255, actualLength: 256)
+            raw256.records[0].shapeFinding
+                == .variableLengthKnownType(.raw, allowedLengthRange: 1...300)
         )
-        #expect(oversizedRaw.records[0].valueBytes.count == 256)
+        #expect(raw256.records[0].valueBytes.count == 256)
+
+        let raw1024 = try TuyaCandidateDPPayloadParser.parse(
+            dp2(4, 0x00, Array(repeating: 0x55, count: 1_024)),
+            policy: policy(maximumValueBytes: 1_024)
+        )
+        #expect(
+            raw1024.records[0].shapeFinding
+                == .variableLengthKnownType(.raw, allowedLengthRange: 1...1_024)
+        )
+        #expect(raw1024.records[0].valueBytes.count == 1_024)
+
+        let oversizedString = try TuyaCandidateDPPayloadParser.parse(
+            dp2(5, 0x03, Array(repeating: 0x41, count: 256)),
+            policy: policy(maximumValueBytes: 300)
+        )
+        #expect(
+            oversizedString.records[0].shapeFinding
+                == .unexpectedVariableKnownTypeLength(.string, allowedLengthRange: 0...255, actualLength: 256)
+        )
     }
 
     @Test("deterministic malformed-input stress never searches past supplied bytes")
