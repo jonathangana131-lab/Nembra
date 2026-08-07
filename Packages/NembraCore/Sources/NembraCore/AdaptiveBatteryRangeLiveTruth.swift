@@ -112,16 +112,12 @@ public extension AdaptiveBatteryRangeModel {
         previousPresentedRemainingMeters: Double? = nil,
         policy: AdaptiveBatteryRangePolicy
     ) -> AdaptiveBatteryRangeLiveEstimate? {
-        guard let normalizedSOC = try? BatterySOCReading(
-            percentage: soc.percentage,
-            provenance: .authoritativeMeasurement,
-            receivedAtUptimeNanoseconds: soc.receivedAtUptimeNanoseconds
-        ),
-        let estimate = estimateRemainingRange(
-            at: normalizedSOC,
-            previousPresentedRemainingMeters: previousPresentedRemainingMeters,
-            policy: policy
-        ) else {
+        guard let normalizedSOC = try? BatterySOCReading.accepted(soc),
+              let estimate = estimateRemainingRange(
+                at: normalizedSOC,
+                previousPresentedRemainingMeters: previousPresentedRemainingMeters,
+                policy: policy
+              ) else {
             return nil
         }
 
