@@ -134,7 +134,7 @@ After the authority- and freshness-sealed semantic parent lands, #83 must reconc
 
 ## Validation
 
-Supplemental Swift 6.2.1 compatibility harness: **22/22 debug + 22/22 release**. In addition to the prior availability/provenance/confidence matrix, it covers malformed raw range, malformed efficiency, raw range above the full-charge equivalent, provisional basis paired with non-learning confidence, retained malformed structure, and the valid smoothed-presented-range-above-current-full-charge counterexample.
+Supplemental Swift 6.2.1 compatibility harness: **23/23 debug + 23/23 release**. In addition to the prior availability/provenance/confidence matrix, it covers malformed raw range, malformed efficiency, a finite efficiency whose full-charge-equivalent multiplication overflows, raw range above the full-charge equivalent, provisional basis paired with non-learning confidence, retained malformed structure, and the valid smoothed-presented-range-above-current-full-charge counterexample.
 
 This is supplemental semantic/API evidence only, not repository package or Xcode acceptance. Freshness cannot be fully proven by this child harness until the parent/integration contract exposes a trustworthy estimate-to-source binding.
 
