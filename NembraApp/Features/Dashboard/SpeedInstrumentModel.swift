@@ -294,6 +294,9 @@ struct DashboardSpeedInstrumentView: View {
         .padding(.horizontal, 8)
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
+            // Initialize the connection gate before subscribing so raw evidence
+            // cannot be accepted based on SwiftUI modifier callback ordering.
+            model.setConnectionContinuityActive(vehicle.state.connection == .connected)
             let stream = await vehicle.speedTelemetryUpdates()
             model.start(stream: stream)
         }
