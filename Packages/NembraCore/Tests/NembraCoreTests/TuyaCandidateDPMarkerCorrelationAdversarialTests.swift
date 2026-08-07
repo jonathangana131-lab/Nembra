@@ -132,6 +132,22 @@ struct TuyaCandidateDPMarkerCorrelationAdversarialTests {
         }
     }
 
+    @Test("one candidate callback cannot support multiple markers in the same field report")
+    func rejectsReusedCandidateSnapshotIdentity() throws {
+        let snapshots = try [
+            snapshot(marker: 1, display: "73%", reference: 73, candidate: 44, generation: 7, payload: payload([valueRecord(id: 17, raw: 73)])),
+            snapshot(marker: 2, display: "73%", reference: 73, candidate: 44, generation: 7, payload: payload([valueRecord(id: 17, raw: 73)]))
+        ]
+        #expect(throws: TuyaCandidateDPMarkerCorrelationError.duplicateCandidateSnapshotIdentity(continuityGeneration: 7, candidateSequenceNumber: 44)) {
+            try TuyaCandidateDPMarkerCorrelation.analyze(
+                snapshots,
+                field: "Battery",
+                hypotheses: [try TuyaCandidateDPLinearTransformHypothesis(identifier: "identity", scale: 1)],
+                policy: policy()
+            )
+        }
+    }
+
     @Test("nonfinite reference values and implicit constant transforms are rejected")
     func validatesResearchInputs() throws {
         #expect(throws: TuyaCandidateDPMarkerCorrelationError.invalidNumericReferenceValue(markerSequenceNumber: 1)) {
