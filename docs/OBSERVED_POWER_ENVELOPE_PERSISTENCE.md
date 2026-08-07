@@ -1,6 +1,6 @@
 # Observed Power Envelope Persistence
 
-This is a **dependent persistence layer** above the `ObservedPowerEnvelope` domain owned by authoritative PR #225. It does not decode ES80 telemetry, establish watts semantics, change the live learner, or wire the Dashboard.
+This is a **dependent persistence layer** above the accepted `ObservedPowerEnvelope` domain originally integrated through PR #225. It does not decode ES80 telemetry, establish watts semantics, change the live learner, or wire the Dashboard.
 
 ## Construction authority stays sealed
 
@@ -76,6 +76,21 @@ Use:
 - package-sealed `reconciledVerifiedVehicleMeasurementCheckpoint(with:)` for trusted production integration.
 
 Uncalibrated, lower/equal, or sub-hysteresis sessions return the retained checkpoint unchanged. Only a qualified increase produces a replacement. One-shot snapshot constructors are for initial checkpoint creation when no retained checkpoint exists.
+
+## Retained calibration -> propulsion presentation
+
+Durable calibration must be usable by the gauge without reconstructing `ObservedPowerEnvelopeCalibration` and pretending retained history is fresh live evidence.
+
+`PropulsionGaugeScale.observedEnvelope(_:)` therefore also accepts:
+
+- `ObservedPowerEnvelopeRestoredCalibration`; and
+- `ObservedPowerEnvelopeEffectiveCalibration` after relaunch reconciliation.
+
+The bridge carries forward only the validated exact vehicle/mode identity, evidence authority, and already-derived learned gauge scale. It does not copy raw observations, chronology, peaks, display frames, or learning eligibility into presentation.
+
+Simulator-restored calibration produces only a Simulator presentation scale. Under SwiftPM, a verified retained calibration can produce a verified-observed-envelope scale because the physical restore that minted that retained value is already package-sealed. In the direct-source build, the separate-file verified adaptation intentionally fails closed rather than reaching across `fileprivate` authority boundaries.
+
+This bridge closes the **NembraCore persistence -> presentation** rung only. The current app target still does not directly compile the observed-envelope/persistence/presentation stack, and no physical ES80 power source is verified, so this is not a claim that the Dashboard is already using retained calibration.
 
 ## Current #225 compatibility
 
