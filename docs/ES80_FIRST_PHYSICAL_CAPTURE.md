@@ -94,10 +94,10 @@ Those values describe intended procedure/provenance. They are not proof that the
 
 Do not manually copy or decode packet hex after the capture.
 
-When the accepted descendant of Nembra's offline capture-report lane is available, feed the **unchanged raw JSON file** directly to its CLI:
+When the accepted descendant of Nembra's offline capture-report lane is available, feed the **unchanged raw JSON file** directly to its CLI. For example, if the exported file is named `capture.json`:
 
 ```text
-nembra-es80-capture-report <capture.json>
+nembra-es80-capture-report capture.json
 ```
 
 The report must remain a separate derived artifact bound to the exact input bytes. Use its target attribution, GATT/value-stream provenance, continuity, and bounded framing-candidate outcomes to decide the next experiment.
