@@ -1,16 +1,41 @@
 import Foundation
 
 enum VehicleDisplayFormatting {
+    /// Speed text is used in compact vehicle surfaces and assistive output. This
+    /// is a presentation capacity, not a physical scooter-speed limit: values
+    /// that would require four integral digits fail closed instead of expanding
+    /// an unbounded string or being clamped to believable vehicle state.
+    private static let maximumSpeedDisplayMagnitude = 1_000.0
+    private static let maximumSpeedFractionDigits = 3
+
     static var usesMetric: Bool {
         Locale.current.measurementSystem == .metric
     }
 
     static func speed(kilometersPerHour: Double?, decimals: Int = 0) -> String {
-        guard let kilometersPerHour, kilometersPerHour.isFinite, kilometersPerHour >= 0 else {
+        guard let kilometersPerHour,
+              kilometersPerHour.isFinite,
+              kilometersPerHour >= 0,
+              (0...maximumSpeedFractionDigits).contains(decimals) else {
             return "—"
         }
+
         let normalizedKilometersPerHour = kilometersPerHour == 0 ? 0 : kilometersPerHour
-        let value = usesMetric ? normalizedKilometersPerHour : normalizedKilometersPerHour * 0.621_371
+        let value = usesMetric
+            ? normalizedKilometersPerHour
+            : normalizedKilometersPerHour * 0.621_371
+        guard value.isFinite, value >= 0 else { return "—" }
+
+        // `%f` is bounded only after the converted value is known to fit the
+        // compact speed presentation. Account for decimal rounding so 999.5 at
+        // zero decimals (or the equivalent boundary at higher precision) cannot
+        // format as a four-digit `1000` after passing the guard.
+        let decimalScale = pow(10.0, Double(decimals))
+        let halfRoundingStep = 0.5 / decimalScale
+        guard value < maximumSpeedDisplayMagnitude - halfRoundingStep else {
+            return "—"
+        }
+
         let unit = usesMetric ? "km/h" : "mph"
         return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
