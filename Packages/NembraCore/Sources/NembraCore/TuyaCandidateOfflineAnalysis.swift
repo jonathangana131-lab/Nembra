@@ -1,3 +1,5 @@
+import Foundation
+
 /// Conservative offline recognition for a publicly reverse-engineered Tuya BLE
 /// framing family. None of these types assert that a physical AOVOPRO ES80 uses
 /// this family. Callers must keep raw capture evidence and provenance separately.
