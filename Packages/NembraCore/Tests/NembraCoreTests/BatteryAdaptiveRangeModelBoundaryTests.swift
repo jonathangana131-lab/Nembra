@@ -81,6 +81,46 @@ struct BatteryAdaptiveRangeModelBoundaryTests {
         #expect(model.historicalEfficiencyMetersPerPercentagePoint == 100)
     }
 
+    @Test("full normalized 100 to 0 consumption survives the complete evidence-to-model seam")
+    func fullNormalizedConsumptionBoundary() throws {
+        var pipeline = BatteryAdaptiveRangeLearningPipeline()
+        var model = AdaptiveBatteryRangeModel()
+        let p = try policy(
+            minimumConsumedPercentagePoints: 100,
+            minimumDistanceMeters: 1_000
+        )
+
+        let start = try pipeline.acceptBatteryObservation(
+            observation(100, uptime: 1),
+            policy: p
+        )
+        #expect(start.disposition == .authoritativeSOCIngested)
+        #expect(start.candidateLearningWindow == nil)
+
+        try pipeline.recordDistance(deltaMeters: 1_000, coverage: .complete)
+        let end = try pipeline.acceptBatteryObservation(
+            observation(0, uptime: 2),
+            policy: p
+        )
+        let window = try #require(end.candidateLearningWindow)
+
+        #expect(end.disposition == .authoritativeSOCIngested)
+        #expect(window.startSOC.percentage == 100)
+        #expect(window.endSOC.percentage == 0)
+        #expect(window.consumedPercentagePoints == 100)
+        #expect(window.distanceMeters == 1_000)
+        #expect(window.distanceCoverage == .complete)
+        #expect(window.transportGapOccurred == false)
+
+        let result = model.ingest(window, policy: p)
+        #expect(result.disposition == .accepted)
+        #expect(result.sample?.consumedPercentagePoints == 100)
+        #expect(result.sample?.metersPerPercentagePoint == 10)
+        #expect(model.acceptedWindowCount == 1)
+        #expect(model.historicalConsumedPercentagePoints == 100)
+        #expect(model.historicalEfficiencyMetersPerPercentagePoint == 10)
+    }
+
     @Test("omitted distance coverage defaults unknown and cannot train learned history")
     func omittedCoverageFailsClosed() throws {
         var pipeline = BatteryAdaptiveRangeLearningPipeline()
