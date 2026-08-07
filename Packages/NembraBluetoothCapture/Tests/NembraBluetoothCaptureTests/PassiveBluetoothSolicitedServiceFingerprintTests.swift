@@ -28,10 +28,10 @@ struct PassiveBluetoothSolicitedServiceFingerprintTests {
             receivedAtDate: .now
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(
             session,
             peripheralIdentifier: "test"
-        )
+        ))
 
         #expect(report.observedServiceUUIDs.isEmpty)
         #expect(report.characteristicUUIDsByService.isEmpty)
@@ -55,10 +55,10 @@ struct PassiveBluetoothSolicitedServiceFingerprintTests {
             receivedAtDate: .now
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(
             session,
             peripheralIdentifier: "test"
-        )
+        ))
 
         #expect(report.observedServiceUUIDs == ["A201"])
         #expect(report.candidateMatches.map(\.family) == [.tuyaLegacyA201])

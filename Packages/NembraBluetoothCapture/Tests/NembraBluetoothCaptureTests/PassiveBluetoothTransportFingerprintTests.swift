@@ -25,7 +25,7 @@ struct PassiveBluetoothTransportFingerprintTests {
             receivedAtDate: .now
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         #expect(report.peripheralIdentifier == "test")
         #expect(report.observedServiceUUIDs == ["FD50"])
         #expect(report.candidateMatches.count == 1)
@@ -89,7 +89,7 @@ struct PassiveBluetoothTransportFingerprintTests {
         try appendCharacteristic("2b10", service: "a201", sequence: 2, to: &session)
         try appendCharacteristic("2B11", service: "A201", sequence: 3, to: &session)
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         let match = try #require(report.candidateMatches.first)
         #expect(match.family == .tuyaLegacyA201)
         #expect(match.strength == .expectedDataPathObserved)
@@ -110,7 +110,7 @@ struct PassiveBluetoothTransportFingerprintTests {
         try appendService("A201", sequence: 4, to: &session)
         try appendCharacteristic("2B11", service: "A201", sequence: 5, to: &session)
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         #expect(report.characteristicUUIDsByService["A201"] == ["2B10", "2B11"])
         let match = try #require(report.candidateMatches.first)
         #expect(match.family == .tuyaLegacyA201)
@@ -132,7 +132,7 @@ struct PassiveBluetoothTransportFingerprintTests {
         try appendCharacteristic("2B10", service: "A201", sequence: 4, to: &session)
         try appendCharacteristic("2B11", service: "A201", sequence: 5, to: &session)
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         let match = try #require(report.candidateMatches.first)
         #expect(match.family == .tuyaLegacyA201)
         #expect(match.strength == .expectedDataPathObserved)
@@ -148,7 +148,7 @@ struct PassiveBluetoothTransportFingerprintTests {
         try appendCharacteristic("2B10", service: "1910", sequence: 4, to: &session)
         try appendCharacteristic("2B11", service: "1910", sequence: 5, to: &session)
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         #expect(report.candidateMatches.map(\.family) == [.tuyaLegacy1910, .tuyaLegacyA201])
         #expect(report.candidateMatches.map(\.strength) == [.expectedDataPathObserved, .characteristicFamilyObserved])
     }
@@ -159,10 +159,29 @@ struct PassiveBluetoothTransportFingerprintTests {
         try appendService("FFF0", sequence: 1, to: &session)
         try appendCharacteristic("FFF1", service: "FFF0", sequence: 2, to: &session)
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         #expect(report.observedServiceUUIDs == ["FFF0"])
         #expect(report.characteristicUUIDsByService["FFF0"] == ["FFF1"])
         #expect(report.candidateMatches.isEmpty)
+    }
+
+    @Test("absent explicit target is distinct from an observed unknown transport")
+    func absentExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try appendService("FFF0", sequence: 1, to: &session)
+        try appendCharacteristic("FFF1", service: "FFF0", sequence: 2, to: &session)
+
+        #expect(PassiveBluetoothTransportFingerprint.analyze(
+            session,
+            peripheralIdentifier: "missing-target"
+        ) == nil)
+
+        let observed = try #require(PassiveBluetoothTransportFingerprint.analyze(
+            session,
+            peripheralIdentifier: "test"
+        ))
+        #expect(observed.observedServiceUUIDs == ["FFF0"])
+        #expect(observed.candidateMatches.isEmpty)
     }
 
     @Test("value-only partial capture can still report observed GATT identifiers")
@@ -181,7 +200,7 @@ struct PassiveBluetoothTransportFingerprintTests {
             receivedAtDate: .now
         )
 
-        let report = PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test")
+        let report = try #require(PassiveBluetoothTransportFingerprint.analyze(session, peripheralIdentifier: "test"))
         #expect(report.candidateMatches.count == 1)
         #expect(report.candidateMatches[0].family == .tuyaModernFD50)
         #expect(report.candidateMatches[0].strength == .characteristicFamilyObserved)
@@ -209,10 +228,10 @@ struct PassiveBluetoothTransportFingerprintTests {
             receivedAtDate: .now
         )
 
-        let selected = PassiveBluetoothTransportFingerprint.analyze(
+        let selected = try #require(PassiveBluetoothTransportFingerprint.analyze(
             session,
             peripheralIdentifier: "selected-es80"
-        )
+        ))
         #expect(selected.observedServiceUUIDs == ["A201"])
         #expect(selected.candidateMatches.map(\.family) == [.tuyaLegacyA201])
 
