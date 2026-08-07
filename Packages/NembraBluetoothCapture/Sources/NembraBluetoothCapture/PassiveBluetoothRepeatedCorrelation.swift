@@ -214,8 +214,7 @@ public enum PassiveBluetoothRepeatedCorrelation {
             )
         }
 
-        let trimmedPeripheralIdentifier = peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPeripheralIdentifier.isEmpty else {
+        guard !peripheralIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return emptyReport(
                 disposition: .invalidPeripheralScope,
                 field: field,
@@ -223,13 +222,17 @@ public enum PassiveBluetoothRepeatedCorrelation {
             )
         }
 
-        // Explicit targeting is an attribution claim about this immutable artifact,
-        // not merely a string filter. Fail closed when the requested identifier is
-        // absent from the same structured connection/GATT/value evidence that the
-        // unscoped analyzer treats as attributable peripheral identity. Advertising
-        // alone intentionally does not establish a GATT correlation target.
-        let peripheralIdentifiers = correlationPeripheralIdentifiers(in: session)
-        guard peripheralIdentifiers.contains(peripheralIdentifier) else {
+        // The parent correlation layer owns explicit target presence and the exact
+        // attribution boundary. `nil` means the requested identifier never appears
+        // in correlation-attributable connection/GATT/value evidence; an observed
+        // target with zero nearby candidate values still returns non-nil windows.
+        guard let windows = PassiveBluetoothCorrelation.windows(
+            in: session,
+            peripheralIdentifier: peripheralIdentifier,
+            field: field,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
+        ) else {
             return emptyReport(
                 disposition: .invalidPeripheralScope,
                 field: field,
@@ -238,13 +241,7 @@ public enum PassiveBluetoothRepeatedCorrelation {
         }
 
         return buildReport(
-            windows: PassiveBluetoothCorrelation.windows(
-                in: session,
-                peripheralIdentifier: peripheralIdentifier,
-                field: field,
-                lookbackNanoseconds: lookbackNanoseconds,
-                lookaheadNanoseconds: lookaheadNanoseconds
-            ),
+            windows: windows,
             field: field,
             markerMetadata: markerMetadata
         )
@@ -465,9 +462,10 @@ public enum PassiveBluetoothRepeatedCorrelation {
         return metadata
     }
 
-    /// Mirrors the current parent correlation attribution boundary. Structured
-    /// connection identity participates in ambiguity detection alongside GATT and
-    /// raw-value identity; advertisement-only noise and human markers do not.
+    /// Mirrors the current parent correlation attribution boundary for the
+    /// unscoped disposition check. Explicit target presence is delegated directly
+    /// to `PassiveBluetoothCorrelation.windows(...)` so this child does not carry
+    /// a second explicit-target authority.
     private static func correlationPeripheralIdentifiers(
         in session: PassiveBluetoothCaptureSession
     ) -> Set<String> {
