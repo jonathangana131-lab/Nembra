@@ -90,7 +90,10 @@ struct VehicleControlsView: View {
                     }
                 }
                 .accessibilityLabel(mode.displayName)
-                .accessibilityValue(vehicle.pendingRideMode == mode ? "Requesting confirmation" : "")
+                .accessibilityValue(
+                    "Requesting confirmation",
+                    isEnabled: vehicle.pendingRideMode == mode
+                )
                 .accessibilityAddTraits(vehicle.state.rideMode == mode ? .isSelected : [])
                 .disabled(
                     !commandsAvailable ||
@@ -170,7 +173,7 @@ struct VehicleControlsView: View {
             }
         }
         .accessibilityLabel(title)
-        .accessibilityValue(pending ? "Requesting confirmation" : "")
+        .accessibilityValue("Requesting confirmation", isEnabled: pending)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected)
     }
