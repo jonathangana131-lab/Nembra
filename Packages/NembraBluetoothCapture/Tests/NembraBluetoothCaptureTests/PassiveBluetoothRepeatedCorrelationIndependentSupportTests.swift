@@ -1,0 +1,375 @@
+import Foundation
+import NembraCore
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Passive Bluetooth repeated correlation independent support")
+struct PassiveBluetoothRepeatedCorrelationIndependentSupportTests {
+    private let identity = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "unknown-2025-es80"
+    )
+
+    @Test("one raw callback shared by overlapping marker windows cannot manufacture recurrence")
+    func oneSharedCallbackCannotBecomeRepeatedEvidence() throws {
+        var session = try makeSession()
+        try appendMarker(
+            to: &session,
+            sequence: 1,
+            uptime: 1_000_000_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: 1_500_000_000,
+            characteristic: "BAT"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 3,
+            uptime: 2_000_000_000,
+            field: "Battery",
+            value: "72%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            field: "Battery",
+            lookbackNanoseconds: 600_000_000,
+            lookaheadNanoseconds: 600_000_000
+        )
+        let evidence = try #require(report.streamEvidence.first)
+
+        #expect(report.markerCount == 2)
+        #expect(evidence.rawCandidateCount == 1)
+        #expect(evidence.markerSupportCount == 1)
+        #expect(evidence.hits.map(\.candidateSequenceNumber) == [2])
+        #expect(!evidence.isRepeatedAcrossMarkers)
+        #expect(!evidence.isRepeatedAcrossDisplayedValues)
+    }
+
+    @Test("matching reassigns an earlier marker when that preserves two independent callbacks")
+    func augmentingPathPreservesMaximumIndependentSupport() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 800_000_000,
+            characteristic: "BAT",
+            payload: [0xB0]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000_000_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 3,
+            uptime: 1_100_000_000,
+            characteristic: "BAT",
+            payload: [0xA0]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 4,
+            uptime: 1_200_000_000,
+            field: "Battery",
+            value: "72%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            field: "Battery",
+            lookbackNanoseconds: 300_000_000,
+            lookaheadNanoseconds: 300_000_000
+        )
+        let evidence = try #require(report.streamEvidence.first)
+
+        #expect(evidence.rawCandidateCount == 2)
+        #expect(evidence.markerSupportCount == 2)
+        #expect(evidence.hits.map(\.markerSequenceNumber) == [2, 4])
+        #expect(evidence.hits.map(\.candidateSequenceNumber) == [1, 3])
+        #expect(evidence.representedDisplayedValues == ["73%", "72%"])
+        #expect(evidence.isRepeatedAcrossMarkers)
+        #expect(evidence.isRepeatedAcrossDisplayedValues)
+
+        let assignedOffsets = evidence.hits.map(\.absoluteOffsetSeconds)
+        #expect(abs(assignedOffsets[0] - 0.2) < 0.000_000_001)
+        #expect(abs(assignedOffsets[1] - 0.1) < 0.000_000_001)
+        #expect(abs((evidence.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.15) < 0.000_000_001)
+        #expect(abs((evidence.maximumAssignedAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
+        #expect(abs((evidence.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+        #expect(abs((evidence.maximumNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+    }
+
+    @Test("ranking uses independently assigned callback proximity instead of reusable nearest callbacks")
+    func rankingUsesAssignedEvidenceProximity() throws {
+        var session = try makeSession()
+
+        // Stream A has a very attractive callback between both markers. A second,
+        // farther callback is required to obtain two independent supports.
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 600_000_000,
+            characteristic: "A",
+            payload: [0xA2]
+        )
+
+        // Stream B has two genuinely independent, moderately close callbacks.
+        try appendValue(
+            to: &session,
+            sequence: 2,
+            uptime: 800_000_000,
+            characteristic: "B",
+            payload: [0xB1]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 3,
+            uptime: 1_000_000_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 4,
+            uptime: 1_100_000_000,
+            characteristic: "A",
+            payload: [0xA1]
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 5,
+            uptime: 1_200_000_000,
+            field: "Battery",
+            value: "72%"
+        )
+        try appendValue(
+            to: &session,
+            sequence: 6,
+            uptime: 1_400_000_000,
+            characteristic: "B",
+            payload: [0xB2]
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            field: "Battery",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(report.streamEvidence.count == 2)
+        let preferred = try #require(report.streamEvidence.first)
+        let second = report.streamEvidence[1]
+
+        #expect(preferred.key.characteristicUUID == "B")
+        #expect(second.key.characteristicUUID == "A")
+        #expect(preferred.markerSupportCount == 2)
+        #expect(second.markerSupportCount == 2)
+
+        #expect(abs((preferred.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
+        #expect(abs((second.medianAssignedAbsoluteOffsetSeconds ?? -1) - 0.25) < 0.000_000_001)
+
+        // A still correctly reports the better local nearest-window metric. That
+        // value no longer determines ranking because it reuses the same callback
+        // before independent allocation.
+        #expect(abs((second.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.1) < 0.000_000_001)
+        #expect(abs((preferred.medianNearestAbsoluteOffsetSeconds ?? -1) - 0.2) < 0.000_000_001)
+    }
+
+    @Test("explicit target absent from attributable capture evidence fails closed")
+    func absentExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 950,
+            characteristic: "BAT",
+            peripheralIdentifier: "target-a"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            peripheralIdentifier: "missing-target",
+            field: "Battery",
+            lookbackNanoseconds: 100,
+            lookaheadNanoseconds: 100
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.markerCount == 1)
+        #expect(report.distinctDisplayedValues == ["73%"])
+        #expect(report.streamEvidence.isEmpty)
+    }
+
+    @Test("advertisement-only identity does not establish an explicit GATT correlation target")
+    func advertisementOnlyExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try session.append(
+            .advertisement(try PassiveBluetoothAdvertisementObservation(
+                peripheralIdentifier: "advertised-only",
+                localName: "AOVOPRO"
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 900,
+            receivedAtDate: .now
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            peripheralIdentifier: "advertised-only",
+            field: "Battery",
+            lookbackNanoseconds: 100,
+            lookaheadNanoseconds: 100
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.streamEvidence.isEmpty)
+    }
+
+    @Test("batch explicit target absence fails closed for every observed field")
+    func batchAbsentExplicitTargetFailsClosed() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 900,
+            characteristic: "BAT",
+            peripheralIdentifier: "target-a"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 3,
+            uptime: 1_100,
+            field: "Power",
+            value: "180 W"
+        )
+
+        let reports = PassiveBluetoothRepeatedCorrelationBatch.analyzeAllObservedFields(
+            in: session,
+            peripheralIdentifier: "missing-target",
+            lookbackNanoseconds: 200,
+            lookaheadNanoseconds: 200
+        )
+
+        #expect(reports.map(\.field) == ["Battery", "Power"])
+        #expect(reports.allSatisfy { $0.disposition == .invalidPeripheralScope })
+        #expect(reports.allSatisfy { $0.streamEvidence.isEmpty })
+    }
+
+    @Test("structured connection identity participates in unscoped ambiguity")
+    func unrelatedConnectionIdentityFailsClosed() throws {
+        var session = try makeSession()
+        try appendValue(
+            to: &session,
+            sequence: 1,
+            uptime: 900,
+            characteristic: "BAT",
+            peripheralIdentifier: "target-a"
+        )
+        try appendMarker(
+            to: &session,
+            sequence: 2,
+            uptime: 1_000,
+            field: "Battery",
+            value: "73%"
+        )
+        try session.append(
+            .connection(try PassiveBluetoothConnectionObservation(
+                peripheralIdentifier: "unrelated-b",
+                state: .connected
+            )),
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 1_100,
+            receivedAtDate: .now
+        )
+
+        let report = PassiveBluetoothRepeatedCorrelation.analyze(
+            session,
+            field: "Battery",
+            lookbackNanoseconds: 200,
+            lookaheadNanoseconds: 200
+        )
+
+        #expect(report.disposition == .ambiguousPeripheralScope)
+        #expect(report.markerCount == 1)
+        #expect(report.streamEvidence.isEmpty)
+    }
+
+    private func makeSession() throws -> PassiveBluetoothCaptureSession {
+        try PassiveBluetoothCaptureSession(
+            vehicleIdentity: identity,
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    private func appendMarker(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        field: String,
+        value: String
+    ) throws {
+        try session.append(
+            .stockAppState(try PassiveBluetoothStockAppObservation(
+                field: field,
+                displayedValue: value
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+
+    private func appendValue(
+        to session: inout PassiveBluetoothCaptureSession,
+        sequence: UInt64,
+        uptime: UInt64,
+        characteristic: String,
+        payload: [UInt8] = [0x01],
+        peripheralIdentifier: String = "physical-es80-placeholder"
+    ) throws {
+        try session.append(
+            .value(try PassiveBluetoothValueObservation(
+                peripheralIdentifier: peripheralIdentifier,
+                serviceUUID: "TEST",
+                characteristicUUID: characteristic,
+                origin: .subscriptionUpdate,
+                payload: Data(payload)
+            )),
+            sequenceNumber: sequence,
+            receivedAtUptimeNanoseconds: uptime,
+            receivedAtDate: .now
+        )
+    }
+}
