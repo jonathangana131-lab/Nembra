@@ -418,8 +418,14 @@ struct HomeView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(presentation.title)
-                    .font(.subheadline.weight(.semibold))
+                switch presentation.action {
+                case .progress:
+                    EmptyView()
+                case .reconnect, .settings, .none:
+                    Text(presentation.title)
+                        .font(.subheadline.weight(.semibold))
+                }
+
                 Text(presentation.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -435,7 +441,7 @@ struct HomeView: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 44, height: 44)
-                    .accessibilityLabel(presentation.title)
+                    .accessibilityHidden(true)
             case .reconnect:
                 Button {
                     Task { await vehicle.connect() }
