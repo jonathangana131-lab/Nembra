@@ -51,19 +51,21 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
         // Keep the match's independently projected route remainder untouched as
         // evidence. A guidance observation has a stricter structural invariant:
         // the whole-route remainder cannot be less than the current-step remainder.
-        // When independent projections contradict, confidence is already false;
-        // only this bridge raises the guidance value to that conservative lower bound.
+        // Recheck the raw relationship at this bridge so a future/internal producer
+        // cannot accidentally label contradictory progress as confident.
+        let rawRemainingDistanceConsistent = distanceRemainingOnStepMeters <= distanceRemainingOnRouteMeters
         let coherentRouteRemaining = max(
             distanceRemainingOnRouteMeters,
             distanceRemainingOnStepMeters
         )
+        let observationConfident = isProgressAssignmentConfident && rawRemainingDistanceConsistent
         return try NavigationGuidanceProgressObservation(
             selectionToken: selectionToken,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             stepIndex: stepIndex,
             distanceRemainingOnStepMeters: distanceRemainingOnStepMeters,
             distanceRemainingOnRouteMeters: coherentRouteRemaining,
-            isProgressAssignmentConfident: isProgressAssignmentConfident
+            isProgressAssignmentConfident: observationConfident
         )
     }
 
