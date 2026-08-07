@@ -1,0 +1,60 @@
+name: ES80 Tuya DP Current Main QA
+
+on:
+  push:
+    branches:
+      - qa/es80-tuya-dp/chat-g5m7q-mainbdbf
+
+permissions:
+  contents: read
+
+jobs:
+  swift-test:
+    name: Current-main NembraCore warnings-as-errors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout integration mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify current-main composition and exact PR blobs
+        env:
+          EXPECTED_PR_HEAD: dc8024f59f4fb19e927c7449728344b2105dc9df
+          EXPECTED_MAIN: bdbf08e2e6e2e69e507a58cfbbe14afefebdcbdb
+          EXPECTED_COMPOSITION_HEAD: 92fedfd4db845739ae69fcf9c76b9b6bdeacca13
+        run: |
+          set -euo pipefail
+          git cat-file -e "$EXPECTED_PR_HEAD^{commit}"
+          git cat-file -e "$EXPECTED_MAIN^{commit}"
+          git cat-file -e "$EXPECTED_COMPOSITION_HEAD^{commit}"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_COMPOSITION_HEAD"
+          test "$(git rev-parse "$EXPECTED_COMPOSITION_HEAD^")" = "$EXPECTED_MAIN"
+
+          expected_files='Packages/NembraCore/Sources/NembraCore/TuyaCandidateDPAnalysis.swift
+          Packages/NembraCore/Tests/NembraCoreTests/TuyaCandidateDPAnalysisTests.swift
+          docs/ES80_TUYA_DP_CANDIDATE_ANALYSIS.md'
+          changed="$(git diff --name-only "$EXPECTED_MAIN" "$EXPECTED_COMPOSITION_HEAD")"
+          test "$changed" = "$expected_files"
+
+          for path in \
+            Packages/NembraCore/Sources/NembraCore/TuyaCandidateDPAnalysis.swift \
+            Packages/NembraCore/Tests/NembraCoreTests/TuyaCandidateDPAnalysisTests.swift \
+            docs/ES80_TUYA_DP_CANDIDATE_ANALYSIS.md
+          do
+            test "$(git rev-parse "$EXPECTED_PR_HEAD:$path")" = "$(git rev-parse "$EXPECTED_COMPOSITION_HEAD:$path")"
+          done
+
+          workflow_only="$(git diff --name-only "$EXPECTED_COMPOSITION_HEAD" HEAD)"
+          test "$workflow_only" = '.github/workflows/es80-tuya-dp-current-main-qa.yml'
+
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+          swift package --package-path Packages/NembraCore dump-package >/dev/null
+
+      - name: Build and run NembraCore tests with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
