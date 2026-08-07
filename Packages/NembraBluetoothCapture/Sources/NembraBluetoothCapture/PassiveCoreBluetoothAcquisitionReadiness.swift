@@ -13,12 +13,17 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
         case awaitingConnection
         case acquiring
         case ready
+        /// A connection attempt reached a terminal transport outcome before any
+        /// complete GATT acquisition existed. The connection evidence is useful,
+        /// but missing topology must never be interpreted as authoritative absence.
+        case terminalWithoutGattAcquisition
     }
 
     enum StateError: Swift.Error, Equatable, Sendable {
         case generationExhausted
         case operationIdentifierExhausted
         case acquisitionNotActive
+        case invalidChildOperationCount
     }
 
     private(set) var phase: Phase = .noTarget
@@ -32,7 +37,7 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
 
     var isIncomplete: Bool {
         switch phase {
-        case .noTarget, .awaitingConnection, .acquiring:
+        case .noTarget, .awaitingConnection, .acquiring, .terminalWithoutGattAcquisition:
             true
         case .ready:
             false
@@ -53,6 +58,14 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
     mutating func beginConnectionAttempt() {
         pendingOperations.removeAll()
         phase = .awaitingConnection
+    }
+
+    /// Marks a terminal connection outcome that produced no complete GATT pass.
+    /// Raw connection evidence may still exist in the recorder, but callers must
+    /// keep analysis/export qualified or unavailable because topology is unknown.
+    mutating func finishWithoutGattAcquisition() {
+        pendingOperations.removeAll()
+        phase = .terminalWithoutGattAcquisition
     }
 
     /// Starts a fresh finite acquisition generation, for example after connect
@@ -95,5 +108,49 @@ struct PassiveCoreBluetoothAcquisitionReadiness: Sendable {
             phase = .ready
         }
         return true
+    }
+
+    /// Atomically replaces one in-flight parent operation with zero or more
+    /// child operations in the same generation. This prevents recursive GATT
+    /// discovery from momentarily entering `.ready` between completing a parent
+    /// callback and registering the child async work it spawned.
+    ///
+    /// Returns nil for a stale/unknown parent without mutating current readiness.
+    mutating func completeOperation(
+        _ token: OperationToken,
+        startingChildOperations childOperationCount: Int
+    ) throws -> [OperationToken]? {
+        guard childOperationCount >= 0 else {
+            throw StateError.invalidChildOperationCount
+        }
+        guard phase == .acquiring,
+              token.generation == generation,
+              pendingOperations.contains(token) else { return nil }
+
+        if childOperationCount > 0 {
+            let count = UInt64(childOperationCount)
+            guard nextOperationIdentifier <= UInt64.max - count else {
+                throw StateError.operationIdentifierExhausted
+            }
+        }
+
+        pendingOperations.remove(token)
+        var children: [OperationToken] = []
+        children.reserveCapacity(childOperationCount)
+
+        for _ in 0..<childOperationCount {
+            let child = OperationToken(
+                generation: generation,
+                identifier: nextOperationIdentifier
+            )
+            nextOperationIdentifier += 1
+            pendingOperations.insert(child)
+            children.append(child)
+        }
+
+        if pendingOperations.isEmpty {
+            phase = .ready
+        }
+        return children
     }
 }
