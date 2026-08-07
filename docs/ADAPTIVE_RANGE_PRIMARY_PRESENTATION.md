@@ -18,7 +18,8 @@ The current `BatteryEstimatedRangeDisplay` intentionally has only numeric meters
 4. `presentedRemainingMeters` is finite and non-negative;
 5. SoC provenance is `.authoritativeMeasurement`, not `.estimate`;
 6. basis is `.learned`, not `.provisionalSeed`;
-7. confidence is `.normal` or `.high`.
+7. confidence is `.normal` or `.high`;
+8. final production integration can prove the estimate is bound to the current accepted authoritative SoC observation rather than retained older derived state.
 
 The public API accepts `VehicleState`, not a caller-selected `VehicleDataAvailability`. It derives `vehicleState.dataAvailability` inside the policy. This removes a freshness role-selector seam where app code could accidentally label retained/no-data state as live.
 
@@ -32,7 +33,7 @@ Canonical vehicle-state behavior remains:
 
 | Input state | Detailed decision | Primary readout |
 | --- | --- | --- |
-| learned + normal/high + authoritative SoC + canonical live state | numeric | numeric |
+| learned + normal/high + authoritative SoC + canonical live state | numeric candidate; still requires current-source binding before production integration | numeric |
 | provisional seed | learning | learning |
 | learning confidence | learning | learning |
 | low confidence | learning | learning |
@@ -60,6 +61,23 @@ The presentation boundary rejects an estimate unless:
 `presentedRemainingMeters` is **not** capped by the current full-charge-equivalent range. Valid deadband/smoothing can temporarily lag a changed learned efficiency, so presentation may legitimately exceed the new raw full-charge equivalent while converging. The policy only requires that presented range itself be finite and non-negative.
 
 This defense does not create authority. It only ensures an already-supplied estimate is structurally representable before the UI can show it numerically.
+
+## Derived-estimate freshness blocker
+
+Whole-vehicle availability is necessary but not sufficient to prove the range estimate itself is current.
+
+`BatterySOCReading` carries `receivedAtUptimeNanoseconds`, and `AdaptiveBatteryRangeModel.estimateRemainingRange(at:)` receives that exact reading. The returned `AdaptiveBatteryRangeEstimate` currently drops the source observation identity/uptime and carries only provenance/confidence/basis plus derived range values.
+
+That creates an ambiguity #83 cannot safely resolve locally: an estimate may be genuinely authoritative in origin yet be an older estimate retained in memory across disconnect/reconnect. Meanwhile fresh speed or another confirmed field can make whole `VehicleState.dataAvailability` become `.live`. Connection state therefore does not prove that the range was recomputed from a post-reconnect battery observation.
+
+Production numeric range requires an upstream estimate-to-source binding, for example:
+
+- carry source SoC observation identity/uptime (and continuity generation if required) into the derived estimate and bind it to the currently accepted authoritative battery observation; or
+- expose a trusted integration result that classifies the **derived estimate itself** as live/retained/unavailable from the verified battery evidence stream, without allowing UI callers to select that role.
+
+The exact owning shape belongs to #40/#38 or their accepted successors. #83 review finding `5210606651` records this dependency. Final Dashboard acceptance needs a reconnect regression: retain an old authoritative estimate, reconnect/live-update non-battery state, and prove numeric range stays withheld until a newly accepted authoritative SoC observation produces/binds a current estimate.
+
+Until that source binding exists, #83's numeric branch is a domain-policy candidate, not production authorization.
 
 ## Upstream authority blockers
 
@@ -108,17 +126,17 @@ This branch intentionally targets PR #40 exact parent `18051b003d8c2b48e37baa3af
 
 ### App-target visibility gate
 
-The Swift package auto-discovers these files, while `Nembra.app` manually enumerates selected core sources. Package success therefore proves neither app visibility nor app-side trust isolation. A future app consumer must wire the complete accepted dependency closure (or deliberately change linkage architecture), compile the exact final app, and re-prove authority construction under that exact module layout.
+The Swift package auto-discovers these files, while `Nembra.app` manually enumerates selected core sources. Package success therefore proves neither app visibility nor app-side trust isolation. A future app consumer must wire the complete accepted dependency closure (or deliberately change linkage architecture), compile the exact final app, and re-prove authority construction and derived-estimate freshness under that exact module layout.
 
 The `VehicleState`-accepting public policy API avoids introducing another app-visible freshness selector and works with both today's direct-source composition and a future separately linked core module.
 
-After the authority-sealed semantic parent lands, #83 must reconcile its exact three-file delta onto accepted parent/fresh `main`, run real package checks, verify app source/linkage closure, and obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge.
+After the authority- and freshness-sealed semantic parent lands, #83 must reconcile its exact three-file delta onto accepted parent/fresh `main`, run real package checks, verify app source/linkage closure, and obtain exact-final-head Xcode 27 / iPhone 12 / iOS 27 Simulator acceptance before production merge.
 
 ## Validation
 
 Supplemental Swift 6.2.1 compatibility harness: **22/22 debug + 22/22 release**. In addition to the prior availability/provenance/confidence matrix, it covers malformed raw range, malformed efficiency, raw range above the full-charge equivalent, provisional basis paired with non-learning confidence, retained malformed structure, and the valid smoothed-presented-range-above-current-full-charge counterexample.
 
-This is supplemental semantic/API evidence only, not repository package or Xcode acceptance.
+This is supplemental semantic/API evidence only, not repository package or Xcode acceptance. Freshness cannot be fully proven by this child harness until the parent/integration contract exposes a trustworthy estimate-to-source binding.
 
 ## Hardware boundary
 
