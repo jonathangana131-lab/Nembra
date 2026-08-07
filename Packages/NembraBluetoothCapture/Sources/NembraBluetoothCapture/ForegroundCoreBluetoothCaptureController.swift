@@ -26,14 +26,35 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     public struct DiscoveredPeripheral: Equatable, Sendable, Identifiable {
         public let id: UUID
         public let localName: String?
-        public let rssi: Int
+        public let rssi: Int?
         public let isConnectable: Bool?
 
-        public init(id: UUID, localName: String?, rssi: Int, isConnectable: Bool?) {
+        public init(id: UUID, localName: String?, rssi: Int?, isConnectable: Bool?) {
             self.id = id
             self.localName = localName
             self.rssi = rssi
             self.isConnectable = isConnectable
+        }
+
+        public var rssiDescription: String {
+            rssi.map { "\($0) dBm" } ?? "Unavailable"
+        }
+
+        static func normalizedRSSI(_ rawValue: Int) -> Int? {
+            rawValue == 127 ? nil : rawValue
+        }
+
+        static func sortsBefore(_ lhs: Self, _ rhs: Self) -> Bool {
+            switch (lhs.rssi, rhs.rssi) {
+            case let (.some(left), .some(right)) where left != right:
+                return left > right
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            default:
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
         }
     }
 
@@ -47,6 +68,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
         case targetSessionChanged
+        case captureIncomplete
         case captureFailed
     }
 
@@ -54,12 +76,37 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case characteristicMissingService
         case missingCharacteristicValue
         case unattributedCharacteristicValue
+        case missingServices
+        case missingIncludedServices
+        case missingCharacteristics
+        case missingDescriptors
+        case serviceNotInCurrentAcquisition
+        case characteristicNotInCurrentAcquisition
+        case ambiguousReadWhileAlreadyNotifying
+        case readProvenanceMismatch
+        case subscriptionProvenanceMismatch
+        case subscriptionStateMismatch
+        case serviceInvalidatedDuringAcquisition
+        case artifactAuthorityGenerationExhausted
+        case eventQueueSequenceExhausted
     }
 
     private struct CandidateAdvertisement {
         let observation: PassiveBluetoothAdvertisementObservation
         let receivedAtUptimeNanoseconds: UInt64
         let receivedAtDate: Date
+    }
+
+    private struct CallbackReceipt {
+        let uptimeNanoseconds: UInt64
+        let date: Date
+    }
+
+    private struct ArtifactContext {
+        let recorder: PassiveCoreBluetoothCaptureRecorder
+        let targetSessionGeneration: UInt64
+        let authorityGeneration: UInt64
+        let eventWatermark: UInt64
     }
 
     public private(set) var bluetoothState: CBManagerState = .unknown
@@ -77,13 +124,28 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         recorder != nil
     }
 
+    /// Authoritative analysis/export is available only after the selected target
+    /// has one completely drained finite GATT acquisition and no cancellation
+    /// terminal callback is outstanding. Ongoing notifications are not readiness
+    /// operations and may continue after this becomes true.
+    public var hasCompleteTargetEvidence: Bool {
+        recorder != nil
+            && !captureFailed
+            && acquisitionLedger.isReady
+            && !selectedTargetCancellationPending
+    }
+
     private let vehicleIdentity: VehicleIdentity
     private let initialSessionID: UUID
     private let firstSessionStartedAtOverride: Date?
     private var hasUsedInitialSessionIdentity = false
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
+    private var artifactAuthorityGeneration: UInt64 = 0
     private var targetState = PassiveCoreBluetoothTargetState()
+    private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
+    private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
+    private var selectedTargetCancellationPending = false
 
     private var centralManager: CBCentralManager!
     private var peripheralByIdentifier: [UUID: CBPeripheral] = [:]
@@ -96,6 +158,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var hasObservedInitialCentralState = false
 
     private struct PendingEvent {
+        let queueSequence: UInt64
         let recorder: PassiveCoreBluetoothCaptureRecorder
         let sessionGeneration: UInt64
         let event: PassiveBluetoothCaptureEvent
@@ -109,6 +172,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// already-queued evidence into the new target artifact.
     private var pendingEvents: [PendingEvent] = []
     private var eventDrainTask: Task<Void, Never>?
+    private var lastEnqueuedEventSequence: UInt64 = 0
+    private var lastProcessedEventSequence: UInt64 = 0
 
     public init(
         vehicleIdentity: VehicleIdentity,
@@ -133,17 +198,16 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         eventDrainTask?.cancel()
     }
 
-    /// Starts an explicit foreground research scan. The initial physical
-    /// fingerprint is intentionally unfiltered because ES80 service identity is
-    /// not yet verified. Duplicate advertisements are opt-in for cadence study.
-    /// Discoveries populate only an in-memory candidate catalog until one target
-    /// is explicitly selected through `connect(to:)`.
+    /// Starts an explicit foreground research scan. Every explicit scan owns a
+    /// fresh in-memory candidate epoch: CoreBluetooth objects observed by a
+    /// previous stopped scan are not left selectable as if freshly rediscovered.
     public func startScanning(captureAdvertisementCadence: Bool = false) throws {
         try ensureCaptureHealthy()
         guard centralManager.state == .poweredOn else {
             throw ControllerError.bluetoothNotPoweredOn
         }
 
+        clearCandidateCatalog()
         centralManager.scanForPeripherals(
             withServices: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchServiceFilter,
             options: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchScanOptions(
@@ -203,6 +267,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
+        acquisitionLedger.beginConnectionAttempt()
+        selectedTargetCancellationPending = false
+        guard advanceArtifactAuthority() else {
+            throw ControllerError.captureFailed
+        }
+
         stopScanning()
         connectionPhase = .connecting(peripheralIdentifier)
         activePeripheral = peripheral
@@ -219,6 +289,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         guard let peripheral = activePeripheral else { return }
+
+        if targetState.selectedTargetIdentifier == peripheral.identifier {
+            selectedTargetCancellationPending = true
+            if !acquisitionLedger.isReady {
+                acquisitionLedger.finishWithoutGattAcquisition()
+            }
+            guard advanceArtifactAuthority() else { return }
+        }
 
         _ = targetState.retireActiveAttempt()
         peripheral.delegate = nil
@@ -246,25 +324,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {
-        try ensureCaptureHealthy()
-        let (recorder, generation) = try currentRecorder()
-        await flushPendingEvents()
-        try ensureCaptureHealthy()
-        guard generation == targetSessionGeneration else {
-            throw ControllerError.targetSessionChanged
-        }
-        return await recorder.snapshot()
+        let context = try currentArtifactContext()
+        await flushPendingEvents(through: context.eventWatermark)
+        try validate(context)
+        let snapshot = await context.recorder.snapshot()
+        try validate(context)
+        return snapshot
     }
 
     public func encodedCaptureJSON(prettyPrinted: Bool = true) async throws -> Data {
-        try ensureCaptureHealthy()
-        let (recorder, generation) = try currentRecorder()
-        await flushPendingEvents()
-        try ensureCaptureHealthy()
-        guard generation == targetSessionGeneration else {
-            throw ControllerError.targetSessionChanged
-        }
-        return try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+        let context = try currentArtifactContext()
+        await flushPendingEvents(through: context.eventWatermark)
+        try validate(context)
+        let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)
+        try validate(context)
+        return data
     }
 
     private func beginTargetSessionIfNeeded(for identifier: UUID) throws {
@@ -288,9 +362,15 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         targetState.selectTarget(identifier)
+        acquisitionLedger.beginTargetSession()
+        gattIdentityRegistry.reset()
+        selectedTargetCancellationPending = false
         hasUsedInitialSessionIdentity = true
         targetSessionGeneration += 1
         recorder = newRecorder
+        guard advanceArtifactAuthority() else {
+            throw ControllerError.captureFailed
+        }
 
         // Preserve at most the selected candidate's latest already-observed
         // advertisement, with the exact callback clocks from when it was actually
@@ -304,24 +384,57 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func currentRecorder() throws -> (PassiveCoreBluetoothCaptureRecorder, UInt64) {
+    private func currentArtifactContext() throws -> ArtifactContext {
+        try ensureCaptureHealthy()
         guard let recorder else { throw ControllerError.targetNotSelected }
-        return (recorder, targetSessionGeneration)
+        guard hasCompleteTargetEvidence else { throw ControllerError.captureIncomplete }
+        return ArtifactContext(
+            recorder: recorder,
+            targetSessionGeneration: targetSessionGeneration,
+            authorityGeneration: artifactAuthorityGeneration,
+            eventWatermark: lastEnqueuedEventSequence
+        )
+    }
+
+    private func validate(_ context: ArtifactContext) throws {
+        try ensureCaptureHealthy()
+        guard context.targetSessionGeneration == targetSessionGeneration,
+              context.authorityGeneration == artifactAuthorityGeneration else {
+            throw ControllerError.targetSessionChanged
+        }
+        guard hasCompleteTargetEvidence else {
+            throw ControllerError.captureIncomplete
+        }
+    }
+
+    private func advanceArtifactAuthority() -> Bool {
+        guard artifactAuthorityGeneration != UInt64.max else {
+            failCapture(AcquisitionError.artifactAuthorityGenerationExhausted)
+            return false
+        }
+        artifactAuthorityGeneration += 1
+        return true
     }
 
     private func scheduleConnectionTimeout(for peripheral: CBPeripheral, nanoseconds: UInt64) {
         connectionTimeoutTask?.cancel()
         let identifier = peripheral.identifier
-        connectionTimeoutTask = Task { @MainActor [weak self, weak peripheral] in
+        connectionTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard !Task.isCancelled,
                   let self,
-                  let peripheral,
+                  let peripheral = self.activePeripheral,
+                  peripheral.identifier == identifier,
                   self.connectionPhase == .connecting(identifier),
                   self.targetState.acceptsActiveCallback(from: identifier) else { return }
 
             self.lastDiagnostic = "Connection attempt timed out and was cancelled."
             self.enqueueInterruption("connection attempt timed out")
+            if self.targetState.selectedTargetIdentifier == identifier {
+                self.selectedTargetCancellationPending = true
+                self.acquisitionLedger.finishWithoutGattAcquisition()
+                guard self.advanceArtifactAuthority() else { return }
+            }
             _ = self.targetState.retireActiveAttempt()
             peripheral.delegate = nil
             self.activePeripheral = nil
@@ -332,20 +445,40 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func beginDiscovery(on peripheral: CBPeripheral) {
-        targetState.resetAcquisitionProvenance()
-        discoveredIncludedServiceObjectIDs.removeAll()
-        discoveredCharacteristicServiceObjectIDs.removeAll()
+    private func beginDiscovery(on peripheral: CBPeripheral) throws {
+        clearAcquisitionObjects()
+        try acquisitionLedger.beginAcquisition()
         peripheral.discoverServices(nil)
     }
 
-    private func discoverTopology(for service: CBService, on peripheral: CBPeripheral) {
+    private func newlyScheduledTopologyOperations(
+        for service: CBService
+    ) -> [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] {
         let serviceID = ObjectIdentifier(service)
+        var operations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] = []
         if discoveredIncludedServiceObjectIDs.insert(serviceID).inserted {
-            peripheral.discoverIncludedServices(nil, for: service)
+            operations.append(.includedServices(serviceID))
         }
         if discoveredCharacteristicServiceObjectIDs.insert(serviceID).inserted {
-            peripheral.discoverCharacteristics(nil, for: service)
+            operations.append(.characteristics(serviceID))
+        }
+        return operations
+    }
+
+    private func issueTopologyOperations(
+        _ operations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey],
+        for service: CBService,
+        on peripheral: CBPeripheral
+    ) {
+        for operation in operations {
+            switch operation {
+            case .includedServices:
+                peripheral.discoverIncludedServices(nil, for: service)
+            case .characteristics:
+                peripheral.discoverCharacteristics(nil, for: service)
+            default:
+                break
+            }
         }
     }
 
@@ -363,7 +496,47 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
     }
 
-    private func acquirePassively(
+    private func validateCurrentService(_ service: CBService) throws {
+        let uuid = CoreBluetoothCaptureMapping.normalizedUUID(service.uuid)
+        guard gattIdentityRegistry.containsService(uuid: uuid, instance: service) else {
+            throw AcquisitionError.serviceNotInCurrentAcquisition
+        }
+    }
+
+    private func validateCurrentCharacteristic(_ characteristic: CBCharacteristic) throws {
+        guard let service = characteristic.service else {
+            throw AcquisitionError.characteristicMissingService
+        }
+        let serviceUUID = CoreBluetoothCaptureMapping.normalizedUUID(service.uuid)
+        let characteristicUUID = CoreBluetoothCaptureMapping.normalizedUUID(characteristic.uuid)
+        guard gattIdentityRegistry.containsService(uuid: serviceUUID, instance: service),
+              gattIdentityRegistry.containsCharacteristic(
+                serviceUUID: serviceUUID,
+                characteristicUUID: characteristicUUID,
+                instance: characteristic
+              ) else {
+            throw AcquisitionError.characteristicNotInCurrentAcquisition
+        }
+    }
+
+    private func plannedCharacteristicOperations(
+        for characteristic: CBCharacteristic
+    ) -> [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] {
+        let characteristicID = ObjectIdentifier(characteristic)
+        let plan = PassiveCoreBluetoothAcquisitionPolicy.plan(for: characteristic)
+        var operations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] = []
+        if plan.shouldDiscoverDescriptors {
+            operations.append(.descriptors(characteristicID))
+        }
+        if plan.shouldReadValue {
+            operations.append(.read(characteristicID))
+        } else if plan.shouldSubscribeForValueUpdates {
+            operations.append(.subscription(characteristicID))
+        }
+        return operations
+    }
+
+    private func issueCharacteristicAcquisition(
         _ characteristic: CBCharacteristic,
         on peripheral: CBPeripheral
     ) throws {
@@ -374,9 +547,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
         let key = try attributeKey(for: characteristic, on: peripheral)
         if plan.shouldReadValue {
-            // Track the request before calling CoreBluetooth so a callback can be
-            // classified as a read response only when this adapter actually has
-            // an outstanding read identity for the same target/GATT path.
             targetState.markReadRequested(key)
             peripheral.readValue(for: characteristic)
         } else if plan.shouldSubscribeForValueUpdates {
@@ -385,23 +555,23 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func subscribeAfterInitialReadIfNeeded(
-        _ characteristic: CBCharacteristic,
-        on peripheral: CBPeripheral
-    ) throws {
-        let plan = PassiveCoreBluetoothAcquisitionPolicy.plan(for: characteristic)
-        if plan.shouldSubscribeForValueUpdates {
-            let key = try attributeKey(for: characteristic, on: peripheral)
-            targetState.markSubscriptionRequested(key, enabled: true)
-            peripheral.setNotifyValue(true, for: characteristic)
-        }
+    private func callbackReceipt() -> CallbackReceipt {
+        CallbackReceipt(
+            uptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            date: Date()
+        )
     }
 
     private func enqueue(_ event: PassiveBluetoothCaptureEvent) {
+        let receipt = callbackReceipt()
+        enqueue(event, receipt: receipt)
+    }
+
+    private func enqueue(_ event: PassiveBluetoothCaptureEvent, receipt: CallbackReceipt) {
         enqueue(
             event,
-            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-            receivedAtDate: Date()
+            receivedAtUptimeNanoseconds: receipt.uptimeNanoseconds,
+            receivedAtDate: receipt.date
         )
     }
 
@@ -411,8 +581,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         receivedAtDate: Date
     ) {
         guard !captureFailed, let recorder else { return }
+        guard lastEnqueuedEventSequence != UInt64.max else {
+            failCapture(AcquisitionError.eventQueueSequenceExhausted)
+            return
+        }
+        lastEnqueuedEventSequence += 1
         pendingEvents.append(
             PendingEvent(
+                queueSequence: lastEnqueuedEventSequence,
                 recorder: recorder,
                 sessionGeneration: targetSessionGeneration,
                 event: event,
@@ -423,20 +599,30 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         startDrainIfNeeded()
     }
 
-    private func enqueueInterruption(_ reason: String) {
+    private func enqueueInterruption(_ reason: String, receipt: CallbackReceipt? = nil) {
         do {
-            enqueue(.interruption(try PassiveBluetoothCaptureInterruption(reason: reason)))
+            let event = PassiveBluetoothCaptureEvent.interruption(
+                try PassiveBluetoothCaptureInterruption(reason: reason)
+            )
+            if let receipt {
+                enqueue(event, receipt: receipt)
+            } else {
+                enqueue(event)
+            }
         } catch {
             failCapture(error)
         }
     }
 
     private func startDrainIfNeeded() {
-        guard eventDrainTask == nil, !pendingEvents.isEmpty else { return }
+        guard eventDrainTask == nil,
+              let drainThroughSequence = pendingEvents.last?.queueSequence else { return }
         eventDrainTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            while !self.pendingEvents.isEmpty {
+            while let first = self.pendingEvents.first,
+                  first.queueSequence <= drainThroughSequence {
                 let next = self.pendingEvents.removeFirst()
+                var shouldStop = false
                 do {
                     try await next.recorder.record(
                         next.event,
@@ -449,24 +635,29 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                     if next.sessionGeneration == self.targetSessionGeneration {
                         self.failCapture(error)
                         self.pendingEvents.removeAll { $0.sessionGeneration == next.sessionGeneration }
-                        break
+                        shouldStop = true
                     }
                 }
+                self.lastProcessedEventSequence = max(
+                    self.lastProcessedEventSequence,
+                    next.queueSequence
+                )
+                if shouldStop { break }
             }
             self.eventDrainTask = nil
-            if !self.pendingEvents.isEmpty {
+            if !self.pendingEvents.isEmpty, !self.captureFailed {
                 self.startDrainIfNeeded()
             }
         }
     }
 
-    private func flushPendingEvents() async {
-        while let drain = eventDrainTask {
+    private func flushPendingEvents(through watermark: UInt64) async {
+        while !captureFailed, lastProcessedEventSequence < watermark {
+            if eventDrainTask == nil {
+                startDrainIfNeeded()
+            }
+            guard let drain = eventDrainTask else { return }
             await drain.value
-        }
-        if !pendingEvents.isEmpty {
-            startDrainIfNeeded()
-            await flushPendingEvents()
         }
     }
 
@@ -499,9 +690,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     private func updateDiscoveryList() {
-        discoveredPeripherals = latestDiscoveryByIdentifier.values.sorted { lhs, rhs in
-            if lhs.rssi != rhs.rssi { return lhs.rssi > rhs.rssi }
-            return lhs.id.uuidString < rhs.id.uuidString
+        discoveredPeripherals = latestDiscoveryByIdentifier.values.sorted {
+            DiscoveredPeripheral.sortsBefore($0, $1)
         }
     }
 
@@ -514,6 +704,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
     private func clearAcquisitionObjects() {
         targetState.resetAcquisitionProvenance()
+        gattIdentityRegistry.reset()
         discoveredIncludedServiceObjectIDs.removeAll()
         discoveredCharacteristicServiceObjectIDs.removeAll()
     }
@@ -553,7 +744,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         _ peripheral: CBPeripheral,
         platformEventTimestamp: TimeInterval?,
         isReconnecting: Bool?,
-        error: Error?
+        error: Error?,
+        receipt: CallbackReceipt
     ) {
         let identifier = peripheral.identifier
         let disposition = targetState.completeDisconnect(from: identifier)
@@ -562,6 +754,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         // A retired target may disconnect after the operator has already selected
         // B. Consume its quarantine but never append A evidence to B's recorder.
         if targetState.selectedTargetIdentifier == identifier {
+            selectedTargetCancellationPending = false
+            if !acquisitionLedger.isReady {
+                acquisitionLedger.finishWithoutGattAcquisition()
+            }
+            guard advanceArtifactAuthority() else { return }
             do {
                 enqueue(
                     .connection(
@@ -572,7 +769,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                             isReconnecting: isReconnecting,
                             error: error
                         )
-                    )
+                    ),
+                    receipt: receipt
                 )
             } catch {
                 failCapture(error)
@@ -589,12 +787,15 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
 extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralManagerDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let receipt = callbackReceipt()
         let previous = bluetoothState
         bluetoothState = central.state
 
         if hasObservedInitialCentralState, previous != central.state {
+            if hasTargetSession, !advanceArtifactAuthority() { return }
             enqueueInterruption(
-                "Bluetooth central state changed \(Self.stateDescription(previous)) -> \(Self.stateDescription(central.state))"
+                "Bluetooth central state changed \(Self.stateDescription(previous)) -> \(Self.stateDescription(central.state))",
+                receipt: receipt
             )
         }
         hasObservedInitialCentralState = true
@@ -612,6 +813,10 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                 connectionPhase = .idle
                 clearAcquisitionObjects()
             }
+            if hasTargetSession, !acquisitionLedger.isReady {
+                acquisitionLedger.finishWithoutGattAcquisition()
+            }
+            selectedTargetCancellationPending = false
             targetState.resetForCentralInvalidation()
             // CoreBluetooth transport objects discovered before this central
             // invalidation are not treated as fresh candidates afterward.
@@ -626,15 +831,15 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        let receivedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        let receivedAtDate = Date()
+        let receipt = callbackReceipt()
+        let normalizedRSSI = DiscoveredPeripheral.normalizedRSSI(RSSI.intValue)
 
         peripheralByIdentifier[peripheral.identifier] = peripheral
         let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue
         let discovery = DiscoveredPeripheral(
             id: peripheral.identifier,
             localName: advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name,
-            rssi: RSSI.intValue,
+            rssi: normalizedRSSI,
             isConnectable: connectable
         )
         latestDiscoveryByIdentifier[peripheral.identifier] = discovery
@@ -648,15 +853,11 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             )
             latestAdvertisementByIdentifier[peripheral.identifier] = CandidateAdvertisement(
                 observation: observation,
-                receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
-                receivedAtDate: receivedAtDate
+                receivedAtUptimeNanoseconds: receipt.uptimeNanoseconds,
+                receivedAtDate: receipt.date
             )
             if targetState.selectedTargetIdentifier == peripheral.identifier, recorder != nil {
-                enqueue(
-                    .advertisement(observation),
-                    receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
-                    receivedAtDate: receivedAtDate
-                )
+                enqueue(.advertisement(observation), receipt: receipt)
             }
         } catch {
             // Broad discovery remains a candidate catalog before target selection.
@@ -672,6 +873,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
     }
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        let receipt = callbackReceipt()
         let identifier = peripheral.identifier
         guard targetState.acceptsActiveCallback(from: identifier),
               targetState.selectedTargetIdentifier == identifier else { return }
@@ -689,13 +891,13 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                         peripheralIdentifier: identifier,
                         state: .connected
                     )
-                )
+                ),
+                receipt: receipt
             )
+            try beginDiscovery(on: peripheral)
         } catch {
             failCapture(error)
-            return
         }
-        beginDiscovery(on: peripheral)
     }
 
     public func centralManager(
@@ -703,11 +905,17 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         let identifier = peripheral.identifier
         let disposition = targetState.completeFailedConnection(from: identifier)
         guard disposition != .ignored else { return }
 
         if targetState.selectedTargetIdentifier == identifier {
+            selectedTargetCancellationPending = false
+            if !acquisitionLedger.isReady {
+                acquisitionLedger.finishWithoutGattAcquisition()
+            }
+            guard advanceArtifactAuthority() else { return }
             do {
                 enqueue(
                     .connection(
@@ -716,7 +924,8 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
                             state: .failedToConnect,
                             error: error
                         )
-                    )
+                    ),
+                    receipt: receipt
                 )
             } catch {
                 failCapture(error)
@@ -735,11 +944,13 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         handleDisconnect(
             peripheral,
             platformEventTimestamp: nil,
             isReconnecting: nil,
-            error: error
+            error: error,
+            receipt: receipt
         )
     }
 
@@ -750,34 +961,55 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         isReconnecting: Bool,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         handleDisconnect(
             peripheral,
             platformEventTimestamp: TimeInterval(timestamp),
             isReconnecting: isReconnecting,
-            error: error
+            error: error,
+            receipt: receipt
         )
     }
 }
 
 extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
         if let error {
             failCapture(error, fallback: "Service discovery failed; capture is incomplete.")
             return
         }
+        guard let services = peripheral.services else {
+            failCapture(AcquisitionError.missingServices, fallback: "Service discovery completed without a services collection; capture is incomplete.")
+            return
+        }
 
-        for service in peripheral.services ?? [] {
-            do {
-                enqueue(.service(try CoreBluetoothCaptureMapping.service(
-                    peripheralIdentifier: peripheral.identifier,
-                    service: service
-                )))
-            } catch {
-                failCapture(error)
-                return
+        var plans: [(CBService, [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey])] = []
+        var childOperations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] = []
+        do {
+            for service in services {
+                let serviceUUID = CoreBluetoothCaptureMapping.normalizedUUID(service.uuid)
+                try gattIdentityRegistry.registerService(uuid: serviceUUID, instance: service)
+                enqueue(
+                    .service(try CoreBluetoothCaptureMapping.service(
+                        peripheralIdentifier: peripheral.identifier,
+                        service: service
+                    )),
+                    receipt: receipt
+                )
+                let operations = newlyScheduledTopologyOperations(for: service)
+                plans.append((service, operations))
+                childOperations.append(contentsOf: operations)
             }
-            discoverTopology(for: service, on: peripheral)
+            try acquisitionLedger.complete(.services, starting: childOperations)
+        } catch {
+            failCapture(error)
+            return
+        }
+
+        for (service, operations) in plans {
+            issueTopologyOperations(operations, for: service, on: peripheral)
         }
     }
 
@@ -786,24 +1018,47 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         didDiscoverIncludedServicesFor service: CBService,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
         if let error {
             failCapture(error, fallback: "Included-service discovery failed; capture is incomplete.")
             return
         }
+        guard let includedServices = service.includedServices else {
+            failCapture(AcquisitionError.missingIncludedServices, fallback: "Included-service discovery completed without a collection; capture is incomplete.")
+            return
+        }
 
-        for included in service.includedServices ?? [] {
-            do {
-                enqueue(.includedService(try CoreBluetoothCaptureMapping.includedService(
-                    peripheralIdentifier: peripheral.identifier,
-                    parentService: service,
-                    includedService: included
-                )))
-            } catch {
-                failCapture(error)
-                return
+        var plans: [(CBService, [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey])] = []
+        var childOperations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] = []
+        do {
+            try validateCurrentService(service)
+            for included in includedServices {
+                let includedUUID = CoreBluetoothCaptureMapping.normalizedUUID(included.uuid)
+                try gattIdentityRegistry.registerService(uuid: includedUUID, instance: included)
+                enqueue(
+                    .includedService(try CoreBluetoothCaptureMapping.includedService(
+                        peripheralIdentifier: peripheral.identifier,
+                        parentService: service,
+                        includedService: included
+                    )),
+                    receipt: receipt
+                )
+                let operations = newlyScheduledTopologyOperations(for: included)
+                plans.append((included, operations))
+                childOperations.append(contentsOf: operations)
             }
-            discoverTopology(for: included, on: peripheral)
+            try acquisitionLedger.complete(
+                .includedServices(ObjectIdentifier(service)),
+                starting: childOperations
+            )
+        } catch {
+            failCapture(error)
+            return
+        }
+
+        for (included, operations) in plans {
+            issueTopologyOperations(operations, for: included, on: peripheral)
         }
     }
 
@@ -812,19 +1067,49 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         didDiscoverCharacteristicsFor service: CBService,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
         if let error {
             failCapture(error, fallback: "Characteristic discovery failed; capture is incomplete.")
             return
         }
+        guard let characteristics = service.characteristics else {
+            failCapture(AcquisitionError.missingCharacteristics, fallback: "Characteristic discovery completed without a collection; capture is incomplete.")
+            return
+        }
 
-        for characteristic in service.characteristics ?? [] {
+        var childOperations: [PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey] = []
+        do {
+            try validateCurrentService(service)
+            for characteristic in characteristics {
+                let serviceUUID = CoreBluetoothCaptureMapping.normalizedUUID(service.uuid)
+                let characteristicUUID = CoreBluetoothCaptureMapping.normalizedUUID(characteristic.uuid)
+                try gattIdentityRegistry.registerCharacteristic(
+                    serviceUUID: serviceUUID,
+                    characteristicUUID: characteristicUUID,
+                    instance: characteristic
+                )
+                enqueue(
+                    .characteristic(try CoreBluetoothCaptureMapping.characteristic(
+                        peripheralIdentifier: peripheral.identifier,
+                        characteristic: characteristic
+                    )),
+                    receipt: receipt
+                )
+                childOperations.append(contentsOf: plannedCharacteristicOperations(for: characteristic))
+            }
+            try acquisitionLedger.complete(
+                .characteristics(ObjectIdentifier(service)),
+                starting: childOperations
+            )
+        } catch {
+            failCapture(error)
+            return
+        }
+
+        for characteristic in characteristics {
             do {
-                enqueue(.characteristic(try CoreBluetoothCaptureMapping.characteristic(
-                    peripheralIdentifier: peripheral.identifier,
-                    characteristic: characteristic
-                )))
-                try acquirePassively(characteristic, on: peripheral)
+                try issueCharacteristicAcquisition(characteristic, on: peripheral)
             } catch {
                 failCapture(error)
                 return
@@ -837,22 +1122,42 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         didDiscoverDescriptorsFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
         if let error {
             failCapture(error, fallback: "Descriptor discovery failed; capture is incomplete.")
             return
         }
+        guard let descriptors = characteristic.descriptors else {
+            failCapture(AcquisitionError.missingDescriptors, fallback: "Descriptor discovery completed without a collection; capture is incomplete.")
+            return
+        }
 
-        for descriptor in characteristic.descriptors ?? [] {
-            do {
-                enqueue(.descriptor(try CoreBluetoothCaptureMapping.descriptor(
-                    peripheralIdentifier: peripheral.identifier,
-                    descriptor: descriptor
-                )))
-            } catch {
-                failCapture(error)
-                return
+        do {
+            try validateCurrentCharacteristic(characteristic)
+            guard let service = characteristic.service else {
+                throw AcquisitionError.characteristicMissingService
             }
+            let serviceUUID = CoreBluetoothCaptureMapping.normalizedUUID(service.uuid)
+            let characteristicUUID = CoreBluetoothCaptureMapping.normalizedUUID(characteristic.uuid)
+            for descriptor in descriptors {
+                try gattIdentityRegistry.registerDescriptor(
+                    serviceUUID: serviceUUID,
+                    characteristicUUID: characteristicUUID,
+                    descriptorUUID: CoreBluetoothCaptureMapping.normalizedUUID(descriptor.uuid),
+                    instance: descriptor
+                )
+                enqueue(
+                    .descriptor(try CoreBluetoothCaptureMapping.descriptor(
+                        peripheralIdentifier: peripheral.identifier,
+                        descriptor: descriptor
+                    )),
+                    receipt: receipt
+                )
+            }
+            try acquisitionLedger.complete(.descriptors(ObjectIdentifier(characteristic)))
+        } catch {
+            failCapture(error)
         }
     }
 
@@ -861,17 +1166,29 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
 
         let key: PassiveCoreBluetoothTargetState.AttributeKey
         do {
+            try validateCurrentCharacteristic(characteristic)
             key = try attributeKey(for: characteristic, on: peripheral)
         } catch {
             failCapture(error)
             return
         }
-        let wasTrackedRead = targetState.consumeReadRequest(key)
 
+        let characteristicID = ObjectIdentifier(characteristic)
+        let readOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.read(characteristicID)
+        let readIsPending = acquisitionLedger.isPending(readOperation)
+
+        if readIsPending, characteristic.isNotifying {
+            failCapture(
+                AcquisitionError.ambiguousReadWhileAlreadyNotifying,
+                fallback: "A tracked read callback arrived while the characteristic was already notifying; provenance is ambiguous."
+            )
+            return
+        }
         if let error {
             failCapture(error, fallback: "Characteristic value acquisition failed; capture is incomplete.")
             return
@@ -885,14 +1202,15 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         }
 
         let origin: PassiveBluetoothValueOrigin
-        if wasTrackedRead {
+        if readIsPending {
+            guard targetState.consumeReadRequest(key) else {
+                failCapture(AcquisitionError.readProvenanceMismatch)
+                return
+            }
             origin = .readResponse
         } else if characteristic.isNotifying {
             origin = .subscriptionUpdate
         } else {
-            // CoreBluetooth does not label this callback strongly enough to call
-            // it a read. Without a tracked request or notifying state, exporting
-            // `.readResponse` would fabricate provenance.
             failCapture(
                 AcquisitionError.unattributedCharacteristicValue,
                 fallback: "Unattributed characteristic value callback; capture is incomplete."
@@ -901,14 +1219,26 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         }
 
         do {
-            enqueue(.value(try CoreBluetoothCaptureMapping.value(
-                peripheralIdentifier: peripheral.identifier,
-                characteristic: characteristic,
-                origin: origin,
-                payload: payload
-            )))
-            if wasTrackedRead {
-                try subscribeAfterInitialReadIfNeeded(characteristic, on: peripheral)
+            enqueue(
+                .value(try CoreBluetoothCaptureMapping.value(
+                    peripheralIdentifier: peripheral.identifier,
+                    characteristic: characteristic,
+                    origin: origin,
+                    payload: payload
+                )),
+                receipt: receipt
+            )
+
+            if readIsPending {
+                let plan = PassiveCoreBluetoothAcquisitionPolicy.plan(for: characteristic)
+                if plan.shouldSubscribeForValueUpdates {
+                    let subscriptionOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.subscription(characteristicID)
+                    try acquisitionLedger.complete(readOperation, starting: [subscriptionOperation])
+                    targetState.markSubscriptionRequested(key, enabled: true)
+                    peripheral.setNotifyValue(true, for: characteristic)
+                } else {
+                    try acquisitionLedger.complete(readOperation)
+                }
             }
         } catch {
             failCapture(error)
@@ -920,16 +1250,22 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
 
         let key: PassiveCoreBluetoothTargetState.AttributeKey
         do {
+            try validateCurrentCharacteristic(characteristic)
             key = try attributeKey(for: characteristic, on: peripheral)
         } catch {
             failCapture(error)
             return
         }
         let requestedEnabled = targetState.consumeSubscriptionRequest(key)
+        let operation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.subscription(
+            ObjectIdentifier(characteristic)
+        )
+        let subscriptionIsPending = acquisitionLedger.isPending(operation)
 
         do {
             enqueue(
@@ -940,7 +1276,8 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
                         requestedEnabled: requestedEnabled,
                         error: error
                     )
-                )
+                ),
+                receipt: receipt
             )
         } catch {
             failCapture(error)
@@ -948,14 +1285,34 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         }
 
         if let error {
-            // Preserve the structured subscription callback first, then fail the
-            // target artifact closed because subsequent missing value evidence
-            // must not be misread as a proven absence.
             failCapture(error, fallback: "Notification subscription failed; capture is incomplete.")
+            return
+        }
+
+        if subscriptionIsPending {
+            guard let requestedEnabled else {
+                failCapture(AcquisitionError.subscriptionProvenanceMismatch)
+                return
+            }
+            guard requestedEnabled == characteristic.isNotifying else {
+                failCapture(
+                    AcquisitionError.subscriptionStateMismatch,
+                    fallback: "Notification-state callback did not reach the state requested by this acquisition."
+                )
+                return
+            }
+            do {
+                try acquisitionLedger.complete(operation)
+            } catch {
+                failCapture(error)
+            }
+        } else if requestedEnabled != nil {
+            failCapture(AcquisitionError.subscriptionProvenanceMismatch)
         }
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
 
         let uuids = invalidatedServices
@@ -964,10 +1321,23 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
         enqueueInterruption(
             uuids.isEmpty
                 ? "GATT services invalidated"
-                : "GATT services invalidated: \(uuids)"
+                : "GATT services invalidated: \(uuids)",
+            receipt: receipt
         )
 
-        clearAcquisitionObjects()
-        peripheral.discoverServices(nil)
+        guard acquisitionLedger.phase == .ready else {
+            failCapture(
+                AcquisitionError.serviceInvalidatedDuringAcquisition,
+                fallback: "GATT services changed before the current acquisition drained; callback generations are ambiguous."
+            )
+            return
+        }
+        guard advanceArtifactAuthority() else { return }
+
+        do {
+            try beginDiscovery(on: peripheral)
+        } catch {
+            failCapture(error)
+        }
     }
 }
