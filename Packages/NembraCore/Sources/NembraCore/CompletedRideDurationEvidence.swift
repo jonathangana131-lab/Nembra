@@ -79,6 +79,17 @@ public struct CompletedRideDurationEvidence: Codable, Equatable, Sendable {
                   observationSegmentCount > 0 else {
                 throw CompletedRideDurationEvidenceError.invalidDurationEvidence
             }
+
+            // The duration accumulator can report complete coverage only when
+            // exactly one contiguous observation segment exists. Every segment
+            // after sequence zero must explicitly follow an unobserved interval,
+            // which makes coverage partial. Reject impossible durable states at
+            // this binding/decoding boundary instead of letting forged history
+            // claim complete process-local elapsed-time coverage.
+            if coverage == .complete,
+               observationSegmentCount != 1 {
+                throw CompletedRideDurationEvidenceError.invalidDurationEvidence
+            }
         }
 
         // A ride reconstructed from a durable checkpoint necessarily crossed a

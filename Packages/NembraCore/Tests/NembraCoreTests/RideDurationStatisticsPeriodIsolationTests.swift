@@ -23,11 +23,12 @@ struct RideDurationStatisticsPeriodIsolationTests {
     }
 
     private func statisticsRide(
+        id: UUID = UUID(),
         at date: Date,
         durationNanoseconds: UInt64
     ) throws -> RideDurationStatisticsRide {
         let completed = try CompletedRideEvidence(
-            sessionID: UUID(),
+            sessionID: id,
             beganAtDate: date,
             confirmedAtDate: date,
             endedAtDate: date,
@@ -75,6 +76,62 @@ struct RideDurationStatisticsPeriodIsolationTests {
         #expect(summary.rideCount == 1)
         #expect(summary.durationAvailability == .complete)
         #expect(summary.totalObservedDurationNanoseconds == 20)
+    }
+
+    @Test("conflicting duplicate history entirely outside a selected period cannot poison that period")
+    func unrelatedDuplicateConflictDoesNotPoisonSelectedPeriod() throws {
+        let reference = date(2026, 8, 7)
+        let currentRide = try statisticsRide(at: reference, durationNanoseconds: 20)
+        let historicalSessionID = UUID()
+        let historicalDate = date(2026, 7, 1)
+        let conflictingHistory = [
+            try statisticsRide(
+                id: historicalSessionID,
+                at: historicalDate,
+                durationNanoseconds: 10
+            ),
+            try statisticsRide(
+                id: historicalSessionID,
+                at: historicalDate,
+                durationNanoseconds: 11
+            )
+        ]
+
+        let summary = try RideDurationStatisticsAggregator.summarize(
+            period: .today,
+            rides: [currentRide] + conflictingHistory,
+            referenceDate: reference,
+            calendar: calendar()
+        )
+
+        #expect(summary.rideCount == 1)
+        #expect(summary.durationAvailability == .complete)
+        #expect(summary.totalObservedDurationNanoseconds == 20)
+    }
+
+    @Test("conflicting duplicate that touches selected period still fails closed")
+    func selectedDuplicateConflictFailsClosed() throws {
+        let reference = date(2026, 8, 7)
+        let sessionID = UUID()
+        let selectedRide = try statisticsRide(
+            id: sessionID,
+            at: reference,
+            durationNanoseconds: 20
+        )
+        let conflictingHistoricalCopy = try statisticsRide(
+            id: sessionID,
+            at: date(2026, 7, 1),
+            durationNanoseconds: 20
+        )
+
+        #expect(throws: RideDurationStatisticsError.sessionConflict(sessionID)) {
+            _ = try RideDurationStatisticsAggregator.summarize(
+                period: .today,
+                rides: [selectedRide, conflictingHistoricalCopy],
+                referenceDate: reference,
+                calendar: calendar()
+            )
+        }
     }
 
     @Test("calendar-unrepresentable history still fails closed when selected")

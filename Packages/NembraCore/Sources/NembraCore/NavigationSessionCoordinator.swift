@@ -21,7 +21,7 @@ public struct NavigationSessionCoordinator: Sendable {
     private var rerouteEvaluator: NavigationRerouteEvaluator
     private var selectedRoute: NavigationRouteSnapshot?
     private var selectionToken: NavigationGuidanceSelectionToken?
-    private var lastProcessedLocationUptimeNanoseconds: UInt64?
+    private var lastSeenLocationUptimeNanoseconds: UInt64?
 
     public var guidanceState: NavigationGuidanceProgressState {
         guidanceTracker.state
@@ -47,20 +47,28 @@ public struct NavigationSessionCoordinator: Sendable {
         return token
     }
 
-    /// Returns nil when no route is selected. A valid screened observation is
-    /// otherwise applied transactionally across geometry, guidance, and reroute
-    /// state under one process-local monotonic ordering gate.
+    /// Returns nil whenever no route is selected. Quality-screened callbacks seen
+    /// while navigation is idle/cleared still advance the process-local high-water
+    /// mark when newer, so a later route selection cannot resurrect an older delayed
+    /// callback as current evidence. Replayed/older callbacks remain harmless nils
+    /// while idle and never regress that high-water mark. With a selected route,
+    /// non-monotonic callbacks fail closed before guidance or reroute mutation.
     @discardableResult
     public mutating func process(
         location: QualityScreenedRideLocation
     ) throws -> NavigationSessionUpdate? {
+        let uptime = location.sample.receivedAtUptimeNanoseconds
+        if let lastSeenLocationUptimeNanoseconds,
+           uptime <= lastSeenLocationUptimeNanoseconds {
+            guard selectedRoute != nil, selectionToken != nil else {
+                return nil
+            }
+            throw NavigationSessionCoordinatorError.nonMonotonicLocation
+        }
+        lastSeenLocationUptimeNanoseconds = uptime
+
         guard let selectedRoute, let selectionToken else {
             return nil
-        }
-
-        if let lastProcessedLocationUptimeNanoseconds,
-           location.sample.receivedAtUptimeNanoseconds <= lastProcessedLocationUptimeNanoseconds {
-            throw NavigationSessionCoordinatorError.nonMonotonicLocation
         }
 
         let match = geometryMatcher.match(location: location, route: selectedRoute)
@@ -74,7 +82,6 @@ public struct NavigationSessionCoordinator: Sendable {
 
         _ = try guidanceTracker.observe(guidanceObservation)
         let rerouteDecision = try rerouteEvaluator.observe(rerouteObservation)
-        lastProcessedLocationUptimeNanoseconds = location.sample.receivedAtUptimeNanoseconds
 
         return NavigationSessionUpdate(
             geometryMatch: match,
@@ -84,8 +91,10 @@ public struct NavigationSessionCoordinator: Sendable {
     }
 
     /// Clears navigation selection/presentation state without pretending the
-    /// process-local callback clock restarted. A later selection therefore still
-    /// cannot accept an older callback from before the clear.
+    /// process-local seen-callback clock restarted. Newer screened callbacks observed
+    /// while cleared continue advancing that clock, while replayed/older callbacks
+    /// cannot move it backward. Later route selection therefore cannot resurrect
+    /// older callbacks from the idle interval as current evidence.
     public mutating func clearRoute() {
         selectedRoute = nil
         selectionToken = nil

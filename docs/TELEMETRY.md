@@ -1,6 +1,6 @@
 # Speed telemetry architecture
 
-Updated: 2026-08-06
+Updated: 2026-08-07
 
 ## Non-negotiable truth model
 
@@ -37,8 +37,10 @@ A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence e
 
 - accepted sample count
 - rejected sample count
+- accepted observation-segment count
+- known observation-interruption count for segment-splitting gaps
 - interval count
-- observed duration
+- observed duration summed only across accepted intra-segment intervals
 - effective sample rate (Hz)
 - mean/min/max arrival interval
 - interval jitter (population standard deviation)
@@ -50,9 +52,13 @@ A raw sample's `receivedAtUptimeNanoseconds` means **when that packet/evidence e
 
 A collector is source-specific; trying to mix GPS into a BLE collector is rejected.
 
-Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history.
+Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history. Selected-source receive chronology advances for each fresh source-matching callback before representation-specific benchmark admission, so a newer callback that is later rejected cannot be erased to let an older or equal-timestamp callback masquerade as fresh. Foreign-source callbacks never advance that selected-source watermark.
 
-The raw speed is stored in SI meters/second, while the empirical resolution diagnostic is expressed in km/h. If a finite SI value cannot be represented as finite km/h, that sample is rejected from the benchmark before it can become an accepted anchor or poison resolution statistics with infinity/NaN. Nembra does not invent an arbitrary scooter maximum to make the conversion fit; the packet remains rejected benchmark evidence and the next valid accepted packet spans the resulting arrival gap.
+`markKnownObservationInterruption()` is for an explicit known break in the selected observation stream, such as a disconnect or subscription interruption. Once accepted benchmark evidence exists, a mark makes the next accepted sample begin a new observation segment so cadence, jitter, duplicate-value, and empirical-step comparisons never bridge the missing evidence. Repeated marks before accepted evidence resumes are idempotent. A mark before the collector has accepted its first benchmark sample is intentionally a no-op because there is no accepted segment to split; callers that need attempt-wide lifecycle-gap provenance must retain that separately rather than treating this benchmark summary as a complete lifecycle log.
+
+The raw speed is stored in SI meters/second, while the empirical resolution diagnostic is expressed in km/h. If a finite SI value cannot be represented as finite km/h, that sample is rejected from benchmark statistics before it can become an accepted interval/speed-step anchor or consume a pending interruption marker. The callback still advances selected-source receive chronology, preventing delayed replay. Without an explicit pending continuity break, the next accepted benchmark sample forms its interval from the previous accepted benchmark anchor; with a pending known interruption, it begins a new segment instead. Nembra does not invent an arbitrary scooter maximum to make the conversion fit.
+
+Observation-segment and interruption counts report only explicit benchmark segment topology. They do not prove continuous physical sampling between otherwise accepted packets, and they do not replace higher-level attempt/session provenance where gaps can occur before benchmark evidence begins.
 
 ## Latency limitations
 
