@@ -226,7 +226,8 @@ public struct ES80PassiveCaptureResearchView: View {
                 .disabled(artifactInteractionLocked)
 
             Button("Record marker") {
-                perform {
+                let recordedFieldTitle = markerField.title
+                if perform({
                     try controller.recordStockAppObservation(
                         field: markerField.captureField,
                         displayedValue: markerValue.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -235,7 +236,8 @@ public struct ES80PassiveCaptureResearchView: View {
                     markerValue = ""
                     markerNote = ""
                     analysis = nil
-                    diagnosticMessage = "Recorded \(markerField.title) marker. Refresh the evidence summary to include the new marker."
+                }) {
+                    diagnosticMessage = "Recorded \(recordedFieldTitle) marker. Refresh the evidence summary to include the new marker."
                 }
             }
             .disabled(
@@ -466,12 +468,15 @@ public struct ES80PassiveCaptureResearchView: View {
         String(identifier.uuidString.prefix(8))
     }
 
-    private func perform(_ operation: () throws -> Void) {
+    @discardableResult
+    private func perform(_ operation: () throws -> Void) -> Bool {
         do {
             try operation()
             diagnosticMessage = nil
+            return true
         } catch {
             diagnosticMessage = error.localizedDescription
+            return false
         }
     }
 
