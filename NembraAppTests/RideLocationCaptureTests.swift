@@ -157,6 +157,70 @@ final class RideLocationCaptureTests: XCTestCase {
         XCTAssertEqual(recordedDistances.count, 1)
     }
 
+    func testRejectedRideAdmissionExcludesCoordinateFromRouteAndDistance() async throws {
+        let directory = temporaryDirectory(name: "location-admission-cutoff")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let routeURL = directory.appendingPathComponent("RideRoutes.store")
+        let container = try RidePersistenceFactory.makeRouteContainer(storeURL: routeURL)
+        let routeStore = SwiftDataRideRouteStore(modelContainer: container)
+        let source = TestRideLocationSource()
+        let admission = LocationAdmissionSequence(decisions: [true, true, false])
+        let sessionID = UUID()
+
+        let coordinator = try RideLocationCaptureCoordinator(
+            source: source,
+            qualityPolicy: try testPolicy(),
+            routeStore: routeStore,
+            routeChunkSize: 2,
+            sessionScopedEvidenceAdmissionSink: { emittedSessionID, meters, uptime in
+                await admission.admit(
+                    sessionID: emittedSessionID,
+                    meters: meters,
+                    uptime: uptime
+                )
+            }
+        )
+        try await coordinator.begin(sessionID: sessionID, requestedCoverage: .complete)
+
+        await source.emit(event(sample: try sample(
+            latitude: 45.638700,
+            longitude: -122.661500,
+            uptime: 1_000_000_000,
+            dateOffset: 0
+        )))
+        await source.emit(event(sample: try sample(
+            latitude: 45.638790,
+            longitude: -122.661500,
+            uptime: 2_000_000_000,
+            dateOffset: 1
+        )))
+        await source.emit(event(sample: try sample(
+            latitude: 45.638880,
+            longitude: -122.661500,
+            uptime: 3_000_000_000,
+            dateOffset: 2
+        )))
+
+        let summary = try await coordinator.finish()
+        let manifest = try XCTUnwrap(summary.routeManifest)
+        XCTAssertEqual(summary.acceptedPointCount, 2)
+        XCTAssertGreaterThan(summary.qualityScreenedDistanceMeters, 9)
+        XCTAssertLessThan(summary.qualityScreenedDistanceMeters, 11)
+        XCTAssertEqual(manifest.pointCount, 2)
+
+        let geometry = try XCTUnwrap(try await routeStore.geometry(sessionID: sessionID))
+        XCTAssertEqual(geometry.segments.count, 1)
+        XCTAssertEqual(geometry.segments[0].points.count, 2)
+        XCTAssertEqual(geometry.segments[0].points.map(\.sequence), [0, 1])
+
+        let calls = await admission.values()
+        XCTAssertEqual(calls.count, 3)
+        XCTAssertEqual(calls.map(\.sessionID), [sessionID, sessionID, sessionID])
+        XCTAssertNil(calls[0].meters)
+        XCTAssertNotNil(calls[1].meters)
+        XCTAssertNotNil(calls[2].meters)
+    }
+
     func testCoordinatorCanBeReusedWithoutLeakingPreviousSessionState() async throws {
         let directory = temporaryDirectory(name: "location-reuse")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -305,13 +369,14 @@ final class RideLocationCaptureTests: XCTestCase {
         }
         XCTAssertNil(rideStore.activeSessionID)
 
-        await rideStore.ingestQualityScreenedGPSDistanceDelta(
+        let admitted = await rideStore.ingestQualityScreenedGPSDistanceDelta(
             25,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
             for: completedSessionID
         )
         try await Task.sleep(nanoseconds: 75_000_000)
 
+        XCTAssertFalse(admitted, "A completed ride must reject the paired route coordinate as well as GPS distance.")
         XCTAssertEqual(
             rideStore.status,
             .idle,
@@ -620,6 +685,31 @@ private actor SessionDistanceCollector {
 
     func values() -> [Value] {
         recorded
+    }
+}
+
+private actor LocationAdmissionSequence {
+    struct Call: Equatable, Sendable {
+        let sessionID: UUID
+        let meters: Double?
+        let uptime: UInt64
+    }
+
+    private var decisions: [Bool]
+    private var calls: [Call] = []
+
+    init(decisions: [Bool]) {
+        self.decisions = decisions
+    }
+
+    func admit(sessionID: UUID, meters: Double?, uptime: UInt64) -> Bool {
+        calls.append(Call(sessionID: sessionID, meters: meters, uptime: uptime))
+        guard !decisions.isEmpty else { return false }
+        return decisions.removeFirst()
+    }
+
+    func values() -> [Call] {
+        calls
     }
 }
 
