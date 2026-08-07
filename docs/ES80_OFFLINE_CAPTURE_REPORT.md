@@ -34,6 +34,19 @@ swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-rep
 
 `--compact` emits sorted-key compact JSON for automation.
 
+## Exact source-artifact binding
+
+The command hashes the **exact input JSON bytes before analysis** and wraps the framing report with:
+
+- the input artifact byte count; and
+- a lowercase SHA-256 digest of those exact bytes.
+
+This means a later worker can verify which physical-capture artifact produced a report even when two files decode to the same session content but differ byte-for-byte, for example because one was re-encoded or reformatted.
+
+The SHA-256 is an artifact-integrity/provenance identifier only. It does **not** authenticate the scooter, prove who recorded the capture, establish chain-of-custody by itself, or verify any ES80 protocol meaning.
+
+The raw capture JSON remains the authority for raw bytes. The report intentionally stores the digest and raw callback byte counts rather than duplicating encrypted payload bytes into a second evidence object that could later be mistaken for a transformed source of truth.
+
 ## Offline safety bounds
 
 The command defaults to:
@@ -47,7 +60,13 @@ The bounded analyzer still rejects candidates that violate the selected limits. 
 
 ## What the report preserves
 
-Schema v1 includes:
+The outer artifact-report schema v1 includes:
+
+- exact source capture JSON SHA-256;
+- exact source capture JSON byte count; and
+- one deterministic framing-analysis report.
+
+The nested framing-analysis schema v1 includes:
 
 - immutable capture session ID;
 - captured `VehicleIdentity` metadata;
@@ -70,8 +89,6 @@ Schema v1 includes:
 
 A `completed` event means only that the captured raw bytes satisfy the selected bounded public-family reassembly hypothesis. It does **not** mean the bytes are an ES80 message or that any field has been identified.
 
-The raw capture JSON remains the authority for bytes. The report intentionally does not create a second copy of encrypted payload bytes that could later be mistaken for a transformed evidence source.
-
 ## Physical experiment handoff
 
 After the product-facing Nembra Capture flow produces a versioned JSON artifact from the selected ES80:
@@ -79,10 +96,17 @@ After the product-facing Nembra Capture flow produces a versioned JSON artifact 
 1. keep the original artifact unchanged;
 2. run this command against that artifact;
 3. retain both the raw artifact and generated report;
-4. use the report to identify exact streams/candidate outcomes for the next correlation layer;
-5. only promote a field after repeatable physical evidence verifies raw source, framing, DP identity/type, scale, signedness, units, cadence, continuity, and provenance.
+4. verify the report's source-artifact SHA-256 against the retained raw file before using it for later protocol evidence;
+5. use the report to identify exact streams/candidate outcomes for the next correlation layer;
+6. only promote a field after repeatable physical evidence verifies raw source, framing, DP identity/type, scale, signedness, units, cadence, continuity, and provenance.
 
 A failed candidate is useful falsifying evidence. Do not edit the capture to manufacture a parse.
+
+## Dependency evolution
+
+This report layer is intentionally downstream of the passive-capture bridge and candidate analyzer. When those accepted parents gain stronger provenance, this layer must preserve it rather than flatten it.
+
+In particular, active analyzer work may add explicit candidate restart boundaries and scoped receipt-sequence chronology. On reconciliation, those semantics must remain visible in the report and source mappings before this lane can be accepted against the newer dependency head.
 
 ## Safety / truth boundary
 
