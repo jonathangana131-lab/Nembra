@@ -140,11 +140,18 @@ public enum BatteryEvidenceContinuity: String, Codable, Sendable {
     case afterUnobservedInterval
 }
 
+/// File-scoped construction marker. Its only purpose is to prevent a role-selecting raw
+/// initializer from becoming visible merely because this source is manually compiled into
+/// the Nembra app target's Swift module.
+fileprivate enum BatteryEvidenceConstructionBoundary {
+    case validatedDomain
+}
+
 /// One normalized battery observation with explicit truth/provenance boundaries.
 ///
-/// Authoritative construction is intentionally sealed inside NembraCore until a physical
-/// target-specific verifier exists. External callers can create only non-authoritative
-/// observations through `nonAuthoritative(...)`.
+/// Authoritative construction is deliberately unavailable to ordinary app/source files.
+/// External callers can create only non-authoritative observations through
+/// `nonAuthoritative(...)`.
 public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
     public let value: BatterySemanticValue
     public let role: BatteryEvidenceRole
@@ -152,15 +159,19 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
     public let receivedAtDate: Date
     public let continuity: BatteryEvidenceContinuity
 
-    /// Trusted/raw construction is module-internal. Tests using `@testable` and a future
-    /// physically verified adapter hosted at the NembraCore trust boundary may use it.
-    init(
+    /// Lowest-level construction is file-scoped. This matters because the current Nembra
+    /// Xcode project manually compiles selected NembraCore source files into the app target
+    /// rather than linking the package product. Plain module-internal access would therefore
+    /// become callable by unrelated app code in that direct-source composition.
+    fileprivate init(
         value: BatterySemanticValue,
         role: BatteryEvidenceRole,
         receivedAtUptimeNanoseconds: UInt64,
         receivedAtDate: Date,
-        continuity: BatteryEvidenceContinuity = .continuous
+        continuity: BatteryEvidenceContinuity = .continuous,
+        constructionBoundary: BatteryEvidenceConstructionBoundary
     ) throws {
+        _ = constructionBoundary
         guard receivedAtDate.timeIntervalSinceReferenceDate.isFinite else {
             throw BatteryEvidenceValidationError.invalidTimestamp
         }
@@ -171,6 +182,29 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
         self.receivedAtDate = receivedAtDate
         self.continuity = continuity
     }
+
+#if SWIFT_PACKAGE
+    /// Package-internal construction exists only when NembraCore is compiled as an actual
+    /// Swift package module. It supports `@testable` package tests and trusted NembraCore
+    /// package sources, while remaining absent when this file is manually compiled directly
+    /// into the Nembra app target. External package clients still cannot access this init.
+    init(
+        value: BatterySemanticValue,
+        role: BatteryEvidenceRole,
+        receivedAtUptimeNanoseconds: UInt64,
+        receivedAtDate: Date,
+        continuity: BatteryEvidenceContinuity = .continuous
+    ) throws {
+        try self.init(
+            value: value,
+            role: role,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            receivedAtDate: receivedAtDate,
+            continuity: continuity,
+            constructionBoundary: .validatedDomain
+        )
+    }
+#endif
 
     /// Public construction path for evidence that must not claim physical target
     /// verification. The caller chooses the descriptive non-authoritative role, but the
@@ -191,7 +225,8 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
             role: role,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             receivedAtDate: receivedAtDate,
-            continuity: continuity
+            continuity: continuity,
+            constructionBoundary: .validatedDomain
         )
     }
 
@@ -227,7 +262,8 @@ public struct BatteryEvidenceObservation: Equatable, Codable, Sendable {
                 role: role,
                 receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
                 receivedAtDate: receivedAtDate,
-                continuity: continuity
+                continuity: continuity,
+                constructionBoundary: .validatedDomain
             )
         } catch {
             throw DecodingError.dataCorruptedError(
