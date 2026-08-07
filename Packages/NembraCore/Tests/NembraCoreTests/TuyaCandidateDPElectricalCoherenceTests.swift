@@ -214,6 +214,8 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             scale: 0.1,
             candidateID: 3
         )
+        let expectedPolicy = try coherencePolicy()
+        let expectedAnchors = [try anchor(0), try anchor(1)]
 
         let result = try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
             voltageReport: voltage,
@@ -223,17 +225,25 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             powerReport: power,
             powerHypothesisIdentifier: "selected",
             evidenceContexts: contexts(),
-            anchors: [try anchor(0), try anchor(1)],
-            policy: coherencePolicy()
+            anchors: expectedAnchors,
+            policy: expectedPolicy
         )
 
         #expect(result.scope.evidenceContextIdentity.identifier == "capture-A")
         #expect(result.scope.voltageFieldLabel == "Voltage")
         #expect(result.scope.currentFieldLabel == "Current")
         #expect(result.scope.powerFieldLabel == "Power")
+        #expect(result.policy == expectedPolicy)
+        #expect(result.requestedAnchors == expectedAnchors)
         #expect(result.voltageSelection.candidate.identifier == 1)
         #expect(result.currentSelection.candidate.identifier == 2)
         #expect(result.powerSelection.candidate.identifier == 3)
+        #expect(result.voltageSelection.sourceReport == voltage)
+        #expect(result.currentSelection.sourceReport == current)
+        #expect(result.powerSelection.sourceReport == power)
+        #expect(result.voltageSelection.selectedEvidence.hypothesis.identifier == "selected")
+        #expect(result.voltageSelection.numericReferences == voltage.numericReferences)
+        #expect(result.voltageSelection.numericAbsoluteTolerance == voltage.absoluteTolerance)
         #expect(result.requestedAnchorCount == 2)
         #expect(result.evaluations.count == 2)
         #expect(result.rejectedAnchors.isEmpty)
