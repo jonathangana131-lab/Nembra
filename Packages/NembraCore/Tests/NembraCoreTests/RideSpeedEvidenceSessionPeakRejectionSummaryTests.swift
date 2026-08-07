@@ -95,6 +95,63 @@ struct RideSpeedEvidenceSessionPeakRejectionSummaryTests {
         #expect(snapshot.peakRejections.selectedSourceQualityRejectedSampleCount == 0)
     }
 
+    @Test("stale overflow and missing-accuracy rejections remain distinct selected-source evidence")
+    func selectedSourceFailureCategoriesDoNotCollapse() throws {
+        var session = RideSpeedEvidenceSessionAccumulator(
+            sessionID: sessionID,
+            peakPolicy: try PeakSpeedPolicy(
+                source: .gps,
+                maximumSpeedAccuracyMetersPerSecond: 0.5
+            )
+        )
+
+        let accepted = session.record(try absoluteSample(
+            source: .gps,
+            metersPerSecond: 5,
+            uptime: 100,
+            accuracy: 0.4
+        ))
+        #expect(accepted.benchmark == .accepted)
+        #expect(accepted.peak != .rejected(.speedAccuracyUnavailable))
+
+        let stale = session.record(try absoluteSample(
+            source: .gps,
+            metersPerSecond: 6,
+            uptime: 100,
+            accuracy: 0.4
+        ))
+        #expect(stale.benchmark == .rejected(.nonMonotonicTimestamp))
+        #expect(stale.peak == .rejected(.nonIncreasingTimestamp))
+
+        let overflow = session.record(try absoluteSample(
+            source: .gps,
+            metersPerSecond: Double.greatestFiniteMagnitude / 2,
+            uptime: 200,
+            accuracy: 0.4
+        ))
+        #expect(overflow.benchmark == .rejected(.nonFiniteDerivedSpeed))
+        #expect(overflow.peak == .rejected(.nonFiniteDerivedSpeed))
+
+        let missingAccuracy = session.record(try absoluteSample(
+            source: .gps,
+            metersPerSecond: 7,
+            uptime: 300,
+            accuracy: nil
+        ))
+        #expect(missingAccuracy.benchmark == .accepted)
+        #expect(missingAccuracy.peak == .rejected(.speedAccuracyUnavailable))
+
+        let snapshot = session.snapshot
+        let peak = try #require(snapshot.peakEvidence)
+        #expect(snapshot.peakRejections.nonIncreasingTimestampCount == 1)
+        #expect(snapshot.peakRejections.nonFiniteDerivedSpeedCount == 1)
+        #expect(snapshot.peakRejections.speedAccuracyUnavailableCount == 1)
+        #expect(snapshot.peakRejections.speedAccuracyExceededCount == 0)
+        #expect(snapshot.peakRejections.selectedSourceQualityRejectedSampleCount == 3)
+        #expect(snapshot.peakRejections.totalRejectedSampleCount == 3)
+        #expect(peak.peakEvidence.qualityRejectedSampleCount == 3)
+    }
+
     @Test("published peak quality-rejection count matches session summary")
     func acceptedPeakCrossChecksSelectedSourceQualityRejections() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
