@@ -102,9 +102,12 @@ public struct TuyaCandidateDPNumericHypothesisPolicy: Equatable, Sendable {
 }
 
 /// One auditable comparison tied directly to the parent's accepted temporal hit.
-/// Raw bytes and raw magnitude remain present beside transformed research math.
+/// Exact marker/message timing, DP byte offsets, raw bytes and raw magnitude stay
+/// present beside transformed research math so this layer never weakens source
+/// provenance merely because it adds a numeric comparison.
 public struct TuyaCandidateDPNumericHypothesisSample: Equatable, Sendable {
     public let markerIndex: Int
+    public let markerReceiptUptimeNanoseconds: UInt64
     public let displayedReference: String
     public let numericReferenceValue: Double
     public let observationIndex: Int
@@ -112,6 +115,9 @@ public struct TuyaCandidateDPNumericHypothesisSample: Equatable, Sendable {
     public let observationLastReceiptUptimeNanoseconds: UInt64
     public let temporalDistanceNanoseconds: UInt64
     public let temporalRelation: TuyaCandidateDPMarkerTemporalRelation
+    public let headerByteOffset: Int
+    public let valueByteOffset: Int
+    public let endByteOffsetExclusive: Int
     public let valueBytes: [UInt8]
     public let rawUnsignedMagnitude: UInt32
     public let transformedCandidateValue: Double
@@ -127,6 +133,7 @@ public struct TuyaCandidateDPNumericHypothesisSample: Equatable, Sendable {
         isWithinTolerance: Bool
     ) {
         markerIndex = hit.markerIndex
+        markerReceiptUptimeNanoseconds = hit.markerReceiptUptimeNanoseconds
         displayedReference = hit.displayedReference
         self.numericReferenceValue = numericReferenceValue
         observationIndex = hit.observationIndex
@@ -134,6 +141,9 @@ public struct TuyaCandidateDPNumericHypothesisSample: Equatable, Sendable {
         observationLastReceiptUptimeNanoseconds = hit.observationLastReceiptUptimeNanoseconds
         temporalDistanceNanoseconds = hit.temporalDistanceNanoseconds
         temporalRelation = hit.temporalRelation
+        headerByteOffset = hit.headerByteOffset
+        valueByteOffset = hit.valueByteOffset
+        endByteOffsetExclusive = hit.endByteOffsetExclusive
         valueBytes = hit.valueBytes
         self.rawUnsignedMagnitude = rawUnsignedMagnitude
         self.transformedCandidateValue = transformedCandidateValue
