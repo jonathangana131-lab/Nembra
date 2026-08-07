@@ -19,7 +19,7 @@ public enum TelemetryBenchmarkRecordResult: Equatable, Sendable {
 /// behavior without storing display-interpolated frames as if they were sensor
 /// measurements.
 ///
-/// Observation-segment/interruption counts reflect only explicit continuity
+/// Observation-segment/interruption counts reflect only explicit known-gap
 /// markers supplied to the collector. They do not prove that physical sampling
 /// was continuous between otherwise accepted packets.
 public struct TelemetryBenchmarkSummary: Equatable, Sendable {
@@ -54,8 +54,8 @@ public struct TelemetryBenchmarkCollector: Sendable {
     private var acceptedSampleCount = 0
     private var rejectedSampleCount = 0
     private var lastAcceptedUptimeNanoseconds: UInt64?
-    private var previousContinuousUptimeNanoseconds: UInt64?
-    private var previousContinuousSpeedKilometersPerHour: Double?
+    private var previousSegmentUptimeNanoseconds: UInt64?
+    private var previousSegmentSpeedKilometersPerHour: Double?
     private var observationSegmentCount = 0
     private var knownObservationInterruptionCount = 0
     private var observationInterruptionPending = false
@@ -75,15 +75,15 @@ public struct TelemetryBenchmarkCollector: Sendable {
     /// The next accepted sample begins a new observation segment. No interval or
     /// speed-step comparison is fabricated across the missing evidence. The
     /// last accepted uptime remains the chronology anchor, so a delayed stale
-    /// callback cannot become fresh merely because continuity was interrupted.
+    /// callback cannot become fresh merely because observation was interrupted.
     /// Repeated marks before new accepted evidence are idempotent.
-    public mutating func markContinuityInterruption() {
+    public mutating func markKnownObservationInterruption() {
         guard acceptedSampleCount > 0, !observationInterruptionPending else { return }
 
         knownObservationInterruptionCount += 1
         observationInterruptionPending = true
-        previousContinuousUptimeNanoseconds = nil
-        previousContinuousSpeedKilometersPerHour = nil
+        previousSegmentUptimeNanoseconds = nil
+        previousSegmentSpeedKilometersPerHour = nil
     }
 
     @discardableResult
@@ -115,14 +115,14 @@ public struct TelemetryBenchmarkCollector: Sendable {
             observationInterruptionPending = false
         }
 
-        if let previousContinuousUptimeNanoseconds {
-            let intervalNanoseconds = sample.receivedAtUptimeNanoseconds - previousContinuousUptimeNanoseconds
+        if let previousSegmentUptimeNanoseconds {
+            let intervalNanoseconds = sample.receivedAtUptimeNanoseconds - previousSegmentUptimeNanoseconds
             observedDurationNanoseconds += intervalNanoseconds
             intervalMoments.record(Double(intervalNanoseconds) / 1_000_000)
         }
 
-        if let previousContinuousSpeedKilometersPerHour {
-            let delta = abs(speedKPH - previousContinuousSpeedKilometersPerHour)
+        if let previousSegmentSpeedKilometersPerHour {
+            let delta = abs(speedKPH - previousSegmentSpeedKilometersPerHour)
             if delta <= 1e-9 {
                 duplicateSpeedValueCount += 1
             } else if minimumNonzeroSpeedStepKilometersPerHour.map({ delta < $0 }) ?? true {
@@ -136,8 +136,8 @@ public struct TelemetryBenchmarkCollector: Sendable {
 
         acceptedSampleCount += 1
         lastAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
-        previousContinuousUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
-        previousContinuousSpeedKilometersPerHour = speedKPH
+        previousSegmentUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
+        previousSegmentSpeedKilometersPerHour = speedKPH
         return .accepted
     }
 
