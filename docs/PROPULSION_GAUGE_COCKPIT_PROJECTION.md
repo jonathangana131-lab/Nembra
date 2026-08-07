@@ -14,6 +14,8 @@ It maps one canonical frame into two deliberately different cockpit concerns:
 
 The projection deliberately exposes no `displayWatts` property. It evaluates the canonical gauge frame exactly once per cockpit snapshot, avoiding duplicate interpolation work inside this handoff on a future 60 Hz render path.
 
+Every snapshot also carries the exact `PropulsionGaugeIdentity` of the display model that produced it, including unavailable states. Accepted numeric measurements repeat that identity so detached/cached measurement values cannot silently become ordinary-looking evidence for a different selected vehicle or confirmed mode.
+
 ## Numeric truth
 
 `PropulsionGaugeCockpitMeasurement` is one of:
@@ -24,6 +26,7 @@ The projection deliberately exposes no `displayWatts` property. It evaluates the
 
 An accepted cockpit measurement retains:
 
+- exact vehicle/mode identity;
 - watts;
 - source-owned receipt sequence;
 - accepted receive uptime;
@@ -31,7 +34,9 @@ An accepted cockpit measurement retains:
 
 Construction is file-private. Generic UI code cannot take a 60 Hz render midpoint and relabel it as an accepted cockpit measurement.
 
-Explicit interruption intentionally maps the primary numeric cockpit readout to `.unavailable` rather than manufacturing `0 W`. Stale-but-not-explicitly-interrupted evidence remains typed `.retained`.
+The identity binding is deliberately present on both the whole snapshot and the accepted measurement. This matters for asynchronous UI pipelines: two scooters or two confirmed modes may legitimately produce the same watts, receipt sequence, receive uptime, and authority. Those values must still remain distinguishable after the projection is detached from its owning display model.
+
+Explicit interruption intentionally maps the primary numeric cockpit readout to `.unavailable` rather than manufacturing `0 W`. Stale-but-not-explicitly-interrupted evidence remains typed `.retained` and retains its originating identity.
 
 ## Render-only motion
 
@@ -57,7 +62,7 @@ The canonical model itself admits a scale only when vehicle/mode identity and Si
 
 The cockpit projection intentionally does **not** decide whether accepted power is near an observed scale edge and does not own wording such as **Near observed max**.
 
-That semantic responsibility belongs to the separate accepted-power `PropulsionObservedScaleRegion` recovery lane / active PR #320, which recovers the product intent of closed, unmerged PR #317. The recovered layer owns:
+That semantic responsibility belongs to the separate accepted-power `PropulsionObservedScaleRegion` layer. It owns:
 
 - accepted-power normalization against a compatible observed presentation scale;
 - the explicit near-edge presentation threshold;
@@ -65,7 +70,7 @@ That semantic responsibility belongs to the separate accepted-power `PropulsionO
 - retained/unavailable behavior for the region;
 - protection against render interpolation entering/leaving the semantic state.
 
-Keeping that responsibility separate prevents two workers from shipping competing near-maximum policies. A future integration may compose the accepted semantic region with this cockpit render/readout projection after both dependencies are accepted, but it must not duplicate the policy in Dashboard code.
+Keeping that responsibility separate prevents competing near-maximum policies. A future Dashboard integration should compose the accepted semantic region with this cockpit render/readout projection rather than duplicate either policy in SwiftUI.
 
 Neither layer may relabel observed-scale proximity as full throttle, rated/certified motor/controller power, a perfect physical maximum, throttle position, or regen proof.
 
@@ -73,13 +78,14 @@ Neither layer may relabel observed-scale proximity as full throttle, rated/certi
 
 When the propulsion gauge is wired into the real cockpit:
 
-1. drive the large numeric watts readout only from `measurement`;
-2. visually qualify `.retained` as last-known/stale rather than live;
-3. show no primary numeric watts for `.unavailable`;
-4. animate the propulsion band only from `visualPropulsionFraction`;
-5. draw the peak marker only from `recentAcceptedPeakMarkerFraction`;
-6. use the accepted observed-scale-region layer, not render fractions, for any near-observed-max semantics;
-7. never persist a cockpit snapshot or feed its render fractions back into ride, battery, range, statistics, calibration, or protocol layers.
+1. bind a snapshot only to the vehicle/mode represented by `snapshot.identity`;
+2. drive the large numeric watts readout only from `measurement` and preserve the accepted measurement's identity when the value is detached or cached;
+3. visually qualify `.retained` as last-known/stale rather than live;
+4. show no primary numeric watts for `.unavailable`;
+5. animate the propulsion band only from `visualPropulsionFraction`;
+6. draw the peak marker only from `recentAcceptedPeakMarkerFraction`;
+7. use the accepted observed-scale-region layer, not render fractions, for any near-observed-max semantics;
+8. never persist a cockpit snapshot or feed its render fractions back into ride, battery, range, statistics, calibration, or protocol layers.
 
 Actual SwiftUI layout, cross-layer composition, 60 Hz runtime behavior, VoiceOver announcement cadence, project source visibility, and physical iPhone performance remain later app/runtime acceptance work. This slice intentionally avoids contested `DashboardView.swift` and `project.pbxproj` integration surfaces.
 
