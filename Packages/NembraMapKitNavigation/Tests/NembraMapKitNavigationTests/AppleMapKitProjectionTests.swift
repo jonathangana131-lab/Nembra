@@ -61,7 +61,7 @@ struct AppleMapKitProjectionTests {
     @Test("documented MapKit errors map into stable Nembra failures")
     func errorProjection() {
         func error(_ code: MKError.Code) -> NSError {
-            NSError(domain: MKErrorDomain, code: code.rawValue)
+            NSError(domain: MKErrorDomain, code: Int(code.rawValue))
         }
 
         #expect(AppleMapKitErrorProjection.failure(from: error(.directionsNotFound)) == .directionsUnavailable)
@@ -71,6 +71,7 @@ struct AppleMapKitProjectionTests {
         #expect(AppleMapKitErrorProjection.failure(from: error(.decodingFailed)) == .invalidProviderResponse)
         #expect(AppleMapKitErrorProjection.failure(from: error(.unknown)) == .unknown)
         #expect(AppleMapKitErrorProjection.failure(from: NSError(domain: "example", code: 1)) == .unknown)
+        #expect(AppleMapKitErrorProjection.failure(from: NSError(domain: MKErrorDomain, code: -1)) == .unknown)
     }
 
     @Test("combined or future returned transport remains unknown")
