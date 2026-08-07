@@ -159,15 +159,16 @@ public struct TuyaCandidateDPElectricalCoherenceScope: Equatable, Sendable {
 }
 
 /// Exact candidate + transform selected by the caller for one research role.
-/// The exact parent numeric tolerance is retained because a bare
-/// `isWithinTolerance` flag is not auditable without the threshold that produced
-/// it. Selection remains evidence provenance only, never field authority.
+/// Complete validated parent references and the exact numeric tolerance are
+/// retained because excluded caller values and bare `isWithinTolerance` flags
+/// are otherwise not auditable. Selection remains evidence provenance only.
 public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
     public let role: TuyaCandidateDPElectricalRole
     public let fieldLabel: String
     public let candidateIndex: Int
     public let candidate: TuyaCandidateDPCorrelationCandidate
     public let hypothesis: TuyaCandidateDPNumericTransformHypothesis
+    public let numericReferences: [TuyaCandidateDPNumericReference]
     public let numericAbsoluteTolerance: Double
     public let evaluableSampleCount: Int
 
@@ -181,6 +182,7 @@ public struct TuyaCandidateDPElectricalSeriesSelection: Equatable, Sendable {
         candidateIndex = report.candidateIndex
         candidate = report.candidate
         hypothesis = evidence.hypothesis
+        numericReferences = report.numericReferences
         numericAbsoluteTolerance = report.absoluteTolerance
         evaluableSampleCount = evidence.samples.count
     }
