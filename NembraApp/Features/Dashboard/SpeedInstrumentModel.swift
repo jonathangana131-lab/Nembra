@@ -37,6 +37,7 @@ final class SpeedInstrumentModel {
     @ObservationIgnored private var interpolationPolicy: SpeedInstrumentInterpolationPolicy = .disabled
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
+    @ObservationIgnored private var acceptsTelemetryForCurrentConnection = true
 
     deinit {
         streamTask?.cancel()
@@ -69,10 +70,32 @@ final class SpeedInstrumentModel {
         isAnimationActive = false
     }
 
+    /// Opens or closes raw-speed presentation continuity for the currently
+    /// confirmed vehicle connection.
+    ///
+    /// A disconnect/reconnecting/connecting boundary is authoritative evidence
+    /// of a presentation gap even though it says nothing about the scooter's
+    /// physical speed. Old raw samples therefore stop driving the live readout,
+    /// and samples delivered during the gap are ignored. Reconnection starts a
+    /// new presentation continuity without inventing a cadence-based timeout.
+    func setConnectionContinuityActive(_ isActive: Bool) {
+        acceptsTelemetryForCurrentConnection = isActive
+        guard !isActive else { return }
+
+        animationEndTask?.cancel()
+        animationEndTask = nil
+        isAnimationActive = false
+        interpolator = SpeedDisplayInterpolator()
+        previousMeasurementUptimeNanoseconds = nil
+        latestMeasurementSource = nil
+        latestMeasuredKilometersPerHour = nil
+    }
+
     /// Internal so the iOS test target can prove display semantics without a
     /// scheduler-sensitive fake stream.
     func accept(_ sample: SpeedTelemetrySample) {
-        guard sample.isAuthoritativeMeasurement else { return }
+        guard acceptsTelemetryForCurrentConnection,
+              sample.isAuthoritativeMeasurement else { return }
 
         let transitionDuration = transitionDurationNanoseconds(for: sample)
         do {
@@ -250,6 +273,9 @@ struct DashboardSpeedInstrumentView: View {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
             let stream = await vehicle.speedTelemetryUpdates()
             model.start(stream: stream)
+        }
+        .onChange(of: vehicle.state.connection, initial: true) { _, connection in
+            model.setConnectionContinuityActive(connection == .connected)
         }
         .onDisappear {
             model.stop()
