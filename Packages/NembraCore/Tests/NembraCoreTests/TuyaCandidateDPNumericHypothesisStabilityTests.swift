@@ -138,6 +138,39 @@ struct TuyaCandidateDPNumericHypothesisStabilityTests {
         #expect(reversed.evidence.map(\.hypothesis) == expected)
     }
 
+    @Test("report retains canonical caller references even when one is excluded from evidence")
+    func retainsExcludedReferenceEvidence() throws {
+        let parent = try TuyaCandidateDPMarkerCorrelator.analyze(
+            scope: scope(),
+            markers: [
+                try marker(time: 100, displayed: "41.3 V"),
+                try marker(time: 300, displayed: "41.2 V")
+            ],
+            observations: [try observation(time: 100, value: [0x01, 0x9D])],
+            policy: try TuyaCandidateDPMarkerCorrelationPolicy(
+                maximumMarkerDistanceNanoseconds: 0,
+                maximumMarkerCount: 16,
+                maximumObservationCount: 16,
+                maximumCandidateOccurrenceCount: 64
+            )
+        )
+        let first = try TuyaCandidateDPNumericReference(markerIndex: 0, value: 41.3)
+        let unused = try TuyaCandidateDPNumericReference(markerIndex: 1, value: 41.2)
+
+        let result = try TuyaCandidateDPNumericHypothesisEvaluator.evaluate(
+            report: parent,
+            candidateIndex: 0,
+            numericReferences: [unused, first],
+            hypotheses: [try TuyaCandidateDPNumericTransformHypothesis(identifier: "explicit /10", scale: 0.1)],
+            policy: policy()
+        )
+
+        #expect(result.numericReferenceCount == 2)
+        #expect(result.numericReferences == [first, unused])
+        #expect(result.unusedReferenceMarkerIndices == [1])
+        #expect(result.evidence.first?.samples.map(\.markerIndex) == [0])
+    }
+
     @Test("report retains the exact threshold that produced each within-tolerance flag")
     func retainsToleranceProvenance() throws {
         let parent = try parentReport(markerCount: 1, rawValue: [41])
