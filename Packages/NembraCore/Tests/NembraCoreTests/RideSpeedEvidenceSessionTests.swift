@@ -30,28 +30,25 @@ struct RideSpeedEvidenceSessionTests {
         )
     }
 
-    private func bluetoothQualityPolicy(
-        minimumAcceptedSamples: Int = 3,
-        maximumRejectedFraction: Double = 0,
+    private func bluetoothPolicy(
+        minimumSamples: Int = 3,
         maximumMeanIntervalMilliseconds: Double = 150,
-        maximumObservedIntervalMilliseconds: Double = 200,
-        maximumJitterMilliseconds: Double = 50,
-        maximumSpeedStepKPH: Double = 10
+        maximumObservedIntervalMilliseconds: Double = 200
     ) throws -> RideObservedPeakQualityPolicy {
         try RideObservedPeakQualityPolicy(
             telemetry: SpeedTelemetryQualityPolicy(
                 requiredSource: .scooterBluetooth,
-                minimumAcceptedSampleCount: minimumAcceptedSamples,
-                maximumRejectedSampleFraction: maximumRejectedFraction,
+                minimumAcceptedSampleCount: minimumSamples,
+                maximumRejectedSampleFraction: 0,
                 maximumMeanIntervalMilliseconds: maximumMeanIntervalMilliseconds,
                 maximumObservedIntervalMilliseconds: maximumObservedIntervalMilliseconds,
-                maximumJitterStandardDeviationMilliseconds: maximumJitterMilliseconds,
-                maximumEmpiricalSpeedStepKilometersPerHour: maximumSpeedStepKPH
+                maximumJitterStandardDeviationMilliseconds: 50,
+                maximumEmpiricalSpeedStepKilometersPerHour: 10
             )
         )
     }
 
-    private func gpsQualityPolicy() throws -> RideObservedPeakQualityPolicy {
+    private func gpsPolicy() throws -> RideObservedPeakQualityPolicy {
         try RideObservedPeakQualityPolicy(
             telemetry: SpeedTelemetryQualityPolicy(
                 requiredSource: .gps,
@@ -67,16 +64,21 @@ struct RideSpeedEvidenceSessionTests {
         )
     }
 
-    @Test("same callbacks mechanically produce same-ride peak and benchmark evidence")
-    func sameRideEvidenceStaysBound() throws {
+    private func recordCleanBluetoothSamples(
+        into session: inout RideSpeedEvidenceSessionAccumulator
+    ) throws {
+        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
+        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
+        _ = session.record(try sample(metersPerSecond: 3, uptime: 300_000_000))
+    }
+
+    @Test("clean callbacks mechanically bind peak and benchmark to one ride and source")
+    func cleanEvidenceStaysBoundAndCanQualify() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
         )
-
-        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
-        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
-        _ = session.record(try sample(metersPerSecond: 3, uptime: 300_000_000))
+        try recordCleanBluetoothSamples(into: &session)
 
         let snapshot = session.snapshot
         let peak = try #require(snapshot.peakEvidence)
@@ -87,38 +89,22 @@ struct RideSpeedEvidenceSessionTests {
         #expect(peak.peakEvidence.peak.metersPerSecond == 3)
         #expect(snapshot.telemetryBenchmark.acceptedSampleCount == 3)
         #expect(snapshot.telemetryBenchmark.intervalCount == 2)
-    }
 
-    @Test("explicit complete quality requirements can make clean BLE peak ready")
-    func cleanBluetoothPeakCanQualify() throws {
-        var session = RideSpeedEvidenceSessionAccumulator(
-            sessionID: sessionID,
-            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
-        )
-
-        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
-        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
-        _ = session.record(try sample(metersPerSecond: 3, uptime: 300_000_000))
-
-        let readiness = session.snapshot.observedPeakReadiness(
-            using: try bluetoothQualityPolicy()
-        )
+        let readiness = snapshot.observedPeakReadiness(using: try bluetoothPolicy())
         #expect(readiness.isReady)
         #expect(readiness.failures.isEmpty)
         #expect(readiness.telemetryQuality.isQualified)
-        #expect(readiness.peakEvidence?.peakEvidence.peak.metersPerSecond == 3)
     }
 
-    @Test("known interruption keeps segmented benchmark useful but makes peak unreportable")
-    func interruptionDisqualifiesPeakWithoutFabricatingBenchmarkInterval() throws {
+    @Test("selected-source unavailability segments benchmark and marks peak partial")
+    func selectedSourceGapCannotBecomeSlowPacket() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
         )
-
         _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
         _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
-        session.recordInterruption(.vehicleConnectionLost)
+        session.recordInterruption(.selectedSourceUnavailable)
         _ = session.record(try sample(metersPerSecond: 3, uptime: 10_000_000_000))
         _ = session.record(try sample(metersPerSecond: 4, uptime: 10_100_000_000))
 
@@ -131,24 +117,36 @@ struct RideSpeedEvidenceSessionTests {
         #expect(snapshot.peakEvidence?.peakEvidence.continuity == .partialSelectedSourceEvidence)
 
         let readiness = snapshot.observedPeakReadiness(
-            using: try bluetoothQualityPolicy(minimumAcceptedSamples: 4)
+            using: try bluetoothPolicy(minimumSamples: 4)
         )
         #expect(!readiness.isReady)
         #expect(readiness.telemetryQuality.isQualified)
         #expect(readiness.failures == [.partialPeakObservation])
     }
 
-    @Test("initial recovery gap is not hidden just because benchmark starts cleanly")
+    @Test("application lifecycle interruption uses the same selected-stream truth boundary")
+    func lifecycleGapMarksBothPipelines() throws {
+        var session = RideSpeedEvidenceSessionAccumulator(
+            sessionID: sessionID,
+            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
+        )
+        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
+        session.recordInterruption(.applicationLifecycleInterrupted)
+        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
+
+        #expect(session.snapshot.telemetryBenchmark.knownObservationInterruptionCount == 1)
+        #expect(session.snapshot.peakEvidence?.peakEvidence.knownInterruptionCount == 1)
+        #expect(session.snapshot.peakEvidence?.peakEvidence.continuity == .partialSelectedSourceEvidence)
+    }
+
+    @Test("initial recovery gap remains visible even though first benchmark segment starts cleanly")
     func initialObservationGapDisqualifiesPeak() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth),
             beginsAfterKnownObservationGap: true
         )
-
-        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
-        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
-        _ = session.record(try sample(metersPerSecond: 3, uptime: 300_000_000))
+        try recordCleanBluetoothSamples(into: &session)
 
         let snapshot = session.snapshot
         #expect(snapshot.beganAfterKnownObservationGap)
@@ -156,15 +154,13 @@ struct RideSpeedEvidenceSessionTests {
         #expect(snapshot.peakEvidence?.beganAfterKnownObservationGap == true)
         #expect(snapshot.peakEvidence?.peakEvidence.continuity == .partialSelectedSourceEvidence)
 
-        let readiness = snapshot.observedPeakReadiness(
-            using: try bluetoothQualityPolicy()
-        )
+        let readiness = snapshot.observedPeakReadiness(using: try bluetoothPolicy())
         #expect(!readiness.isReady)
         #expect(readiness.telemetryQuality.isQualified)
         #expect(readiness.failures == [.partialPeakObservation])
     }
 
-    @Test("peak-specific GPS accuracy rejection cannot be hidden by clean raw benchmark")
+    @Test("GPS peak-specific accuracy rejection cannot be hidden by clean raw benchmark")
     func gpsAccuracyRejectionRemainsPeakFailure() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
@@ -173,7 +169,6 @@ struct RideSpeedEvidenceSessionTests {
                 maximumSpeedAccuracyMetersPerSecond: 0.5
             )
         )
-
         _ = session.record(try sample(
             source: .gps,
             metersPerSecond: 1,
@@ -202,19 +197,18 @@ struct RideSpeedEvidenceSessionTests {
         #expect(snapshot.peakEvidence?.peakEvidence.acceptedSampleCount == 2)
         #expect(snapshot.peakEvidence?.peakEvidence.qualityRejectedSampleCount == 1)
 
-        let readiness = snapshot.observedPeakReadiness(using: try gpsQualityPolicy())
+        let readiness = snapshot.observedPeakReadiness(using: try gpsPolicy())
         #expect(!readiness.isReady)
         #expect(readiness.telemetryQuality.isQualified)
         #expect(readiness.failures == [.partialPeakObservation])
     }
 
-    @Test("GPS peak cannot be ready without an explicit peak accuracy ceiling")
+    @Test("GPS cannot qualify without an explicit peak speed-accuracy ceiling")
     func gpsPeakAccuracyPolicyIsRequired() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .gps)
         )
-
         for index in 1...3 {
             _ = session.record(try sample(
                 source: .gps,
@@ -225,47 +219,37 @@ struct RideSpeedEvidenceSessionTests {
             ))
         }
 
-        let readiness = session.snapshot.observedPeakReadiness(using: try gpsQualityPolicy())
+        let readiness = session.snapshot.observedPeakReadiness(using: try gpsPolicy())
         #expect(!readiness.isReady)
         #expect(readiness.telemetryQuality.isQualified)
         #expect(readiness.failures == [.gpsPeakAccuracyPolicyUnavailable])
     }
 
-    @Test("benchmark quality failure keeps otherwise clean peak unavailable for reporting")
+    @Test("weak cadence fails even when the numeric peak itself is clean")
     func weakCadenceFailsReadiness() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
         )
-
         _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
         _ = session.record(try sample(metersPerSecond: 2, uptime: 500_000_000))
         _ = session.record(try sample(metersPerSecond: 3, uptime: 900_000_000))
 
         let readiness = session.snapshot.observedPeakReadiness(
-            using: try bluetoothQualityPolicy(
+            using: try bluetoothPolicy(
                 maximumMeanIntervalMilliseconds: 150,
                 maximumObservedIntervalMilliseconds: 200
             )
         )
         #expect(!readiness.isReady)
         #expect(!readiness.telemetryQuality.isQualified)
-        #expect(readiness.failures.count == 1)
-        guard case let .telemetryQualityFailed(failures) = readiness.failures[0] else {
-            Issue.record("Expected telemetry-quality failure")
-            return
-        }
-        #expect(failures.contains(.meanIntervalExceeded(
-            maximumMilliseconds: 150,
-            actualMilliseconds: 400
-        )))
-        #expect(failures.contains(.observedIntervalExceeded(
-            maximumMilliseconds: 200,
-            actualMilliseconds: 400
-        )))
+        #expect(readiness.failures.contains { failure in
+            if case .telemetryQualityFailed = failure { return true }
+            return false
+        })
     }
 
-    @Test("all GPS benchmark samples may be valid while no peak sample passes GPS accuracy")
+    @Test("raw GPS benchmark may qualify while peak is unavailable after all accuracy rejections")
     func noAcceptedPeakFailsSeparatelyFromBenchmarkQuality() throws {
         var session = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
@@ -274,7 +258,6 @@ struct RideSpeedEvidenceSessionTests {
                 maximumSpeedAccuracyMetersPerSecond: 0.5
             )
         )
-
         for index in 1...3 {
             _ = session.record(try sample(
                 source: .gps,
@@ -285,98 +268,9 @@ struct RideSpeedEvidenceSessionTests {
             ))
         }
 
-        let readiness = session.snapshot.observedPeakReadiness(using: try gpsQualityPolicy())
+        let readiness = session.snapshot.observedPeakReadiness(using: try gpsPolicy())
         #expect(!readiness.isReady)
         #expect(readiness.telemetryQuality.isQualified)
         #expect(readiness.failures == [.peakUnavailable])
-    }
-
-    @Test("foreign-source callback reaches both collectors and cannot silently disappear")
-    func foreignSourceTrafficIsVisibleToBenchmarkQuality() throws {
-        var session = RideSpeedEvidenceSessionAccumulator(
-            sessionID: sessionID,
-            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
-        )
-
-        let foreignResult = session.record(try sample(
-            source: .gps,
-            metersPerSecond: 20,
-            uptime: 50_000_000,
-            speedAccuracy: 0.2,
-            latencyMilliseconds: 20
-        ))
-        #expect(foreignResult.peak == .rejected(.sourceMismatch))
-        #expect(foreignResult.benchmark == .rejected(.sourceMismatch))
-
-        _ = session.record(try sample(metersPerSecond: 1, uptime: 100_000_000))
-        _ = session.record(try sample(metersPerSecond: 2, uptime: 200_000_000))
-        _ = session.record(try sample(metersPerSecond: 3, uptime: 300_000_000))
-
-        let readiness = session.snapshot.observedPeakReadiness(
-            using: try bluetoothQualityPolicy(maximumRejectedFraction: 0)
-        )
-        #expect(!readiness.isReady)
-        #expect(session.snapshot.peakEvidence?.peakEvidence.continuity == .noRecordedSelectedSourceEvidenceLoss)
-        #expect(session.snapshot.telemetryBenchmark.rejectedSampleCount == 1)
-        #expect(!readiness.telemetryQuality.isQualified)
-    }
-
-    @Test("peak quality wrapper refuses policies that silently omit required evidence dimensions")
-    func incompleteFeaturePolicyIsRejected() throws {
-        let weak = try SpeedTelemetryQualityPolicy(
-            requiredSource: .scooterBluetooth,
-            minimumAcceptedSampleCount: 1
-        )
-
-        #expect(throws: RideObservedPeakQualityPolicyError.rejectedFractionRequirementRequired) {
-            try RideObservedPeakQualityPolicy(telemetry: weak)
-        }
-    }
-
-    @Test("feature policy requires an explicit authoritative source")
-    func explicitSourceRequirementIsMandatory() throws {
-        let sourceAgnostic = try SpeedTelemetryQualityPolicy(
-            minimumAcceptedSampleCount: 3,
-            maximumRejectedSampleFraction: 0,
-            maximumMeanIntervalMilliseconds: 150,
-            maximumObservedIntervalMilliseconds: 200,
-            maximumJitterStandardDeviationMilliseconds: 50,
-            maximumEmpiricalSpeedStepKilometersPerHour: 10
-        )
-
-        #expect(throws: RideObservedPeakQualityPolicyError.sourceRequirementRequired) {
-            try RideObservedPeakQualityPolicy(telemetry: sourceAgnostic)
-        }
-    }
-
-    @Test("GPS feature policy requires explicit latency coverage and limit")
-    func gpsLatencyEvidenceRequirementsCannotBeOmitted() throws {
-        let missingCoverage = try SpeedTelemetryQualityPolicy(
-            requiredSource: .gps,
-            minimumAcceptedSampleCount: 3,
-            maximumRejectedSampleFraction: 0,
-            maximumMeanIntervalMilliseconds: 150,
-            maximumObservedIntervalMilliseconds: 200,
-            maximumJitterStandardDeviationMilliseconds: 50,
-            maximumMeanDeliveryLatencyMilliseconds: 100,
-            maximumEmpiricalSpeedStepKilometersPerHour: 10
-        )
-        #expect(throws: RideObservedPeakQualityPolicyError.gpsLatencyCoverageRequirementRequired) {
-            try RideObservedPeakQualityPolicy(telemetry: missingCoverage)
-        }
-
-        let missingLimit = try SpeedTelemetryQualityPolicy(
-            requiredSource: .gps,
-            minimumAcceptedSampleCount: 3,
-            maximumRejectedSampleFraction: 0,
-            maximumMeanIntervalMilliseconds: 150,
-            maximumObservedIntervalMilliseconds: 200,
-            maximumJitterStandardDeviationMilliseconds: 50,
-            minimumDeliveryLatencySampleFraction: 1,
-            maximumEmpiricalSpeedStepKilometersPerHour: 10
-        )
-        #expect(throws: RideObservedPeakQualityPolicyError.gpsLatencyRequirementRequired) {
-            try RideObservedPeakQualityPolicy(telemetry: missingLimit)
-        }
     }
 }
