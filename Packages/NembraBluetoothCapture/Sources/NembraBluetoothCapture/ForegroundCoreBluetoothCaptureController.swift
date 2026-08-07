@@ -419,11 +419,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private func scheduleConnectionTimeout(for peripheral: CBPeripheral, nanoseconds: UInt64) {
         connectionTimeoutTask?.cancel()
         let identifier = peripheral.identifier
-        connectionTimeoutTask = Task { @MainActor [weak self, weak peripheral] in
+        connectionTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard !Task.isCancelled,
                   let self,
-                  let peripheral,
+                  let peripheral = self.activePeripheral,
+                  peripheral.identifier == identifier,
                   self.connectionPhase == .connecting(identifier),
                   self.targetState.acceptsActiveCallback(from: identifier) else { return }
 
