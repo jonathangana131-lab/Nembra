@@ -462,6 +462,134 @@ final class RideLocationCaptureTests: XCTestCase {
         consumer.cancel()
     }
 
+    @MainActor
+    func testThrowingCompletionBarrierKeepsHistoryPendingUntilRetry() async throws {
+        let directory = temporaryDirectory(name: "completion-barrier-retry")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "completion-barrier-retry"),
+            baseDirectoryURL: directory
+        )
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(initialState: initialState, commandLatencyNanoseconds: 0)
+        let rideStore = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        rideStore.setRideCompletionBarrier { _ in
+            throw TestRideCompletionBarrierError.unavailable
+        }
+        await rideStore.start()
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Simulator movement should start a confirmed ride.") {
+            rideStore.status == .active
+        }
+        let sessionID = try XCTUnwrap(rideStore.activeSessionID)
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("A failed completion barrier should surface as persistence unavailable.") {
+            rideStore.status == .persistenceUnavailable
+        }
+
+        let pending = try await persistence.checkpointStore.load()
+        guard case let .completedPendingCommit(evidence) = pending else {
+            XCTFail("The completed ride checkpoint must remain pending when route outcome persistence fails.")
+            return
+        }
+        XCTAssertEqual(evidence.sessionID, sessionID)
+        XCTAssertNil(try await persistence.historyStore.record(sessionID: sessionID))
+
+        rideStore.setRideCompletionBarrier { _ in }
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("A later observation should retry and commit the same pending ride.") {
+            rideStore.status == .idle && rideStore.lastCompletedSessionID == sessionID
+        }
+        XCTAssertNotNil(try await persistence.historyStore.record(sessionID: sessionID))
+        XCTAssertNil(try await persistence.checkpointStore.load())
+        rideStore.stop()
+    }
+
+    func testRouteOutcomeLedgerPersistsFailureAndAllowsVerifiedRepair() async throws {
+        let directory = temporaryDirectory(name: "route-outcome-ledger")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AtomicRideRouteOutcomeStore(directoryURL: directory)
+        let sessionID = UUID()
+        let failed = try RideRouteOutcomeRecord(
+            sessionID: sessionID,
+            state: .storageFailed,
+            acceptedPointCount: 3
+        )
+        _ = try await store.commit(failed)
+        XCTAssertEqual(try await store.record(sessionID: sessionID), failed)
+
+        let repaired = try RideRouteOutcomeRecord(
+            sessionID: sessionID,
+            state: .recorded,
+            acceptedPointCount: 3
+        )
+        _ = try await store.commit(repaired)
+        XCTAssertEqual(try await store.record(sessionID: sessionID), repaired)
+
+        let contradictory = try RideRouteOutcomeRecord(
+            sessionID: sessionID,
+            state: .noRecordedGeometry,
+            acceptedPointCount: 0
+        )
+        do {
+            _ = try await store.commit(contradictory)
+            XCTFail("A verified recorded route must not be rewritten as no geometry.")
+        } catch RideRouteOutcomeStoreError.conflictingOutcome(let conflictID) {
+            XCTAssertEqual(conflictID, sessionID)
+        }
+    }
+
+    @MainActor
+    func testRoutePresentationDistinguishesStorageFailureFromNoRecordedGeometry() async throws {
+        let directory = temporaryDirectory(name: "route-outcome-presentation")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try RidePersistenceFactory.makeRouteContainer(
+            storeURL: directory.appendingPathComponent("RideRoutes.store")
+        )
+        let routeStore = SwiftDataRideRouteStore(modelContainer: container)
+        let outcomeStore = AtomicRideRouteOutcomeStore(
+            directoryURL: directory.appendingPathComponent("RouteOutcomes", isDirectory: true)
+        )
+        let presentation = RideRoutePresentationStore(
+            routeStore: routeStore,
+            outcomeStore: outcomeStore
+        )
+
+        let failedSession = UUID()
+        _ = try await outcomeStore.commit(
+            try RideRouteOutcomeRecord(
+                sessionID: failedSession,
+                state: .storageFailed,
+                acceptedPointCount: 2
+            )
+        )
+        await presentation.refresh(sessionID: failedSession)
+        XCTAssertEqual(presentation.status(sessionID: failedSession), .failed)
+        XCTAssertNotNil(presentation.errorMessage(sessionID: failedSession))
+
+        let emptySession = UUID()
+        _ = try await outcomeStore.commit(
+            try RideRouteOutcomeRecord(
+                sessionID: emptySession,
+                state: .noRecordedGeometry,
+                acceptedPointCount: 0
+            )
+        )
+        await presentation.refresh(sessionID: emptySession)
+        XCTAssertEqual(presentation.status(sessionID: emptySession), .unavailable)
+        XCTAssertNil(presentation.errorMessage(sessionID: emptySession))
+    }
+
     func testPersistedRouteChunksWithoutManifestRecoverAsPartial() async throws {
         let directory = temporaryDirectory(name: "route-draft-recovery")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -624,6 +752,10 @@ final class RideLocationCaptureTests: XCTestCase {
         }
         XCTFail("Timed out waiting for \(count) ride session lifecycle events.")
     }
+}
+
+private enum TestRideCompletionBarrierError: Error {
+    case unavailable
 }
 
 private actor TestRideLocationSource: RideLocationSource {
