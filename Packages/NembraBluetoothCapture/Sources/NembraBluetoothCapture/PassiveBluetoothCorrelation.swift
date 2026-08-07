@@ -67,23 +67,60 @@ public struct PassiveBluetoothCorrelationWindow: Equatable, Sendable {
 }
 
 public enum PassiveBluetoothCorrelation {
-    /// Builds time-local candidate windows around stock-app observations.
+    /// Builds time-local candidate windows around stock-app observations when
+    /// the session contains value evidence from at most one peripheral.
     ///
-    /// - Parameters:
-    ///   - session: Immutable raw capture evidence.
-    ///   - field: Optional case-insensitive exact stock-app field filter.
-    ///   - lookbackNanoseconds: Maximum raw-value age before the marker.
-    ///   - lookaheadNanoseconds: Maximum raw-value time after the marker.
-    ///
-    /// Any parent-model byte-continuity break is a hard boundary. A value on the
-    /// other side of a structured disconnect/Bluetooth transition/observer
-    /// restart is never presented as a candidate for the marker, even if timing
-    /// proximity happens to be small.
+    /// Imported captures may legitimately contain nearby-device evidence. A
+    /// stock-app marker has no peripheral identifier of its own, so this
+    /// convenience API refuses to guess when value callbacks belong to multiple
+    /// peripherals. Use the explicit `peripheralIdentifier` overload when the
+    /// target has already been selected by stronger evidence.
     public static func windows(
         in session: PassiveBluetoothCaptureSession,
         field: String? = nil,
         lookbackNanoseconds: UInt64 = 2_000_000_000,
         lookaheadNanoseconds: UInt64 = 2_000_000_000
+    ) -> [PassiveBluetoothCorrelationWindow] {
+        let identifiers = valuePeripheralIdentifiers(in: session)
+        guard identifiers.count <= 1 else { return [] }
+        return makeWindows(
+            in: session,
+            peripheralIdentifier: identifiers.first,
+            field: field,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
+        )
+    }
+
+    /// Builds time-local candidate windows for one explicitly selected
+    /// CoreBluetooth peripheral. Raw values from every other peripheral are
+    /// excluded before proximity ranking.
+    public static func windows(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String,
+        field: String? = nil,
+        lookbackNanoseconds: UInt64 = 2_000_000_000,
+        lookaheadNanoseconds: UInt64 = 2_000_000_000
+    ) -> [PassiveBluetoothCorrelationWindow] {
+        makeWindows(
+            in: session,
+            peripheralIdentifier: peripheralIdentifier,
+            field: field,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
+        )
+    }
+
+    /// Any parent-model byte-continuity break is a hard boundary. A value on the
+    /// other side of a structured disconnect/Bluetooth transition/observer
+    /// restart is never presented as a candidate for the marker, even if timing
+    /// proximity happens to be small.
+    private static func makeWindows(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String?,
+        field: String?,
+        lookbackNanoseconds: UInt64,
+        lookaheadNanoseconds: UInt64
     ) -> [PassiveBluetoothCorrelationWindow] {
         let records = session.records
         var segmentStart = 0
@@ -129,6 +166,10 @@ public enum PassiveBluetoothCorrelation {
                 guard record.receivedAtUptimeNanoseconds >= minimumUptime,
                       record.receivedAtUptimeNanoseconds <= upperUptime,
                       case let .value(value) = record.event else { continue }
+                if let peripheralIdentifier,
+                   value.peripheralIdentifier != peripheralIdentifier {
+                    continue
+                }
 
                 candidates.append(
                     PassiveBluetoothCorrelationCandidate(
@@ -167,6 +208,17 @@ public enum PassiveBluetoothCorrelation {
         }
 
         return result
+    }
+
+    private static func valuePeripheralIdentifiers(
+        in session: PassiveBluetoothCaptureSession
+    ) -> Set<String> {
+        var identifiers: Set<String> = []
+        for record in session.records {
+            guard case let .value(value) = record.event else { continue }
+            identifiers.insert(value.peripheralIdentifier)
+        }
+        return identifiers
     }
 
     private static func signedOffsetSeconds(candidate: UInt64, marker: UInt64) -> Double {
