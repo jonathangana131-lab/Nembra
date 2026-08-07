@@ -1,37 +1,49 @@
-# Rolling Number Recovery — Independent Review Lease
+# Rolling Number Recovery — Independent Peer Review
 
-PROTOCOL_VERSION: 7  
+### V8 WORKER STATE
+PROTOCOL_VERSION: 8  
 WORKER_ID: `chat-d8v2m`  
-ROLE: REVIEW / HARDENING  
+ROLE: PEER REVIEW / HARDENING ENGINEER  
 LANE_ID: `rolling-number-recovery-independent-review-d8v2m`  
 EPOCH: 1  
-STATE: active read-only review; normal GitHub control/PR text publication restored  
+CONTROL_CLAIM: v8 issue #108 comment `5210989057`; v7 history #79 comment `5210969319`  
+CURRENT_HEAD: this worker-only review branch  
+BASE_OR_PARENT: latest policy main `871797d8e2117bd2081c5ecca42c6fb7b93ef7d5`; branch reconciliation pending this checkpoint  
+OWNED_PATHS: `docs/worker-reviews/ROLLING_NUMBER_RECOVERY_INDEPENDENT_REVIEW_CHAT_D8V2M.md` only  
+LOCK_CLASS: C additive  
+LAST_KNOWN_GREEN: supplemental Swift 6.2.1 property/boundary/host-performance checks below; PR #95 resolver green, Xcode job queued at last meaningful inspection  
+CURRENT_STATE: peer review complete/clean for PR #95 exact head `e675fb995bde98f1718ed31624253f648beb547c`; merge acceptance remains incumbent responsibility  
+NEXT_PACKET: refresh #95 owner/main/CI after v8 migration; publish any changed acceptance conclusion only if evidence changed; then release/pivot if no further same-lane work remains  
+DEPENDENCIES: incumbent `chat-b6r9m`; exact-final-head Xcode/Simulator + fresh-main discipline before #95 merge  
+KNOWN_OVERLAP: none; this worker owns no #95 product path  
+CI_STATE: #95 run `31136468286`; resolver `92736839496` green; Xcode `92736860915` queued at last meaningful inspection  
+AUTOMATED_REVIEW_STATE: DISABLED_BY_DEFAULT under v8; not requested and not a blocker  
+PEER_REVIEW_STATE: COMPLETE/CLEAN; PR #95 comment `5210975045`  
+SERVICE_DEGRADATIONS: prior GitHub text-write secondary limit recovered; Xcode runner queue remains independently degraded/queued  
+BLOCKED_ON: none for peer-review work  
+HARDWARE_STATUS: software presentation/performance review only; no physical AOVOPRO ES80 or physical-iPhone performance claim  
+HANDOFF_READY: true
 
 ## Coordination boundary
 
-This worker owns **no product/source/test/workflow path** in PR #95. Incumbent `chat-b6r9m` retains:
+Incumbent `chat-b6r9m` retains all PR #95 product paths:
 
 - `Packages/NembraCore/Sources/NembraCore/RollingNumberModel.swift`
 - `Packages/NembraCore/Tests/NembraCoreTests/RollingNumberPerformanceHardeningTests.swift`
 - `docs/ROLLING_NUMBER_PERFORMANCE.md`
 
-The earlier secondary content-creation rate limit has cleared. Normal v7 publication is now durable:
-
-- control issue #79 claim / recovery registration: comment `5210969319`
-- PR #95 independent acceptance review: comment `5210975045`
-
-This worker-specific Class-C file remains a recovery-friendly detailed evidence checkpoint, not a replacement for the control issue.
+This worker does not edit or take over those paths.
 
 ## Review target / isolation
 
 - PR: #95
 - reviewed head: `e675fb995bde98f1718ed31624253f648beb547c`
-- exact PR changed-file inventory: the three incumbent paths listed above, no fourth path
-- live main at latest refresh: `8dcf1459bd9152a94d6616fe1597e4a835a4972a`
-- `60d8ecc... -> 8dcf145...` main movement changes exactly three additive route-summary paths (`RideRouteEvidenceSummary.swift`, its test, and its doc), with zero rolling-number overlap.
-- GitHub reports PR #95 mergeable, but its cached/generated merge candidate is still based on `60d8ecc...`; it is therefore not treated as fresh-main acceptance evidence.
+- exact changed-file inventory: the three incumbent paths above, no fourth path
+- main observed after the candidate reconciliation: `8dcf1459bd9152a94d6616fe1597e4a835a4972a`; its product movement after #95's `60d8ecc...` base was exactly three additive route-summary paths with zero rolling-number overlap
+- subsequent `871797d8...` main movement is Swarm OS v8 policy only and does not overlap #95 product paths
+- GitHub reports #95 mergeable, but its cached generated merge candidate was based on the older `60d8ecc...`; that is not fresh-main acceptance evidence
 
-## Source/API review result
+## Source/API/build-graph verdict
 
 No source-level blocker found on `e675fb995...`.
 
@@ -40,42 +52,30 @@ Checked boundaries:
 - `snapshot(scaledValue:)` is presentation-only and capacity-bounded.
 - Fixed-slot extraction preserves most-significant-to-least-significant digit order.
 - Hidden leading integer placeholders and always-visible fractional slots remain coherent.
-- Supported layouts are capped at 15 total digit slots; every supported integer scaled value is below `10^15`, comfortably below `2^53`, so delegating the existing Double-quantization path into the UInt64 snapshot path does not introduce a new integer-representation precision hole.
-- Transition work remains bounded to fixed digit-slot count, with roll steps in `0...9` and direction based only on display-scaled ordering.
+- Supported layouts cap total digit slots at 15; supported scaled integer values remain below `10^15` and below `2^53`, so delegating the existing Double quantization path into the UInt64 path does not add an integer-representation precision hole.
+- Transition work remains bounded to fixed digit-slot count, with roll steps in `0...9` and display-only direction semantics.
 - Live Dashboard still consumes `snapshot(for:)`; the new exact-integer overload is additive and does not silently alter current speed behavior.
-- Adjacent PR #33 explicitly leaves `RollingSpeedValueView` and `RollingNumberModel` untouched, so no current same-path integration collision was found.
-- Current battery-primary-readout PR #57 does not reference `RollingNumberModel`; it explicitly defers final integer battery-roll animation, so #95 does not create a hidden immediate parent/API dependency there.
-- Current `Nembra.xcodeproj/project.pbxproj` already contains `RollingNumberModel.swift` as a PBX file reference and `RollingNumberModel.swift in Sources` build-file entry for the app target. Therefore #95 needs no project-file edit to make the changed implementation visible to the iOS app build; SwiftPM and app-target compilation both exercise the same source file.
+- Adjacent PR #33 explicitly leaves `RollingSpeedValueView` and `RollingNumberModel` untouched.
+- Battery-primary-readout PR #57 does not consume `RollingNumberModel` and explicitly defers final integer battery-roll animation.
+- Current `Nembra.xcodeproj/project.pbxproj` already wires `RollingNumberModel.swift` into the app target PBX Sources phase, so no project-file edit is required.
 
 ### Public API compatibility
 
-Exact base `60d8ecc...` and #95 source were compared directly, and the focused PR patch was re-read. Every pre-existing public declaration remains source-signature compatible. The only new public symbol is:
+Exact base and #95 source were compared directly. Every pre-existing public declaration keeps its signature. The only new public symbol is additive:
 
 `public func snapshot(scaledValue: UInt64) throws -> RollingNumberSnapshot`
 
-`RollingNumberError`, layout/snapshot/transition types, `RollingNumberModel.init(layout:)`, `snapshot(for:)`, and both `transition` overloads keep their existing public signatures. The rest of the source delta is implementation and documentation. This is an additive API change, not a replacement or wire-format migration.
+No replacement API or wire-format migration is introduced.
 
 ## Independent supplemental verification
 
-A standalone Swift 6.2.1 mirror of the exact rolling-number algorithm passed **1,238,191 property checks** covering:
+A standalone Swift 6.2.1 mirror of the exact algorithm passed **1,238,191 property checks** across valid layouts, digit extraction/visibility, exact-scaled vs Double-path equivalence, transition direction/step bounds, and 15-slot boundaries.
 
-- valid layout boundaries;
-- digit extraction and visibility;
-- exact scaled vs Double-path equivalence across supported ranges;
-- transition direction and bounded roll steps;
-- largest 15-slot boundary cases.
-
-A second old-vs-new Swift 6.2.1 boundary harness passed **294 / 294 comparisons with zero behavior differences** across:
-
-- scaled rounding thresholds plus adjacent floating-point values;
-- exact and adjacent capacity values;
-- zero / negative-zero / tiny positive and negative inputs;
-- negative and invalid numeric values;
-- representative 15-slot and fractional layouts.
+A second old-vs-new Swift 6.2.1 boundary harness passed **294 / 294 comparisons with zero behavior differences** around scaled rounding thresholds, capacity edges, signed zero/tiny values, invalid numeric inputs, fractional layouts, and 15-slot cases.
 
 ### Directional host performance probe
 
-A separate optimized Swift 6.2.1 benchmark alternated old/new execution order over five 400,000-snapshot rounds per layout and preserved identical result checksums. Median results:
+An optimized Swift 6.2.1 alternating-order benchmark preserved identical checksums over five 400,000-snapshot rounds per layout:
 
 | Total slots | Old median | New median | New / old |
 | ---: | ---: | ---: | ---: |
@@ -83,28 +83,19 @@ A separate optimized Swift 6.2.1 benchmark alternated old/new execution order ov
 | 4 | 26.368 ms | 24.072 ms | 0.913 |
 | 15 | 34.162 ms | 30.692 ms | 0.898 |
 
-This is directional host evidence only. It supports the source-level allocation/CPU premise and rules out an obvious host regression, but it is **not** iPhone 12 profiling, Simulator acceptance, or a physical-device performance claim.
+Directional host evidence only. It rules out an obvious host regression but is not iPhone 12 profiling, Simulator acceptance, or physical-device proof.
 
-## CI truth
+## Acceptance truth
 
-Exact-final-head workflow run `31136468286` targets `e675fb995...`.
+At the last meaningful inspection, exact-head workflow run `31136468286` targeted `e675fb995...`:
 
-- trusted same-repo resolver job `92736839496`: success
-- Xcode 27 build/test/capture job `92736860915`: queued at the last meaningful inspection
+- trusted same-repo resolver `92736839496`: success
+- Xcode 27 build/test/capture `92736860915`: queued
 
-Another lane's Xcode retry was observed canceled before receiving a self-hosted runner, so shared scheduler/concurrency churn exists; this does not turn #95 green or red.
+Therefore the peer review is clean, but #95 is **not merge-accepted** from this evidence alone. Green ancestor or resolver status cannot substitute for exact-final-head Xcode/Simulator evidence. If main remains ahead when the frozen candidate becomes terminal, the incumbent must reconcile as required by v8 dependency/release discipline and gate the resulting exact final SHA.
 
-Therefore source review is clean but **merge acceptance is not yet green**.
+## Durable publication
 
-Because `main` advanced after this candidate was frozen, final acceptance still requires fresh-main discipline: preserve the candidate while its queued run is alive; after terminal diagnostic evidence, incumbent/coordinator should reconcile the non-overlapping main movement and obtain exact-final-head QA on the resulting candidate if v7 merge discipline still requires the fresh-main SHA.
-
-## Hardware boundary
-
-Software presentation/performance review only. No physical AOVOPRO ES80 behavior and no physical-iPhone performance result is claimed.
-
-## Next packet
-
-1. inspect exact Xcode job after meaningful runner-state change, not by busy-polling;
-2. refresh current main / #95 owner movement;
-3. if the frozen candidate becomes terminal, hand the fresh-main reconciliation requirement to incumbent with exact evidence;
-4. do not mutate PR #95 source or branch.
+- v7 control registration: #79 comment `5210969319`
+- v8 migration/claim: #108 comment `5210989057`
+- PR #95 independent peer-review verdict: comment `5210975045`
