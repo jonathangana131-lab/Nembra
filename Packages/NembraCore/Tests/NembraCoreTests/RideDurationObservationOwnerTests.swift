@@ -57,6 +57,39 @@ struct RideDurationObservationOwnerTests {
         #expect(value.wholeObservedSeconds == 0)
     }
 
+    @Test("rejected observation during a gap does not consume resume chronology")
+    func rejectedGapObservationIsAtomic() throws {
+        let sessionID = UUID()
+        let processID = UUID()
+        var owner = RideDurationObservationOwner()
+
+        try owner.begin(
+            sessionID: sessionID,
+            processGenerationID: processID,
+            atUptimeNanoseconds: 100
+        )
+        try owner.markObservationGap(sessionID: sessionID, atUptimeNanoseconds: 200)
+        let beforeRejectedObservation = owner.snapshot
+
+        #expect(throws: RideDurationObservationOwnerError.noActiveSession) {
+            try owner.observe(sessionID: sessionID, atUptimeNanoseconds: 300)
+        }
+        #expect(owner.snapshot == beforeRejectedObservation)
+
+        // The rejected callback must not advance the chronology floor. This exact
+        // timestamp is still a legitimate boundary for the fresh observed segment.
+        try owner.resumeObservation(
+            sessionID: sessionID,
+            processGenerationID: processID,
+            atUptimeNanoseconds: 300
+        )
+        let snapshot = try owner.end(sessionID: sessionID, atUptimeNanoseconds: 400)
+
+        #expect(snapshot.observedDurationNanoseconds == 200)
+        #expect(snapshot.coverage == .partial)
+        #expect(snapshot.observationSegmentCount == 2)
+    }
+
     @Test("recovered attachment is partial from its first observed segment")
     func recoveredAttachment() throws {
         let sessionID = UUID()
