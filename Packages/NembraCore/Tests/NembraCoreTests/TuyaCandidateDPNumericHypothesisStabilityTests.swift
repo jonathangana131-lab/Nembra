@@ -88,11 +88,14 @@ struct TuyaCandidateDPNumericHypothesisStabilityTests {
         )
     }
 
-    private func policy(maximumReferences: Int = 16) throws -> TuyaCandidateDPNumericHypothesisPolicy {
+    private func policy(
+        maximumReferences: Int = 16,
+        tolerance: Double = 0
+    ) throws -> TuyaCandidateDPNumericHypothesisPolicy {
         try TuyaCandidateDPNumericHypothesisPolicy(
             maximumReferenceCount: maximumReferences,
             maximumHypothesisCount: 8,
-            absoluteTolerance: 0
+            absoluteTolerance: tolerance
         )
     }
 
@@ -133,6 +136,37 @@ struct TuyaCandidateDPNumericHypothesisStabilityTests {
         let expected = [scaleOneOffsetZero, scaleOneOffsetOne, scaleTwo]
         #expect(forward.evidence.map(\.hypothesis) == expected)
         #expect(reversed.evidence.map(\.hypothesis) == expected)
+    }
+
+    @Test("report retains the exact threshold that produced each within-tolerance flag")
+    func retainsToleranceProvenance() throws {
+        let parent = try parentReport(markerCount: 1, rawValue: [41])
+        let references = [try TuyaCandidateDPNumericReference(markerIndex: 0, value: 41.3)]
+        let identity = try TuyaCandidateDPNumericTransformHypothesis(
+            identifier: "identity",
+            scale: 1
+        )
+
+        let strict = try TuyaCandidateDPNumericHypothesisEvaluator.evaluate(
+            report: parent,
+            candidateIndex: 0,
+            numericReferences: references,
+            hypotheses: [identity],
+            policy: policy(tolerance: 0.2)
+        )
+        let loose = try TuyaCandidateDPNumericHypothesisEvaluator.evaluate(
+            report: parent,
+            candidateIndex: 0,
+            numericReferences: references,
+            hypotheses: [identity],
+            policy: policy(tolerance: 0.5)
+        )
+
+        #expect(strict.absoluteTolerance == 0.2)
+        #expect(loose.absoluteTolerance == 0.5)
+        #expect(strict.evidence.first?.samples.first?.isWithinTolerance == false)
+        #expect(loose.evidence.first?.samples.first?.isWithinTolerance == true)
+        #expect(strict.evidence.first?.samples.first?.absoluteError == loose.evidence.first?.samples.first?.absoluteError)
     }
 
     @Test("mean absolute error stays finite when a naive finite-error sum would overflow")
