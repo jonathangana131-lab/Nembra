@@ -19,8 +19,22 @@ enum VehicleDisplayFormatting {
     /// Semantic counterpart for assistive output. It deliberately shares the
     /// exact compact projection used by visible speed text, but replaces the
     /// punctuation sentinel with a word VoiceOver can communicate meaningfully.
-    static func accessibilitySpeed(kilometersPerHour: Double?, decimals: Int = 0) -> String {
-        compactSpeed(kilometersPerHour: kilometersPerHour, decimals: decimals) ?? "Unavailable"
+    /// A retained qualifier is added only when a concrete compact value exists;
+    /// unavailable/malformed evidence never becomes the awkward phrase
+    /// "Last known, unavailable".
+    static func accessibilitySpeed(
+        kilometersPerHour: Double?,
+        decimals: Int = 0,
+        isRetained: Bool = false
+    ) -> String {
+        guard let compactSpeed = compactSpeed(
+            kilometersPerHour: kilometersPerHour,
+            decimals: decimals
+        ) else {
+            return "Unavailable"
+        }
+
+        return isRetained ? "Last known, \(compactSpeed)" : compactSpeed
     }
 
     static func speed(kilometersPerHour: Int?) -> String {
