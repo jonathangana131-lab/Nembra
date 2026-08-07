@@ -102,8 +102,11 @@ public enum RideDurationStatisticsAggregator {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> RideDurationStatisticsSummary {
-        guard referenceDate.timeIntervalSinceReferenceDate.isFinite,
-              isRepresentable(referenceDate, in: calendar) else {
+        guard referenceDate.timeIntervalSinceReferenceDate.isFinite else {
+            throw RideDurationStatisticsError.invalidReferenceDate
+        }
+        if period != .allTime,
+           !isRepresentable(referenceDate, in: calendar) {
             throw RideDurationStatisticsError.invalidReferenceDate
         }
 
