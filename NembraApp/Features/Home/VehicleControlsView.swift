@@ -89,7 +89,14 @@ struct VehicleControlsView: View {
                         }
                     }
                 }
-                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
+                .accessibilityLabel(mode.displayName)
+                .accessibilityValue(vehicle.pendingRideMode == mode ? "Requesting confirmation" : "")
+                .accessibilityAddTraits(vehicle.state.rideMode == mode ? .isSelected : [])
+                .disabled(
+                    !commandsAvailable ||
+                    vehicle.isVehicleCommandPending ||
+                    vehicle.state.rideMode == mode
+                )
             }
         } header: {
             Text("Ride Mode")
@@ -162,6 +169,9 @@ struct VehicleControlsView: View {
                 }
             }
         }
+        .accessibilityLabel(title)
+        .accessibilityValue(pending ? "Requesting confirmation" : "")
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected)
     }
 
