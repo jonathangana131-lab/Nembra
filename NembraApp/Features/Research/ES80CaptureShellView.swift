@@ -112,7 +112,7 @@ struct ES80CaptureShellView: View {
             isPresented: $isExporting,
             document: exportDocument,
             contentType: .json,
-            defaultFilename: "Nembra-ES80-passive-capture"
+            defaultFilename: "Nembra-passive-bluetooth-capture"
         ) { result in
             switch result {
             case .success:
@@ -266,9 +266,10 @@ struct ES80CaptureShellView: View {
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            secondaryButton("Cancel connection", systemImage: "xmark") {
-                controller.cancelActiveConnection()
-            }
+            Text("This research shell does not offer an in-session cancel/retry until the controller exposes its terminal-callback quarantine state. If setup cannot finish, relaunch Nembra Capture rather than starting another attempt inside this evidence session.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
         case .preparingEvidence:
             statePanel(
