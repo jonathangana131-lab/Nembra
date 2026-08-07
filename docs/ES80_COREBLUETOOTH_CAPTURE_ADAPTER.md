@@ -1,256 +1,207 @@
 # ES80 CoreBluetooth Passive Capture Adapter
 
-Status: software adapter + foreground research acquisition + offline correlation/fingerprint analysis. No physical 2025 AOVOPRO ES80 advertisement, GATT, Tuya DP, or command semantic is verified by this document.
+Status: V11 feature-cell software adapter, foreground research acquisition, and offline evidence analysis. No physical 2025 AOVOPRO ES80 advertisement identity, GATT layout, Tuya DP mapping, telemetry scaling/cadence, or application command semantic is verified by this document.
 
-Dependency: the platform-neutral evidence model in PR #11 / `NembraCore`.
+Dependency: the versioned passive evidence model in `NembraCore` (`PassiveBluetoothCapture.swift`, schema v2).
 
-## Architecture boundary
+## Architecture and truth boundary
 
-`NembraCore` remains platform-neutral. Apple CoreBluetooth types live in the separate `Packages/NembraBluetoothCapture` package, which projects platform observations into immutable `PassiveBluetoothCaptureEvent` evidence.
+`NembraCore` stays platform-neutral. Apple CoreBluetooth types live in `Packages/NembraBluetoothCapture`, which projects platform observations into immutable `PassiveBluetoothCaptureEvent` evidence.
 
-The adapter layer must never silently convert:
+The adapter must never silently convert:
 
-- local name into vehicle identity;
-- candidate service UUID into protocol proof;
-- GATT write capability into command authorization;
-- notification bytes into a Tuya packet before framing is verified;
-- stock-app values into decoded DPs;
-- time proximity into field semantics;
-- CoreBluetooth write completion into scooter-state confirmation.
+- a Bluetooth local name or operator `VehicleIdentity` label into physical ES80 identity proof;
+- broad-scan candidate advertisements into selected-target capture evidence;
+- a candidate service UUID into protocol proof;
+- GATT `.write` / `.writeWithoutResponse` properties into command authorization;
+- notification/subscription success into scooter command acknowledgement;
+- raw value bytes into Tuya packets or decoded fields before framing/meaning is verified;
+- stock-app values or time proximity into DP semantics;
+- missing evidence after an acquisition error into proven absence.
 
-## Current 2025 target
+No application characteristic-value write API exists in this package.
 
-The physical Nembra target is the newer 2025-generation AOVOPRO ES80. Its stock app is directly observed to expose live:
+## Candidate catalog versus selected target
 
-- battery percentage;
-- voltage;
-- amps/current;
-- wattage/power.
+The first explicit foreground scan is intentionally broad because the physical ES80 service identity is not yet verified. Discoveries therefore populate an **in-memory candidate catalog only**.
 
-Those values are correlation anchors for capture. Their raw BLE/Tuya source, scale, cadence, signedness, and derivation remain unverified.
+A durable target-labeled capture session does not exist until the operator explicitly chooses one observed peripheral by selecting and connecting it. At target selection:
 
-## Apple CoreBluetooth evidence preserved
+- a new capture session is created for that target (or the existing session is retained when reconnecting the same target);
+- at most that target's latest already-observed advertisement is seeded into the durable timeline;
+- unrelated nearby candidates never enter the target artifact;
+- stock-app markers, analysis, and JSON export are unavailable before a target session exists;
+- choosing a different target starts a different durable session rather than mixing devices.
 
-Current Apple documentation exposes standard advertisement fields for:
+The selected CoreBluetooth peripheral identifier is attribution evidence for the research session. It is not promoted to a permanent hardware identity and is not proof that the peripheral is physically an ES80.
 
-- local name;
-- manufacturer data;
-- service data;
-- advertised service UUIDs;
-- overflow service UUIDs;
-- solicited service UUIDs;
-- Tx power;
-- connectability;
-- discovery RSSI.
+## Connection-attempt and callback attribution
 
-The adapter maps all of those fields without interpreting them.
-
-Apple also exposes discovery of:
-
-- services;
-- included-service relationships;
-- characteristics and characteristic properties;
-- descriptors;
-- characteristic values from reads or subscribed updates.
-
-The capture domain preserves those structures without manufacturing missing values.
-
-Official Apple references accessed 2026-08-06:
-
-- https://developer.apple.com/documentation/corebluetooth/advertisement-data-retrieval-keys
-- https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate
-- https://developer.apple.com/documentation/corebluetooth/cbperipheral/services
-- https://developer.apple.com/documentation/corebluetooth/cbservice/characteristics
-- https://developer.apple.com/documentation/corebluetooth/cbcharacteristic/descriptors
-- https://developer.apple.com/documentation/corebluetooth/cbdescriptor/characteristic
-
-## First fingerprint scan policy
-
-For the first explicit **foreground research** fingerprint, Nembra cannot assume that the physical ES80 uses FD50, A201, 1910, F1/F2, or another family. The package therefore exposes a nil service filter for this research-only scan policy so unknown service evidence is not discarded before it is observed.
-
-Apple recommends scanning for specific service UUIDs in ordinary usage. Once the physical ES80 fingerprint is verified, production/reconnect scanning should use the narrow verified service set instead of a permanent unfiltered scan.
-
-Apple also documents duplicate-filter control. Duplicate callbacks can be useful when measuring real advertisement cadence/change behavior, but Apple warns of battery cost. The adapter therefore makes duplicate advertisement capture explicitly opt-in.
-
-Official Apple references:
-
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/scanforperipherals(withservices:options:)
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerscanoptionallowduplicateskey
-
-## Foreground live acquisition controller
-
-`ForegroundCoreBluetoothCaptureController` is a user-initiated research controller, not the production scooter transport.
-
-It:
-
-- scans broadly in the foreground for the first unknown fingerprint;
-- exposes actually discovered peripheral UUIDs for explicit selection;
-- does not promote local-name similarity to ES80 identity;
-- owns a finite connection cancellation deadline because CoreBluetooth connection attempts do not time out by themselves;
-- discovers all services, included services, characteristics, and descriptor UUIDs after connection;
-- reads only readable characteristics;
-- subscribes only to notify/indicate characteristics;
-- records Bluetooth central-state transitions, disconnects, and service invalidation as continuity interruptions;
-- discards stale GATT object state and rediscovers after invalidation/reconnect boundaries;
-- maintains one MainActor callback queue so asynchronous recorder calls cannot reorder the original CoreBluetooth callback sequence.
-
-No application characteristic-value write API exists in this controller.
-
-Official Apple references:
-
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:)
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/cancelperipheralconnection(_:)
-- https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerdelegate
-- https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate
-
-## Passive characteristic acquisition
-
-The passive phase permits only evidence-gathering operations supported by observed GATT properties:
-
-- discover descriptors for every discovered characteristic;
-- read a characteristic only when it advertises `.read`;
-- subscribe only when it advertises `.notify` or `.indicate`;
-- do not write an application characteristic value.
-
-For characteristics that support both read and notify/indicate, the live controller performs the initial read first and begins subscription after that callback. This prevents a requested initial read from being silently mislabeled as an unsolicited subscribed update.
-
-Apple documents `setNotifyValue` as the way a central configures characteristic notifications/indications, including the Client Characteristic Configuration descriptor behavior. That subscription configuration is transport state rather than a scooter application command, but it is still limited to characteristics that explicitly advertise notify/indicate capability.
-
-Official Apple references:
-
-- https://developer.apple.com/documentation/corebluetooth/cbcharacteristic/properties
-- https://developer.apple.com/documentation/corebluetooth/cbdescriptor/value
-
-## Notification versus indication truth
-
-CoreBluetooth reports changed characteristic values through the same `didUpdateValueFor` delegate callback and does not provide enough delivery metadata there to truthfully label each callback as GATT notification versus indication merely from the callback itself.
-
-PR #11 therefore includes `subscriptionUpdate` as an intentionally ambiguous origin. The adapter uses that classification for subscribed callbacks unless stronger evidence exists; it does not guess.
-
-## Raw packet boundaries remain immutable evidence
-
-Public Tuya research shows that Tuya performs packet reassembly and decryption above GATT. Therefore:
-
-- each CoreBluetooth value callback is captured as the bytes actually delivered;
-- one callback is not assumed to equal one Tuya message;
-- multiple callbacks are not joined in the raw capture artifact;
-- sequence number + monotonic receipt time preserve reconstruction order;
-- any Tuya reassembly/decryption happens later in a derived decoder layer.
-
-See:
-
-- `docs/ES80_TUYA_TRANSPORT_RESEARCH.md`
-- `docs/ES80_TUYA_REVERSE_ENGINEERING_CANDIDATES.md`
-
-## Stock-app correlation is not cross-app packet sniffing
-
-`recordStockAppObservation` inserts a human-observed stock-app marker such as `39.8 V`, `4.2 A`, `167 W`, or `73%` into the same evidence timeline when the research setup legitimately makes that observation available.
-
-The CoreBluetooth controller records traffic delivered to **Nembra's own** central/peripheral session. It is not a raw-air BLE sniffer and must not claim that it intercepted another app's private GATT exchange.
-
-If the stock Tuya app and Nembra cannot both maintain a legitimate connection to the scooter at the same time, correlation must instead use one of the following truthful setups:
-
-- before/after markers with the timing limitation documented;
-- a second device only if simultaneous connection is actually supported and verified;
-- an external BLE sniffer/test setup where legally and technically appropriate;
-- repeated controlled sessions whose state changes are reproducible.
-
-Never fabricate a simultaneous correlation that the physical setup did not provide.
-
-## Offline stock-app correlation windows
-
-`PassiveBluetoothCorrelation` is intentionally semantic-free. It finds raw characteristic-value callbacks within a configurable monotonic-time window around stock-app markers.
+CoreBluetooth callbacks are asynchronous and cancelled attempts may still deliver terminal callbacks. The adapter therefore maintains a pure target/attempt state machine with monotonically increasing attempt generations.
 
 Rules:
 
-- interruption records are hard boundaries;
-- values across a disconnect/Bluetooth transition/observer restart are never suggested as candidates for one marker;
-- candidate payloads stay opaque bytes/hex;
-- candidates are ordered by time proximity, then sequence number;
-- a nearby packet is a **correlation candidate only**, never proof that it carries the displayed voltage/current/power/battery field.
+- only callbacks from the currently active selected peripheral may mutate active acquisition state;
+- explicit cancel/timeout retires that attempt and quarantines the same peripheral until CoreBluetooth delivers either a failed-connect or disconnect terminal callback;
+- a different target may begin while the retired target drains;
+- late callbacks from retired target A cannot clear, contaminate, or enter active target B;
+- switching targets cannot redirect already-queued evidence: each queued event captures the exact recorder/session generation that existed at callback entry;
+- central-manager invalidation clears connection/quarantine objects because CoreBluetooth has invalidated that transport state.
 
-This gives physical research a fast way to narrow which characteristics deserve deeper differential analysis without poisoning raw evidence.
+The pure state machine is unit-tested without fabricating CoreBluetooth objects.
 
-## Offline transport fingerprint candidates
+## Structured connection evidence
 
-`PassiveBluetoothTransportFingerprint` summarizes observed service/characteristic identifiers and compares them against the **publicly researched candidate families** currently documented in the repository:
+Connection lifecycle is captured as parent schema-v2 `.connection` evidence rather than being reduced to free-form interruption strings:
 
-- modern Tuya `FD50` family;
-- corroborated legacy Tuya `A201` + `2B10`/`2B11` family;
-- legacy-documented Tuya `1910` + `2B10`/`2B11` family.
+- `.connected`;
+- `.failedToConnect`, including stable error domain/code when supplied;
+- `.disconnected`, including stable error domain/code and CoreBluetooth platform disconnect timestamp / `isReconnecting` only when the platform supplies them.
 
-The report deliberately supports:
+Nembra's record receipt uptime/date remain separate from platform event metadata. Structured disconnects carry `event.breaksByteContinuity == true`.
 
-- service-only candidate strength;
-- partial characteristic-family strength;
-- expected-data-path strength;
-- multiple simultaneous candidate matches;
-- no match at all.
+Connection evidence alone never establishes a GATT service/characteristic path.
 
-Even its strongest result means “this capture resembles the researched family,” not “the ES80 protocol is verified.” Unknown services remain valid evidence and must not be forced into a candidate.
+## Passive GATT acquisition
 
-## Recorder clock model
+The passive phase permits only evidence-gathering operations supported by observed characteristic properties:
 
-`PassiveCoreBluetoothCaptureRecorder` assigns strict monotonically increasing sequence numbers. It stores:
+- discover descriptors for every discovered characteristic;
+- read only characteristics advertising `.read`;
+- subscribe only to characteristics advertising `.notify` or `.indicate`;
+- do not perform application characteristic-value writes.
 
-- process-local monotonic uptime nanoseconds for ordering;
-- wall-clock `Date` only for correlation with the stock app / user observation.
+For a characteristic that supports both read and subscription, the controller performs the initial read first and requests subscription after the read callback. This avoids conflating an explicitly requested read response with a subscribed update.
 
-Equal monotonic timestamps are allowed because multiple callbacks can fall in one timer tick; sequence number is the strict tiebreaker. A monotonic timestamp moving backwards is rejected by the core capture model.
+CoreBluetooth notification configuration may update the GATT Client Characteristic Configuration descriptor internally. That is transport subscription state, not an application scooter command.
+
+## Read and subscription provenance
+
+CoreBluetooth delivers characteristic values through one callback that does not itself say “this was the read you requested.” The adapter therefore tracks outstanding operations by selected peripheral + service UUID + characteristic UUID.
+
+A callback is classified as `.readResponse` only when an outstanding read for that exact path is consumed. Otherwise, if CoreBluetooth reports the characteristic is notifying, the value is classified as `.subscriptionUpdate`. A callback with neither tracked-read provenance nor notifying state is not guessed into a read; capture fails closed as incomplete.
+
+Subscription-state callbacks are recorded as schema-v2 `.subscription` evidence with:
+
+- peripheral/service/characteristic identifiers;
+- `requestedEnabled` only when the adapter can prove which tracked request the callback answers;
+- the resulting `isNotifying` state;
+- stable platform error domain/code when supplied.
+
+A failed subscription callback is preserved as structured evidence first, then the capture fails closed because subsequent missing values must not be presented as a complete observation.
+
+## Fail-closed acquisition completeness
+
+A service, included-service, characteristic, descriptor, read/value, or subscription acquisition failure can make the observed topology/value stream incomplete. The controller therefore treats such failures as capture-fatal for the current target session:
+
+- scanning/acquisition is stopped;
+- the controller exposes `captureFailed` and a diagnostic;
+- snapshot/export rejects the failed capture;
+- missing callbacks after the error are never interpreted as proof that a service/value does not exist.
+
+A future product requirement for exportable partial captures would require an explicit versioned completeness/error model. It must not be inferred from diagnostics or absent events.
+
+## Ordering and continuity
+
+`PassiveCoreBluetoothCaptureRecorder` assigns strict increasing sequence numbers and records `DispatchTime.now().uptimeNanoseconds` as the monotonic receipt clock. That uptime is system-boot-relative, not a wall clock. `Date` is correlation metadata only and never repairs ordering.
+
+Equal monotonic timestamps are allowed; sequence number is the strict tiebreaker. Backward uptime is rejected by the parent capture model.
+
+Offline analyzers use the parent `event.breaksByteContinuity` contract:
+
+- generic interruption events split continuity;
+- structured disconnect events split continuity;
+- correlation windows never cross those boundaries;
+- callback-rate statistics never average an interval across those boundaries.
+
+## Transport fingerprint analysis
+
+`PassiveBluetoothTransportFingerprint` compares observed identifiers against publicly researched candidate families already documented in the repository, currently including modern `FD50` and legacy `A201` / `1910` families.
+
+The report remains deliberately non-authoritative:
+
+- advertisement/service evidence can produce service-level candidate strength when explicitly scoped;
+- discovered characteristic/descriptor/value evidence may contribute exact GATT paths;
+- schema-v2 subscription evidence may contribute only the exact service/characteristic path it names;
+- connection-only evidence cannot create GATT topology;
+- multiple families may remain candidates simultaneously;
+- no match is a valid result.
+
+Even the strongest candidate means “resembles the researched transport family,” not “the ES80 protocol is verified.”
+
+## Stock-app correlation
+
+A stock-app marker is a human-observed reference such as battery percentage, voltage, current, or power recorded at a known point in the selected target's timeline. It remains correlation evidence only.
+
+Nembra records traffic delivered to Nembra's own CoreBluetooth session. It is not a raw-air BLE sniffer and does not claim to intercept another app's private exchange. If simultaneous legitimate observation is not possible, use truthful before/after or repeated controlled sessions and document the limitation.
+
+## Raw packet boundary
+
+Each CoreBluetooth value callback is stored as the bytes actually delivered. The raw capture does not assume:
+
+- one callback equals one Tuya message;
+- adjacent callbacks should be concatenated;
+- encryption/framing boundaries;
+- field identity, scale, units, or signedness.
+
+Any reassembly/decryption/field hypothesis belongs in a derived layer and must remain traceable to immutable raw evidence.
+
+## Research UI boundary
+
+`ES80PassiveCaptureResearchView` is reusable research UI and is not production scooter-control wiring.
+
+It shows:
+
+- central and connection state;
+- the currently selected research target;
+- broad discovered candidates;
+- target-gated stock-app markers;
+- target-gated evidence analysis;
+- target-gated versioned JSON export;
+- fail-closed capture diagnostics.
+
+Changing target clears stale analysis/export presentation so evidence from A is not presented as B.
 
 ## Export and secrets
 
-Capture JSON uses PR #11's versioned `PassiveBluetoothCaptureJSON` codec.
+Capture JSON uses the parent versioned `PassiveBluetoothCaptureJSON` envelope. Do not export:
 
-Do not export:
-
-- Tuya local keys;
-- auth keys;
-- session keys;
+- Tuya local/auth/session keys;
 - account tokens;
 - unrelated device credentials.
 
-If a later legitimate decoder requires a secret from the user's own bound device, secret storage/export policy must be designed separately. Raw research evidence should be shareable without leaking credentials by default.
+Secret storage/export policy, if ever required for a legitimate future decoder, is a separate design problem.
 
-## Current package scope
+## Current feature-cell scope
 
-Implemented now:
+Implemented in the V11 cell:
 
-- CoreBluetooth advertisement projection;
-- service projection;
-- included-service topology projection;
-- characteristic UUID/property projection;
-- descriptor UUID projection;
-- raw characteristic value projection;
-- strict ordered recorder;
-- versioned JSON export;
-- passive acquisition policy;
-- foreground research scan/connect/discover/read/subscribe controller;
-- explicit connection timeout/cancellation ownership;
-- stock-app marker capture;
-- interruption-aware offline raw-value correlation windows;
-- non-authoritative Tuya transport fingerprint report;
-- dedicated Xcode 27 package CI and deterministic tests.
+- target-scoped advertisement, connection, service, included-service, characteristic, descriptor, subscription, value, marker, and continuity evidence;
+- selected-target / attempt-generation / read-subscription provenance state;
+- fail-closed incomplete acquisition;
+- strict ordered recorder and versioned JSON export;
+- interruption/disconnect-aware correlation and value-stream statistics;
+- conservative non-authoritative transport fingerprinting;
+- deterministic pure tests for attempt quarantine, stale target isolation, provenance, v2 continuity, and fingerprint rules.
 
-Not implemented/claimed yet:
+Not implemented/claimed:
 
 - production app wiring;
-- polished physical capture UI;
 - background reconnect;
 - cross-app BLE sniffing;
 - Tuya pairing/decryption;
 - DP decoding;
-- any motorized-hardware application write;
+- any application characteristic-value write or motorized command path;
 - physical ES80 validation.
 
 ## Acceptance boundary
 
-This package can be accepted as a software foundation when:
+The package is locally acceptable only when:
 
-1. its exact-head package tests pass on the Xcode 27 runner;
-2. it is reconciled with the final accepted PR #11 evidence model;
-3. its diff remains isolated from active app/location/UI workers;
-4. no application write API or inferred ES80 protocol mapping appears in the adapter;
-5. offline correlation/fingerprint output remains explicitly candidate evidence rather than decoded truth.
+1. the coherent `Packages/NembraBluetoothCapture` head compiles and all focused SwiftPM tests pass on the Xcode 27/macOS runner;
+2. independent review confirms target attribution, completeness, provenance, and no-write truth boundaries;
+3. the feature cell integration branch contains the reviewed parent schema v2 and the child package without unrelated product work;
+4. any package-specific CI workflow is reviewed separately as control-plane code rather than assumed from historical #22;
+5. the final release train proves combined source/build compatibility under Xcode 27 / iPhone 12 / iOS 27 where applicable.
 
-Physical hardware verification remains a later evidence gate, not something Simulator/package tests can prove.
+Physical hardware verification remains a later evidence gate; Simulator/package tests cannot close it.
