@@ -15,13 +15,20 @@ Nembra therefore needs a separate freshness/availability layer after:
 
 Freshness must not be hidden inside any of those earlier layers because age does not change what the evidence *is*.
 
-## Construction boundary
+## Construction boundary follows both Nembra build graphs
 
-`BatteryEvidenceAvailabilitySnapshot` is a public read-only output type, but its raw dictionary initializer is module-internal.
+`BatteryEvidenceAvailabilitySnapshot` is a public read-only output type, but production raw-dictionary construction is **file-scoped** to the availability evaluator source.
 
-External code cannot assemble a fake aggregate containing arbitrary `.fresh` cases and then pass that aggregate deeper into the trusted live-truth path. Production aggregate construction flows through `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`, which evaluates every field against process-local uptime and the injected policy.
+This is intentionally stronger than module-internal access. Nembra's current iOS project may manually compile selected package-domain sources directly into the `Nembra` app target, where plain `internal` declarations would become callable by unrelated app code. A raw availability initializer in that composition would let a caller hand-label arbitrary observations `.fresh` and bypass uptime/policy evaluation.
 
-The field-level `availability(for:atUptimeNanoseconds:policy:)` API remains public because it performs that actual calculation itself rather than accepting a preclassified freshness state.
+The source therefore has two explicit paths:
+
+- direct app-source compilation: raw aggregate construction remains file-scoped and production snapshots come only from `BatteryEvidenceAvailabilityEvaluator.snapshot(...)`;
+- real Swift-package compilation (`SWIFT_PACKAGE`): an internal fixture initializer remains available to NembraCore/dependent package tests, while external package clients remain blocked.
+
+A direct same-module compile probe without `SWIFT_PACKAGE` fails to construct the raw availability aggregate; the package fixture spelling compiles with `SWIFT_PACKAGE`. This is supplemental software evidence, not hosted acceptance or physical ES80 proof.
+
+The field-level `availability(for:atUptimeNanoseconds:policy:)` API remains public because it performs the actual uptime/policy calculation rather than accepting a preclassified freshness result. Production selection of the injected policy is a separate configuration responsibility; this slice does not invent physical ES80 thresholds.
 
 ## No guessed ES80 thresholds
 
