@@ -1,0 +1,38 @@
+name: Ride Statistics Period Isolation Package Smoke
+
+on:
+  push:
+    branches:
+      - qa/ride-stats-period-isolation/chat-v5q7n-5bab324
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent and workflow-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_sha="5bab324c172d44328b63045aee5a2611e1efab0b"
+          test "$(git rev-parse HEAD^)" = "$product_sha"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = ".github/workflows/ride-stats-period-isolation-package-smoke.yml"
+
+      - name: Run full NembraCore suite with Swift 6.2 warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/Packages/NembraCore \
+            swift:6.2 \
+            bash -lc 'swift --version && swift test -Xswiftc -warnings-as-errors'
