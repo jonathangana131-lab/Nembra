@@ -54,7 +54,7 @@ struct PeakSpeedEvidenceTests {
         #expect(evidence.acceptedSampleCount == 1)
         #expect(evidence.qualityRejectedSampleCount == 0)
         #expect(evidence.knownInterruptionCount == 0)
-        #expect(evidence.continuity == .uninterruptedAcceptedObservations)
+        #expect(evidence.continuity == .noRecordedSelectedSourceEvidenceLoss)
     }
 
     @Test("higher speed updates peak while lower and equal samples retain earliest maximum")
@@ -92,7 +92,7 @@ struct PeakSpeedEvidenceTests {
         #expect(evidence.peak.metersPerSecond == 4)
         #expect(evidence.acceptedSampleCount == 1)
         #expect(evidence.qualityRejectedSampleCount == 0)
-        #expect(evidence.continuity == .uninterruptedAcceptedObservations)
+        #expect(evidence.continuity == .noRecordedSelectedSourceEvidenceLoss)
     }
 
     @Test("motion-assisted estimates never become peak measurements")
@@ -143,7 +143,7 @@ struct PeakSpeedEvidenceTests {
         let evidence = try #require(accumulator.evidence)
         #expect(evidence.peak.metersPerSecond == 8)
         #expect(evidence.qualityRejectedSampleCount == 2)
-        #expect(evidence.continuity == .partialAcceptedObservations)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
     @Test("quality-rejected selected-source observations still advance ordering evidence")
@@ -181,7 +181,7 @@ struct PeakSpeedEvidenceTests {
         #expect(evidence.peak.metersPerSecond == 4)
         #expect(evidence.acceptedSampleCount == 1)
         #expect(evidence.qualityRejectedSampleCount == 2)
-        #expect(evidence.continuity == .partialAcceptedObservations)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
     @Test("non-increasing selected-source timestamps are rejected transactionally")
@@ -200,7 +200,7 @@ struct PeakSpeedEvidenceTests {
         #expect(evidence.peak.metersPerSecond == 5)
         #expect(evidence.acceptedSampleCount == 2)
         #expect(evidence.qualityRejectedSampleCount == 1)
-        #expect(evidence.continuity == .partialAcceptedObservations)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
     @Test("known observation interruption preserves measured peak but marks continuity partial")
@@ -215,7 +215,7 @@ struct PeakSpeedEvidenceTests {
         let evidence = try #require(accumulator.evidence)
         #expect(evidence.peak.metersPerSecond == 6)
         #expect(evidence.knownInterruptionCount == 1)
-        #expect(evidence.continuity == .partialAcceptedObservations)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
     @Test("reset removes prior peak and continuity history")
@@ -234,6 +234,6 @@ struct PeakSpeedEvidenceTests {
         #expect(fresh.peak.metersPerSecond == 2)
         #expect(fresh.qualityRejectedSampleCount == 0)
         #expect(fresh.knownInterruptionCount == 0)
-        #expect(fresh.continuity == .uninterruptedAcceptedObservations)
+        #expect(fresh.continuity == .noRecordedSelectedSourceEvidenceLoss)
     }
 }
