@@ -51,7 +51,7 @@ public enum TuyaCandidateTranscriptAnalyzer {
         var boundContinuityGeneration: UInt64?
         var startObservationIndex: Int?
         var lastAcceptedObservationIndex: Int?
-        var lastSeenReceiptUptimeNanoseconds: UInt64?
+        var receiptChronology = TuyaCandidateTranscriptReceiptChronology()
 
         for (index, observation) in observations.enumerated() {
             if let currentStreamIdentity = boundStreamIdentity,
@@ -88,18 +88,21 @@ public enum TuyaCandidateTranscriptAnalyzer {
                 }
             }
 
-            // Receipt uptime is process-local transcript ordering evidence, not
-            // candidate-local framing state. Preserve the newest observation seen
-            // even when its bytes are rejected so a later delayed observation cannot
-            // become a fresh candidate merely because the reassembler was reset.
-            if let lastSeenReceiptUptimeNanoseconds,
-               observation.receiptUptimeNanoseconds <= lastSeenReceiptUptimeNanoseconds {
+            // Real stream/generation boundaries above are stronger evidence and
+            // are preserved before testing the incoming callback's transcript-wide
+            // receipt chronology. Chronology itself outlives candidate resets,
+            // completions, failures, restarts, and real boundaries so a delayed or
+            // replayed callback cannot become fresh simply because framing state
+            // restarted.
+            do {
+                try receiptChronology.admit(observation)
+            } catch let error as TuyaCandidateOfflineAnalysisError {
                 events.append(
                     .rejectedCandidate(
                         startObservationIndex: startObservationIndex ?? index,
                         lastAcceptedObservationIndex: lastAcceptedObservationIndex,
                         failingObservationIndex: index,
-                        error: .nonMonotonicReceiptUptime
+                        error: error
                     )
                 )
                 reassembler = nil
@@ -110,8 +113,10 @@ public enum TuyaCandidateTranscriptAnalyzer {
                     lastAcceptedObservationIndex: &lastAcceptedObservationIndex
                 )
                 continue
+            } catch {
+                events.append(.unexpectedAnalyzerFailure(failingObservationIndex: index))
+                return events
             }
-            lastSeenReceiptUptimeNanoseconds = observation.receiptUptimeNanoseconds
 
             // Once transcript chronology has admitted this exact observation, a
             // packet-zero prefix is an explicit new-message marker under this
