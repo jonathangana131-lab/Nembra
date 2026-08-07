@@ -231,9 +231,10 @@ struct DashboardSpeedInstrumentView: View {
     let modePersonality: DashboardModePersonality
 
     var body: some View {
+        let isRetained = vehicle.state.dataAvailability == .retained
         let fallbackConfirmedKilometersPerHour = Self.confirmedFallbackForPresentation(
             kilometersPerHour: vehicle.state.speedKilometersPerHour,
-            isRetained: vehicle.state.dataAvailability == .retained,
+            isRetained: isRetained,
             isConnected: vehicle.state.connection == .connected,
             permitsLiveConfirmedFallback: model.permitsLiveConfirmedFallback
         )
@@ -256,15 +257,18 @@ struct DashboardSpeedInstrumentView: View {
             .accessibilityLabel("Speed")
             // VoiceOver stays anchored to the newest authoritative/raw speed,
             // never a 60 Hz visual interpolation midpoint or malformed value.
+            // Retained values carry their last-known qualifier on the speed
+            // element itself so focus order cannot make cached evidence sound live.
             .accessibilityValue(
                 Self.accessibilitySpeedValue(
-                    kilometersPerHour: authoritativeKilometersPerHour
+                    kilometersPerHour: authoritativeKilometersPerHour,
+                    isRetained: isRetained
                 )
             )
             .accessibilityIdentifier("dashboard.speed")
 
             Group {
-                if vehicle.state.dataAvailability == .retained {
+                if isRetained {
                     Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                 } else if vehicle.state.connection == .connected {
                     Text(Self.liveSpeedStatusText(
@@ -357,11 +361,15 @@ struct DashboardSpeedInstrumentView: View {
         return kilometersPerHour
     }
 
-    static func accessibilitySpeedValue(kilometersPerHour: Double?) -> String {
+    static func accessibilitySpeedValue(
+        kilometersPerHour: Double?,
+        isRetained: Bool
+    ) -> String {
         guard let kilometersPerHour = validatedKilometersPerHour(kilometersPerHour) else {
             return "Unavailable"
         }
-        return VehicleDisplayFormatting.speed(kilometersPerHour: kilometersPerHour)
+        let formattedSpeed = VehicleDisplayFormatting.speed(kilometersPerHour: kilometersPerHour)
+        return isRetained ? "Last known, \(formattedSpeed)" : formattedSpeed
     }
 
     static func liveSpeedStatusText(kilometersPerHour: Double?) -> String {
