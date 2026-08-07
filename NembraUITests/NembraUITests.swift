@@ -21,7 +21,13 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertTrue(light.label.contains("Off"))
         light.tap()
-        XCTAssertTrue(waitForLabelFragment("On", element: light))
+        let confirmedLightOn = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Light", "On")
+        ).firstMatch
+        XCTAssertTrue(
+            confirmedLightOn.waitForExistence(timeout: 3),
+            "The light control must expose the scooter-confirmed On state after acknowledgement."
+        )
 
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
