@@ -147,7 +147,8 @@ public struct NavigationGuidanceProgressTracker: Sendable {
 
         let currentStep = route.steps[observation.stepIndex]
         guard observation.distanceRemainingOnStepMeters <= currentStep.distanceMeters,
-              observation.distanceRemainingOnRouteMeters <= route.distanceMeters else {
+              observation.distanceRemainingOnRouteMeters <= route.distanceMeters,
+              observation.distanceRemainingOnRouteMeters >= observation.distanceRemainingOnStepMeters else {
             throw NavigationGuidanceProgressError.invalidObservation
         }
 
