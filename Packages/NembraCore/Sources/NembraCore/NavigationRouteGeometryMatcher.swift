@@ -72,8 +72,12 @@ public struct NavigationRouteGeometryMatch: Equatable, Sendable {
 /// The matcher performs no Core Location quality screening itself. It projects
 /// the accepted coordinate onto provider route/step geometry, derives provider-
 /// scaled remaining-distance estimates, and fails progress confidence closed for
-/// excessive route distance, competing steps, or multiple near-equal positions
-/// separated far along one polyline (for example a self-intersection). Deviation
+/// excessive route distance, competing steps, multiple near-equal positions
+/// separated far along one polyline (for example a self-intersection), or a
+/// contradiction between independently projected step and whole-route remainder.
+/// When that last contradiction occurs, whole-route remainder is conservatively
+/// raised to the current-step remainder so downstream guidance remains structurally
+/// coherent while the progress assignment itself stays unavailable. Deviation
 /// confidence remains separate so being too far away for trustworthy progress does
 /// not erase strong off-route-distance evidence. All numeric thresholds are injected
 /// so Simulator math cannot become an outdoor production claim.
@@ -128,6 +132,17 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             stepAmbiguous = false
         }
 
+        let stepRemaining = Self.scaledRemaining(
+            providerDistanceMeters: step.distanceMeters,
+            progressFraction: bestStep.1.progressFraction
+        )
+        let projectedRouteRemaining = Self.scaledRemaining(
+            providerDistanceMeters: route.distanceMeters,
+            progressFraction: routeProjection.progressFraction
+        )
+        let remainingDistanceConsistent = stepRemaining <= projectedRouteRemaining
+        let coherentRouteRemaining = max(projectedRouteRemaining, stepRemaining)
+
         let routeProgressUsable = routeProjection.hasDirectionalExtent || route.distanceMeters == 0
         let stepProgressUsable = bestStep.1.hasDirectionalExtent || step.distanceMeters == 0
         let confident = routeProjection.distanceMeters <= policy.maximumRouteDistanceMeters
@@ -137,20 +152,15 @@ public struct NavigationRouteGeometryMatcher: Sendable {
             && !bestStep.1.hasAmbiguousProgressPosition
             && routeProgressUsable
             && stepProgressUsable
+            && remainingDistanceConsistent
         let deviationConfident = routeProgressUsable
 
         return NavigationRouteGeometryMatch(
             receivedAtUptimeNanoseconds: location.sample.receivedAtUptimeNanoseconds,
             stepIndex: bestStep.0,
             distanceFromRouteMeters: routeProjection.distanceMeters,
-            distanceRemainingOnStepMeters: Self.scaledRemaining(
-                providerDistanceMeters: step.distanceMeters,
-                progressFraction: bestStep.1.progressFraction
-            ),
-            distanceRemainingOnRouteMeters: Self.scaledRemaining(
-                providerDistanceMeters: route.distanceMeters,
-                progressFraction: routeProjection.progressFraction
-            ),
+            distanceRemainingOnStepMeters: stepRemaining,
+            distanceRemainingOnRouteMeters: coherentRouteRemaining,
             isProgressAssignmentConfident: confident,
             isDeviationAssessmentConfident: deviationConfident,
             startsNewRouteSegment: location.startsNewRouteSegment
