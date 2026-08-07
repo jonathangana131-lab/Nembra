@@ -125,6 +125,26 @@ struct AdaptiveBatteryRangePrimaryPresentationTests {
         #expect(decision == .unavailable(.retainedVehicleDataRequiresQualifier))
     }
 
+    @Test("retained state without a range reports missing estimate rather than a fake qualifier need")
+    func retainedMissingEstimateIsNoEstimate() {
+        let decision = policy.resolve(
+            estimate: nil,
+            dataAvailability: .retained
+        )
+
+        #expect(decision == .unavailable(.noEstimate))
+    }
+
+    @Test("retained state cannot hide a malformed presented range")
+    func retainedInvalidRangeIsInvalid() {
+        let decision = policy.resolve(
+            estimate: estimate(presentedRemainingMeters: .infinity, confidence: .high),
+            dataAvailability: .retained
+        )
+
+        #expect(decision == .unavailable(.invalidPresentedRange))
+    }
+
     @Test("unavailable vehicle data dominates a stale estimate")
     func unavailableVehicleDataIsWithheld() {
         let decision = policy.resolve(
