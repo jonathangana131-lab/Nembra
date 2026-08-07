@@ -13,16 +13,19 @@ struct RideDistanceFinalCoverageTruthTests {
         )
     }
 
-    private func evidence(gpsCoverage: RideDistanceCoverage) throws -> RideDistanceEvidence {
+    private func evidence(
+        gpsCoverage: RideDistanceCoverage,
+        odometerCoverage: RideDistanceCoverage = .complete
+    ) throws -> RideDistanceEvidence {
         try RideDistanceEvidence(
             startingOdometerKilometers: 100,
             endingOdometerKilometers: 104.6,
-            odometerCoverage: .complete,
+            odometerCoverage: odometerCoverage,
             gpsRouteDistanceMeters: 4_570,
             gpsRouteCoverage: gpsCoverage,
             liveIntegratedDistanceMeters: nil,
             liveIntegratedCoverage: .unknown,
-            transportGapOccurred: gpsCoverage == .partial
+            transportGapOccurred: gpsCoverage == .partial || odometerCoverage == .partial
         )
     }
 
@@ -57,6 +60,22 @@ struct RideDistanceFinalCoverageTruthTests {
         #expect(result.confidence == .corroborated)
         #expect(result.status == .coverageIncomplete)
         #expect(result.comparisons.first?.coverage == .complete)
+        #expect(result.comparisons.first?.disposition == .agrees)
+    }
+
+    @Test("partial corroboration cannot downgrade a selected complete source")
+    func completeSelectedSourceRemainsComplete() throws {
+        let result = RideDistanceReconciler.reconcile(
+            evidence: try evidence(gpsCoverage: .complete, odometerCoverage: .partial),
+            policy: try policy()
+        )
+
+        #expect(result.finalSource == .gpsRoute)
+        #expect(result.finalDistanceMeters == 4_570)
+        #expect(result.finalSourceCoverage == .complete)
+        #expect(result.confidence == .corroborated)
+        #expect(result.status == .complete)
+        #expect(result.comparisons.first?.coverage == .partial)
         #expect(result.comparisons.first?.disposition == .agrees)
     }
 }
