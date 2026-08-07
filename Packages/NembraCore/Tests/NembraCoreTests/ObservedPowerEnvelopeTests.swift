@@ -39,9 +39,11 @@ struct ObservedPowerEnvelopeTests {
         watts: Double,
         uptime: UInt64,
         sequence: UInt64? = nil,
+        scope: ObservedPowerEnvelopeScope? = nil,
         eligibility: ObservedPowerEnvelopeLearningEligibility = .eligibleForEnvelopeLearning
     ) -> ObservedPowerEnvelopeObservation {
         .verifiedVehicleMeasurement(
+            scope: scope ?? (try! physicalScope()),
             powerWatts: watts,
             receiptSequenceNumber: sequence ?? uptime,
             observedAtUptimeNanoseconds: uptime,
@@ -118,6 +120,7 @@ struct ObservedPowerEnvelopeTests {
 
         for index in 1...10 {
             _ = learner.record(.simulatorQA(
+                scope: try simulatorScope(),
                 powerWatts: 600,
                 receiptSequenceNumber: UInt64(index),
                 observedAtUptimeNanoseconds: UInt64(index),
@@ -135,6 +138,7 @@ struct ObservedPowerEnvelopeTests {
         var learner = try physicalLearner()
 
         #expect(learner.record(.simulatorQA(
+            scope: try physicalScope(),
             powerWatts: 900,
             receiptSequenceNumber: 1,
             observedAtUptimeNanoseconds: 100,
@@ -145,6 +149,73 @@ struct ObservedPowerEnvelopeTests {
         )))
 
         #expect(learner.record(physicalObservation(watts: 500, uptime: 100)) == .acceptedLearningSample)
+    }
+
+    @Test("physical observation from another scooter is rejected before chronology")
+    func crossVehicleScopeMismatchFailsBeforeChronology() throws {
+        let expectedScope = try physicalScope()
+        let otherScope = try ObservedPowerEnvelopeScope.verifiedVehicleIdentity(
+            vehicleIdentityKey: "physical-es80-other"
+        )
+        var learner = try ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
+            scope: expectedScope,
+            policy: policy()
+        )
+
+        #expect(learner.record(physicalObservation(
+            watts: 900,
+            uptime: 500,
+            sequence: 50,
+            scope: otherScope
+        )) == .rejected(.scopeMismatch(expected: expectedScope, actual: otherScope)))
+
+        // Mismatch must not consume the learner's ordering state.
+        #expect(learner.record(physicalObservation(
+            watts: 500,
+            uptime: 100,
+            sequence: 1,
+            scope: expectedScope
+        )) == .acceptedLearningSample)
+    }
+
+    @Test("confirmed mode mismatch is rejected even for the same vehicle identity")
+    func crossModeScopeMismatchFailsBeforeLearning() throws {
+        let sport = try physicalScope(mode: "sport")
+        let eco = try physicalScope(mode: "eco")
+        var learner = try ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
+            scope: sport,
+            policy: policy()
+        )
+
+        #expect(learner.record(physicalObservation(
+            watts: 700,
+            uptime: 1,
+            sequence: 1,
+            scope: eco
+        )) == .rejected(.scopeMismatch(expected: sport, actual: eco)))
+        #expect(learner.calibration == nil)
+    }
+
+    @Test("simulator observations obey the same exact scope attribution")
+    func simulatorScopeMismatchFailsClosed() throws {
+        let expectedScope = try simulatorScope(mode: "sport")
+        let otherScope = try ObservedPowerEnvelopeScope.simulatorQA(
+            vehicleIdentityKey: expectedScope.vehicleIdentityKey,
+            confirmedModeKey: "eco"
+        )
+        var learner = try ObservedPowerEnvelopeLearner.simulatorQA(
+            scope: expectedScope,
+            policy: policy()
+        )
+
+        #expect(learner.record(.simulatorQA(
+            scope: otherScope,
+            powerWatts: 600,
+            receiptSequenceNumber: 10,
+            observedAtUptimeNanoseconds: 10,
+            learningEligibility: .eligibleForEnvelopeLearning
+        )) == .rejected(.scopeMismatch(expected: expectedScope, actual: otherScope)))
+        #expect(learner.calibration == nil)
     }
 
     @Test("measurement-only physical evidence can never establish calibration")
