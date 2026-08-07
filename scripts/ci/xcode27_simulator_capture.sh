@@ -10,8 +10,11 @@ RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 ACCESSIBILITY_CAPTURE="${NEMBRA_ACCESSIBILITY_CAPTURE:-0}"
+ACCESSIBILITY_CAPTURE_MANIFEST="$ARTIFACTS_DIR/accessibility-captures.tsv"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf "$RESULT_BUNDLE"
+printf 'scenario\trequested_appearance\tvariant\tobserved_appearance\tincrease_contrast\tcontent_size\tscreenshot\n' \
+  > "$ACCESSIBILITY_CAPTURE_MANIFEST"
 
 case "$ACCESSIBILITY_CAPTURE" in
   0|1) ;;
@@ -217,7 +220,7 @@ capture_state() {
     xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
   fi
 
-  local launch_output pid screenshot_path
+  local launch_output pid screenshot_path observed_appearance observed_contrast observed_content_size expected_content_size
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
@@ -235,11 +238,47 @@ capture_state() {
     exit 6
   fi
 
+  if [[ -n "$variant" ]]; then
+    observed_appearance="$(read_simctl_ui_setting appearance || true)"
+    observed_contrast="$(read_simctl_ui_setting increase_contrast || true)"
+    observed_content_size="$(read_simctl_ui_setting content_size || true)"
+    if [[ "$observed_appearance" != "$appearance" ]]; then
+      echo "Appearance changed before ${artifact_key} capture: expected $appearance, got ${observed_appearance:-<empty>}." >&2
+      exit 8
+    fi
+    case "$variant" in
+      increase-contrast)
+        if [[ "$observed_contrast" != "enabled" ]]; then
+          echo "Increase Contrast changed before ${artifact_key} capture: got ${observed_contrast:-<empty>}." >&2
+          exit 8
+        fi
+        ;;
+      content-size-*)
+        expected_content_size="${variant#content-size-}"
+        if [[ "$observed_content_size" != "$expected_content_size" ]]; then
+          echo "Content size changed before ${artifact_key} capture: expected $expected_content_size, got ${observed_content_size:-<empty>}." >&2
+          exit 8
+        fi
+        ;;
+      *)
+        echo "Unknown accessibility capture variant: $variant" >&2
+        exit 8
+        ;;
+    esac
+  fi
+
   screenshot_path="$ARTIFACTS_DIR/screenshots/${artifact_key}.png"
   xcrun simctl io "$UDID" screenshot "$screenshot_path"
   if [[ ! -s "$screenshot_path" ]]; then
     echo "Simulator screenshot was not created for ${artifact_key}." >&2
     exit 7
+  fi
+
+  if [[ -n "$variant" ]]; then
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$state" "$appearance" "$variant" "$observed_appearance" \
+      "${observed_contrast:-<empty>}" "${observed_content_size:-<empty>}" "$(basename "$screenshot_path")" \
+      >> "$ACCESSIBILITY_CAPTURE_MANIFEST"
   fi
 }
 
