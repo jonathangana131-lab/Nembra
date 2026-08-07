@@ -100,27 +100,20 @@ public struct AccelerationRunResult: Equatable, Sendable {
     /// prove that the scooter never reached target earlier between samples.
     public let targetTransitionObservationWindow: AccelerationTimingWindow
 
-    /// Conservative first-reach envelope on the receive-observation timeline.
+    /// Monotonic receive-clock interval from the last accepted stationary packet
+    /// receipt to the first accepted at/above-target packet receipt.
     ///
-    /// The lower bound remains zero because accepted below-target samples cannot
-    /// rule out an earlier unsampled target excursion without a separately
-    /// validated physical dynamics/source-timestamp contract.
-    public let firstReachReceiveClockLowerBoundSeconds: Double
-
-    /// Span from the last stationary receive observation to the first accepted
-    /// target-reaching receive observation. This is an observation-clock ceiling,
-    /// not a physical acceleration-time upper bound when delivery latency varies.
-    public let firstReachReceiveClockUpperBoundSeconds: Double
+    /// This is a directly observed app-timeline interval only. It is deliberately
+    /// not named or modeled as first-reach time, acceleration time, or a physical
+    /// upper/lower bound because unsampled excursions and variable delivery latency
+    /// prevent those stronger claims without additional validated evidence.
+    public let stationaryToTargetObservationElapsedSeconds: Double
 
     /// Count of accepted measurements actually retained by the final timing
     /// trace: the last stationary launch anchor plus accepted post-launch samples.
     /// Earlier stationary samples that were superseded by a newer anchor are not
     /// represented in this count.
     public let timingEvidenceSampleCount: Int
-
-    public var firstReachReceiveClockEnvelopeWidthSeconds: Double {
-        max(0, firstReachReceiveClockUpperBoundSeconds - firstReachReceiveClockLowerBoundSeconds)
-    }
 }
 
 public enum AccelerationRunInterruption: Equatable, Sendable {
@@ -398,12 +391,7 @@ public struct AccelerationRunEvaluator: Sendable {
             return
         }
 
-        // Accepted below-target samples cannot prove that the physical scooter did
-        // not briefly reach target and fall back between callbacks. Therefore the
-        // truthful first-reach lower bound on this receive-observation basis is 0.
-        // The receive span is retained as a conservative observation-clock ceiling,
-        // not promoted into a physical acceleration-time upper bound.
-        let upperBoundNanoseconds = targetTransitionObservationWindow.latestUptimeNanoseconds
+        let observationElapsedNanoseconds = targetTransitionObservationWindow.latestUptimeNanoseconds
             - launchObservationWindow.earliestUptimeNanoseconds
 
         state = .completed(AccelerationRunResult(
@@ -412,8 +400,7 @@ public struct AccelerationRunEvaluator: Sendable {
             timingBasis: .receiveObservationUptime,
             launchObservationWindow: launchObservationWindow,
             targetTransitionObservationWindow: targetTransitionObservationWindow,
-            firstReachReceiveClockLowerBoundSeconds: 0,
-            firstReachReceiveClockUpperBoundSeconds: Double(upperBoundNanoseconds) / 1_000_000_000,
+            stationaryToTargetObservationElapsedSeconds: Double(observationElapsedNanoseconds) / 1_000_000_000,
             timingEvidenceSampleCount: timingEvidenceSampleCount
         ))
     }
