@@ -126,6 +126,38 @@ struct RideHistoryDurationAttachmentTests {
         }
     }
 
+    @Test("base history without a duration attachment is ordinary unavailability")
+    func missingDurationAttachmentIsUnavailable() async throws {
+        let ride = try completedRide()
+        let coordinator = RideHistoryDurationCommitCoordinator(
+            historyStore: InMemoryRideHistoryStore(
+                records: [RideHistoryRecord(evidence: ride)]
+            ),
+            durationStore: InMemoryDurationStore()
+        )
+
+        #expect(try await coordinator.joinedRecord(sessionID: sessionID) == nil)
+    }
+
+    @Test("orphaned duration attachment without base history fails closed")
+    func orphanedDurationAttachmentRejected() async throws {
+        let ride = try completedRide()
+        let durationStore = InMemoryDurationStore()
+        _ = try await durationStore.commit(
+            RideHistoryDurationRecord(evidence: duration(completedRide: ride))
+        )
+        let coordinator = RideHistoryDurationCommitCoordinator(
+            historyStore: InMemoryRideHistoryStore(),
+            durationStore: durationStore
+        )
+
+        await #expect(
+            throws: RideHistoryDurationCommitCoordinatorError.missingCompletedRide(sessionID)
+        ) {
+            _ = try await coordinator.joinedRecord(sessionID: sessionID)
+        }
+    }
+
     @Test("same session with different ride continuity cannot join")
     func continuityMismatchRejected() async throws {
         let baseRide = try completedRide(continuity: .uninterruptedProcess)
