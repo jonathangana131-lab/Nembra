@@ -59,15 +59,15 @@ public actor UnverifiedScooterService: ScooterService {
     public func snapshot() -> VehicleState { state }
 
     /// A connection attempt cannot be made until hardware/protocol identity is
-    /// verified. Re-publish the current state rather than faking progress or a
-    /// fresh vehicle-observation timestamp.
+    /// verified. Re-publish the current state without changing its existing
+    /// timestamp or faking connection progress.
     public func connect() async {
         publishCurrentState()
     }
 
     public func disconnect() async {
         // This placeholder can never leave `.disconnected`. Preserve the exact
-        // state/timestamp rather than manufacturing a new vehicle observation.
+        // state, including its existing timestamp, on this idempotent republish.
         publishCurrentState()
     }
 
