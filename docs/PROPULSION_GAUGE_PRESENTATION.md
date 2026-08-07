@@ -20,9 +20,11 @@ Accepted samples carry:
 
 Verified samples require the real source-owned receipt sequence. Simulator may omit one only as an explicit synthetic-QA convenience, in which case its Simulator-owned uptime is reused as synthetic ordering metadata. Production code must never invent or subdivide nanoseconds merely to order two accepted callbacks.
 
-Chronology is scoped to the source-owned continuity generation. Inside one generation, receipt sequence must strictly increase while uptime is nondecreasing, so equal uptime callbacks remain valid when source order advances. A newer same-generation receipt identity is consumed before secondary uptime validation, so a malformed newer callback cannot later be rewritten and a delayed lower sequence cannot re-enter.
+Chronology is scoped to the source authority **and** its continuity generation. Simulator and verified physical evidence do not share a numeric receipt/generation namespace, so a high Simulator sequence can never reject the first verified sequence (or vice versa). Inside one authority + generation, receipt sequence must strictly increase while uptime is nondecreasing, so equal uptime callbacks remain valid when source order advances. A newer same-domain receipt identity is consumed before secondary uptime validation, so a malformed newer callback cannot later be rewritten and a delayed lower sequence cannot re-enter.
 
-A strictly newer continuity generation is an explicit clock/order epoch boundary. It may restart receipt sequence and uptime instead of forcing a caller to fabricate monotonic values across a process/clock restart. Older generations fail closed. This remains compatible with Nembra's passive capture model: one uninterrupted capture session keeps globally increasing sequence while its interruption markers break byte continuity; adapters with a stronger source-owned generation may also use that generation to establish a new clock/order epoch.
+A strictly newer continuity generation within the same authority is an explicit clock/order epoch boundary. It may restart receipt sequence and uptime instead of forcing a caller to fabricate monotonic values across a process/clock restart. Older same-authority generations fail closed. Each authority retains its own replay high-water even if presentation temporarily switches to the other authority.
+
+This remains compatible with Nembra's passive capture model: one uninterrupted capture session may keep globally increasing sequence while its interruption markers break byte continuity; an adapter with a stronger source-owned generation can use that generation to establish a new clock/order epoch. Presentation does not manufacture either sequence or generation for verified evidence.
 
 Render frames may move at display refresh rate toward the latest accepted sample. They never become persisted telemetry, peak evidence, battery/range evidence, ride evidence, protocol claims, or calibration observations. If a caller requests a frame before the newest accepted sample's receipt uptime, the presentation fails closed with `invalidRenderClock` instead of silently moving the requested clock forward and backdating evidence.
 
@@ -42,7 +44,7 @@ A new continuity generation or authority change snaps to the new accepted observ
 
 If the latest sample ages beyond the injected live window, the model preserves the exact accepted watts as **retained** data but removes the active normalized gauge.
 
-`markUnavailable()` is stronger than visual hiding after evidence exists: it retires the latest accepted continuity generation. A delayed callback from that disconnected/interrupted generation cannot clear unavailability and resurrect `.live`; resumption requires a genuinely newer source-owned generation. The newer generation may restart its sequence and uptime epochs. This is an acceptance boundary, not a fabricated zero-power sample. If no measurement has ever been accepted, there is no known generation to retire.
+`markUnavailable()` is stronger than visual hiding after evidence exists: it retires the latest accepted continuity generation **inside the currently active authority only**. A delayed callback from that disconnected/interrupted authority + generation cannot clear unavailability and resurrect `.live`. A foreign authority does not inherit that numeric generation floor and may become the new accepted source through its own chronology domain. Resuming the interrupted authority itself requires a genuinely newer generation. This is an acceptance boundary, not a fabricated zero-power sample. If no measurement has ever been accepted, there is no known generation to retire.
 
 ## Peak marker
 
@@ -75,7 +77,7 @@ Finite accepted observations remain finite through render interpolation, includi
 
 This slice is currently NembraCore/package-only. It intentionally does not modify `DashboardView.swift` or `Nembra.xcodeproj/project.pbxproj` while those high-contention product surfaces are owned by other active workers.
 
-The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, continuity generation, and source receipt order. After that, the verified power observation path plus canonical observed-envelope calibration can feed this render model before Dashboard integration.
+The next production step is not to invent watts. It is to consume a verified read-only ES80 power/current source after passive physical capture establishes raw source, framing, field identity, scaling, units, signedness, cadence, provenance, authority/source domain, continuity generation, and source receipt order. After that, the verified power observation path plus canonical observed-envelope calibration can feed this render model before Dashboard integration.
 
 Simulator may use `PropulsionPowerSample.simulator` plus a Simulator envelope/scale for visual/runtime QA, but those values remain explicitly synthetic.
 
