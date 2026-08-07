@@ -9,7 +9,8 @@ enum VehicleDisplayFormatting {
         guard let kilometersPerHour, kilometersPerHour.isFinite, kilometersPerHour >= 0 else {
             return "—"
         }
-        let value = usesMetric ? kilometersPerHour : kilometersPerHour * 0.621_371
+        let normalizedKilometersPerHour = kilometersPerHour == 0 ? 0 : kilometersPerHour
+        let value = usesMetric ? normalizedKilometersPerHour : normalizedKilometersPerHour * 0.621_371
         let unit = usesMetric ? "km/h" : "mph"
         return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
@@ -23,7 +24,8 @@ enum VehicleDisplayFormatting {
         guard let kilometers, kilometers.isFinite, kilometers >= 0 else {
             return "—"
         }
-        let value = usesMetric ? kilometers : kilometers * 0.621_371
+        let normalizedKilometers = kilometers == 0 ? 0 : kilometers
+        let value = usesMetric ? normalizedKilometers : normalizedKilometers * 0.621_371
         let unit = usesMetric ? "km" : "mi"
         return String(format: "%.*f %@", locale: Locale.current, decimals, value, unit)
     }
