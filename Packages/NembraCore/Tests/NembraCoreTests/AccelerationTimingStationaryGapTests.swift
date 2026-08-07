@@ -3,6 +3,10 @@ import Testing
 
 @Suite("Acceleration stationary-gap semantics")
 struct AccelerationTimingStationaryGapTests {
+    /// Synthetic software fixture only. This is not a verified production ES80
+    /// stationary threshold.
+    private let fixtureStationaryMaximumMetersPerSecond = 0.5
+
     private func sample(
         metersPerSecond: Double,
         seconds: Double
@@ -20,6 +24,7 @@ struct AccelerationTimingStationaryGapTests {
     func longStationaryIdleCanRearmLaunchTiming() throws {
         let policy = try AccelerationRunPolicy(
             targetMetersPerSecond: 5,
+            stationaryMaximumMetersPerSecond: fixtureStationaryMaximumMetersPerSecond,
             maximumSampleIntervalNanoseconds: 1_500_000_000
         )
         var evaluator = AccelerationRunEvaluator(policy: policy)
@@ -46,6 +51,7 @@ struct AccelerationTimingStationaryGapTests {
     func launchGapUsesNewestStationaryAnchor() throws {
         let policy = try AccelerationRunPolicy(
             targetMetersPerSecond: 5,
+            stationaryMaximumMetersPerSecond: fixtureStationaryMaximumMetersPerSecond,
             maximumSampleIntervalNanoseconds: 1_500_000_000
         )
         var evaluator = AccelerationRunEvaluator(policy: policy)
