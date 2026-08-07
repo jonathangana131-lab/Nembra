@@ -50,7 +50,7 @@ struct PassiveCoreBluetoothAcquisitionOperationLedgerTests {
     }
 
     @Test
-    func restartingAcquisitionRejectsOldGenerationOperations() throws {
+    func overlappingAcquisitionDoesNotErasePendingLedgerOperations() throws {
         let service = NSObject()
         let oldOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.characteristics(
             ObjectIdentifier(service)
@@ -60,6 +60,68 @@ struct PassiveCoreBluetoothAcquisitionOperationLedgerTests {
         try ledger.beginAcquisition()
         try ledger.complete(.services, starting: [oldOperation])
 
+        #expect(throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionAlreadyActive) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.isPending(oldOperation))
+        #expect(ledger.pendingOperationCount == 1)
+
+        try ledger.complete(oldOperation)
+        #expect(ledger.isReady)
+        #expect(ledger.pendingOperationCount == 0)
+    }
+
+    @Test
+    func rejectedSourcePhaseLeavesLedgerUnchanged() throws {
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.noTarget)
+        ) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.phase == .noTarget)
+        #expect(ledger.pendingOperationCount == 0)
+        #expect(!ledger.isPending(.services))
+
+        ledger.beginTargetSession()
+        ledger.finishWithoutGattAcquisition()
+        #expect(
+            throws: PassiveCoreBluetoothAcquisitionReadiness.StateError.acquisitionNotPermitted(.terminalWithoutGattAcquisition)
+        ) {
+            try ledger.beginAcquisition()
+        }
+        #expect(ledger.phase == .terminalWithoutGattAcquisition)
+        #expect(ledger.pendingOperationCount == 0)
+        #expect(!ledger.isPending(.services))
+    }
+
+    @Test
+    func completedLedgerMayStartQuiescentReacquisition() throws {
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+        ledger.beginTargetSession()
+        try ledger.beginAcquisition()
+        try ledger.complete(.services)
+        #expect(ledger.isReady)
+
+        try ledger.beginAcquisition()
+        #expect(ledger.phase == .acquiring)
+        #expect(ledger.isPending(.services))
+        #expect(ledger.pendingOperationCount == 1)
+    }
+
+    @Test
+    func connectionBoundaryRejectsOldGenerationOperations() throws {
+        let service = NSObject()
+        let oldOperation = PassiveCoreBluetoothAcquisitionOperationLedger.OperationKey.characteristics(
+            ObjectIdentifier(service)
+        )
+        var ledger = PassiveCoreBluetoothAcquisitionOperationLedger()
+        ledger.beginTargetSession()
+        try ledger.beginAcquisition()
+        try ledger.complete(.services, starting: [oldOperation])
+
+        ledger.beginConnectionAttempt()
         try ledger.beginAcquisition()
         #expect(!ledger.isPending(oldOperation))
         #expect(ledger.isPending(.services))

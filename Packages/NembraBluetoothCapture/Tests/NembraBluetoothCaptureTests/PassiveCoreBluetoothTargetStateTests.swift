@@ -16,14 +16,18 @@ struct PassiveCoreBluetoothTargetStateTests {
 
         let retiredA = state.retireActiveAttempt()
         #expect(retiredA == attemptA)
+        #expect(state.isAwaitingTerminalCallback(for: a))
         state.selectTarget(b)
         let attemptB = try state.beginAttempt(for: b)
         #expect(attemptB.generation == 2)
         #expect(state.acceptsActiveCallback(from: b))
         #expect(!state.acceptsActiveCallback(from: a))
+        #expect(state.isAwaitingTerminalCallback(for: a))
+        #expect(!state.isAwaitingTerminalCallback(for: b))
 
         let lateFailure = state.completeFailedConnection(from: a)
         #expect(lateFailure == .retired)
+        #expect(!state.isAwaitingTerminalCallback(for: a))
         #expect(state.activeAttempt == attemptB)
         let secondLateTerminal = state.completeDisconnect(from: a)
         #expect(secondLateTerminal == .ignored)
@@ -39,6 +43,7 @@ struct PassiveCoreBluetoothTargetStateTests {
         let first = try state.beginAttempt(for: peripheral)
         let retiredFirst = state.retireActiveAttempt()
         #expect(retiredFirst == first)
+        #expect(state.isAwaitingTerminalCallback(for: peripheral))
 
         do {
             _ = try state.beginAttempt(for: peripheral)
@@ -49,13 +54,16 @@ struct PassiveCoreBluetoothTargetStateTests {
 
         let failedTerminal = state.completeFailedConnection(from: peripheral)
         #expect(failedTerminal == .retired)
+        #expect(!state.isAwaitingTerminalCallback(for: peripheral))
         let second = try state.beginAttempt(for: peripheral)
         #expect(second.generation == first.generation + 1)
 
         let retiredSecond = state.retireActiveAttempt()
         #expect(retiredSecond == second)
+        #expect(state.isAwaitingTerminalCallback(for: peripheral))
         let disconnectedTerminal = state.completeDisconnect(from: peripheral)
         #expect(disconnectedTerminal == .retired)
+        #expect(!state.isAwaitingTerminalCallback(for: peripheral))
         let third = try state.beginAttempt(for: peripheral)
         #expect(third.generation == second.generation + 1)
     }
@@ -72,9 +80,12 @@ struct PassiveCoreBluetoothTargetStateTests {
         let attemptB = try state.beginAttempt(for: b)
 
         #expect(!state.acceptsActiveCallback(from: a))
+        #expect(state.isAwaitingTerminalCallback(for: a))
+        #expect(!state.isAwaitingTerminalCallback(for: b))
         #expect(state.activeAttempt == attemptB)
         let lateDisconnect = state.completeDisconnect(from: a)
         #expect(lateDisconnect == .retired)
+        #expect(!state.isAwaitingTerminalCallback(for: a))
         #expect(state.activeAttempt == attemptB)
     }
 
@@ -127,11 +138,13 @@ struct PassiveCoreBluetoothTargetStateTests {
         state.selectTarget(peripheral)
         _ = try state.beginAttempt(for: peripheral)
         _ = state.retireActiveAttempt()
+        #expect(state.isAwaitingTerminalCallback(for: peripheral))
 
         state.resetForCentralInvalidation()
 
         #expect(state.selectedTargetIdentifier == peripheral)
         #expect(state.activeAttempt == nil)
+        #expect(!state.isAwaitingTerminalCallback(for: peripheral))
         let retry = try state.beginAttempt(for: peripheral)
         #expect(retry.generation == 2)
     }

@@ -102,6 +102,8 @@ public struct ES80PassiveCaptureResearchView: View {
                 } else {
                     Button("Cancel connection", role: .cancel) {
                         controller.cancelActiveConnection()
+                        analysis = nil
+                        exportDocument = nil
                     }
                 }
             }
@@ -143,7 +145,7 @@ public struct ES80PassiveCaptureResearchView: View {
 
                             Spacer(minLength: 12)
 
-                            Text("\(peripheral.rssi) dBm")
+                            Text(peripheral.rssiDescription)
                                 .font(.subheadline.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
@@ -156,12 +158,9 @@ public struct ES80PassiveCaptureResearchView: View {
                             } else {
                                 Button(controller.selectedTargetIdentifier == peripheral.id ? "Reconnect target" : "Select & connect") {
                                     perform {
-                                        let previousTarget = controller.selectedTargetIdentifier
                                         try controller.connect(to: peripheral.id)
-                                        if previousTarget != peripheral.id {
-                                            analysis = nil
-                                            exportDocument = nil
-                                        }
+                                        analysis = nil
+                                        exportDocument = nil
                                     }
                                 }
                                 .disabled(!canStartConnection)
@@ -213,7 +212,7 @@ public struct ES80PassiveCaptureResearchView: View {
             }
             .disabled(
                 markerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || !targetEvidenceReady
+                    || !targetSessionReady
             )
 
             if !controller.hasTargetSession {
@@ -241,7 +240,7 @@ public struct ES80PassiveCaptureResearchView: View {
                     }
                 }
             }
-            .disabled(!targetEvidenceReady)
+            .disabled(!artifactEvidenceReady)
 
             if let analysis {
                 LabeledContent("Records", value: "\(analysis.recordCount)")
@@ -273,10 +272,16 @@ public struct ES80PassiveCaptureResearchView: View {
                         }
                     }
                 }
+            } else if !controller.hasTargetSession {
+                Text("Select one research target before analyzing evidence.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if !artifactEvidenceReady {
+                Text("Analysis unlocks after the selected target's finite passive GATT discovery/read/subscription setup completes without ambiguity.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             } else {
-                Text(controller.hasTargetSession
-                    ? "Analysis operates only on immutable capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry."
-                    : "Select one research target before analyzing evidence.")
+                Text("Analysis operates only on immutable capture evidence. Candidate fingerprints and callback rates are not decoded scooter telemetry.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -297,11 +302,9 @@ public struct ES80PassiveCaptureResearchView: View {
                     }
                 }
             }
-            .disabled(!targetEvidenceReady)
+            .disabled(!artifactEvidenceReady)
 
-            Text(controller.hasTargetSession
-                ? "The versioned JSON contains target-scoped raw evidence and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens."
-                : "Select one research target before preparing a target-labeled capture artifact.")
+            Text(exportExplanation)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -312,8 +315,22 @@ public struct ES80PassiveCaptureResearchView: View {
         return false
     }
 
-    private var targetEvidenceReady: Bool {
+    private var targetSessionReady: Bool {
         controller.hasTargetSession && !controller.captureFailed
+    }
+
+    private var artifactEvidenceReady: Bool {
+        controller.hasCompleteTargetEvidence
+    }
+
+    private var exportExplanation: String {
+        if !controller.hasTargetSession {
+            return "Select one research target before preparing a target-labeled capture artifact."
+        }
+        if !artifactEvidenceReady {
+            return "Export stays unavailable until finite passive acquisition is complete and no selected-target cancellation callback is pending."
+        }
+        return "The versioned JSON contains target-scoped raw evidence and correlation markers. It must not contain Tuya local keys, auth keys, session keys, or account tokens."
     }
 
     private var bluetoothStateLabel: String {
