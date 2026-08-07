@@ -221,6 +221,9 @@ public enum RideDistanceConfidence: String, Equatable, Sendable {
 
 public enum RideDistanceReconciliationStatus: String, Equatable, Sendable {
     case insufficientEvidence
+    /// The selected final distance source itself has complete ride coverage.
+    /// Corroboration can raise confidence but cannot repair another source's
+    /// partial or unknown coverage.
     case complete
     case coverageIncomplete
     case vehicleDistanceRecoveredAcrossCoverageGap
@@ -266,7 +269,6 @@ public enum RideDistanceReconciler {
         var hasConflict = false
         var agreementCount = 0
         var recoveryCount = 0
-        var hasCompleteAgreement = finalCoverage == .complete
 
         for source in RideDistanceSource.allCases where source != finalSource {
             guard let distance = evidence.distance(for: source) else { continue }
@@ -288,9 +290,6 @@ public enum RideDistanceReconciler {
                 disposition = .agrees
                 recoveredGap = nil
                 agreementCount += 1
-                if sourceCoverage == .complete {
-                    hasCompleteAgreement = true
-                }
             } else if policy.allowOdometerToRecoverKnownCoverageGaps,
                       finalSource == .scooterOdometer,
                       finalCoverage == .complete,
@@ -331,7 +330,7 @@ public enum RideDistanceReconciler {
             status = .vehicleDistanceRecoveredAcrossCoverageGap
         } else if agreementCount > 0 {
             confidence = .corroborated
-            status = hasCompleteAgreement ? .complete : .coverageIncomplete
+            status = finalCoverage == .complete ? .complete : .coverageIncomplete
         } else {
             confidence = .singleSource
             status = finalCoverage == .complete ? .complete : .coverageIncomplete
