@@ -61,8 +61,8 @@ public struct RidePowerStatisticsPresentation: Equatable, Sendable {
     /// never rated power, throttle, certified maximum, or perfect physical maximum.
     public let permitsCompletePeriodObservedHighWording: Bool
 
-    /// True whenever the selected period contains at least one ride whose accepted power evidence is
-    /// missing or known to have selected-source coverage loss.
+    /// True when a real accepted observed high is exposed while selected-period evidence coverage is
+    /// incomplete. `.powerUnavailable` and `.noCompletedRides` disclose absence through `state` itself.
     public let requiresIncompleteEvidenceDisclosure: Bool
 
     /// True only for explicitly synthetic Simulator-QA evidence. Production UI can use this to keep
@@ -214,6 +214,7 @@ public enum RidePowerStatisticsPresenter {
                   summary.gapFreePeakPowerRideCount == summary.rideCount,
                   summary.partialPeakPowerRideCount == 0,
                   summary.unavailablePeakPowerRideCount == 0,
+                  summary.highestAcceptedObservedPowerContinuity == .noRecordedSelectedSourceEvidenceLoss,
                   hasNumericEvidence else {
                 throw RidePowerStatisticsPresentationError.invalidSummary
             }
