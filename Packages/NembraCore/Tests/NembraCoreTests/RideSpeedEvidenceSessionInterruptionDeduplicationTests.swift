@@ -39,6 +39,7 @@ struct RideSpeedEvidenceSessionInterruptionDeduplicationTests {
         session.recordInterruption(.applicationLifecycleInterrupted)
 
         let pending = session.snapshot
+        #expect(pending.knownSelectedSourceInterruptionCount == 1)
         #expect(pending.peakEvidence?.peakEvidence.knownInterruptionCount == 1)
         #expect(pending.telemetryBenchmark.knownObservationInterruptionCount == 1)
         #expect(pending.peakEvidence?.peakEvidence.continuity == .partialSelectedSourceEvidence)
@@ -48,6 +49,7 @@ struct RideSpeedEvidenceSessionInterruptionDeduplicationTests {
         session.recordInterruption(.selectedSourceUnavailable)
 
         let secondGap = session.snapshot
+        #expect(secondGap.knownSelectedSourceInterruptionCount == 2)
         #expect(secondGap.peakEvidence?.peakEvidence.knownInterruptionCount == 2)
         #expect(secondGap.telemetryBenchmark.knownObservationInterruptionCount == 2)
     }
@@ -60,19 +62,57 @@ struct RideSpeedEvidenceSessionInterruptionDeduplicationTests {
             beginsAfterKnownObservationGap: true
         )
 
+        #expect(session.snapshot.knownSelectedSourceInterruptionCount == 1)
         session.recordInterruption(.applicationLifecycleInterrupted)
         session.recordInterruption(.selectedSourceUnavailable)
+        #expect(session.snapshot.knownSelectedSourceInterruptionCount == 1)
         _ = session.record(try sample(uptime: 100))
 
         let resumed = session.snapshot
+        #expect(resumed.knownSelectedSourceInterruptionCount == 1)
         #expect(resumed.peakEvidence?.beganAfterKnownObservationGap == true)
         #expect(resumed.peakEvidence?.peakEvidence.knownInterruptionCount == 1)
         #expect(resumed.telemetryBenchmark.knownObservationInterruptionCount == 0)
 
         session.recordInterruption(.selectedSourceUnavailable)
         let laterGap = session.snapshot
+        #expect(laterGap.knownSelectedSourceInterruptionCount == 2)
         #expect(laterGap.peakEvidence?.peakEvidence.knownInterruptionCount == 2)
         #expect(laterGap.telemetryBenchmark.knownObservationInterruptionCount == 1)
+    }
+
+    @Test("pre-first-peak interruption remains visible even when benchmark has no segment to break")
+    func interruptionBeforeAnyEvidenceIsNotLost() throws {
+        var session = RideSpeedEvidenceSessionAccumulator(
+            sessionID: sessionID,
+            peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
+        )
+
+        session.recordInterruption(.selectedSourceUnavailable)
+        session.recordInterruption(.applicationLifecycleInterrupted)
+
+        let snapshot = session.snapshot
+        #expect(!snapshot.beganAfterKnownObservationGap)
+        #expect(snapshot.knownSelectedSourceInterruptionCount == 1)
+        #expect(snapshot.peakEvidence == nil)
+        #expect(snapshot.telemetryBenchmark.acceptedSampleCount == 0)
+        #expect(snapshot.telemetryBenchmark.knownObservationInterruptionCount == 0)
+
+        let policy = try RideObservedPeakQualityPolicy(
+            telemetry: SpeedTelemetryQualityPolicy(
+                requiredSource: .scooterBluetooth,
+                minimumAcceptedSampleCount: 3,
+                maximumRejectedSampleFraction: 0,
+                maximumMeanIntervalMilliseconds: 150,
+                maximumObservedIntervalMilliseconds: 200,
+                maximumJitterStandardDeviationMilliseconds: 50,
+                maximumEmpiricalSpeedStepKilometersPerHour: 10
+            )
+        )
+        let readiness = snapshot.observedPeakReadiness(using: policy)
+        #expect(readiness.knownSelectedSourceInterruptionCount == 1)
+        #expect(readiness.peakEvidence == nil)
+        #expect(readiness.failures.contains(.peakUnavailable))
     }
 
     @Test("rejected selected-source evidence does not rearm the same pending gap")
@@ -95,12 +135,14 @@ struct RideSpeedEvidenceSessionInterruptionDeduplicationTests {
 
         session.recordInterruption(.selectedSourceUnavailable)
         let stillSameGap = session.snapshot
+        #expect(stillSameGap.knownSelectedSourceInterruptionCount == 1)
         #expect(stillSameGap.peakEvidence?.peakEvidence.knownInterruptionCount == 1)
         #expect(stillSameGap.telemetryBenchmark.knownObservationInterruptionCount == 1)
 
         _ = session.record(try sample(metersPerSecond: 7, uptime: 400))
         session.recordInterruption(.selectedSourceUnavailable)
         let newGap = session.snapshot
+        #expect(newGap.knownSelectedSourceInterruptionCount == 2)
         #expect(newGap.peakEvidence?.peakEvidence.knownInterruptionCount == 2)
         #expect(newGap.telemetryBenchmark.knownObservationInterruptionCount == 2)
     }
@@ -137,6 +179,7 @@ struct RideSpeedEvidenceSessionInterruptionDeduplicationTests {
 
         session.recordInterruption(.selectedSourceUnavailable)
         let snapshot = session.snapshot
+        #expect(snapshot.knownSelectedSourceInterruptionCount == 2)
         #expect(snapshot.peakEvidence?.peakEvidence.knownInterruptionCount == 2)
         #expect(snapshot.telemetryBenchmark.knownObservationInterruptionCount == 2)
         #expect(snapshot.peakEvidence?.peakEvidence.qualityRejectedSampleCount == 1)
