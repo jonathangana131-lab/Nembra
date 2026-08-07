@@ -42,10 +42,18 @@ struct PassiveCoreBluetoothAcquisitionOperationLedger {
         readiness.finishWithoutGattAcquisition()
     }
 
+    /// Starts a root service-discovery operation transactionally. A rejected
+    /// lifecycle transition must leave both readiness tokens and operation-key
+    /// attribution unchanged; otherwise an unresolved CoreBluetooth callback
+    /// would become unrepresentable merely because software attempted a restart.
     mutating func beginAcquisition() throws {
-        tokenByOperation.removeAll()
-        try readiness.startAcquisition()
-        tokenByOperation[.services] = try readiness.beginOperation()
+        var candidateReadiness = readiness
+        try candidateReadiness.startAcquisition()
+        let rootToken = try candidateReadiness.beginOperation()
+
+        readiness = candidateReadiness
+        tokenByOperation.removeAll(keepingCapacity: true)
+        tokenByOperation[.services] = rootToken
     }
 
     /// Atomically completes one callback operation and registers every finite
