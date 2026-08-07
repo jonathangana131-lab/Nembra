@@ -29,9 +29,15 @@ The caller supplies:
 - a maximum allowed evidence span;
 - absolute and relative power-error tolerances.
 
-There are no ES80 defaults for timing, scale, signedness, or tolerance. Field-label strings are preserved but never parsed to infer meaning.
+There are no ES80 defaults for timing, scale, signedness, unit, or tolerance. Field-label strings are preserved but never parsed to infer meaning.
 
-Each #280 report also carries the exact caller-owned numeric `absoluteTolerance` that produced its samples' `isWithinTolerance` flags. This layer retains that threshold separately for voltage, current, and power because those three display spaces may legitimately use different tolerances. It does not force them equal or reinterpret them as physical accuracy.
+Each #280 report carries the complete validated caller numeric-reference set and the exact caller-owned numeric `absoluteTolerance` that produced its samples' `isWithinTolerance` flags. This layer retains both separately for voltage, current, and power, including references whose candidate samples were excluded by the parent. The three roles may legitimately use different numeric tolerances.
+
+## Unit contract
+
+The relationship `power = voltage × current` is evaluated only in the caller-supplied numeric spaces. The caller is responsible for supplying mutually compatible units for the intended research question, for example numeric anchors normalized to volts, amps, and watts.
+
+The evaluator does not infer a unit from a label, DP identifier, payload width, scale, or magnitude. It does not silently convert milliamps to amps, kilowatts to watts, or any other unit system. A coherent numeric relationship is therefore evidence about the explicitly supplied hypothesis only, never proof that the raw fields physically use V/A/W.
 
 ## Capture / monotonic-clock boundary
 
@@ -79,7 +85,7 @@ The evaluator never repairs, interpolates, or pretends separated observations we
 
 One stock marker may support at most one anchor within each role in a single evaluation. Duplicate anchor tuples and per-role marker reuse fail closed so callers cannot inflate support counts by repeating the same evidence.
 
-Missing numeric samples, excessive timing span, and non-finite relationship math are retained as explicit rejection reasons instead of being silently dropped.
+Missing numeric samples, excessive timing span, and non-finite relationship math are retained as explicit rejection reasons instead of being silently dropped. Because every role selection also preserves the parent's complete numeric-reference set, a rejected marker index can still be audited back to the caller value even when it never produced a usable sample.
 
 ## Numeric stability
 
@@ -102,6 +108,7 @@ The report preserves:
 - exact field labels;
 - each selected raw DP candidate identity;
 - each selected numeric transform;
+- each role's complete validated parent numeric-reference set;
 - each role's exact parent numeric absolute tolerance;
 - full #280 samples including raw bytes and timing provenance;
 - reference-side and candidate-side predicted power/error/tolerance;
@@ -119,8 +126,9 @@ This layer does **not**:
 - discover DP IDs or transforms automatically;
 - parse stock-app display strings into numbers;
 - claim any candidate is voltage/current/power;
+- infer or convert physical units;
 - prove the caller supplied the correct capture-context identity;
-- establish units, scale, signedness, cadence, freshness, or source authority;
+- establish unit, scale, signedness, cadence, freshness, or source authority;
 - reinterpret a parent numeric tolerance as sensor accuracy or protocol confidence;
 - infer battery energy, Wh, Wh/mi, torque, throttle, or regen;
 - authorize Bluetooth writes or vehicle commands;
