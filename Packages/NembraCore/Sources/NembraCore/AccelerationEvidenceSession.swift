@@ -96,9 +96,8 @@ public enum AccelerationEvidenceSessionRecordResult: Equatable, Sendable {
     /// A completed, invalidated, or continuity-broken session is immutable.
     case ignoredAfterTerminalEvidence
     /// The attempt benchmark saw the selected-source callback before the timing
-    /// evaluator consumed that exact sample. Final reporting quality is rebuilt
-    /// from the evaluator's retained launch-to-target trace rather than this
-    /// broader attempt stream.
+    /// evaluator consumed that exact sample. Final reporting quality comes from
+    /// the separately maintained retained timing-trace benchmark.
     case processed(benchmark: TelemetryBenchmarkRecordResult, runState: AccelerationRunState)
 }
 
@@ -112,9 +111,9 @@ public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
     /// the reporting authority for a completed result.
     public let attemptStreamBenchmark: TelemetryBenchmarkSummary
 
-    /// Quality summary reconstructed from only the exact selected-source samples
-    /// that can belong to the evaluator's final retained timing window. This is
-    /// the reporting authority once the run completes.
+    /// Quality summary containing only the final stationary anchor plus timing
+    /// samples the evaluator accepted after launch. It is available only when a
+    /// run completes and is the reporting authority for telemetry quality.
     public let timingTraceBenchmark: TelemetryBenchmarkSummary?
 
     public let ignoredForeignSourceCallbackCount: Int
@@ -144,15 +143,18 @@ public struct AccelerationEvidenceSessionSnapshot: Equatable, Sendable {
 /// acceleration observation attempt.
 ///
 /// The exact selected-source callback is sent to `TelemetryBenchmarkCollector`
-/// and `AccelerationRunEvaluator` in the same call. Once the evaluator becomes
-/// terminal, or a known observation gap breaks a partially observed attempt, the
-/// session freezes so post-run traffic cannot make an earlier result look better.
+/// and `AccelerationRunEvaluator` in the same call. A second constant-memory
+/// collector tracks only the evaluator's current retained timing trace: it resets
+/// when a newer accepted stationary anchor supersedes the old anchor, skips
+/// timing-quality-rejected packets, and freezes when the evaluator becomes
+/// terminal. Post-run traffic therefore cannot make an earlier result look better.
 public struct AccelerationEvidenceSession: Sendable {
     public let policy: AccelerationEvidenceSessionPolicy
 
     private var evaluator: AccelerationRunEvaluator
     private var attemptBenchmark: TelemetryBenchmarkCollector
-    private var selectedSourceSamples: [SpeedTelemetrySample] = []
+    private var timingTraceBenchmarkCollector: TelemetryBenchmarkCollector?
+    private var hasSelectedSourceObservation = false
     private var ignoredForeignSourceCallbackCount = 0
     private var knownObservationInterruptionCount = 0
     private var continuityWasBroken = false
@@ -179,14 +181,15 @@ public struct AccelerationEvidenceSession: Sendable {
             return .ignoredForeignSource(expected: policy.source, actual: sample.source)
         }
 
-        // Retain only the short-lived selected-source attempt window in memory so
-        // a completed result can rebuild quality from the evaluator's final
-        // launch-to-target observation bounds. These samples are not persistence
-        // evidence and are discarded with the session.
-        selectedSourceSamples.append(sample)
-
+        hasSelectedSourceObservation = true
         let benchmarkResult = attemptBenchmark.record(sample)
+        let stateBefore = evaluator.state
         evaluator.accept(sample)
+        updateTimingTrace(
+            sample: sample,
+            stateBefore: stateBefore,
+            stateAfter: evaluator.state
+        )
         return .processed(benchmark: benchmarkResult, runState: evaluator.state)
     }
 
@@ -200,7 +203,7 @@ public struct AccelerationEvidenceSession: Sendable {
         guard !isTerminalEvidence else { return }
 
         if interruption != .operatorCancelled,
-           !selectedSourceSamples.isEmpty {
+           hasSelectedSourceObservation {
             knownObservationInterruptionCount += 1
             continuityWasBroken = true
         }
@@ -210,8 +213,8 @@ public struct AccelerationEvidenceSession: Sendable {
 
     public var snapshot: AccelerationEvidenceSessionSnapshot {
         let traceBenchmark: TelemetryBenchmarkSummary?
-        if case let .completed(result) = evaluator.state {
-            traceBenchmark = makeTimingTraceBenchmark(for: result)
+        if case .completed = evaluator.state {
+            traceBenchmark = timingTraceBenchmarkCollector?.summary
         } else {
             traceBenchmark = nil
         }
@@ -237,28 +240,53 @@ public struct AccelerationEvidenceSession: Sendable {
         }
     }
 
-    /// Rebuild quality from the final observation window instead of reusing the
-    /// wider attempt benchmark. In a completed evaluator run, selected-source
-    /// chronology is monotonic and any post-launch return to stationary would
-    /// already have invalidated the run. The remaining acceptance distinction is
-    /// the evaluator's optional speed-accuracy gate, which is applied here too.
-    private func makeTimingTraceBenchmark(
-        for result: AccelerationRunResult
-    ) -> TelemetryBenchmarkSummary {
-        var collector = TelemetryBenchmarkCollector(source: policy.source)
-        let lowerBound = result.launchObservationWindow.earliestUptimeNanoseconds
-        let upperBound = result.targetTransitionObservationWindow.latestUptimeNanoseconds
+    private mutating func updateTimingTrace(
+        sample: SpeedTelemetrySample,
+        stateBefore: AccelerationRunState,
+        stateAfter: AccelerationRunState
+    ) {
+        switch (stateBefore, stateAfter) {
+        case (.waitingForStandstill, .armed):
+            resetTimingTrace(to: sample)
 
-        for sample in selectedSourceSamples {
-            guard sample.receivedAtUptimeNanoseconds >= lowerBound,
-                  sample.receivedAtUptimeNanoseconds <= upperBound,
-                  timingAccuracyIsAcceptable(sample) else {
-                continue
+        case (.armed, .armed):
+            // With an explicit required source, a same-state stationary callback
+            // is a new anchor only when it passed the evaluator's accuracy gate.
+            // A moving or poor-accuracy callback leaves the prior anchor intact.
+            if sample.metersPerSecond <= policy.run.stationaryMaximumMetersPerSecond,
+               timingAccuracyIsAcceptable(sample) {
+                resetTimingTrace(to: sample)
             }
-            collector.record(sample)
-        }
 
-        return collector.summary
+        case (.armed, .running), (.armed, .completed),
+             (.running, .running), (.running, .completed):
+            // Any other evaluator rejection from these states is terminal
+            // (chronology, gap, source change, return to stationary). If the state
+            // advanced/remained nonterminal and accuracy passes, this sample is
+            // part of the retained timing trace.
+            if timingAccuracyIsAcceptable(sample) {
+                timingTraceBenchmarkCollector?.record(sample)
+            }
+
+        case (.waitingForStandstill, .waitingForStandstill),
+             (.waitingForStandstill, .running),
+             (.waitingForStandstill, .completed),
+             (.waitingForStandstill, .invalidated),
+             (.armed, .waitingForStandstill),
+             (.armed, .invalidated),
+             (.running, .waitingForStandstill),
+             (.running, .armed),
+             (.running, .invalidated),
+             (.completed, _),
+             (.invalidated, _):
+            break
+        }
+    }
+
+    private mutating func resetTimingTrace(to stationaryAnchor: SpeedTelemetrySample) {
+        var collector = TelemetryBenchmarkCollector(source: policy.source)
+        collector.record(stationaryAnchor)
+        timingTraceBenchmarkCollector = collector
     }
 
     private func timingAccuracyIsAcceptable(_ sample: SpeedTelemetrySample) -> Bool {
