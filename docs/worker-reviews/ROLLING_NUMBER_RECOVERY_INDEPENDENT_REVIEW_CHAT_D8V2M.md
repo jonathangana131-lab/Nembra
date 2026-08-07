@@ -40,6 +40,7 @@ Checked boundaries:
 - Live Dashboard still consumes `snapshot(for:)`; the new exact-integer overload is additive and does not silently alter current speed behavior.
 - Adjacent PR #33 explicitly leaves `RollingSpeedValueView` and `RollingNumberModel` untouched, so no current same-path integration collision was found.
 - Current battery-primary-readout PR #57 does not reference `RollingNumberModel`; it explicitly defers final integer battery-roll animation, so #95 does not create a hidden immediate parent/API dependency there.
+- Current `Nembra.xcodeproj/project.pbxproj` already contains `RollingNumberModel.swift` as a PBX file reference and `RollingNumberModel.swift in Sources` build-file entry for the app target. Therefore #95 needs no project-file edit to make the changed implementation visible to the iOS app build; SwiftPM and app-target compilation both exercise the same source file.
 
 ### Public API compatibility
 
