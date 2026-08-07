@@ -14,9 +14,10 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
 
     @Test
     func manifestBindsExactCaptureBytesAndDerivedStationaryFacts() throws {
-        let captureJSON = try makeCapture(includeDisconnect: true)
+        let captureJSON = try makeCapture(includeStockAppMarker: true, includeDisconnect: true)
         let setup = PassiveBluetoothStationaryCaptureSetup(
             chargerState: .disconnected,
+            executionContext: .foregroundScreenOn,
             stockAppReferenceSetup: .sameDeviceBeforeCapture
         )
 
@@ -37,6 +38,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         #expect(manifest.sourceArtifact.byteCount == captureJSON.count)
         #expect(manifest.sourceArtifact.sha256 == SHA256.hash(data: captureJSON).map { String(format: "%02x", $0) }.joined())
         #expect(manifest.setup == setup)
+        #expect(manifest.setup.executionContext == .foregroundScreenOn)
         #expect(manifest.evidenceSummary.targetGATTRecordCount == 3)
         #expect(manifest.evidenceSummary.targetValueRecordCount == 1)
         #expect(manifest.evidenceSummary.stockAppMarkerCount == 1)
@@ -125,6 +127,37 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
+    func stockAppMarkersRequireADeclaredReferenceSetup() throws {
+        let captureJSON = try makeCapture(includeStockAppMarker: true)
+
+        #expect(
+            throws: PassiveBluetoothStationaryCaptureManifestError
+                .stockAppMarkersWithoutDeclaredReference(markerCount: 1)
+        ) {
+            _ = try makeManifest(captureJSON: captureJSON)
+        }
+    }
+
+    @Test
+    func importedDerivedSummaryTamperingIsRejectedEvenWhenDigestAndSessionStayUnchanged() throws {
+        let captureJSON = try makeCapture()
+        let manifest = try makeManifest(captureJSON: captureJSON)
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
+        var object = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        var evidenceSummary = try #require(object["evidenceSummary"] as? [String: Any])
+        evidenceSummary["targetValueRecordCount"] = 999
+        object["evidenceSummary"] = evidenceSummary
+        let tamperedManifestJSON = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        #expect(throws: PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verify(
+                manifestJSON: tamperedManifestJSON,
+                captureJSON: captureJSON
+            )
+        }
+    }
+
+    @Test
     func invalidBuildCommitIsRejectedBeforeSidecarCreation() throws {
         let captureJSON = try makeCapture()
         #expect(
@@ -135,7 +168,11 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
                 preparedAt: preparedAt,
                 nembraBuildCommitSHA: "main",
                 selectedPeripheralIdentifier: target,
-                setup: .init(chargerState: .disconnected, stockAppReferenceSetup: .none)
+                setup: .init(
+                    chargerState: .disconnected,
+                    executionContext: .foregroundScreenOn,
+                    stockAppReferenceSetup: .none
+                )
             )
         }
     }
@@ -164,7 +201,11 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             preparedAt: preparedAt,
             nembraBuildCommitSHA: commit,
             selectedPeripheralIdentifier: target,
-            setup: .init(chargerState: .disconnected, stockAppReferenceSetup: .none)
+            setup: .init(
+                chargerState: .disconnected,
+                executionContext: .foregroundScreenOn,
+                stockAppReferenceSetup: .none
+            )
         )
     }
 
@@ -172,6 +213,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         targetPeripheral: String? = nil,
         additionalGATTPeripheral: String? = nil,
         unrelatedConnectionPeripheral: String? = nil,
+        includeStockAppMarker: Bool = false,
         includeDisconnect: Bool = false
     ) throws -> Data {
         let selected = targetPeripheral ?? target
@@ -213,10 +255,12 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             origin: .subscriptionUpdate,
             payload: Data([0x01, 0x02])
         )))
-        try append(.stockAppState(try PassiveBluetoothStockAppObservation(
-            field: "battery",
-            displayedValue: "73%"
-        )))
+        if includeStockAppMarker {
+            try append(.stockAppState(try PassiveBluetoothStockAppObservation(
+                field: "battery",
+                displayedValue: "73%"
+            )))
+        }
 
         if let additionalGATTPeripheral {
             try append(.service(try PassiveBluetoothServiceObservation(
