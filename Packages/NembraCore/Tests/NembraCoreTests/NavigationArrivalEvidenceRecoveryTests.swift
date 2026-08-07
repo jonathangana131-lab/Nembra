@@ -43,7 +43,8 @@ struct NavigationArrivalEvidenceRecoveryTests {
             maximumFinalStepDistanceRemainingMeters: 5,
             maximumRouteDistanceRemainingMeters: 8,
             minimumQualifyingObservationCount: count,
-            minimumSustainedDurationNanoseconds: duration
+            minimumSustainedDurationNanoseconds: duration,
+            maximumAcceptedObservationGapNanoseconds: 10_000
         )
     }
 
@@ -72,7 +73,8 @@ struct NavigationArrivalEvidenceRecoveryTests {
                 maximumFinalStepDistanceRemainingMeters: 5,
                 maximumRouteDistanceRemainingMeters: 8,
                 minimumQualifyingObservationCount: 1,
-                minimumSustainedDurationNanoseconds: 1
+                minimumSustainedDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 10_000
             )
         }
         #expect(throws: NavigationArrivalEvidenceError.invalidPolicy) {
@@ -80,9 +82,64 @@ struct NavigationArrivalEvidenceRecoveryTests {
                 maximumFinalStepDistanceRemainingMeters: 5,
                 maximumRouteDistanceRemainingMeters: 8,
                 minimumQualifyingObservationCount: 2,
-                minimumSustainedDurationNanoseconds: 0
+                minimumSustainedDurationNanoseconds: 0,
+                maximumAcceptedObservationGapNanoseconds: 10_000
             )
         }
+        #expect(throws: NavigationArrivalEvidenceError.invalidPolicy) {
+            try NavigationArrivalEvidencePolicy(
+                maximumFinalStepDistanceRemainingMeters: 5,
+                maximumRouteDistanceRemainingMeters: 8,
+                minimumQualifyingObservationCount: 2,
+                minimumSustainedDurationNanoseconds: 1,
+                maximumAcceptedObservationGapNanoseconds: 0
+            )
+        }
+    }
+
+    @Test("silent intervals beyond the policy gap cannot count as sustained arrival")
+    func longAcceptedObservationGapRestartsCandidate() throws {
+        let selectedRoute = try route()
+        var guidance = NavigationGuidanceProgressTracker()
+        let token = try guidance.select(route: selectedRoute)
+        let strictPolicy = try NavigationArrivalEvidencePolicy(
+            maximumFinalStepDistanceRemainingMeters: 5,
+            maximumRouteDistanceRemainingMeters: 8,
+            minimumQualifyingObservationCount: 2,
+            minimumSustainedDurationNanoseconds: 1_000,
+            maximumAcceptedObservationGapNanoseconds: 1_500
+        )
+        var arrival = NavigationArrivalEvidenceTracker(policy: strictPolicy)
+        try arrival.select(token: token, route: selectedRoute)
+
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 100),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+
+        // The 1.9s silence exceeds the explicit 1.5s evidence-gap bound, so this
+        // qualifying sample begins a fresh candidate instead of confirming arrival.
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 2_000),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        guard case let .candidate(restarted) = arrival.state else {
+            Issue.record("Expected a restarted arrival candidate")
+            return
+        }
+        #expect(restarted.firstQualifyingObservationUptimeNanoseconds == 2_000)
+        #expect(restarted.qualifyingObservationCount == 1)
+
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 3_000),
+                guidanceTracker: &guidance
+            ) == .arrived
+        )
     }
 
     @Test("arrival needs repeated final-step evidence over sustained time")
