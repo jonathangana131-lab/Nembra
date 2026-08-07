@@ -61,7 +61,11 @@ enum VehicleDisplayFormatting {
         }
 
         let normalizedKilometersPerHour = kilometersPerHour == 0 ? 0 : kilometersPerHour
-        let value = usesMetric
+        // Capture one measurement-system decision for the complete projection so
+        // the numeric conversion and its unit label cannot observe different
+        // locale states during the same formatting call.
+        let isMetric = usesMetric
+        let value = isMetric
             ? normalizedKilometersPerHour
             : normalizedKilometersPerHour * 0.621_371
         guard value.isFinite, value >= 0 else { return nil }
@@ -84,7 +88,7 @@ enum VehicleDisplayFormatting {
             return nil
         }
 
-        let unit = usesMetric ? "km/h" : "mph"
+        let unit = isMetric ? "km/h" : "mph"
         return String(format: "%.*f %@", locale: Locale.current, decimals, roundedValue, unit)
     }
 }
