@@ -179,7 +179,9 @@ public enum PassiveBluetoothTransportFingerprint {
             where observation.peripheralIdentifier == peripheralIdentifier:
             evidence.services.formUnion(observation.serviceUUIDs.map(normalize))
             evidence.services.formUnion(observation.overflowServiceUUIDs.map(normalize))
-            evidence.services.formUnion(observation.solicitedServiceUUIDs.map(normalize))
+            // Reconciled from PR #164: Service Solicitation has the opposite GAP
+            // role. Preserve solicited UUIDs in raw advertisement evidence, but
+            // never promote them into peripheral-hosted service topology.
             evidence.services.formUnion(observation.serviceData.keys.map(normalize))
 
         case let .service(observation)
