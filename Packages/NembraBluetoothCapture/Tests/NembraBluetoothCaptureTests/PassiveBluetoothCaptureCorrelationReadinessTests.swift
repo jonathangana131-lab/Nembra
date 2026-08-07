@@ -40,6 +40,8 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.stockAppMarkerCount == 1)
         #expect(report.supportedMarkerCount == 0)
         #expect(report.targetValueObservationCount == 0)
+        #expect(report.correlationLookbackNanoseconds == 2_000_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 2_000_000_000)
     }
 
     @Test("nonblank target identity is matched exactly instead of normalized")
@@ -162,6 +164,8 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.unsupportedMarkerCount == 0)
         #expect(report.markerSupportFraction == 1)
         #expect(report.targetValueObservationCount == 1)
+        #expect(report.correlationLookbackNanoseconds == 500_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 500_000_000)
         #expect(report.targetValueOrigins == [.notification])
         #expect(report.distinctMarkerFields == ["Battery"])
     }
@@ -359,6 +363,8 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.supportedMarkerCount == 1)
         #expect(report.unsupportedMarkerCount == 1)
         #expect(report.markerSupportFraction == 0.5)
+        #expect(report.correlationLookbackNanoseconds == 100_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 100_000_000)
         #expect(report.distinctMarkerFields == ["Battery", "Power"])
         #expect(report.targetValueOrigins == [.readResponse])
     }

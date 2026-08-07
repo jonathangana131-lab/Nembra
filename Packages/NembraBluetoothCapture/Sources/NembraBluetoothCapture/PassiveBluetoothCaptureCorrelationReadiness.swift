@@ -32,8 +32,9 @@ public enum PassiveBluetoothCaptureCorrelationReadinessDisposition: String, Equa
 ///
 /// Counts remain descriptive evidence only. In particular, `supportedMarkerCount`
 /// means only that a marker has at least one nearby target value callback after
-/// continuity filtering. It is not protocol-field confidence, repeatability,
-/// payload decoding, or physical hardware verification.
+/// continuity filtering under the retained lookback/lookahead window. It is not
+/// protocol-field confidence, repeatability, payload decoding, or physical
+/// hardware verification.
 public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Sendable {
     public let disposition: PassiveBluetoothCaptureCorrelationReadinessDisposition
     public let peripheralIdentifier: String
@@ -42,6 +43,8 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
     public let supportedMarkerCount: Int
     public let targetValueObservationCount: Int
     public let targetContinuityBreakCount: Int
+    public let correlationLookbackNanoseconds: UInt64
+    public let correlationLookaheadNanoseconds: UInt64
     public let distinctMarkerFields: Set<String>
     public let targetValueOrigins: Set<PassiveBluetoothValueOrigin>
 
@@ -53,6 +56,8 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
         supportedMarkerCount: Int,
         targetValueObservationCount: Int,
         targetContinuityBreakCount: Int,
+        correlationLookbackNanoseconds: UInt64,
+        correlationLookaheadNanoseconds: UInt64,
         distinctMarkerFields: Set<String>,
         targetValueOrigins: Set<PassiveBluetoothValueOrigin>
     ) {
@@ -63,6 +68,8 @@ public struct PassiveBluetoothCaptureCorrelationReadinessReport: Equatable, Send
         self.supportedMarkerCount = supportedMarkerCount
         self.targetValueObservationCount = targetValueObservationCount
         self.targetContinuityBreakCount = targetContinuityBreakCount
+        self.correlationLookbackNanoseconds = correlationLookbackNanoseconds
+        self.correlationLookaheadNanoseconds = correlationLookaheadNanoseconds
         self.distinctMarkerFields = distinctMarkerFields
         self.targetValueOrigins = targetValueOrigins
     }
@@ -111,7 +118,9 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
                 peripheralIdentifier: peripheralIdentifier,
                 session: session,
                 sessionSummary: sessionSummary,
-                supportedMarkerCount: 0
+                supportedMarkerCount: 0,
+                lookbackNanoseconds: lookbackNanoseconds,
+                lookaheadNanoseconds: lookaheadNanoseconds
             )
         }
 
@@ -137,7 +146,9 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
             peripheralIdentifier: peripheralIdentifier,
             session: session,
             sessionSummary: sessionSummary,
-            supportedMarkerCount: supportedMarkerCount
+            supportedMarkerCount: supportedMarkerCount,
+            lookbackNanoseconds: lookbackNanoseconds,
+            lookaheadNanoseconds: lookaheadNanoseconds
         )
     }
 
@@ -186,7 +197,9 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
         peripheralIdentifier: String,
         session: PassiveBluetoothCaptureSession,
         sessionSummary: SessionSummary,
-        supportedMarkerCount: Int
+        supportedMarkerCount: Int,
+        lookbackNanoseconds: UInt64,
+        lookaheadNanoseconds: UInt64
     ) -> PassiveBluetoothCaptureCorrelationReadinessReport {
         PassiveBluetoothCaptureCorrelationReadinessReport(
             disposition: disposition,
@@ -196,6 +209,8 @@ public enum PassiveBluetoothCaptureCorrelationReadiness {
             supportedMarkerCount: supportedMarkerCount,
             targetValueObservationCount: sessionSummary.targetValueObservationCount,
             targetContinuityBreakCount: sessionSummary.targetContinuityBreakCount,
+            correlationLookbackNanoseconds: lookbackNanoseconds,
+            correlationLookaheadNanoseconds: lookaheadNanoseconds,
             distinctMarkerFields: sessionSummary.distinctMarkerFields,
             targetValueOrigins: sessionSummary.targetValueOrigins
         )
