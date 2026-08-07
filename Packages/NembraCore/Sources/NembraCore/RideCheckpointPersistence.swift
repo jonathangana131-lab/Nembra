@@ -15,8 +15,9 @@ public enum RideCheckpointPhase: String, Codable, Equatable, Sendable {
 }
 
 /// Durable, compact evidence needed to recover one confirmed ride after process
-/// termination. Monotonic uptime is intentionally absent: uptime belongs to one
-/// process/boot epoch and must never be treated as durable wall-clock history.
+/// termination. Monotonic uptime is intentionally absent: it is boot-relative
+/// transient timing evidence, and a durable checkpoint cannot prove that a later
+/// process shares the same uptime domain.
 public struct RideRecoveryCheckpoint: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beganAtDate: Date
@@ -184,7 +185,8 @@ public enum RideDurableCheckpoint: Codable, Equatable, Sendable {
             try container.encode(Kind.inProgress, forKey: .kind)
             try container.encode(checkpoint, forKey: .inProgress)
         case let .completedPendingCommit(evidence):
-            try container.encode(Kind.completedPendingCommit, forKey: .completedPendingCommit)
+            try container.encode(Kind.completedPendingCommit, forKey: .kind)
+            try container.encode(evidence, forKey: .completedPendingCommit)
         }
     }
 }
