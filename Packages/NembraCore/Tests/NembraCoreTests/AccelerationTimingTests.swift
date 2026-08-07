@@ -189,8 +189,8 @@ struct AccelerationTimingTests {
         #expect(evaluator.state == .armed(source: .scooterBluetooth))
     }
 
-    @Test("decoded impossible motion-assist provenance cannot become authoritative timing evidence")
-    func malformedDecodedMotionAssistIsIgnored() throws {
+    @Test("malformed motion-assist evidence is rejected by decoder or evaluator boundary")
+    func malformedMotionAssistNeverBecomesTimingEvidence() throws {
         let valid = try sample(metersPerSecond: 0, seconds: 1)
         let encoded = try JSONEncoder().encode(valid)
         let validJSON = try #require(String(data: encoded, encoding: .utf8))
@@ -199,17 +199,26 @@ struct AccelerationTimingTests {
             with: "\"motionAssist\""
         )
         #expect(malformedJSON != validJSON)
+        let malformedData = try #require(malformedJSON.data(using: .utf8))
 
-        let malformed = try JSONDecoder().decode(
-            SpeedTelemetrySample.self,
-            from: try #require(malformedJSON.data(using: .utf8))
-        )
-        #expect(malformed.source == .motionAssist)
-        #expect(malformed.isAuthoritativeMeasurement)
+        do {
+            // On an older permissive Codable boundary, prove the evaluator still
+            // refuses the impossible motion-assist/absolute-measurement pairing.
+            let malformed = try JSONDecoder().decode(
+                SpeedTelemetrySample.self,
+                from: malformedData
+            )
+            #expect(malformed.source == .motionAssist)
+            #expect(malformed.isAuthoritativeMeasurement)
 
-        var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
-        evaluator.accept(malformed)
-        #expect(evaluator.state == .waitingForStandstill)
+            var evaluator = AccelerationRunEvaluator(policy: try policy(targetMetersPerSecond: 5))
+            evaluator.accept(malformed)
+            #expect(evaluator.state == .waitingForStandstill)
+        } catch let validationError as SpeedTelemetryValidationError {
+            // A hardened imported-sample boundary may reject the malformed pair
+            // before this evaluator ever sees it. That is the preferred safe path.
+            #expect(validationError == .invalidProvenanceForSource)
+        }
     }
 
     @Test("a source change invalidates an in-progress timing trace")
