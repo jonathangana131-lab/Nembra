@@ -13,10 +13,10 @@ public enum PassiveBluetoothRepeatedCorrelationDisposition: String, Equatable, S
     case invalidPeripheralScope
 }
 
-/// Traceable nearest raw-value evidence for one stock-app marker and one GATT
-/// value stream. Sequence numbers point back into the immutable capture artifact
-/// so a later analyst can inspect the original bytes without duplicating or
-/// mutating them here.
+/// Traceable independently assigned raw-value evidence for one stock-app marker
+/// and one GATT value stream. Sequence numbers point back into the immutable
+/// capture artifact so a later analyst can inspect the original bytes without
+/// duplicating or mutating them here.
 public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
     public let markerSequenceNumber: UInt64
     public let markerDisplayedValue: String
@@ -25,8 +25,6 @@ public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
     public let origin: PassiveBluetoothValueOrigin
     public let payloadByteCount: Int
 
-    /// Analyzer output only. File-private construction prevents unrelated callers
-    /// from minting correlation evidence that was never derived from a capture.
     fileprivate init(
         markerSequenceNumber: UInt64,
         markerDisplayedValue: String,
@@ -51,10 +49,10 @@ public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
 /// Repeated time-correlation evidence for one exact peripheral/service/
 /// characteristic stream.
 ///
-/// Support counts are deliberately marker-based: a high-rate characteristic can
-/// emit many callbacks inside one window, but it receives at most one support hit
-/// for that marker. `rawCandidateCount` remains available so callback density is
-/// visible instead of being hidden by the de-duplication.
+/// `hits` are independent assignments: one immutable raw callback may support at
+/// most one human marker in this report. `rawCandidateCount` is the number of
+/// distinct raw callback sequence identities observed for the stream across all
+/// marker windows, not the number of window incidences.
 public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Sendable, Identifiable {
     public let key: PassiveBluetoothValueStreamKey
     public let totalMarkerCount: Int
@@ -66,9 +64,6 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
 
     public var id: PassiveBluetoothValueStreamKey { key }
 
-    /// Analyzer output only. Keeping construction in this file makes support
-    /// counts, hit provenance, and summary statistics read-only evidence outside
-    /// the producer boundary.
     fileprivate init(
         key: PassiveBluetoothValueStreamKey,
         totalMarkerCount: Int,
@@ -97,13 +92,15 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
     }
 
     /// Descriptive repeatability only. This is not protocol-field confidence.
+    /// Because hits are one-to-one assignments, two hits necessarily represent
+    /// two distinct immutable raw callbacks.
     public var isRepeatedAcrossMarkers: Bool {
         markerSupportCount >= 2
     }
 
-    /// Descriptive evidence that the stream recurred near markers carrying more
-    /// than one human-observed display string. It does not mean the payload bytes
-    /// encode or scale with those strings.
+    /// Descriptive evidence that independently repeated callbacks were assigned
+    /// near markers carrying more than one human-observed display string. It does
+    /// not mean the payload bytes encode or scale with those strings.
     public var isRepeatedAcrossDisplayedValues: Bool {
         markerSupportCount >= 2 && representedDisplayedValues.count >= 2
     }
@@ -112,9 +109,9 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
 /// Cross-marker report for one human-observed stock-app field.
 ///
 /// The stream list is a prioritization aid for offline research only. Ranking is
-/// based on repeated temporal support, display-value diversity, and proximity;
-/// it never labels a stream as battery/current/power/etc. and never decodes the
-/// opaque payload.
+/// based on independent repeated temporal support, display-value diversity, and
+/// proximity; it never labels a stream as battery/current/power/etc. and never
+/// decodes the opaque payload.
 public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
     public let disposition: PassiveBluetoothRepeatedCorrelationDisposition
     public let field: String
@@ -122,8 +119,6 @@ public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
     public let distinctDisplayedValues: Set<String>
     public let streamEvidence: [PassiveBluetoothRepeatedCorrelationStreamEvidence]
 
-    /// Analyzer output only. Callers consume reports read-only rather than
-    /// manufacturing an `.analyzed` result disconnected from capture evidence.
     fileprivate init(
         disposition: PassiveBluetoothRepeatedCorrelationDisposition,
         field: String,
@@ -147,9 +142,6 @@ public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
 /// semantics. It does not merge callbacks across a disconnect/interruption and
 /// does not mutate the raw evidence artifact.
 public enum PassiveBluetoothRepeatedCorrelation {
-    /// Analyze an unscoped capture only when its GATT/value evidence resolves to
-    /// zero or one peripheral identifier. A mixed imported capture fails closed
-    /// because stock-app markers themselves do not carry a peripheral identity.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         field: String,
@@ -186,10 +178,6 @@ public enum PassiveBluetoothRepeatedCorrelation {
         )
     }
 
-    /// Analyze one explicitly selected peripheral in an imported/mixed capture.
-    /// Only raw value evidence from that exact identifier is eligible. The
-    /// CoreBluetooth identifier remains observed transport identity evidence; it
-    /// is not promoted to a globally stable physical scooter identity.
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String,
@@ -231,50 +219,128 @@ public enum PassiveBluetoothRepeatedCorrelation {
         var displayedValues: Set<String> = []
     }
 
+    private struct MarkerCandidateWindow {
+        let markerSequenceNumber: UInt64
+        let markerDisplayedValue: String
+        let candidates: [PassiveBluetoothCorrelationCandidate]
+    }
+
     private struct MutableStreamEvidence {
-        var rawCandidateCount = 0
-        var hits: [PassiveBluetoothRepeatedCorrelationHit] = []
+        var windows: [MarkerCandidateWindow] = []
+        var rawCandidateSequenceNumbers: Set<UInt64> = []
 
         mutating func ingest(
             window: PassiveBluetoothCorrelationWindow,
-            nearestCandidate: PassiveBluetoothCorrelationCandidate,
-            rawCandidateCount: Int
+            candidates: [PassiveBluetoothCorrelationCandidate]
         ) {
-            self.rawCandidateCount += rawCandidateCount
-            hits.append(
-                PassiveBluetoothRepeatedCorrelationHit(
+            guard !candidates.isEmpty else { return }
+            let orderedCandidates = candidates.sorted(by: PassiveBluetoothRepeatedCorrelation.candidatePreference)
+            windows.append(
+                MarkerCandidateWindow(
                     markerSequenceNumber: window.markerSequenceNumber,
                     markerDisplayedValue: window.displayedValue,
-                    candidateSequenceNumber: nearestCandidate.sequenceNumber,
-                    candidateOffsetSeconds: nearestCandidate.offsetSecondsFromMarker,
-                    origin: nearestCandidate.origin,
-                    payloadByteCount: nearestCandidate.payload.count
+                    candidates: orderedCandidates
                 )
             )
+            rawCandidateSequenceNumbers.formUnion(orderedCandidates.map(\.sequenceNumber))
         }
 
         func finalized(
             key: PassiveBluetoothValueStreamKey,
             totalMarkerCount: Int
         ) -> PassiveBluetoothRepeatedCorrelationStreamEvidence {
-            let orderedHits = hits.sorted { lhs, rhs in
-                if lhs.markerSequenceNumber != rhs.markerSequenceNumber {
-                    return lhs.markerSequenceNumber < rhs.markerSequenceNumber
-                }
-                return lhs.candidateSequenceNumber < rhs.candidateSequenceNumber
-            }
-            let absoluteOffsets = orderedHits.map(\.absoluteOffsetSeconds).sorted()
+            let hits = PassiveBluetoothRepeatedCorrelation.independentHits(from: windows)
+            let absoluteOffsets = hits.map(\.absoluteOffsetSeconds).sorted()
 
             return PassiveBluetoothRepeatedCorrelationStreamEvidence(
                 key: key,
                 totalMarkerCount: totalMarkerCount,
-                rawCandidateCount: rawCandidateCount,
-                hits: orderedHits,
-                representedDisplayedValues: Set(orderedHits.map(\.markerDisplayedValue)),
-                medianNearestAbsoluteOffsetSeconds: median(absoluteOffsets),
+                rawCandidateCount: rawCandidateSequenceNumbers.count,
+                hits: hits,
+                representedDisplayedValues: Set(hits.map(\.markerDisplayedValue)),
+                medianNearestAbsoluteOffsetSeconds: PassiveBluetoothRepeatedCorrelation.median(absoluteOffsets),
                 maximumNearestAbsoluteOffsetSeconds: absoluteOffsets.last
             )
         }
+    }
+
+    /// Produces a deterministic maximum-cardinality one-to-one assignment between
+    /// marker windows and immutable candidate sequence identities. Per-marker
+    /// candidate preference remains absolute temporal proximity then sequence.
+    /// An augmenting-path reassignment is allowed when it preserves an earlier
+    /// marker with another candidate and lets a later marker gain independent
+    /// support. This prevents one callback from manufacturing repeatability while
+    /// avoiding unnecessary loss of legitimate independent evidence.
+    private static func independentHits(
+        from windows: [MarkerCandidateWindow]
+    ) -> [PassiveBluetoothRepeatedCorrelationHit] {
+        let orderedWindows = windows.sorted { lhs, rhs in
+            lhs.markerSequenceNumber < rhs.markerSequenceNumber
+        }
+        guard !orderedWindows.isEmpty else { return [] }
+
+        var candidateOwner: [UInt64: Int] = [:]
+        var markerAssignment: [Int: PassiveBluetoothCorrelationCandidate] = [:]
+
+        func assign(
+            markerIndex: Int,
+            visitedCandidateSequences: inout Set<UInt64>
+        ) -> Bool {
+            for candidate in orderedWindows[markerIndex].candidates {
+                let sequence = candidate.sequenceNumber
+                guard visitedCandidateSequences.insert(sequence).inserted else { continue }
+
+                if let previousMarker = candidateOwner[sequence] {
+                    if assign(
+                        markerIndex: previousMarker,
+                        visitedCandidateSequences: &visitedCandidateSequences
+                    ) {
+                        candidateOwner[sequence] = markerIndex
+                        markerAssignment[markerIndex] = candidate
+                        return true
+                    }
+                } else {
+                    candidateOwner[sequence] = markerIndex
+                    markerAssignment[markerIndex] = candidate
+                    return true
+                }
+            }
+            return false
+        }
+
+        for markerIndex in orderedWindows.indices {
+            var visitedCandidateSequences: Set<UInt64> = []
+            _ = assign(
+                markerIndex: markerIndex,
+                visitedCandidateSequences: &visitedCandidateSequences
+            )
+        }
+
+        return markerAssignment.keys.sorted { lhs, rhs in
+            orderedWindows[lhs].markerSequenceNumber < orderedWindows[rhs].markerSequenceNumber
+        }
+        .compactMap { markerIndex in
+            guard let candidate = markerAssignment[markerIndex] else { return nil }
+            let window = orderedWindows[markerIndex]
+            return PassiveBluetoothRepeatedCorrelationHit(
+                markerSequenceNumber: window.markerSequenceNumber,
+                markerDisplayedValue: window.markerDisplayedValue,
+                candidateSequenceNumber: candidate.sequenceNumber,
+                candidateOffsetSeconds: candidate.offsetSecondsFromMarker,
+                origin: candidate.origin,
+                payloadByteCount: candidate.payload.count
+            )
+        }
+    }
+
+    private static func candidatePreference(
+        _ lhs: PassiveBluetoothCorrelationCandidate,
+        _ rhs: PassiveBluetoothCorrelationCandidate
+    ) -> Bool {
+        let lhsMagnitude = abs(lhs.offsetSecondsFromMarker)
+        let rhsMagnitude = abs(rhs.offsetSecondsFromMarker)
+        if lhsMagnitude != rhsMagnitude { return lhsMagnitude < rhsMagnitude }
+        return lhs.sequenceNumber < rhs.sequenceNumber
     }
 
     private static func buildReport(
@@ -296,16 +362,8 @@ public enum PassiveBluetoothRepeatedCorrelation {
             }
 
             for (key, candidates) in candidatesByStream {
-                // `PassiveBluetoothCorrelation` already sorts each window by
-                // absolute marker offset then sequence number. Filtering that
-                // stable order by stream preserves the deterministic nearest hit.
-                guard let nearest = candidates.first else { continue }
                 var accumulator = accumulators[key, default: MutableStreamEvidence()]
-                accumulator.ingest(
-                    window: window,
-                    nearestCandidate: nearest,
-                    rawCandidateCount: candidates.count
-                )
+                accumulator.ingest(window: window, candidates: candidates)
                 accumulators[key] = accumulator
             }
         }
@@ -324,9 +382,6 @@ public enum PassiveBluetoothRepeatedCorrelation {
         )
     }
 
-    /// Sorting is a research convenience, not a semantic confidence score.
-    /// Repeated marker support is prioritized first; diversity and temporal
-    /// proximity break ties before deterministic stream identity ordering.
     private static func evidenceSort(
         _ lhs: PassiveBluetoothRepeatedCorrelationStreamEvidence,
         _ rhs: PassiveBluetoothRepeatedCorrelationStreamEvidence
@@ -340,9 +395,7 @@ public enum PassiveBluetoothRepeatedCorrelation {
 
         let lhsMedian = lhs.medianNearestAbsoluteOffsetSeconds ?? .infinity
         let rhsMedian = rhs.medianNearestAbsoluteOffsetSeconds ?? .infinity
-        if lhsMedian != rhsMedian {
-            return lhsMedian < rhsMedian
-        }
+        if lhsMedian != rhsMedian { return lhsMedian < rhsMedian }
         return lhs.key < rhs.key
     }
 
@@ -362,9 +415,9 @@ public enum PassiveBluetoothRepeatedCorrelation {
         return metadata
     }
 
-    /// Mirrors the existing correlation layer's attribution boundary. Only GATT
-    /// and raw-value evidence participates in ambiguity detection; advertisement
-    /// noise and connection callbacks alone do not assign a marker to a target.
+    /// Mirrors the current parent correlation attribution boundary. Structured
+    /// connection identity participates in ambiguity detection alongside GATT and
+    /// raw-value identity; advertisement-only noise and human markers do not.
     private static func correlationPeripheralIdentifiers(
         in session: PassiveBluetoothCaptureSession
     ) -> Set<String> {
@@ -372,6 +425,8 @@ public enum PassiveBluetoothRepeatedCorrelation {
 
         for record in session.records {
             switch record.event {
+            case let .connection(observation):
+                identifiers.insert(observation.peripheralIdentifier)
             case let .service(observation):
                 identifiers.insert(observation.peripheralIdentifier)
             case let .includedService(observation):
@@ -384,7 +439,7 @@ public enum PassiveBluetoothRepeatedCorrelation {
                 identifiers.insert(observation.peripheralIdentifier)
             case let .value(observation):
                 identifiers.insert(observation.peripheralIdentifier)
-            case .advertisement, .connection, .stockAppState, .interruption:
+            case .advertisement, .stockAppState, .interruption:
                 break
             }
         }
