@@ -22,15 +22,22 @@ struct RideLocationSourceEvent: Equatable, Sendable {
     let sample: RideLocationSample?
     let issue: RideLocationSourceIssue?
     let isStationary: Bool
+    /// Process-local receipt ordering for diagnostics that may not carry a
+    /// CLLocation sample of their own. This is not scooter telemetry.
+    let receivedAtUptimeNanoseconds: UInt64
 
     init(
         sample: RideLocationSample?,
         issue: RideLocationSourceIssue?,
-        isStationary: Bool
+        isStationary: Bool,
+        receivedAtUptimeNanoseconds: UInt64? = nil
     ) {
         self.sample = sample
         self.issue = issue
         self.isStationary = isStationary
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+            ?? sample?.receivedAtUptimeNanoseconds
+            ?? DispatchTime.now().uptimeNanoseconds
     }
 }
 
@@ -309,8 +316,8 @@ actor RideLocationCaptureCoordinator {
     /// exact ride UUID this capture began with. Returning `false` means the ride
     /// application has already closed that session's evidence boundary, so the
     /// same point is excluded from route persistence as well as GPS distance.
-    /// A nil distance is the first accepted anchor point: it still requires
-    /// session admission but must not manufacture a zero-distance observation.
+    /// A nil distance is an identity/continuity event (first anchor, stationary
+    /// duplicate, or source diagnostic) and must not manufacture movement.
     typealias EvidenceAdmissionSink = @Sendable (
         _ sessionID: UUID,
         _ distanceDeltaMeters: Double?,
@@ -355,8 +362,8 @@ actor RideLocationCaptureCoordinator {
     }
 
     /// Compatibility initializer for existing callers that already scope each
-    /// emitted nonzero delta to a ride UUID. The wrapper admits first anchor
-    /// points and preserves the old sink behavior for accepted distance deltas.
+    /// emitted nonzero delta to a ride UUID. The wrapper admits identity-only
+    /// events and preserves the old sink behavior for positive distance deltas.
     init(
         source: any RideLocationSource,
         qualityPolicy: RideLocationQualityPolicy,
@@ -370,7 +377,7 @@ actor RideLocationCaptureCoordinator {
             routeStore: routeStore,
             routeChunkSize: routeChunkSize,
             sessionScopedEvidenceAdmissionSink: { sessionID, meters, uptime in
-                if let meters {
+                if let meters, meters > 0 {
                     await sessionScopedDistanceSink(sessionID, meters, uptime)
                 }
                 return true
@@ -489,11 +496,22 @@ actor RideLocationCaptureCoordinator {
 
     private func consume(_ event: RideLocationSourceEvent) async {
         if event.issue != nil {
-            // An explicit Core Location diagnostic means continuity is no longer
-            // justified. Mark the quality screen immediately. Route topology is
-            // materialized only if a later screened point is admitted to the
-            // active ride, so a post-cutoff buffered point cannot create a route
-            // segment that the completed GPS evidence does not own.
+            // A source diagnostic is itself evidence that route continuity was
+            // interrupted. First ask the application whether this diagnostic is
+            // still inside the exact ride boundary. If so, materialize the gap
+            // immediately so a trailing issue followed by finish cannot retain
+            // a false `.complete` manifest. A buffered post-completion issue is
+            // rejected and therefore cannot rewrite pre-completion route truth.
+            if let sessionID {
+                let admittedIssue = await evidenceAdmissionSink(
+                    sessionID,
+                    nil,
+                    event.receivedAtUptimeNanoseconds
+                )
+                if admittedIssue {
+                    await markRouteGapIfAvailable()
+                }
+            }
             qualityScreen.markKnownCoverageGap()
         }
 
@@ -504,9 +522,14 @@ actor RideLocationCaptureCoordinator {
             return
         case let .accepted(accepted):
             guard let sessionID else { return }
+            // Exact zero displacement is not movement evidence. Route identity is
+            // still checked, but RideEngine is not fed a stationary GPS sample
+            // that could end the ride from inside this capture task and create a
+            // coordinator.finish() self-await cycle.
+            let movementDelta = accepted.distanceDeltaMeters.flatMap { $0 > 0 ? $0 : nil }
             let admitted = await evidenceAdmissionSink(
                 sessionID,
-                accepted.distanceDeltaMeters,
+                movementDelta,
                 accepted.sample.receivedAtUptimeNanoseconds
             )
             guard admitted else {
@@ -526,8 +549,8 @@ actor RideLocationCaptureCoordinator {
             await appendRoutePointIfAvailable(accepted.sample)
             acceptedPointCount += 1
 
-            if let distanceDeltaMeters = accepted.distanceDeltaMeters {
-                qualityScreenedDistanceMeters += distanceDeltaMeters
+            if let movementDelta {
+                qualityScreenedDistanceMeters += movementDelta
             }
         }
     }
