@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Propulsion gauge presentation")
 struct PropulsionGaugePresentationTests {
-    private let identity = PropulsionGaugeIdentity(vehicleID: "es80-test")
+    private let identity = try! PropulsionGaugeIdentity(vehicleID: "es80-test")
 
     private func motionPolicy(
         rise: UInt64 = 1_000_000_000,
@@ -303,7 +303,7 @@ struct PropulsionGaugePresentationTests {
 
     @Test("visual scale cannot cross vehicle identity even within one authority domain")
     func scaleCannotCrossVehicleIdentity() throws {
-        let otherIdentity = PropulsionGaugeIdentity(vehicleID: "another-es80")
+        let otherIdentity = try PropulsionGaugeIdentity(vehicleID: "another-es80")
         let foreignScale = try simulatorScale(ceilingWatts: 500, identity: otherIdentity)
         var model = PropulsionGaugeDisplayModel(identity: identity, policy: try motionPolicy())
         try model.accept(simulatorSample(watts: 250, uptime: 1_000))
@@ -318,7 +318,7 @@ struct PropulsionGaugePresentationTests {
 
     @Test("verified envelope scale preserves exact vehicle and mode identity")
     func verifiedScalePreservesCalibrationIdentity() throws {
-        let sportIdentity = PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "confirmed-sport")
+        let sportIdentity = try PropulsionGaugeIdentity(vehicleID: "es80-test", modeKey: "confirmed-sport")
         let scale = try verifiedScale(ceilingWatts: 500, identity: sportIdentity)
 
         #expect(scale.identity == sportIdentity)
