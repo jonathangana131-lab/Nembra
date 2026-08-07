@@ -59,6 +59,14 @@ struct BatteryDisplaySOCTransitionTests {
         #expect(BatteryDisplaySOCTransitionPlanner.plan(from: 73, to: 101) == .clear)
     }
 
+    @Test("extreme invalid endpoints fail closed before arithmetic")
+    func extremeInvalidEndpointsFailClosed() {
+        #expect(BatteryDisplaySOCTransitionPlanner.plan(from: Int.min, to: 73) == .snap(73))
+        #expect(BatteryDisplaySOCTransitionPlanner.plan(from: Int.max, to: 73) == .snap(73))
+        #expect(BatteryDisplaySOCTransitionPlanner.plan(from: 73, to: Int.min) == .clear)
+        #expect(BatteryDisplaySOCTransitionPlanner.plan(from: 73, to: Int.max) == .clear)
+    }
+
     @Test("zero and full scale endpoints remain valid")
     func boundaries() {
         let descending = BatteryDisplaySOCTransitionPlanner.plan(from: 1, to: 0)
