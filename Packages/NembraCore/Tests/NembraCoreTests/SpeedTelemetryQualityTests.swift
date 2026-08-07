@@ -161,30 +161,34 @@ struct SpeedTelemetryQualityTests {
         ])
     }
 
-    @Test("non-finite derived speed resolution fails closed")
+    @Test("rejected non-finite derived speed remains unqualified")
     func nonFiniteDerivedSpeedResolutionFailsClosed() throws {
         let overflowingMetersPerSecond = Double.greatestFiniteMagnitude / 2
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
-        collector.record(try sample(
+        let firstResult = collector.record(try sample(
             metersPerSecond: overflowingMetersPerSecond,
             milliseconds: 0
         ))
-        collector.record(try sample(
+        let secondResult = collector.record(try sample(
             metersPerSecond: overflowingMetersPerSecond,
             milliseconds: 100
         ))
 
-        #expect(collector.summary.acceptedSampleCount == 2)
-        #expect(
-            collector.summary.empiricalMinimumNonzeroSpeedStepKilometersPerHour?.isNaN == true
-        )
+        #expect(firstResult == .rejected(.nonFiniteDerivedSpeed))
+        #expect(secondResult == .rejected(.nonFiniteDerivedSpeed))
+        #expect(collector.summary.acceptedSampleCount == 0)
+        #expect(collector.summary.rejectedSampleCount == 2)
+        #expect(collector.summary.empiricalMinimumNonzeroSpeedStepKilometersPerHour == nil)
 
         let assessment = collector.summary.qualityAssessment(
             using: try SpeedTelemetryQualityPolicy(
                 maximumEmpiricalSpeedStepKilometersPerHour: 1
             )
         )
-        #expect(assessment.failures == [.missingSpeedResolutionEvidence])
+        #expect(assessment.failures == [
+            .insufficientAcceptedSamples(required: 1, actual: 0),
+            .missingSpeedResolutionEvidence
+        ])
     }
 
     @Test("latency requirement can demand representative timestamp coverage")
