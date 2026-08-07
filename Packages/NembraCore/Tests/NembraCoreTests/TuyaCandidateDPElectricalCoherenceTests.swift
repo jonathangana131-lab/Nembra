@@ -25,7 +25,11 @@ struct TuyaCandidateDPElectricalCoherenceTests {
         )
     }
 
-    private func marker(_ time: UInt64, field: String, index: Int) throws -> TuyaCandidateDPStockAppMarker {
+    private func marker(
+        _ time: UInt64,
+        field: String,
+        index: Int
+    ) throws -> TuyaCandidateDPStockAppMarker {
         try TuyaCandidateDPStockAppMarker(
             receiptUptimeNanoseconds: time,
             displayedReference: "\(field)-marker-\(index)"
@@ -114,7 +118,9 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 maximumCandidateOccurrenceCount: 64
             )
         )
-        let numericReferences = try numericValues.enumerated().compactMap { index, value in
+        let numericReferences: [TuyaCandidateDPNumericReference] = try numericValues.enumerated().compactMap {
+            index,
+            value in
             guard let value else { return nil }
             return try TuyaCandidateDPNumericReference(markerIndex: index, value: value)
         }
@@ -328,7 +334,7 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             policy: coherencePolicy(absolute: 0, relative: 0.025)
         )
         let evaluation = try #require(tolerant.evaluations.first)
-        #expect(evaluation.referenceAllowedPowerError == 1.05)
+        #expect(abs(evaluation.referenceAllowedPowerError - 1.05) < 1e-12)
         #expect(evaluation.referenceAbsolutePowerError == 1)
         #expect(evaluation.referenceRelationshipWithinTolerance)
         #expect(evaluation.candidateRelationshipWithinTolerance)
@@ -478,6 +484,14 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             scale: 0.1,
             candidateID: 1
         )
+        let power = try numericReport(
+            field: "Power",
+            markerTimes: [120],
+            rawValues: [uint16(410)],
+            numericValues: [41],
+            scale: 0.1,
+            candidateID: 3
+        )
         let wrongStreamCurrent = try numericReport(
             field: "Current",
             markerTimes: [110],
@@ -487,15 +501,6 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             candidateID: 2,
             characteristic: "D"
         )
-        let power = try numericReport(
-            field: "Power",
-            markerTimes: [120],
-            rawValues: [uint16(410)],
-            numericValues: [41],
-            scale: 0.1,
-            candidateID: 3
-        )
-
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.streamIdentityMismatch(role: .current)) {
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
                 voltageReport: voltage,
@@ -531,6 +536,14 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             )
         }
 
+        let current = try numericReport(
+            field: "Current",
+            markerTimes: [110],
+            rawValues: [[10]],
+            numericValues: [1],
+            scale: 0.1,
+            candidateID: 2
+        )
         let wrongWidthPower = try numericReport(
             field: "Power",
             markerTimes: [120],
@@ -539,14 +552,6 @@ struct TuyaCandidateDPElectricalCoherenceTests {
             scale: 0.1,
             candidateID: 3,
             width: .oneByte
-        )
-        let current = try numericReport(
-            field: "Current",
-            markerTimes: [110],
-            rawValues: [[10]],
-            numericValues: [1],
-            scale: 0.1,
-            candidateID: 2
         )
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.dataLengthWidthMismatch(role: .power)) {
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
@@ -618,20 +623,32 @@ struct TuyaCandidateDPElectricalCoherenceTests {
 
     @Test("anchor reuse cannot manufacture repeated support")
     func duplicateAndReusedAnchorsFailClosed() throws {
+        let voltage = try numericReport(
+            field: "Voltage",
+            markerTimes: [100, 200],
+            rawValues: [uint16(410), uint16(400)],
+            numericValues: [41, 40],
+            scale: 0.1,
+            candidateID: 1
+        )
+        let current = try numericReport(
+            field: "Current",
+            markerTimes: [110, 210],
+            rawValues: [[10], [10]],
+            numericValues: [1, 1],
+            scale: 0.1,
+            candidateID: 2
+        )
+        let power = try numericReport(
+            field: "Power",
+            markerTimes: [120, 220],
+            rawValues: [uint16(410), uint16(400)],
+            numericValues: [41, 40],
+            scale: 0.1,
+            candidateID: 3
+        )
         let duplicate = try anchor(0)
         #expect(throws: TuyaCandidateDPElectricalCoherenceError.duplicateAnchor(anchorIndex: 1, previousAnchorIndex: 0)) {
-            let voltage = try numericReport(
-                field: "Voltage", markerTimes: [100], rawValues: [uint16(410)],
-                numericValues: [41], scale: 0.1, candidateID: 1
-            )
-            let current = try numericReport(
-                field: "Current", markerTimes: [110], rawValues: [[10]],
-                numericValues: [1], scale: 0.1, candidateID: 2
-            )
-            let power = try numericReport(
-                field: "Power", markerTimes: [120], rawValues: [uint16(410)],
-                numericValues: [41], scale: 0.1, candidateID: 3
-            )
             try TuyaCandidateDPElectricalCoherenceEvaluator.evaluate(
                 voltageReport: voltage,
                 voltageHypothesisIdentifier: "selected",
@@ -640,22 +657,10 @@ struct TuyaCandidateDPElectricalCoherenceTests {
                 powerReport: power,
                 powerHypothesisIdentifier: "selected",
                 anchors: [duplicate, duplicate],
-                policy: coherencePolicy()
+                policy: coherencePolicy(span: 200)
             )
         }
 
-        let voltage = try numericReport(
-            field: "Voltage", markerTimes: [100, 200], rawValues: [uint16(410), uint16(400)],
-            numericValues: [41, 40], scale: 0.1, candidateID: 1
-        )
-        let current = try numericReport(
-            field: "Current", markerTimes: [110, 210], rawValues: [[10], [10]],
-            numericValues: [1, 1], scale: 0.1, candidateID: 2
-        )
-        let power = try numericReport(
-            field: "Power", markerTimes: [120, 220], rawValues: [uint16(410), uint16(400)],
-            numericValues: [41, 40], scale: 0.1, candidateID: 3
-        )
         let first = try TuyaCandidateDPElectricalAnchor(
             voltageMarkerIndex: 0,
             currentMarkerIndex: 0,
