@@ -99,6 +99,39 @@ struct TelemetryBenchmarkSelectedSourceChronologyTests {
         #expect(abs((summary.meanIntervalMilliseconds ?? 0) - 201) < 0.000_001)
     }
 
+    @Test("rejected first selected-source callback still closes cold-start chronology")
+    func rejectedFirstObservationPreventsOlderFirstAcceptance() throws {
+        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+
+        let overflow = try overflowingSample(milliseconds: 300)
+        #expect(!overflow.kilometersPerHour.isFinite)
+        #expect(collector.record(overflow) == .rejected(.nonFiniteDerivedSpeed))
+
+        // There is no accepted benchmark anchor yet, but receive chronology already
+        // exists. An older delayed callback cannot become the collector's first
+        // accepted evidence after a newer selected-source callback was observed.
+        #expect(
+            collector.record(try sample(milliseconds: 200, speedKilometersPerHour: 7.2))
+                == .rejected(.nonMonotonicTimestamp)
+        )
+
+        var summary = collector.summary
+        #expect(summary.acceptedSampleCount == 0)
+        #expect(summary.rejectedSampleCount == 2)
+        #expect(summary.observationSegmentCount == 0)
+        #expect(summary.intervalCount == 0)
+        #expect(summary.observedDurationSeconds == 0)
+
+        #expect(collector.record(try sample(milliseconds: 400, speedKilometersPerHour: 10.8)) == .accepted)
+        summary = collector.summary
+        #expect(summary.acceptedSampleCount == 1)
+        #expect(summary.rejectedSampleCount == 2)
+        #expect(summary.observationSegmentCount == 1)
+        #expect(summary.intervalCount == 0)
+        #expect(summary.observedDurationSeconds == 0)
+        #expect(summary.effectiveSampleRateHertz == nil)
+    }
+
     @Test("foreign callbacks never advance selected-source chronology")
     func foreignSourceCannotPoisonSelectedSourceWatermark() throws {
         var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
