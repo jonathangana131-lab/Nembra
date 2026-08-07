@@ -29,6 +29,7 @@ struct NembraGlassButtonStyle: ViewModifier {
                         .primary.opacity(colorSchemeContrast == .increased ? 0.34 : 0.14),
                         lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
                     )
+                    .allowsHitTesting(false)
                 }
         } else if #available(iOS 26.0, *) {
             content
@@ -39,6 +40,7 @@ struct NembraGlassButtonStyle: ViewModifier {
                 .overlay {
                     if colorSchemeContrast == .increased {
                         shape.stroke(.primary.opacity(0.28), lineWidth: 1.25)
+                            .allowsHitTesting(false)
                     }
                 }
         } else {
@@ -47,6 +49,7 @@ struct NembraGlassButtonStyle: ViewModifier {
                 .overlay {
                     if colorSchemeContrast == .increased {
                         shape.stroke(.primary.opacity(0.28), lineWidth: 1.25)
+                            .allowsHitTesting(false)
                     }
                 }
         }
