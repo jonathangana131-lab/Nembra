@@ -193,8 +193,8 @@ struct PassiveBluetoothCaptureComparisonTests {
         #expect(stream.rawDifferenceScore == nil)
     }
 
-    @Test("selected-target disconnect withholds direct difference metrics but unrelated disconnect does not")
-    func scopesDisconnectContinuityToResolvedTarget() throws {
+    @Test("connection-only neighbor does not fragment a resolved GATT target; target disconnect does")
+    func scopesDisconnectContinuityToResolvedGATTTarget() throws {
         var baseline = try makeSession()
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xAA], sequence: 1, to: &baseline)
         try appendDisconnect(peripheral: "noise-device", sequence: 2, to: &baseline)
@@ -203,32 +203,39 @@ struct PassiveBluetoothCaptureComparisonTests {
         var comparison = try makeSession()
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xBB], sequence: 1, to: &comparison)
 
-        var unrelatedReport = PassiveBluetoothCaptureComparison.compare(
+        var report = PassiveBluetoothCaptureComparison.compare(
             baseline: baseline,
             comparison: comparison
         )
-        #expect(unrelatedReport.baselinePeripheralIdentifier == nil)
-        #expect(unrelatedReport.differenceAvailability == .continuityAmbiguous)
+        #expect(report.baselinePeripheralIdentifier == "physical-es80-placeholder")
+        #expect(report.baselineContinuityBreakCount == 0)
+        #expect(report.differenceAvailability == .comparable)
+        let uninterrupted = try #require(report.streamComparisons.first)
+        #expect(uninterrupted.baseline?.continuitySegmentCount == 1)
+        #expect(uninterrupted.sharedPayloadCount == 1)
+        #expect(uninterrupted.baselineOnlyPayloadCount == 1)
+        #expect(uninterrupted.rawDifferenceScore == 1)
 
         baseline = try makeSession()
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xAA], sequence: 1, to: &baseline)
         try appendDisconnect(peripheral: "physical-es80-placeholder", sequence: 2, to: &baseline)
         try appendValue(service: "A201", characteristic: "2B10", payload: [0xBB], sequence: 3, to: &baseline)
 
-        unrelatedReport = PassiveBluetoothCaptureComparison.compare(
+        report = PassiveBluetoothCaptureComparison.compare(
             baseline: baseline,
             comparison: comparison
         )
-        #expect(unrelatedReport.baselinePeripheralIdentifier == "physical-es80-placeholder")
-        #expect(unrelatedReport.baselineContinuityBreakCount == 1)
-        #expect(unrelatedReport.differenceAvailability == .continuityAmbiguous)
-        #expect(unrelatedReport.streamComparisons.first?.rawDifferenceScore == nil)
+        #expect(report.baselinePeripheralIdentifier == "physical-es80-placeholder")
+        #expect(report.baselineContinuityBreakCount == 1)
+        #expect(report.differenceAvailability == .continuityAmbiguous)
+        #expect(report.streamComparisons.first?.baseline?.continuitySegmentCount == 2)
+        #expect(report.streamComparisons.first?.rawDifferenceScore == nil)
     }
 
     @Test("advertisement-only service UUIDs never become GATT topology deltas")
     func advertisementServicesStayOutOfGATTTopology() throws {
         var baseline = try makeSession()
-        try appendService("A201", sequence: 1, to: &baseline)
+        try appendService("a201", sequence: 1, to: &baseline)
         try appendAdvertisement(
             serviceUUIDs: ["180F"],
             sequence: 2,
