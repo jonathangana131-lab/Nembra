@@ -31,9 +31,10 @@ struct UnverifiedScooterServiceTests {
         #expect(await iterator.next() == nil)
     }
 
-    @Test("commands report unverified configuration rather than a fake disconnect")
+    @Test("commands report unverified configuration without mutating vehicle state")
     func commandsStayUnavailableForTruthfulReason() async {
         let service = UnverifiedScooterService()
+        let before = await service.snapshot()
 
         await #expect(throws: ScooterCommandError.unverifiedConfiguration) {
             try await service.setHeadlight(true)
@@ -54,12 +55,6 @@ struct UnverifiedScooterServiceTests {
             try await service.setSpeedLimit(kilometersPerHour: 20, slot: .limit1)
         }
 
-        let state = await service.snapshot()
-        #expect(state.isHeadlightOn == nil)
-        #expect(state.isLocked == nil)
-        #expect(state.isCruiseEnabled == nil)
-        #expect(state.rideMode == nil)
-        #expect(state.startMode == nil)
-        #expect(state.speedLimitsKilometersPerHour.isEmpty)
+        #expect(await service.snapshot() == before)
     }
 }
