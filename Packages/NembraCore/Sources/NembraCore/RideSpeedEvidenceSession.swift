@@ -237,14 +237,16 @@ public enum RideObservedPeakReadinessFailure: Equatable, Sendable {
 /// Immutable audit result for one same-ride observed-peak quality decision.
 ///
 /// `isReady` means the retained benchmark satisfied the retained caller-supplied
-/// policy and the peak-specific truth checks below. Keeping both policy and raw
-/// benchmark summary prevents a later consumer from seeing only an untraceable
-/// boolean/assessment after the thresholds or measured metrics have been lost.
-/// This type is intentionally not Codable and does not claim those thresholds
-/// have been physically validated for AOVOPRO ES80.
+/// policy and the peak-specific truth checks below. Keeping the session topology,
+/// policy, and raw benchmark prevents a later consumer from seeing only an
+/// untraceable boolean/assessment after failed-session provenance or thresholds
+/// have been lost. This type is intentionally not Codable and does not claim
+/// those thresholds have been physically validated for AOVOPRO ES80.
 public struct RideObservedPeakReadiness: Equatable, Sendable {
     public let sessionID: UUID
     public let source: SpeedTelemetrySource
+    public let beganAfterKnownObservationGap: Bool
+    public let foreignSourceCallbackCount: Int
     public let peakEvidence: RidePeakSpeedEvidence?
     public let telemetryBenchmark: TelemetryBenchmarkSummary
     public let policy: RideObservedPeakQualityPolicy
@@ -256,6 +258,8 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
     fileprivate init(
         sessionID: UUID,
         source: SpeedTelemetrySource,
+        beganAfterKnownObservationGap: Bool,
+        foreignSourceCallbackCount: Int,
         peakEvidence: RidePeakSpeedEvidence?,
         telemetryBenchmark: TelemetryBenchmarkSummary,
         policy: RideObservedPeakQualityPolicy,
@@ -264,6 +268,8 @@ public struct RideObservedPeakReadiness: Equatable, Sendable {
     ) {
         self.sessionID = sessionID
         self.source = source
+        self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
+        self.foreignSourceCallbackCount = foreignSourceCallbackCount
         self.peakEvidence = peakEvidence
         self.telemetryBenchmark = telemetryBenchmark
         self.policy = policy
@@ -321,6 +327,8 @@ public extension RideSpeedEvidenceSessionSnapshot {
         return RideObservedPeakReadiness(
             sessionID: sessionID,
             source: source,
+            beganAfterKnownObservationGap: beganAfterKnownObservationGap,
+            foreignSourceCallbackCount: foreignSourceCallbackCount,
             peakEvidence: peakEvidence,
             telemetryBenchmark: telemetryBenchmark,
             policy: policy,
