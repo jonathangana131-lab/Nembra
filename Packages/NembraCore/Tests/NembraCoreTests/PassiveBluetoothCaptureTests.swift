@@ -76,6 +76,32 @@ struct PassiveBluetoothCaptureTests {
         #expect(Set(PassiveBluetoothValueOrigin.allCases).contains(.subscriptionUpdate))
     }
 
+    @Test("characteristic property arrays encode in deterministic raw-value order")
+    func characteristicPropertiesEncodeDeterministically() throws {
+        let characteristic = try PassiveBluetoothCharacteristicObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "FFE1",
+            properties: Set(PassiveBluetoothCharacteristicProperty.allCases)
+        )
+        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: Date(timeIntervalSince1970: 1_550))
+        try session.append(
+            .characteristic(characteristic),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 15,
+            receivedAtDate: Date(timeIntervalSince1970: 1_551)
+        )
+
+        let data = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+        let json = String(decoding: data, as: UTF8.self)
+        let expectedProperties = PassiveBluetoothCharacteristicProperty.allCases
+            .map(\.rawValue)
+            .sorted()
+            .map { "\"\($0)\"" }
+            .joined(separator: ",")
+        #expect(json.contains("\"properties\":[\(expectedProperties)]"))
+    }
+
     @Test("included-service relationships survive versioned capture round trip")
     func preservesIncludedServiceRelationships() throws {
         let included = try PassiveBluetoothIncludedServiceObservation(
@@ -199,6 +225,31 @@ struct PassiveBluetoothCaptureTests {
         }
     }
 
+    @Test("disconnect and explicit interruption are byte-continuity boundaries")
+    func continuityBoundarySemanticsAreExplicit() throws {
+        let connected = try PassiveBluetoothConnectionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            state: .connected
+        )
+        let disconnected = try PassiveBluetoothConnectionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            state: .disconnected
+        )
+        let interruption = try PassiveBluetoothCaptureInterruption(reason: "observer restart")
+        let subscription = try PassiveBluetoothSubscriptionObservation(
+            peripheralIdentifier: "physical-es80-placeholder",
+            serviceUUID: "FD50",
+            characteristicUUID: "FFE2",
+            requestedEnabled: true,
+            resultingIsNotifying: true
+        )
+
+        #expect(PassiveBluetoothCaptureEvent.connection(disconnected).breaksByteContinuity)
+        #expect(PassiveBluetoothCaptureEvent.interruption(interruption).breaksByteContinuity)
+        #expect(!PassiveBluetoothCaptureEvent.connection(connected).breaksByteContinuity)
+        #expect(!PassiveBluetoothCaptureEvent.subscription(subscription).breaksByteContinuity)
+    }
+
     @Test("subscription callbacks preserve request context, resulting state, and failure evidence")
     func preservesSubscriptionStateAndResult() throws {
         let subscriptionError = try PassiveBluetoothErrorObservation(domain: "CBATTErrorDomain", code: 14)
@@ -228,7 +279,7 @@ struct PassiveBluetoothCaptureTests {
         #expect(captured.error == subscriptionError)
     }
 
-    @Test("captured value origins contain no motorized write action and permit ambiguous subscription delivery")
+    @Test("value origins remain non-mutating and permit ambiguous subscription delivery")
     func valueOriginsAreNonMutating() {
         #expect(Set(PassiveBluetoothValueOrigin.allCases) == [.notification, .indication, .subscriptionUpdate, .readResponse])
     }
@@ -343,6 +394,50 @@ struct PassiveBluetoothCaptureTests {
         #expect(try PassiveBluetoothCaptureJSON.decode(Data(json.utf8)) == session)
     }
 
+    @Test("schema v1 rejects v2-only connection and subscription events")
+    func schemaV1RejectsV2OnlyEventVocabulary() throws {
+        let events: [PassiveBluetoothCaptureEvent] = [
+            .connection(
+                try PassiveBluetoothConnectionObservation(
+                    peripheralIdentifier: "physical-es80-placeholder",
+                    state: .connected
+                )
+            ),
+            .subscription(
+                try PassiveBluetoothSubscriptionObservation(
+                    peripheralIdentifier: "physical-es80-placeholder",
+                    serviceUUID: "FD50",
+                    characteristicUUID: "FFE2",
+                    requestedEnabled: true,
+                    resultingIsNotifying: true
+                )
+            )
+        ]
+
+        for (offset, event) in events.enumerated() {
+            var session = try PassiveBluetoothCaptureSession(
+                vehicleIdentity: es80,
+                startedAt: Date(timeIntervalSince1970: 2_000 + Double(offset))
+            )
+            try session.append(
+                event,
+                sequenceNumber: 1,
+                receivedAtUptimeNanoseconds: UInt64(offset + 1),
+                receivedAtDate: Date(timeIntervalSince1970: 2_001 + Double(offset))
+            )
+
+            let encoded = try PassiveBluetoothCaptureJSON.encode(session, prettyPrinted: false)
+            let currentToken = "\"schemaVersion\":\(PassiveBluetoothCaptureJSON.currentSchemaVersion)"
+            var json = String(decoding: encoded, as: UTF8.self)
+            #expect(json.contains(currentToken))
+            json = json.replacingOccurrences(of: currentToken, with: "\"schemaVersion\":1")
+
+            #expect(throws: PassiveBluetoothCaptureValidationError.eventNotSupportedBySchemaVersion(1)) {
+                _ = try PassiveBluetoothCaptureJSON.decode(Data(json.utf8))
+            }
+        }
+    }
+
     @Test("JSON import cannot bypass record ordering validation")
     func jsonImportRevalidatesRecordOrder() throws {
         struct UncheckedSessionPayload: Encodable {
@@ -362,18 +457,18 @@ struct PassiveBluetoothCaptureTests {
         let payload = UncheckedSessionPayload(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000082")!,
             vehicleIdentity: es80,
-            startedAt: Date(timeIntervalSince1970: 2_000),
+            startedAt: Date(timeIntervalSince1970: 2_100),
             records: [
                 PassiveBluetoothCaptureRecord(
                     sequenceNumber: 2,
                     receivedAtUptimeNanoseconds: 20,
-                    receivedAtDate: Date(timeIntervalSince1970: 2_001),
+                    receivedAtDate: Date(timeIntervalSince1970: 2_101),
                     event: event
                 ),
                 PassiveBluetoothCaptureRecord(
                     sequenceNumber: 1,
                     receivedAtUptimeNanoseconds: 21,
-                    receivedAtDate: Date(timeIntervalSince1970: 2_002),
+                    receivedAtDate: Date(timeIntervalSince1970: 2_102),
                     event: event
                 )
             ]
