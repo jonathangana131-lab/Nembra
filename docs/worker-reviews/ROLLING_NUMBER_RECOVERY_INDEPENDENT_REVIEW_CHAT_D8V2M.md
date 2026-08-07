@@ -24,6 +24,7 @@ This file is a worker-specific Class-C durable checkpoint on the isolated lease 
 - exact PR changed-file inventory: the three incumbent paths listed above, no fourth path
 - live main at latest refresh: `8dcf1459bd9152a94d6616fe1597e4a835a4972a`
 - `60d8ecc... -> 8dcf145...` main movement changes exactly three additive route-summary paths (`RideRouteEvidenceSummary.swift`, its test, and its doc), with zero rolling-number overlap.
+- GitHub reports PR #95 mergeable, but its cached/generated merge candidate is still based on `60d8ecc...`; it is therefore not treated as fresh-main acceptance evidence.
 
 ## Source/API review result
 
@@ -59,7 +60,17 @@ A second old-vs-new Swift 6.2.1 boundary harness passed **294 / 294 comparisons 
 - positive/negative infinity and NaN;
 - representative 15-slot and fractional layouts.
 
-These are supplemental software checks only; they are not repository Xcode, Simulator artifact, or physical-device proof.
+### Directional host performance probe
+
+A separate optimized Swift 6.2.1 benchmark alternated old/new execution order over five 400,000-snapshot rounds per layout and preserved identical result checksums. Median results:
+
+| Total slots | Old median | New median | New / old |
+| ---: | ---: | ---: | ---: |
+| 2 | 26.465 ms | 22.956 ms | 0.867 |
+| 4 | 26.368 ms | 24.072 ms | 0.913 |
+| 15 | 34.162 ms | 30.692 ms | 0.898 |
+
+This is directional host evidence only. It supports the source-level allocation/CPU premise and rules out an obvious host regression, but it is **not** iPhone 12 profiling, Simulator acceptance, or a physical-device performance claim.
 
 ## CI truth
 
@@ -67,6 +78,8 @@ Exact-final-head workflow run `31136468286` targets `e675fb995...`.
 
 - trusted same-repo resolver job `92736839496`: success
 - Xcode 27 build/test/capture job `92736860915`: queued at latest meaningful inspection
+
+Another lane's Xcode retry was observed canceled before receiving a self-hosted runner, so shared scheduler/concurrency churn exists; this does not turn #95 green or red.
 
 Therefore source review is clean but **merge acceptance is not yet green**.
 
