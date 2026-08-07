@@ -10,9 +10,13 @@ final class AppRuntime {
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
-    private let simulatorRouteRecorder: RideRouteRecorder?
+    private let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+    private let rideCheckpointStore: (any RideCheckpointStore)?
+    private let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
+    private var rideLocationLifecycleTask: Task<Void, Never>?
+    private var activeLocationCaptureSessionID: UUID?
 
     init(
         vehicleStore: VehicleStore,
@@ -22,7 +26,9 @@ final class AppRuntime {
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
-        simulatorRouteRecorder: RideRouteRecorder?
+        rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?,
+        rideCheckpointStore: (any RideCheckpointStore)?,
+        rideRouteDraftFinalizer: RideRouteDraftFinalizer?
     ) {
         self.vehicleStore = vehicleStore
         self.rideStore = rideStore
@@ -31,20 +37,27 @@ final class AppRuntime {
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
-        self.simulatorRouteRecorder = simulatorRouteRecorder
+        self.rideLocationCaptureCoordinator = rideLocationCaptureCoordinator
+        self.rideCheckpointStore = rideCheckpointStore
+        self.rideRouteDraftFinalizer = rideRouteDraftFinalizer
     }
 
     deinit {
         simulatorRideDriverTask?.cancel()
+        rideLocationLifecycleTask?.cancel()
     }
 
     func start() async {
         guard !didStart else { return }
         didStart = true
 
+        installRideCompletionBarrierIfAvailable()
+        await finalizeRecoveredRouteDraftIfNeeded()
+
         // Ride evidence subscribes first so explicit QA telemetry emitted after
         // launch cannot race past the automatic ride application layer.
         await rideStore.start()
+        startRideLocationLifecycleIfAvailable()
         await vehicleStore.start()
 
         guard simulationScenario == .riding,
@@ -80,47 +93,18 @@ final class AppRuntime {
                 elapsedSeconds: 60
             )
 
-            // The route fixture is also explicit Simulator-only evidence. It is
-            // written through RideRouteRecorder and the production route-store
-            // contract; it never mutates completed-history distance evidence and
-            // is classified partial because recording starts only after the ride
-            // has already reached confirmed active state.
-            if let sessionID = await waitForActiveRideSessionID(),
-               let simulatorRouteRecorder {
-                do {
-                    try await simulatorRouteRecorder.begin(
-                        sessionID: sessionID,
-                        coverageAlreadyPartial: true
-                    )
-                    let now = Date()
-                    let route = [
-                        (37.33490, -122.00902),
-                        (37.33535, -122.00840),
-                        (37.33586, -122.00773),
-                        (37.33642, -122.00712)
-                    ]
-                    for (index, coordinate) in route.enumerated() {
-                        try await simulatorRouteRecorder.append(
-                            latitude: coordinate.0,
-                            longitude: coordinate.1,
-                            capturedAtDate: now.addingTimeInterval(Double(index)),
-                            sourceMeasurementDate: now.addingTimeInterval(Double(index)),
-                            horizontalAccuracyMeters: 4
-                        )
-                    }
-                    _ = try await simulatorRouteRecorder.finish(requestedCoverage: .partial)
-                } catch {
-                    // The UI test requires route evidence for this opt-in QA
-                    // scenario, so a recorder failure remains observable as the
-                    // truthful no-route/error state instead of being fabricated.
-                }
-            }
+            // Location is no longer written directly into route persistence.
+            // The root-owned ride lifecycle starts the explicit Simulator source
+            // only after RideEngine owns a confirmed UUID. Give its two real-time
+            // intervals enough wall-clock time to reach the same quality screen,
+            // route recorder, and session-scoped GPS-distance sink before the
+            // fixture supplies authoritative ride-end evidence.
+            try? await Task.sleep(nanoseconds: 4_250_000_000)
+            guard !Task.isCancelled else { return }
 
             // Explicit end-to-end history fixture used only when a UI/QA launch
             // opts in through the Simulator environment. It drives the real ride
             // engine and persistence path instead of inserting a fake row.
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
             await simulatorService.simulateRide(
                 speedKilometersPerHour: 0,
                 elapsedSeconds: 0
@@ -135,15 +119,106 @@ final class AppRuntime {
         }
     }
 
-    private func waitForActiveRideSessionID() async -> UUID? {
-        for _ in 0..<20 {
-            if let sessionID = rideStore.activeSessionID {
-                return sessionID
+    /// If the process stopped after `completedPendingCommit` became durable but
+    /// before route-manifest commit, finalize only the already persisted chunks
+    /// as partial coverage before RideApplicationStore publishes history. Route
+    /// recovery remains additive: failure here never blocks the idempotent ride
+    /// history recovery path.
+    private func finalizeRecoveredRouteDraftIfNeeded() async {
+        guard let rideCheckpointStore,
+              let rideRouteDraftFinalizer,
+              let checkpoint = try? await rideCheckpointStore.load(),
+              case let .completedPendingCommit(evidence) = checkpoint else { return }
+
+        _ = try? await rideRouteDraftFinalizer.finalizePartialDraftIfNeeded(
+            sessionID: evidence.sessionID
+        )
+    }
+
+    /// Application/root lifetime owns location capture. SwiftUI navigation and
+    /// view appearance never start or stop it. The ride engine's durable session
+    /// UUID is the only lifecycle identity accepted by the coordinator.
+    private func startRideLocationLifecycleIfAvailable() {
+        guard rideLocationLifecycleTask == nil,
+              let rideLocationCaptureCoordinator else { return }
+
+        let stream = rideStore.rideSessionEvents()
+        rideLocationLifecycleTask = Task { [weak self] in
+            for await event in stream {
+                guard !Task.isCancelled else { break }
+                await self?.handleRideSessionEvent(
+                    event,
+                    coordinator: rideLocationCaptureCoordinator
+                )
             }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            if Task.isCancelled { return nil }
         }
-        return nil
+    }
+
+    /// Completed history is not allowed to publish before the additive route
+    /// recorder has finalized its manifest. Keeping this barrier on AppRuntime
+    /// preserves root ownership while avoiding any SwiftUI lifecycle dependency.
+    private func installRideCompletionBarrierIfAvailable() {
+        guard let rideLocationCaptureCoordinator else { return }
+        rideStore.setRideCompletionBarrier { [weak self] sessionID in
+            await self?.finishLocationCaptureBeforeRideCommit(
+                sessionID: sessionID,
+                coordinator: rideLocationCaptureCoordinator
+            )
+        }
+    }
+
+    private func finishLocationCaptureBeforeRideCommit(
+        sessionID: UUID,
+        coordinator: RideLocationCaptureCoordinator
+    ) async {
+        if activeLocationCaptureSessionID == sessionID {
+            _ = try? await coordinator.finish()
+            activeLocationCaptureSessionID = nil
+            return
+        }
+
+        // A recovered `completedPendingCommit` session has no active in-process
+        // source to finish. Reconcile any durable chunk draft idempotently before
+        // history is allowed to clear the checkpoint.
+        _ = try? await rideRouteDraftFinalizer?.finalizePartialDraftIfNeeded(
+            sessionID: sessionID
+        )
+    }
+
+    private func handleRideSessionEvent(
+        _ event: RideApplicationSessionEvent,
+        coordinator: RideLocationCaptureCoordinator
+    ) async {
+        switch event {
+        case let .becameActive(sessionID):
+            guard activeLocationCaptureSessionID != sessionID else { return }
+
+            if activeLocationCaptureSessionID != nil {
+                _ = try? await coordinator.finish()
+                activeLocationCaptureSessionID = nil
+            }
+
+            do {
+                // Capture begins only after ride confirmation, so the candidate
+                // interval before this point is known missing coverage.
+                try await coordinator.begin(
+                    sessionID: sessionID,
+                    requestedCoverage: .partial
+                )
+                activeLocationCaptureSessionID = sessionID
+            } catch {
+                activeLocationCaptureSessionID = nil
+            }
+
+        case let .ended(sessionID):
+            // Normal completion already flushed through the awaited completion
+            // barrier before RideApplicationStore released this UUID. Keep this
+            // as a fail-safe for any non-completion transition that still ends a
+            // previously active session.
+            guard activeLocationCaptureSessionID == sessionID else { return }
+            _ = try? await coordinator.finish()
+            activeLocationCaptureSessionID = nil
+        }
     }
 }
 
@@ -264,15 +339,38 @@ enum AppBootstrap {
 
         let simulatorAutoCompletesRide = bootstrap.scenario == .riding
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
-        let simulatorRouteRecorder: RideRouteRecorder?
-        if bootstrap.scenario != nil,
+
+        let rideLocationCaptureCoordinator: RideLocationCaptureCoordinator?
+        if simulatorAutoCompletesRide,
            let routeStore = persistence?.routeStore {
-            simulatorRouteRecorder = try? RideRouteRecorder(
-                store: routeStore,
-                chunkSize: 2
-            )
+            do {
+                let source = SimulatorRideLocationSource.completedRideQA()
+                let policy = try RideLocationQualityPolicy.simulatorQA()
+                rideLocationCaptureCoordinator = try RideLocationCaptureCoordinator(
+                    source: source,
+                    qualityPolicy: policy,
+                    routeStore: routeStore,
+                    routeChunkSize: 2,
+                    sessionScopedDistanceSink: { [weak rideStore] sessionID, meters, uptime in
+                        await rideStore?.ingestQualityScreenedGPSDistanceDelta(
+                            meters,
+                            receivedAtUptimeNanoseconds: uptime,
+                            for: sessionID
+                        )
+                    }
+                )
+            } catch {
+                rideLocationCaptureCoordinator = nil
+            }
         } else {
-            simulatorRouteRecorder = nil
+            rideLocationCaptureCoordinator = nil
+        }
+
+        let rideRouteDraftFinalizer: RideRouteDraftFinalizer?
+        if let routeStore = persistence?.routeStore {
+            rideRouteDraftFinalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+        } else {
+            rideRouteDraftFinalizer = nil
         }
 
         return AppRuntime(
@@ -283,7 +381,9 @@ enum AppBootstrap {
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
-            simulatorRouteRecorder: simulatorRouteRecorder
+            rideLocationCaptureCoordinator: rideLocationCaptureCoordinator,
+            rideCheckpointStore: persistence?.checkpointStore,
+            rideRouteDraftFinalizer: rideRouteDraftFinalizer
         )
     }
 

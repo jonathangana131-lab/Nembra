@@ -322,6 +322,176 @@ final class RideLocationCaptureTests: XCTestCase {
         rideStore.stop()
     }
 
+    @MainActor
+    func testRideSessionLifecycleKeepsOneIdentityThroughEndingRecoveryThenEndsOnce() async throws {
+        let directory = temporaryDirectory(name: "location-lifecycle")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "location-lifecycle"),
+            baseDirectoryURL: directory
+        )
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = SimulatedScooterService(
+            initialState: initialState,
+            commandLatencyNanoseconds: 0
+        )
+        let rideStore = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore
+        )
+        await rideStore.start()
+
+        let events = SessionEventCollector()
+        let stream = rideStore.rideSessionEvents()
+        let consumer = Task {
+            for await event in stream {
+                await events.append(event)
+            }
+        }
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Simulator movement should begin one authoritative session.") {
+            rideStore.status == .active
+        }
+        let sessionID = try XCTUnwrap(rideStore.activeSessionID)
+        try await waitForSessionEventCount(events, count: 1)
+        let initialEvents = await events.values()
+        XCTAssertEqual(initialEvents, [.becameActive(sessionID)])
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("Zero speed should enter the ending candidate without ending the session.") {
+            rideStore.status == .endingCandidate
+        }
+        XCTAssertEqual(rideStore.activeSessionID, sessionID)
+
+        await service.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
+        try await waitUntil("Fresh movement should recover the same ride session.") {
+            rideStore.status == .active
+        }
+        XCTAssertEqual(rideStore.activeSessionID, sessionID)
+        try await Task.sleep(nanoseconds: 75_000_000)
+        let recoveredEvents = await events.values()
+        XCTAssertEqual(
+            recoveredEvents,
+            [.becameActive(sessionID)],
+            "Ending-candidate recovery must not restart root-owned location capture."
+        )
+
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await Task.sleep(nanoseconds: 550_000_000)
+        await service.simulateRide(speedKilometersPerHour: 0, elapsedSeconds: 0)
+        try await waitUntil("The completed ride should return the authoritative session to idle.") {
+            rideStore.status == .idle
+        }
+        try await waitForSessionEventCount(events, count: 2)
+        let completedEvents = await events.values()
+        XCTAssertEqual(
+            completedEvents,
+            [.becameActive(sessionID), .ended(sessionID)]
+        )
+
+        rideStore.stop()
+        consumer.cancel()
+    }
+
+    func testPersistedRouteChunksWithoutManifestRecoverAsPartial() async throws {
+        let directory = temporaryDirectory(name: "route-draft-recovery")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try RidePersistenceFactory.makeRouteContainer(
+            storeURL: directory.appendingPathComponent("RideRoutes.store")
+        )
+        let routeStore = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+        let capturedAtDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let points = [
+            try RideRoutePoint(
+                sequence: 0,
+                latitude: 37.334900,
+                longitude: -122.009020,
+                capturedAtDate: capturedAtDate,
+                horizontalAccuracyMeters: 4
+            ),
+            try RideRoutePoint(
+                sequence: 1,
+                latitude: 37.335305,
+                longitude: -122.009020,
+                capturedAtDate: capturedAtDate.addingTimeInterval(2),
+                horizontalAccuracyMeters: 4
+            )
+        ]
+        let chunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 0, chunkIndex: 0),
+            points: points
+        )
+        _ = try await routeStore.commit(chunk)
+
+        let before = try await routeStore.manifest(sessionID: sessionID)
+        XCTAssertNil(before)
+
+        let finalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+        let manifest = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
+        XCTAssertEqual(manifest?.coverage, .partial)
+        XCTAssertEqual(manifest?.pointCount, 2)
+
+        let loadedGeometry = try await routeStore.geometry(sessionID: sessionID)
+        let geometry = try XCTUnwrap(loadedGeometry)
+        XCTAssertEqual(geometry.coverage, .partial)
+        XCTAssertTrue(geometry.hasDrawablePath)
+
+        let secondPass = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
+        XCTAssertEqual(secondPass, manifest, "Recovered route finalization must be idempotent.")
+    }
+
+    func testRouteDraftRecoveryDoesNotInventEmptyManifest() async throws {
+        let directory = temporaryDirectory(name: "route-draft-empty")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try RidePersistenceFactory.makeRouteContainer(
+            storeURL: directory.appendingPathComponent("RideRoutes.store")
+        )
+        let routeStore = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+        let finalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+
+        let recovered = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
+        let manifest = try await routeStore.manifest(sessionID: sessionID)
+        XCTAssertNil(recovered)
+        XCTAssertNil(manifest)
+    }
+
+    func testMalformedRecoveredRouteDraftFailsClosed() async throws {
+        let directory = temporaryDirectory(name: "route-draft-malformed")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try RidePersistenceFactory.makeRouteContainer(
+            storeURL: directory.appendingPathComponent("RideRoutes.store")
+        )
+        let routeStore = SwiftDataRideRouteStore(modelContainer: container)
+        let sessionID = UUID()
+        let point = try RideRoutePoint(
+            sequence: 0,
+            latitude: 37.334900,
+            longitude: -122.009020,
+            capturedAtDate: Date(timeIntervalSince1970: 1_700_000_000),
+            horizontalAccuracyMeters: 4
+        )
+        let malformedChunk = try RideRouteChunk(
+            id: RideRouteChunkID(sessionID: sessionID, segmentIndex: 1, chunkIndex: 0),
+            points: [point]
+        )
+        _ = try await routeStore.commit(malformedChunk)
+
+        let finalizer = RideRouteDraftFinalizer(routeStore: routeStore)
+        do {
+            _ = try await finalizer.finalizePartialDraftIfNeeded(sessionID: sessionID)
+            XCTFail("Non-contiguous recovered route evidence must fail closed.")
+        } catch {
+            let manifest = try await routeStore.manifest(sessionID: sessionID)
+            XCTAssertNil(manifest)
+        }
+    }
+
     private func testPolicy() throws -> RideLocationQualityPolicy {
         try RideLocationQualityPolicy(
             maximumHorizontalAccuracyMeters: 20,
@@ -373,6 +543,21 @@ final class RideLocationCaptureTests: XCTestCase {
             try await Task.sleep(nanoseconds: 25_000_000)
         }
         XCTFail(failureMessage)
+    }
+
+    @MainActor
+    private func waitForSessionEventCount(
+        _ collector: SessionEventCollector,
+        count: Int,
+        timeoutNanoseconds: UInt64 = 2_000_000_000
+    ) async throws {
+        let start = DispatchTime.now().uptimeNanoseconds
+        while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
+            let values = await collector.values()
+            if values.count >= count { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for \(count) ride session lifecycle events.")
     }
 }
 
@@ -434,6 +619,18 @@ private actor SessionDistanceCollector {
     }
 
     func values() -> [Value] {
+        recorded
+    }
+}
+
+private actor SessionEventCollector {
+    private var recorded: [RideApplicationSessionEvent] = []
+
+    func append(_ event: RideApplicationSessionEvent) {
+        recorded.append(event)
+    }
+
+    func values() -> [RideApplicationSessionEvent] {
         recorded
     }
 }
