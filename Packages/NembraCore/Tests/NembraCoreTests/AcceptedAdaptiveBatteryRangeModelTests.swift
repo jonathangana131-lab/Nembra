@@ -26,7 +26,11 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
             endSOC: end
         )
         var model = AcceptedAdaptiveBatteryRangeModel()
-        let result = model.ingest(window, policy: try policy())
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: .deferredUntilVerifiedEvidence
+        )
 
         #expect(window.transportGapOccurred == false)
         #expect(result.disposition == .accepted)
@@ -34,6 +38,87 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
         #expect(model.historicalConsumedPercentagePoints == 10)
         #expect(model.acceptedWindowCount == 1)
         #expect(model.typicalFullChargeRangeMeters(using: try policy()) == 12_000)
+    }
+
+    @Test("evidence-backed plausibility ceiling rejects an absurd first window before baseline learning")
+    func firstWindowPlausibilityCeilingRejectsExtremeEvidence() throws {
+        let epoch = UUID(uuidString: "78787878-7878-7878-7878-787878787878")!
+        var stream = AcceptedBatterySOCStream()
+        let start = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        let end = try #require(stream.accept(
+            try verifiedSOC(percent: 70, epoch: epoch, sequence: 2, uptime: 2_000)
+        ))
+        let window = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: 100_000,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: start,
+            endSOC: end
+        )
+        let plausibility = try AcceptedAdaptiveRangePlausibilityPolicy(
+            maximumFullChargeEquivalentMeters: 20_000
+        )
+        var model = AcceptedAdaptiveBatteryRangeModel()
+
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: plausibility
+        )
+
+        #expect(result.disposition == .rejected(.efficiencyOutlier))
+        #expect(model.hasLearnedEfficiency == false)
+        #expect(model.historicalConsumedPercentagePoints == 0)
+        #expect(model.acceptedWindowCount == 0)
+    }
+
+    @Test("plausibility ceiling accepts an otherwise-valid window exactly at its bound")
+    func firstWindowPlausibilityCeilingAcceptsBoundary() throws {
+        let epoch = UUID(uuidString: "79797979-7979-7979-7979-797979797979")!
+        var stream = AcceptedBatterySOCStream()
+        let start = try #require(stream.accept(
+            try verifiedSOC(percent: 80, epoch: epoch, sequence: 1, uptime: 1_000)
+        ))
+        let end = try #require(stream.accept(
+            try verifiedSOC(percent: 70, epoch: epoch, sequence: 2, uptime: 2_000)
+        ))
+        let window = try AcceptedBatteryRangeLearningWindow(
+            distanceMeters: 2_000,
+            distanceCoverage: .complete,
+            transportGapOccurred: false,
+            startSOC: start,
+            endSOC: end
+        )
+        let plausibility = try AcceptedAdaptiveRangePlausibilityPolicy(
+            maximumFullChargeEquivalentMeters: 20_000
+        )
+        var model = AcceptedAdaptiveBatteryRangeModel()
+
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: plausibility
+        )
+
+        #expect(result.disposition == .accepted)
+        #expect(model.hasLearnedEfficiency)
+        #expect(model.typicalFullChargeRangeMeters(using: try policy()) == 20_000)
+    }
+
+    @Test("plausibility ceiling itself is finite and positive")
+    func invalidPlausibilityCeilingRejected() {
+        #expect(throws: AcceptedAdaptiveRangeValidationError.invalidPlausibilityPolicy) {
+            _ = try AcceptedAdaptiveRangePlausibilityPolicy(
+                maximumFullChargeEquivalentMeters: 0
+            )
+        }
+        #expect(throws: AcceptedAdaptiveRangeValidationError.invalidPlausibilityPolicy) {
+            _ = try AcceptedAdaptiveRangePlausibilityPolicy(
+                maximumFullChargeEquivalentMeters: .infinity
+            )
+        }
     }
 
     @Test("direct post-gap boundary forces learning window transport gap")
@@ -65,7 +150,11 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
             endSOC: end
         )
         var model = AcceptedAdaptiveBatteryRangeModel()
-        let result = model.ingest(window, policy: try policy())
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: .deferredUntilVerifiedEvidence
+        )
 
         #expect(window.transportGapOccurred)
         #expect(result.disposition == .rejected(.transportGap))
@@ -108,7 +197,11 @@ struct AcceptedAdaptiveBatteryRangeModelTests {
             endSOC: end
         )
         var model = AcceptedAdaptiveBatteryRangeModel()
-        let result = model.ingest(window, policy: try policy())
+        let result = model.ingest(
+            window,
+            policy: try policy(),
+            plausibilityPolicy: .deferredUntilVerifiedEvidence
+        )
 
         #expect(window.transportGapOccurred)
         #expect(result.disposition == .rejected(.transportGap))
