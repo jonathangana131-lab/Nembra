@@ -1,338 +1,224 @@
 # 2025 AOVOPRO ES80 Passive Physical Capture Runbook
 
-Status: **prepared software procedure; physical target capture not yet performed**.
+Status: **prepared software procedure; physical target capture not yet performed by the V11 feature cell**.
 
-Target: Nembra's newer **2025-generation AOVOPRO ES80**, using the current/Tuya-generation stock-app path.
-
-Directly observed on the physical target's stock app:
-
-- battery percentage;
-- live voltage;
-- live amps/current;
-- live wattage/power.
-
-Those displays are trusted as **stock-app behavior**. Their raw Bluetooth/Tuya source, DP IDs/types/scales, cadence, signedness, current meaning, and whether wattage is independently transmitted versus derived remain unverified until the sessions below produce physical evidence.
+Target: the newer 2025-generation AOVOPRO ES80 research target. Existing stock-app observations provide useful visible reference values such as battery percentage, voltage, current, and power, but their raw Bluetooth/Tuya source, identifiers, scale, cadence, signedness, and derivation remain unverified until physical capture evidence closes those gates.
 
 ## Software prerequisite
 
-The isolated `NembraBluetoothCapture` package contains the passive acquisition/evidence tooling required for these sessions:
+The V11 `ES80 Passive Capture + CoreBluetooth Adapter` feature cell contains the passive tooling required for physical sessions:
 
-- broad first-fingerprint foreground scan;
-- explicit peripheral selection;
-- connect timeout/cancellation;
-- complete service / included-service / characteristic / descriptor discovery;
+- broad first-fingerprint foreground candidate scan;
+- explicit peripheral target selection before any durable target artifact exists;
+- selected-target connection timeout/cancellation and stale-callback isolation;
+- service / included-service / characteristic / descriptor discovery;
 - reads only where `.read` is advertised;
 - subscriptions only where `.notify` / `.indicate` is advertised;
-- immutable raw value callback recording;
-- monotonic ordering + explicit interruption boundaries;
-- manual stock-app correlation markers;
+- structured connection/subscription evidence;
+- raw value callback provenance and monotonic ordering;
+- fail-closed incomplete acquisition;
+- selected-target stock-app correlation markers;
 - versioned JSON export;
 - per-peripheral transport candidate reports;
-- raw callback-stream cadence statistics;
-- controlled-session byte/statistics comparison.
+- continuity-aware callback-stream statistics and controlled-session comparison.
 
-The package also has a reusable `ES80PassiveCaptureResearchView`, but it is intentionally **not production-app wired yet**. App integration must wait for the parent passive-evidence PR to land and must add the proper Bluetooth privacy-purpose description before a physical iPhone run.
+`ES80PassiveCaptureResearchView` remains research UI, not production scooter-control wiring. Physical iPhone integration must include the appropriate Bluetooth privacy-purpose configuration and must be accepted as an app-visible cell/release-train change before use.
 
-No package API sends an application characteristic value. CI fails if `.writeValue(...)` appears in the passive package source.
+No package API performs an application characteristic-value write. The V11 product recovery intentionally does **not** revive historical #22's package workflow; any CI write guard is a separate control-plane slice and must be reviewed on its own merits.
 
-## Hard safety rules
+## Hard safety and truth rules
 
-1. Do not send random writes to the scooter.
-2. Do not copy writable DP IDs from another Tuya scooter/product and test them on the ES80.
-3. Do not use historical ZYDTECH `0xAA` telemetry-trigger writes during the passive target-ES80 phase.
-4. Discover/read/subscribe only according to real GATT properties.
-5. Treat CoreBluetooth write capability as metadata, never command authorization.
-6. Treat all FD50/A201/1910/F1/F2 findings as candidate fingerprints until the physical scooter proves them.
-7. Keep raw GATT callback boundaries immutable; derived Tuya reassembly/decryption happens later.
-8. Do not publish Tuya local keys, auth keys, session keys, account tokens, or unrelated device credentials in capture JSON/GitHub artifacts.
-9. Do not claim Nembra intercepted another app's Bluetooth session. CoreBluetooth gives Nembra its own central-session traffic, not raw over-the-air packets from Tuya Smart.
+1. Do not send unknown application characteristic writes or random scooter commands.
+2. Do not copy writable DP IDs from another Tuya product and treat them as ES80 commands.
+3. Discover/read/subscribe only according to observed GATT properties.
+4. Treat `.write` / `.writeWithoutResponse` properties as metadata, never authorization.
+5. Treat subscription success as transport state, never scooter command acknowledgement.
+6. Treat FD50/A201/1910 and other researched families as candidates until the physical scooter supplies matching evidence.
+7. Keep raw CoreBluetooth callback boundaries immutable; derived framing/decryption happens later.
+8. Do not export Tuya local/auth/session keys, account tokens, or unrelated credentials.
+9. Do not claim Nembra intercepted another app's private Bluetooth exchange. CoreBluetooth supplies Nembra's own central-session observations.
+10. A broad-scan candidate is not target evidence. Select one peripheral explicitly before recording markers, analyzing, or exporting a target-labeled artifact.
+11. If discovery/read/subscription acquisition fails closed, discard that session as incomplete for absence claims; do not interpret missing events as “not present.”
+12. `VehicleIdentity` and a CoreBluetooth UUID are attribution labels/evidence, not permanent proof of physical ES80 identity.
 
 ## Session 0 — preparation
 
 Before the first scan:
 
 - scooter safely stationary;
-- drive wheel unloaded only if later wheel-spin observation is genuinely needed and mechanically safe;
-- no unknown Nembra commands enabled;
+- no unknown Nembra command path enabled;
 - Bluetooth enabled;
-- record scooter/app/firmware identifiers visible in legitimate UI where available;
-- note approximate battery percentage from the stock app;
-- note whether charger is connected;
-- ensure only one physical ES80 is intentionally being tested.
+- note app/scooter/firmware identifiers visible in legitimate UI when available;
+- note approximate visible battery/reference state;
+- note charger state;
+- ensure only one physical ES80 is intentionally being tested;
+- record the exact Nembra build/commit and research setup.
 
-If another nearby Tuya device exists, leave it alone. The capture tooling deliberately fingerprints each CoreBluetooth peripheral separately so a nearby FD50/A201 advertisement cannot become ES80 evidence.
+Nearby Bluetooth/Tuya devices may remain visible in the broad catalog. They must not enter the target capture unless the operator deliberately selects that peripheral for its own separate research session.
 
 ## Session A — advertisement + GATT fingerprint
 
-Goal: establish the physical 2025 ES80's real Bluetooth identity/topology without assuming a protocol family.
+Goal: establish the physical target's real Bluetooth identity/topology without assuming a protocol family.
 
 Procedure:
 
-1. Start an explicit foreground research scan with duplicate advertisements **off** initially.
-2. Observe discovered peripherals and record:
-   - CoreBluetooth peripheral UUID;
-   - local name, including no-name state;
-   - RSSI;
-   - connectability;
-   - manufacturer data;
-   - service data;
-   - advertised / overflow / solicited service UUIDs;
-   - Tx power if exposed.
-3. Select the likely scooter only from physical correlation, not name similarity alone.
-4. Connect to that exact observed peripheral.
-5. Let the controller discover every service, included service, characteristic property, and descriptor UUID.
-6. Allow passive reads/subscriptions according to advertised properties.
-7. Capture at least 30–60 seconds stationary.
-8. Export versioned JSON.
+1. Start an explicit foreground research scan with duplicate advertisements off initially.
+2. Observe the candidate catalog: local name/no-name state, RSSI, connectability, manufacturer/service data, advertised/overflow/solicited UUIDs, and Tx power when supplied.
+3. Identify the likely physical scooter using legitimate physical correlation, not local-name similarity alone.
+4. Choose **Select & connect** for that exact candidate. This action creates the durable target session.
+5. Confirm the research UI shows the intended selected-target CoreBluetooth identifier.
+6. Let the controller discover services, included services, characteristics/properties, descriptors, and passive read/subscription paths.
+7. If capture becomes fail-closed, stop and investigate; do not export an apparently complete artifact.
+8. If healthy, capture roughly 30–60 seconds stationary and export versioned JSON.
 
-Questions answered:
+Questions answered only after physical evidence exists:
 
-- Does the target expose FD50, A201, 1910, a ZYDTECH-like family, or something else?
-- Which characteristics are read / notify / indicate / write-capable?
-- Is there an obvious high-frequency subscribed value stream while stationary?
-- Does GATT topology change after connection?
+- Which advertisement/GATT identifiers are actually observed for the target?
+- Does it resemble FD50, A201, 1910, or another family?
+- Which characteristics advertise read/notify/indicate/write capabilities?
+- Which passive value streams are observed?
+- Does topology change/invalidate during the session?
 
-Acceptance wording:
+Acceptance wording should say `OBSERVED ON PHYSICAL TARGET: ...`, not “battery service” or “ES80 protocol” unless later evidence really establishes that meaning.
 
-- `OBSERVED ON PHYSICAL 2025 ES80: <advertisement/GATT fact>` only after this session.
-- Do **not** call a service `the battery service` merely because a researched candidate matched.
+## Session B — reconnect and lifecycle evidence
 
-## Session B — reconnect / initial state synchronization
-
-Goal: catch the state burst/query behavior most likely to expose current battery/electrical state.
+Goal: characterize reconnect/initial-state behavior and preserve connection continuity truth.
 
 Procedure:
 
-1. End Session A cleanly and keep its JSON immutable.
-2. Start a new capture.
-3. Reconnect to the same observed CoreBluetooth peripheral identifier when available.
-4. Capture from immediately before connection through at least 15–30 seconds after service/subscription setup.
-5. If a legitimate research setup allows observing the stock app's values at the same time, record manual markers for:
-   - battery `%`;
-   - voltage `V`;
-   - current `A`;
-   - power `W`;
-   - speed `0`;
-   - trip mileage;
-   - odometer/total mileage.
-6. Export JSON.
+1. Keep Session A JSON immutable.
+2. Reconnect the same selected research target when appropriate, or start a deliberately separate session if the setup requires it.
+3. Capture from before connection through at least 15–30 seconds after discovery/subscription setup.
+4. Preserve structured `.connected`, `.failedToConnect`, `.disconnected`, platform error domain/code, and platform disconnect timestamp/reconnect metadata when CoreBluetooth supplies them.
+5. Record legitimate visible stock-app markers only after a selected target session exists.
+6. Export only if acquisition remains healthy.
 
-Why this matters:
-
-Tuya's public architecture describes state synchronization/query behavior around connection/reconnection. A quiet stationary stream later does not prove a field is absent if the useful state arrived in the initial sync.
+A structured disconnect is a byte-continuity break. Receipt uptime/date and CoreBluetooth platform event timestamp are different clocks and must not be substituted for one another.
 
 ## Session C — stationary baseline cadence
 
-Goal: characterize raw callback behavior before interpreting fields.
-
-Procedure:
+Goal: characterize callback behavior before assigning semantics.
 
 1. Scooter on, stationary, charger disconnected.
-2. Capture 2–5 minutes with advertisement duplicate capture off unless advertisement cadence itself is under test.
-3. Record visible stock-app V/A/W/% markers only when the research setup legitimately permits them.
-4. Export JSON.
+2. Capture 2–5 minutes with duplicate advertisement capture off unless advertisement cadence itself is the experiment.
+3. Record legitimate visible reference markers when the setup permits them.
+4. Export a healthy immutable session.
 5. Run `PassiveBluetoothValueStreamAnalysis`.
 
 Review per characteristic:
 
 - callback count;
 - continuity segments;
-- read-response versus subscription-update origins;
+- read-response versus subscription-update provenance;
 - payload length range;
-- unique payload count;
-- consecutive duplicate count;
+- unique/duplicate payload behavior;
 - min/median/mean/max callback interval.
 
-These are **raw CoreBluetooth callback statistics**, not decoded telemetry cadence.
+These are raw CoreBluetooth callback statistics, not decoded telemetry cadence.
 
 ## Session D — charger disconnected versus connected
 
-Goal: find raw streams that materially react to charging without declaring their semantics.
+Goal: find raw streams that react to charging without declaring field meaning.
 
-Prefer two separate immutable captures:
+Prefer two separate immutable target captures:
 
-- baseline: scooter stationary, charger disconnected;
-- comparison: scooter stationary, charger connected and charging normally.
+- baseline: stationary, charger disconnected;
+- comparison: stationary, charger connected/charging normally.
 
-Record legitimate stock-app markers when available, especially:
-
-- battery %;
-- voltage;
-- current;
-- watts;
-- charging state/indicator if the stock app exposes one.
-
-Then use `PassiveBluetoothCaptureComparison`.
+Record legitimate reference markers such as visible battery %, voltage, current, power, or charging indicator when available. Then use `PassiveBluetoothCaptureComparison`.
 
 Review:
 
-- whether both captures resolved to the same observed CoreBluetooth peripheral identifier;
+- whether both captures resolve to the intended observed peripheral identity;
 - added/removed GATT services;
 - streams present in only one state;
 - shared versus state-specific raw payloads;
-- whether last payload changed;
-- raw difference score as a sorting hint only.
+- last-payload differences and raw difference score.
 
-If the report says `.differentObservedIdentifiers` or `.unresolved`, do not present the result as proven same-scooter state comparison without resolving that identity issue.
+If identity is `.differentObservedIdentifiers` or `.unresolved`, do not present the comparison as proven same-scooter state evidence without resolving that ambiguity.
 
 ## Session E — post-ride voltage recovery
 
-Goal: separate load/rest behavior from naive voltage→SoC assumptions.
+Goal: separate load/rest behavior from naive voltage-to-SoC assumptions.
 
-Procedure:
+1. Capture a stationary rested baseline and legitimate visible reference markers.
+2. Perform a normal short ride using the scooter normally; Nembra sends no unknown application commands.
+3. Resume/start passive capture as the physical setup safely permits.
+4. Record visible post-stop reference values.
+5. Record repeated rest markers at useful intervals such as ~30 s, ~1 min, ~2 min, and ~5 min.
+6. Preserve every disconnect/interruption boundary.
 
-1. Capture a stationary rested baseline with stock-app `% / V / A / W` markers where legitimate.
-2. Perform a normal short ride using the scooter normally; Nembra sends no unknown commands.
-3. Begin/continue passive capture as the physical setup permits.
-4. Immediately after stopping, record visible stock-app `% / V / A / W`.
-5. Record repeated rest markers at useful intervals such as ~30 sec, ~1 min, ~2 min, ~5 min.
-6. Preserve all interruption boundaries.
-
-Questions:
-
-- Does displayed voltage recover while percentage stays fixed?
-- Does percentage move under load/rest?
-- Which raw stream follows that behavior?
-- Is current zero at rest?
-- Does wattage equal approximately `V × A`, suggesting derivation, or have an independent timing/value pattern?
-
-A numerical relationship is a hypothesis until raw field mapping and timing are independently verified.
+Questions include whether displayed voltage recovers while percentage remains fixed, which raw streams correlate with load/rest, whether current behavior changes sign/zero state, and whether displayed watts may be derived. Numerical relationships remain hypotheses until field identity and timing are independently verified.
 
 ## Session F — controlled riding electrical correlation
 
-Only after Sessions A–E have identified stable passive streams.
+Only after Sessions A–E identify stable passive streams.
 
-Goal: measure behavior under real motion without turning raw callbacks into fake fields.
+Capture safe, legitimate states such as stationary-before-motion, gentle acceleration, steady motion, coast, normal electronic braking behavior, and stationary recovery. Use a second observer/device only if the physical setup truly supports it; never operate a phone unsafely while riding.
 
-Capture:
+Potential questions:
 
-- stationary before motion;
-- gentle acceleration;
-- steady low speed;
-- steady higher speed where safe/legal;
-- coast;
-- electronic/regenerative braking where the stock scooter normally performs it;
-- stationary recovery.
+- which raw stream cadence resembles speed versus slower battery state;
+- current sign/zero behavior;
+- power sign/derivation behavior;
+- speed update cadence/jitter/resolution;
+- voltage sag versus load;
+- whether one packet contains multiple changing fields.
 
-Record stock-app values with a legitimate second-device/external-observation setup if simultaneous observation is actually supported. Do not look at or operate a phone unsafely while riding.
-
-Questions:
-
-- which stream cadence resembles speed versus slower battery state;
-- whether current becomes negative during e-braking, goes to zero, or uses another convention;
-- whether watts are signed/unsigned;
-- native speed update cadence/jitter/resolution;
-- relationship between voltage sag and current/load;
-- whether one packet carries multiple changing fields.
+None of those questions is answered by the software adapter alone.
 
 ## Cross-app correlation limitation
 
-On one iPhone, Nembra cannot claim to passively sniff Tuya Smart's private CoreBluetooth exchange.
+Nembra cannot claim to passively sniff a stock app's private CoreBluetooth exchange from the same iPhone. Legitimate approaches include Nembra's own read/subscribe session plus before/after reference values, simultaneous second-device observation only when physically supported, external BLE test equipment where appropriate, or repeated controlled physical states.
 
-Legitimate options include:
+Every capture must document the actual setup used.
 
-- Nembra's own read/subscribe session plus before/after stock-app values;
-- simultaneous second-device observation only if the scooter truly supports it;
-- external BLE sniffer/test equipment where appropriate;
-- repeated controlled states whose physical conditions are reproducible.
-
-Every capture should document which setup was actually used.
-
-## Promotion gates for each stock-app field
+## Promotion gates for visible fields
 
 ### Battery percentage
-
-Before classifying as authoritative measured SoC, verify:
-
-- exact raw field / decoded DP path;
-- scale and valid range;
-- whether direct 0–100 or derived;
-- quantization;
-- update cadence/latency;
-- load/rest behavior;
-- reconnect behavior;
-- charging behavior;
-- low-SoC behavior.
+Verify exact raw/decoded path, scale/range, direct-vs-derived behavior, quantization, cadence/latency, reconnect/charging/load-rest behavior, and low-state behavior before calling it authoritative measured SoC.
 
 ### Voltage
-
-Before using as measured voltage evidence, verify:
-
-- exact raw field;
-- units/scale;
-- cadence;
-- load sag and recovery;
-- full/low pack behavior;
-- whether app value is raw or transformed.
-
-Never map instantaneous voltage linearly to precise SoC.
+Verify exact raw field, units/scale, cadence, load sag/recovery, pack-state behavior, and whether the stock app transforms the value. Never map instantaneous voltage linearly to precise SoC.
 
 ### Current
+Verify exact raw field, units/scale, signedness, physical meaning, zero/rest behavior, acceleration/braking/charging behavior, and timing quality before energy integration.
 
-Before using current for energy estimation, verify:
-
-- exact raw field;
-- units/scale;
-- signedness;
-- battery current versus controller/input/other meaning;
-- zero/rest behavior;
-- acceleration behavior;
-- e-braking behavior;
-- charging behavior;
-- cadence/timestamp quality.
-
-### Wattage/power
-
-Before treating watts as an independent measured field, verify:
-
-- whether a distinct raw field exists;
-- units/scale;
-- timing versus voltage/current;
-- whether `W ≈ V × A` and whether that relation indicates local derivation;
-- sign behavior;
-- update cadence.
-
-Even a verified live watt field is not enough by itself for trustworthy `Wh/mi`; energy integration also requires trustworthy timing and distance.
+### Power
+Verify whether an independent raw field exists, units/scale/sign, timing relative to voltage/current, possible `V × A` derivation, and update cadence. A live watt value alone is insufficient for trustworthy energy-per-distance estimates.
 
 ## Physical identity gate
 
-CoreBluetooth peripheral UUID is useful observed identity evidence, but Nembra must not assume it is the final durable per-scooter learning key without validating lifecycle behavior across:
-
-- app relaunch;
-- phone reboot;
-- Bluetooth toggles;
-- forget/re-pair/rebind flows;
-- scooter power cycles;
-- firmware/app changes where relevant.
-
-Adaptive-range history must not silently leak between different physical scooters.
+CoreBluetooth peripheral UUID is useful observed identity evidence but is not yet a proven durable per-scooter key. Validate behavior across app relaunch, phone reboot, Bluetooth toggles, pair/rebind flows, scooter power cycles, and relevant firmware/app changes before using it as a long-lived physical identity.
 
 ## Expected artifacts
 
-Each physical session should preserve:
+Preserve for each physical session:
 
 - versioned raw capture JSON;
-- exact app/build/commit SHA used to capture;
-- research setup note;
-- physical state label;
-- relevant stock-app markers;
+- exact Nembra build/commit SHA;
+- selected-target CoreBluetooth identifier and how it was physically correlated;
+- research setup/physical state note;
+- legitimate reference markers;
 - transport fingerprint report;
 - raw value-stream statistics;
-- controlled-session comparison when applicable;
-- a short VERIFIED / PROBABLE / UNKNOWN conclusion list.
+- controlled-session comparison where applicable;
+- a short `VERIFIED / PROBABLE / UNKNOWN` conclusion list;
+- acquisition-failure notes for any discarded incomplete session.
 
-Do not overwrite an old raw capture with decoded/reconstructed data. Derived decoders should consume immutable evidence and produce separate outputs.
+Never overwrite raw capture evidence with reconstructed/decoded data. Derived analysis produces separate artifacts.
 
-## Smallest first physical action after app integration
+## Smallest first physical action after app-visible integration
 
-Once PR #11 lands and this package is safely integrated with Bluetooth privacy configuration, the smallest useful physical step is:
+Once this V11 feature cell has local package acceptance, app-visible Bluetooth privacy/integration is reviewed, and the release train proves the combined build, the smallest useful physical step is:
 
 1. scooter stationary;
 2. start broad foreground scan;
-3. identify/select the physical ES80;
+3. physically correlate and explicitly select the intended target;
 4. connect;
-5. capture advertisement + full GATT topology + passive reads/subscriptions for ~60 seconds;
-6. export JSON;
-7. stop.
+5. capture selected-target advertisement + GATT topology + passive reads/subscriptions for ~60 seconds;
+6. export only if the capture remains healthy;
+7. stop and inspect the immutable evidence before adding any decoder hypothesis.
 
-That single session should establish which protocol family the **actual 2025 scooter** resembles and determine the next exact decoder/correlation step without sending one unknown application write.
+That session should determine the next research step without sending an unknown application write.
