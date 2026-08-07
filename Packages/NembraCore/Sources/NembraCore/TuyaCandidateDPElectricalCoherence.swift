@@ -294,10 +294,12 @@ public struct TuyaCandidateDPElectricalAnchorEvaluation: Equatable, Sendable {
 }
 
 /// Descriptive result for one explicit triplet of DP candidates/transforms.
-/// Counts are not confidence scores; they make repeated independent support and
-/// rejected anchors auditable before any physical semantic claim.
+/// Counts are not confidence scores. Exact caller policy and requested anchors
+/// are retained so the report is self-auditing rather than outcome-only.
 public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
     public let scope: TuyaCandidateDPElectricalCoherenceScope
+    public let policy: TuyaCandidateDPElectricalCoherencePolicy
+    public let requestedAnchors: [TuyaCandidateDPElectricalAnchor]
     public let voltageSelection: TuyaCandidateDPElectricalSeriesSelection
     public let currentSelection: TuyaCandidateDPElectricalSeriesSelection
     public let powerSelection: TuyaCandidateDPElectricalSeriesSelection
@@ -314,18 +316,21 @@ public struct TuyaCandidateDPElectricalCoherenceReport: Equatable, Sendable {
 
     fileprivate init(
         scope: TuyaCandidateDPElectricalCoherenceScope,
+        policy: TuyaCandidateDPElectricalCoherencePolicy,
+        requestedAnchors: [TuyaCandidateDPElectricalAnchor],
         voltageSelection: TuyaCandidateDPElectricalSeriesSelection,
         currentSelection: TuyaCandidateDPElectricalSeriesSelection,
         powerSelection: TuyaCandidateDPElectricalSeriesSelection,
-        requestedAnchorCount: Int,
         evaluations: [TuyaCandidateDPElectricalAnchorEvaluation],
         rejectedAnchors: [TuyaCandidateDPElectricalRejectedAnchor]
     ) {
         self.scope = scope
+        self.policy = policy
+        self.requestedAnchors = requestedAnchors
         self.voltageSelection = voltageSelection
         self.currentSelection = currentSelection
         self.powerSelection = powerSelection
-        self.requestedAnchorCount = requestedAnchorCount
+        requestedAnchorCount = requestedAnchors.count
         self.evaluations = evaluations
         self.rejectedAnchors = rejectedAnchors
 
@@ -535,6 +540,8 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
                 current: currentReport.correlationScope,
                 power: powerReport.correlationScope
             ),
+            policy: policy,
+            requestedAnchors: anchors,
             voltageSelection: TuyaCandidateDPElectricalSeriesSelection(
                 role: .voltage,
                 report: voltageReport,
@@ -550,7 +557,6 @@ public enum TuyaCandidateDPElectricalCoherenceEvaluator {
                 report: powerReport,
                 evidence: powerEvidence
             ),
-            requestedAnchorCount: anchors.count,
             evaluations: evaluations,
             rejectedAnchors: rejections
         )
