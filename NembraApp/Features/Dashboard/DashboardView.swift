@@ -79,6 +79,8 @@ struct DashboardView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showLockConfirmation = false
+    @AppStorage("nembra.primaryBatteryReadoutMode")
+    private var batteryReadoutModeRawValue = BatteryPrimaryReadoutMode.percentage.rawValue
 
     var body: some View {
         let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
@@ -155,13 +157,7 @@ struct DashboardView: View {
 
             Spacer(minLength: 0)
 
-            dashboardMetric(
-                title: "BATTERY",
-                value: batteryText,
-                symbol: batteryIcon,
-                warning: isBatteryLow,
-                identifier: "dashboard.battery"
-            )
+            dashboardBatteryMetric
 
             dashboardMetric(
                 title: "TRIP",
@@ -296,6 +292,41 @@ struct DashboardView: View {
         }
     }
 
+    private var dashboardBatteryMetric: some View {
+        Button(action: toggleBatteryReadout) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(batteryReadoutTitle, systemImage: batteryIcon)
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(isBatteryLow ? Color.red : Color.secondary)
+
+                Text(batteryReadoutText)
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(isBatteryLow ? Color.red : Color.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                if batteryReadoutPresentation.batteryFillPercent != nil {
+                    Text("LAST KNOWN CHARGE")
+                        .font(.caption2.weight(.medium))
+                        .tracking(0.5)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(batteryReadoutPresentation.batteryFillPercent == nil)
+        .accessibilityLabel("Battery")
+        .accessibilityValue(batteryReadoutAccessibilityValue)
+        .accessibilityHint(batteryReadoutAccessibilityHint)
+        .accessibilityIdentifier("dashboard.battery")
+        .sensoryFeedback(.selection, trigger: batteryReadoutModeRawValue)
+    }
+
     private func dashboardMetric(
         title: String,
         value: String,
@@ -353,18 +384,95 @@ struct DashboardView: View {
         VehicleDisplayFormatting.distance(kilometers: vehicle.state.tripKilometers)
     }
 
-    private var batteryText: String {
-        guard let battery = vehicle.state.batteryPercent else { return "—" }
-        return "\(battery)%"
+    private var batteryReadoutMode: BatteryPrimaryReadoutMode {
+        BatteryPrimaryReadoutMode(rawValue: batteryReadoutModeRawValue) ?? .percentage
+    }
+
+    private var batteryReadoutTitle: String {
+        switch batteryReadoutMode {
+        case .percentage: "BATTERY"
+        case .estimatedRange: "RANGE"
+        }
+    }
+
+    private var batteryReadoutPresentation: BatteryPrimaryReadoutPresentation {
+        BatteryPrimaryReadoutState(mode: batteryReadoutMode).presentation(
+            for: BatteryPrimaryReadoutInputs(
+                displaySOCPercent: vehicle.state.batteryPercent,
+                estimatedRange: .unavailable
+            )
+        )
+    }
+
+    private var batteryReadoutText: String {
+        switch batteryReadoutPresentation.primaryValue {
+        case let .percentage(percent):
+            return "\(percent)%"
+        case let .estimatedRangeMeters(meters):
+            return VehicleDisplayFormatting.distance(kilometers: meters / 1_000)
+        case .learningRange:
+            return "Learning"
+        case .unavailable:
+            return "—"
+        }
+    }
+
+    private var batteryReadoutAccessibilityValue: String {
+        let baseValue: String
+        switch batteryReadoutPresentation.primaryValue {
+        case let .percentage(percent):
+            baseValue = "\(percent) percent"
+        case let .estimatedRangeMeters(meters):
+            baseValue = "\(VehicleDisplayFormatting.distance(kilometers: meters / 1_000)), estimated range"
+        case .learningRange:
+            baseValue = "Estimated range learning"
+        case .unavailable:
+            baseValue = batteryReadoutMode == .estimatedRange ? "Estimated range unavailable" : "Unavailable"
+        }
+
+        var qualifiers: [String] = []
+        if batteryReadoutPresentation.batteryFillPercent != nil {
+            switch batteryReadoutMode {
+            case .percentage:
+                qualifiers.append("last known vehicle data")
+            case .estimatedRange:
+                qualifiers.append("battery charge is last known vehicle data")
+            }
+        }
+        if isBatteryLow {
+            qualifiers.append("low battery")
+        }
+
+        guard !qualifiers.isEmpty else { return baseValue }
+        return ([baseValue] + qualifiers).joined(separator: ", ")
+    }
+
+    private var batteryReadoutAccessibilityHint: String {
+        guard batteryReadoutPresentation.batteryFillPercent != nil else {
+            return "Battery data unavailable."
+        }
+
+        switch batteryReadoutMode {
+        case .percentage:
+            return "Showing the last known charge. Double tap to show estimated remaining range."
+        case .estimatedRange:
+            return "Showing the last known charge. Double tap to show battery percentage."
+        }
+    }
+
+    private func toggleBatteryReadout() {
+        var state = BatteryPrimaryReadoutState(mode: batteryReadoutMode)
+        state.toggle()
+        batteryReadoutModeRawValue = state.mode.rawValue
     }
 
     private var isBatteryLow: Bool {
-        guard let battery = vehicle.state.batteryPercent else { return false }
+        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return false }
         return battery <= 15
     }
 
     private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        guard let battery = batteryReadoutPresentation.batteryFillPercent else { return "questionmark.circle" }
         return switch battery {
         case ...15: "battery.0percent"
         case ...35: "battery.25percent"
