@@ -49,6 +49,16 @@ public struct SpeedTelemetrySample: Equatable, Codable, Sendable {
     public let measurementDate: Date?
     public let speedAccuracyMetersPerSecond: Double?
 
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case provenance
+        case metersPerSecond
+        case receivedAtUptimeNanoseconds
+        case receivedAtDate
+        case measurementDate
+        case speedAccuracyMetersPerSecond
+    }
+
     public init(
         source: SpeedTelemetrySource,
         provenance: SpeedTelemetryProvenance,
@@ -84,6 +94,33 @@ public struct SpeedTelemetrySample: Equatable, Codable, Sendable {
         self.receivedAtDate = receivedAtDate
         self.measurementDate = measurementDate
         self.speedAccuracyMetersPerSecond = speedAccuracyMetersPerSecond
+    }
+
+    /// Imported samples must cross the same validation boundary as live provider
+    /// samples. Synthesized Codable would assign stored properties directly and
+    /// could otherwise recreate impossible source/provenance or numeric states.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            source: container.decode(SpeedTelemetrySource.self, forKey: .source),
+            provenance: container.decode(SpeedTelemetryProvenance.self, forKey: .provenance),
+            metersPerSecond: container.decode(Double.self, forKey: .metersPerSecond),
+            receivedAtUptimeNanoseconds: container.decode(UInt64.self, forKey: .receivedAtUptimeNanoseconds),
+            receivedAtDate: container.decode(Date.self, forKey: .receivedAtDate),
+            measurementDate: container.decodeIfPresent(Date.self, forKey: .measurementDate),
+            speedAccuracyMetersPerSecond: container.decodeIfPresent(Double.self, forKey: .speedAccuracyMetersPerSecond)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(source, forKey: .source)
+        try container.encode(provenance, forKey: .provenance)
+        try container.encode(metersPerSecond, forKey: .metersPerSecond)
+        try container.encode(receivedAtUptimeNanoseconds, forKey: .receivedAtUptimeNanoseconds)
+        try container.encode(receivedAtDate, forKey: .receivedAtDate)
+        try container.encodeIfPresent(measurementDate, forKey: .measurementDate)
+        try container.encodeIfPresent(speedAccuracyMetersPerSecond, forKey: .speedAccuracyMetersPerSecond)
     }
 
     public var kilometersPerHour: Double {
