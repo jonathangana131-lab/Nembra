@@ -14,16 +14,19 @@ struct PassiveCoreBluetoothTargetStateTests {
         #expect(attemptA.generation == 1)
         #expect(state.acceptsActiveCallback(from: a))
 
-        #expect(state.retireActiveAttempt() == attemptA)
+        let retiredA = state.retireActiveAttempt()
+        #expect(retiredA == attemptA)
         state.selectTarget(b)
         let attemptB = try state.beginAttempt(for: b)
         #expect(attemptB.generation == 2)
         #expect(state.acceptsActiveCallback(from: b))
         #expect(!state.acceptsActiveCallback(from: a))
 
-        #expect(state.completeFailedConnection(from: a) == .retired)
+        let lateFailure = state.completeFailedConnection(from: a)
+        #expect(lateFailure == .retired)
         #expect(state.activeAttempt == attemptB)
-        #expect(state.completeDisconnect(from: a) == .ignored)
+        let secondLateTerminal = state.completeDisconnect(from: a)
+        #expect(secondLateTerminal == .ignored)
         #expect(state.activeAttempt == attemptB)
     }
 
@@ -34,7 +37,8 @@ struct PassiveCoreBluetoothTargetStateTests {
 
         state.selectTarget(peripheral)
         let first = try state.beginAttempt(for: peripheral)
-        #expect(state.retireActiveAttempt() == first)
+        let retiredFirst = state.retireActiveAttempt()
+        #expect(retiredFirst == first)
 
         do {
             _ = try state.beginAttempt(for: peripheral)
@@ -43,12 +47,15 @@ struct PassiveCoreBluetoothTargetStateTests {
             #expect(error == .peripheralAwaitingTerminalCallback(peripheral))
         }
 
-        #expect(state.completeFailedConnection(from: peripheral) == .retired)
+        let failedTerminal = state.completeFailedConnection(from: peripheral)
+        #expect(failedTerminal == .retired)
         let second = try state.beginAttempt(for: peripheral)
         #expect(second.generation == first.generation + 1)
 
-        #expect(state.retireActiveAttempt() == second)
-        #expect(state.completeDisconnect(from: peripheral) == .retired)
+        let retiredSecond = state.retireActiveAttempt()
+        #expect(retiredSecond == second)
+        let disconnectedTerminal = state.completeDisconnect(from: peripheral)
+        #expect(disconnectedTerminal == .retired)
         let third = try state.beginAttempt(for: peripheral)
         #expect(third.generation == second.generation + 1)
     }
@@ -66,7 +73,8 @@ struct PassiveCoreBluetoothTargetStateTests {
 
         #expect(!state.acceptsActiveCallback(from: a))
         #expect(state.activeAttempt == attemptB)
-        #expect(state.completeDisconnect(from: a) == .retired)
+        let lateDisconnect = state.completeDisconnect(from: a)
+        #expect(lateDisconnect == .retired)
         #expect(state.activeAttempt == attemptB)
     }
 
@@ -82,10 +90,13 @@ struct PassiveCoreBluetoothTargetStateTests {
         state.selectTarget(peripheral)
         _ = try state.beginAttempt(for: peripheral)
 
-        #expect(!state.consumeReadRequest(key))
+        let untracked = state.consumeReadRequest(key)
+        #expect(!untracked)
         state.markReadRequested(key)
-        #expect(state.consumeReadRequest(key))
-        #expect(!state.consumeReadRequest(key))
+        let tracked = state.consumeReadRequest(key)
+        #expect(tracked)
+        let consumedAgain = state.consumeReadRequest(key)
+        #expect(!consumedAgain)
     }
 
     @Test
@@ -100,10 +111,13 @@ struct PassiveCoreBluetoothTargetStateTests {
         state.selectTarget(peripheral)
         _ = try state.beginAttempt(for: peripheral)
 
-        #expect(state.consumeSubscriptionRequest(key) == nil)
+        let untracked = state.consumeSubscriptionRequest(key)
+        #expect(untracked == nil)
         state.markSubscriptionRequested(key, enabled: true)
-        #expect(state.consumeSubscriptionRequest(key) == true)
-        #expect(state.consumeSubscriptionRequest(key) == nil)
+        let tracked = state.consumeSubscriptionRequest(key)
+        #expect(tracked == true)
+        let consumedAgain = state.consumeSubscriptionRequest(key)
+        #expect(consumedAgain == nil)
     }
 
     @Test
