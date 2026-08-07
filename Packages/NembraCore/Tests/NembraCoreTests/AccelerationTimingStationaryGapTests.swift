@@ -35,7 +35,7 @@ struct AccelerationTimingStationaryGapTests {
             Issue.record("Expected a completed run after the fresh stationary anchor")
             return
         }
-        #expect(result.launchWindow == AccelerationTimingWindow(
+        #expect(result.launchObservationWindow == AccelerationTimingWindow(
             earliestUptimeNanoseconds: 10_000_000_000,
             latestUptimeNanoseconds: 11_000_000_000
         ))
