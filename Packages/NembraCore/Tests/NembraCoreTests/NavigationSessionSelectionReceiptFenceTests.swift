@@ -171,8 +171,8 @@ struct NavigationSessionSelectionReceiptFenceTests {
         _ = try #require(freshResult)
     }
 
-    @Test("clearing navigation removes the old route-selection fence without resetting seen chronology")
-    func clearRouteRemovesSelectionFence() throws {
+    @Test("compatibility selection preserves an already-proven receipt floor")
+    func compatibilitySelectionPreservesKnownFenceFloor() throws {
         var session = try coordinator()
         _ = try session.select(
             route: route(),
@@ -180,13 +180,22 @@ struct NavigationSessionSelectionReceiptFenceTests {
         )
         session.clearRoute()
 
-        // No route is selected, so an older-than-former-fence receipt remains
-        // harmless idle chronology rather than inheriting a stale route boundary.
+        // Idle delivery does not use a route fence, so this callback stays harmless
+        // and advances only global delivered-callback chronology.
         #expect(try session.process(location: location(uptime: 90)) == nil)
         #expect(session.guidanceState == .idle)
 
+        // The compatibility selector cannot mint an exact new boundary, but it also
+        // must not weaken the process-local floor already proven by the earlier strong
+        // selection. A delayed receipt older than that known floor remains ineligible.
         _ = try session.select(route: route())
-        let freshResult = try session.process(location: location(uptime: 91))
+        let awaitingState = session.guidanceState
+        #expect(throws: NavigationSessionCoordinatorError.locationReceivedAtOrBeforeSelectionFence) {
+            try session.process(location: location(uptime: 91))
+        }
+        #expect(session.guidanceState == awaitingState)
+
+        let freshResult = try session.process(location: location(uptime: 101))
         _ = try #require(freshResult)
     }
 }
