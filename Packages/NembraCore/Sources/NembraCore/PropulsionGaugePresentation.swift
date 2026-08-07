@@ -15,9 +15,19 @@ public struct PropulsionGaugeIdentity: Hashable, Codable, Sendable {
         self.vehicleID = vehicleID
         self.modeKey = modeKey
     }
+
+    fileprivate var isStructurallyValid: Bool {
+        guard !vehicleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return modeKey.map {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } ?? true
+    }
 }
 
 public enum PropulsionPowerSampleError: Error, Equatable, Sendable {
+    case invalidIdentity
     case invalidWatts
 }
 
@@ -28,6 +38,8 @@ public enum PropulsionPowerSampleError: Error, Equatable, Sendable {
 public struct PropulsionPowerSample: Equatable, Sendable {
     public let identity: PropulsionGaugeIdentity
     public let watts: Double
+    /// Source-owned total-order receipt identity. This is chronology evidence, not power evidence.
+    public let receiptSequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
     public let continuityGeneration: UInt64
     public let authority: PropulsionPowerSampleAuthority
@@ -35,26 +47,33 @@ public struct PropulsionPowerSample: Equatable, Sendable {
     private init(
         identity: PropulsionGaugeIdentity,
         watts: Double,
+        receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
         continuityGeneration: UInt64,
         authority: PropulsionPowerSampleAuthority
     ) {
         self.identity = identity
         self.watts = watts
+        self.receiptSequenceNumber = receiptSequenceNumber
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
         self.continuityGeneration = continuityGeneration
         self.authority = authority
     }
 
+    /// Simulator convenience: when no explicit synthetic sequence is supplied,
+    /// uptime is reused only as Simulator-owned ordering metadata. Production
+    /// verified samples must always provide their real source-owned receipt order.
     public static func simulator(
         identity: PropulsionGaugeIdentity,
         watts: Double,
+        receiptSequenceNumber: UInt64? = nil,
         receivedAtUptimeNanoseconds: UInt64,
         continuityGeneration: UInt64
     ) throws -> Self {
         try validated(
             identity: identity,
             watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber ?? receivedAtUptimeNanoseconds,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             continuityGeneration: continuityGeneration,
             authority: .simulator
@@ -65,12 +84,14 @@ public struct PropulsionPowerSample: Equatable, Sendable {
     package static func verifiedVehicleMeasurement(
         identity: PropulsionGaugeIdentity,
         watts: Double,
+        receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
         continuityGeneration: UInt64
     ) throws -> Self {
         try validated(
             identity: identity,
             watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             continuityGeneration: continuityGeneration,
             authority: .verifiedVehicleMeasurement
@@ -80,12 +101,14 @@ public struct PropulsionPowerSample: Equatable, Sendable {
     fileprivate static func verifiedVehicleMeasurement(
         identity: PropulsionGaugeIdentity,
         watts: Double,
+        receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
         continuityGeneration: UInt64
     ) throws -> Self {
         try validated(
             identity: identity,
             watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             continuityGeneration: continuityGeneration,
             authority: .verifiedVehicleMeasurement
@@ -96,10 +119,14 @@ public struct PropulsionPowerSample: Equatable, Sendable {
     private static func validated(
         identity: PropulsionGaugeIdentity,
         watts: Double,
+        receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
         continuityGeneration: UInt64,
         authority: PropulsionPowerSampleAuthority
     ) throws -> Self {
+        guard identity.isStructurallyValid else {
+            throw PropulsionPowerSampleError.invalidIdentity
+        }
         guard watts.isFinite, watts >= 0 else {
             throw PropulsionPowerSampleError.invalidWatts
         }
@@ -107,6 +134,7 @@ public struct PropulsionPowerSample: Equatable, Sendable {
         return Self(
             identity: identity,
             watts: watts,
+            receiptSequenceNumber: receiptSequenceNumber,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
             continuityGeneration: continuityGeneration,
             authority: authority
@@ -122,7 +150,9 @@ public enum PropulsionGaugeScaleOrigin: String, Equatable, Sendable {
 }
 
 public enum PropulsionGaugeScaleError: Error, Equatable, Sendable {
+    case invalidIdentity
     case invalidCeiling
+    case envelopeAuthorityMismatch
 }
 
 /// Presentation scale only. It does not learn a ceiling and never asserts a rated/certified hardware maximum.
@@ -175,11 +205,45 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
     }
 #endif
 
+    /// Maps the canonical observed-envelope capability into presentation authority
+    /// without exposing a raw verified-scale factory to ordinary app/UI code.
+    /// The calibration itself is the sealed authority token: mismatched identity
+    /// and evidence authorities fail closed rather than being upgraded here.
+    public static func observedEnvelope(
+        _ calibration: ObservedPowerEnvelopeCalibration
+    ) throws -> Self {
+        let identity = PropulsionGaugeIdentity(
+            vehicleID: calibration.scope.vehicleIdentityKey,
+            modeKey: calibration.scope.confirmedModeKey
+        )
+        guard identity.isStructurallyValid else {
+            throw PropulsionGaugeScaleError.invalidIdentity
+        }
+
+        switch (calibration.scope.identityAuthority, calibration.evidenceAuthority) {
+        case (.verifiedVehicleIdentity, .verifiedVehicleMeasurement):
+            return try verifiedObservedEnvelope(
+                identity: identity,
+                ceilingWatts: calibration.learnedGaugeScaleWatts
+            )
+        case (.simulatorQA, .simulatorQA):
+            return try simulator(
+                identity: identity,
+                ceilingWatts: calibration.learnedGaugeScaleWatts
+            )
+        default:
+            throw PropulsionGaugeScaleError.envelopeAuthorityMismatch
+        }
+    }
+
     private static func validated(
         identity: PropulsionGaugeIdentity,
         ceilingWatts: Double,
         origin: PropulsionGaugeScaleOrigin
     ) throws -> Self {
+        guard identity.isStructurallyValid else {
+            throw PropulsionGaugeScaleError.invalidIdentity
+        }
         guard ceilingWatts.isFinite, ceilingWatts > 0 else {
             throw PropulsionGaugeScaleError.invalidCeiling
         }
@@ -189,6 +253,7 @@ public struct PropulsionGaugeScale: Equatable, Sendable {
 
 public enum PropulsionGaugeMotionPolicyError: Error, Equatable, Sendable {
     case invalidStaleInterval
+    case fallResponseSlowerThanRise
 }
 
 /// Display-clock timing only. These values do not define BLE cadence or physical scooter dynamics.
@@ -209,6 +274,9 @@ public struct PropulsionGaugeMotionPolicy: Equatable, Sendable {
         guard staleAfterNanoseconds > 0 else {
             throw PropulsionGaugeMotionPolicyError.invalidStaleInterval
         }
+        guard fallSettlingDurationNanoseconds <= riseSettlingDurationNanoseconds else {
+            throw PropulsionGaugeMotionPolicyError.fallResponseSlowerThanRise
+        }
 
         self.riseSettlingDurationNanoseconds = riseSettlingDurationNanoseconds
         self.fallSettlingDurationNanoseconds = fallSettlingDurationNanoseconds
@@ -221,7 +289,7 @@ public enum PropulsionGaugeAvailability: String, Equatable, Sendable {
     case live
     /// The last accepted numeric observation is preserved, but the active gauge is no longer animated.
     case retained
-    /// Explicit source/session unavailability. Disconnect is never converted into measured zero.
+    /// Explicit source/session unavailability or invalid render chronology. Disconnect is never converted into measured zero.
     case unavailable
 }
 
@@ -232,6 +300,8 @@ public enum PropulsionGaugeFrameOrigin: String, Equatable, Sendable {
     case visuallyInterpolated
     /// Exact last accepted measurement retained after its live window expired.
     case retainedAcceptedMeasurement
+    /// The caller requested a display frame before the newest accepted receipt existed.
+    case invalidRenderClock
     case unavailable
 }
 
@@ -242,6 +312,7 @@ public struct PropulsionGaugeFrame: Equatable, Sendable {
     public let origin: PropulsionGaugeFrameOrigin
     public let displayWatts: Double?
     public let latestAcceptedWatts: Double?
+    public let latestAcceptedReceiptSequenceNumber: UInt64?
     public let latestAcceptedUptimeNanoseconds: UInt64?
     public let latestAuthority: PropulsionPowerSampleAuthority?
     public let normalizedPropulsion: Double?
@@ -251,6 +322,7 @@ public struct PropulsionGaugeFrame: Equatable, Sendable {
 
 public enum PropulsionGaugeDisplayError: Error, Equatable, Sendable {
     case identityMismatch
+    case nonIncreasingReceiptSequence
     case nonMonotonicMeasurement
     case staleContinuityGeneration
 }
@@ -265,9 +337,11 @@ public struct PropulsionGaugeDisplayModel: Sendable {
 
     private var hasMeasurement = false
     private var latestAcceptedWatts = 0.0
+    private var latestAcceptedReceiptSequenceNumber: UInt64 = 0
     private var latestAcceptedUptimeNanoseconds: UInt64 = 0
     private var latestContinuityGeneration: UInt64 = 0
     private var latestAuthority: PropulsionPowerSampleAuthority = .simulator
+    private var lastSeenReceiptSequenceNumber: UInt64?
 
     private var transitionAnchorWatts = 0.0
     private var transitionTargetWatts = 0.0
@@ -288,11 +362,22 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             throw PropulsionGaugeDisplayError.identityMismatch
         }
 
+        if let lastSeenReceiptSequenceNumber {
+            guard sample.receiptSequenceNumber > lastSeenReceiptSequenceNumber else {
+                throw PropulsionGaugeDisplayError.nonIncreasingReceiptSequence
+            }
+        }
+
+        // Receipt chronology is source-owned and consumed before secondary time/
+        // continuity validation. A newer malformed callback may be rejected, but
+        // it cannot later be rewritten and a delayed lower sequence cannot re-enter.
+        lastSeenReceiptSequenceNumber = sample.receiptSequenceNumber
+
         if hasMeasurement {
             guard sample.continuityGeneration >= latestContinuityGeneration else {
                 throw PropulsionGaugeDisplayError.staleContinuityGeneration
             }
-            guard sample.receivedAtUptimeNanoseconds > latestAcceptedUptimeNanoseconds else {
+            guard sample.receivedAtUptimeNanoseconds >= latestAcceptedUptimeNanoseconds else {
                 throw PropulsionGaugeDisplayError.nonMonotonicMeasurement
             }
         }
@@ -337,6 +422,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
 
         hasMeasurement = true
         latestAcceptedWatts = sample.watts
+        latestAcceptedReceiptSequenceNumber = sample.receiptSequenceNumber
         latestAcceptedUptimeNanoseconds = sample.receivedAtUptimeNanoseconds
         latestContinuityGeneration = sample.continuityGeneration
         latestAuthority = sample.authority
@@ -359,6 +445,22 @@ public struct PropulsionGaugeDisplayModel: Sendable {
                 origin: .unavailable,
                 displayWatts: nil,
                 latestAcceptedWatts: nil,
+                latestAcceptedReceiptSequenceNumber: nil,
+                latestAcceptedUptimeNanoseconds: nil,
+                latestAuthority: nil,
+                normalizedPropulsion: nil,
+                acceptedPeakNormalized: nil,
+                scaleOrigin: nil
+            )
+        }
+
+        if now < latestAcceptedUptimeNanoseconds {
+            return PropulsionGaugeFrame(
+                availability: .unavailable,
+                origin: .invalidRenderClock,
+                displayWatts: nil,
+                latestAcceptedWatts: nil,
+                latestAcceptedReceiptSequenceNumber: nil,
                 latestAcceptedUptimeNanoseconds: nil,
                 latestAuthority: nil,
                 normalizedPropulsion: nil,
@@ -373,6 +475,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
                 origin: .unavailable,
                 displayWatts: nil,
                 latestAcceptedWatts: latestAcceptedWatts,
+                latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
                 latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
                 latestAuthority: latestAuthority,
                 normalizedPropulsion: nil,
@@ -381,14 +484,14 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             )
         }
 
-        let effectiveNow = max(now, latestAcceptedUptimeNanoseconds)
-        let age = effectiveNow - latestAcceptedUptimeNanoseconds
+        let age = now - latestAcceptedUptimeNanoseconds
         if age > policy.staleAfterNanoseconds {
             return PropulsionGaugeFrame(
                 availability: .retained,
                 origin: .retainedAcceptedMeasurement,
                 displayWatts: latestAcceptedWatts,
                 latestAcceptedWatts: latestAcceptedWatts,
+                latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
                 latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
                 latestAuthority: latestAuthority,
                 normalizedPropulsion: nil,
@@ -397,9 +500,9 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             )
         }
 
-        let displayWatts = liveMotionValue(atUptimeNanoseconds: effectiveNow)
+        let displayWatts = liveMotionValue(atUptimeNanoseconds: now)
         let isAtAcceptedMeasurement = transitionSettlingDurationNanoseconds == 0
-            || effectiveNow - transitionStartUptimeNanoseconds >= transitionSettlingDurationNanoseconds
+            || now - transitionStartUptimeNanoseconds >= transitionSettlingDurationNanoseconds
             || displayWatts == latestAcceptedWatts
 
         let compatibleScale = scale.flatMap { candidate -> PropulsionGaugeScale? in
@@ -418,8 +521,8 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             min(1, max(0, displayWatts / $0.ceilingWatts))
         }
 
-        let peakAge = effectiveNow >= acceptedPeakUptimeNanoseconds
-            ? effectiveNow - acceptedPeakUptimeNanoseconds
+        let peakAge = now >= acceptedPeakUptimeNanoseconds
+            ? now - acceptedPeakUptimeNanoseconds
             : 0
         let acceptedPeakNormalized: Double?
         if let compatibleScale,
@@ -434,6 +537,7 @@ public struct PropulsionGaugeDisplayModel: Sendable {
             origin: isAtAcceptedMeasurement ? .acceptedMeasurement : .visuallyInterpolated,
             displayWatts: displayWatts,
             latestAcceptedWatts: latestAcceptedWatts,
+            latestAcceptedReceiptSequenceNumber: latestAcceptedReceiptSequenceNumber,
             latestAcceptedUptimeNanoseconds: latestAcceptedUptimeNanoseconds,
             latestAuthority: latestAuthority,
             normalizedPropulsion: normalized,
