@@ -114,6 +114,14 @@ During v7 recovery, source review independently proved that one inherited test c
 
 Repository-wide NembraCore/Xcode 27 QA on the exact final recovery SHA is still required before merge.
 
+## App-target visibility is a separate future integration gate
+
+`Packages/NembraCore/Package.swift` auto-discovers this new source, so NembraCore package builds and tests include `SpeedTelemetryQuality.swift` automatically. The production `Nembra.app` target currently does **not** link the NembraCore package product; it manually compiles a selected list of NembraCore source files through `Nembra.xcodeproj/project.pbxproj`.
+
+This recovery intentionally has no app-layer consumer, so it does not claim or require `SpeedTelemetryQuality.swift` to be visible to `Nembra.app` yet and does not race the current Class-A project-file owner. A future Home/Dashboard/ride/navigation consumer must first verify that this source and its required NembraCore dependency closure are present in the app target, or coordinate explicit project wiring with the active integration owner, then compile the exact final app composition under Xcode.
+
+A package green therefore proves this domain slice compiles/tests in NembraCore. It must not be promoted to proof that a future app consumer is already wired correctly.
+
 ## Hardware validation still required
 
 For the AOVOPRO ES80 and iPhone 12, capture real traces for the relevant operating conditions before setting production requirements. At minimum evaluate:
