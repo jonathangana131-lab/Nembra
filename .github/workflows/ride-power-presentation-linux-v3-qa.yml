@@ -1,0 +1,30 @@
+name: Ride Power Presentation Linux V3 QA
+
+on:
+  push:
+    branches:
+      - 'qa/ride-power-presentation-linux-v3/chat-h4n7q'
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Verify immutable product parent and unchanged core tree
+        env:
+          PRODUCT_HEAD: 5284e44b2016ea7a508875f7aca1e8f13107e01c
+        run: |
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          git diff --exit-code "$PRODUCT_HEAD" HEAD -- \
+            Packages/NembraCore/Sources/NembraCore \
+            Packages/NembraCore/Tests/NembraCoreTests
+      - name: Swift toolchain
+        run: swift --version
+      - name: NembraCore tests
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
