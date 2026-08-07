@@ -7,12 +7,7 @@ Dependency while this document was written: PR #185 telemetry-benchmark continui
 
 ## Why this layer exists
 
-Nembra already has separate truthful primitives for:
-
-- observed peak speed from one selected authoritative source;
-- ride-bound peak identity/provenance;
-- raw telemetry benchmarking;
-- caller-supplied telemetry quality assessment.
+Nembra already has separate truthful primitives for observed peak speed, ride-bound peak identity/provenance, raw telemetry benchmarking, and caller-supplied telemetry quality assessment.
 
 Those primitives are intentionally independent, but independence leaves a dangerous composition seam: a clean benchmark from one ride could be paired with a peak from another ride if a future caller simply joins values by source name.
 
@@ -27,20 +22,37 @@ The session owns:
 - one `RidePeakSpeedEvidenceAccumulator`;
 - one `TelemetryBenchmarkCollector`.
 
-Every raw callback is sent to both evidence pipelines through the same `record(_:)` method.
+Every raw callback is sent to both evidence pipelines through the same package-owned `record(_:)` operation.
 
-Every **selected-speed-source** observation break is sent to both through `recordInterruption(_:)` using `RideSpeedEvidenceSessionInterruption`.
+Every selected-speed-source observation break is sent to both through package-owned `recordInterruption(_:)` using `RideSpeedEvidenceSessionInterruption`.
 
 That interruption API is intentionally narrower than ride/vehicle lifecycle events:
 
-- `.selectedSourceUnavailable` means the caller has already determined that the selected speed evidence source itself was unavailable;
+- `.selectedSourceUnavailable` means the trusted lifecycle owner has already determined that the selected speed evidence source itself was unavailable;
 - `.applicationLifecycleInterrupted` means the app/process lifecycle interrupted observation.
 
-There is deliberately no public `.vehicleConnectionLost` case here. A scooter BLE disconnect is a speed-source gap when BLE is the selected source, but it is not automatically a GPS evidence gap. The adapter that observes a physical vehicle event must translate it to `.selectedSourceUnavailable` only after making that source-specific determination.
+There is deliberately no `.vehicleConnectionLost` case here. A scooter BLE disconnect is a speed-source gap when BLE is the selected source, but it is not automatically a GPS evidence gap. The adapter that observes a physical vehicle event must translate it to `.selectedSourceUnavailable` only after making that source-specific determination.
 
 `RideSpeedEvidenceSessionSnapshot` has no public free-form initializer, so external code cannot manufacture a snapshot by combining an arbitrary ride peak and an arbitrary benchmark after the fact.
 
 This is a software composition guarantee. It does not identify which ES80 transport characteristic is physically authoritative.
+
+## Live lifecycle authority is sealed
+
+Current `main` package-seals `RidePeakSpeedEvidenceAccumulator` creation because a caller-selected UUID proves identity only; it does not authorize resetting or independently operating another observer for the same ride.
+
+The ride-speed session must not reopen that hole one layer higher. Therefore its live observer surface is also package-owned:
+
+- `RideSpeedEvidenceSessionAccumulator.init(...)` is `package`;
+- `record(_:)` is `package`;
+- `recordInterruption(_:)` is `package`;
+- `snapshot` is `package`.
+
+Unrelated dependent code cannot create a fresh clean session observer for an existing ride UUID, replace an observer to erase prior loss history, or independently drive the live evidence accumulator. A future app-facing adapter must mechanically bind this observer to the authoritative ride lifecycle rather than expose UUID-based construction directly.
+
+A supplemental Swift 6.2.1 two-package warnings-as-errors probe confirms same-package construction/mutation/projection compiles, while an external package is rejected specifically because the initializer is inaccessible at `package` protection.
+
+The session source is not currently wired into `Nembra.app`, and repository search found no accepted production consumer, so this seal does not remove an existing app API.
 
 ## Known gaps are not slow packets
 
@@ -67,14 +79,17 @@ This prevents a permissive quality policy from silently authorizing a mixed-sour
 
 ## Feature-level observed-peak quality policy
 
-`RideObservedPeakQualityPolicy` chooses **no numeric ES80 constants**. Instead, it refuses to exist unless the caller explicitly supplies the evidence dimensions peak reporting must not silently omit:
+`RideObservedPeakQualityPolicy` chooses **no ES80-specific numeric constants**. Instead, it refuses to exist unless the caller supplies the evidence dimensions peak reporting must not silently omit:
 
 - an explicit required authoritative source;
+- at least three accepted samples;
 - a maximum rejected-sample fraction;
 - maximum mean arrival interval;
 - maximum observed arrival interval;
 - maximum interval jitter;
 - maximum empirical nonzero speed step / resolution.
+
+The three-sample floor is a statistical shape invariant, not an ES80 quality threshold. Jitter is variation between intervals. Two accepted samples provide only one interval, whose population standard deviation is trivially zero and therefore is not meaningful jitter evidence. Three accepted samples are the minimum capable of providing two uninterrupted intervals.
 
 For GPS, the policy additionally requires:
 
@@ -83,7 +98,7 @@ For GPS, the policy additionally requires:
 
 GPS peak evidence itself must also use an explicit `maximumSpeedAccuracyMetersPerSecond` in `PeakSpeedPolicy` before it can become reportable under this layer.
 
-The values of those thresholds must come from legitimate feature requirements and physical evidence. This package does not guess them.
+The actual threshold values must come from legitimate feature requirements and physical evidence. This package does not guess them.
 
 ## Reportability failures remain distinct
 
@@ -124,25 +139,19 @@ After #185 merges:
 2. rebuild this branch from current main plus only this lane's own files;
 3. verify the effective diff no longer contains `TelemetryBenchmark.swift` or `TelemetryBenchmarkContinuityTests.swift`;
 4. rerun focused package tests on the exact final head;
-5. merge only after the dependency is part of main and same-ride tests remain green.
+5. refresh reviews, overlap, and mergeability;
+6. merge only after the dependency is part of main and same-ride tests remain green.
 
 ## Verification
 
-Focused Swift 6.2.1 warnings-as-errors debug and release harnesses pass against the #185 benchmark-continuity contract plus the merged ride-bound peak contract.
+Before the lifecycle-authority and minimum-jitter-sample hardening, focused Swift 6.2.1 warnings-as-errors debug and release harnesses passed **18/18 tests in both configurations** against the #185 benchmark-continuity contract plus the merged ride-bound peak contract. Those results are supporting evidence only after the newer source changes.
 
-The latest focused run passes **18/18 tests in debug and 18/18 in release** across same-ride readiness, feature-policy, source/interruption edge cases, and durable peak corruption checks.
+Additional post-hardening evidence currently includes:
 
-Covered behavior includes:
+- same-package `package` access compile: pass with warnings-as-errors;
+- external-package fresh observer construction: rejected at compile time as intended;
+- new deterministic policy regressions reject minimum accepted sample counts of 1 and 2 and accept 3.
 
-- clean same-ride BLE peak + benchmark qualification under explicit complete policy;
-- large known selected-source gap excluded from benchmark intervals while peak becomes partial;
-- application lifecycle interruption reaching both evidence pipelines;
-- initial recovery gap remaining disqualifying even though the benchmark begins with a clean first segment;
-- GPS peak-specific accuracy rejection remaining visible when raw benchmark quality itself is clean;
-- GPS quality policy requiring explicit latency evidence;
-- incomplete feature policies failing construction instead of silently using defaults;
-- explicit quality-policy source mismatch failing assessment;
-- foreign-source traffic failing peak readiness even under a permissive generic rejected-sample policy;
-- motion-assist estimates remaining visible as foreign traffic and never becoming peak evidence.
+Exact post-hardening repository/package acceptance remains required after dependency #185 lands and this branch is rebuilt on current main.
 
 Software verification is not physical AOVOPRO ES80 validation.
