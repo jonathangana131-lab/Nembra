@@ -38,6 +38,7 @@ The short visual peak-hold marker is derived only from accepted samples. Render-
 The learned ceiling:
 - accepts only package-sealed `verifiedVehicleMeasurement` observations;
 - is bound to exact vehicle identity and optional confirmed mode key;
+- emits a scale that carries that same vehicle/mode identity, so another scooter or mode cannot consume it accidentally;
 - ignores zero when building its positive upper envelope while still advancing evidence chronology;
 - uses a bounded rolling window and caller-injected upper percentile;
 - requires repeated positive observations before a scale exists;
@@ -48,7 +49,7 @@ The learned ceiling:
 
 It is a **learned observed visual ceiling**, not a certified/rated motor or controller maximum. Production UI must not label it as rated power or full throttle.
 
-A Simulator scale is a separate explicit authority. The display model refuses to combine a Simulator scale with verified vehicle observations or a learned physical scale with Simulator observations.
+A Simulator scale is a separate explicit authority and is identity-bound too. The display model refuses to combine a Simulator scale with verified vehicle observations, a learned physical scale with Simulator observations, or any scale whose vehicle/mode identity differs from the active gauge identity.
 
 ## Current product integration status
 
