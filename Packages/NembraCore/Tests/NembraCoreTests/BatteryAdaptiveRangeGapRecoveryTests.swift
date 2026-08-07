@@ -49,6 +49,7 @@ struct BatteryAdaptiveRangeGapRecoveryTests {
 
         pipeline.markUnobservedInterval()
         try pipeline.recordDistance(deltaMeters: 400, coverage: .partial)
+        pipeline.recordTransportGap()
         let beforeFailure = pipeline
 
         #expect(throws: BatteryEvidenceStreamValidationError.missingContinuityBoundary) {
@@ -63,6 +64,7 @@ struct BatteryAdaptiveRangeGapRecoveryTests {
         #expect(pipeline.windowAssembler.anchorSOC == nil)
         #expect(pipeline.windowAssembler.accumulatedDistanceMeters == 400)
         #expect(pipeline.windowAssembler.distanceCoverage == .partial)
+        #expect(pipeline.windowAssembler.transportGapOccurred)
 
         let boundary = try pipeline.acceptBatteryObservation(
             verifiedSOC(
