@@ -43,6 +43,7 @@ struct RidePeakSpeedEvidenceAdversarialTests {
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
               "rideContinuity": "uninterruptedProcess",
+              "beganAfterKnownObservationGap": false,
               "source": "scooterBluetooth",
               "metersPerSecond": 1e308,
               "acceptedSampleCount": 1,
@@ -65,6 +66,7 @@ struct RidePeakSpeedEvidenceAdversarialTests {
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
               "rideContinuity": "uninterruptedProcess",
+              "beganAfterKnownObservationGap": false,
               "source": "scooterBluetooth",
               "metersPerSecond": 5,
               "acceptedSampleCount": 0,
@@ -87,6 +89,7 @@ struct RidePeakSpeedEvidenceAdversarialTests {
             {
               "sessionID": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
               "rideContinuity": "uninterruptedProcess",
+              "beganAfterKnownObservationGap": false,
               "source": "scooterBluetooth",
               "metersPerSecond": 5,
               "acceptedSampleCount": 1,
@@ -113,12 +116,14 @@ struct RidePeakSpeedEvidenceAdversarialTests {
             policy: policy
         )
 
+        let rejected = try gpsSample(
+            metersPerSecond: 8,
+            uptime: 100,
+            accuracy: 0.8
+        )
         #expect(
-            accumulator.record(try gpsSample(
-                metersPerSecond: 8,
-                uptime: 100,
-                accuracy: 0.8
-            )) == .rejected(.speedAccuracyExceeded(maximum: 0.5, actual: 0.8))
+            accumulator.record(rejected) ==
+                .rejected(.speedAccuracyExceeded(maximum: 0.5, actual: 0.8))
         )
         _ = accumulator.record(try gpsSample(
             metersPerSecond: 6,
@@ -126,9 +131,10 @@ struct RidePeakSpeedEvidenceAdversarialTests {
             accuracy: 0.4
         ))
 
+        let peak = try #require(accumulator.evidence)
         let durable = try CompletedRidePeakSpeedEvidence(
             completedRide: completedRide(),
-            ridePeak: #require(accumulator.evidence)
+            ridePeak: peak
         )
 
         #expect(durable.metersPerSecond == 6)
