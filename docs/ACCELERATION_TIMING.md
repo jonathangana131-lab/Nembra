@@ -1,19 +1,23 @@
 # Acceleration timing evidence core
 
-Date: 2026-08-06
-Worker: `chat-p7w3k`
-Lane: `acceleration-timing-core`
+Date: 2026-08-06  
+Original worker: `chat-p7w3k`  
+V7 recovery/hardening: `chat-l2p6q`  
+Lane: `recover-acceleration-timing-core`  
 Primary hardware-validation target: **AOVOPRO ES80**
 
-This slice adds a platform-independent timing core for future 0-to-target acceleration tests. It deliberately stops before app UI, run history, Core Motion fusion, or physical-scooter activation.
+This slice adds a platform-independent evidence core for future 0-to-target acceleration work. It deliberately stops before app UI, run history, Core Motion fusion, or physical-scooter activation.
 
 ## Product requirement
 
-Nembra eventually needs polished 0–10 / 15 / 20 / top-speed tests, but a displayed stopwatch value must not imply timing precision that the underlying speed samples cannot support.
+Nembra eventually needs polished 0–10 / 15 / 20 / top-speed tests, but the product must not present a stopwatch number as physical acceleration truth unless the underlying source evidence actually supports that claim.
 
-A speed threshold is crossed **between** authoritative measurements. If one packet is below a threshold and the next packet is above it, software does not know the exact crossing instant unless a separately validated higher-rate measurement source proves it.
+Two separate limits matter:
 
-`AccelerationRunEvaluator` therefore reports timing **bounds** instead of fabricating a single exact crossing timestamp.
+1. **sampling limit** — accepted below-target packets do not prove the scooter never reached target and fell back between packets;
+2. **clock/latency limit** — `SpeedTelemetrySample.receivedAtUptimeNanoseconds` is the app's monotonic packet-receipt clock, not necessarily the physical source-measurement or threshold-crossing clock.
+
+The current evaluator therefore produces **receive-observation evidence**, not a physical 0-to-target time.
 
 ## Evidence model
 
@@ -25,11 +29,29 @@ The evaluator consumes `SpeedTelemetrySample` and accepts only `absoluteMeasurem
 - a configured authoritative source can be required explicitly;
 - if no source is required, the first usable authoritative source becomes locked for that run and a later source change invalidates the trace;
 - optional speed-accuracy gating is available for sources such as GPS;
-- an optional maximum accepted sample interval can reject a trace when usable measurement cadence becomes too sparse to support the requested timing quality;
+- an optional maximum accepted sample interval can reject a trace when usable measurement cadence becomes too sparse for the requested evidence quality;
 - that interval is injected policy, not a guessed ES80 constant; leaving it unset makes no cadence claim;
-- monotonic process uptime, not wall-clock time, defines ordering and timing.
+- monotonic process uptime, not wall-clock time, defines observation ordering and receive-interval calculations.
 
 No claim is made here about whether ES80 Bluetooth or GPS will be the accepted production acceleration source. That requires physical measurement of cadence, latency, jitter, resolution, and accuracy.
+
+## Receive-observation timing basis
+
+Every completed result declares:
+
+`timingBasis == .receiveObservationUptime`
+
+That basis means:
+
+- window endpoints are `receivedAtUptimeNanoseconds` values;
+- the app knows the accepted observations arrived in that monotonic order;
+- the result does **not** compensate for source-to-app delivery latency;
+- optional `measurementDate` and derived delivery latency are not silently converted into a monotonic physical timing clock;
+- receive-time windows must not be labeled as physical scooter crossing windows.
+
+For example, a source measurement may physically occur at 1.0 s and arrive at the app at 1.5 s. A later measurement may physically occur at 2.0 s and arrive at 2.1 s. The receive interval `[1.5, 2.1]` is truthful about app observations, but it does not prove a physical threshold crossing happened inside that receive interval.
+
+A future physical timing basis would need stronger evidence, such as a validated source-side monotonic timestamp and/or a measured latency envelope that can be propagated into the result conservatively.
 
 ## Two monotonic anchors: observed vs accepted
 
@@ -51,46 +73,60 @@ The optional `maximumSampleIntervalNanoseconds` is evidence-critical only when t
 
 Therefore:
 
-- stationary sample at 1 s, another stationary sample at 10 s, then movement at 11 s can be a valid launch with a `[10 s, 11 s]` launch window even under a 1.5 s gap ceiling;
-- stationary sample at 10 s followed by first movement at 12 s fails that same 1.5 s ceiling;
+- stationary observation at 1 s, another stationary observation at 10 s, then movement observed at 11 s can remain valid with a `[10 s, 11 s]` launch **observation** window even under a 1.5 s gap ceiling;
+- stationary observation at 10 s followed by first movement observation at 12 s fails that same 1.5 s ceiling;
 - a rejected GPS callback between accepted measurements does **not** reset the usable-measurement gap timer.
 
-This separation lets chronology stay truthful without pretending rejected data improves timing quality or that a parked scooter needs continuous high-rate measurements before a run begins.
+This separation lets chronology stay truthful without pretending rejected data improves timing quality or that a parked scooter needs continuous high-rate measurements before an attempt begins.
 
-## Run semantics
+## Observation semantics
 
-A run begins from a verified stationary anchor.
+A trace requires a verified stationary observation anchor.
 
 - If the first eligible measurement is already moving above the stationary ceiling, the evaluator reports an invalid rolling start.
 - Repeated stationary measurements refresh the most recent launch anchor, even after a long idle interval.
-- The first measurement above the stationary ceiling establishes a **launch crossing window** between the last stationary packet and that moving packet; the configured sample-gap ceiling applies to this transition when enabled.
-- The first measurement at or above the requested target establishes a **target crossing window** between the preceding below-target packet and the target-reaching packet.
-- A completed result reports the narrowest elapsed lower/upper bounds that those two windows support.
+- The first measurement above the stationary ceiling creates `launchObservationWindow`, spanning the last accepted stationary receipt and the first accepted moving receipt.
+- The first accepted measurement at or above the requested target creates `targetTransitionObservationWindow`, spanning the immediately preceding accepted below-target receipt and that target-reaching receipt.
+- `targetTransitionObservationWindow` describes the final observed below→at/above pair. It does **not** prove that pair contains the scooter's first physical target reach.
 
-Timing-window construction is evaluator-owned. Callers receive immutable window evidence but cannot publicly construct contradictory/reversed windows and trigger a precondition through the public API.
+Timing-window construction is evaluator-owned. Callers receive immutable observation evidence but cannot publicly construct contradictory/reversed windows and trigger a precondition through the public API.
 
-### Retained timing-evidence sample count
+## Why first-reach lower bound is zero
 
-`AccelerationRunResult.timingEvidenceSampleCount` is deliberately **not** named an authoritative-callback count. It counts the accepted measurements actually retained by the final timing trace:
+Conventional 0-to-target timing means the **first** time the scooter reaches the target after launch.
 
-- the newest stationary measurement that forms the launch window;
+Consider accepted samples for a 10 m/s target:
+
+- stationary at receive uptime 0;
+- 2 m/s at 1 s;
+- 9 m/s at 2 s;
+- 8 m/s at 3 s;
+- 10 m/s at 4 s.
+
+The final observed below→at-target pair is `[3 s, 4 s]`. But the accepted samples do not rule out an unsampled excursion above 10 m/s between 1 s and 2 s followed by a drop back below target before the 2 s observation.
+
+Therefore a positive first-reach lower bound derived from the last sampled below-target packet would be fabricated precision.
+
+The current result exposes:
+
+- `firstReachReceiveClockLowerBoundSeconds == 0`;
+- `firstReachReceiveClockUpperBoundSeconds` equal to the receive-clock span from the last stationary observation to the first accepted at/above-target observation.
+
+That upper value is a conservative **receive-observation span**, not a physical acceleration-time upper bound. Variable delivery latency can still separate receipt timing from physical scooter timing.
+
+A future nonzero physical lower bound would require an evidence contract capable of ruling out earlier target excursions, such as separately validated dynamics/source sampling guarantees. Sample monotonicity alone is insufficient.
+
+## Retained timing-evidence sample count
+
+`AccelerationRunResult.timingEvidenceSampleCount` counts accepted measurements retained by the final evidence trace:
+
+- the newest stationary measurement that forms the launch observation window;
 - the first moving measurement;
-- each accepted post-launch measurement through the target crossing.
+- each accepted post-launch measurement through the first accepted at/above-target observation.
 
-Earlier stationary measurements that were superseded by a newer stationary launch anchor are real observations, but they are not part of the final run timing window and therefore are not counted as retained timing evidence.
+Earlier stationary measurements that were superseded by a newer stationary launch anchor are real observations, but they are not part of the final retained trace and therefore are not counted.
 
-Example: stationary samples at 1.0 s and 2.0 s, first movement at 3.0 s, and target at 4.0 s produce a launch window `[2.0, 3.0]` and a retained timing-evidence count of **3**, not 4.
-
-## Bounded timing example
-
-- stationary packet at 1.0 s;
-- first moving packet at 2.0 s;
-- last below-target packet at 3.0 s;
-- target-reaching packet at 4.0 s.
-
-The launch happened somewhere in `[1.0, 2.0]` and the finish happened somewhere in `[3.0, 4.0]`. The truthful elapsed result is therefore **1.0–3.0 s**, not a fabricated `2.00 s`.
-
-Future presentation may choose a concise estimate only if it also respects the measured uncertainty and accepted product policy. This core does not make that presentation decision.
+Example: stationary samples at 1.0 s and 2.0 s, first movement at 3.0 s, and first accepted target-reaching sample at 4.0 s produce a launch observation window `[2.0, 3.0]` and a retained timing-evidence count of **3**, not 4.
 
 ## Invalidation behavior
 
@@ -98,9 +134,9 @@ An active trace fails closed when evidence continuity is no longer trustworthy:
 
 - non-monotonic locked/required-source observation;
 - configured maximum accepted-measurement interval exceeded on the launch transition or during a moving run;
-- measurement source changes mid-run;
+- measurement source changes mid-trace;
 - vehicle/app interruption explicitly reported by the caller;
-- the scooter returns to stationary after launch;
+- the scooter returns to stationary after launch observation;
 - initial rolling start.
 
 `reset()` discards the old trace and requires a fresh stationary anchor.
@@ -109,6 +145,10 @@ An active trace fails closed when evidence continuity is no longer trustworthy:
 
 This slice does **not**:
 
+- produce a physical 0-to-target acceleration time;
+- claim packet receive timestamps equal source measurement timestamps;
+- compensate for variable source-to-app delivery latency;
+- prove the final observed below→target pair contains the first physical target reach;
 - select the production ES80 speed source;
 - infer threshold crossing from interpolated display values;
 - use Core Motion as absolute speed;
@@ -121,14 +161,18 @@ This slice does **not**:
 - send any scooter command or BLE write;
 - activate acceleration testing on physical hardware.
 
-## Software verification
+## Deterministic software verification
 
-The revised focused Swift 6.2.1 package passed **17/17 deterministic tests across 2 suites** covering:
+The focused test matrix now contains **19 deterministic tests across 2 suites** covering:
 
 - rolling-start rejection;
-- packet-bounded elapsed timing;
+- explicit receive-observation timing basis;
+- conservative zero first-reach lower bound;
+- regression for a decreasing-but-still-moving sampled sequence where an earlier unsampled target excursion cannot be ruled out;
+- regression proving `measurementDate` / delivery latency does not silently become the timing basis;
+- launch and target-transition observation windows;
 - retained timing-evidence count excluding superseded stationary anchors;
-- sparse immediate target crossing;
+- sparse immediate target observation;
 - motion-estimate rejection;
 - source-change invalidation;
 - required-source and GPS-accuracy gating;
@@ -143,17 +187,19 @@ The revised focused Swift 6.2.1 package passed **17/17 deterministic tests acros
 - return-to-stationary invalidation;
 - reset and malformed-policy behavior.
 
-The local harness emitted only benign warnings where its simplified local `SpeedTelemetrySample` initializer is nonthrowing while the repository-shaped tests use `try`; all 17 tests passed. Repository-wide exact-head NembraCore + Xcode 27 Simulator QA is still required on the final PR head. The lane remains draft until it is reconciled to fresh main for the acceptance queue.
+Repository-wide exact-head NembraCore + Xcode 27 Simulator QA remains required on the final PR head. Deterministic tests are software evidence only.
 
 ## Hardware validation still required
 
-Before production activation on the AOVOPRO ES80:
+Before production acceleration timing can make a physical-time claim on the AOVOPRO ES80:
 
 1. measure real ES80 Bluetooth speed cadence, latency, jitter, and resolution;
-2. compare that evidence against quality-screened GPS timing on physical iPhone 12;
-3. determine whether either source is sufficient alone or whether a carefully bounded multi-sensor presentation is justified;
-4. choose stationary, maximum-gap, and target-crossing policy from measured traces rather than simulator convenience;
-5. validate interruption/reconnect behavior on real rides;
-6. decide user-facing precision from observed uncertainty instead of arbitrary decimal places.
+2. compare that evidence against quality-screened GPS timing on a physical iPhone 12;
+3. determine whether either source supplies a trustworthy source-side timing basis;
+4. quantify source-to-app latency and its variability rather than assuming packet receipt equals measurement time;
+5. determine what evidence, if any, can rule out earlier unsampled target excursions;
+6. choose stationary, maximum-gap, and target policies from measured traces rather than Simulator convenience;
+7. validate interruption/reconnect behavior on real rides;
+8. decide user-facing precision from observed uncertainty instead of arbitrary decimal places.
 
 Software correctness here is not physical ES80 validation.
