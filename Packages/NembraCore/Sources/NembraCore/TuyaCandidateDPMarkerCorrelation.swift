@@ -343,11 +343,13 @@ public enum TuyaCandidateDPMarkerCorrelator {
                     continue
                 }
 
+                let independentOccurrences = uniqueOccurrencesByObservation(nearest.occurrences)
+                guard !independentOccurrences.isEmpty else { continue }
                 proposals.append(
                     MarkerHitProposal(
                         markerIndex: markerIndex,
                         marker: marker,
-                        occurrence: nearest.occurrences.min(by: deterministicOccurrenceOrder) ?? first,
+                        occurrences: independentOccurrences,
                         temporalDistanceNanoseconds: distance
                     )
                 )
@@ -379,51 +381,111 @@ public enum TuyaCandidateDPMarkerCorrelator {
         )
     }
 
+    /// Resolve nearest same-value alternatives as one bipartite assignment instead
+    /// of collapsing every marker to its first deterministic observation before
+    /// de-biasing. This preserves all independent physical support that can be
+    /// assigned without reusing an observation. Markers are considered in closer
+    /// distance order, then marker order, while augmenting paths may relocate an
+    /// already-matched marker to one of its equally-near alternatives.
+    ///
+    /// If capacity is genuinely insufficient, the previous conservative contract
+    /// remains: a uniquely closer holder keeps the observation and the farther
+    /// marker is shared; an unavoidable equal-distance conflict supports neither
+    /// side of that tie.
     private static func resolveSharedObservations(
         _ proposals: [MarkerHitProposal]
     ) -> ResolvedMarkerHits {
-        var byObservation: [Int: [MarkerHitProposal]] = [:]
-        for proposal in proposals {
-            byObservation[proposal.occurrence.observationIndex, default: []].append(proposal)
+        guard !proposals.isEmpty else {
+            return ResolvedMarkerHits(hits: [], sharedObservationMarkerIndices: [])
         }
 
-        var hits: [TuyaCandidateDPMarkerHit] = []
-        var sharedMarkerIndices: [Int] = []
+        let orderedProposals = proposals.sorted {
+            if $0.temporalDistanceNanoseconds != $1.temporalDistanceNanoseconds {
+                return $0.temporalDistanceNanoseconds < $1.temporalDistanceNanoseconds
+            }
+            return $0.markerIndex < $1.markerIndex
+        }
+        let proposalByMarker = Dictionary(
+            uniqueKeysWithValues: orderedProposals.map { ($0.markerIndex, $0) }
+        )
 
-        for proposalsForObservation in byObservation.values {
-            guard proposalsForObservation.count > 1 else {
-                if let proposal = proposalsForObservation.first {
-                    hits.append(proposal.makeHit())
+        var markerByObservation: [Int: Int] = [:]
+        var occurrenceByMarker: [Int: CandidateOccurrence] = [:]
+
+        func assign(
+            markerIndex: Int,
+            visitedObservations: inout Set<Int>
+        ) -> Bool {
+            guard let proposal = proposalByMarker[markerIndex] else { return false }
+
+            for occurrence in proposal.occurrences {
+                let observationIndex = occurrence.observationIndex
+                guard visitedObservations.insert(observationIndex).inserted else {
+                    continue
                 }
-                continue
-            }
 
-            let minimumDistance = proposalsForObservation
-                .map(\.temporalDistanceNanoseconds)
-                .min()!
-            let closest = proposalsForObservation.filter {
-                $0.temporalDistanceNanoseconds == minimumDistance
-            }
-
-            if closest.count == 1, let winner = closest.first {
-                hits.append(winner.makeHit())
-                sharedMarkerIndices.append(
-                    contentsOf: proposalsForObservation.compactMap { proposal in
-                        proposal.markerIndex == winner.markerIndex ? nil : proposal.markerIndex
+                if let holderMarkerIndex = markerByObservation[observationIndex] {
+                    guard assign(
+                        markerIndex: holderMarkerIndex,
+                        visitedObservations: &visitedObservations
+                    ) else {
+                        continue
                     }
-                )
-            } else {
-                sharedMarkerIndices.append(
-                    contentsOf: proposalsForObservation.map(\.markerIndex)
-                )
+                }
+
+                markerByObservation[observationIndex] = markerIndex
+                occurrenceByMarker[markerIndex] = occurrence
+                return true
+            }
+            return false
+        }
+
+        for proposal in orderedProposals {
+            var visitedObservations: Set<Int> = []
+            _ = assign(
+                markerIndex: proposal.markerIndex,
+                visitedObservations: &visitedObservations
+            )
+        }
+
+        let unmatched = orderedProposals.filter {
+            occurrenceByMarker[$0.markerIndex] == nil
+        }
+        var sharedMarkerIndices = Set(unmatched.map(\.markerIndex))
+        var markersToDemote: Set<Int> = []
+
+        // A maximum-cardinality assignment must not turn an unavoidable equal-
+        // distance conflict into an arbitrary winner. Preserve the prior tie
+        // contract by demoting any assigned holder tied with an unmatched marker
+        // for the same physical observation. A uniquely closer holder remains a
+        // legitimate hit and only the farther unmatched marker stays shared.
+        for proposal in unmatched {
+            for occurrence in proposal.occurrences {
+                guard let holderMarkerIndex = markerByObservation[occurrence.observationIndex],
+                      let holder = proposalByMarker[holderMarkerIndex] else {
+                    continue
+                }
+                if holder.temporalDistanceNanoseconds == proposal.temporalDistanceNanoseconds {
+                    markersToDemote.insert(holderMarkerIndex)
+                    sharedMarkerIndices.insert(holderMarkerIndex)
+                }
             }
         }
 
-        hits.sort { $0.markerIndex < $1.markerIndex }
-        sharedMarkerIndices.sort()
+        for markerIndex in markersToDemote {
+            if let occurrence = occurrenceByMarker.removeValue(forKey: markerIndex) {
+                markerByObservation.removeValue(forKey: occurrence.observationIndex)
+            }
+        }
+
+        let hits = occurrenceByMarker.compactMap { markerIndex, occurrence in
+            proposalByMarker[markerIndex]?.makeHit(occurrence: occurrence)
+        }
+        .sorted { $0.markerIndex < $1.markerIndex }
+
         return ResolvedMarkerHits(
             hits: hits,
-            sharedObservationMarkerIndices: sharedMarkerIndices
+            sharedObservationMarkerIndices: sharedMarkerIndices.sorted()
         )
     }
 
@@ -497,6 +559,19 @@ public enum TuyaCandidateDPMarkerCorrelator {
             minimumDistanceNanoseconds: minimumDistance,
             occurrences: nearest
         )
+    }
+
+    private static func uniqueOccurrencesByObservation(
+        _ occurrences: [CandidateOccurrence]
+    ) -> [CandidateOccurrence] {
+        var seenObservationIndices: Set<Int> = []
+        var result: [CandidateOccurrence] = []
+        for occurrence in occurrences.sorted(by: deterministicOccurrenceOrder) {
+            if seenObservationIndices.insert(occurrence.observationIndex).inserted {
+                result.append(occurrence)
+            }
+        }
+        return result
     }
 
     private static func temporalDistance(
@@ -609,10 +684,10 @@ private struct NearestOccurrences {
 private struct MarkerHitProposal {
     let markerIndex: Int
     let marker: TuyaCandidateDPStockAppMarker
-    let occurrence: CandidateOccurrence
+    let occurrences: [CandidateOccurrence]
     let temporalDistanceNanoseconds: UInt64
 
-    func makeHit() -> TuyaCandidateDPMarkerHit {
+    func makeHit(occurrence: CandidateOccurrence) -> TuyaCandidateDPMarkerHit {
         TuyaCandidateDPMarkerHit(
             markerIndex: markerIndex,
             marker: marker,
