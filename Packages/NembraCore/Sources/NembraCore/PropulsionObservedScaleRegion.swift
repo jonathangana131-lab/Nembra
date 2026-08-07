@@ -78,7 +78,7 @@ public struct PropulsionObservedScaleRegionSnapshot: Equatable, Sendable {
 
 public extension PropulsionGaugeDisplayModel {
     /// Projects a stable observed-scale region from the same accepted-only
-    /// accessibility snapshot used to keep VoiceOver off interpolated frames.
+    /// evidence used to keep VoiceOver off interpolated frames.
     ///
     /// Calling this every display frame is safe: render-only gauge motion can
     /// never enter or leave the semantic near-edge region by itself.
@@ -87,11 +87,21 @@ public extension PropulsionGaugeDisplayModel {
         scale: PropulsionGaugeScale?,
         policy: PropulsionObservedScaleRegionPolicy
     ) -> PropulsionObservedScaleRegionSnapshot {
-        let accepted = accessibilitySnapshot(
-            atUptimeNanoseconds: now,
-            scale: scale
-        )
+        let frame = frame(atUptimeNanoseconds: now, scale: scale)
+        let accepted = accessibilitySnapshot(from: frame, scale: scale)
+        return observedScaleRegionSnapshot(from: accepted, policy: policy)
+    }
+}
 
+extension PropulsionGaugeDisplayModel {
+    /// Internal semantic projection from accepted-only evidence. Higher-level
+    /// cockpit composition can provide an accessibility snapshot derived from the
+    /// same canonical frame used for render motion, avoiding a second frame pass
+    /// without weakening the accepted-measurement boundary.
+    func observedScaleRegionSnapshot(
+        from accepted: PropulsionGaugeAccessibilitySnapshot,
+        policy: PropulsionObservedScaleRegionPolicy
+    ) -> PropulsionObservedScaleRegionSnapshot {
         let region: PropulsionObservedScaleRegion
         switch accepted.availability {
         case .unavailable:

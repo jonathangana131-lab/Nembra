@@ -52,8 +52,22 @@ public extension PropulsionGaugeDisplayModel {
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
     ) -> PropulsionGaugeAccessibilitySnapshot {
-        let frame = frame(atUptimeNanoseconds: now, scale: scale)
+        accessibilitySnapshot(
+            from: frame(atUptimeNanoseconds: now, scale: scale),
+            scale: scale
+        )
+    }
+}
 
+extension PropulsionGaugeDisplayModel {
+    /// Internal projection seam for higher-level product composition that has
+    /// already evaluated the canonical frame. Keeping this helper internal lets a
+    /// 60 Hz cockpit share one frame without exposing a way for external callers to
+    /// manufacture accessibility authority.
+    func accessibilitySnapshot(
+        from frame: PropulsionGaugeFrame,
+        scale: PropulsionGaugeScale?
+    ) -> PropulsionGaugeAccessibilitySnapshot {
         // The accepted presentation frame remains the single authority for scale
         // compatibility. Accessibility must not duplicate vehicle/mode/authority
         // admission rules that could later diverge from the visual model.

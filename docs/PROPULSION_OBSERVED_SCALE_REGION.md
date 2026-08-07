@@ -4,11 +4,13 @@
 
 Nembra's live cockpit needs a restrained way to emphasize when the newest **accepted** propulsion-power measurement is genuinely near the edge of a compatible observed-power presentation scale. That state must never be driven by render interpolation and must never be described as throttle position or a certified/rated hardware maximum.
 
-`PropulsionObservedScaleRegionSnapshot` is the semantic handoff for that state.
+`PropulsionObservedScaleRegionSnapshot` is the semantic handoff for that state. `PropulsionGaugeCockpitCompositionSnapshot` now lets the future high-frequency cockpit consume this semantic state together with accepted numeric/render presentation from one canonical frame evaluation.
 
 ## Accepted measurement, never display interpolation
 
-The projection consumes `PropulsionGaugeDisplayModel.accessibilitySnapshot(...)`, not `PropulsionGaugeFrame.displayWatts` or `normalizedPropulsion`.
+The standalone projection evaluates the canonical frame once, derives an accepted-only `PropulsionGaugeAccessibilitySnapshot`, then applies observed-scale semantics. The combined cockpit projection reuses the same accepted-only helper from the exact frame already used for cockpit render geometry.
+
+Neither path consumes `PropulsionGaugeFrame.displayWatts` or `normalizedPropulsion` as semantic evidence.
 
 Therefore:
 - a newly accepted high-power sample may enter the near-edge region immediately while the animated gauge is still rising from a lower value;
@@ -19,9 +21,9 @@ Therefore:
 
 ## Freshness is not animation
 
-After propulsion freshness PR #315, animation response and accepted-measurement currentness are independent policies. This projection intentionally inherits currentness from the canonical accepted-only snapshot. Visual animation tuning, including a slower or faster response, cannot extend how long near-edge semantics stay live.
+Animation response and accepted-measurement currentness are independent policies. This projection intentionally inherits currentness from canonical accepted evidence. Visual animation tuning, including a slower or faster response, cannot extend how long near-edge semantics stay live.
 
-The focused regressions include a model with long animation settling time and a very short freshness interval; near-edge semantics become retained exactly when the freshness policy expires even though animation timing is unchanged.
+The focused regressions include long animation settling with a short freshness interval; near-edge semantics become retained exactly when freshness expires even though render timing is unchanged.
 
 ## Region states
 
@@ -56,18 +58,25 @@ Even the verified wording gate does **not** mean throttle position, rated/certif
 
 ## Composition with the cockpit projection
 
-Merged PR #322 owns the complementary cockpit-facing separation between accepted numeric power and render-only presentation:
-- `measurement` is accepted numeric watts and provenance;
-- `visualPropulsionFraction` is display-clock motion only;
-- `recentAcceptedPeakMarkerFraction` is short-lived presentation context only.
+The cockpit-facing projection owns:
+- `measurement` as accepted numeric watts and provenance;
+- `visualPropulsionFraction` as display-clock motion only;
+- `recentAcceptedPeakMarkerFraction` as short-lived presentation context only.
 
-This slice owns accepted observed-scale-region semantics and verified near-observed-maximum wording eligibility. A later app integration should compose the two layers rather than reimplementing either policy in SwiftUI.
+This layer owns accepted observed-scale-region semantics and verified near-observed-maximum wording eligibility.
 
-The current branch is deliberately based on main **after #322 merged**, so package validation covers the real combined propulsion composition rather than a merely conflict-free pre-#322 ancestor.
+`cockpitCompositionSnapshot(...)` is the integration seam between them. It evaluates the canonical gauge frame exactly once, then:
+1. derives the cockpit snapshot from that frame;
+2. derives accepted-only accessibility/scale evidence from that same frame;
+3. derives this semantic region from that accepted-only evidence.
+
+The combined snapshot is sealed against arbitrary cross-tick pairing. This avoids duplicated frame/interpolation work on a future 60 Hz render path without weakening either truth contract.
+
+Standalone projection APIs remain available and behaviorally identical for focused consumers. SwiftUI should prefer the combined snapshot when it needs both layers on the same render tick.
 
 ## Integration status
 
-This slice is package/domain-only. It does not modify `DashboardView.swift`, `Nembra.xcodeproj/project.pbxproj`, BLE/Tuya acquisition, observed-envelope persistence, rides, battery/range, navigation, or commands. The production app still manually compiles selected NembraCore source files, so a package test does not by itself prove this new type is app-visible.
+This remains package/domain-only. It does not modify `DashboardView.swift`, `Nembra.xcodeproj/project.pbxproj`, BLE/Tuya acquisition, observed-envelope persistence, rides, battery/range, navigation, or commands. The production app still requires deliberate source visibility/wiring and real Simulator/runtime acceptance before this composition is a shipped cockpit feature.
 
 ## Truth boundary
 
