@@ -134,9 +134,11 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 /// interval. Both rules prevent a caller from stretching process-local monotonic truth across
 /// relaunch merely because a checkpoint happened before useful elapsed-time evidence existed.
 ///
-/// Fresh construction is package-scoped so an external feature cannot discard partial/recovered
-/// evidence and mint a clean accumulator for the same public UUID. A future app-facing creator
-/// must be owned by the ride lifecycle that can prove one accumulator authority per session.
+/// Fresh construction, mutation, and snapshot projection are package-scoped. Codable remains
+/// public as the durable import/export representation, but an external feature cannot operate a
+/// decoded/copied value as a fresh ride observer or project it into completed-duration evidence.
+/// A future app-facing creator must be owned by the ride lifecycle and keep the accumulator
+/// encapsulated so one observation authority exists per active session.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beginsAfterUnobservedInterval: Bool
@@ -157,7 +159,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         self.requiresInitialRecoveryGap = false
     }
 
-    public var snapshot: RideSessionDurationEvidenceSnapshot {
+    package var snapshot: RideSessionDurationEvidenceSnapshot {
         let duration: UInt64? = observationSegments.isEmpty
             ? nil
             : totalObservedDurationNanoseconds
@@ -179,7 +181,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
     }
 
     @discardableResult
-    public mutating func upsert(
+    package mutating func upsert(
         _ segment: RideSessionDurationObservedSegment
     ) throws -> RideSessionDurationUpsertResult {
         guard segment.sessionID == sessionID else {
