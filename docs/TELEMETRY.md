@@ -52,6 +52,8 @@ A collector is source-specific; trying to mix GPS into a BLE collector is reject
 
 Out-of-order or duplicate monotonic timestamps are rejected rather than silently reordering history.
 
+The raw speed is stored in SI meters/second, while the empirical resolution diagnostic is expressed in km/h. If a finite SI value cannot be represented as finite km/h, that sample is rejected from the benchmark before it can become an accepted anchor or poison resolution statistics with infinity/NaN. Nembra does not invent an arbitrary scooter maximum to make the conversion fit; the packet remains rejected benchmark evidence and the next valid accepted packet spans the resulting arrival gap.
+
 ## Latency limitations
 
 A BLE notification that contains no device-side measurement timestamp does **not** let Nembra claim end-to-end sensor latency. In that case we can truthfully measure arrival cadence/jitter and app-side processing latency later, but not the controller's internal sampling delay.
@@ -73,7 +75,7 @@ Important behavior:
 
 This preserves truthful raw-arrival semantics while allowing ride-distance fixtures to jump forward deterministically. A regression test checks that a simulated raw sample lands within the real process-uptime window around its emission.
 
-Simulation timing is not MAXSHOT timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
+Simulation timing is not physical AOVOPRO ES80 timing. It exists to exercise the presentation system before physical scooter packet cadence is captured.
 
 ## Real-hardware benchmark procedure (pending hardware access)
 
@@ -94,7 +96,7 @@ For Core Motion, evaluate only bounded short-horizon assistance around authorita
 
 ## Dashboard decision gate
 
-No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet rates. The eventual Dashboard strategy must be selected from measured hardware traces. A 60/120 Hz visual render loop may interpolate between reliable estimates, but the raw evidence cadence remains exactly what the sensors produced.
+No interpolation/fusion constants should be tuned to imaginary AOVOPRO ES80 packet rates. The eventual Dashboard strategy must be selected from measured hardware traces. A 60/120 Hz visual render loop may interpolate between reliable estimates, but the raw evidence cadence remains exactly what the sensors produced.
 
 ## Render-only interpolation
 
@@ -109,7 +111,7 @@ No interpolation/fusion constants should be tuned to imaginary MAXSHOT packet ra
 - motion-assisted estimates cannot enter this authoritative interpolator
 - every `SpeedDisplayFrame` carries both the visual value and the latest measured value, plus an origin flag (`measured` vs `visuallyInterpolated`)
 
-The interpolator does not predict future speed. Final transition duration is supplied by its caller and must be tuned from real MAXSHOT benchmark traces plus iPhone 12 Simulator/device visual QA. No production timing constant is claimed yet.
+The interpolator does not predict future speed. Final transition duration is supplied by its caller and must be tuned from real AOVOPRO ES80 benchmark traces plus iPhone 12 Simulator/device visual QA. No production timing constant is claimed yet.
 
 ## Phase 10 Dashboard presentation policy
 
@@ -117,7 +119,7 @@ The interpolator does not predict future speed. Final transition duration is sup
 
 Rules:
 
-- ordinary/unverified production launch injects `SpeedInstrumentInterpolationPolicy.disabled`; real MAXSHOT samples therefore snap until hardware timing is measured
+- ordinary/unverified production launch injects `SpeedInstrumentInterpolationPolicy.disabled`; real AOVOPRO ES80 samples therefore snap until hardware timing is measured
 - explicit Simulator QA launch injects `.simulatorQA` only to exercise visual behavior; its constants are test presentation values, not hardware claims
 - the speed subtree may render on a SwiftUI animation timeline capped at 60 Hz while a transition is active
 - that timeline is paused when no interpolation window is active, avoiding a permanent whole-app/high-frequency refresh loop
