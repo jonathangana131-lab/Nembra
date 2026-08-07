@@ -54,11 +54,17 @@ public struct PassiveBluetoothRepeatedCorrelationHit: Equatable, Sendable {
 /// distinct raw callback sequence identities observed for the stream across all
 /// marker windows, not the number of window incidences.
 ///
-/// The `medianNearest...` / `maximumNearest...` fields remain literal nearest-
+/// The `medianNearest...` / `maximumNearest...` fields are literal nearest-
 /// candidate proximity summaries: for every marker window containing this stream,
 /// they use that window's nearest raw callback before one-to-one support allocation.
-/// An independently assigned hit may therefore be farther away after augmenting
-/// reassignment. Its exact assigned offset remains on the hit itself.
+/// They describe local candidate availability, not the proximity of the callbacks
+/// ultimately credited as independent support.
+///
+/// The `medianAssigned...` / `maximumAssigned...` fields summarize the actual
+/// independently assigned hits after one-to-one allocation. An assigned hit may be
+/// farther away than the marker's nearest callback when augmenting reassignment is
+/// required to avoid crediting the same immutable callback twice. Stream ranking
+/// uses these assigned-evidence metrics rather than the pre-allocation nearest ones.
 public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Sendable, Identifiable {
     public let key: PassiveBluetoothValueStreamKey
     public let totalMarkerCount: Int
@@ -67,6 +73,8 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
     public let representedDisplayedValues: Set<String>
     public let medianNearestAbsoluteOffsetSeconds: Double?
     public let maximumNearestAbsoluteOffsetSeconds: Double?
+    public let medianAssignedAbsoluteOffsetSeconds: Double?
+    public let maximumAssignedAbsoluteOffsetSeconds: Double?
 
     public var id: PassiveBluetoothValueStreamKey { key }
 
@@ -77,7 +85,9 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
         hits: [PassiveBluetoothRepeatedCorrelationHit],
         representedDisplayedValues: Set<String>,
         medianNearestAbsoluteOffsetSeconds: Double?,
-        maximumNearestAbsoluteOffsetSeconds: Double?
+        maximumNearestAbsoluteOffsetSeconds: Double?,
+        medianAssignedAbsoluteOffsetSeconds: Double?,
+        maximumAssignedAbsoluteOffsetSeconds: Double?
     ) {
         self.key = key
         self.totalMarkerCount = totalMarkerCount
@@ -86,6 +96,8 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
         self.representedDisplayedValues = representedDisplayedValues
         self.medianNearestAbsoluteOffsetSeconds = medianNearestAbsoluteOffsetSeconds
         self.maximumNearestAbsoluteOffsetSeconds = maximumNearestAbsoluteOffsetSeconds
+        self.medianAssignedAbsoluteOffsetSeconds = medianAssignedAbsoluteOffsetSeconds
+        self.maximumAssignedAbsoluteOffsetSeconds = maximumAssignedAbsoluteOffsetSeconds
     }
 
     public var markerSupportCount: Int {
@@ -116,8 +128,8 @@ public struct PassiveBluetoothRepeatedCorrelationStreamEvidence: Equatable, Send
 ///
 /// The stream list is a prioritization aid for offline research only. Ranking is
 /// based on independent repeated temporal support, display-value diversity, and
-/// proximity; it never labels a stream as battery/current/power/etc. and never
-/// decodes the opaque payload.
+/// the proximity of the independently assigned callbacks; it never labels a stream
+/// as battery/current/power/etc. and never decodes the opaque payload.
 public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
     public let disposition: PassiveBluetoothRepeatedCorrelationDisposition
     public let field: String
@@ -145,8 +157,10 @@ public struct PassiveBluetoothRepeatedCorrelationReport: Equatable, Sendable {
 ///
 /// This layer intentionally depends on `PassiveBluetoothCorrelation` for each
 /// marker window so known byte-continuity boundaries keep the same fail-closed
-/// semantics. It does not merge callbacks across a disconnect/interruption and
-/// does not mutate the raw evidence artifact.
+/// semantics. It does not merge callbacks across a disconnect/interruption inside
+/// a marker window and does not mutate the raw evidence artifact. Repeated support
+/// may aggregate the same GATT path across separately bounded marker windows; that
+/// aggregate is recurrence evidence, not uninterrupted-stream evidence.
 public enum PassiveBluetoothRepeatedCorrelation {
     public static func analyze(
         _ session: PassiveBluetoothCaptureSession,
@@ -260,6 +274,7 @@ public enum PassiveBluetoothRepeatedCorrelation {
                 window.candidates.first.map { abs($0.offsetSecondsFromMarker) }
             }
             .sorted()
+            let assignedAbsoluteOffsets = hits.map(\.absoluteOffsetSeconds).sorted()
 
             return PassiveBluetoothRepeatedCorrelationStreamEvidence(
                 key: key,
@@ -268,7 +283,9 @@ public enum PassiveBluetoothRepeatedCorrelation {
                 hits: hits,
                 representedDisplayedValues: Set(hits.map(\.markerDisplayedValue)),
                 medianNearestAbsoluteOffsetSeconds: PassiveBluetoothRepeatedCorrelation.median(nearestAbsoluteOffsets),
-                maximumNearestAbsoluteOffsetSeconds: nearestAbsoluteOffsets.last
+                maximumNearestAbsoluteOffsetSeconds: nearestAbsoluteOffsets.last,
+                medianAssignedAbsoluteOffsetSeconds: PassiveBluetoothRepeatedCorrelation.median(assignedAbsoluteOffsets),
+                maximumAssignedAbsoluteOffsetSeconds: assignedAbsoluteOffsets.last
             )
         }
     }
@@ -402,9 +419,17 @@ public enum PassiveBluetoothRepeatedCorrelation {
             return lhs.representedDisplayedValues.count > rhs.representedDisplayedValues.count
         }
 
-        let lhsMedian = lhs.medianNearestAbsoluteOffsetSeconds ?? .infinity
-        let rhsMedian = rhs.medianNearestAbsoluteOffsetSeconds ?? .infinity
-        if lhsMedian != rhsMedian { return lhsMedian < rhsMedian }
+        let lhsAssignedMedian = lhs.medianAssignedAbsoluteOffsetSeconds ?? .infinity
+        let rhsAssignedMedian = rhs.medianAssignedAbsoluteOffsetSeconds ?? .infinity
+        if lhsAssignedMedian != rhsAssignedMedian {
+            return lhsAssignedMedian < rhsAssignedMedian
+        }
+
+        let lhsAssignedMaximum = lhs.maximumAssignedAbsoluteOffsetSeconds ?? .infinity
+        let rhsAssignedMaximum = rhs.maximumAssignedAbsoluteOffsetSeconds ?? .infinity
+        if lhsAssignedMaximum != rhsAssignedMaximum {
+            return lhsAssignedMaximum < rhsAssignedMaximum
+        }
         return lhs.key < rhs.key
     }
 
