@@ -1,0 +1,60 @@
+name: Propulsion Observed Scale Region Integration QA
+
+on:
+  push:
+    branches:
+      - qa/propulsion-observed-scale-region/chat-g5m7q-r2-main690e
+
+permissions:
+  contents: read
+
+jobs:
+  swift-test:
+    name: Current-main NembraCore warnings-as-errors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout integration mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify current-main composition and exact feature blobs
+        env:
+          EXPECTED_FEATURE_HEAD: 53d75184efb6e1162811c90e67535b9c2059775a
+          EXPECTED_MAIN: 690e360665f2428da6cc3a5e8bf7540833215789
+          EXPECTED_COMPOSITION_HEAD: 7b4047db040dfa8e5d474e97a8a2d374d7a6a2bd
+        run: |
+          set -euo pipefail
+          git cat-file -e "$EXPECTED_FEATURE_HEAD^{commit}"
+          git cat-file -e "$EXPECTED_MAIN^{commit}"
+          git cat-file -e "$EXPECTED_COMPOSITION_HEAD^{commit}"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_COMPOSITION_HEAD"
+          test "$(git rev-parse "$EXPECTED_COMPOSITION_HEAD^")" = "$EXPECTED_MAIN"
+
+          expected_files='Packages/NembraCore/Sources/NembraCore/PropulsionObservedScaleRegion.swift
+          Packages/NembraCore/Tests/NembraCoreTests/PropulsionObservedScaleRegionTests.swift
+          docs/PROPULSION_OBSERVED_SCALE_REGION.md'
+          changed="$(git diff --name-only "$EXPECTED_MAIN" "$EXPECTED_COMPOSITION_HEAD")"
+          test "$changed" = "$expected_files"
+
+          for path in \
+            Packages/NembraCore/Sources/NembraCore/PropulsionObservedScaleRegion.swift \
+            Packages/NembraCore/Tests/NembraCoreTests/PropulsionObservedScaleRegionTests.swift \
+            docs/PROPULSION_OBSERVED_SCALE_REGION.md
+          do
+            test "$(git rev-parse "$EXPECTED_FEATURE_HEAD:$path")" = "$(git rev-parse "$EXPECTED_COMPOSITION_HEAD:$path")"
+          done
+
+          workflow_only="$(git diff --name-only "$EXPECTED_COMPOSITION_HEAD" HEAD)"
+          test "$workflow_only" = '.github/workflows/propulsion-observed-scale-region-integration-qa.yml'
+
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+          swift package --package-path Packages/NembraCore dump-package >/dev/null
+
+      - name: Build and run NembraCore tests with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
