@@ -28,6 +28,22 @@ struct ObservedPowerEnvelopeTests {
         )
     }
 
+    private func physicalObservation(
+        watts: Double,
+        uptime: UInt64,
+        eligibility: ObservedPowerEnvelopeLearningEligibility = .eligibleForEnvelopeLearning
+    ) -> ObservedPowerEnvelopeObservation {
+        .verifiedVehicleMeasurement(
+            powerWatts: watts,
+            observedAtUptimeNanoseconds: uptime,
+            learningEligibility: eligibility
+        )
+    }
+
+    private func physicalLearner() throws -> ObservedPowerEnvelopeLearner {
+        .verifiedVehicleMeasurements(scope: try scope(), policy: try policy())
+    }
+
     @Test("scope requires an explicit nonempty vehicle key and trustworthy mode key")
     func scopeValidation() throws {
         #expect(throws: ObservedPowerEnvelopeScopeError.emptyVehicleIdentityKey) {
@@ -58,16 +74,49 @@ struct ObservedPowerEnvelopeTests {
         }
     }
 
-    @Test("measurement-only evidence can never establish calibration")
+    @Test("simulator learner produces explicitly simulator-only calibration")
+    func simulatorCalibrationKeepsProvenance() throws {
+        var learner = ObservedPowerEnvelopeLearner.simulatorQA(scope: try scope(), policy: try policy())
+
+        for index in 1...10 {
+            _ = learner.record(.simulatorQA(
+                powerWatts: 600,
+                observedAtUptimeNanoseconds: UInt64(index),
+                learningEligibility: .eligibleForEnvelopeLearning
+            ))
+        }
+
+        let calibration = try #require(learner.calibration)
+        #expect(calibration.evidenceAuthority == .simulatorQA)
+        #expect(learner.evidenceAuthority == .simulatorQA)
+    }
+
+    @Test("simulator evidence cannot enter a verified physical learner")
+    func authorityMismatchFailsClosedWithoutConsumingPhysicalChronology() throws {
+        var learner = try physicalLearner()
+
+        #expect(learner.record(.simulatorQA(
+            powerWatts: 900,
+            observedAtUptimeNanoseconds: 100,
+            learningEligibility: .eligibleForEnvelopeLearning
+        )) == .rejected(.evidenceAuthorityMismatch(
+            expected: .verifiedVehicleMeasurement,
+            actual: .simulatorQA
+        )))
+
+        #expect(learner.record(physicalObservation(watts: 500, uptime: 100)) == .acceptedLearningSample)
+    }
+
+    @Test("measurement-only physical evidence can never establish calibration")
     func measurementOnlyDoesNotLearn() throws {
-        var learner = ObservedPowerEnvelopeLearner(scope: try scope(), policy: try policy())
+        var learner = try physicalLearner()
 
         for index in 1...30 {
-            let result = learner.recordQualifiedObservation(
-                powerWatts: 700,
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .measurementOnly
-            )
+            let result = learner.record(physicalObservation(
+                watts: 700,
+                uptime: UInt64(index),
+                eligibility: .measurementOnly
+            ))
             #expect(result == .acceptedMeasurementOnly)
         }
 
@@ -77,18 +126,15 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("one spike cannot establish a false high ceiling")
     func singleSpikeIsRobustlyIgnored() throws {
-        var learner = ObservedPowerEnvelopeLearner(scope: try scope(), policy: try policy())
+        var learner = try physicalLearner()
         let samples: [Double] = [500, 505, 498, 502, 501, 499, 503, 500, 1_400, 504]
 
         for (index, watts) in samples.enumerated() {
-            _ = learner.recordQualifiedObservation(
-                powerWatts: watts,
-                observedAtUptimeNanoseconds: UInt64(index + 1),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            _ = learner.record(physicalObservation(watts: watts, uptime: UInt64(index + 1)))
         }
 
         let calibration = try #require(learner.calibration)
+        #expect(calibration.evidenceAuthority == .verifiedVehicleMeasurement)
         #expect(calibration.learnedObservedCeilingWatts < 510)
         #expect(calibration.learnedGaugeScaleWatts < 531)
         #expect(calibration.upperBandSupportCount >= 3)
@@ -96,24 +142,22 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("repeated stronger physical observations raise the envelope")
     func repeatedStrongerEvidenceRaisesEnvelope() throws {
-        var learner = ObservedPowerEnvelopeLearner(scope: try scope(), policy: try policy())
+        var learner = try physicalLearner()
 
         for index in 1...10 {
-            _ = learner.recordQualifiedObservation(
-                powerWatts: 500 + Double(index % 3),
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            _ = learner.record(physicalObservation(
+                watts: 500 + Double(index % 3),
+                uptime: UInt64(index)
+            ))
         }
         let initial = try #require(learner.calibration)
 
         var sawRaise = false
         for index in 11...22 {
-            let result = learner.recordQualifiedObservation(
-                powerWatts: 650 + Double(index % 4),
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            let result = learner.record(physicalObservation(
+                watts: 650 + Double(index % 4),
+                uptime: UInt64(index)
+            ))
             if case .calibrationRaised = result { sawRaise = true }
         }
 
@@ -125,70 +169,45 @@ struct ObservedPowerEnvelopeTests {
 
     @Test("ordinary lower output never silently shrinks an established ceiling")
     func lowerOutputDoesNotDownAdapt() throws {
-        var learner = ObservedPowerEnvelopeLearner(scope: try scope(), policy: try policy())
+        var learner = try physicalLearner()
 
         for index in 1...12 {
-            _ = learner.recordQualifiedObservation(
-                powerWatts: 700 + Double(index % 3),
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            _ = learner.record(physicalObservation(
+                watts: 700 + Double(index % 3),
+                uptime: UInt64(index)
+            ))
         }
         let initial = try #require(learner.calibration)
 
         for index in 13...60 {
-            _ = learner.recordQualifiedObservation(
-                powerWatts: 380 + Double(index % 4),
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            _ = learner.record(physicalObservation(
+                watts: 380 + Double(index % 4),
+                uptime: UInt64(index)
+            ))
         }
 
         #expect(learner.calibration == initial)
     }
 
-    @Test("fresh invalid numeric evidence closes chronology to delayed callbacks")
+    @Test("fresh invalid physical numeric evidence closes chronology to delayed callbacks")
     func invalidFreshSampleStillAdvancesChronology() throws {
-        var learner = ObservedPowerEnvelopeLearner(scope: try scope(), policy: try policy())
+        var learner = try physicalLearner()
 
-        #expect(learner.recordQualifiedObservation(
-            powerWatts: 500,
-            observedAtUptimeNanoseconds: 100,
-            learningEligibility: .eligibleForEnvelopeLearning
-        ) == .acceptedLearningSample)
-
-        #expect(learner.recordQualifiedObservation(
-            powerWatts: .infinity,
-            observedAtUptimeNanoseconds: 300,
-            learningEligibility: .eligibleForEnvelopeLearning
-        ) == .rejected(.invalidPowerWatts))
-
-        #expect(learner.recordQualifiedObservation(
-            powerWatts: 510,
-            observedAtUptimeNanoseconds: 200,
-            learningEligibility: .eligibleForEnvelopeLearning
-        ) == .rejected(.nonIncreasingObservationTimestamp))
-
-        #expect(learner.recordQualifiedObservation(
-            powerWatts: 520,
-            observedAtUptimeNanoseconds: 400,
-            learningEligibility: .eligibleForEnvelopeLearning
-        ) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(watts: 500, uptime: 100)) == .acceptedLearningSample)
+        #expect(learner.record(physicalObservation(watts: .infinity, uptime: 300)) == .rejected(.invalidPowerWatts))
+        #expect(learner.record(physicalObservation(watts: 510, uptime: 200)) == .rejected(.nonIncreasingObservationTimestamp))
+        #expect(learner.record(physicalObservation(watts: 520, uptime: 400)) == .acceptedLearningSample)
     }
 
     @Test("presentation normalization reaches the edge near learned observed output and never rewrites watts")
     func normalizedPresentationPositionIsRenderOnly() throws {
-        var learner = ObservedPowerEnvelopeLearner(
+        var learner = ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
             scope: try scope(),
             policy: try policy(headroomFraction: 0.02)
         )
 
         for index in 1...10 {
-            _ = learner.recordQualifiedObservation(
-                powerWatts: 600,
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            _ = learner.record(physicalObservation(watts: 600, uptime: UInt64(index)))
         }
 
         let calibration = try #require(learner.calibration)
@@ -205,9 +224,9 @@ struct ObservedPowerEnvelopeTests {
         #expect(calibration.learnedObservedCeilingWatts == 600)
     }
 
-    @Test("extreme finite power stays accepted even when headroom math cannot produce a finite scale")
+    @Test("extreme finite physical power stays accepted even when headroom math cannot produce a finite scale")
     func extremeFinitePowerDoesNotInventHardwareCap() throws {
-        var learner = ObservedPowerEnvelopeLearner(
+        var learner = ObservedPowerEnvelopeLearner.verifiedVehicleMeasurements(
             scope: try scope(),
             policy: try policy(
                 windowCapacity: 3,
@@ -219,11 +238,10 @@ struct ObservedPowerEnvelopeTests {
         )
 
         for index in 1...3 {
-            let result = learner.recordQualifiedObservation(
-                powerWatts: Double.greatestFiniteMagnitude,
-                observedAtUptimeNanoseconds: UInt64(index),
-                learningEligibility: .eligibleForEnvelopeLearning
-            )
+            let result = learner.record(physicalObservation(
+                watts: Double.greatestFiniteMagnitude,
+                uptime: UInt64(index)
+            ))
             #expect(result == .acceptedLearningSample)
         }
         #expect(learner.calibration == nil)
