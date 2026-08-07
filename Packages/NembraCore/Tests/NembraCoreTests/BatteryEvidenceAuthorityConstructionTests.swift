@@ -59,7 +59,7 @@ struct BatteryEvidenceAuthorityConstructionTests {
 
     @Test("package receipt sequencer produces one epoch and strict sequence")
     func sequencerProducesStrictReceiptOrder() throws {
-        var sequencer = BatteryEvidenceReceiptSequencer(acquisitionEpoch: epoch)
+        let sequencer = BatteryEvidenceReceiptSequencer(acquisitionEpoch: epoch)
 
         let first = try sequencer.nextReceiptIdentity()
         let second = try sequencer.nextReceiptIdentity()
@@ -70,9 +70,23 @@ struct BatteryEvidenceAuthorityConstructionTests {
         #expect(second.sequenceNumber > first.sequenceNumber)
     }
 
+    @Test("sequencer aliases share one counter instead of forking receipt identity")
+    func sequencerAliasesCannotForkCounter() throws {
+        let sequencer = BatteryEvidenceReceiptSequencer(acquisitionEpoch: epoch)
+        let alias = sequencer
+
+        let first = try sequencer.nextReceiptIdentity()
+        let second = try alias.nextReceiptIdentity()
+        let third = try sequencer.nextReceiptIdentity()
+
+        #expect(first == receipt(1))
+        #expect(second == receipt(2))
+        #expect(third == receipt(3))
+    }
+
     @Test("receipt sequencer fails closed before UInt64 wrap")
     func sequencerNeverWraps() throws {
-        var sequencer = BatteryEvidenceReceiptSequencer(
+        let sequencer = BatteryEvidenceReceiptSequencer(
             acquisitionEpoch: epoch,
             startingSequenceNumber: UInt64.max - 1
         )
