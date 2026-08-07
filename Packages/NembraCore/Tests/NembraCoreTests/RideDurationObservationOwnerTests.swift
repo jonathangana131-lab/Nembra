@@ -90,6 +90,53 @@ struct RideDurationObservationOwnerTests {
         #expect(snapshot.observationSegmentCount == 2)
     }
 
+    @Test("rejected resume keeps the gap retryable at the same boundary")
+    func rejectedResumeIsAtomic() throws {
+        let sessionID = UUID()
+        let firstProcessID = UUID()
+        let secondProcessID = UUID()
+        let retryProcessID = UUID()
+        var owner = RideDurationObservationOwner()
+
+        try owner.begin(
+            sessionID: sessionID,
+            processGenerationID: firstProcessID,
+            atUptimeNanoseconds: 100
+        )
+        try owner.markObservationGap(sessionID: sessionID, atUptimeNanoseconds: 200)
+        try owner.resumeObservation(
+            sessionID: sessionID,
+            processGenerationID: secondProcessID,
+            atUptimeNanoseconds: 300
+        )
+        try owner.markObservationGap(sessionID: sessionID, atUptimeNanoseconds: 400)
+        let beforeRejectedResume = owner.snapshot
+
+        // Returning to a retired process generation is invalid once a different
+        // generation has produced accepted evidence.
+        #expect(throws: RideSessionDurationEvidenceError.retiredProcessGenerationReused) {
+            try owner.resumeObservation(
+                sessionID: sessionID,
+                processGenerationID: firstProcessID,
+                atUptimeNanoseconds: 500
+            )
+        }
+        #expect(owner.snapshot == beforeRejectedResume)
+
+        // The failed candidate must not consume the gap, create an active segment,
+        // or advance chronology. A valid generation can retry the exact boundary.
+        try owner.resumeObservation(
+            sessionID: sessionID,
+            processGenerationID: retryProcessID,
+            atUptimeNanoseconds: 500
+        )
+        let snapshot = try owner.end(sessionID: sessionID, atUptimeNanoseconds: 600)
+
+        #expect(snapshot.observedDurationNanoseconds == 300)
+        #expect(snapshot.coverage == .partial)
+        #expect(snapshot.observationSegmentCount == 3)
+    }
+
     @Test("recovered attachment is partial from its first observed segment")
     func recoveredAttachment() throws {
         let sessionID = UUID()
