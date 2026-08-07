@@ -191,9 +191,11 @@ public struct TuyaCandidateDPMarkerCandidateEvidence: Equatable, Sendable {
     /// Marker indices rejected because equally-near observations disagreed in
     /// raw bytes for this candidate.
     public let ambiguousNearestMarkerIndices: [Int]
-    /// Marker indices that could only reuse a candidate message already proposed
-    /// for another marker. One physical candidate message may support at most one
-    /// human marker in repeated-evidence counts.
+    /// Marker indices whose nearest same-value evidence cannot be assigned as one
+    /// unique non-reusing marker-to-observation association. This includes both
+    /// unavoidable physical-observation reuse and equal-priority components with
+    /// multiple equally valid complete assignments. One physical candidate message
+    /// may support at most one human marker in repeated-evidence counts.
     public let sharedObservationMarkerIndices: [Int]
     public let distinctDisplayedReferenceCount: Int
     public let distinctRawValueCount: Int
@@ -386,7 +388,10 @@ public enum TuyaCandidateDPMarkerCorrelator {
     /// Proposals at the same temporal distance are then split into connected
     /// marker/observation components.
     ///
-    /// An equal-distance component produces marker-specific hits only when every
+    /// A single human marker may deterministically select one of several equally
+    /// near same-value observations because there is no cross-marker association
+    /// claim to invent; it still receives at most one support hit. A multi-marker
+    /// equal-distance component produces marker-specific hits only when every
     /// marker can be assigned an independent observation and that complete
     /// assignment is unique. Deficient or multiply-matchable equal-priority
     /// components are retained as shared/ambiguous evidence and reserve their
@@ -443,6 +448,17 @@ public enum TuyaCandidateDPMarkerCorrelator {
                 guard let matching = fullMatching(component) else {
                     sharedMarkerIndices.formUnion(component.map(\.markerIndex))
                     unavailableObservationIndices.formUnion(componentObservationIndices)
+                    continue
+                }
+
+                // Multiple same-value callbacks near one human marker are high-rate
+                // evidence, not a marker-association ambiguity. Preserve exactly
+                // one deterministic support hit for that marker.
+                if component.count == 1 {
+                    for (markerIndex, occurrence) in matching {
+                        occurrenceByMarker[markerIndex] = occurrence
+                        unavailableObservationIndices.insert(occurrence.observationIndex)
+                    }
                     continue
                 }
 
