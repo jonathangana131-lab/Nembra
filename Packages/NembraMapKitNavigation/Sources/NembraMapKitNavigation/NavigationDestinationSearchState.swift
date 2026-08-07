@@ -57,7 +57,8 @@ public struct NavigationDestinationSearchRequest: Equatable, Sendable {
         guard query.contains(where: { !$0.isWhitespace }) else {
             throw NavigationDestinationSearchDomainError.invalidQuery
         }
-        guard !resultTypes.isEmpty else {
+        guard !resultTypes.isEmpty,
+              resultTypes.isSubset(of: .all) else {
             throw NavigationDestinationSearchDomainError.invalidResultTypes
         }
         self.query = query
