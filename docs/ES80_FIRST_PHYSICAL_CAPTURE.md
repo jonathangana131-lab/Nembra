@@ -6,7 +6,7 @@ Primary target: newer Tuya-generation AOVOPRO ES80
 
 This procedure defines **one** minimal physical experiment. Its purpose is to move Nembra from software-only passive capture toward observed physical advertisement/GATT/value evidence without sending an unknown application characteristic write or pretending that a broad-scan candidate is already a verified ES80 identity.
 
-It is intentionally stationary and foreground-only. It is not a riding test, battery-decoding test, command test, or proof of any Tuya DP semantic.
+It is intentionally stationary and foreground-only. It is not a riding test, battery-decoding test, stock-app correlation test, command test, or proof of any Tuya DP semantic.
 
 ## Run gate
 
@@ -47,7 +47,8 @@ For this experiment:
 - do not send any unknown characteristic-value write;
 - do not use a `.write` / `.writeWithoutResponse` property as authorization;
 - do not enable lock, light, cruise, speed-limit, start-mode, or motor commands from Nembra;
-- do not switch to the stock Tuya/AOVOPRO app on the same iPhone during the capture;
+- do not open or use the stock Tuya/AOVOPRO app on any device as part of this first fingerprint experiment;
+- do not insert stock-app state/reference markers into this first capture;
 - do not lock the iPhone, background Nembra, or let the screen auto-lock during the capture;
 - if Bluetooth, the app, or the selected connection becomes unavailable before finite acquisition is ready, treat the attempt as incomplete rather than filling the gap with assumptions.
 
@@ -61,7 +62,7 @@ The current capture path is foreground research software. This first experiment 
 4. Keep the scooter untouched for about 30 seconds before opening the capture flow so transient power-on behavior can settle.
 5. Use the exact accepted Debug research build identified above on the iPhone 12.
 6. Keep only the physical target scooter intentionally under test. Nearby BLE devices may remain present; they are candidates only.
-7. If a second device is available, it may display the legitimate stock app **for reference only**. Do not require a second device for this first fingerprint capture, and do not claim Nembra is sniffing the stock app's private session.
+7. Keep the stock app closed for this first fingerprint. Battery %, voltage, current, watts, and other stock-app displays are intentionally deferred to a later evidence-driven correlation experiment.
 
 ## Exact capture procedure
 
@@ -77,6 +78,18 @@ The current capture path is foreground research software. This first experiment 
 10. Export the prepared versioned JSON unchanged. If the provenance sidecar/manifest capability is available, export/preserve it with the exact JSON bytes.
 11. End the experiment. Do not immediately add a decoder or send a write from the phone.
 
+## First-run provenance values
+
+For a stationary-capture manifest/sidecar that implements the accepted provenance contract, the first experiment's intended operator setup is:
+
+- experiment kind: `stationaryBaseline`;
+- charger state: `disconnected`;
+- stock-app reference setup: `none`;
+- stock-app marker count expected from the raw artifact: `0`;
+- capture execution context: foreground + screen on, if/when that operator-declared field exists in the accepted manifest schema.
+
+Those values describe intended procedure/provenance. They are not proof that the scooter was physically stationary, not scooter authentication, and not telemetry semantics. If the exact raw artifact contradicts the setup metadata, fail closed rather than forcing the sidecar to verify.
+
 ## What to preserve
 
 Keep together:
@@ -85,12 +98,10 @@ Keep together:
 - exact Nembra Git commit/build identity;
 - full selected observed CoreBluetooth peripheral identifier from authoritative capture evidence/tooling, never a guessed expansion of a UI prefix;
 - capture start/end context;
-- explicit state: `stationary`, `charger disconnected`, `foreground`, `screen remained on`;
+- explicit state: `stationary`, `charger disconnected`, `foreground`, `screen remained on`, `stock app unused`;
 - any generated stationary-capture manifest/sidecar;
 - any failure diagnostic shown by Nembra;
 - no manually reconstructed packet data.
-
-If a second reference device was used, record that setup separately. A stock-app number remains a correlation anchor only; it is not raw protocol proof.
 
 ## Offline acceptance questions
 
@@ -103,6 +114,7 @@ The first artifact is useful if offline tooling can answer these questions from 
 5. Which raw value streams changed or repeated during the stationary 60-second window?
 6. Were there any continuity breaks, topology invalidations, acquisition failures, or target-attribution ambiguities?
 7. Does the artifact contain enough explicit target evidence to distinguish `target absent/unknown` from `target observed but no candidate match`?
+8. Does the raw artifact contain zero stock-app markers, as required by this first-run no-reference procedure?
 
 These answers may promote facts only to **OBSERVED ON PHYSICAL TARGET** / **PHYSICAL EVIDENCE PRESENT** where the raw artifact supports them. They do not yet establish battery, voltage, current, watts, speed, odometer, charging, command, or acknowledgement semantics.
 
@@ -117,6 +129,7 @@ Only if:
 - target attribution is non-ambiguous under the capture/analyzer policy;
 - no capture-integrity failure occurred;
 - the phone stayed foreground with no known suspension/background gap;
+- the stock app was unused and the raw artifact contains no stock-app reference markers;
 - the raw artifact can be opened by Nembra's offline tooling.
 
 A pass means: **Nembra has a usable passive physical fingerprint artifact for the selected observed target.**
@@ -132,6 +145,7 @@ Retry later with a fresh session if:
 - capture failed closed;
 - the phone locked/backgrounded or continuity is uncertain;
 - Bluetooth became unavailable during the required acquisition window;
+- stock-app markers appear despite this run's declared no-reference setup;
 - export failed or the raw file changed after export;
 - provenance cannot be tied to the exact build and selected observed target.
 
@@ -141,6 +155,6 @@ Do not patch a failed artifact into a pass.
 
 Do **not** preselect a battery/current/power DP before reviewing this artifact.
 
-After offline analysis, choose exactly one next correlation experiment based on the strongest observed raw stream and transport evidence. For example, if a stable target-scoped value stream exists and the physical setup can legitimately expose a known stock-app reference on a second device, the next experiment can correlate one safe stationary state change or one reference value against that stream.
+After offline analysis, choose exactly one next correlation experiment based on the strongest observed raw stream and transport evidence. Only then introduce a legitimate stock-app reference, preferably on a separate observer device when simultaneous observation is truly required by the experiment. The second experiment must preserve the actual reference setup and timing rather than implying that Nembra sniffed another app's private Bluetooth session.
 
 Until raw source, scaling, units, signedness, cadence, and provenance are verified, stock-app battery %, voltage, amps, and watts remain correlation anchors rather than production telemetry authority.
