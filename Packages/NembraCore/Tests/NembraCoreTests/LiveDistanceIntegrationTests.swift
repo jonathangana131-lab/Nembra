@@ -244,7 +244,7 @@ struct LiveDistanceIntegrationTests {
         }
     }
 
-    @Test("distance overflow preserves accepted evidence but consumes authoritative chronology")
+    @Test("distance overflow preserves accepted evidence, closes chronology, and marks a gap")
     func overflowPreservesAcceptedEvidenceAndConsumesChronology() throws {
         var accumulator = LiveDistanceSegmentAccumulator(
             policy: try policy(maximumGap: 3_000_000_000),
@@ -257,13 +257,20 @@ struct LiveDistanceIntegrationTests {
                 try sample(speed: Double.greatestFiniteMagnitude, uptime: 2_000_000_000)
             ) == .rejected(.distanceOverflow)
         )
-        #expect(accumulator.snapshot == before)
+
+        let afterOverflow = accumulator.snapshot
+        #expect(afterOverflow.lastAcceptedSampleUptimeNanoseconds == before.lastAcceptedSampleUptimeNanoseconds)
+        #expect(afterOverflow.distanceMeters == before.distanceMeters)
+        #expect(afterOverflow.acceptedSampleCount == before.acceptedSampleCount)
+        #expect(afterOverflow.integratedIntervalCount == before.integratedIntervalCount)
+        #expect(afterOverflow.knownCoverageGapCount == before.knownCoverageGapCount + 1)
+        #expect(afterOverflow.hasKnownCoverageGap)
 
         #expect(
             accumulator.record(try sample(speed: 0, uptime: 1_000_000_000))
                 == .rejected(.nonIncreasingTimestamp)
         )
-        #expect(accumulator.snapshot == before)
+        #expect(accumulator.snapshot == afterOverflow)
     }
 
     @Test("finalizing without an integrated interval remains unavailable rather than fake zero")
