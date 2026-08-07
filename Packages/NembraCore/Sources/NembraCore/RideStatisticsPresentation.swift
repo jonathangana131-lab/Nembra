@@ -108,9 +108,15 @@ public enum RideStatisticsPresenter {
               summary.ridingDayCount >= 0,
               summary.trustworthyDistanceRideCount >= 0,
               summary.excludedDistanceRideCount >= 0,
-              summary.longestRidingDayStreakDays >= 0,
-              summary.rideCount
-                == summary.trustworthyDistanceRideCount + summary.excludedDistanceRideCount,
+              summary.longestRidingDayStreakDays >= 0 else {
+            throw RideStatisticsPresentationError.invalidSummary
+        }
+
+        let reconciledRideCount = summary.trustworthyDistanceRideCount.addingReportingOverflow(
+            summary.excludedDistanceRideCount
+        )
+        guard !reconciledRideCount.overflow,
+              reconciledRideCount.partialValue == summary.rideCount,
               summary.ridingDayCount <= summary.rideCount,
               summary.longestRidingDayStreakDays <= summary.ridingDayCount else {
             throw RideStatisticsPresentationError.invalidSummary
