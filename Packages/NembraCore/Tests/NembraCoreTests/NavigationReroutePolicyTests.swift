@@ -6,11 +6,13 @@ struct NavigationReroutePolicyTests {
     private func policy(
         minimumDeviationDistanceMeters: Double = 25,
         requiredConsecutiveAcceptedSamples: Int = 3,
+        minimumConsecutiveDeviationDurationNanoseconds: UInt64 = 1,
         rerouteCooldownNanoseconds: UInt64 = 10_000_000_000
     ) throws -> NavigationReroutePolicy {
         try NavigationReroutePolicy(
             minimumDeviationDistanceMeters: minimumDeviationDistanceMeters,
             requiredConsecutiveAcceptedSamples: requiredConsecutiveAcceptedSamples,
+            minimumConsecutiveDeviationDurationNanoseconds: minimumConsecutiveDeviationDurationNanoseconds,
             rerouteCooldownNanoseconds: rerouteCooldownNanoseconds
         )
     }
@@ -23,7 +25,7 @@ struct NavigationReroutePolicyTests {
         try NavigationRouteDeviationObservation(
             receivedAtUptimeNanoseconds: uptime,
             distanceFromActiveRouteMeters: distance,
-            isProgressAssignmentConfident: confident
+            isDeviationAssessmentConfident: confident
         )
     }
 
@@ -33,6 +35,7 @@ struct NavigationReroutePolicyTests {
             _ = try NavigationReroutePolicy(
                 minimumDeviationDistanceMeters: 25,
                 requiredConsecutiveAcceptedSamples: 1,
+                minimumConsecutiveDeviationDurationNanoseconds: 1,
                 rerouteCooldownNanoseconds: 1
             )
         }
@@ -46,6 +49,7 @@ struct NavigationReroutePolicyTests {
                 _ = try NavigationReroutePolicy(
                     minimumDeviationDistanceMeters: distance,
                     requiredConsecutiveAcceptedSamples: 2,
+                    minimumConsecutiveDeviationDurationNanoseconds: 1,
                     rerouteCooldownNanoseconds: 1
                 )
             }
@@ -55,7 +59,16 @@ struct NavigationReroutePolicyTests {
             _ = try NavigationReroutePolicy(
                 minimumDeviationDistanceMeters: 25,
                 requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 1,
                 rerouteCooldownNanoseconds: 0
+            )
+        }
+        #expect(throws: NavigationReroutePolicyError.invalidPolicy) {
+            _ = try NavigationReroutePolicy(
+                minimumDeviationDistanceMeters: 25,
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 0,
+                rerouteCooldownNanoseconds: 1
             )
         }
     }
@@ -67,7 +80,7 @@ struct NavigationReroutePolicyTests {
                 _ = try NavigationRouteDeviationObservation(
                     receivedAtUptimeNanoseconds: 1,
                     distanceFromActiveRouteMeters: distance,
-                    isProgressAssignmentConfident: true
+                    isDeviationAssessmentConfident: true
                 )
             }
         }
@@ -99,6 +112,42 @@ struct NavigationReroutePolicyTests {
         #expect(evaluator.lastRerouteRequestUptimeNanoseconds == 3)
     }
 
+    @Test("sample count reached before injected duration keeps current route")
+    func countBeforeDurationCannotReroute() throws {
+        var evaluator = NavigationRerouteEvaluator(
+            policy: try policy(
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 10
+            )
+        )
+
+        let first = try evaluator.observe(observation(uptime: 100, distance: 40))
+        let second = try evaluator.observe(observation(uptime: 105, distance: 40))
+
+        #expect(first == .keepCurrentRoute)
+        #expect(second == .keepCurrentRoute)
+        #expect(evaluator.consecutiveDeviationSamples == 2)
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == 100)
+        #expect(evaluator.lastRerouteRequestUptimeNanoseconds == nil)
+    }
+
+    @Test("exact injected deviation duration boundary can request reroute")
+    func exactDurationBoundaryReroutes() throws {
+        var evaluator = NavigationRerouteEvaluator(
+            policy: try policy(
+                requiredConsecutiveAcceptedSamples: 2,
+                minimumConsecutiveDeviationDurationNanoseconds: 10
+            )
+        )
+
+        _ = try evaluator.observe(observation(uptime: 100, distance: 40))
+        let boundary = try evaluator.observe(observation(uptime: 110, distance: 40))
+
+        #expect(boundary == .requestReroute)
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == nil)
+        #expect(evaluator.lastRerouteRequestUptimeNanoseconds == 110)
+    }
+
     @Test("distance exactly on injected threshold counts")
     func exactThresholdCounts() throws {
         var evaluator = NavigationRerouteEvaluator(
@@ -119,6 +168,7 @@ struct NavigationReroutePolicyTests {
         _ = try evaluator.observe(observation(uptime: 1, distance: 40))
         _ = try evaluator.observe(observation(uptime: 2, distance: 40))
         let onRoute = try evaluator.observe(observation(uptime: 3, distance: 5))
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == nil)
         let nextDeviation = try evaluator.observe(observation(uptime: 4, distance: 40))
 
         #expect(onRoute == .keepCurrentRoute)
@@ -133,6 +183,7 @@ struct NavigationReroutePolicyTests {
         _ = try evaluator.observe(observation(uptime: 1, distance: 50))
         _ = try evaluator.observe(observation(uptime: 2, distance: 50))
         let ambiguous = try evaluator.observe(observation(uptime: 3, distance: 100, confident: false))
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == nil)
         let afterAmbiguity = try evaluator.observe(observation(uptime: 4, distance: 50))
 
         #expect(ambiguous == .keepCurrentRoute)
@@ -147,6 +198,7 @@ struct NavigationReroutePolicyTests {
         _ = try evaluator.observe(observation(uptime: 1, distance: 40))
         _ = try evaluator.observe(observation(uptime: 2, distance: 40))
         evaluator.markKnownContinuityGap()
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == nil)
         let afterGap = try evaluator.observe(observation(uptime: 3, distance: 40))
 
         #expect(afterGap == .keepCurrentRoute)
@@ -215,6 +267,7 @@ struct NavigationReroutePolicyTests {
         evaluator.didSelectNewRoute()
         #expect(evaluator.lastRerouteRequestUptimeNanoseconds == nil)
         #expect(evaluator.consecutiveDeviationSamples == 0)
+        #expect(evaluator.deviationRunStartUptimeNanoseconds == nil)
 
         _ = try evaluator.observe(observation(uptime: 3, distance: 40))
         let rerouteOnNewRoute = try evaluator.observe(observation(uptime: 4, distance: 40))
