@@ -10,6 +10,18 @@ public enum ScooterCommandError: Error, Equatable, Sendable {
     case commandInProgress
 }
 
+/// Optional field-specific currentness projection supplied by a telemetry source
+/// that can attribute samples at its acquisition boundary.
+///
+/// Raw telemetry remains available separately through `SpeedTelemetryProvider`
+/// for rendering and diagnostics. Consumers that need current physical/control
+/// truth use this projection instead of guessing freshness from cached
+/// `VehicleState.speedKilometersPerHour`.
+public protocol SpeedEvidenceProvider: Sendable {
+    func speedEvidenceUpdates() async -> AsyncStream<SpeedEvidenceAvailability>
+    func speedEvidenceSnapshot() async -> SpeedEvidenceAvailability
+}
+
 public protocol ScooterService: SpeedTelemetryProvider, Sendable {
     var profile: VehicleProfile { get }
 
