@@ -90,6 +90,22 @@ For a stationary-capture manifest/sidecar that implements the accepted provenanc
 
 Those values describe intended procedure/provenance. They are not proof that the scooter was physically stationary, not scooter authentication, and not telemetry semantics. If the exact raw artifact contradicts the setup metadata, fail closed rather than forcing the sidecar to verify.
 
+## Automated offline handoff
+
+Do not manually copy or decode packet hex after the capture.
+
+When the accepted descendant of Nembra's offline capture-report lane is available, feed the **unchanged raw JSON file** directly to its CLI:
+
+```text
+nembra-es80-capture-report <capture.json>
+```
+
+The report must remain a separate derived artifact bound to the exact input bytes. Use its target attribution, GATT/value-stream provenance, continuity, and bounded framing-candidate outcomes to decide the next experiment.
+
+A structurally completed framing candidate is still only a public-family hypothesis. Do not rename candidate streams Battery, Voltage, Current, Power, Speed, Throttle, or Regen because the CLI found a frame shape. If the accepted CLI contract changes before physical execution, use the exact accepted command/contract rather than this historical spelling.
+
+If no accepted automated report tool is available yet, preserve the raw capture unchanged and stop. Do not substitute manual hex interpretation just to keep the experiment moving.
+
 ## What to preserve
 
 Keep together:
@@ -100,6 +116,7 @@ Keep together:
 - capture start/end context;
 - explicit state: `stationary`, `charger disconnected`, `foreground`, `screen remained on`, `stock app unused`;
 - any generated stationary-capture manifest/sidecar;
+- any generated offline capture report as a separate derived artifact;
 - any failure diagnostic shown by Nembra;
 - no manually reconstructed packet data.
 
