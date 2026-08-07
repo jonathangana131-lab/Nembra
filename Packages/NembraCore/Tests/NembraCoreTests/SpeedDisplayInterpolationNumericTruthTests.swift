@@ -61,6 +61,31 @@ struct SpeedDisplayInterpolationNumericTruthTests {
         #expect(frame.origin == .measured)
     }
 
+    @Test("completed extreme-span transition snaps exactly to its authoritative target")
+    func completedExtremeSpanReturnsTargetDirectly() throws {
+        var interpolator = SpeedDisplayInterpolator()
+        let huge = try sample(
+            metersPerSecond: Double.greatestFiniteMagnitude / 4,
+            uptimeNanoseconds: 1_000
+        )
+        try interpolator.accept(huge, transitionDurationNanoseconds: 0)
+
+        let normal = try sample(
+            metersPerSecond: 4,
+            uptimeNanoseconds: 2_000
+        )
+        try interpolator.accept(normal, transitionDurationNanoseconds: 0)
+
+        let frame = try #require(
+            interpolator.frame(atUptimeNanoseconds: 2_000)
+        )
+        #expect(frame.kilometersPerHour == normal.kilometersPerHour)
+        #expect(frame.latestMeasuredKilometersPerHour == normal.kilometersPerHour)
+        #expect(frame.latestMeasurementUptimeNanoseconds == 2_000)
+        #expect(frame.transitionProgress == 1)
+        #expect(frame.origin == .measured)
+    }
+
     @Test("rejected derived overflow cannot replace the last valid display measurement")
     func overflowingDerivedSpeedIsTransactionalAfterValidMeasurement() throws {
         var interpolator = SpeedDisplayInterpolator()
