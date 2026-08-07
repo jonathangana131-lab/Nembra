@@ -77,6 +77,31 @@ Use:
 
 Uncalibrated, lower/equal, or sub-hysteresis sessions return the retained checkpoint unchanged. Only a qualified increase produces a replacement. One-shot snapshot constructors are for initial checkpoint creation when no retained checkpoint exists.
 
+## Crash-tolerant checkpoint journal
+
+`AtomicObservedPowerEnvelopeCheckpointStore` is the durable file layer for one exact calibration scope/policy. It follows Nembra's accepted two-slot journal pattern instead of relying on a fragile single JSON file or high-frequency preferences write.
+
+Each save writes a schema-versioned outer envelope with a monotonic persistence generation to the older/unused slot using Foundation atomic replacement, then immediately decodes the new slot before reporting success. The other valid slot remains the fallback if the newest file later becomes truncated or corrupt.
+
+The journal adds durable invariants above checkpoint decoding:
+
+- both slots corrupt -> fail closed until explicit recovery/clear;
+- unsupported outer schema -> never silently overwrite or downgrade;
+- equal persistence generation with divergent payloads -> conflict;
+- a semantically invalid inner checkpoint -> corrupt journal data;
+- generation overflow -> fail without replacing retained calibration;
+- one corrupt slot plus one unused slot -> recover into the unused slot and preserve the only forensic copy;
+- a journal directory is bound to one exact vehicle/mode identity, authority pair, and learning policy until explicitly cleared;
+- two valid generations must themselves show a legal retained-to-stronger progression.
+
+The store also enforces the same upward-hysteresis floor at the final durable-write boundary. Equal, lower, or merely sub-hysteresis incoming checkpoints return `.retainedExisting` without creating a new generation. Only a same-scope/same-policy/same-authority checkpoint whose learned observed ceiling is strictly above the retained ceiling by the persisted hysteresis requirement may advance the journal.
+
+This means a caller bypassing the higher-level reconciliation helper still cannot silently shrink or churn the durable learned scale. It does **not** make an arbitrary checkpoint physically authoritative: verified restore and verified presentation remain sealed by the domain/package boundaries above.
+
+The store takes a caller-provided directory. NembraCore does not invent a filesystem location, hash a BLE local name, or choose a physical scooter identifier. Production app wiring must supply a legitimate storage location only after a stable non-secret per-scooter identity/storage policy is established. A separate directory (or explicit clear) is required when intentionally changing scope/policy.
+
+Calibration writes should remain infrequent and event-driven; no display clock, BLE cadence, or render frame should cause journal writes.
+
 ## Retained calibration -> propulsion presentation
 
 Durable calibration must be usable by the gauge without reconstructing `ObservedPowerEnvelopeCalibration` and pretending retained history is fresh live evidence.
