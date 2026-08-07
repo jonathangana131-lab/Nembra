@@ -38,9 +38,6 @@ public enum PropulsionObservedScaleRegion: String, Equatable, Sendable {
 /// Product-facing projection that remains pinned to the measurement clock even
 /// while the visual propulsion gauge animates at display refresh rate.
 public struct PropulsionObservedScaleRegionSnapshot: Equatable, Sendable {
-    /// Exact vehicle / confirmed-mode scope inherited from the accepted-only accessibility projection.
-    /// This keeps a detached semantic result from losing the identity that admitted its measurement/scale.
-    public let identity: PropulsionGaugeIdentity
     public let region: PropulsionObservedScaleRegion
     public let availability: PropulsionGaugeAvailability
     public let latestAcceptedWatts: Double?
@@ -106,7 +103,6 @@ public extension PropulsionGaugeDisplayModel {
                   acceptedFraction.isFinite,
                   accepted.scaleOrigin != nil else {
                 return PropulsionObservedScaleRegionSnapshot(
-                    identity: accepted.identity,
                     region: .observedScaleUnavailable,
                     availability: accepted.availability,
                     latestAcceptedWatts: accepted.latestAcceptedWatts,
@@ -123,7 +119,6 @@ public extension PropulsionGaugeDisplayModel {
         }
 
         return PropulsionObservedScaleRegionSnapshot(
-            identity: accepted.identity,
             region: region,
             availability: accepted.availability,
             latestAcceptedWatts: accepted.latestAcceptedWatts,
