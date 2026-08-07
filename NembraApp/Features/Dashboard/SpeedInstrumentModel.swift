@@ -257,7 +257,7 @@ struct DashboardSpeedInstrumentView: View {
             // VoiceOver stays anchored to the newest authoritative/raw speed,
             // never a 60 Hz visual interpolation midpoint or malformed value.
             .accessibilityValue(
-                VehicleDisplayFormatting.speed(
+                Self.accessibilitySpeedValue(
                     kilometersPerHour: authoritativeKilometersPerHour
                 )
             )
@@ -355,6 +355,13 @@ struct DashboardSpeedInstrumentView: View {
         if isRetained { return kilometersPerHour }
         guard isConnected, permitsLiveConfirmedFallback else { return nil }
         return kilometersPerHour
+    }
+
+    static func accessibilitySpeedValue(kilometersPerHour: Double?) -> String {
+        guard let kilometersPerHour = validatedKilometersPerHour(kilometersPerHour) else {
+            return "Unavailable"
+        }
+        return VehicleDisplayFormatting.speed(kilometersPerHour: kilometersPerHour)
     }
 
     static func liveSpeedStatusText(kilometersPerHour: Double?) -> String {
