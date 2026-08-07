@@ -101,6 +101,8 @@ Each new attempt receives a monotonically increasing generation token. Raw speed
 
 The owner also records a process-local monotonic start fence. A raw sample received at or before that fence is ignored, because a callback at the exact boundary is ambiguous with traffic already queued when the attempt began. The first usable observation must be strictly newer than the attempt boundary.
 
+Interruption results preserve whether evidence actually changed. A non-cancellation connection/application event delivered before any selected-source observation is returned as `ignoredBeforeSelectedSourceEvidence`; the underlying session has no selected evidence to invalidate or continuity-break. Once the selected source has been observed, even if that first observation was rejected by an accuracy gate, a later known interruption can break continuity and is reported as applied. Operator cancellation remains a terminal explicit action.
+
 An active mutable attempt cannot be silently replaced. Completed, invalidated, and continuity-broken attempts are terminal and remain inspectable until the caller explicitly begins a newer attempt. Attempt start fences themselves must advance monotonically within one owner.
 
 This closes the reusable software ownership primitive only. It does **not** mean Nembra currently starts acceleration attempts from production UI, has a verified ES80 speed source, has validated physical quality thresholds, or maps every real app/Bluetooth lifecycle edge into this owner yet.
