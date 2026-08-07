@@ -112,8 +112,18 @@ public struct SpeedDisplayInterpolator: Sendable {
             progress = min(1, Double(elapsed) / Double(transitionDurationNanoseconds))
         }
 
-        let visualValue = anchorKilometersPerHour
-            + (targetKilometersPerHour - anchorKilometersPerHour) * progress
+        // Completed transitions must return the authoritative target directly.
+        // Re-evaluating the lerp at exactly 1 can lose the target through
+        // catastrophic cancellation across an extreme-but-finite span.
+        let visualValue: Double
+        if progress <= 0 {
+            visualValue = anchorKilometersPerHour
+        } else if progress >= 1 {
+            visualValue = targetKilometersPerHour
+        } else {
+            visualValue = anchorKilometersPerHour
+                + (targetKilometersPerHour - anchorKilometersPerHour) * progress
+        }
         let isAtMeasurement = progress >= 1 || abs(visualValue - targetKilometersPerHour) <= 1e-9
 
         return SpeedDisplayFrame(
