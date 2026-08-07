@@ -115,4 +115,50 @@ struct NavigationGuidanceSelectionIdentityTests {
         #expect(!highSequenceToken.sharesTrackerGeneration(with: freshToken))
         #expect(highSequenceToken != freshToken)
     }
+
+    @Test("accepted observation receipt binds the exact observation to the exact resulting state")
+    func acceptedObservationMintsBoundReceipt() throws {
+        var tracker = NavigationGuidanceProgressTracker()
+        let token = try tracker.select(route: route())
+        let sample = try observation(token: token, uptime: 100)
+
+        guard let receipt = try tracker.acceptanceReceipt(for: sample) else {
+            Issue.record("Expected an accepted guidance receipt")
+            return
+        }
+
+        #expect(receipt.observation == sample)
+        #expect(receipt.resultingState == tracker.state)
+    }
+
+    @Test("superseded selection observation cannot mint an acceptance receipt")
+    func supersededObservationCannotMintReceipt() throws {
+        var tracker = NavigationGuidanceProgressTracker()
+        let selectedRoute = try route()
+        let firstToken = try tracker.select(route: selectedRoute)
+        _ = try tracker.select(route: selectedRoute)
+        let before = tracker.state
+
+        let receipt = try tracker.acceptanceReceipt(
+            for: observation(token: firstToken, uptime: 100)
+        )
+
+        #expect(receipt == nil)
+        #expect(tracker.state == before)
+    }
+
+    @Test("replayed observation cannot mint a second acceptance receipt")
+    func replayedObservationCannotMintReceipt() throws {
+        var tracker = NavigationGuidanceProgressTracker()
+        let token = try tracker.select(route: route())
+        let sample = try observation(token: token, uptime: 100)
+        let firstReceipt = try tracker.acceptanceReceipt(for: sample)
+        #expect(firstReceipt != nil)
+        let before = tracker.state
+
+        #expect(throws: NavigationGuidanceProgressError.nonMonotonicObservation) {
+            try tracker.acceptanceReceipt(for: sample)
+        }
+        #expect(tracker.state == before)
+    }
 }
