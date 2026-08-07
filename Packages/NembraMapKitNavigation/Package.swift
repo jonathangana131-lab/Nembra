@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "NembraMapKitNavigation",
+    platforms: [
+        .iOS(.v26),
+        .macOS(.v26),
+    ],
     products: [
         .library(name: "NembraMapKitNavigation", targets: ["NembraMapKitNavigation"]),
         .library(name: "NembraMapKitNavigationSimulation", targets: ["NembraMapKitNavigationSimulation"]),
