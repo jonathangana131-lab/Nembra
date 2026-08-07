@@ -7,6 +7,7 @@ public enum RideSessionDurationEvidenceError: Error, Equatable, Sendable {
     case closedSegmentCannotExtend
     case segmentIdentityReused
     case retiredProcessGenerationReused
+    case restoredProcessGenerationReused
     case unexpectedSequence
     case invalidGapClassification
     case sequenceExhausted
@@ -125,11 +126,17 @@ public enum RideSessionDurationUpsertResult: Equatable, Sendable {
 /// zero must not claim an earlier gap. Set `beginsAfterUnobservedInterval` only when attaching
 /// to a ride after elapsed time was already unobserved (for example conservative recovery);
 /// sequence zero must then acknowledge that initial gap and coverage becomes `.partial`.
+///
+/// Decoding is a durable-restoration boundary. If decoded evidence already contains a segment,
+/// that segment is sealed: it may be replayed idempotently/stale, but it cannot be extended and
+/// the next inserted segment must use a different process-generation identity. This prevents a
+/// caller from accidentally stretching old process-local monotonic evidence across relaunch.
 public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let beginsAfterUnobservedInterval: Bool
     private var observationSegments: [RideSessionDurationObservedSegment]
     private var totalObservedDurationNanoseconds: UInt64
+    private var requiresFreshProcessGeneration: Bool
 
     public init(
         sessionID: UUID,
@@ -139,6 +146,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
         self.beginsAfterUnobservedInterval = beginsAfterUnobservedInterval
         self.observationSegments = []
         self.totalObservedDurationNanoseconds = 0
+        self.requiresFreshProcessGeneration = false
     }
 
     public var snapshot: RideSessionDurationEvidenceSnapshot {
@@ -186,7 +194,8 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             if segment.observedDurationNanoseconds < existing.observedDurationNanoseconds {
                 return .staleReplayIgnored
             }
-            guard existingIndex == observationSegments.index(before: observationSegments.endIndex) else {
+            guard existingIndex == observationSegments.index(before: observationSegments.endIndex),
+                  !requiresFreshProcessGeneration else {
                 throw RideSessionDurationEvidenceError.closedSegmentCannotExtend
             }
 
@@ -231,6 +240,12 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             }
         }
 
+        if requiresFreshProcessGeneration,
+           let previousSegment = observationSegments.last,
+           previousSegment.processGenerationID == segment.processGenerationID {
+            throw RideSessionDurationEvidenceError.restoredProcessGenerationReused
+        }
+
         if let previousSegment = observationSegments.last,
            previousSegment.processGenerationID != segment.processGenerationID,
            observationSegments.contains(where: {
@@ -247,6 +262,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
 
         observationSegments.append(segment)
         totalObservedDurationNanoseconds = newTotal
+        requiresFreshProcessGeneration = false
         return .inserted
     }
 
@@ -276,6 +292,7 @@ public struct RideSessionDurationEvidenceAccumulator: Codable, Equatable, Sendab
             for segment in decodedSegments {
                 try upsert(segment)
             }
+            requiresFreshProcessGeneration = !decodedSegments.isEmpty
         } catch {
             throw DecodingError.dataCorrupted(
                 .init(
