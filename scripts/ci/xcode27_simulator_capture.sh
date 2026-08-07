@@ -27,9 +27,6 @@ esac
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
-  echo "git_head=$(git rev-parse HEAD)"
-  echo "capture_script_path=$0"
-  echo "capture_script_blob_sha=$(git hash-object "$0")"
   echo "accessibility_capture=$ACCESSIBILITY_CAPTURE"
   sw_vers
   xcodebuild -version
@@ -201,7 +198,7 @@ xcrun simctl status_bar "$UDID" override \
   --batteryLevel 82 \
   --wifiBars 3 \
   --cellularMode active \
-  --cellularBors 4 >/dev/null 2>&1 || true
+  --cellularBars 4 >/dev/null 2>&1 || true
 
 capture_state() {
   local state="$1"
@@ -215,7 +212,7 @@ capture_state() {
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   if [[ -n "$variant" ]]; then
     if ! set_simctl_ui_setting_verified appearance "$appearance" \
-      "$ARTIFAACTS_DIR/logs/simctl-appearance-${artifact_key}.log"; then
+      "$ARTIFACTS_DIR/logs/simctl-appearance-${artifact_key}.log"; then
       echo "Could not verify ${appearance} appearance for accessibility capture ${artifact_key}." >&2
       exit 8
     fi
@@ -225,11 +222,11 @@ capture_state() {
 
   local launch_output pid screenshot_path observed_appearance observed_contrast observed_content_size expected_content_size
   launch_output="$(
-    SIMCTL_CHILD_NEMBRA_SIMILATION_SCENARIO="$state" \
+    SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
       | tee "$ARTIFACTS_DIR/logs/launch-${artifact_key}.log"
   )"
-  pid="${launch_output#**: }"
+  pid="${launch_output##*: }"
   if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
     echo "Could not parse launched Nembra process ID from: $launch_output" >&2
     exit 5
@@ -296,4 +293,107 @@ capture_increase_contrast_matrix() {
   case "$original_contrast" in
     enabled|disabled) ;;
     *)
-      echo "Could not establish initial Increase Contrast state; got: ${orh(˛⁄Óù∆≠y÷ÚÆ['£
+      echo "Could not establish initial Increase Contrast state; got: ${original_contrast:-<empty>}" >&2
+      exit 8
+      ;;
+  esac
+
+  if ! set_simctl_ui_setting_verified increase_contrast enabled \
+    "$ARTIFACTS_DIR/logs/simctl-increase-contrast-enable.log"; then
+    echo "Could not verify Increase Contrast enabled state." >&2
+    exit 8
+  fi
+
+  {
+    echo "requested=enabled"
+    echo "initial=$original_contrast"
+    echo "applied=enabled"
+  } > "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
+
+  capture_state connected-stopped light increase-contrast
+  capture_state reconnecting light increase-contrast
+  capture_state low-battery light increase-contrast
+  capture_state connected-stopped dark increase-contrast
+
+  if ! set_simctl_ui_setting_verified increase_contrast "$original_contrast" \
+    "$ARTIFACTS_DIR/logs/simctl-increase-contrast-restore.log"; then
+    echo "Could not restore and verify Increase Contrast to $original_contrast." >&2
+    exit 8
+  fi
+  restored_contrast="$(read_simctl_ui_setting increase_contrast || true)"
+  echo "restored=$restored_contrast" >> "$ARTIFACTS_DIR/logs/increase-contrast-state.txt"
+}
+
+capture_dynamic_type_matrix() {
+  if ! simctl_ui_supports content_size; then
+    echo "Accessibility capture requested, but this Xcode runner does not advertise simctl ui content_size." >&2
+    exit 8
+  fi
+
+  local original_content_size restored_content_size category
+  original_content_size="$(read_simctl_ui_setting content_size || true)"
+  case "$original_content_size" in
+    ""|unsupported|unknown)
+      echo "Could not establish initial content-size state; got: ${original_content_size:-<empty>}" >&2
+      exit 8
+      ;;
+  esac
+
+  {
+    echo "initial=$original_content_size"
+    echo "requested=accessibility-medium,accessibility-extra-large,accessibility-extra-extra-extra-large"
+  } > "$ARTIFACTS_DIR/logs/dynamic-type-state.txt"
+
+  for category in \
+    accessibility-medium \
+    accessibility-extra-large \
+    accessibility-extra-extra-extra-large
+  do
+    if ! set_simctl_ui_setting_verified content_size "$category" \
+      "$ARTIFACTS_DIR/logs/simctl-content-size-${category}.log"; then
+      echo "Could not set and verify Dynamic Type content size $category." >&2
+      exit 8
+    fi
+
+    capture_state connected-stopped light "content-size-${category}"
+    if [[ "$category" != "accessibility-medium" ]]; then
+      capture_state reconnecting light "content-size-${category}"
+    fi
+    if [[ "$category" == "accessibility-extra-extra-extra-large" ]]; then
+      capture_state low-battery light "content-size-${category}"
+    fi
+  done
+
+  if ! set_simctl_ui_setting_verified content_size "$original_content_size" \
+    "$ARTIFACTS_DIR/logs/simctl-content-size-restore.log"; then
+    echo "Could not restore and verify content size to $original_content_size." >&2
+    exit 8
+  fi
+  restored_content_size="$(read_simctl_ui_setting content_size || true)"
+  echo "restored=$restored_content_size" >> "$ARTIFACTS_DIR/logs/dynamic-type-state.txt"
+}
+
+for state in \
+  cold-disconnected \
+  reconnecting \
+  connected-stopped \
+  riding \
+  low-battery \
+  bluetooth-off \
+  permission-denied \
+  scooter-unavailable \
+  unsupported-configuration
+do
+  capture_state "$state" light
+done
+capture_state connected-stopped dark
+capture_state reconnecting dark
+
+if [[ "$ACCESSIBILITY_CAPTURE" == "1" ]]; then
+  capture_increase_contrast_matrix
+  capture_dynamic_type_matrix
+fi
+record_simctl_ui_state "$ARTIFACTS_DIR/logs/simctl-ui-state-after.txt"
+
+printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
+find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
