@@ -283,11 +283,16 @@ struct PeakPowerEvidenceTests {
         #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 
-    @Test("reset starts a fresh epoch while retaining scope and authority")
-    func resetClearsEvidenceButKeepsSelectedStreamIdentity() throws {
+    @Test("reset clears peak window but never reopens selected-stream replay chronology")
+    func resetPreservesReplayProtection() throws {
         let scope = try simulatorScope(mode: "drive")
         var accumulator = try PeakPowerEvidenceAccumulator.simulatorQA(scope: scope)
-        _ = accumulator.record(simulatorObservation(watts: 700, sequence: 50, scope: scope))
+        _ = accumulator.record(simulatorObservation(
+            watts: 700,
+            sequence: 50,
+            uptime: 500,
+            scope: scope
+        ))
         accumulator.recordInterruption(.sourceUnavailable)
 
         accumulator.reset()
@@ -295,15 +300,34 @@ struct PeakPowerEvidenceTests {
         #expect(accumulator.scope == scope)
         #expect(accumulator.evidenceAuthority == .simulatorQA)
         #expect(accumulator.evidence == nil)
+
+        // Product accumulation restarted, but the selected source stream did not
+        // gain a new acquisition-generation identity. A delayed pre-reset callback
+        // therefore remains replay and must not be allowed to establish a new peak.
+        #expect(accumulator.record(simulatorObservation(
+            watts: 900,
+            sequence: 10,
+            uptime: 100,
+            scope: scope
+        )) == .rejected(.nonIncreasingObservationSequence))
+        #expect(accumulator.evidence == nil)
+
+        // A genuinely newer immutable receipt may establish the new product peak.
         guard case let .peakUpdated(measurement) = accumulator.record(simulatorObservation(
             watts: 300,
-            sequence: 1,
+            sequence: 51,
+            uptime: 500,
             scope: scope
         )) else {
-            Issue.record("Fresh epoch should accept fresh source-owned chronology")
+            Issue.record("Reset must preserve replay guards while allowing genuinely newer evidence")
             return
         }
         #expect(measurement.powerWatts == 300)
-        #expect(accumulator.evidence?.continuity == .noRecordedSelectedSourceEvidenceLoss)
+
+        let evidence = try #require(accumulator.evidence)
+        #expect(evidence.acceptedMeasurementCount == 1)
+        #expect(evidence.peakCandidateMeasurementCount == 1)
+        #expect(evidence.qualityRejectedMeasurementCount == 1)
+        #expect(evidence.continuity == .partialSelectedSourceEvidence)
     }
 }
