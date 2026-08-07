@@ -1,157 +1,188 @@
 # Apple MapKit navigation adapter
 
-Date: 2026-08-06
-Worker: `chat-j9r2w`
-Lane: `mapkit-navigation-adapter`
-Parent: PR #41 current head `a12a2be087825676915a6f9df94b0ddb7690267a`
+## Purpose
 
-## Scope
+`Packages/NembraMapKitNavigation` is Nembra's Apple-provider bridge above the platform-neutral navigation domain in `NembraCore`.
 
-This dependent lane builds the Apple directions bridge and UI-neutral navigation workflow above the platform-neutral NembraCore navigation domain. It remains isolated in SwiftPM and does **not** wire MapKit into the production app, Xcode project, Dashboard, Home, ride persistence, battery/range, BLE, or motorized-hardware control.
+It owns provider request/response projection, provider-operation lifetime, route alternatives, explicit route selection, navigation experience composition, semantic presentation, and accessibility-worthy guidance announcements.
 
-Current package products:
-- `NembraMapKitNavigation` — production-facing adapter/domain composition;
-- `NembraMapKitNavigationSimulation` — explicitly separate server-free Simulator/QA provider.
+`NembraMapKitNavigationSimulation` is a separate server-free SwiftPM product for deterministic Simulator/QA composition.
 
-## Implemented production-facing layers
-
-### Current MapKit projection
-- projects `NavigationRoutePlanRequest` into current `MKDirections.Request` values;
-- uses current `MKMapItem(location:address:)` / `location`, not deprecated placemark APIs;
-- maps cycling, alternate-route, highway, and toll request facts without changing meaning;
-- extracts `MKPolyline` coordinates in provider order;
-- projects `MKRoute` / `MKRoute.Step` geometry, localized instructions/notices, distance, ETA, transport, highway/toll facts, and advisories into immutable Nembra snapshots;
-- documented MapKit errors map into stable Nembra planning failures;
-- unknown request transport fails closed;
-- combined/future returned transport remains `.unknown`.
-
-### Provider-operation race safety
-`NavigationDirectionsOperationCoordinator` runs injected provider operations under Nembra's existing monotonic request token.
-
-It:
-- removes operation identity before transport cancellation;
-- rejects late success/error after cancellation as `.cancelled`;
-- prevents duplicate active use of one token from replacing the original operation;
-- permits independent request tokens concurrently;
-- fails closed on empty routes;
-- supports cancel-one and cancel-all without trusting callback timing.
-
-### Concrete `MKDirections` operation
-`AppleMapKitDirectionsOperationFactory` builds `MKDirections(request:)`; its thin operation awaits `calculate()`, projects routes, and forwards `cancel()`.
-
-It deliberately carries no request-generation state. Nembra's provider-neutral coordinator owns correctness if `cancel()` races a late completion.
-
-### Planning-service composition
-`NavigationRoutePlanningService` composes NembraCore planning state with provider lifetime:
-- supersession invalidates the old planning token before cancelling provider work;
-- late first-request completion cannot overwrite the newer planning state;
-- explicit cancel publishes cancelled before transport cancellation can race;
-- reset cancels active provider work and returns planning state to idle.
-
-### Explicit route selection
-`NavigationRouteSelectionState` preserves provider route order but starts **unselected**.
-
-Nembra does not silently promote provider index 0 into "best", safest, legal, or preferred. Only an explicit valid index creates selection; replacing the exact provider result array clears prior index identity.
-
-### App-facing experience coordinator
-`NavigationExperienceCoordinator` composes planning, route alternatives, explicit selection, and the parent navigation session.
-
-Important behavior:
-- a new plan may run while the current selected route remains active;
-- fresh alternatives arrive unselected and do not replace active navigation automatically;
-- failed replanning can leave current guidance intact;
-- a workflow-generation guard prevents a late superseded `plan()` return from resetting a newer explicitly selected route;
-- cancelling planning preserves current navigation while rejecting late result publication;
-- only already-screened `QualityScreenedRideLocation` reaches the selected navigation session.
-
-### Semantic presentation projection
-`NavigationPresentationProjector` turns the experience snapshot into UI-neutral semantics:
-- planning/failed/alternatives state;
-- route options with provider order, distance, ETA, toll/highway/advisory facts and transport provenance;
-- exact selected-route identity;
-- active/unavailable guidance with exact provider current/next instruction and notice strings;
-- unit-neutral remaining distances.
-
-It deliberately does **not** infer maneuver icons from localized text, choose a preferred route, hard-code user units, or convert navigation estimates into ride telemetry.
-
-## Deterministic simulation product
-
-`NembraMapKitNavigationSimulation` is a separate SwiftPM product so production MapKit transport does not silently acquire fixture behavior.
-
-`NavigationSimulationDirectionsOperationFactory`:
-- consumes explicitly scripted route/failure responses in order;
-- records route requests for deterministic QA assertions;
-- allows responses to be enqueued;
-- fails `.directionsUnavailable` when no response is scripted instead of inventing a route;
-- preserves scripted product failure reasons;
-- composes through the same planning / route-selection / navigation experience paths used by the adapter.
-
-It performs no network access and is intended for future Simulator/product QA only.
+This package is intentionally **not** production app wiring. Adding the package does not by itself place MapKit navigation in Home, Dashboard, ride history, battery/range, Bluetooth, or vehicle-control surfaces.
 
 ## Truth boundaries
 
-- MapKit cycling is a cycling-route suggestion, never scooter legality, safety, access, or ES80 approval.
-- Provider route geometry/distance/ETA is navigation information, not recorded ride GPS distance, measured speed, battery evidence, or completed-history truth.
-- Provider localized instruction/notice/advisory strings are preserved as provider strings.
-- No maneuver type/icon is invented by parsing localized text.
-- No provider route is automatically labeled best/preferred.
-- `MKDirections.cancel()` is not the correctness mechanism; Nembra token identity is.
-- Simulation responses are QA fixtures and never physical ES80/outdoor evidence.
-- No live Apple directions-server traffic is required for deterministic CI.
+These boundaries are permanent product rules:
 
-## Server-independent verification
+- MapKit cycling directions are **cycling-route suggestions**, never proof that a route is legal, safe, accessible, or appropriate for an AOVOPRO ES80.
+- Provider route geometry, distance, ETA, highway/toll flags, advisories, instructions, and notices remain **provider navigation facts**.
+- Provider route distance/ETA never becomes measured ride distance, speed, odometer, battery/range evidence, or completed-ride truth.
+- Provider instruction/notice strings are preserved rather than parsed into invented maneuver semantics.
+- No provider route is automatically called "best", safest, preferred, or scooter-approved.
+- `MKDirections.cancel()` is not an acknowledgement and is not the correctness mechanism for stale-result rejection.
+- Process-local receipt chronology is delivery-order evidence only. It is not GPS measurement time, route progress, ride duration, or physical vehicle telemetry.
+- Simulation responses are QA fixtures and never physical/outdoor/ES80 evidence.
 
-The repo-layout package was tested cleanly with sibling dependency `../NembraCore` under Swift 6.2.1.
+## Package products
 
-**Current server-independent result: 45/45 tests passed across six suites.**
+### `NembraMapKitNavigation`
 
-Covered suites:
-- provider operation coordinator: 9;
-- planning-service composition: 7;
-- explicit route selection: 6;
-- experience coordinator: 10;
-- semantic presentation: 7;
-- simulation directions provider: 6.
+Production-facing, UI-neutral composition containing:
 
-The exact GitHub manifest/simulation identities from that clean run are:
-- package manifest `ff8183944502b198f503f7885c4e4f5750322cc5`;
-- simulation source `c2d06f79143e41bcc558cec5df0a11d1da294192`;
-- simulation tests `47d11adb5d0939a32829ec417da153a8244f18fe`.
+- current Apple MapKit request projection;
+- current Apple MapKit route/step projection;
+- stable MapKit error projection into Nembra failure semantics;
+- token-owned provider-operation lifetime;
+- route-planning service composition;
+- explicit route-alternative selection;
+- navigation experience composition;
+- semantic presentation projection;
+- guidance-announcement deduplication;
+- destination-search state.
 
-Other previously verified exact async/UI-neutral blobs remain recorded in PR #77 history/body.
+### `NembraMapKitNavigationSimulation`
 
-## Apple-specific preflight
+Server-free scripted directions provider used only for deterministic development/QA. It consumes explicit route/failure responses in order and never invents a route when no response was configured.
 
-The local chat runtime lacks the real MapKit SDK. Before real Xcode execution:
-- projection + concrete MapKit operation + real provider-neutral coordinator type-check against synthetic modules shaped to current Apple documentation;
-- a stronger synthetic type-check of the Xcode-only projection test suite found a real Swift Testing compile problem (`try` nested inside `#expect` equality);
-- that test was corrected by evaluating expected coordinates first;
-- the exact authoritative corrected test blob `7bb831c6d6ed616b171a6da4cc96bf5d2a9b9a42` type-checks cleanly in the synthetic testable module.
+## Apple MapKit projection
 
-Synthetic type-check is API-shape evidence only, not Apple-SDK proof.
+`AppleMapKitRequestProjection` converts `NavigationRoutePlanRequest` into current `MKDirections.Request` values.
 
-## Real Xcode evidence path
+The adapter:
 
-A CI-only `feature/mapkit-navigation-adapter-chat-j9r2w` mirror preserves adapter source while adding one workflow step to run `swift test` in `Packages/NembraMapKitNavigation` on the repository's `xcode-27` runner.
+- uses `MKMapItem(location:address:)` rather than deprecated placemark construction;
+- preserves requested transport, alternate-route preference, highway preference, and toll preference;
+- supports current MapKit cycling requests without relabeling them as scooter routing;
+- rejects `.unknown` request transport instead of guessing;
+- preserves provider polyline order;
+- projects route and step distance, ETA, transport, notices, advisories, highway/toll facts, and localized instruction strings;
+- maps future/combined returned transport values to `.unknown` rather than guessing a known mode;
+- fails closed when provider facts cannot satisfy Nembra's immutable route-domain invariants.
 
-Latest successfully emitted mirror run before the simulation-target addition:
-- run `31133522624`;
-- mirror head `50e44bf99453ffb3dbd0f1bc1bfc8b2bc3efb922`;
-- latest observed state: queued.
+The package platform floors are intentionally compatible with this current MapKit surface (`iOS 26+` and `macOS 26+`) and with Nembra's iOS 27 product baseline.
 
-That run covers the MapKit projection/concrete operation and the 39-test package state through semantic presentation. The later simulation target is independently 45/45 green on the real Swift toolchain. An attempted low-level mirror-tree refresh for the simulation target was blocked by the connector write-safety layer, so no alternate mutation path was used to force it.
+## Provider-operation lifetime
 
-Parent #41 has its own exact-SHA Xcode run `31132870331` on `a12a2be087825676915a6f9df94b0ddb7690267a`; latest observed state was also waiting for the self-hosted runner.
+`NavigationDirectionsOperationCoordinator` runs injected provider operations under Nembra's existing monotonic route-request token.
 
-## Required acceptance sequence
+Correctness does not depend on provider cancellation winning a race. The coordinator:
 
-1. Inspect/fix the real Xcode adapter run when the self-hosted runner executes it.
-2. Compile/run the Xcode-only projection tests against the real MapKit/CoreLocation SDK.
-3. Keep deterministic CI independent of live Apple directions servers.
-4. After parent #41 is accepted/merged, reconcile/retarget this lane onto fresh main.
-5. Run a final current-head MapKit package gate after that reconciliation.
-6. Only then begin production app/SwiftUI wiring.
+- rejects duplicate active use of one token;
+- removes operation identity before cancellation;
+- rejects late completion after removal as cancelled/stale;
+- permits independent request tokens concurrently;
+- fails closed on empty provider route arrays;
+- supports single-token and all-operation cancellation.
+
+The concrete `AppleMapKitDirectionsOperation` deliberately carries no generation state. It only executes `MKDirections.calculate()`, projects returned routes, and forwards `cancel()`.
+
+## Planning-service composition
+
+`NavigationRoutePlanningService` composes NembraCore planning state with provider lifetime.
+
+Important ordering rules:
+
+- supersession invalidates the old planning generation before cancelling its provider operation;
+- a late superseded completion cannot publish into the newer planning state;
+- explicit cancellation invalidates product state before provider cancellation;
+- reset uses `NavigationRoutePlanningCoordinator.reset()` as the single product-state transition, receives the exact active token if one existed, then cancels that provider operation;
+- provider cancellation therefore never exposes a transient product state that can be mistaken for accepted route truth.
+
+## Explicit route selection
+
+Route alternatives always start unselected.
+
+`NavigationRouteSelectionID` binds a visible option to:
+
+1. the exact planning request token;
+2. the exact route index in that immutable result set;
+3. the immutable route facts themselves.
+
+A delayed selection from a replaced planning generation therefore fails closed instead of retargeting the same numeric index in a newer result array.
+
+## Navigation experience composition
+
+`NavigationExperienceCoordinator` composes planning, route alternatives, explicit selection, and `NavigationSessionCoordinator`.
+
+Important behavior:
+
+- a new plan can run while an already selected route remains active;
+- returned alternatives never replace active navigation until the user explicitly selects one;
+- failed replanning can leave current guidance intact;
+- workflow generation rejects a late superseded `plan()` return;
+- cancelling planning does not silently clear an already selected route;
+- only `QualityScreenedRideLocation` reaches navigation guidance/reroute logic.
+
+### Route-selection receipt fence
+
+For callers whose route-selection event can race with already-screened asynchronous location delivery, use:
+
+`selectRoute(_:receiptFence:)`
+
+The fence must use the same monotonic receipt clock as `RideLocationSample.receivedAtUptimeNanoseconds`.
+
+The session accepts the route/fence **before** presentation selection is committed. If the fence regresses or otherwise fails current session chronology, the call fails transactionally: the previous selected route/presentation remains intact.
+
+The legacy `selectRoute(_:)` overload remains source-compatible for strictly serialized callers. It does not erase a stronger receipt floor already proven inside the navigation session.
+
+## Presentation and accessibility semantics
+
+`NavigationPresentationProjector` emits UI-neutral semantic state:
+
+- planning/requesting/failed/alternatives state;
+- generation-bound route-option identity;
+- provider distance/ETA/highway/toll/advisory facts;
+- requested and returned transport provenance;
+- selected-route identity;
+- active/unavailable guidance;
+- provider current/next instruction and notice strings;
+- unit-neutral remaining distances.
+
+It does not choose a route, infer maneuver icons from localized text, choose user units, or reinterpret provider estimates as ride telemetry.
+
+`NavigationGuidanceAnnouncementTracker` deduplicates accessibility-worthy maneuver/unavailable changes independently from GPS/render cadence. Changing remaining-distance estimates alone does not create repeated announcements.
+
+## Deterministic verification model
+
+Acceptance is layered because the package contains both provider-neutral logic and Apple-SDK-specific code.
+
+### Provider-neutral logic
+
+Run the package tests with Swift warnings treated as errors. Adversarial coverage should include at least:
+
+- cancellation and late-callback rejection;
+- request supersession;
+- route-generation identity;
+- transactional route selection;
+- reset ordering;
+- receipt-fenced route selection;
+- presentation projection;
+- announcement deduplication;
+- simulation-provider behavior.
+
+### Real Apple SDK
+
+A real Xcode 27 / MapKit compile is required for Apple-facing acceptance. Documentation-shaped synthetic modules or Linux `canImport(MapKit) == false` builds are useful supporting evidence but do **not** prove the current Apple SDK surface.
+
+The real-SDK gate must compile and execute the MapKit projection tests without live directions-server dependence. Live Apple routing responses are not required for deterministic CI.
+
+## Production integration boundary
+
+Merging this package is not the same as shipping navigation UI.
+
+Production app wiring should happen only after the package is accepted against current NembraCore and the real Apple SDK, then proceed through normal Nembra app-visible acceptance:
+
+1. explicit app composition and lifecycle ownership;
+2. destination/route-selection UX;
+3. Dashboard cockpit integration while keeping speed primary;
+4. quality-screened location delivery using the strong receipt-fence path where asynchronous delivery can race selection;
+5. reroute/arrival integration without turning provider routes into ride measurement;
+6. Simulator interaction/screenshots and accessibility review;
+7. iPhone 12 performance validation;
+8. outdoor/physical validation kept clearly separate from Simulator/software evidence.
 
 ## Hardware status
 
-**PUBLIC API RESEARCH + SOFTWARE IMPLEMENTATION ONLY.** Server-independent planning, selection, workflow, presentation, and simulation behavior is deterministically tested. MapKit-specific real-SDK validation is still waiting on the Xcode runner. No physical AOVOPRO ES80 routing legality, outdoor GPS behavior, route quality, production thresholds, or physical iPhone behavior is verified here.
+**SOFTWARE + PUBLIC APPLE API ONLY.**
+
+This adapter does not verify AOVOPRO ES80 protocol semantics, physical route legality, outdoor route quality, GPS field behavior, or physical iPhone performance. Those remain separate evidence domains.
