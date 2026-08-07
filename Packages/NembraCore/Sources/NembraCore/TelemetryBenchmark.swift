@@ -19,9 +19,12 @@ public enum TelemetryBenchmarkRecordResult: Equatable, Sendable {
 /// behavior without storing display-interpolated frames as if they were sensor
 /// measurements.
 ///
-/// Observation-segment/interruption counts reflect only explicit known-gap
-/// markers supplied to the collector. They do not prove that physical sampling
-/// was continuous between otherwise accepted packets.
+/// Observation-segment/interruption counts reflect explicit known-gap markers
+/// that occur after accepted benchmark evidence exists and can therefore split
+/// accepted observation segments. A marker supplied before the first accepted
+/// sample is intentionally a no-op here; callers that need attempt-wide lifecycle
+/// gap provenance must retain that separately. These counts do not prove that
+/// physical sampling was continuous between otherwise accepted packets.
 public struct TelemetryBenchmarkSummary: Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let acceptedSampleCount: Int
@@ -83,8 +86,10 @@ public struct TelemetryBenchmarkCollector: Sendable {
     /// speed-step comparison is fabricated across the missing evidence. Global
     /// selected-source callback chronology remains intact, so a delayed stale
     /// callback cannot become fresh merely because observation was interrupted or
-    /// because a newer callback was rejected from benchmark statistics. Repeated
-    /// marks before new accepted evidence are idempotent.
+    /// because a newer callback was rejected from benchmark statistics. A mark
+    /// before the first accepted sample is intentionally a no-op because there is
+    /// no accepted benchmark segment to split; repeated marks while a later split
+    /// is already pending are also idempotent.
     public mutating func markKnownObservationInterruption() {
         guard acceptedSampleCount > 0, !observationInterruptionPending else { return }
 
