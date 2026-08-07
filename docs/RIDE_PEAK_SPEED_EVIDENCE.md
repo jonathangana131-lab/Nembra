@@ -27,10 +27,12 @@ This slice adds the identity/provenance boundary before any History, Statistics,
 
 ## Completed-ride projection
 
-`CompletedRidePeakSpeedEvidence` is a durable projection created from:
+`CompletedRidePeakSpeedEvidence` is a durable projection created by a trusted NembraCore package adapter from:
 
 - one immutable `CompletedRideEvidence`;
 - one `RidePeakSpeedEvidence` with the same session UUID.
+
+The two-value bridge is package-scoped. UUID + ride continuity are necessary checks, but they do not by themselves prove that two independently supplied completed records are the exact same immutable ride. Until a future durable identity binding can prove that stronger statement, ordinary external clients cannot perform this join and treat it as Nembra-authoritative.
 
 A session mismatch fails closed.
 
@@ -77,7 +79,7 @@ Decoded durable peak evidence is rebuilt through the same validating initializer
 - initial-gap provenance with no interruption evidence;
 - a recovered ride without explicit initial-gap provenance, partial continuity, and an interruption.
 
-`validate(against:)` rechecks session identity and completed-ride continuity before a future persistence/statistics adapter joins the records.
+`validate(against:)` is also package-scoped. Trusted adapters may use it as a necessary session/continuity recheck inside a mechanically bound join; external clients cannot use it as if UUID + continuity were proof of exact completed-record identity.
 
 ## Important limitation: still not reportable top-speed truth by itself
 
