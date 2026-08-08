@@ -65,6 +65,33 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         }
     }
 
+    /// Producer-issued proof that this sealed Ready admission was rejected by
+    /// the canonical authority fence before the recorder mutation body executed.
+    /// The initializer is file-private so package callers cannot manufacture rollback
+    /// authority from copied queue/authority scalars.
+    struct ReadyRecorderMutationRejectionReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,
+            currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            self.currentAuthority = currentAuthority
+        }
+    }
+
+    enum ReadyRecorderMutationOutcome: Equatable, Sendable {
+        case recorded(RecordedReadyBoundary)
+        case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)
+    }
+
     struct CommittedReadyEpoch: Equatable, Sendable {
         private let readyDecision: PassiveCoreBluetoothObservationBoundaryDecision
         private let readyTransaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
@@ -74,6 +101,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         var authority: PassiveCoreBluetoothArtifactAuthorityContext { readyDecision.authority }
         var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }
         var observedAtDate: Date { readyDecision.observedAtDate }
+        var transactionRevision: UInt64 { readyTransaction.revision }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.readyDecision == rhs.readyDecision
@@ -325,6 +353,35 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             transaction: transaction,
             authorityFence: authorityFence
         )
+    }
+
+    /// Performs the same canonical authority-fenced Ready append, but preserves a
+    /// mechanically safe recovery authority for the one failure that proves the
+    /// recorder mutation body never ran. Generic recorder/session errors still throw
+    /// and issue no rollback proof because their durable-mutation status is not
+    /// established by this admission.
+    func recordBoundaryWithMutationOutcome(
+        on recorder: PassiveCoreBluetoothCaptureRecorder
+    ) async throws -> ReadyRecorderMutationOutcome {
+        do {
+            return .recorded(try await recordBoundary(on: recorder))
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            switch error {
+            case let .authorityChanged(expected, current):
+                guard expected == decision.authority else {
+                    throw error
+                }
+                return .rejectedBeforeMutation(
+                    ReadyRecorderMutationRejectionReceipt(
+                        decision: decision,
+                        transaction: transaction,
+                        currentAuthority: current
+                    )
+                )
+            case .nonAdvancingTransition:
+                throw error
+            }
+        }
     }
 
     private init(

@@ -303,10 +303,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// recorder/session becomes incomplete evidence and normal FIFO draining is
     /// immediately quarantined. Queue retirement + fresh durable session binding
     /// are separate required steps; abort itself never reopens `.awaitingReady`.
+    ///
+    /// The caller must provide #440's producer-issued `CommittedReadyEpoch`; copied
+    /// authority/cutoff scalars cannot authorize retirement of a committed epoch.
     @discardableResult
     mutating func abortObservationEpoch(
-        expectedReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
-        expectedReadyQueueCutoff: UInt64
+        _ committedReadyEpoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch
     ) throws -> ObservationEpochAbortReceipt {
         guard case .observing = phase else {
             throw StateError.invalidTransition
@@ -315,8 +317,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             throw StateError.staleTransaction
         }
         guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,
-              committedReadyTransaction.authority == expectedReadyAuthority,
-              committedReadyTransaction.queueCutoff == expectedReadyQueueCutoff else {
+              committedReadyTransaction.authority == committedReadyEpoch.authority,
+              committedReadyTransaction.queueCutoff == committedReadyEpoch.queueCutoff,
+              committedReadyTransaction.revision == committedReadyEpoch.transactionRevision else {
             throw StateError.staleTransaction
         }
 
@@ -339,15 +342,15 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// durable on the recorder actor.
     @discardableResult
     mutating func abortUncommittedReady(
-        after rejection: PassiveCoreBluetoothObservationBoundaryRecorderMutationRejectionReceipt
+        after rejection: PassiveCoreBluetoothObservationBoundaryTransactionDecision.ReadyRecorderMutationRejectionReceipt
     ) throws -> ObservationEpochAbortReceipt {
         guard case let .drainingReady(current) = phase else {
             throw StateError.invalidTransition
         }
-        guard rejection.queueKind == .finiteAcquisitionReady,
-              current.boundaryKind == .finiteAcquisitionReady,
+        guard current.boundaryKind == .finiteAcquisitionReady,
               current.authority == rejection.authority,
-              current.queueCutoff == rejection.queueCutoff else {
+              current.queueCutoff == rejection.queueCutoff,
+              current.revision == rejection.transactionRevision else {
             throw StateError.staleTransaction
         }
 
