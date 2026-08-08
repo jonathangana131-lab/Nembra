@@ -122,6 +122,79 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testVehicleControlsPrimaryES80RecomposesAtAccessibilityDynamicType() {
+        let app = launchProduction(
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Controls unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["This vehicle configuration is not verified for control commands."].waitForExistence(timeout: 2))
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Accessibility XXXL Top")
+
+        let cruiseOff = app.buttons["vehicle-controls.cruise.off"]
+        let cruiseOn = app.buttons["vehicle-controls.cruise.on"]
+        XCTAssertTrue(scrollToExistence(cruiseOff, in: app))
+        XCTAssertTrue(scrollToExistence(cruiseOn, in: app))
+        XCTAssertFalse(cruiseOff.isEnabled)
+        XCTAssertFalse(cruiseOn.isEnabled)
+        XCTAssertGreaterThan(
+            cruiseOn.frame.minY,
+            cruiseOff.frame.maxY,
+            "Accessibility Dynamic Type must stack ES80 Cruise controls vertically instead of preserving the compact adaptive row."
+        )
+
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Accessibility XXXL Controls")
+    }
+
+    @MainActor
+    func testVehicleControlsUnavailableRecoveryRecomposesAtAccessibilityDynamicType() {
+        let app = launch(
+            scenario: "scooter-unavailable",
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 4))
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        let recoveryMessage = app.staticTexts["Keep the scooter powered on and nearby, then try again."]
+        let reconnect = app.buttons["Reconnect"]
+        XCTAssertTrue(recoveryMessage.waitForExistence(timeout: 2))
+        XCTAssertTrue(reconnect.waitForExistence(timeout: 2))
+        XCTAssertGreaterThan(
+            reconnect.frame.minY,
+            recoveryMessage.frame.maxY,
+            "Accessibility Dynamic Type must place the recovery action below the complete issue prose instead of squeezing both into one row."
+        )
+        XCTAssertTrue(app.staticTexts["Last confirmed settings shown below"].waitForExistence(timeout: 2))
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable Accessibility XXXL Top")
+
+        let walk = app.buttons["vehicle-controls.mode.walk"]
+        let eco = app.buttons["vehicle-controls.mode.eco"]
+        XCTAssertTrue(scrollToExistence(walk, in: app))
+        XCTAssertTrue(scrollToExistence(eco, in: app))
+        XCTAssertGreaterThan(
+            eco.frame.minY,
+            walk.frame.maxY,
+            "Accessibility Dynamic Type must stack Ride Mode controls in one column."
+        )
+
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable Accessibility XXXL Controls")
+    }
+
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
         let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
@@ -263,21 +336,52 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        applyContentSizeCategory(contentSizeCategory, to: app)
         app.launch()
         return app
     }
 
     @MainActor
-    private func launchProduction(orientation: UIDeviceOrientation) -> XCUIApplication {
+    private func launchProduction(
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
+    ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
+        applyContentSizeCategory(contentSizeCategory, to: app)
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func applyContentSizeCategory(_ contentSizeCategory: String?, to app: XCUIApplication) {
+        guard let contentSizeCategory else { return }
+        // Validation-only Simulator override already used by Nembra's Home visual QA.
+        // It changes presentation only and never enters vehicle/simulation truth.
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            contentSizeCategory
+        ]
+    }
+
+    @MainActor
+    private func scrollToExistence(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 4
+    ) -> Bool {
+        if element.exists { return true }
+        for _ in 0..<maxSwipes {
+            app.swipeUp()
+            if element.exists { return true }
+        }
+        return false
     }
 
     @MainActor
