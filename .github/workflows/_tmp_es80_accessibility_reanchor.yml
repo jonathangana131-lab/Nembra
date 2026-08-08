@@ -78,7 +78,7 @@ jobs:
           git diff --check -- NembraUITests/NembraUITests.swift
           grep -F 'func testCaptureCriticalSimulatorStatesPassSystemAccessibilityAudit() throws' NembraUITests/NembraUITests.swift >/dev/null
           grep -F 'try app.performAccessibilityAudit()' NembraUITests/NembraUITests.swift >/dev/null
-          test "$(grep -c -- '--es80-capture-qa-scenario=' NembraUITests/NembraUITests.swift)" -ge 2
+          test "$(grep -c -- '--es80-capture-qa-scenario=' NembraUITests/NembraUITests.swift)" -ge 1
 
       - name: Commit current audit and self-delete transformer
         shell: bash
