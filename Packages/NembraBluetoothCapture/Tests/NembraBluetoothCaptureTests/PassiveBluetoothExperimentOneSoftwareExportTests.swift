@@ -161,29 +161,39 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
     }
 
     private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
-        var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        let minimum = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds
+        var ledger = PassiveBluetoothPowerCycleObservationLedger(
+            minimumWindowDurationNanoseconds: minimum
+        )
+        let starts: [UInt64] = [
+            10,
+            10 + minimum + 10,
+            10 + (minimum + 10) * 2,
+            10 + (minimum + 10) * 3
+        ]
         _ = try ledger.completeWindow(
             phase: .firstPoweredOff,
-            startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
+            startedAtUptimeNanoseconds: starts[0],
+            endedAtUptimeNanoseconds: starts[0] + minimum,
             candidates: [candidate(neighbor)]
         )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
+            startedAtUptimeNanoseconds: starts[1],
+            endedAtUptimeNanoseconds: starts[1] + minimum,
             candidates: [candidate(neighbor), candidate(scooter)]
         )
         _ = try ledger.completeWindow(
             phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
+            startedAtUptimeNanoseconds: starts[2],
+            endedAtUptimeNanoseconds: starts[2] + minimum,
             candidates: [candidate(neighbor)]
         )
         return try #require(ledger.completeWindow(
             phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
+            startedAtUptimeNanoseconds: starts[3],
+            endedAtUptimeNanoseconds: starts[3] + minimum,
             candidates: [candidate(neighbor), candidate(scooter)]
         ))
     }
