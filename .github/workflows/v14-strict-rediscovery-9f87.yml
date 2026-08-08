@@ -1,0 +1,31 @@
+name: V14 strict rediscovery 9f87
+
+on:
+  push:
+    branches:
+      - feature/es80-v14-strict-rediscovery-current-9f87/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply strict product repair
+        run: python3 scripts/ci/v14_strict_rediscovery_9f87_patch.py
+      - name: Validate and publish product tree
+        run: |
+          set -euo pipefail
+          git diff --check
+          rm .github/workflows/v14-strict-rediscovery-9f87.yml
+          rm scripts/ci/v14_strict_rediscovery_9f87_patch.py
+          git add -A
+          git diff --cached --check
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git commit -m "Capture: preserve admission until strictly fresh rediscovery"
+          git push origin HEAD:feature/es80-v14-strict-rediscovery-current-9f87/gpt56-thinking
