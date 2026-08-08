@@ -1,8 +1,17 @@
+import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
 @Suite("Passive CoreBluetooth artifact-authority fence")
 struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
     private let authorityA = PassiveCoreBluetoothArtifactAuthorityContext(
         targetSessionGeneration: 7,
         authorityGeneration: 11
@@ -27,12 +36,15 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
 
         #expect(value == 42)
         #expect(mutationCount == 1)
+        #expect(fence.currentAuthority == authorityA)
     }
 
     @Test("authority transition wins before stale mutation body can execute")
-    func transitionedAuthorityRejectsStaleMutation() throws {
+    func transitionedAuthorityRejectsStaleMutation() async throws {
         let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
-        try fence.transition(from: authorityA, to: authorityB)
+        try await MainActor.run {
+            try fence.transition(from: authorityA, to: authorityB)
+        }
 
         var staleMutationExecuted = false
         let error = capturedStateError {
@@ -56,44 +68,92 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
         #expect(currentMutationExecuted)
     }
 
-    @Test("stale transition cannot overwrite or rewind a newer authority")
-    func staleTransitionCannotOverwriteNewerAuthority() throws {
+    @Test("stale authority transition cannot overwrite a newer authority")
+    func staleTransitionCannotOverwriteNewerAuthority() async throws {
         let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
-        try fence.transition(from: authorityA, to: authorityB)
+        try await MainActor.run {
+            try fence.transition(from: authorityA, to: authorityB)
+        }
 
         let attemptedReplacement = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: authorityA.targetSessionGeneration,
             authorityGeneration: authorityB.authorityGeneration + 1
         )
-        let error = capturedStateError {
-            try fence.transition(from: authorityA, to: attemptedReplacement)
+        var transitionError: PassiveCoreBluetoothArtifactAuthorityFence.StateError?
+        do {
+            try await MainActor.run {
+                try fence.transition(from: authorityA, to: attemptedReplacement)
+            }
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            transitionError = error
         }
 
         #expect(
-            error == .authorityChanged(
+            transitionError == .authorityChanged(
                 expected: authorityA,
                 current: authorityB
             )
         )
-
-        var stillOwnedByB = false
-        try fence.withCurrentAuthority(authorityB) {
-            stillOwnedByB = true
-        }
-        #expect(stillOwnedByB)
+        #expect(fence.currentAuthority == authorityB)
     }
 
-    @Test("full target-session identity participates in the authority fence")
-    func targetSessionReplacementRejectsOldSessionMutation() throws {
+    @Test("same or same-session backward authority cannot become current again")
+    func nonAdvancingSameSessionTransitionsFailClosed() async throws {
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
+
+        var unchangedError: PassiveCoreBluetoothArtifactAuthorityFence.StateError?
+        do {
+            try await MainActor.run {
+                try fence.transition(from: authorityA, to: authorityA)
+            }
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            unchangedError = error
+        }
+        #expect(
+            unchangedError == .nonAdvancingTransition(
+                from: authorityA,
+                to: authorityA
+            )
+        )
+        #expect(fence.currentAuthority == authorityA)
+
+        try await MainActor.run {
+            try fence.transition(from: authorityA, to: authorityB)
+        }
+
+        var resurrectionError: PassiveCoreBluetoothArtifactAuthorityFence.StateError?
+        do {
+            try await MainActor.run {
+                try fence.transition(from: authorityB, to: authorityA)
+            }
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            resurrectionError = error
+        }
+        #expect(
+            resurrectionError == .nonAdvancingTransition(
+                from: authorityB,
+                to: authorityA
+            )
+        )
+        #expect(fence.currentAuthority == authorityB)
+    }
+
+    @Test("strictly newer target session may start its own authority counter")
+    func newerTargetSessionMayResetAuthorityCounter() async throws {
         let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
         let replacementSessionAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: authorityA.targetSessionGeneration + 1,
             authorityGeneration: 1
         )
-        try fence.transition(
-            from: authorityA,
-            to: replacementSessionAuthority
-        )
+
+        try await MainActor.run {
+            try fence.transition(
+                from: authorityA,
+                to: replacementSessionAuthority
+            )
+        }
+
+        #expect(fence.currentAuthority == replacementSessionAuthority)
 
         var oldSessionMutationExecuted = false
         let error = capturedStateError {
@@ -101,7 +161,6 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
                 oldSessionMutationExecuted = true
             }
         }
-
         #expect(
             error == .authorityChanged(
                 expected: authorityA,
@@ -115,6 +174,42 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
             replacementMutationExecuted = true
         }
         #expect(replacementMutationExecuted)
+    }
+
+    @Test("older target session cannot resurrect even with a larger authority counter")
+    func olderTargetSessionCannotResurrect() async throws {
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
+        let newerSessionAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authorityA.targetSessionGeneration + 1,
+            authorityGeneration: 1
+        )
+        try await MainActor.run {
+            try fence.transition(from: authorityA, to: newerSessionAuthority)
+        }
+
+        let attemptedOlderSession = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authorityA.targetSessionGeneration,
+            authorityGeneration: UInt64.max
+        )
+        var transitionError: PassiveCoreBluetoothArtifactAuthorityFence.StateError?
+        do {
+            try await MainActor.run {
+                try fence.transition(
+                    from: newerSessionAuthority,
+                    to: attemptedOlderSession
+                )
+            }
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            transitionError = error
+        }
+
+        #expect(
+            transitionError == .nonAdvancingTransition(
+                from: newerSessionAuthority,
+                to: attemptedOlderSession
+            )
+        )
+        #expect(fence.currentAuthority == newerSessionAuthority)
     }
 
     @Test("throwing mutation releases the fence without changing authority")
@@ -140,6 +235,77 @@ struct PassiveCoreBluetoothArtifactAuthorityFenceTests {
             followupMutationExecuted = true
         }
         #expect(followupMutationExecuted)
+    }
+
+    @Test("revoked decision leaves zero stale recorder boundaries")
+    func revokedDecisionCannotMutateRecorder() async throws {
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let decision = try await MainActor.run {
+            try PassiveCoreBluetoothObservationBoundaryDecision.capture(
+                kind: .finiteAcquisitionReady,
+                queueCutoff: 0,
+                processedThrough: 0,
+                authority: authorityA
+            )
+        }
+
+        try await MainActor.run {
+            try fence.transition(from: authorityA, to: authorityB)
+        }
+
+        var rejection: PassiveCoreBluetoothArtifactAuthorityFence.StateError?
+        do {
+            try await decision.recordBoundary(
+                on: recorder,
+                authorityFence: fence
+            )
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            rejection = error
+        }
+
+        #expect(
+            rejection == .authorityChanged(
+                expected: authorityA,
+                current: authorityB
+            )
+        )
+        let session = await recorder.snapshot()
+        #expect(session.observationBoundaries.isEmpty)
+    }
+
+    @Test("current decision records exact pre-await clocks through authority fence")
+    func currentDecisionRecordsWithoutClockResampling() async throws {
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let decision = try await MainActor.run {
+            try PassiveCoreBluetoothObservationBoundaryDecision.capture(
+                kind: .finiteAcquisitionReady,
+                queueCutoff: 0,
+                processedThrough: 0,
+                authority: authorityA
+            )
+        }
+
+        try await decision.recordBoundary(
+            on: recorder,
+            authorityFence: fence
+        )
+
+        let session = await recorder.snapshot()
+        let boundary = try #require(session.observationBoundaries.first)
+        #expect(session.observationBoundaries.count == 1)
+        #expect(boundary.kind == .finiteAcquisitionReady)
+        #expect(boundary.recordSequenceWatermark == 0)
+        #expect(boundary.observedAtUptimeNanoseconds == decision.observedAtUptimeNanoseconds)
+        #expect(boundary.observedAtDate == decision.observedAtDate)
+        #expect(fence.currentAuthority == authorityA)
     }
 
     private func capturedStateError(
