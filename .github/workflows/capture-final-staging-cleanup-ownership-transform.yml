@@ -1,0 +1,119 @@
+name: Capture final staging cleanup ownership transform
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-final-staging-cleanup-ownership/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply ownership-gated cleanup repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script_path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          test_path = Path("scripts/ci/tests/test_xcode27_signed_field_candidate_source.py")
+          script = script_path.read_text()
+          tests = test_path.read_text()
+
+          replacements = [
+              (
+                  'FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"\n',
+                  'FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"\n'
+                  '# Cleanup may remove this private staging path only after this process successfully creates it.\n'
+                  'FINAL_STAGING_OWNED=0\n',
+              ),
+              (
+                  '  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then\n'
+                  '    rm -rf "$FINAL_STAGING_DIR"\n'
+                  '  fi\n',
+                  '  if [[ "${FINAL_STAGING_OWNED:-0}" == "1" && -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then\n'
+                  '    rm -rf "$FINAL_STAGING_DIR"\n'
+                  '  fi\n',
+              ),
+              (
+                  'mkdir "$FINAL_STAGING_DIR"\n'
+                  'cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"\n',
+                  'mkdir "$FINAL_STAGING_DIR"\n'
+                  'FINAL_STAGING_OWNED=1\n'
+                  'cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"\n',
+              ),
+              (
+                  '# Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.\n'
+                  'FINAL_STAGING_DIR=""\n',
+                  '# Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.\n'
+                  'FINAL_STAGING_OWNED=0\n'
+                  'FINAL_STAGING_DIR=""\n',
+              ),
+          ]
+          for old, new in replacements:
+              if script.count(old) != 1:
+                  raise SystemExit(f"producer transform anchor count drifted: {old!r} -> {script.count(old)}")
+              script = script.replace(old, new, 1)
+
+          test_anchor = '''        self.assertLess(
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('rename_exclusive(source, destination'),
+        )
+
+    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
+'''
+          test_replacement = '''        self.assertLess(
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('rename_exclusive(source, destination'),
+        )
+
+    def test_cleanup_only_removes_staging_directory_owned_by_this_process(self):
+        self.assertIn('FINAL_STAGING_OWNED=0', self.source)
+        cleanup_guard = (
+            'if [[ "${FINAL_STAGING_OWNED:-0}" == "1" '
+            '&& -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then'
+        )
+        self.assertIn(cleanup_guard, self.source)
+        self.assertNotIn(
+            'if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then',
+            self.source,
+        )
+        mkdir_index = self.source.index('mkdir "$FINAL_STAGING_DIR"')
+        owned_index = self.source.index('FINAL_STAGING_OWNED=1')
+        rename_index = self.source.index('rename_exclusive(source, destination')
+        released_index = self.source.rindex('FINAL_STAGING_OWNED=0')
+        self.assertLess(mkdir_index, owned_index)
+        self.assertLess(owned_index, rename_index)
+        self.assertLess(rename_index, released_index)
+
+    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
+'''
+          if tests.count(test_anchor) != 1:
+              raise SystemExit(f"test transform anchor count drifted: {tests.count(test_anchor)}")
+          tests = tests.replace(test_anchor, test_replacement, 1)
+
+          script_path.write_text(script)
+          test_path.write_text(tests)
+          PY
+
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          git diff --check
+
+      - name: Commit clean product delta
+        run: |
+          rm .github/workflows/capture-final-staging-cleanup-ownership-transform.yml
+          git config user.name "nembra-v14-go"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_source.py .github/workflows/capture-final-staging-cleanup-ownership-transform.yml
+          git diff --cached --check
+          git commit -m "[Capture producer v14] Own final staging before cleanup"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
