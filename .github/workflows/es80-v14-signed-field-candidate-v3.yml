@@ -1,0 +1,82 @@
+name: ES80 V14 Signed Field Candidate V3 QA
+
+on:
+  push:
+    branches:
+      - 'qa/es80-v14-signed-field-candidate-v3/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate shell and Python syntax
+        run: |
+          bash -n scripts/field/xcode27_signed_capture_candidate.sh
+          python3 -m py_compile \
+            scripts/field/verify_signed_capture_candidate.py \
+            scripts/field/tests/test_verify_signed_capture_candidate.py
+
+      - name: Run adversarial portable verifier tests
+        run: python3 -m unittest -v scripts/field/tests/test_verify_signed_capture_candidate.py
+
+      - name: Prove non-macOS producer execution fails closed
+        run: |
+          set +e
+          output="$(bash scripts/field/xcode27_signed_capture_candidate.sh 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 2
+          grep -Fq 'requires macOS with Xcode 27' <<<"$output"
+
+      - name: Pin producer and verifier truth boundaries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          producer = Path('scripts/field/xcode27_signed_capture_candidate.sh').read_text(encoding='utf-8')
+          verifier = Path('scripts/field/verify_signed_capture_candidate.py').read_text(encoding='utf-8')
+
+          producer_required = [
+              'git status --porcelain=v1 --untracked-files=all',
+              "-destination 'generic/platform=iOS'",
+              'CODE_SIGN_STYLE=Automatic',
+              'codesign --verify --deep --strict',
+              '"schemaVersion": 3',
+              '"evidenceClass": "signed-field-candidate-not-field-authorization"',
+              'ditto -x -k "$SIGNED_APP_ARCHIVE"',
+              'device_install_result=success',
+              'THIS IS NOT PHYSICAL FIELD AUTHORIZATION.',
+          ]
+          missing = [needle for needle in producer_required if needle not in producer]
+          if missing:
+              raise SystemExit(f'Missing producer truth guards: {missing}')
+
+          producer_forbidden = [
+              'CODE_SIGNING_ALLOWED=NO',
+              'device_install_id=',
+              'logs/devicectl-install.log',
+              'fieldAuthorized',
+              'physicalGO',
+          ]
+          present = [needle for needle in producer_forbidden if needle in producer]
+          if present:
+              raise SystemExit(f'Forbidden producer surface found: {present}')
+
+          verifier_required = [
+              '"verification": "self-consistent-byte-provenance"',
+              '"authenticity": "not-established-by-portable-verifier"',
+              '"fieldAuthorization": "NO-GO"',
+              '"codeSignatureVerification": "not-reperformed-by-portable-verifier"',
+          ]
+          missing = [needle for needle in verifier_required if needle not in verifier]
+          if missing:
+              raise SystemExit(f'Missing verifier non-authority labels: {missing}')
+          if '"verification": "accepted-byte-provenance"' in verifier:
+              raise SystemExit('Portable verifier must not label self-consistency as accepted provenance.')
+          PY
