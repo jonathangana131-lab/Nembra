@@ -26,6 +26,8 @@ It must never be:
 
 The signer therefore refuses a private-key path that resolves inside the Nembra repository. It also refuses to publish the signed authorization envelope inside the repository, reducing the chance that a build-specific signed `GO` payload is accidentally committed.
 
+The OpenSSL executable is part of the same release-authority custody boundary because it receives the inherited descriptor for the private signing key. Production signing never searches ambient `PATH`: the operator must supply the exact trusted executable with `--openssl`. That executable is canonicalized, must be a regular executable outside the repository, must not be group/world writable, and on POSIX must be owned by root or by the signing user. Supply the canonical executable itself rather than a symlink.
+
 The signer does **not** generate the production private key. Key creation, custody, backup, rotation, operator access, and independent approval belong to the external release-authority process.
 
 ## Private-key custody and one-snapshot signing
@@ -38,9 +40,10 @@ Before any signing operation it requires the source key to:
 - be one regular non-symlink file;
 - be between 1 byte and 64 KiB;
 - have no group or other permission bits (for example, owner-only mode `0600` is acceptable);
+- on POSIX, be owned by the signing user;
 - be openable with `O_NOFOLLOW` on the signing platform.
 
-The source pathname is then opened **once**. The signer records the open descriptor's device, inode, mode, size, nanosecond modification time, and nanosecond change time. OpenSSL receives that exact inherited descriptor through `/dev/fd/<fd>` and canonicalizes the key once into an operation-local `authorization-private-key.pem` inside a mode-`0700` temporary directory. The snapshot itself must remain a regular, non-empty, owner-only file.
+The source pathname is then opened **once**. The signer records the open descriptor's device, inode, mode, owner/group identity, size, nanosecond modification time, and nanosecond change time. OpenSSL receives that exact inherited descriptor through `/dev/fd/<fd>` and canonicalizes the key once into an operation-local `authorization-private-key.pem` inside a mode-`0700` temporary directory. The snapshot itself must remain a regular, non-empty, owner-only file owned by the signing user.
 
 After the snapshot is created, the external key pathname is not reopened for public-key derivation, signing, or self-verification. Those operations use only the private temporary snapshot. The source descriptor is `fstat`ed again and the operation fails closed if its recorded identity changed while the snapshot was being created.
 
@@ -83,25 +86,29 @@ The base64 fields preserve the exact signed subject/payload bytes. The package v
 
 ## Offline invocation
 
-Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Keep the private key owner-only before invoking the signer.
+Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Keep the private key owner-only before invoking the signer. Independently establish the canonical trusted OpenSSL executable path; do not rely on shell `PATH` lookup.
 
 ```sh
 chmod 600 /external/authority/nembra-field-authority-private.pem
 
 python3 scripts/ci/es80_field_authorization_envelope.py \
+  --openssl /usr/bin/openssl \
   --external-record /external/review/NembraCaptureExternalBuildRecord.json \
   --field-evidence /external/review/NembraCaptureFieldBuildEvidenceRecord.json \
   --private-key-pem /external/authority/nembra-field-authority-private.pem \
   --output-envelope /external/review/NembraCaptureFieldAuthorizationEnvelope.json
 ```
 
+`/usr/bin/openssl` above is an example canonical system path for the release machine. The release authority must review the executable it actually intends to trust; if another OpenSSL installation is used, pass its canonical non-symlink path explicitly.
+
 The tool:
 
-- requires OpenSSL;
+- requires an explicit trusted OpenSSL executable for production signing and never discovers it from ambient `PATH`;
+- canonicalizes that executable and rejects repository-controlled, non-regular, non-executable, group/world-writable, or unexpected-owner executables;
 - requires a P-256 / `prime256v1` private key;
-- requires an owner-only external private-key file and fails closed on group/other access;
+- requires an owner-only, signing-user-owned external private-key file and fails closed on group/other access;
 - opens the authority key once with no-follow semantics and snapshots that exact descriptor into a private operation-local key file;
-- requires the source key identity to remain stable while the snapshot is created;
+- requires the source key identity, including owner/group identity, to remain stable while the snapshot is created;
 - never reads the private-key bytes into Python;
 - derives only the public uncompressed X9.63 point for review/pinning output;
 - signs and self-verifies using the same private temporary key snapshot;
@@ -128,7 +135,9 @@ Do **not** auto-edit or auto-pin the key from this script. The production trust 
 python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 ```
 
-The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
+The no-argument self-test uses the fixed `/usr/bin/openssl` path and never searches ambient `PATH`; it may also be pointed at an explicit trusted executable with `--openssl`. Its key is an **ephemeral temporary** P-256 fixture outside the repository, not production authority material.
+
+The self-test signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
 
 The trusted exact-head Xcode 27 workflow compiles this signer and executes the self-test. A passing self-test is still software acceptance evidence only; it does not create or accept a production authority.
 
