@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 
 /// Package-owned software evidence for one sealed ES80 Experiment One run.
 ///
@@ -63,6 +64,9 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case correlationWindowPhaseMismatch(index: Int)
     case correlationWindowSequenceMismatch(index: Int)
     case correlationCandidateCountMismatch(index: Int)
+    /// The software evidence does not satisfy the already-accepted sealed Experiment One structure.
+    /// This is a structural/software result only; success still does not establish physical truth.
+    case recipeStructuralEvidenceInvalid
     case unsupportedSchemaVersion(Int)
     case unsupportedRecipe(PassiveBluetoothExperimentRecipeID)
     case manifestRecipeMismatch
@@ -102,19 +106,24 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
 
         let windows = try makeCorrelationWindows(powerCycleResult)
-        let replayed = try replayCorrelation(windows)
-        let selectedTarget: UUID
+        let reconstructed = try reconstructedPowerCycleResult(from: windows)
+        let replayed = reconstructed.correlation
         switch replayed.disposition {
         case .invalidObservationAuthority, .invalidObservationWindowOrder:
             throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
         case .noRepeatableCandidate, .ambiguousRepeatableCandidates:
             throw PassiveBluetoothExperimentOneSoftwareExportError.correlationNotUnique
-        case let .singleRepeatableCandidate(identifier):
-            selectedTarget = identifier
+        case .singleRepeatableCandidate:
+            break
         }
         guard replayed == powerCycleResult.correlation else {
             throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
         }
+
+        let selectedTarget = try structurallyCoherentTarget(
+            captureJSON: captureJSON,
+            powerCycleResult: reconstructed
+        )
 
         let manifest = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
             captureJSON: captureJSON,
@@ -162,6 +171,10 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         return try encoder.encode(WireV1(export))
     }
 
+    /// Verifies closed-world wire shape plus internal software/recipe consistency.
+    ///
+    /// This does not independently attest the wire-carried executable digest and cannot authorize a
+    /// physical run. Independent accepted-build / field-GO provenance remains a separate gate.
     public static func decodeAndVerify(_ data: Data) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try validateClosedWorldShape(data)
 
@@ -194,16 +207,20 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         let windows = try wire.correlationWindows.enumerated().map { index, item in
             try decodedWindow(item, index: index)
         }
-        let replayed = try replayCorrelation(windows)
-        let selectedTarget: UUID
-        switch replayed.disposition {
-        case let .singleRepeatableCandidate(identifier):
-            selectedTarget = identifier
+        let reconstructed = try reconstructedPowerCycleResult(from: windows)
+        switch reconstructed.correlation.disposition {
         case .invalidObservationAuthority, .invalidObservationWindowOrder:
             throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
         case .noRepeatableCandidate, .ambiguousRepeatableCandidates:
             throw PassiveBluetoothExperimentOneSoftwareExportError.correlationNotUnique
+        case .singleRepeatableCandidate:
+            break
         }
+
+        let selectedTarget = try structurallyCoherentTarget(
+            captureJSON: captureJSON,
+            powerCycleResult: reconstructed
+        )
 
         let manifest = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
             manifestJSON: manifestJSON,
@@ -231,6 +248,27 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             correlationWindows: windows,
             build: build
         )
+    }
+
+    private static func structurallyCoherentTarget(
+        captureJSON: Data,
+        powerCycleResult: PassiveBluetoothPowerCycleObservationResult
+    ) throws -> UUID {
+        let session: PassiveBluetoothCaptureSession
+        do {
+            session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
+        } catch {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.recipeStructuralEvidenceInvalid
+        }
+
+        let assessment = PassiveBluetoothExperimentOneStructuralEvidenceAssessment.assess(
+            powerCycleResult: powerCycleResult,
+            captureSession: session
+        )
+        guard case let .structurallyCoherent(identifier) = assessment.status else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.recipeStructuralEvidenceInvalid
+        }
+        return identifier
     }
 
     private static func makeCorrelationWindows(
@@ -263,9 +301,13 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
     }
 
-    private static func replayCorrelation(
-        _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
-    ) throws -> PassiveBluetoothPowerCycleTargetCorrelationReport {
+    private static func reconstructedPowerCycleResult(
+        from windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
+    ) throws -> PassiveBluetoothPowerCycleObservationResult {
+        guard windows.count == 4 else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.correlationWindowCount(windows.count)
+        }
+
         let snapshots = try windows.enumerated().map { index, window in
             guard window.phase.rawValue == index else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
@@ -279,11 +321,25 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
                 }
             )
         }
-        return PassiveBluetoothPowerCycleTargetCorrelation.assess(
+        let receipts = zip(windows, snapshots).map { window, snapshot in
+            PassiveBluetoothPowerCycleObservationWindowReceipt(
+                phase: window.phase,
+                windowSequence: snapshot.windowSequence,
+                startedAtUptimeNanoseconds: window.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: window.endedAtUptimeNanoseconds,
+                observedCandidateCount: snapshot.candidates.count
+            )
+        }
+        let correlation = PassiveBluetoothPowerCycleTargetCorrelation.assess(
             firstOff: snapshots[0],
             firstOn: snapshots[1],
             secondOff: snapshots[2],
             secondOn: snapshots[3]
+        )
+        return .init(
+            windows: receipts,
+            observationSnapshots: snapshots,
+            correlation: correlation
         )
     }
 
