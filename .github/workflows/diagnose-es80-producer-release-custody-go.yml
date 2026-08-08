@@ -19,7 +19,7 @@ jobs:
 
       - name: Verify diagnostic parent
         run: |
-          test "$(git rev-parse HEAD^)" = "380b8c9b63793f381176f549c3ad192551db302f"
+          test "$(git rev-parse HEAD^)" = "d24fa173fcaa8b7ef57543c0ceb4a99601b856b8"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/diagnose-es80-producer-release-custody-go.yml"
 
       - name: Reuse exact guarded construction transform
@@ -35,6 +35,9 @@ jobs:
           block = workflow[start:end]
           lines = []
           for line in block.splitlines():
+              if line == '':
+                  lines.append('')
+                  continue
               if not line.startswith('          '):
                   raise SystemExit(f'unexpected constructor indentation: {line!r}')
               lines.append(line[10:])
