@@ -40,6 +40,18 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         XCTAssertFalse(
+            app.buttons["Disconnected"].exists,
+            "The operator charger-state declaration belongs behind accepted field authority and must not leak into the NO-GO surface."
+        )
+        XCTAssertFalse(
+            app.buttons["Connected"].exists,
+            "The alternate charger-state declaration must remain unreachable while the package gate is NO-GO."
+        )
+        XCTAssertFalse(
+            app.buttons["Confirm setup"].exists,
+            "Setup provenance cannot become an implicit field-authorization bypass."
+        )
+        XCTAssertFalse(
             app.buttons["Begin OFF 1 window"].exists,
             "A NO-GO build must not expose the first physical OFF/ON action."
         )
@@ -62,6 +74,22 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             app.buttons["Finish Capture"].exists,
             "Finish cannot exist before field authorization and accepted Horizon/seal authority."
+        )
+        XCTAssertFalse(
+            app.buttons["Check integrity"].exists,
+            "Final-artifact integrity is post-seal analysis authority and must not appear before a legitimate Capture exists."
+        )
+        XCTAssertFalse(
+            app.buttons["Share Capture"].exists,
+            "The final Share artifact must not surface before a legitimate sealed and integrity-verified Capture exists."
+        )
+        XCTAssertFalse(
+            app.buttons["Retry Share file"].exists,
+            "Share-file retry cannot become a NO-GO bypass."
+        )
+        XCTAssertFalse(
+            app.staticTexts["Ready for analysis"].exists,
+            "NO-GO must never display a downstream analysis-ready state."
         )
         XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
