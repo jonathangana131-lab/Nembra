@@ -405,16 +405,25 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             windowFrame: windowFrame,
             context: "Simulator QA disclosure at positive Accessibility XXXL"
         )
-        assertVisibleInScreenshotViewport(
+        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
             primaryStatus,
-            windowFrame: windowFrame,
+            in: app,
             context: "Capture Complete status at Accessibility XXXL"
         )
-
-        let topAttachment = XCTAttachment(screenshot: app.screenshot())
-        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
-        topAttachment.lifetime = .keepAlways
-        add(topAttachment)
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture Complete status at Accessibility XXXL"
+        )
+        let statusAttachment = XCTAttachment(screenshot: app.screenshot())
+        statusAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
+        statusAttachment.lifetime = .keepAlways
+        add(statusAttachment)
 
         bringIntoScreenshotViewport(
             share,
@@ -427,16 +436,26 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             windowFrame: actionWindowFrame,
             context: "Share Capture action at Accessibility XXXL"
         )
+        let shareAttachment = XCTAttachment(screenshot: app.screenshot())
+        shareAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Share"
+        shareAttachment.lifetime = .keepAlways
+        add(shareAttachment)
+
+        bringIntoScreenshotViewport(
+            details,
+            in: app,
+            context: "View Details action at Accessibility XXXL"
+        )
         assertVisibleInScreenshotViewport(
             details,
-            windowFrame: actionWindowFrame,
+            windowFrame: app.windows.firstMatch.frame,
             context: "View Details action at Accessibility XXXL"
         )
 
-        let actionsAttachment = XCTAttachment(screenshot: app.screenshot())
-        actionsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Actions"
-        actionsAttachment.lifetime = .keepAlways
-        add(actionsAttachment)
+        let detailsAttachment = XCTAttachment(screenshot: app.screenshot())
+        detailsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — View Details"
+        detailsAttachment.lifetime = .keepAlways
+        add(detailsAttachment)
     }
 
     @MainActor
@@ -471,10 +490,25 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             context: "Simulator QA disclosure in positive landscape state"
         )
 
-        let topAttachment = XCTAttachment(screenshot: app.screenshot())
-        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
-        topAttachment.lifetime = .keepAlways
-        add(topAttachment)
+        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
+            primaryStatus,
+            in: app,
+            context: "Capture can be sealed status in landscape"
+         )
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture can be sealed status in landscape"
+         )
+        let statusAttachment = XCTAttachment(screenshot: app.screenshot())
+        statusAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
+        statusAttachment.lifetime = .keepAlways
+        add(statusAttachment)
 
         bringIntoScreenshotViewport(
             finish,
@@ -482,11 +516,6 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             context: "Seal Capture action in positive landscape state"
         )
         let actionWindowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            primaryStatus,
-            windowFrame: actionWindowFrame,
-            context: "Capture can be sealed status in landscape"
-        )
         assertVisibleInScreenshotViewport(
             finish,
             windowFrame: actionWindowFrame,
