@@ -569,7 +569,13 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]
+        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            // The sealed admission must be joined to a controller observation received after
+            // that handoff. Replaying an older cached advertisement would splice two software
+            // chronology lives and could enqueue evidence that predates this recorder.
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
@@ -597,16 +603,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
+        // This sealed admission publishes a genuinely fresh durable recorder/session,
+        // so it is the same authority boundary that may restore foreground evidence
+        // validity after a prior scene loss. Transport retry alone never does this.
+        foregroundEvidenceIntegrityValid = true
         hasUsedInitialSessionIdentity = true
         recorder = payload.recorder
 
-        if let latestAdvertisement {
-            enqueue(
-                .advertisement(latestAdvertisement.observation),
-                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
-                receivedAtDate: latestAdvertisement.receivedAtDate
-            )
-        }
+        enqueue(
+            .advertisement(latestAdvertisement.observation),
+            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+            receivedAtDate: latestAdvertisement.receivedAtDate
+        )
 
         do {
             _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
