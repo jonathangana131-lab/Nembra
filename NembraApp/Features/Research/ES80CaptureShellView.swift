@@ -1314,23 +1314,23 @@ struct ES80CaptureShellView: View {
             case .foregroundIntegrityLost:
                 return "Nembra left the foreground after capture began. Start a fresh capture."
             case .captureAdmissionAlreadyPrepared:
-                return "The correlated target is already prepared. Continue the current rediscovery."
+                return "The scooter signal is already confirmed. Continue looking for it."
             case .captureAdmissionNotPrepared:
-                return "No confirmed correlated target is ready for this step."
+                return "Confirm one scooter signal before continuing."
             case .correlationIncomplete:
-                return "All four OFF / ON windows must complete before target confirmation."
+                return "Complete all four OFF / ON checks before confirming the scooter signal."
             case .correlationEvidenceInvalid:
-                return "The four-window evidence or ordering is invalid."
+                return "The OFF / ON sequence is no longer valid. Start again from OFF 1."
             case .correlationNotUnique:
-                return "The four-window series did not produce exactly one repeatable target."
+                return "The OFF / ON checks did not isolate one scooter signal. Start a fresh capture."
             case .targetNotRediscovered:
-                return "The exact correlated target has not reappeared in the fresh scan yet. Keep scanning and retry."
+                return "The matched scooter signal has not reappeared yet. Keep the scooter ON and keep scanning."
             case .targetNotConnectable:
-                return "The exact correlated target is visible but Bluetooth reports it as non-connectable."
+                return "The matched scooter signal is visible, but Bluetooth cannot connect to it right now."
             case .controllerUnavailable:
                 return "Passive Bluetooth capture is unavailable."
             case .observationNotReady:
-                return "Passive discovery and the minimum observation period are not complete yet."
+                return "Read-only discovery and the required observation time are not complete yet."
             case .artifactAlreadyFinalized:
                 return "This capture is already sealed."
             }
@@ -1339,29 +1339,29 @@ struct ES80CaptureShellView: View {
         if let error = error as? PassiveBluetoothPowerCycleObservationSessionError {
             switch error {
             case .invalidMinimumWindowDuration:
-                return "This build has an invalid observation-window duration. Capture cannot continue."
+                return "This build has an invalid timing requirement for the OFF / ON checks. Capture cannot continue."
             case .seriesComplete:
-                return "All four correlation windows are already sealed."
+                return "All four OFF / ON checks are already complete."
             case .seriesInvalidated:
-                return "This OFF / ON series has an evidence gap. Start a fresh capture."
+                return "The OFF / ON sequence was interrupted. Start a fresh capture."
             case .windowAlreadyActive:
-                return "The current correlation window is already active."
+                return "This OFF / ON step is already running."
             case .windowNotActive:
-                return "No correlation window is currently active."
+                return "No OFF / ON step is currently running."
             case .bluetoothBecameUnavailable:
-                return "Bluetooth became unavailable during this observation window."
+                return "Bluetooth became unavailable during this step. Start a fresh capture."
             case .scanReadinessPending:
-                return "Scanning was requested, but the observation window has not opened yet."
+                return "Bluetooth scanning is starting. This step has not begun yet."
             case .scanReadinessTimedOut:
-                return "Bluetooth did not become ready in time for this observation window."
+                return "Bluetooth did not become ready in time. Start this step again."
             case .scanBecameInactive:
-                return "This window's Bluetooth scan became inactive."
+                return "Bluetooth scanning stopped during this step. Start a fresh capture."
             case .minimumWindowDurationNotReached:
-                return "The observation window has not reached the required minimum yet."
+                return "Keep this step running until the required time is complete."
             case .nonMonotonicWindowClock:
-                return "Nembra could not establish a valid observation window."
+                return "Nembra could not establish reliable timing for this step. Start a fresh capture."
             case .windowSequenceExhausted:
-                return "This OFF / ON sequence cannot continue. Start a fresh capture."
+                return "This OFF / ON sequence is already complete."
             }
         }
 
@@ -1376,11 +1376,11 @@ struct ES80CaptureShellView: View {
         case .unknown:
             return "Waiting for Bluetooth to report its state."
         case .resetting:
-            return "Bluetooth is resetting. Keep Nembra open until the radio becomes ready."
+            return "Bluetooth is resetting. Keep Nembra open until Bluetooth becomes ready."
         case .unsupported:
-            return "This device does not expose the Bluetooth capability required for passive capture."
+            return "This device cannot provide the Bluetooth access required for Capture."
         case .unauthorized:
-            return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting correlation."
+            return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting OFF 1."
         case .poweredOff:
             return "Turn Bluetooth on before beginning OFF 1. The scooter's OFF state and the phone's Bluetooth state are separate requirements."
         case .poweredOn:
