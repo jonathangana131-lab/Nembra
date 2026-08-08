@@ -63,6 +63,11 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case correlationWindowPhaseMismatch(index: Int)
     case correlationWindowSequenceMismatch(index: Int)
     case correlationCandidateCountMismatch(index: Int)
+    case correlationWindowDurationRejected(
+        index: Int,
+        observedNanoseconds: UInt64,
+        minimumRequiredNanoseconds: UInt64
+    )
     case unsupportedSchemaVersion(Int)
     case unsupportedRecipe(PassiveBluetoothExperimentRecipeID)
     case manifestRecipeMismatch
@@ -249,6 +254,11 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
                     .correlationCandidateCountMismatch(index: index)
             }
+            try requireCanonicalExperimentOneDuration(
+                startedAtUptimeNanoseconds: receipt.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: receipt.endedAtUptimeNanoseconds,
+                index: index
+            )
             return .init(
                 phase: receipt.phase,
                 observationSeriesIdentity: snapshot.observationSeriesIdentity.rawValue,
@@ -270,6 +280,11 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
                     .correlationWindowPhaseMismatch(index: index)
             }
+            try requireCanonicalExperimentOneDuration(
+                startedAtUptimeNanoseconds: window.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: window.endedAtUptimeNanoseconds,
+                index: index
+            )
             return try PassiveBluetoothCandidateObservationSnapshot(
                 observationSeriesIdentity: .init(rawValue: window.observationSeriesIdentity),
                 windowSequence: .init(rawValue: window.windowSequence),
@@ -292,11 +307,15 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow {
         guard let phase = PassiveBluetoothPowerCycleObservationPhase(rawValue: wire.phase),
               phase.rawValue == index,
-              wire.endedAtUptimeNanoseconds >= wire.startedAtUptimeNanoseconds,
               let authority = canonicalUUID(wire.observationSeriesIdentity) else {
             throw PassiveBluetoothExperimentOneSoftwareExportError
                 .correlationWindowPhaseMismatch(index: index)
         }
+        try requireCanonicalExperimentOneDuration(
+            startedAtUptimeNanoseconds: wire.startedAtUptimeNanoseconds,
+            endedAtUptimeNanoseconds: wire.endedAtUptimeNanoseconds,
+            index: index
+        )
         let candidates = try wire.candidates.map { candidate in
             guard let id = canonicalUUID(candidate.peripheralIdentifier) else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError.malformedWireData
@@ -314,6 +333,32 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             endedAtUptimeNanoseconds: wire.endedAtUptimeNanoseconds,
             candidates: candidates
         )
+    }
+
+    private static func requireCanonicalExperimentOneDuration(
+        startedAtUptimeNanoseconds: UInt64,
+        endedAtUptimeNanoseconds: UInt64,
+        index: Int
+    ) throws {
+        let minimum = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds
+        guard endedAtUptimeNanoseconds >= startedAtUptimeNanoseconds else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError
+                .correlationWindowDurationRejected(
+                    index: index,
+                    observedNanoseconds: 0,
+                    minimumRequiredNanoseconds: minimum
+                )
+        }
+        let observed = endedAtUptimeNanoseconds - startedAtUptimeNanoseconds
+        guard observed >= minimum else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError
+                .correlationWindowDurationRejected(
+                    index: index,
+                    observedNanoseconds: observed,
+                    minimumRequiredNanoseconds: minimum
+                )
+        }
     }
 
     private static func canonicalUUID(_ raw: String) -> UUID? {
