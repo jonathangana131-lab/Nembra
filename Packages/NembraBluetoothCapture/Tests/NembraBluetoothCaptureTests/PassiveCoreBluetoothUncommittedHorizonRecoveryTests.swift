@@ -56,7 +56,8 @@ struct PassiveCoreBluetoothUncommittedHorizonRecoveryTests {
             processedThrough: 2,
             gate: &gate
         )
-        #expect(gate.phase == .drainingHorizon(try #require(gate.activeTransaction)))
+        let activeHorizon = try #require(gate.activeTransaction)
+        #expect(gate.phase == .drainingHorizon(activeHorizon))
 
         try fence.transition(from: authority, to: replacementAuthority)
         let rejection = try await rejectedHorizon(horizon, recorder: recorder)
