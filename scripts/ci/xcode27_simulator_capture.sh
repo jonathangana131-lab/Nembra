@@ -10,17 +10,29 @@ RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 CAPTURE_BUILD_IDENTIFIER="${NEMBRA_CAPTURE_BUILD_IDENTIFIER:-Capture Build V14-F1}"
-CAPTURE_PROCEDURE_ID="${NEMBRA_CAPTURE_PROCEDURE_ID:-ES80-FINGERPRINT-v1}"
+CAPTURE_PROCEDURE_ID="ES80-FINGERPRINT-v1"
 SOURCE_COMMIT_SHA="$(git rev-parse HEAD)"
+SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
 
 if [[ ! "$SOURCE_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Capture provenance requires an exact 40-hex Git commit, got: $SOURCE_COMMIT_SHA" >&2
   exit 8
 fi
+if [[ ! "$SOURCE_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Capture provenance requires an exact 40-hex Git tree, got: $SOURCE_TREE_SHA" >&2
+  exit 9
+fi
+
+WORKTREE_STATUS="$(git status --porcelain --untracked-files=all)"
+if [[ -n "$WORKTREE_STATUS" ]]; then
+  echo "Capture provenance refuses to bind HEAD to a dirty checkout:" >&2
+  printf '%s\n' "$WORKTREE_STATUS" >&2
+  exit 10
+fi
 
 if [[ -z "$CAPTURE_BUILD_IDENTIFIER" ]] || [[ "$CAPTURE_BUILD_IDENTIFIER" != "${CAPTURE_BUILD_IDENTIFIER//$'\n'/}" ]]; then
   echo "Capture build identifier must be non-empty and single-line." >&2
-  exit 9
+  exit 11
 fi
 
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
@@ -31,6 +43,7 @@ rm -rf "$RESULT_BUNDLE"
   echo "runner_arch=$(uname -m)"
   echo "capture_build_identifier=$CAPTURE_BUILD_IDENTIFIER"
   echo "capture_source_commit_sha=$SOURCE_COMMIT_SHA"
+  echo "capture_source_tree_sha=$SOURCE_TREE_SHA"
   echo "capture_procedure_id=$CAPTURE_PROCEDURE_ID"
   sw_vers
   xcodebuild -version
@@ -133,31 +146,32 @@ APP_INFO_PLIST="$APP_PATH/Info.plist"
 APP_EXECUTABLE="$APP_PATH/Nembra"
 if [[ ! -f "$APP_INFO_PLIST" ]] || [[ ! -f "$APP_EXECUTABLE" ]]; then
   echo "Built Nembra app is missing Info.plist or executable bytes required for Capture provenance." >&2
-  exit 10
+  exit 12
 fi
 
 EMBEDDED_BUILD_IDENTIFIER="$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 EMBEDDED_SOURCE_COMMIT_SHA="$(plutil -extract NembraCaptureBuildCommitSHA raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
   echo "Built app Capture build identifier does not match the exact build invocation." >&2
-  exit 11
+  exit 13
 fi
 if [[ "$EMBEDDED_SOURCE_COMMIT_SHA" != "$SOURCE_COMMIT_SHA" ]]; then
   echo "Built app Capture source declaration does not match the exact checked-out commit." >&2
-  exit 12
+  exit 14
 fi
 
 EXECUTABLE_SHA256="$(shasum -a 256 "$APP_EXECUTABLE" | awk '{print $1}')"
 EXECUTABLE_BYTE_COUNT="$(stat -f '%z' "$APP_EXECUTABLE")"
 if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a canonical SHA-256 for the built Nembra executable." >&2
-  exit 13
+  exit 15
 fi
 
 python3 - \
   "$ARTIFACTS_DIR/capture-build-record.json" \
   "$CAPTURE_BUILD_IDENTIFIER" \
   "$SOURCE_COMMIT_SHA" \
+  "$SOURCE_TREE_SHA" \
   "$CAPTURE_PROCEDURE_ID" \
   "$BUNDLE_ID" \
   "$EXECUTABLE_SHA256" \
@@ -171,6 +185,7 @@ from datetime import datetime, timezone
     output_path,
     build_identifier,
     source_commit_sha,
+    source_tree_sha,
     procedure_id,
     bundle_id,
     executable_sha256,
@@ -182,6 +197,8 @@ record = {
     "recordedAtUTC": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "buildIdentifier": build_identifier,
     "sourceCommitSHA": source_commit_sha,
+    "sourceTreeSHA": source_tree_sha,
+    "workingTreeCleanAtBuildStart": True,
     "procedureID": procedure_id,
     "bundleIdentifier": bundle_id,
     "executableSHA256": executable_sha256,
@@ -189,9 +206,10 @@ record = {
     "githubRunID": os.environ.get("GITHUB_RUN_ID"),
     "githubRunAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
     "trustBoundary": (
-        "The source commit and build identifier are declarations injected by the exact-head build invocation. "
-        "The executable SHA-256 and byte count are evidence about the built executable bytes. This record binds "
-        "those values inside the trusted QA run; it is not a cryptographic source-to-binary attestation."
+        "The source commit/tree and build identifier are declarations injected by the exact-head build invocation. "
+        "The build refused a dirty checkout before compilation. The executable SHA-256 and byte count are evidence "
+        "about the built executable bytes. This record binds those values inside the trusted QA run; it is not a "
+        "cryptographic source-to-binary attestation."
     ),
 }
 
