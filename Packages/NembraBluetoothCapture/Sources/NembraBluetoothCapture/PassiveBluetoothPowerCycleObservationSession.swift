@@ -29,6 +29,7 @@ public enum PassiveBluetoothPowerCycleObservationSessionError: Error, Equatable,
     case windowAlreadyActive
     case windowNotActive
     case bluetoothBecameUnavailable
+    case scanBecameInactive
     case minimumWindowDurationNotReached
     case nonMonotonicWindowClock
     case windowSequenceExhausted
@@ -59,11 +60,41 @@ public struct PassiveBluetoothPowerCycleObservationWindowReceipt: Equatable, Sen
 
 /// Final software result of one four-window observation series.
 ///
-/// The correlation report remains physical-response correlation evidence only. A unique UUID
-/// may be offered for explicit operator selection; it is not permanent scooter authentication.
+/// `observationSnapshots` preserves the exact package-issued full-UUID/connectability catalogs
+/// that earned `correlation`, so durable provenance can replay the assessor instead of trusting a
+/// detached summary. Those snapshots remain software evidence only; they do not authenticate a
+/// physical scooter or prove radio-time absence/completeness.
 public struct PassiveBluetoothPowerCycleObservationResult: Equatable, Sendable {
     public let windows: [PassiveBluetoothPowerCycleObservationWindowReceipt]
+    public let observationSnapshots: [PassiveBluetoothCandidateObservationSnapshot]
     public let correlation: PassiveBluetoothPowerCycleTargetCorrelationReport
+}
+
+/// Fail-closed callback/window liveness policy shared by the live producer and deterministic tests.
+/// A started receipt window is not enough: the exact CoreBluetooth manager must also remain powered
+/// and actively scanning when evidence is admitted.
+enum PassiveBluetoothPowerCycleScanLiveness {
+    static func isLive(
+        isPoweredOn: Bool,
+        isScanning: Bool,
+        hasStartedReceiptWindow: Bool
+    ) -> Bool {
+        isPoweredOn && isScanning && hasStartedReceiptWindow
+    }
+}
+
+/// Monotonic merge for repeated discovery evidence within one live window.
+/// Explicit non-connectable evidence dominates; otherwise explicit connectable dominates unknown.
+enum PassiveBluetoothPowerCycleConnectabilityMerge {
+    static func merged(current: Bool?, incoming: Bool?) -> Bool? {
+        if current == false || incoming == false {
+            return false
+        }
+        if current == true || incoming == true {
+            return true
+        }
+        return nil
+    }
 }
 
 /// Pure state machine that seals snapshots under one higher-level observation-series authority.
@@ -150,6 +181,7 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
         )
         return PassiveBluetoothPowerCycleObservationResult(
             windows: completedReceipts,
+            observationSnapshots: completedSnapshots,
             correlation: correlation
         )
     }
@@ -163,31 +195,28 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
 /// the callback, so callbacks from a retired window fail the exact-manager guard once a new
 /// transport is active instead of being stamped with a fabricated local scan generation.
 ///
-/// Any Bluetooth-authority failure or explicit operator abandonment permanently invalidates the
-/// whole four-window series. The caller must construct a fresh session and restart at OFF₁;
-/// already-completed windows are never reused across a known gap.
+/// Any Bluetooth-authority failure, scan-liveness loss, or explicit operator abandonment
+/// permanently invalidates the whole four-window series. The caller must construct a fresh session
+/// and restart at OFF₁; already-completed windows are never reused across a known gap.
 ///
 /// Safety / truth boundary:
 /// - broad discovery only; no connection and no characteristic-value writes;
 /// - local names, RSSI, services, short UUIDs, and product signatures never affect correlation;
 /// - window phases are operator-declared expected power state, not physical attestation;
-/// - a completed catalog contains callbacks accepted before the synchronous receipt cutoff;
+/// - a completed catalog contains callbacks accepted while the exact manager reported active scan
+///   before the synchronous receipt cutoff; it is not radio-time completeness proof;
 /// - a unique repeated UUID is correlation evidence only, never permanent ES80 identity.
 @MainActor
-public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCentralManagerDelegate {
+public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
     private struct CandidateState {
         let id: UUID
         var isConnectable: Bool?
 
         mutating func merge(isConnectable incoming: Bool?) {
-            // Explicit non-connectable evidence dominates. Otherwise preserve explicit true over unknown.
-            if isConnectable == false || incoming == false {
-                isConnectable = false
-            } else if isConnectable == true || incoming == true {
-                isConnectable = true
-            } else {
-                isConnectable = nil
-            }
+            isConnectable = PassiveBluetoothPowerCycleConnectabilityMerge.merged(
+                current: isConnectable,
+                incoming: incoming
+            )
         }
     }
 
@@ -223,10 +252,16 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
     public var progress: PassiveBluetoothPowerCycleObservationProgress? {
         guard let phase = ledger.nextPhase else { return nil }
+        let managerIsPoweredOn = activeManager?.state == .poweredOn
+        let managerIsScanning = activeManager?.isScanning == true
         return PassiveBluetoothPowerCycleObservationProgress(
             phase: phase,
             isAwaitingBluetoothPower: awaitingPoweredOn,
-            isScanning: windowStartedAtUptimeNanoseconds != nil,
+            isScanning: PassiveBluetoothPowerCycleScanLiveness.isLive(
+                isPoweredOn: managerIsPoweredOn,
+                isScanning: managerIsScanning,
+                hasStartedReceiptWindow: windowStartedAtUptimeNanoseconds != nil
+            ),
             isSeriesInvalidated: ledger.isInvalidated,
             currentObservedCandidateCount: candidatesByIdentifier.count,
             completedWindowCount: ledger.completedReceipts.count
@@ -261,7 +296,9 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         activeManager = manager
         switch manager.state {
         case .poweredOn:
-            beginScanIfAwaiting(on: manager)
+            guard beginScanIfAwaiting(on: manager) else {
+                throw PassiveBluetoothPowerCycleObservationSessionError.scanBecameInactive
+            }
         case .poweredOff, .unauthorized, .unsupported:
             invalidateCurrentTransportForBluetoothState(manager)
             throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
@@ -277,9 +314,9 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     /// phase or reusing the manager; the same window genuinely keeps scanning on the same manager
     /// until the minimum duration is satisfied.
     ///
-    /// On success, the manager is retired synchronously before evidence is sealed. Any callback
-    /// already queued from that manager reaches the delegate with a non-active manager identity
-    /// and is rejected rather than leaking into the next window.
+    /// On success, the manager is stopped and retired synchronously before evidence is sealed. Any
+    /// callback already queued from that manager reaches the delegate with a non-active manager
+    /// identity and is rejected rather than leaking into the next window.
     @discardableResult
     public func finishCurrentWindow() throws -> PassiveBluetoothPowerCycleObservationResult? {
         guard !ledger.isInvalidated else {
@@ -289,10 +326,17 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
             throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
         }
         guard let manager = activeManager,
-              manager.state == .poweredOn,
               let startedAt = windowStartedAtUptimeNanoseconds,
               let phase = ledger.nextPhase else {
             throw PassiveBluetoothPowerCycleObservationSessionError.windowNotActive
+        }
+        guard manager.state == .poweredOn else {
+            invalidateCurrentTransportForBluetoothState(manager)
+            throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
+        }
+        guard manager.isScanning else {
+            retireCurrentTransport(manager, bluetoothFailure: false)
+            throw PassiveBluetoothPowerCycleObservationSessionError.scanBecameInactive
         }
 
         let endedAt = DispatchTime.now().uptimeNanoseconds
@@ -334,21 +378,22 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         }
     }
 
-    /// Explicit operator abandonment is a known experiment gap. It invalidates the whole series
-    /// permanently; prior completed windows cannot be reused. Construct a fresh session and restart
-    /// the physical OFF₁ -> ON₁ -> OFF₂ -> ON₂ procedure.
+    /// Explicit operator abandonment is a known experiment gap. It invalidates any incomplete
+    /// series even between completed windows, when no CoreBluetooth transport is currently active.
+    /// Prior completed windows can therefore never be patched into a later resumed attempt.
     public func abandonCurrentWindow() {
-        guard activeManager != nil || awaitingPoweredOn || windowStartedAtUptimeNanoseconds != nil else {
-            return
-        }
+        guard finalResult == nil, !ledger.isInvalidated else { return }
+
         if let manager = activeManager {
             retireCurrentTransport(manager, bluetoothFailure: false)
-        } else {
-            ledger.invalidate()
-            awaitingPoweredOn = false
-            windowStartedAtUptimeNanoseconds = nil
-            candidatesByIdentifier.removeAll(keepingCapacity: true)
+            return
         }
+
+        ledger.invalidate()
+        lastWindowInvalidatedByBluetooth = false
+        awaitingPoweredOn = false
+        windowStartedAtUptimeNanoseconds = nil
+        candidatesByIdentifier.removeAll(keepingCapacity: true)
     }
 
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -356,7 +401,11 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
         switch central.state {
         case .poweredOn:
-            beginScanIfAwaiting(on: central)
+            if awaitingPoweredOn {
+                _ = beginScanIfAwaiting(on: central)
+            } else if windowStartedAtUptimeNanoseconds != nil, !central.isScanning {
+                retireCurrentTransport(central, bluetoothFailure: false)
+            }
         case .unknown, .resetting:
             if windowStartedAtUptimeNanoseconds != nil {
                 invalidateCurrentTransportForBluetoothState(central)
@@ -376,8 +425,11 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     ) {
         guard !ledger.isInvalidated,
               central === activeManager,
-              central.state == .poweredOn,
-              windowStartedAtUptimeNanoseconds != nil else {
+              PassiveBluetoothPowerCycleScanLiveness.isLive(
+                  isPoweredOn: central.state == .poweredOn,
+                  isScanning: central.isScanning,
+                  hasStartedReceiptWindow: windowStartedAtUptimeNanoseconds != nil
+              ) else {
             return
         }
 
@@ -394,22 +446,31 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         }
     }
 
-    private func beginScanIfAwaiting(on manager: CBCentralManager) {
+    /// Starts a scan only for the exact active powered-on manager. A successful scan request must
+    /// be reflected by `CBCentralManager.isScanning` before a receipt window is opened; otherwise
+    /// the whole series fails closed instead of timing a window that was never known live.
+    @discardableResult
+    private func beginScanIfAwaiting(on manager: CBCentralManager) -> Bool {
         guard !ledger.isInvalidated,
               manager === activeManager,
               awaitingPoweredOn,
               manager.state == .poweredOn,
               windowStartedAtUptimeNanoseconds == nil else {
-            return
+            return false
         }
 
         awaitingPoweredOn = false
         candidatesByIdentifier.removeAll(keepingCapacity: true)
-        windowStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         manager.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+        guard manager.isScanning else {
+            retireCurrentTransport(manager, bluetoothFailure: false)
+            return false
+        }
+        windowStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        return true
     }
 
     private func invalidateCurrentTransportForBluetoothState(_ manager: CBCentralManager) {
@@ -421,7 +482,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         bluetoothFailure: Bool
     ) {
         guard manager === activeManager else { return }
-        if windowStartedAtUptimeNanoseconds != nil {
+        if manager.isScanning {
             manager.stopScan()
         }
         ledger.invalidate()
@@ -432,3 +493,9 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         candidatesByIdentifier.removeAll(keepingCapacity: true)
     }
 }
+
+/// CoreBluetooth's imported delegate requirements are not actor-isolated in the SDK surface.
+/// The manager is explicitly delivered on `.main`, and the class itself is `@MainActor`; using
+/// the same narrow `@preconcurrency` conformance boundary as the existing foreground controller
+/// avoids weakening the implementation methods to `nonisolated` or relaxing package concurrency.
+extension PassiveBluetoothPowerCycleObservationSession: @preconcurrency CBCentralManagerDelegate {}
