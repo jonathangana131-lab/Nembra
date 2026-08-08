@@ -25,6 +25,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case horizonArtifactNotReady
         case freshTargetSessionRequired
         case freshRecorderIdentityMismatch
+        case abortResolutionReceiptMismatch
+        case abortResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case abortQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
         case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
@@ -525,6 +528,54 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
+    /// Reopens one abandoned observation epoch only after the controller has installed
+    /// the exact recorder whose construction earned producer-issued fresh-session proof,
+    /// applied the exact abandoned-FIFO resolution to its global resolved frontier, and
+    /// proved no callback advanced the queue tail afterward.
+    ///
+    /// This transition intentionally mirrors successful-terminal recovery. Retired
+    /// positions remain resolved-by-retirement; they are never relabeled as recorder-written
+    /// evidence. The exact producer-derived fresh target-session generation is bound until
+    /// the next Ready begins, and weak reset cannot erase that bind.
+    @MainActor
+    mutating func reopenAfterAbortedFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.abortedResolution
+        guard currentAbort == resolution.abortReceipt else {
+            throw StateError.abortResolutionReceiptMismatch
+        }
+        guard freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSession.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
     /// Reopens a successful terminal Horizon only after the controller has
     /// installed the exact recorder whose construction earned producer-issued fresh-session
     /// proof, applied the exact terminal resolution to its global resolved frontier, and
@@ -579,8 +630,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         phase = .awaitingReady
     }
 
-    /// Abort quarantine remains irreversible here. Its sibling real-recorder producer
-    /// is separately owned and must converge without weakening terminal authority.
+    /// Requests a fresh lifecycle grammar only when no observation transaction has
+    /// begun yet. Any accepted recovery bind remains intact until exact Ready consumes it.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
