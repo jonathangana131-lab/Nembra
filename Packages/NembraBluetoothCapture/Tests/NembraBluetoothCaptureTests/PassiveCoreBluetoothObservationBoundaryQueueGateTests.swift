@@ -58,6 +58,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 8,
+            processedThrough: 2,
             authority: authority
         )
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 10) == 8)
@@ -151,6 +152,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 3,
+            processedThrough: 1,
             authority: authority
         )
 
@@ -203,6 +205,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         let horizon = try horizonGate.begin(
             .observationHorizon,
             through: 2,
+            processedThrough: 1,
             authority: authority
         )
         try horizonGate.markBoundaryRecorded(
@@ -236,6 +239,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 2,
+            processedThrough: 1,
             authority: authority
         )
         try gate.markBoundaryRecorded(
