@@ -11,8 +11,10 @@ This tool still cannot authorize physical Experiment One.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -169,6 +171,9 @@ def _snapshot_self_test() -> None:
         assert snapshot.read_bytes() == payload
         assert stat.S_IMODE(snapshot.stat().st_mode) == 0o400
 
+        source.write_bytes(b"caller path changed after exact snapshot")
+        assert snapshot.read_bytes() == payload
+
         existing = root / "existing.ipa"
         existing.write_bytes(b"do not replace")
         try:
@@ -193,11 +198,86 @@ def _snapshot_self_test() -> None:
                 raise AssertionError("symlink signed-field IPA input must fail closed")
 
 
+def _main_snapshot_binding_self_test() -> None:
+    source_sha = "a" * 40
+    build_instance_id = "12345678-1234-4abc-8def-1234567890ab"
+    payload = b"exact field candidate bytes"
+    payload_sha256 = hashlib.sha256(payload).hexdigest()
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-main-binding-self-test-") as temporary:
+        root = Path(temporary)
+        source = root / "candidate.ipa"
+        source.write_bytes(payload)
+        output = root / "evidence"
+        observed: dict[str, object] = {}
+
+        inspection = {
+            "field_build_record": {
+                "sourceCommitSHA": source_sha,
+                "buildInstanceID": build_instance_id,
+                "signedInstallableSHA256": payload_sha256,
+            },
+            "signing_inspection": {
+                "signedInstallableSHA256": payload_sha256,
+                "ipaByteCount": len(payload),
+            },
+        }
+
+        original_inspect = _core.inspect_ipa
+        original_write_outputs = _core.write_outputs
+
+        def fake_inspect(path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:
+            assert expected_source_sha == source_sha
+            assert intended_device_udid == "00008101-001234567890001E"
+            observed["inspect_path"] = path
+            observed["inspect_bytes"] = path.read_bytes()
+            source.write_bytes(b"caller source changed after snapshot")
+            observed["snapshot_after_source_change"] = path.read_bytes()
+            return inspection
+
+        def fake_write_outputs(path: Path, output_dir: Path, accepted_inspection: dict) -> dict[str, Path]:
+            assert accepted_inspection is inspection
+            observed["write_path"] = path
+            observed["write_bytes"] = path.read_bytes()
+            return {
+                "external_record": output_dir / "external.json",
+                "field_build_record": output_dir / "field.json",
+                "signing_inspection": output_dir / "inspection.json",
+                "retained_ipa": output_dir / "build-evidence" / "NembraField.ipa",
+            }
+
+        _core.inspect_ipa = fake_inspect
+        _core.write_outputs = fake_write_outputs
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = main([
+                    "--ipa",
+                    str(source),
+                    "--output-dir",
+                    str(output),
+                    "--expected-source-sha",
+                    source_sha,
+                    "--intended-device-udid",
+                    "00008101-001234567890001E",
+                ])
+        finally:
+            _core.inspect_ipa = original_inspect
+            _core.write_outputs = original_write_outputs
+
+        assert result == 0
+        assert observed["inspect_path"] != source
+        assert observed["inspect_path"] == observed["write_path"]
+        assert observed["inspect_bytes"] == payload
+        assert observed["snapshot_after_source_change"] == payload
+        assert observed["write_bytes"] == payload
+
+
 def main(argv: list[str]) -> int:
     args = _core.parse_args(argv)
     if args.self_test:
         _core.self_test()
         _snapshot_self_test()
+        _main_snapshot_binding_self_test()
         print("signed-field artifact evidence self-test: PASS")
         return 0
 
