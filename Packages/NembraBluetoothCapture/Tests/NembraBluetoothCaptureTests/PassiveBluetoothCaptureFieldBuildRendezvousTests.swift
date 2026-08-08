@@ -8,21 +8,28 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
     private let buildInstanceID = "a1b2c3d4-e5f6-47a8-90bc-def123456789"
     private let sourceCommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
     private let runtimeExecutableData = Data("field-runtime".utf8)
-    private let infoPlistSHA256 = String(repeating: "b", count: 64)
+    private let runtimeInfoPlistData = Data("field-info-plist".utf8)
     private let signedInstallableSHA256 = String(repeating: "c", count: 64)
 
     private var executableSHA256: String {
         sha256Hex(runtimeExecutableData)
     }
 
+    private var infoPlistSHA256: String {
+        sha256Hex(runtimeInfoPlistData)
+    }
+
     @Test
-    func exactEvidenceExternalRecordAndRunningExecutableMintRendezvous() throws {
+    func exactEvidenceExternalRecordAndRunningBundleMintRendezvous() throws {
         let externalData = try makeExternalRecordJSON()
         let externalRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(externalData)
         let evidence = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
             try makeEvidenceJSON(externalBuildRecordSHA256: sha256Hex(externalData))
         )
-        let runtimeIdentity = try makeRuntimeIdentity(executableData: runtimeExecutableData)
+        let runtimeIdentity = try makeRuntimeIdentity(
+            executableData: runtimeExecutableData,
+            infoPlistData: runtimeInfoPlistData
+        )
 
         let rendezvous = try evidence.makeRuntimeBoundRendezvous(
             matching: externalRecord,
@@ -51,7 +58,30 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
         let evidence = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
             try makeEvidenceJSON(externalBuildRecordSHA256: sha256Hex(externalData))
         )
-        let detachedRuntime = try makeRuntimeIdentity(executableData: Data("detached-runtime".utf8))
+        let detachedRuntime = try makeRuntimeIdentity(
+            executableData: Data("detached-runtime".utf8),
+            infoPlistData: runtimeInfoPlistData
+        )
+
+        #expect(throws: PassiveBluetoothCaptureFieldBuildRendezvousError.runningBuildMismatch) {
+            _ = try evidence.makeRuntimeBoundRendezvous(
+                matching: externalRecord,
+                running: detachedRuntime
+            )
+        }
+    }
+
+    @Test
+    func detachedRunningInfoPlistFailsEvenWhenExecutableAndExternalRecordsAgree() throws {
+        let externalData = try makeExternalRecordJSON()
+        let externalRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(externalData)
+        let evidence = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON.decodeDeclaration(
+            try makeEvidenceJSON(externalBuildRecordSHA256: sha256Hex(externalData))
+        )
+        let detachedRuntime = try makeRuntimeIdentity(
+            executableData: runtimeExecutableData,
+            infoPlistData: Data("detached-info-plist".utf8)
+        )
 
         #expect(throws: PassiveBluetoothCaptureFieldBuildRendezvousError.runningBuildMismatch) {
             _ = try evidence.makeRuntimeBoundRendezvous(
@@ -74,7 +104,10 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
         #expect(throws: PassiveBluetoothCaptureFieldBuildRendezvousError.externalBuildRecordMismatch) {
             _ = try evidence.makeRuntimeBoundRendezvous(
                 matching: prettyRecord,
-                running: try makeRuntimeIdentity(executableData: runtimeExecutableData)
+                running: try makeRuntimeIdentity(
+                    executableData: runtimeExecutableData,
+                    infoPlistData: runtimeInfoPlistData
+                )
             )
         }
     }
@@ -89,7 +122,10 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
 
         _ = try evidence.makeRuntimeBoundRendezvous(
             matching: externalRecord,
-            running: try makeRuntimeIdentity(executableData: runtimeExecutableData)
+            running: try makeRuntimeIdentity(
+                executableData: runtimeExecutableData,
+                infoPlistData: runtimeInfoPlistData
+            )
         )
 
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure == false)
@@ -100,7 +136,8 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
     }
 
     private func makeRuntimeIdentity(
-        executableData: Data
+        executableData: Data,
+        infoPlistData: Data
     ) throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
         try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
             infoDictionary: [
@@ -108,7 +145,8 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey: buildInstanceID,
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA,
             ],
-            executableData: executableData
+            executableData: executableData,
+            infoPlistData: infoPlistData
         )
     }
 
