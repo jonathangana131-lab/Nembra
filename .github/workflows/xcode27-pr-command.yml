@@ -89,6 +89,15 @@ jobs:
         working-directory: Packages/NembraCore
         run: swift test
 
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field evidence tooling
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 
