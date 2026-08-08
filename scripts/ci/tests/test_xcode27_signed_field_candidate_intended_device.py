@@ -16,19 +16,23 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
             ': "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to a private mode-0600 file containing the intended field iPhone UDID for verification only.}"',
             source,
         )
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID', source)
         self.assertIn('--validate-private-input', source)
         self.assertIn(
             '--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
             source,
         )
-        self.assertEqual(re.findall(r'\bNEMBRA_INTENDED_FIELD_DEVICE_UDID\b', source), [])
+        self.assertEqual(
+            re.findall(r'\bNEMBRA_INTENDED_FIELD_DEVICE_UDID\b', source),
+            ["NEMBRA_INTENDED_FIELD_DEVICE_UDID"],
+        )
         self.assertNotIn('--intended-device-udid "$', source)
         self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', source)
         self.assertNotIn('intended_device_udid=', source)
         self.assertNotIn('field_device_udid=', source)
 
         self.assertIn('os.O_NOFOLLOW', runner)
-        self.assertIn('metadata.st_mode & 0o077', runner.replace('before.st_mode', 'metadata.st_mode'))
+        self.assertIn('before.st_mode & 0o077', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
         self.assertIn('"--intended-device-udid",\n        intended_device_identifier,', runner)
         self.assertNotIn('os.environ[', runner)
