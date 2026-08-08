@@ -42,7 +42,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let viewDetails = app.descendants(matching: .any)["es80.capture.view-details"]
         XCTAssertTrue(
             viewDetails.waitForExistence(timeout: 3),
-            "The locked product must expose build/procedure preflight details without exposing field actions."
+            "The locked product must expose build/procedure evidence details without exposing field actions."
+        )
+        XCTAssertTrue(
+            app.staticTexts["BUILD EVIDENCE"].waitForExistence(timeout: 3),
+            "Raw runtime metadata and executable hashing must be labeled as evidence, not as a passed trusted-build preflight."
         )
         viewDetails.tap()
         XCTAssertTrue(
@@ -92,7 +96,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO Runtime Provenance Details"
+        attachment.name = "Nembra Capture V14 — NO-GO Runtime Build Evidence"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
