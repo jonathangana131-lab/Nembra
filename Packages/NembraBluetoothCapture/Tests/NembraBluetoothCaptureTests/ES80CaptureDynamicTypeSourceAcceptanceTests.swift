@@ -99,6 +99,10 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
             "Accessibility acceptance must not regress the rider-facing health strip back to TARGET vocabulary."
         )
         #expect(
+            health.contains(".accessibilityIdentifier(\"es80.capture.health\")"),
+            "The retained Accessibility XXXL XCUI evidence needs one stable Capture-health target on the real shell."
+        )
+        #expect(
             Self.hasIntentionalAdaptiveLayout(health),
             "Signal / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
         )
