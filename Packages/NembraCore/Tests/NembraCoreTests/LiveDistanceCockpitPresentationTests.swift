@@ -162,6 +162,42 @@ struct LiveDistanceCockpitPresentationTests {
         #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
     }
 
+    @Test("multiple accepted samples require strictly increasing accepted chronology")
+    func repeatedAcceptedTimestampFailsClosed() {
+        let snapshot = LiveDistanceSegmentSnapshot(
+            source: .gps,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 100,
+            firstAcceptedSampleUptimeNanoseconds: 100,
+            lastAcceptedSampleUptimeNanoseconds: 100,
+            distanceMeters: 0,
+            hasKnownCoverageGap: false,
+            acceptedSampleCount: 2,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 0
+        )
+
+        #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
+    }
+
+    @Test("late first evidence cannot silently erase its initial coverage gap")
+    func missingInitialGapMetadataFailsClosed() {
+        let snapshot = LiveDistanceSegmentSnapshot(
+            source: .gps,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 100,
+            firstAcceptedSampleUptimeNanoseconds: 200,
+            lastAcceptedSampleUptimeNanoseconds: 1_000_000_200,
+            distanceMeters: 1,
+            hasKnownCoverageGap: false,
+            acceptedSampleCount: 2,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 0
+        )
+
+        #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
+    }
+
     @Test("non-finite numeric presentation evidence fails closed")
     func nonFiniteDistanceFailsClosed() {
         let snapshot = LiveDistanceSegmentSnapshot(
