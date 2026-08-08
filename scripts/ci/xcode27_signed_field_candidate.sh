@@ -26,6 +26,26 @@ fi
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
 EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd -P)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
 
+ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"
+case "$ALLOW_PROVISIONING_UPDATES" in
+  0|1) ;;
+  *)
+    echo "NEMBRA_ALLOW_PROVISIONING_UPDATES must be exactly 0 or 1." >&2
+    exit 5
+    ;;
+esac
+
+# Do not use an optionally empty Bash array here. macOS /bin/bash 3.2 + `set -u` can treat expansion
+# of an empty array as an unbound variable. The explicit branch is portable and preserves zero extra
+# arguments when provisioning updates are disabled.
+run_xcodebuild() {
+  if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
+    xcodebuild -allowProvisioningUpdates "$@"
+  else
+    xcodebuild "$@"
+  fi
+}
+
 # A dirty invocation checkout is never accepted. This is defense in depth only: the actual build
 # below is performed from a fresh detached worktree at SOURCE_SHA so a later mutation, ignored file,
 # or concurrent worker cannot silently become bytes stamped as this exact commit.
@@ -33,13 +53,13 @@ REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
   printf '%s\n' "$REPOSITORY_STATUS" >&2
-  exit 5
+  exit 6
 fi
 
 SOURCE_SHA="$(git rev-parse --verify HEAD^{commit})"
 if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Could not derive one exact lowercase 40-hex Git HEAD." >&2
-  exit 6
+  exit 7
 fi
 
 # This spelling is owned by the accepted schema-v3/current field-artifact evidence contract.
@@ -47,7 +67,7 @@ BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
 BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
-  exit 7
+  exit 8
 fi
 
 WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BUILD_INSTANCE_ID}"
@@ -70,11 +90,11 @@ PY
 # candidate into an existing directory, even if canonical verifier target files are absent.
 if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
-  exit 8
+  exit 9
 fi
 if [[ -e "$ARTIFACTS_DIR" ]]; then
   echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
-  exit 9
+  exit 10
 fi
 
 # Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a
@@ -83,7 +103,7 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
-    exit 10
+    exit 11
   fi
 fi
 
@@ -119,7 +139,7 @@ PY
 )"
 if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive one canonical SHA-256 for retained ExportOptions.plist." >&2
-  exit 11
+  exit 12
 fi
 
 rm -rf "$WORK_ROOT"
@@ -138,24 +158,18 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 12
+  exit 13
 fi
 mkdir -p "$EXPORT_DIR"
 
-PROVISIONING_ARGS=()
-if [[ "${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}" == "1" ]]; then
-  PROVISIONING_ARGS+=("-allowProvisioningUpdates")
-fi
-
 set +e
 set -o pipefail
-xcodebuild \
+run_xcodebuild \
   -project Nembra.xcodeproj \
   -scheme Nembra \
   -configuration Release \
   -destination "generic/platform=iOS" \
   -archivePath "$ARCHIVE_PATH" \
-  "${PROVISIONING_ARGS[@]}" \
   "DEVELOPMENT_TEAM=$NEMBRA_DEVELOPMENT_TEAM" \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
@@ -166,23 +180,22 @@ ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")
 set -e
 if [[ "${ARCHIVE_PIPESTATUS[0]}" -ne 0 || "${ARCHIVE_PIPESTATUS[1]}" -ne 0 ]]; then
   echo "Signed field-candidate archive/log capture failed: xcodebuild=${ARCHIVE_PIPESTATUS[0]} tee=${ARCHIVE_PIPESTATUS[1]}." >&2
-  exit 13
+  exit 14
 fi
 
 set +e
 set -o pipefail
-xcodebuild \
+run_xcodebuild \
   -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
-  "${PROVISIONING_ARGS[@]}" \
   2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-export.log"
 EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")
 set -e
 if [[ "${EXPORT_PIPESTATUS[0]}" -ne 0 || "${EXPORT_PIPESTATUS[1]}" -ne 0 ]]; then
   echo "Signed field-candidate export/log capture failed: xcodebuild=${EXPORT_PIPESTATUS[0]} tee=${EXPORT_PIPESTATUS[1]}." >&2
-  exit 14
+  exit 15
 fi
 
 POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
@@ -194,7 +207,7 @@ PY
 )"
 if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
   echo "Retained ExportOptions.plist changed during archive/export; refusing candidate evidence." >&2
-  exit 15
+  exit 16
 fi
 
 # The detached worktree itself must still be clean after archive/export. Xcode products live under
@@ -205,7 +218,7 @@ POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 16
+  exit 17
 fi
 
 shopt -s nullglob
@@ -214,7 +227,7 @@ shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 17
+  exit 18
 fi
 IPA_PATH="${IPA_FILES[0]}"
 
@@ -318,6 +331,7 @@ PY
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
+  echo "allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES"
   echo "export_options_file=ExportOptions.plist"
   echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
   echo "archive_log=logs/xcodebuild-archive.log"
