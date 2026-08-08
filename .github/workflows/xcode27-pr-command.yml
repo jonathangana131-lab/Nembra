@@ -99,8 +99,6 @@ jobs:
           python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
-          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
 
       - name: Validate signed field candidate producer source
         run: |
@@ -116,6 +114,8 @@ jobs:
           python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
 
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
