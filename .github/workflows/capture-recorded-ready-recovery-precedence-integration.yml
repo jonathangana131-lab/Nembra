@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "733171c637fdd4a6c9d62615e867b8fd39d0900b"
+          test "$(git rev-parse HEAD^)" = "dd88b9839465c3966b4c4615e6a43a5b68a0bf53"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-recorded-ready-recovery-precedence-integration.yml"
 
       - name: Apply exact recorded Ready precedence repair
@@ -36,30 +36,30 @@ jobs:
           controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
           source = controller.read_text()
 
-          old = '''                    } catch {
-                        // Recorder mutation already happened; quarantine this exact
-                        // partial boundary rather than relabeling it as zero-mutation.
-                        _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
-                            recordedReady
-                        )
-                        throw error
-                    }
-          '''
-          new = '''                    } catch {
-                        let recordedReadyFailure = error
-                        do {
-                            // Recorder mutation already happened; quarantine this exact
-                            // partial boundary rather than relabeling it as zero-mutation.
-                            _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
-                                recordedReady
-                            )
-                        } catch {
-                            // Exact quarantine failure is stronger lifecycle evidence than
-                            // the triggering queue-commit failure. Never suppress it.
+          old = '''                        } catch {
+                            // Recorder mutation already happened, so quarantine with
+                            // the distinct recorded-before-commit origin. Never label
+                            // this a zero-mutation rejection.
+                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
                             throw error
                         }
-                        throw recordedReadyFailure
-                    }
+          '''
+          new = '''                        } catch {
+                            let recordedReadyFailure = error
+                            do {
+                                // Recorder mutation already happened, so quarantine with
+                                // the distinct recorded-before-commit origin. Never label
+                                // this a zero-mutation rejection.
+                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
+                                    recordedReady
+                                )
+                            } catch {
+                                // Exact quarantine failure is stronger lifecycle evidence than
+                                // the triggering queue-commit failure. Never suppress it.
+                                throw error
+                            }
+                            throw recordedReadyFailure
+                        }
           '''
           count = source.count(old)
           if count != 1:
