@@ -1,0 +1,62 @@
+name: TEMP ES80 rider atomic repair
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-rider-language/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-run:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Reuse atomic transform with corrected hero-label assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/tmp-es80-rider-atomic-finalize.yml').read_text(encoding='utf-8')
+          marker = '        run: |\n'
+          start = workflow.index(marker) + len(marker)
+          body_lines = []
+          for line in workflow[start:].splitlines():
+              if line.startswith('          '):
+                  body_lines.append(line[10:])
+              elif not line.strip():
+                  body_lines.append('')
+              else:
+                  break
+          script = '\n'.join(body_lines) + '\n'
+
+          old = '''for required in ("Scooter OFF", "Scooter ON", "PASSIVE / READ ONLY", "Share Capture", "View Details"):
+              if required not in rider:
+                  raise SystemExit(f"required rider copy disappeared: {required}")
+'''
+          new = '''for required in ("Scooter OFF", "Scooter ON", "Share Capture", "View Details"):
+              if required not in rider:
+                  raise SystemExit(f"required rider copy disappeared: {required}")
+          if "PASSIVE / READ ONLY" not in text:
+              raise SystemExit("required hero safety label disappeared: PASSIVE / READ ONLY")
+'''
+          if script.count(old) != 1:
+              raise SystemExit(f'atomic validation marker count={script.count(old)}')
+          script = script.replace(old, new, 1)
+          cleanup = 'rm -f .github/workflows/tmp-es80-rider-atomic-finalize.yml\n'
+          if cleanup not in script:
+              raise SystemExit('atomic cleanup marker missing')
+          script = script.replace(
+              cleanup,
+              cleanup + 'rm -f .github/workflows/tmp-es80-rider-atomic-repair.yml\n',
+              1,
+          )
+          Path('/tmp/nembra-rider-atomic.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/nembra-rider-atomic.sh
