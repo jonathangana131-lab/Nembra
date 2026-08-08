@@ -322,7 +322,7 @@ struct ES80CaptureShellView: View {
         switch phase {
         case .physicalProcedureLocked:
             statePanel(
-                eyebrow: "FIELD AUTHORITY",
+                eyebrow: "FIELD STATUS",
                 title: "This build is not authorized",
                 message: "Field capture is locked for this build. OFF / ON windows, connection, capture, and sealing stay unavailable until this exact build is authorized.",
                 symbol: "lock.shield.fill"
@@ -529,7 +529,7 @@ struct ES80CaptureShellView: View {
         case .acquiring:
             statePanel(
                 eyebrow: "PASSIVE DISCOVERY",
-                title: "Learning the readable surface",
+                title: "Reading available data",
                 message: "Nembra is passively discovering what this target exposes. Observation starts only after that discovery is complete.",
                 symbol: "waveform.path.ecg.rectangle"
             )
@@ -593,8 +593,8 @@ struct ES80CaptureShellView: View {
         case .finalizing:
             statePanel(
                 eyebrow: "SEALING",
-                title: "Freezing final evidence",
-                message: "Nembra is sealing the final evidence cutoff, checking capture integrity, and preparing the final capture artifact. Do not leave the app while this finishes.",
+                title: "Sealing capture",
+                message: "Nembra is finishing the accepted read-only observations, checking capture integrity, and preparing the final Share file. Keep Nembra open until this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -785,12 +785,12 @@ struct ES80CaptureShellView: View {
 #else
             if let report = finalShareIntegrityReport {
 #endif
-                Text("The exact \(report.finalShareByteCount.formatted())-byte final Share artifact passed the final Share and nested capture integrity checks. No protocol field meaning is claimed yet.")
+                Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required integrity check and is ready to share for analysis. No protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Analysis readiness is not earned until Nembra verifies the exact final Share bytes and their nested evidence.")
+                Text("\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Nembra still needs to verify the final Share file before this capture is ready for analysis.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -898,7 +898,7 @@ struct ES80CaptureShellView: View {
             return .physicalProcedureLocked
         }
         if status.foregroundIntegrityLost {
-            return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")
+            return .failed("Nembra left the foreground after capture began, so this run can no longer be trusted. Start a fresh Experiment One.")
         }
         if finalizationInFlight {
             return .finalizing
@@ -920,10 +920,10 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed(coordinator.lastDiagnostic ?? "The passive Bluetooth connection ended before the observation could be sealed. Start a fresh Experiment One; this session cannot be reused.")
             }
         case .unavailable:
-            return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")
+            return .bluetoothUnavailable("Bluetooth capture is unavailable for this run. Check Bluetooth and start a fresh Experiment One.")
         }
 
         if status.hasPreparedCaptureAdmission {
@@ -932,7 +932,7 @@ struct ES80CaptureShellView: View {
 
         switch status.correlation {
         case .invalidEvidence:
-            return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")
+            return .correlationFailed("The four windows did not remain one continuous valid observation series in the required OFF 1, ON 1, OFF 2, ON 2 order.")
         case .noRepeatableCandidate:
             return .noRepeatableTarget
         case let .ambiguousRepeatableCandidates(count):
@@ -947,10 +947,10 @@ struct ES80CaptureShellView: View {
             return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
         }
         guard let progress = status.powerCycleProgress else {
-            return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")
+            return .correlationFailed("Nembra lost the active OFF / ON sequence before it produced a result. Start again from OFF 1.")
         }
         if progress.isSeriesInvalidated {
-            return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")
+            return .correlationFailed("A Bluetooth, scanning, or foreground interruption invalidated this four-window observation series.")
         }
         if progress.isScanning {
             return .correlationObserving(progress.phase)
@@ -1227,7 +1227,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \(String(describing: error))"
+            localFailureMessage = "Nembra could not create a fresh Capture run: \(experimentErrorMessage(error))"
         }
     }
 
@@ -1599,10 +1599,10 @@ struct ES80CaptureShellView: View {
 
     private func heroTitle(for phase: Phase) -> String {
         switch phase {
-        case .complete: return "Evidence, sealed."
-        case .readyToSeal, .observing: return "Hold the evidence line."
-        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."
-        default: return "Find the real scooter signal."
+        case .complete: return "Capture, sealed."
+        case .readyToSeal, .observing: return "Keep it steady."
+        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Stay with this signal."
+        default: return "Find the scooter signal."
         }
     }
 
