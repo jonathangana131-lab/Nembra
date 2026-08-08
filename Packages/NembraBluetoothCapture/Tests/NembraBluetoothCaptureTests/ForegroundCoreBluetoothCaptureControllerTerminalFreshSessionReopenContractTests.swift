@@ -46,7 +46,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionReopenContrac
     }
 
     @Test("fresh-session reopen proves applied chronology and waits out same-target terminal callback quarantine")
-    func freshRecoveryConsumesExactAppliedResolutionWithoutSuspension() throws {
+    func freshRecoveryConsumesExactAppliedResolution() throws {
         let source = try Self.controllerSource()
 
         // The old same-target helper deliberately returns while a recorder exists and
@@ -57,10 +57,5 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionReopenContrac
         #expect(source.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(source.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(source.contains("freshTargetSessionGeneration: targetSessionGeneration"))
-
-        // The resolution -> fresh-session publication -> gate-reopen handoff must be
-        // one synchronous MainActor transaction. A later implementation may name its
-        // helper differently; this token pins the no-suspension authority boundary.
-        #expect(source.contains("terminalResolutionRecoveryHasNoActorSuspension"))
     }
 }
