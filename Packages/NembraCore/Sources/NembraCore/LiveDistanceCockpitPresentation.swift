@@ -107,8 +107,23 @@ public enum LiveDistanceCockpitState: Equatable, Sendable {
                 return
             }
 
-            if snapshot.acceptedSampleCount == 1,
-               firstAcceptedSampleUptimeNanoseconds != lastAcceptedSampleUptimeNanoseconds {
+            if snapshot.acceptedSampleCount == 1 {
+                guard firstAcceptedSampleUptimeNanoseconds == lastAcceptedSampleUptimeNanoseconds else {
+                    self = .unavailable
+                    return
+                }
+            } else {
+                guard lastAcceptedSampleUptimeNanoseconds > firstAcceptedSampleUptimeNanoseconds else {
+                    self = .unavailable
+                    return
+                }
+            }
+
+            // The accumulator records an initial coverage gap whenever its first
+            // accepted sample arrives after the segment boundary. Do not let a
+            // malformed projection erase that gap and manufacture a clean role.
+            if firstAcceptedSampleUptimeNanoseconds > snapshot.segmentStartUptimeNanoseconds,
+               snapshot.knownCoverageGapCount == 0 {
                 self = .unavailable
                 return
             }
