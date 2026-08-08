@@ -15,13 +15,15 @@ required_tokens = (
     "import os",
     "os.open(",
     "O_NOFOLLOW",
+    "O_DIRECTORY",
+    "dir_fd=",
     "os.fstat(",
     "os.fdopen(os.dup(",
 )
 for token in required_tokens:
     if token not in visual:
         raise SystemExit(
-            f"visual-evidence manifest must bind retained bytes through one no-follow descriptor: missing {token!r}"
+            f"visual-evidence manifest must bind retained bytes through no-follow descriptor ancestry: missing {token!r}"
         )
 
 forbidden_path_reopen_tokens = (
