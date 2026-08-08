@@ -18,6 +18,21 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         )
     }
 
+    private static func admissionSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: packageRoot
+                .appendingPathComponent("Sources")
+                .appendingPathComponent("NembraBluetoothCapture")
+                .appendingPathComponent("PassiveBluetoothExperimentOneRun.swift"),
+            encoding: .utf8
+        )
+    }
+
     @Test("public coordinator owns one internal run and never exposes admission recorder or vehicle injection")
     func publicSurfaceKeepsMutationAuthorityInsidePackage() throws {
         let source = try Self.coordinatorSource()
@@ -26,13 +41,14 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(source.contains("private let run: PassiveBluetoothExperimentOneRun"))
         #expect(source.contains("private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?"))
         #expect(source.contains("public var powerCycleObservationSession: PassiveBluetoothPowerCycleObservationSession"))
-        #expect(source.contains("public init(controller: ForegroundCoreBluetoothCaptureController) throws"))
+        #expect(source.contains("package init(controller: ForegroundCoreBluetoothCaptureController) throws"))
         #expect(source.contains("vehicleIdentity: VehicleProfile.aovoproES80.identity"))
 
         #expect(!source.contains("public var pendingCaptureAdmission"))
         #expect(!source.contains("public let pendingCaptureAdmission"))
         #expect(!source.contains("public func issueCaptureAdmission"))
         #expect(!source.contains("recorder: PassiveCoreBluetoothCaptureRecorder"))
+        #expect(!source.contains("public init(controller: ForegroundCoreBluetoothCaptureController) throws"))
         #expect(!source.contains("public init(\n        controller: ForegroundCoreBluetoothCaptureController,\n        vehicleIdentity:"))
     }
 
@@ -78,10 +94,16 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
 
         #expect(!connection.contains("defer {"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)"))
-        let preview = try #require(connection.range(of: "if (try? admission.stagingPreview()) == nil"))
-        let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: preview.lowerBound..<connection.endIndex))
-        #expect(connect.lowerBound < preview.lowerBound)
-        #expect(preview.lowerBound < clear.lowerBound)
+        let consumed = try #require(connection.range(of: "if admission.isConsumed"))
+        let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: consumed.lowerBound..<connection.endIndex))
+        #expect(connect.lowerBound < consumed.lowerBound)
+        #expect(consumed.lowerBound < clear.lowerBound)
         #expect(connection.contains("preparedCorrelatedTargetIdentifier = nil"))
+        #expect(!connection.contains("stagingPreview()"))
+
+        let admission = try Self.admissionSource()
+        #expect(admission.contains("var isConsumed: Bool"))
+        #expect(admission.contains("hasBeenConsumed"))
+        #expect(!admission.contains("public var isConsumed"))
     }
 }
