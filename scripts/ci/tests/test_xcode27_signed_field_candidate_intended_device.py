@@ -63,6 +63,33 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertNotIn('ARTIFACTS_DIR="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', source)
         self.assertNotIn('BUILD_INSTANCE_ID="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', source)
 
+    def test_superseded_raw_udid_environment_is_scrubbed_before_any_child_process(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        scrub = "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID"
+        first_child = 'ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"'
+
+        self.assertEqual(
+            source.count(scrub),
+            1,
+            "The superseded raw UDID variable must have one unambiguous scrub point.",
+        )
+        self.assertLess(
+            source.index(scrub),
+            source.index(first_child),
+            "The raw legacy UDID must be removed before dirname/pwd/uname or any later child can inherit it.",
+        )
+        raw_name_lines = [
+            line.strip()
+            for line in source.splitlines()
+            if "NEMBRA_INTENDED_FIELD_DEVICE_UDID" in line
+            and "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" not in line
+        ]
+        self.assertEqual(
+            raw_name_lines,
+            [scrub],
+            "The superseded raw UDID variable may exist only as the immediate environment scrub, never as an input seam.",
+        )
+
     def test_private_input_must_be_owned_by_current_user(self) -> None:
         runner = load_private_runner()
 
