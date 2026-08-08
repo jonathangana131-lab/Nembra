@@ -33,7 +33,13 @@ struct RideSpeedEvidenceSessionSelectedSourceChronologyTests {
             uptime: 100_000_000
         ))
         #expect(first.benchmark == .accepted)
-        #expect(first.peak == .acceptedNewPeak)
+        let firstPeakWasUpdated: Bool
+        if case .peakUpdated = first.peak {
+            firstPeakWasUpdated = true
+        } else {
+            firstPeakWasUpdated = false
+        }
+        #expect(firstPeakWasUpdated)
 
         // Finite SI speed whose required km/h representation overflows. The
         // callback is unusable as benchmark/peak evidence, but its receive
@@ -59,7 +65,13 @@ struct RideSpeedEvidenceSessionSelectedSourceChronologyTests {
             uptime: 400_000_000
         ))
         #expect(fresh.benchmark == .accepted)
-        #expect(fresh.peak == .acceptedNewPeak)
+        let freshPeakWasUpdated: Bool
+        if case .peakUpdated = fresh.peak {
+            freshPeakWasUpdated = true
+        } else {
+            freshPeakWasUpdated = false
+        }
+        #expect(freshPeakWasUpdated)
 
         let snapshot = session.snapshot
         let peak = try #require(snapshot.peakEvidence)
