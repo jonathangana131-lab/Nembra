@@ -102,15 +102,17 @@ This is the smallest useful first physical experiment after the final runbook st
 
 ### A. Correlate the physical target
 
-Use the deterministic physical power sequence:
+Use the deterministic physical power sequence. Each OFF / ON observation window must span **at least 10 seconds** under the package-owned monotonic receipt-time policy:
 
-1. **OFF1** — scooter physically off; collect the accepted scan interval.
-2. **ON1** — power the scooter on; collect the accepted scan interval.
-3. **OFF2** — power the scooter off again; collect the accepted scan interval.
-4. **ON2** — power the scooter on again; collect the accepted scan interval.
+1. **OFF1** — scooter physically off; collect the accepted scan interval for at least 10 seconds.
+2. **ON1** — power the scooter on; collect the accepted scan interval for at least 10 seconds.
+3. **OFF2** — power the scooter off again; collect the accepted scan interval for at least 10 seconds.
+4. **ON2** — power the scooter on again; collect the accepted scan interval for at least 10 seconds.
 5. Let the accepted correlation logic compare full CoreBluetooth peripheral identity across the four intervals.
 6. If exactly one candidate satisfies the accepted repeatability rules, present it only as a **correlated Bluetooth target / scooter signal found**.
 7. The operator explicitly confirms that exact correlated candidate before a target-labeled durable capture session begins.
+
+The 10-second minimum is an Experiment One sampling-duration requirement enforced by the package evidence policy. A UI countdown may guide the operator, but it cannot shorten or mint accepted receipt-time evidence. This minimum is **not** a BLE cadence claim, RF-completeness proof, or proof that OFF-window non-observation means physical absence.
 
 Do not break ties using display name, RSSI, vague Tuya hints, service-name vibes, or short IDs. If the accepted correlation contract cannot produce one unambiguous candidate, stop. Do not guess.
 
@@ -245,6 +247,7 @@ Verify exact source/field, units/scale, cadence, freshness/currentness behavior,
 Stop the experiment and preserve only legitimate evidence if any required condition fails, including:
 
 - Bluetooth becomes unavailable or the accepted target cannot be correlated unambiguously;
+- any OFF / ON correlation window cannot prove the accepted **>=10-second** package monotonic receipt-time minimum;
 - the selected target/session changes unexpectedly;
 - acquisition never earns accepted Ready;
 - foreground integrity required by the recipe is lost;
