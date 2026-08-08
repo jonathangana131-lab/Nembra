@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-/// Expected-red source contract for the first controller consumer of the sealed
-/// Experiment One admission. Software ownership/provenance only; no physical claim.
+/// Source contract for the controller consumer of the sealed Experiment One admission.
+/// Software ownership/provenance only; no physical claim.
 struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTests {
     private static func controllerSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
@@ -40,12 +40,14 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
         #expect(source.contains("let payload = try admission.consume()"))
     }
 
-    @Test("Experiment One target comes from consumed full UUID and must exist in the current controller catalog")
+    @Test("Experiment One target comes from previewed full UUID and consumed payload must match it")
     func consumedTargetMustBeFreshlyDiscoveredByThisController() throws {
         let source = Self.codeOnly(try Self.controllerSource())
 
-        #expect(source.contains("peripheralByIdentifier[payload.peripheralIdentifier]"))
-        #expect(source.contains("latestDiscoveryByIdentifier[payload.peripheralIdentifier]"))
+        #expect(source.contains("let preview = try admission.previewForControllerStaging()"))
+        #expect(source.contains("peripheralByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("latestDiscoveryByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("payload.peripheralIdentifier == preview.peripheralIdentifier"))
         #expect(source.contains("targetState.selectTarget(payload.peripheralIdentifier)"))
     }
 
