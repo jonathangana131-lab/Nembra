@@ -180,6 +180,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         help="private mode-0600 file containing the verification-only intended field-device identifier",
     )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="validate only the private intended-device input before a costly archive/export cycle",
+    )
     parser.add_argument("--self-test", action="store_true", help="run platform-independent private-input checks")
     return parser.parse_args(argv)
 
@@ -189,6 +194,12 @@ def main(argv: list[str]) -> int:
     if args.self_test:
         self_test()
         print("private signed-field inspector runner self-test: PASS")
+        return 0
+
+    if args.validate_only:
+        if args.intended_device_udid_file is None:
+            raise PrivateInputError("--validate-only requires --intended-device-udid-file")
+        read_private_identifier(args.intended_device_udid_file)
         return 0
 
     missing = [
