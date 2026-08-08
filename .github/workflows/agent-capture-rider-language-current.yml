@@ -1,0 +1,61 @@
+name: Agent Capture rider language current
+
+on:
+  push:
+    branches:
+      - polish/es80-v14-rider-language-current-gpt56b
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: polish/es80-v14-rider-language-current-gpt56b
+          fetch-depth: 0
+
+      - name: Apply human-first Capture copy
+        shell: bash
+        run: |
+          python3 -m py_compile .github/scripts/agent_capture_rider_language_current.py
+          python3 .github/scripts/agent_capture_rider_language_current.py
+          git diff --check
+
+      - name: Verify truth and product contracts
+        shell: bash
+        run: |
+          file=NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Text("Read-only capture")' "$file"
+          grep -F 'PASSIVE / READ ONLY' "$file"
+          grep -F 'Scooter OFF' "$file"
+          grep -F 'Scooter ON' "$file"
+          grep -F 'Share Capture' "$file"
+          grep -F 'View Details' "$file"
+          grep -F 'guard status.physicalProcedurePermitted else' "$file"
+          grep -F 'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)' "$file"
+          ! grep -F 'One sealed evidence life' "$file"
+          ! grep -F "producer's evidence clock" "$file"
+          ! grep -F 'accepted Horizon authority' "$file"
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -frontend -parse "$file"
+          fi
+
+      - name: Self-delete helper and checkpoint product delta
+        shell: bash
+        run: |
+          rm .github/workflows/agent-capture-rider-language-current.yml
+          rm .github/scripts/agent_capture_rider_language_current.py
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  .github/workflows/agent-capture-rider-language-current.yml \
+                  .github/scripts/agent_capture_rider_language_current.py
+          if git diff --cached --quiet; then
+            echo 'No product delta to checkpoint' >&2
+            exit 1
+          fi
+          git commit -m 'polish(capture): make primary states rider-readable'
+          git push origin HEAD:polish/es80-v14-rider-language-current-gpt56b
