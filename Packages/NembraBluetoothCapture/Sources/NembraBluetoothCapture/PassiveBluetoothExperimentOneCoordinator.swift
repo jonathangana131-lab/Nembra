@@ -40,10 +40,9 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    /// Package-only deterministic construction seam. Production app code must enter through the
-    /// field-gated canonical ES80 factory so it cannot mint a live controller while physical GO is
-    /// closed or substitute a different software vehicle context.
-    package init(controller: ForegroundCoreBluetoothCaptureController) throws {
+    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,
+    /// never injected by app/UI code merely to make a run eligible.
+    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
@@ -91,9 +90,9 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     ///
     /// Controller-side staging may still fail after this coordinator's descriptive catalog check
     /// (for example because the exact post-admission advertisement has not reached the controller's
-    /// accepted freshness boundary yet). Those failures remain retryable only while the producer-owned
-    /// admission itself is still unconsumed. Once the controller consumes the admission, the local
-    /// handoff is cleared fail-closed even if a later irreversible step throws.
+    /// accepted freshness boundary yet). Those failures remain retryable only while the exact sealed
+    /// admission reports that `consume()` has not run. Once the controller consumes the admission,
+    /// the local handoff is cleared fail-closed even if a later irreversible step throws.
     public func connectPreparedCapture(
         timeout: TimeInterval = 12
     ) throws {
@@ -113,10 +112,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
         } catch {
-            // `stagingPreview()` is producer-owned and read-only. It succeeds only while this exact
-            // one-shot admission remains unconsumed. Preserve the handoff for a legitimate retry in
-            // that case; otherwise clear it because downstream ownership may already have changed.
-            if (try? admission.stagingPreview()) == nil {
+            if admission.isConsumed {
                 pendingCaptureAdmission = nil
                 preparedCorrelatedTargetIdentifier = nil
             }
