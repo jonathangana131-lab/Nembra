@@ -3,8 +3,8 @@ import Foundation
 /// Package-owned field-execution lock for the first physical ES80 experiment.
 ///
 /// The release-grade V14 product state remains mechanically NO-GO. The zero-argument production
-/// status and Boolean intentionally cannot be changed by app preferences, launch arguments, typed
-/// identifiers, caller-supplied flags, Settings, or imported JSON.
+/// status intentionally cannot be changed by app preferences, launch arguments, typed identifiers,
+/// caller-supplied flags, Settings, or imported JSON.
 ///
 /// TODAY's private Research Field Build is a deliberately separate, narrower authority lane. The
 /// package may mint `ResearchBuildAdmission` only from the current installed application's signed
@@ -31,9 +31,17 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     private static let sourceCommitSHAInfoPlistKey = "NembraCaptureBuildCommitSHA"
     private static let expectedBuildIdentifierPrefix = "Capture Build V14-"
 
-    /// Release-grade production policy remains NO-GO. A research build must use the separate
-    /// current-application admission path below rather than silently broadening this authority.
+    /// Canonical app-facing execution permission.
+    ///
+    /// Release-grade `status` remains NO-GO. During the active TODAY freeze, the exact running app may
+    /// nevertheless proceed through the narrowly scoped private-research lane when—and only when—the
+    /// package can mint a current-application `ResearchBuildAdmission`. Normal/test builds have no such
+    /// signed build metadata, so they remain false without any Settings or runtime toggle.
     public static var permitsPhysicalProcedure: Bool {
+        if admitCurrentApplicationResearchBuild() != nil {
+            return true
+        }
+
         switch status {
         case .noGo:
             return false
@@ -94,7 +102,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
               UUID(uuidString: buildInstanceID) != nil,
               let sourceCommitSHA = infoDictionary[sourceCommitSHAInfoPlistKey] as? String,
               isExactGitCommitSHA(sourceCommitSHA),
-              buildIdentifier == expectedBuildIdentifierPrefix + sourceCommitSHA.prefix(12) else {
+              buildIdentifier == expectedBuildIdentifierPrefix + String(sourceCommitSHA.prefix(12)) else {
             return nil
         }
 
