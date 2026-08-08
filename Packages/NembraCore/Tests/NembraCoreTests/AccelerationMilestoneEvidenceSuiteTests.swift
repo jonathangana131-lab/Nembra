@@ -22,12 +22,13 @@ struct AccelerationMilestoneEvidenceSuiteTests {
 
     private func policy(
         targets: [Double] = [2, 4, 6],
+        source: SpeedTelemetrySource = .scooterBluetooth,
         telemetrySource: SpeedTelemetrySource = .scooterBluetooth
     ) throws -> AccelerationMilestoneEvidenceSuitePolicy {
         try AccelerationMilestoneEvidenceSuitePolicy(
             targetsMetersPerSecond: targets,
             stationaryMaximumMetersPerSecond: 0.25,
-            source: .scooterBluetooth,
+            source: source,
             maximumSampleIntervalNanoseconds: 300_000_000,
             telemetry: telemetryPolicy(source: telemetrySource)
         )
@@ -79,6 +80,18 @@ struct AccelerationMilestoneEvidenceSuiteTests {
         }
     }
 
+    @Test("motion-assisted display estimates cannot become milestone evidence")
+    func motionAssistSourceIsRejected() throws {
+        #expect(throws: AccelerationMilestoneEvidenceSuitePolicyError.runPolicy(
+            .invalidRequiredSource
+        )) {
+            _ = try policy(
+                source: .motionAssist,
+                telemetrySource: .motionAssist
+            )
+        }
+    }
+
     @Test("one accepted stream can qualify multiple observed milestones")
     func sharedStreamProducesMilestones() throws {
         var suite = AccelerationMilestoneEvidenceSuite(policy: try policy())
@@ -123,8 +136,8 @@ struct AccelerationMilestoneEvidenceSuiteTests {
 
         let milestones = suite.snapshot.milestones
         #expect(milestones[0].readiness.isReady)
-        #expect(milestones[1].session.runState == .invalidated(.measurementGapExceeded))
-        #expect(milestones[2].session.runState == .invalidated(.measurementGapExceeded))
+        #expect(milestones[1].sessionSnapshot.runState == .invalidated(.measurementGapExceeded))
+        #expect(milestones[2].sessionSnapshot.runState == .invalidated(.measurementGapExceeded))
         #expect(suite.snapshot.highestReadyTargetMetersPerSecond == 2)
         #expect(!suite.snapshot.allMilestonesReady)
     }
@@ -144,10 +157,10 @@ struct AccelerationMilestoneEvidenceSuiteTests {
 
         let milestones = suite.snapshot.milestones
         #expect(milestones[0].readiness.isReady)
-        #expect(milestones[1].session.runState == .invalidated(
+        #expect(milestones[1].sessionSnapshot.runState == .invalidated(
             .interruption(.vehicleConnectionLost)
         ))
-        #expect(milestones[2].session.runState == .invalidated(
+        #expect(milestones[2].sessionSnapshot.runState == .invalidated(
             .interruption(.vehicleConnectionLost)
         ))
         #expect(milestones[1].readiness.failures.contains(.knownObservationInterruption(count: 1)))
