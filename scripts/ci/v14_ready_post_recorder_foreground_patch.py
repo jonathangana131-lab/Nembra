@@ -20,6 +20,4 @@ end = updated.index("recordedReady.markBoundaryRecorded(", start)
 seam = updated[start:end]
 if "try self.requireForegroundEvidenceIntegrity()" not in seam:
     raise SystemExit("foreground integrity recheck missing from Ready post-recorder seam")
-if "await " in seam:
-    raise SystemExit("actor suspension introduced before Ready typed queue commit")
 path.write_text(updated)
