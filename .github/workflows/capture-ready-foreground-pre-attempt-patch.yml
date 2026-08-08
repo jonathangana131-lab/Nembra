@@ -1,0 +1,149 @@
+name: Capture Ready foreground pre-attempt patch
+
+on:
+  push:
+    branches:
+      - agent/es80-app-spine-preH-controller-v14
+    paths:
+      - .github/workflows/capture-ready-foreground-pre-attempt-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/es80-app-spine-preH-controller-v14
+          fetch-depth: 2
+
+      - name: Verify exact converged parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "2cd33308a58351c886391dc7ef8323d11d509a89"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-ready-foreground-pre-attempt-patch.yml"
+
+      - name: Apply exact Ready pre-attempt foreground quarantine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = controller.read_text()
+          old = '''                do {
+                              try self.ensureCaptureHealthy()
+                              let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+          '''
+          new = '''                do {
+                              // The Ready FIFO drain is an actor suspension. Foreground loss may
+                              // poison this exact durable capture while it is suspended, so prove
+                              // foreground integrity and generic health before the first recorder
+                              // attempt. If either fails, consume the exact unused Ready admission
+                              // and quarantine its transaction rather than leaving `.drainingReady`.
+                              do {
+                                  try self.requireForegroundEvidenceIntegrity()
+                                  try self.ensureCaptureHealthy()
+                              } catch {
+                                  let preAttemptFailure = error
+                                  do {
+                                      let abandonment = try admission.abandonBeforeRecorderAttempt()
+                                      try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(
+                                          after: abandonment
+                                      )
+                                  } catch {
+                                      // Exact lifecycle-quarantine failure is stronger than the
+                                      // triggering foreground/health error. Keep capture fail-closed.
+                                      throw error
+                                  }
+                                  throw preAttemptFailure
+                              }
+
+                              let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one Ready pre-attempt patch site, found {source.count(old)}")
+          controller.write_text(source.replace(old, new))
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyForegroundPreAttemptTests.swift")
+          if test_path.exists():
+              raise SystemExit(f"refusing to overwrite existing {test_path}")
+          test_path.write_text(r'''import Foundation
+          import Testing
+
+          @Suite("Foreground CoreBluetooth Ready foreground pre-attempt recovery")
+          struct ForegroundCoreBluetoothCaptureControllerReadyForegroundPreAttemptTests {
+              private static func controllerSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let packageRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: packageRoot
+                          .appendingPathComponent("Sources")
+                          .appendingPathComponent("NembraBluetoothCapture")
+                          .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              @Test("Ready proves foreground integrity after FIFO drain and before recorder attempt")
+              func readyRechecksForegroundBeforeRecorderMutation() throws {
+                  let source = try Self.controllerSource()
+                  let ready = try #require(source.range(of: "let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady("))
+                  let flush = try #require(source.range(
+                      of: "await self.flushPendingEvents(through: admission.queueCutoff)",
+                      range: ready.lowerBound..<source.endIndex
+                  ))
+                  let foreground = try #require(source.range(
+                      of: "try self.requireForegroundEvidenceIntegrity()",
+                      range: flush.lowerBound..<source.endIndex
+                  ))
+                  let health = try #require(source.range(
+                      of: "try self.ensureCaptureHealthy()",
+                      range: foreground.lowerBound..<source.endIndex
+                  ))
+                  let abandonment = try #require(source.range(
+                      of: "let abandonment = try admission.abandonBeforeRecorderAttempt()",
+                      range: health.lowerBound..<source.endIndex
+                  ))
+                  let quarantine = try #require(source.range(
+                      of: "try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(",
+                      range: abandonment.lowerBound..<source.endIndex
+                  ))
+                  let recorderAttempt = try #require(source.range(
+                      of: "admission.recordBoundaryWithMutationOutcome(on: recorder)",
+                      range: quarantine.lowerBound..<source.endIndex
+                  ))
+
+                  #expect(flush.lowerBound < foreground.lowerBound)
+                  #expect(foreground.lowerBound < health.lowerBound)
+                  #expect(health.lowerBound < abandonment.lowerBound)
+                  #expect(abandonment.lowerBound < quarantine.lowerBound)
+                  #expect(quarantine.lowerBound < recorderAttempt.lowerBound)
+              }
+          }
+          ''')
+
+          Path(".github/workflows/capture-ready-foreground-pre-attempt-patch.yml").unlink()
+          PY
+
+          git diff --check
+          test "$(grep -c 'admission.abandonBeforeRecorderAttempt()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "1"
+          test "$(grep -c 'abortReadyBeforeRecorderAttempt(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "1"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyForegroundPreAttemptTests.swift
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: quarantine Ready after foreground loss before recorder attempt"
+          git push origin HEAD:agent/es80-app-spine-preH-controller-v14
