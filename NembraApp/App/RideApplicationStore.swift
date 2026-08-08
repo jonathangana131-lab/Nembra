@@ -169,6 +169,11 @@ final class RideApplicationStore {
 
             updatePublishedState(from: await restored.currentPhase())
             await subscribeToEvidenceStreams()
+        } catch is CancellationError {
+            // Cancellation is an application-lifecycle boundary, not evidence that
+            // ride persistence failed. A caller abandoning startup must not leave a
+            // false persistence warning behind.
+            return
         } catch {
             fail(error, persistence: true)
         }
@@ -335,11 +340,19 @@ final class RideApplicationStore {
                 }
                 updatePublishedState(from: await coordinator.currentPhase())
             }
+        } catch is CancellationError {
+            // Ride evidence tasks are deliberately cancelled by `stop()` and by
+            // object teardown. The coordinator now drops cancellation-before-
+            // admission work explicitly; that expected lifecycle event is not a
+            // ride-engine or persistence failure and must not surface as one.
+            return
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
             do {
                 setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
                 updatePublishedState(from: await coordinator.currentPhase())
+            } catch is CancellationError {
+                return
             } catch {
                 fail(error, persistence: true)
             }
