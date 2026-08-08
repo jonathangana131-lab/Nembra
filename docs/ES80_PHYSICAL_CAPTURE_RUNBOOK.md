@@ -6,7 +6,7 @@ Primary physical target: the current/newer Tuya-generation AOVOPRO ES80.
 
 This document is the physical-procedure gate for Nembra Capture under the V14 product contract. It supersedes older V11-era timing/authorization wording in this file. Supporting passive research primitives may already exist, but package code, Simulator evidence, a passing child PR, or a visually complete research shell does not authorize a physical experiment.
 
-Only the **final composed exact build** may change this status from `NO-GO` to `GO` after every required software, app-visible, runtime, integrity, and safety gate below is satisfied.
+Only the **final composed exact build** may change this status from `NO-GO` to `GO` after every required software, app-visible, runtime, integrity, signed-device build-authority, and safety gate below is satisfied.
 
 ## Current NO-GO blockers
 
@@ -24,7 +24,10 @@ The current passive-foundation recovery does not by itself close the full V14 Ca
 - exact build/procedure/recipe provenance embedded in the exported artifact;
 - final exact-head Xcode 27 / iPhone 12 / iOS 27 acceptance for the composed app;
 - required visual, accessibility, performance, and recovery-state review for the app-visible Capture surface;
-- an explicit final runbook edit that names the accepted exact build/commit, procedure version, expected artifact, and stop conditions and changes this status to `GO`.
+- a final **signed physical-device/installable artifact** produced from that exact accepted composition, with the exact bytes/identity needed for independent acceptance retained rather than substituting Simulator build evidence;
+- independent external acceptance/attestation of that exact signed-device field artifact, correlated to its exact build-instance/build tuple and retained artifact evidence without treating arbitrary parsed JSON, a caller-supplied digest, a skipped/queued workflow, or the artifact's own self-description as authority;
+- a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state that is mechanically tied to the independently accepted exact field-build authority and cannot be unlocked by a UI Boolean, launch argument, local preference, or caller-constructible token;
+- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
 
 Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform it.
 
@@ -45,19 +48,23 @@ Until those conditions are closed, all procedures below are **supporting experim
 13. A CoreBluetooth peripheral UUID is useful observed identity evidence but is not automatically a permanent physical-scooter identifier.
 14. If acquisition, foreground integrity, chronology, horizon duration, seal, integrity, or export readiness fails, treat the session as incomplete. Never interpret missing evidence as proof that a field/service/event does not exist.
 15. Never promote Simulator, public research, display interpolation, or derived UI motion into physical telemetry evidence.
+16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
 
 ## Final GO record — intentionally blank while NO-GO
 
 When the software is actually ready, replace this section in the same acceptance change that flips the status above to `GO`.
 
 - Accepted exact build/commit: **NOT YET AUTHORIZED**
+- Accepted signed-device/installable artifact identity/digest: **NOT YET AUTHORIZED**
+- Independent field-build acceptance / attestation subject: **NOT YET AUTHORIZED**
+- Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**
 - Procedure version: **V14 / NOT YET AUTHORIZED**
 - Baseline device: iPhone 12 / iOS 27
 - Experiment recipe: **ES80-FINGERPRINT-v1 candidate; final recipe authority not yet issued**
 - Expected artifact: **NOT YET AUTHORIZED**
 - Physical result collected: **NO**
 
-No ancestor SHA, package-only green, child PR, Simulator run, or stale acceptance may be filled into this section as the final physical build.
+No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, or stale acceptance may be filled into this section as the final physical build authority.
 
 ## Intended preflight once GO is authorized
 
@@ -65,7 +72,9 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 
 - Bluetooth permission and powered-on state;
 - foreground evidence integrity;
-- exact build identity and capture schema compatibility;
+- exact runtime build identity and capture schema compatibility;
+- package-owned physical field-execution authority is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
+- the independently accepted signed-device/installable build authority matches the exact runtime/build-instance rendezvous required by the final accepted contract;
 - storage/export readiness;
 - the exact versioned experiment recipe;
 - any required stock-app/reference-marker setup;
@@ -231,10 +240,11 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - the accepted >=60-second post-Ready horizon cannot be proven;
 - Horizon/queue commit/immutable freeze cannot complete exactly;
 - artifact integrity or export readiness fails;
+- runtime build identity no longer matches the package-owned accepted field-build authority;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
 
 ## Current physical conclusion
 
-**NO-GO.** The passive foundation is valuable software evidence, but it is not the final composed app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final build and procedure.
+**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, and procedure.
