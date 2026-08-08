@@ -136,9 +136,10 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
             researchLive.range(of: "ForegroundCoreBluetoothCaptureController(")
         )
         let boundInitializer = try #require(
-            researchLive.range(of: "fieldExecutionStatus: admission.status")
+            researchLive.range(of: "researchAdmission: admission")
         )
         #expect(controller.lowerBound < boundInitializer.lowerBound)
+        #expect(!researchLive.contains("fieldExecutionStatus: admission.status"))
         #expect(!researchFactory.contains("UserDefaults"))
         #expect(!researchFactory.contains("ProcessInfo"))
         #expect(!researchFactory.contains("authorized: Bool"))
