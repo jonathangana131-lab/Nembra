@@ -1,0 +1,154 @@
+name: Patch Capture Ready pre-attempt authority repair
+
+on:
+  push:
+    branches:
+      - cell/capture-ready-pre-attempt-authority-repair/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch-product:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact parent and apply guarded repair
+        env:
+          EXPECTED_PARENT: 2cd33308a58351c886391dc7ef8323d11d509a89
+          WORKFLOW_PATH: .github/workflows/patch-capture-ready-pre-attempt-authority-gpt56-thinking.yml
+          CONTROLLER: Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          TEST_PATH: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyPreAttemptAuthorityValidationTests.swift
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$WORKFLOW_PATH"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = controller.read_text()
+          pattern = re.compile(
+              r'(?m)^(?P<i>[ \t]*)do \{\n'
+              r'(?P=i)    try self\.ensureCaptureHealthy\(\)\n'
+              r'(?P=i)    let outcome = try await admission\.recordBoundaryWithMutationOutcome\(on: recorder\)\n'
+          )
+          matches = list(pattern.finditer(source))
+          if len(matches) != 1:
+              raise SystemExit(f"expected one Ready pre-attempt patch site, found {len(matches)}")
+          indent = matches[0].group('i')
+          replacement = (
+              f"{indent}do {{\n"
+              f"{indent}    do {{\n"
+              f"{indent}        try self.ensureCaptureHealthy()\n"
+              f"{indent}        try self.validateBoundaryAuthority(admission.authority)\n"
+              f"{indent}    }} catch {{\n"
+              f"{indent}        let preAttemptFailure = error\n"
+              f"{indent}        do {{\n"
+              f"{indent}            let abandonment = try admission.abandonBeforeRecorderAttempt()\n"
+              f"{indent}            try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(\n"
+              f"{indent}                after: abandonment\n"
+              f"{indent}            )\n"
+              f"{indent}        }} catch {{\n"
+              f"{indent}            // Failure to prove/quarantine the exact unused Ready is\n"
+              f"{indent}            // stronger than the triggering health/authority failure.\n"
+              f"{indent}            throw error\n"
+              f"{indent}        }}\n"
+              f"{indent}        throw preAttemptFailure\n"
+              f"{indent}    }}\n\n"
+              f"{indent}    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)\n"
+          )
+          controller.write_text(pattern.sub(replacement, source, count=1))
+
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyPreAttemptAuthorityValidationTests.swift")
+          test.write_text(textwrap.dedent('''\
+              import Foundation
+              import Testing
+
+              @Suite("Foreground CoreBluetooth Ready pre-attempt authority validation")
+              struct ForegroundCoreBluetoothCaptureControllerReadyPreAttemptAuthorityValidationTests {
+                  private static func controllerSource() throws -> String {
+                      let testFile = URL(fileURLWithPath: #filePath)
+                      let packageRoot = testFile
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                          .deletingLastPathComponent()
+                      return try String(
+                          contentsOf: packageRoot
+                              .appendingPathComponent("Sources")
+                              .appendingPathComponent("NembraBluetoothCapture")
+                              .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
+                          encoding: .utf8
+                      )
+                  }
+
+                  @Test("Ready authority drift after FIFO drain is abandoned before recorder attempt")
+                  func readyRevalidatesExactAuthorityBeforeFirstRecorderAttempt() throws {
+                      let source = try Self.controllerSource()
+                      let start = try #require(
+                          source.range(of: "    private func beginFiniteAcquisitionReadyBoundaryIfNeeded() {")?.lowerBound
+                      )
+                      let end = try #require(
+                          source.range(
+                              of: "    private func validateBoundaryAuthority(",
+                              range: start..<source.endIndex
+                          )?.lowerBound
+                      )
+                      let section = source[start..<end]
+
+                      let admission = try #require(
+                          section.range(of: "let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(")
+                      )
+                      let flush = try #require(
+                          section.range(
+                              of: "await self.flushPendingEvents(through: admission.queueCutoff)",
+                              range: admission.upperBound..<section.endIndex
+                          )
+                      )
+                      let authorityCheck = try #require(
+                          section.range(
+                              of: "try self.validateBoundaryAuthority(admission.authority)",
+                              range: flush.upperBound..<section.endIndex
+                          )
+                      )
+                      let abandonment = try #require(
+                          section.range(
+                              of: "admission.abandonBeforeRecorderAttempt()",
+                              range: authorityCheck.upperBound..<section.endIndex
+                          )
+                      )
+                      let recorderAttempt = try #require(
+                          section.range(
+                              of: "admission.recordBoundaryWithMutationOutcome(on: recorder)",
+                              range: abandonment.upperBound..<section.endIndex
+                          )
+                      )
+
+                      #expect(flush.lowerBound < authorityCheck.lowerBound)
+                      #expect(authorityCheck.lowerBound < abandonment.lowerBound)
+                      #expect(abandonment.lowerBound < recorderAttempt.lowerBound)
+                  }
+              }
+          '''))
+          PY
+
+          grep -q 'try self.validateBoundaryAuthority(admission.authority)' "$CONTROLLER"
+          grep -q 'let abandonment = try admission.abandonBeforeRecorderAttempt()' "$CONTROLLER"
+          grep -q 'abortReadyBeforeRecorderAttempt' "$CONTROLLER"
+          git diff --check
+
+          git rm "$WORKFLOW_PATH"
+          git add "$CONTROLLER" "$TEST_PATH"
+          git diff --cached --check
+
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git commit -m '[Capture] restore Ready pre-attempt authority quarantine'
+          git push origin HEAD:cell/capture-ready-pre-attempt-authority-repair/gpt56-thinking
