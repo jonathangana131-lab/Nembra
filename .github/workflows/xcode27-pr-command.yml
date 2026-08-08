@@ -79,11 +79,14 @@ jobs:
           printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
-      - name: Validate project structure
+      - name: Validate project structure and field-candidate tooling
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
           bash -n scripts/ci/xcode27_simulator_capture.sh
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m unittest scripts/ci/tests/test_xcode27_signed_field_candidate_source.py -v
 
       - name: Validate core package
         working-directory: Packages/NembraCore
