@@ -8,16 +8,15 @@ struct RideObservedPeakHistoryPopulationBoundsTests {
     private let sessionID = UUID(uuidString: "98765432-1111-2222-3333-444455556666")!
     private let epoch = Date(timeIntervalSinceReferenceDate: 70_000)
 
-    @Test("interval jitter above half the retained range is impossible")
+    @Test("interval jitter above the feasible population maximum is impossible")
     func impossibleIntervalPopulationDeviationRejected() throws {
         let evidence = try bluetoothEvidence()
         let data = try mutatedJSON(evidence) { root in
             var benchmark = root["telemetryBenchmark"] as! [String: Any]
 
             // Two intervals with min=100 ms, max=300 ms, mean=200 ms and
-            // duration=400 ms are otherwise algebraically consistent. A
-            // population SD of 150 ms is impossible because Popoviciu caps it at
-            // (300 - 100) / 2 = 100 ms. The old full-range check admitted 150.
+            // duration=400 ms are otherwise algebraically consistent. Their
+            // population SD is exactly 100 ms; 150 ms is impossible.
             benchmark["observedDurationSeconds"] = 0.4
             benchmark["effectiveSampleRateHertz"] = 5.0
             benchmark["meanIntervalMilliseconds"] = 200.0
@@ -32,20 +31,124 @@ struct RideObservedPeakHistoryPopulationBoundsTests {
         }
     }
 
-    @Test("delivery latency deviation above half the retained range is impossible")
+    @Test("two interval extrema cannot forge an impossibly small population deviation")
+    func impossibleTwoIntervalLowDeviationRejected() throws {
+        let evidence = try bluetoothEvidence()
+        let data = try mutatedJSON(evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+
+            // With exactly two intervals and attained extrema 100/300 ms, the
+            // population is exactly [100, 300]. Mean=200 and duration/rate stay
+            // self-consistent, but SD=0 is impossible (it must be 100 ms).
+            benchmark["observedDurationSeconds"] = 0.4
+            benchmark["effectiveSampleRateHertz"] = 5.0
+            benchmark["meanIntervalMilliseconds"] = 200.0
+            benchmark["minimumIntervalMilliseconds"] = 100.0
+            benchmark["maximumIntervalMilliseconds"] = 300.0
+            benchmark["intervalJitterStandardDeviationMilliseconds"] = 0.0
+            root["telemetryBenchmark"] = benchmark
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("two interval extrema determine the mean as well as deviation")
+    func impossibleTwoIntervalMeanRejected() throws {
+        let evidence = try bluetoothEvidence()
+        let data = try mutatedJSON(evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+
+            // Keep forged duration/rate consistent with forged mean=125 ms so
+            // the ordinary timing algebra passes. Two attained extrema 100/300
+            // still prove the only possible mean is 200 ms (and SD is 100 ms).
+            benchmark["observedDurationSeconds"] = 0.25
+            benchmark["effectiveSampleRateHertz"] = 8.0
+            benchmark["meanIntervalMilliseconds"] = 125.0
+            benchmark["minimumIntervalMilliseconds"] = 100.0
+            benchmark["maximumIntervalMilliseconds"] = 300.0
+            benchmark["intervalJitterStandardDeviationMilliseconds"] = 100.0
+            root["telemetryBenchmark"] = benchmark
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("delivery latency deviation above the feasible population maximum is impossible")
     func impossibleLatencyPopulationDeviationRejected() throws {
-        let evidence = try gpsNoPeakEvidence()
+        let evidence = try gpsNoPeakEvidence(sampleCount: 3)
         let data = try mutatedJSON(evidence) { root in
             var benchmark = root["telemetryBenchmark"] as! [String: Any]
 
             // Three retained latency samples with min=10 ms and max=90 ms can
-            // never have population SD > 40 ms. Keep the mean centered and use
-            // 60 ms so every ordinary min/mean/max shape check passes while the
-            // old full-range (80 ms) bound would have accepted the aggregate.
+            // never have population SD > 40 ms when mean=50 ms. Use 60 ms so
+            // a weaker full-range (80 ms) check would have admitted it.
             benchmark["meanDeliveryLatencyMilliseconds"] = 50.0
             benchmark["minimumDeliveryLatencyMilliseconds"] = 10.0
             benchmark["maximumDeliveryLatencyMilliseconds"] = 90.0
             benchmark["deliveryLatencyStandardDeviationMilliseconds"] = 60.0
+            root["telemetryBenchmark"] = benchmark
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("two latency extrema cannot forge an impossibly small population deviation")
+    func impossibleTwoLatencyLowDeviationRejected() throws {
+        let evidence = try gpsNoPeakEvidence(sampleCount: 2)
+        let data = try mutatedJSON(evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+
+            // Count=2 plus attained extrema 10/90 ms fixes the population to
+            // [10, 90], so mean=50 ms and population SD=40 ms. SD=0 is forged.
+            benchmark["meanDeliveryLatencyMilliseconds"] = 50.0
+            benchmark["minimumDeliveryLatencyMilliseconds"] = 10.0
+            benchmark["maximumDeliveryLatencyMilliseconds"] = 90.0
+            benchmark["deliveryLatencyStandardDeviationMilliseconds"] = 0.0
+            root["telemetryBenchmark"] = benchmark
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("two latency extrema determine the retained mean")
+    func impossibleTwoLatencyMeanRejected() throws {
+        let evidence = try gpsNoPeakEvidence(sampleCount: 2)
+        let data = try mutatedJSON(evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+
+            benchmark["meanDeliveryLatencyMilliseconds"] = 20.0
+            benchmark["minimumDeliveryLatencyMilliseconds"] = 10.0
+            benchmark["maximumDeliveryLatencyMilliseconds"] = 90.0
+            benchmark["deliveryLatencyStandardDeviationMilliseconds"] = 40.0
+            root["telemetryBenchmark"] = benchmark
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("attained extrema impose a nonzero lower variance bound beyond two samples")
+    func impossibleThreeLatencyZeroDeviationRejected() throws {
+        let evidence = try gpsNoPeakEvidence(sampleCount: 3)
+        let data = try mutatedJSON(evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+
+            // For n=3, attained extrema 10/90 and mean=50 force the remaining
+            // sample to 50. The minimum possible population SD is therefore
+            // sqrt((40^2 + 40^2) / 3) ~= 32.66 ms, not zero.
+            benchmark["meanDeliveryLatencyMilliseconds"] = 50.0
+            benchmark["minimumDeliveryLatencyMilliseconds"] = 10.0
+            benchmark["maximumDeliveryLatencyMilliseconds"] = 90.0
+            benchmark["deliveryLatencyStandardDeviationMilliseconds"] = 0.0
             root["telemetryBenchmark"] = benchmark
         }
 
@@ -84,7 +187,9 @@ struct RideObservedPeakHistoryPopulationBoundsTests {
         )
     }
 
-    private func gpsNoPeakEvidence() throws -> RideObservedPeakHistoryEvidence {
+    private func gpsNoPeakEvidence(
+        sampleCount: Int
+    ) throws -> RideObservedPeakHistoryEvidence {
         let ride = try completedRide()
         var accumulator = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
@@ -94,7 +199,7 @@ struct RideObservedPeakHistoryPopulationBoundsTests {
             )
         )
 
-        for index in 1...3 {
+        for index in 1...sampleCount {
             _ = accumulator.record(try sample(
                 source: .gps,
                 metersPerSecond: Double(index),
