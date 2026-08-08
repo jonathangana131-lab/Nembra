@@ -41,6 +41,8 @@ struct PassiveCoreBluetoothAbortedQueueResolution: Sendable {
     }
 
     enum StateError: Error, Equatable, Sendable {
+        case abortQuarantineRequired
+        case abortReceiptMismatch
         case resolvedFrontierDoesNotMatchRetirementSettled(current: UInt64, settled: UInt64)
         case controllerQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)
         case retainedEvidenceUnexpected(retainedCount: Int)
@@ -51,6 +53,9 @@ struct PassiveCoreBluetoothAbortedQueueResolution: Sendable {
     /// Resolves an accepted pre-H retirement synchronously on MainActor.
     ///
     /// Admission is deliberately strict:
+    /// - the queue gate must still be in the exact abort-quarantined epoch that
+    ///   produced the retirement proof; an old proof cannot be resolved after the
+    ///   lifecycle has already reopened;
     /// - the controller's current globally-resolved frontier must equal the exact
     ///   settled frontier validated by the retirement producer;
     /// - the controller's global enqueue tail must still equal the retirement tail,
@@ -67,8 +72,16 @@ struct PassiveCoreBluetoothAbortedQueueResolution: Sendable {
     static func resolve(
         currentResolvedThroughQueueSequence: UInt64,
         currentLastEnqueuedEventSequence: UInt64,
-        retirementReceipt: PassiveCoreBluetoothAbortedObservationQueueRetirement.Receipt
+        retirementReceipt: PassiveCoreBluetoothAbortedObservationQueueRetirement.Receipt,
+        abortedGate: PassiveCoreBluetoothObservationBoundaryQueueGate
     ) throws -> Receipt {
+        guard case let .abortQuarantined(currentAbort) = abortedGate.phase else {
+            throw StateError.abortQuarantineRequired
+        }
+        guard currentAbort == retirementReceipt.abortReceipt else {
+            throw StateError.abortReceiptMismatch
+        }
+
         let settled = retirementReceipt.validatedSettledQueueSequence
         let tail = retirementReceipt.validatedQueueTailSequence
         let readyCutoff = retirementReceipt.abortReceipt.abandonedReadyQueueCutoff
