@@ -8,13 +8,17 @@ struct ES80PhysicalRunbookChargerPreflightAcceptanceTests {
         let app = try repositoryFile("NembraApp/App/NembraApp.swift")
         let runbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
 
-        // The real product already makes this a fresh-run operator declaration: connected is
-        // explicitly blocked, Disconnected is required for ES80-FINGERPRINT-v1, and the UI states
-        // that Nembra cannot sense the charger directly. The field procedure must not be weaker.
-        #expect(app.contains("Required for ES80-FINGERPRINT-v1"))
+        // The real product makes this a fresh-run operator declaration: connected is explicitly
+        // blocked, Disconnected is required before OFF 1, and the UI states that Nembra cannot
+        // sense the charger directly. A fresh experiment must reset both the selected state and
+        // the accepted declaration before returning through this preflight.
+        #expect(app.contains("Confirm the charger state before OFF 1 becomes available."))
+        #expect(app.contains("Keep charger unplugged for the whole capture"))
         #expect(app.contains("Unplug charger to continue"))
         #expect(app.contains("Nembra cannot sense the charger directly"))
+        #expect(app.contains("private func makeFreshExperimentCoordinator()"))
         #expect(app.contains("selectedChargerState = nil"))
+        #expect(app.contains("disconnectedDeclarationAccepted = false"))
 
         let preflight = try section(
             in: runbook,
