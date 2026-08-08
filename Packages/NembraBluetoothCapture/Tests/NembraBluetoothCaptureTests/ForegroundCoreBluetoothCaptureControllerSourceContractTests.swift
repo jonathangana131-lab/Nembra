@@ -60,7 +60,6 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         for mutation in [
             "peripheralByIdentifier[peripheral.identifier] = peripheral",
             "latestDiscoveryByIdentifier[peripheral.identifier] = discovery",
-            "updateDiscoveryList()",
             "latestAdvertisementByIdentifier[peripheral.identifier] = CandidateAdvertisement(",
             "enqueue(.advertisement(observation), receipt: receipt)",
             "lastDiagnostic = Self.diagnostic(error, fallback: \"Candidate advertisement mapping failed.\")",
@@ -113,8 +112,8 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         #expect(source.contains("private var scanRequested = false"))
         #expect(source.contains("public var isScanRequested: Bool"))
         #expect(source.contains("scanRequested && centralManager?.isScanning == true"))
-        #expect(!source.contains("isScanning = true"))
-        #expect(!source.contains("isScanning = false"))
+        #expect(source.range(of: "isScanning = true") == nil)
+        #expect(source.range(of: "isScanning = false") == nil)
 
         let scanControls = try Self.section(
             in: source,
@@ -150,7 +149,7 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     }
 
     @Test
-    func cancellationCallGraphKeepsEvidenceBoundaryBeforeRetirement() throws {
+    func cancellationCallGraphKeepsEvidenceBoundaryBeforeOrdinaryRetirement() throws {
         let source = try Self.controllerSource()
         let body = try Self.section(
             in: source,
@@ -161,33 +160,52 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         #expect(body.contains("cancelActiveConnection(cause: .operatorRequest)"))
         #expect(body.contains("cancelActiveConnection(cause: .foregroundIntegrityLoss)"))
         #expect(body.contains("cancelActiveConnection(cause: .finalizedArtifactTeardown)"))
-        #expect(!body.contains("PassiveCoreBluetoothCancellationBoundary"))
+        #expect(body.range(of: "PassiveCoreBluetoothCancellationBoundary") == nil)
 
+        let cancellationStart = try #require(body.range(of: "    private func cancelActiveConnection(cause:"))
+        let cancellation = body[cancellationStart.lowerBound...]
+        let terminalBranchStart = try #require(cancellation.range(of: "if observationBoundaryBlocksArtifactMutation {"))
+        let ordinaryStart = try #require(
+            cancellation.range(
+                of: "if targetState.selectedTargetIdentifier == peripheral.identifier {",
+                range: terminalBranchStart.upperBound..<cancellation.endIndex
+            )
+        )
+        let terminalBranch = cancellation[terminalBranchStart.lowerBound..<ordinaryStart.lowerBound]
+        #expect(terminalBranch.contains("_ = targetState.retireActiveAttempt()"))
+        #expect(terminalBranch.contains("centralManager.cancelPeripheralConnection(peripheral)"))
+        #expect(terminalBranch.range(of: "enqueueInterruption(") == nil)
+        #expect(terminalBranch.range(of: "advanceArtifactAuthority()") == nil)
+
+        let ordinary = cancellation[ordinaryStart.lowerBound...]
         let interruptionOffset = try Self.offset(
             of: "if let interruptionReason = cause.interruptionReason {",
-            in: body
+            in: ordinary
         )
         let pendingOffset = try Self.offset(
             of: "selectedTargetCancellationPending = true",
-            in: body
+            in: ordinary
         )
         let authorityOffset = try Self.offset(
             of: "guard advanceArtifactAuthority() else { return }",
-            in: body
+            in: ordinary
         )
         let retirementOffset = try Self.offset(
             of: "_ = targetState.retireActiveAttempt()",
-            in: body
+            in: ordinary
         )
         let transportCancelOffset = try Self.offset(
             of: "centralManager.cancelPeripheralConnection(peripheral)",
-            in: body
+            in: ordinary
         )
 
         #expect(interruptionOffset < pendingOffset)
         #expect(interruptionOffset < authorityOffset)
         #expect(interruptionOffset < retirementOffset)
         #expect(interruptionOffset < transportCancelOffset)
+        #expect(pendingOffset < authorityOffset)
+        #expect(authorityOffset < retirementOffset)
+        #expect(retirementOffset < transportCancelOffset)
     }
 
     @Test
@@ -198,20 +216,20 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
             from: "    public func teardownActiveConnectionAfterFinalization() throws {",
             to: "    private func cancelActiveConnection(cause:"
         )
-        let authorizationOffset = try Self.offset(
-            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+        let terminalOffset = try Self.offset(
+            of: "guard observationBoundaryQueueGate.isTerminal else {",
             in: teardown
         )
-        let rejectionOffset = try Self.offset(
-            of: "throw ControllerError.artifactNotFinalized",
+        let authorizationOffset = try Self.offset(
+            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
             in: teardown
         )
         let transportOffset = try Self.offset(
             of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
             in: teardown
         )
-        #expect(authorizationOffset < rejectionOffset)
-        #expect(rejectionOffset < transportOffset)
+        #expect(terminalOffset < authorizationOffset)
+        #expect(authorizationOffset < transportOffset)
 
         let artifactReads = try Self.section(
             in: source,
@@ -225,17 +243,19 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         let authorityAdvance = try Self.section(
             in: source,
             from: "    private func advanceArtifactAuthority() -> Bool {",
-            to: "    private func scheduleConnectionTimeout("
+            to: "    private func currentArtifactAuthorityContext()"
+        )
+        let transitionOffset = try Self.offset(of: "try artifactAuthorityFence.transition(", in: authorityAdvance)
+        let generationOffset = try Self.offset(
+            of: "artifactAuthorityGeneration = nextAuthority.authorityGeneration",
+            in: authorityAdvance
         )
         let revokeOffset = try Self.offset(
             of: "lastFinalizedArtifactAuthority = nil",
             in: authorityAdvance
         )
-        let generationOffset = try Self.offset(
-            of: "artifactAuthorityGeneration += 1",
-            in: authorityAdvance
-        )
-        #expect(revokeOffset < generationOffset)
+        #expect(transitionOffset < generationOffset)
+        #expect(generationOffset < revokeOffset)
     }
 
     @Test
@@ -263,18 +283,23 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
             in: teardown
         )
         #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)
+
         let cancellation = try Self.section(
             in: source,
             from: "    private func cancelActiveConnection(cause:",
             to: "    /// Adds a human-observed stock-app value"
         )
+        let ordinaryStart = try #require(
+            cancellation.range(of: "if targetState.selectedTargetIdentifier == peripheral.identifier {")
+        )
+        let ordinary = cancellation[ordinaryStart.lowerBound...]
         let pendingOffset = try Self.offset(
             of: "selectedTargetCancellationPending = true",
-            in: cancellation
+            in: ordinary
         )
         let retirementOffset = try Self.offset(
             of: "_ = targetState.retireActiveAttempt()",
-            in: cancellation
+            in: ordinary
         )
         #expect(pendingOffset < retirementOffset)
 
@@ -327,6 +352,6 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
             in: body
         )
         #expect(fenceOffset < cancelOffset)
-        #expect(!body.contains(".operatorRequest"))
+        #expect(body.range(of: ".operatorRequest") == nil)
     }
 }
