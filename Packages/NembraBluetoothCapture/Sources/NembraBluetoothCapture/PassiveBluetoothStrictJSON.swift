@@ -6,17 +6,40 @@ import Foundation
 /// reject repeated semantic keys before decoding so trust never depends on parser precedence.
 enum PassiveBluetoothStrictJSON {
     static func duplicateTopLevelObjectKey(in data: Data) -> String? {
+        duplicateObjectKey(in: data, scope: .topLevelOnly)
+    }
+
+    /// Returns the first repeated semantic key found in any JSON object, including nested objects.
+    ///
+    /// Closed-world formats with structured nested authority should use this in addition to their
+    /// explicit top-level check so `JSONSerialization` never gets to collapse a nested duplicate
+    /// before shape validation sees the exact bytes.
+    static func duplicateObjectKeyAtAnyDepth(in data: Data) -> String? {
+        duplicateObjectKey(in: data, scope: .allObjects)
+    }
+
+    private enum DuplicateScope {
+        case topLevelOnly
+        case allObjects
+    }
+
+    private static func duplicateObjectKey(
+        in data: Data,
+        scope: DuplicateScope
+    ) -> String? {
         let bytes = Array(data)
-        var objectDepth = 0
-        var seenKeys = Set<String>()
+        var seenKeysByObject = [Set<String>()]
+        seenKeysByObject.removeAll(keepingCapacity: true)
         var index = 0
 
         while index < bytes.count {
             switch bytes[index] {
             case 0x7B: // {
-                objectDepth += 1
+                seenKeysByObject.append([])
             case 0x7D: // }
-                objectDepth -= 1
+                if !seenKeysByObject.isEmpty {
+                    seenKeysByObject.removeLast()
+                }
             case 0x22: // "
                 let stringStart = index
                 index += 1
@@ -37,16 +60,19 @@ enum PassiveBluetoothStrictJSON {
                 guard index < bytes.count else { return nil }
                 let stringEnd = index
 
-                if objectDepth == 1 {
+                if !seenKeysByObject.isEmpty {
                     var lookahead = index + 1
                     while lookahead < bytes.count, isJSONWhitespace(bytes[lookahead]) {
                         lookahead += 1
                     }
                     if lookahead < bytes.count, bytes[lookahead] == 0x3A { // :
-                        let encodedKey = Data(bytes[stringStart...stringEnd])
-                        if let key = try? JSONDecoder().decode(String.self, from: encodedKey),
-                           !seenKeys.insert(key).inserted {
-                            return key
+                        let shouldInspect = scope == .allObjects || seenKeysByObject.count == 1
+                        if shouldInspect {
+                            let encodedKey = Data(bytes[stringStart...stringEnd])
+                            if let key = try? JSONDecoder().decode(String.self, from: encodedKey),
+                               !seenKeysByObject[seenKeysByObject.count - 1].insert(key).inserted {
+                                return key
+                            }
                         }
                     }
                 }
