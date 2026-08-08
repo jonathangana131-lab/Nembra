@@ -39,31 +39,25 @@ jobs:
               'while producer `stagingPreview()` proves this exact admission is still unconsumed.',
               'while producer `previewForControllerStaging()` proves this exact admission is still unconsumed.'
           )
-          old = '''        } catch {
-              if (try? admission.stagingPreview()) == nil {
-                  pendingCaptureAdmission = nil
-                  preparedCorrelatedTargetIdentifier = nil
-              }
-              throw error
-          }'''
-          new = '''        } catch {
-              // The narrowed producer staging preview remains readable only before
-              // irreversible one-shot consumption. Preserve the same completed
-              // OFF/ON evidence life only while that exact authority still exists.
-              do {
-                  _ = try admission.previewForControllerStaging()
-              } catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {
-                  pendingCaptureAdmission = nil
-                  preparedCorrelatedTargetIdentifier = nil
-              } catch {
-                  // Unknown/future staging-state failures are not proven retryable.
-                  pendingCaptureAdmission = nil
-                  preparedCorrelatedTargetIdentifier = nil
-              }
-              throw error
-          }'''
+          old = '''            if (try? admission.stagingPreview()) == nil {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            }'''
+          new = '''            // The narrowed producer staging preview remains readable only before
+            // irreversible one-shot consumption. Preserve the same completed
+            // OFF/ON evidence life only while that exact authority still exists.
+            do {
+                _ = try admission.previewForControllerStaging()
+            } catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            } catch {
+                // Unknown/future staging-state failures are not proven retryable.
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            }'''
           if text.count(old) != 1:
-              raise SystemExit(f'expected one hardened coordinator catch seam, found {text.count(old)}')
+              raise SystemExit(f'expected one old staging probe, found {text.count(old)}')
           text = text.replace(old, new, 1)
           path.write_text(text)
           PY
