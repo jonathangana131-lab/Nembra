@@ -34,7 +34,7 @@ struct PassiveCoreBluetoothObservationBoundaryMutationPermitTests {
         )
     }
 
-    private func classifyReadyAttempt(
+    private static func classifyReadyAttempt(
         _ admission: PassiveCoreBluetoothObservationBoundaryTransactionDecision,
         recorder: PassiveCoreBluetoothCaptureRecorder
     ) async -> AttemptResult {
@@ -48,7 +48,7 @@ struct PassiveCoreBluetoothObservationBoundaryMutationPermitTests {
         }
     }
 
-    private func classifyHorizonAttempt(
+    private static func classifyHorizonAttempt(
         _ admission: PassiveCoreBluetoothObservationBoundaryTransactionDecision.HorizonAdmission,
         recorder: PassiveCoreBluetoothCaptureRecorder
     ) async -> AttemptResult {
@@ -112,7 +112,7 @@ struct PassiveCoreBluetoothObservationBoundaryMutationPermitTests {
         ) { group in
             for copy in copies {
                 group.addTask {
-                    await classifyReadyAttempt(copy, recorder: recorder)
+                    await Self.classifyReadyAttempt(copy, recorder: recorder)
                 }
             }
 
@@ -206,7 +206,7 @@ struct PassiveCoreBluetoothObservationBoundaryMutationPermitTests {
         ) { group in
             for copy in copies {
                 group.addTask {
-                    await classifyHorizonAttempt(copy, recorder: recorder)
+                    await Self.classifyHorizonAttempt(copy, recorder: recorder)
                 }
             }
 
