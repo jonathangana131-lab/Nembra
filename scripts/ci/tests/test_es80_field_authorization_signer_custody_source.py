@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+import os
 from pathlib import Path
 import re
+import runpy
 import unittest
+from unittest.mock import patch
 
 SIGNER = Path(__file__).resolve().parents[1] / "es80_field_authorization_envelope.py"
 
@@ -88,6 +91,69 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             self.source,
             "Verification chatter must never contaminate the signer's JSON stdout.",
         )
+
+    def test_openssl_subprocess_behaviorally_ignores_hostile_ambient_environment(self):
+        namespace = runpy.run_path(str(SIGNER))
+        run_openssl = namespace["run_openssl"]
+        controlled_environment = namespace["controlled_openssl_environment"]()
+        timeout_seconds = namespace["OPENSSL_COMMAND_TIMEOUT_SECONDS"]
+        subprocess_module = namespace["subprocess"]
+        captured = {}
+
+        class Completed:
+            returncode = 0
+            stdout = b"fixture"
+            stderr = b""
+
+        def fake_run(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return Completed()
+
+        hostile_environment = {
+            "PATH": "/tmp/attacker-bin",
+            "HOME": "/tmp/attacker-home",
+            "OPENSSL_CONF": "/tmp/attacker-openssl.cnf",
+            "OPENSSL_MODULES": "/tmp/attacker-modules",
+            "OPENSSL_ENGINES": "/tmp/attacker-engines",
+            "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
+            "LD_PRELOAD": "/tmp/attacker.so",
+            "PYTHONPATH": "/tmp/attacker-python",
+        }
+        previous = {name: os.environ.get(name) for name in hostile_environment}
+        os.environ.update(hostile_environment)
+        try:
+            with patch("subprocess.run", side_effect=fake_run):
+                result = run_openssl(
+                    "/usr/bin/openssl",
+                    ["version"],
+                    capture_stdout=True,
+                )
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        self.assertEqual(result, b"fixture")
+        self.assertEqual(captured["args"][0], ["/usr/bin/openssl", "version"])
+        self.assertEqual(captured["kwargs"]["env"], controlled_environment)
+        self.assertEqual(captured["kwargs"]["cwd"], "/")
+        self.assertEqual(captured["kwargs"]["stdin"], subprocess_module.DEVNULL)
+        self.assertEqual(captured["kwargs"]["stderr"], subprocess_module.PIPE)
+        self.assertEqual(captured["kwargs"]["timeout"], timeout_seconds)
+        self.assertEqual(controlled_environment["OPENSSL_CONF"], "/dev/null")
+        self.assertEqual(controlled_environment["PATH"], "/usr/bin:/bin")
+        for name in (
+            "HOME",
+            "OPENSSL_MODULES",
+            "OPENSSL_ENGINES",
+            "DYLD_INSERT_LIBRARIES",
+            "LD_PRELOAD",
+            "PYTHONPATH",
+        ):
+            self.assertNotIn(name, controlled_environment)
 
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
