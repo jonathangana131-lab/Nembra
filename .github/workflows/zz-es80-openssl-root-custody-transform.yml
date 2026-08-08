@@ -1,0 +1,117 @@
+name: Temporary ES80 OpenSSL root-custody transform
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-openssl-root-custody/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tighten release-authority executable custody
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          signer_path = Path("scripts/ci/es80_field_authorization_envelope.py")
+          source = signer_path.read_text()
+
+          old_owner = '''    if hasattr(os, "geteuid"):
+                  signing_uid = os.geteuid()
+                  if executable_stat.st_uid not in {0, signing_uid}:
+                      raise AuthorizationEnvelopeError(
+                          "OpenSSL executable must be owned by root or the signing user"
+                      )
+          '''
+          new_owner = '''    if not hasattr(os, "geteuid"):
+                  raise AuthorizationEnvelopeError(
+                      "platform cannot verify root custody for the OpenSSL executable"
+                  )
+              if executable_stat.st_uid != 0:
+                  raise AuthorizationEnvelopeError(
+                      "OpenSSL executable must be owned by root for field-authorization signing"
+                  )
+          '''
+          if source.count(old_owner) != 1:
+              raise SystemExit("expected exactly one incumbent OpenSSL owner block")
+          source = source.replace(old_owner, new_owner, 1)
+
+          old_directory = '''        if directory_stat.st_mode & 0o022:
+                      raise AuthorizationEnvelopeError(
+                          f"OpenSSL custody path is group/world-writable: {directory}"
+                      )
+                  if directory == directory.parent:
+          '''
+          new_directory = '''        if not stat.S_ISDIR(directory_stat.st_mode):
+                      raise AuthorizationEnvelopeError(
+                          f"OpenSSL custody ancestor is not a directory: {directory}"
+                      )
+                  if directory_stat.st_uid != 0:
+                      raise AuthorizationEnvelopeError(
+                          f"OpenSSL custody path must be root-owned: {directory}"
+                      )
+                  if directory_stat.st_mode & 0o022:
+                      raise AuthorizationEnvelopeError(
+                          f"OpenSSL custody path is group/world-writable: {directory}"
+                      )
+                  if directory == directory.parent:
+          '''
+          if source.count(old_directory) != 1:
+              raise SystemExit("expected exactly one incumbent OpenSSL custody-directory block")
+          source = source.replace(old_directory, new_directory, 1)
+          signer_path.write_text(source)
+
+          test_path = Path("scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py")
+          test_source = test_path.read_text()
+          marker = '''    def test_private_key_requires_owner_only_posix_access(self):
+          '''
+          if marker not in test_source:
+              raise SystemExit("custody source-test insertion marker missing")
+          addition = '''    def test_openssl_executable_and_custody_ancestors_are_root_owned(self):
+                  self.assertIn(
+                      "executable_stat.st_uid != 0",
+                      self.source,
+                      "The release-authority executable must be root-owned, not merely signing-user-owned.",
+                  )
+                  self.assertIn(
+                      "directory_stat.st_uid != 0",
+                      self.source,
+                      "Every canonical OpenSSL custody ancestor must be root-owned.",
+                  )
+                  self.assertNotIn(
+                      "executable_stat.st_uid not in {0, signing_uid}",
+                      self.source,
+                      "A signing-user-owned executable remains replaceable by that identity between validation and exec.",
+                  )
+
+          '''
+          if "test_openssl_executable_and_custody_ancestors_are_root_owned" in test_source:
+              raise SystemExit("root-custody regression already exists")
+          test_source = test_source.replace(marker, addition + marker, 1)
+          test_path.write_text(test_source)
+          PY
+
+      - name: Validate focused signer custody
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          git diff --check
+
+      - name: Publish clean product checkpoint and remove transformer
+        run: |
+          rm .github/workflows/zz-es80-openssl-root-custody-transform.yml
+          git config user.name "Nembra V14 custody recovery"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Capture: require root-custodied OpenSSL signer"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
