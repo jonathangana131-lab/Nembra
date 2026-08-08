@@ -49,6 +49,9 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     }
 
     enum StateError: Error, Equatable, Sendable {
+        case terminalHorizonRequired
+        case staleTerminalTransaction
+        case terminalAuthorityChanged
         case resolvedFrontierDoesNotMatchHorizon(current: UInt64, horizon: UInt64)
         case controllerQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)
         case retainedEvidenceRoutingRequired(retainedCount: Int)
@@ -64,6 +67,9 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     /// Resolves a zero-retained terminal retirement synchronously on MainActor.
     ///
     /// Admission is deliberately strict:
+    /// - the supplied queue gate must still be the exact terminal transaction that
+    ///   issued the retirement receipt. Resolution cannot be delayed until after a
+    ///   reopen or substituted with another terminal authority/revision/H;
     /// - the controller's already-resolved frontier must be *exactly* H. This
     ///   proves the terminal boundary did not leave an unresolved pre-H queue gap
     ///   and makes replay fail once the caller advances its frontier;
@@ -83,8 +89,20 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     static func resolve(
         currentResolvedThroughQueueSequence: UInt64,
         currentLastEnqueuedEventSequence: UInt64,
-        retirementReceipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt
+        retirementReceipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt,
+        terminalGate: PassiveCoreBluetoothObservationBoundaryQueueGate
     ) throws -> Receipt {
+        guard case let .terminal(transaction) = terminalGate.phase else {
+            throw StateError.terminalHorizonRequired
+        }
+        guard transaction.revision == retirementReceipt.terminalTransactionRevision,
+              transaction.queueCutoff == retirementReceipt.horizonQueueCutoff else {
+            throw StateError.staleTerminalTransaction
+        }
+        guard transaction.authority == retirementReceipt.terminalAuthority else {
+            throw StateError.terminalAuthorityChanged
+        }
+
         let horizon = retirementReceipt.horizonQueueCutoff
         guard currentResolvedThroughQueueSequence == horizon else {
             throw StateError.resolvedFrontierDoesNotMatchHorizon(
