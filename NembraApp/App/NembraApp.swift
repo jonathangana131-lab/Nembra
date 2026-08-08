@@ -1,6 +1,5 @@
 import Foundation
 import NembraBluetoothCapture
-import NembraCore
 import SwiftUI
 
 @main
@@ -13,18 +12,15 @@ struct NembraApp: App {
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
-    @State private var researchController: ForegroundCoreBluetoothCaptureController?
+    @State private var researchCoordinator: PassiveBluetoothExperimentOneCoordinator?
 
     init() {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-
-        let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
-            && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
-        _researchController = State(
-            initialValue: fieldCaptureAuthorized
-                ? Self.makeES80ResearchController()
+        _researchCoordinator = State(
+            initialValue: launchMode == .es80PassiveCapture
+                ? try? PassiveBluetoothExperimentOneCoordinator()
                 : nil
         )
     }
@@ -51,13 +47,13 @@ struct NembraApp: App {
             case .es80PassiveCapture:
                 NavigationStack {
                     if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let researchController {
-                            ES80CaptureShellView(controller: researchController)
+                        if let researchCoordinator {
+                            ES80CaptureShellView(coordinator: researchCoordinator)
                         } else {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The passive Bluetooth research controller could not be created.")
+                                description: Text("The package-owned Experiment One workflow could not be created.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -82,14 +78,6 @@ struct NembraApp: App {
         }
 #endif
         return .standard
-    }
-
-    private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
-        // This is the declared software context required by the ES80 Experiment One authority.
-        // It is metadata consistency only and must never be presented as physical authentication.
-        try? ForegroundCoreBluetoothCaptureController(
-            vehicleIdentity: VehicleProfile.aovoproES80.identity
-        )
     }
 }
 
@@ -182,7 +170,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Correlation workflow installed")
+                        Text("Single-authority workflow installed")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -199,7 +187,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag or local preference cannot do it.")
+                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
