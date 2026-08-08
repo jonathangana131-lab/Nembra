@@ -7,6 +7,7 @@ on:
       - scripts/ci/xcode27_simulator_capture.sh
       - scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
       - scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+      - scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
       - .github/workflows/capture-simulator-visual-custody-source.yml
 
 permissions:
@@ -35,3 +36,5 @@ jobs:
           python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
           python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
