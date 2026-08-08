@@ -18,8 +18,7 @@ jobs:
         with:
           ref: parallel/es80-recovery-installed-recorder-gate-v14/chat-gpt56
           fetch-depth: 0
-
-      - name: Patch four-state gate to consume real-recorder recovery proof
+      - name: Patch recovery gate
         shell: bash
         run: |
           set -euo pipefail
@@ -27,347 +26,28 @@ jobs:
           from pathlib import Path
           p = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
           s = p.read_text()
-
-          def one(old, new, label):
+          def one(old,new,label):
               global s
-              n = s.count(old)
-              if n != 1:
-                  raise SystemExit(f'{label}: expected one anchor, found {n}')
-              s = s.replace(old, new, 1)
-
-          one(
-              '        case horizonArtifactNotReady\n',
-              '        case horizonArtifactNotReady\n'
-              '        case freshTargetSessionRequired\n'
-              '        case recoveryResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n'
-              '        case recoveryQueueTailChanged(expected: UInt64, actual: UInt64)\n'
-              '        case freshRecorderNotInstalled\n'
-              '        case freshRecorderSessionMismatch\n',
-              'errors'
-          )
-          one(
-              '    private var committedReadyTransaction: Transaction?\n',
-              '    private var committedReadyTransaction: Transaction?\n'
-              '    /// Exact producer-provisioned target session allowed to consume the first Ready after recovery.\n'
-              '    private var requiredReadyTargetSessionGeneration: UInt64?\n',
-              'state'
-          )
-          one(
-              '        guard processedQueueSequence == nil else {\n'
-              '            throw StateError.invalidTransition\n'
-              '        }\n'
-              '        guard nextRevision != UInt64.max else {\n',
-              '        guard processedQueueSequence == nil else {\n'
-              '            throw StateError.invalidTransition\n'
-              '        }\n'
-              '        if let requiredReadyTargetSessionGeneration {\n'
-              '            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {\n'
-              '                throw StateError.freshTargetSessionRequired\n'
-              '            }\n'
-              '        }\n'
-              '        guard nextRevision != UInt64.max else {\n',
-              'Ready admission'
-          )
-          one(
-              '        phase = .drainingReady(transaction)\n'
-              '        nextRevision += 1\n',
-              '        requiredReadyTargetSessionGeneration = nil\n'
-              '        phase = .drainingReady(transaction)\n'
-              '        nextRevision += 1\n',
-              'Ready consume'
-          )
-
-          anchor = '    /// Abort quarantine is intentionally irreversible in this slice.'
-          i = s.find(anchor)
-          if i < 0:
-              raise SystemExit('recovery tail anchor missing')
-          tail = '''    /// Reopens an abandoned epoch only from a real-recorder provisioning receipt whose
-    /// embedded FIFO resolution is still applied and whose exact recorder is already installed.
-    @MainActor
-    mutating func reopenAfterAbortedFreshTargetSession(
-        _ fresh: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
-        currentResolvedThroughQueueSequence: UInt64,
-        currentLastEnqueuedEventSequence: UInt64,
-        installedRecorderIdentity: ObjectIdentifier,
-        installedRecorderSessionID: UUID
-    ) throws {
-        guard case let .abortQuarantined(currentAbort) = phase else {
-            throw StateError.invalidTransition
-        }
-        let resolution = fresh.abortedResolution
-        guard resolution.abortReceipt == currentAbort else {
-            throw StateError.staleTransaction
-        }
-        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
-            throw StateError.recoveryResolvedFrontierNotApplied(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentResolvedThroughQueueSequence
-            )
-        }
-        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
-            throw StateError.recoveryQueueTailChanged(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentLastEnqueuedEventSequence
-            )
-        }
-        guard installedRecorderIdentity == fresh.recorderIdentity else {
-            throw StateError.freshRecorderNotInstalled
-        }
-        guard installedRecorderSessionID == fresh.sessionID else {
-            throw StateError.freshRecorderSessionMismatch
-        }
-        guard fresh.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
-            throw StateError.freshTargetSessionRequired
-        }
-
-        committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration
-        phase = .awaitingReady
-    }
-
-    /// Reopens terminal H only from UUID-bound terminal resolution carried by a real-recorder
-    /// provisioning receipt. Resolution issuance alone is insufficient: the controller must
-    /// already have applied the resolved frontier and installed that exact recorder/session.
-    @MainActor
-    mutating func reopenAfterTerminalFreshTargetSession(
-        _ fresh: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,
-        currentResolvedThroughQueueSequence: UInt64,
-        currentLastEnqueuedEventSequence: UInt64,
-        installedRecorderIdentity: ObjectIdentifier,
-        installedRecorderSessionID: UUID
-    ) throws {
-        guard case let .terminal(transaction) = phase else {
-            throw StateError.invalidTransition
-        }
-        let resolution = fresh.terminalResolution
-        guard resolution.terminalTransactionRevision == transaction.revision,
-              resolution.terminalTransactionIdentity == transaction.identity,
-              resolution.horizonQueueCutoff == transaction.queueCutoff,
-              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
-            throw StateError.staleTransaction
-        }
-        guard resolution.terminalAuthority == transaction.authority else {
-            throw StateError.authorityChanged
-        }
-        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
-            throw StateError.recoveryResolvedFrontierNotApplied(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentResolvedThroughQueueSequence
-            )
-        }
-        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
-            throw StateError.recoveryQueueTailChanged(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentLastEnqueuedEventSequence
-            )
-        }
-        guard installedRecorderIdentity == fresh.recorderIdentity else {
-            throw StateError.freshRecorderNotInstalled
-        }
-        guard installedRecorderSessionID == fresh.sessionID else {
-            throw StateError.freshRecorderSessionMismatch
-        }
-        guard fresh.targetSessionGeneration > transaction.authority.targetSessionGeneration else {
-            throw StateError.freshTargetSessionRequired
-        }
-
-        committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration
-        phase = .awaitingReady
-    }
-
-    /// Weak reset cannot escape quarantine/terminal state or erase a producer-issued bind.
-    @discardableResult
-    mutating func resetForNewCaptureSession() -> Bool {
-        guard phase == .awaitingReady else { return false }
-        committedReadyTransaction = nil
-        return true
-    }
-}
-'''
-          p.write_text(s[:i] + tail)
+              if s.count(old) != 1: raise SystemExit(label)
+              s = s.replace(old,new,1)
+          one('        case horizonArtifactNotReady\n','        case horizonArtifactNotReady\n        case freshTargetSessionRequired\n        case recoveryResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n        case recoveryQueueTailChanged(expected: UInt64, actual: UInt64)\n        case freshRecorderNotInstalled\n        case freshRecorderSessionMismatch\n','errors')
+          one('    private var committedReadyTransaction: Transaction?\n','    private var committedReadyTransaction: Transaction?\n    private var requiredReadyTargetSessionGeneration: UInt64?\n','state')
+          one('        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        guard nextRevision != UInt64.max else {\n','        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        if let requiredReadyTargetSessionGeneration {\n            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else { throw StateError.freshTargetSessionRequired }\n        }\n        guard nextRevision != UInt64.max else {\n','ready-check')
+          one('        phase = .drainingReady(transaction)\n        nextRevision += 1\n','        requiredReadyTargetSessionGeneration = nil\n        phase = .drainingReady(transaction)\n        nextRevision += 1\n','ready-consume')
+          anchor='    /// Abort quarantine is intentionally irreversible in this slice.'
+          i=s.find(anchor)
+          if i<0: raise SystemExit('tail')
+          lines=[
+          '    @MainActor','    mutating func reopenAfterAbortedFreshTargetSession(','        _ fresh: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,','        currentResolvedThroughQueueSequence: UInt64,','        currentLastEnqueuedEventSequence: UInt64,','        installedRecorderIdentity: ObjectIdentifier,','        installedRecorderSessionID: UUID','    ) throws {','        guard case let .abortQuarantined(currentAbort) = phase else { throw StateError.invalidTransition }','        let resolution = fresh.abortedResolution','        guard resolution.abortReceipt == currentAbort else { throw StateError.staleTransaction }','        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {','            throw StateError.recoveryResolvedFrontierNotApplied(expected: resolution.resolvedThroughQueueSequence, actual: currentResolvedThroughQueueSequence)','        }','        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {','            throw StateError.recoveryQueueTailChanged(expected: resolution.resolvedThroughQueueSequence, actual: currentLastEnqueuedEventSequence)','        }','        guard installedRecorderIdentity == fresh.recorderIdentity else { throw StateError.freshRecorderNotInstalled }','        guard installedRecorderSessionID == fresh.sessionID else { throw StateError.freshRecorderSessionMismatch }','        guard fresh.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else { throw StateError.freshTargetSessionRequired }','        committedReadyTransaction = nil','        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration','        phase = .awaitingReady','    }','',
+          '    @MainActor','    mutating func reopenAfterTerminalFreshTargetSession(','        _ fresh: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,','        currentResolvedThroughQueueSequence: UInt64,','        currentLastEnqueuedEventSequence: UInt64,','        installedRecorderIdentity: ObjectIdentifier,','        installedRecorderSessionID: UUID','    ) throws {','        guard case let .terminal(transaction) = phase else { throw StateError.invalidTransition }','        let resolution = fresh.terminalResolution','        guard resolution.terminalTransactionRevision == transaction.revision,','              resolution.terminalTransactionIdentity == transaction.identity,','              resolution.horizonQueueCutoff == transaction.queueCutoff,','              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else { throw StateError.staleTransaction }','        guard resolution.terminalAuthority == transaction.authority else { throw StateError.authorityChanged }','        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {','            throw StateError.recoveryResolvedFrontierNotApplied(expected: resolution.resolvedThroughQueueSequence, actual: currentResolvedThroughQueueSequence)','        }','        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {','            throw StateError.recoveryQueueTailChanged(expected: resolution.resolvedThroughQueueSequence, actual: currentLastEnqueuedEventSequence)','        }','        guard installedRecorderIdentity == fresh.recorderIdentity else { throw StateError.freshRecorderNotInstalled }','        guard installedRecorderSessionID == fresh.sessionID else { throw StateError.freshRecorderSessionMismatch }','        guard fresh.targetSessionGeneration > transaction.authority.targetSessionGeneration else { throw StateError.freshTargetSessionRequired }','        committedReadyTransaction = nil','        requiredReadyTargetSessionGeneration = fresh.targetSessionGeneration','        phase = .awaitingReady','    }','',
+          '    @discardableResult','    mutating func resetForNewCaptureSession() -> Bool {','        guard phase == .awaitingReady else { return false }','        committedReadyTransaction = nil','        return true','    }','}','']
+          p.write_text(s[:i]+'\n'.join(lines))
           PY
-
-          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothInstalledRecorderRecoveryGateTests.swift <<'SWIFT'
-          import Foundation
-          import NembraCore
-          import Testing
-          @testable import NembraBluetoothCapture
-
-          @Suite("Installed-recorder Capture recovery gate")
-          struct PassiveCoreBluetoothInstalledRecorderRecoveryGateTests {
-              private typealias Gate = PassiveCoreBluetoothObservationBoundaryQueueGate
-              private struct Event: Equatable {
-                  let queueSequence: UInt64
-                  let authority: PassiveCoreBluetoothArtifactAuthorityContext
-              }
-              private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
-                  targetSessionGeneration: 7,
-                  authorityGeneration: 11
-              )
-              private let es80 = VehicleIdentity(
-                  manufacturer: "AOVOPRO",
-                  model: "ES80",
-                  displayName: "AOVOPRO ES80",
-                  protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
-              )
-
-              @Test("aborted reopen requires applied frontier and exact installed recorder")
-              @MainActor
-              func abortedRecoveryConsumesRealRecorderProof() async throws {
-                  var gate = Gate()
-                  let committed = try await committedReady(gate: &gate, cutoff: 2)
-                  _ = try gate.abortObservationEpoch(committed)
-                  var pending: [Event] = []
-                  let retirement = try PassiveCoreBluetoothAbortedObservationQueueRetirement.retire(
-                      from: &pending,
-                      currentLastEnqueuedEventSequence: 2,
-                      currentSettledQueueSequence: 2,
-                      drainIsIdle: true,
-                      abortedGate: gate,
-                      identity: { .init(queueSequence: $0.queueSequence, authority: $0.authority) }
-                  )
-                  let resolution = try PassiveCoreBluetoothAbortedQueueResolution.resolve(
-                      currentResolvedThroughQueueSequence: 2,
-                      currentLastEnqueuedEventSequence: 2,
-                      retirementReceipt: retirement,
-                      abortedGate: gate
-                  )
-                  let fresh = try PassiveCoreBluetoothAbortedFreshTargetSession.create(
-                      after: resolution,
-                      vehicleIdentity: es80
-                  )
-
-                  #expect(throws: Gate.StateError.recoveryResolvedFrontierNotApplied(expected: 2, actual: 1)) {
-                      try gate.reopenAfterAbortedFreshTargetSession(
-                          fresh.receipt,
-                          currentResolvedThroughQueueSequence: 1,
-                          currentLastEnqueuedEventSequence: 2,
-                          installedRecorderIdentity: ObjectIdentifier(fresh.recorder),
-                          installedRecorderSessionID: fresh.receipt.sessionID
-                      )
-                  }
-                  #expect(throws: Gate.StateError.freshRecorderNotInstalled) {
-                      try gate.reopenAfterAbortedFreshTargetSession(
-                          fresh.receipt,
-                          currentResolvedThroughQueueSequence: 2,
-                          currentLastEnqueuedEventSequence: 2,
-                          installedRecorderIdentity: ObjectIdentifier(PassiveCoreBluetoothCaptureRecorder.self),
-                          installedRecorderSessionID: fresh.receipt.sessionID
-                      )
-                  }
-                  try gate.reopenAfterAbortedFreshTargetSession(
-                      fresh.receipt,
-                      currentResolvedThroughQueueSequence: 2,
-                      currentLastEnqueuedEventSequence: 2,
-                      installedRecorderIdentity: ObjectIdentifier(fresh.recorder),
-                      installedRecorderSessionID: fresh.receipt.sessionID
-                  )
-                  #expect(gate.phase == .awaitingReady)
-                  #expect(throws: Gate.StateError.freshTargetSessionRequired) {
-                      _ = try gate.begin(
-                          .finiteAcquisitionReady,
-                          through: 2,
-                          authority: .init(targetSessionGeneration: 9, authorityGeneration: 1)
-                      )
-                  }
-                  _ = try gate.begin(
-                      .finiteAcquisitionReady,
-                      through: 2,
-                      authority: .init(targetSessionGeneration: 8, authorityGeneration: 1)
-                  )
-              }
-
-              @Test("terminal reopen requires UUID-bound resolution, applied frontier, and installed recorder")
-              @MainActor
-              func terminalRecoveryConsumesRealRecorderProof() async throws {
-                  var gate = Gate()
-                  let committed = try await committedReady(gate: &gate, cutoff: 2)
-                  let horizon = try committed.beginHorizon(
-                      queueCutoff: 3,
-                      processedThrough: 3,
-                      gate: &gate
-                  )
-                  let recorder = try PassiveCoreBluetoothCaptureRecorder(
-                      vehicleIdentity: es80,
-                      startedAt: Date(timeIntervalSince1970: 3)
-                  )
-                  let recordedH = try await horizon.recordBoundary(on: recorder)
-                  let committedH = try recordedH.markBoundaryRecorded(
-                      on: &gate,
-                      lastProcessedQueueSequence: 3
-                  )
-                  try committedH.completeHorizonArtifactFreeze(on: &gate)
-
-                  var pending = [Event(queueSequence: 4, authority: authority)]
-                  let retirement = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                      from: &pending,
-                      currentLastEnqueuedEventSequence: 4,
-                      terminalGate: gate,
-                      identity: { .init(queueSequence: $0.queueSequence, authority: $0.authority) }
-                  )
-                  let resolution = try PassiveCoreBluetoothTerminalQueueResolution.resolve(
-                      currentResolvedThroughQueueSequence: 3,
-                      currentLastEnqueuedEventSequence: 4,
-                      retirementReceipt: retirement,
-                      terminalGate: gate
-                  )
-                  let fresh = try PassiveCoreBluetoothTerminalFreshTargetSession.create(
-                      after: resolution,
-                      vehicleIdentity: es80
-                  )
-
-                  #expect(throws: Gate.StateError.recoveryQueueTailChanged(expected: 4, actual: 5)) {
-                      try gate.reopenAfterTerminalFreshTargetSession(
-                          fresh.receipt,
-                          currentResolvedThroughQueueSequence: 4,
-                          currentLastEnqueuedEventSequence: 5,
-                          installedRecorderIdentity: ObjectIdentifier(fresh.recorder),
-                          installedRecorderSessionID: fresh.receipt.sessionID
-                      )
-                  }
-                  try gate.reopenAfterTerminalFreshTargetSession(
-                      fresh.receipt,
-                      currentResolvedThroughQueueSequence: 4,
-                      currentLastEnqueuedEventSequence: 4,
-                      installedRecorderIdentity: ObjectIdentifier(fresh.recorder),
-                      installedRecorderSessionID: fresh.receipt.sessionID
-                  )
-                  #expect(gate.phase == .awaitingReady)
-              }
-
-              @MainActor
-              private func committedReady(
-                  gate: inout Gate,
-                  cutoff: UInt64
-              ) async throws -> PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch {
-                  let recorder = try PassiveCoreBluetoothCaptureRecorder(
-                      vehicleIdentity: es80,
-                      startedAt: Date(timeIntervalSince1970: 1)
-                  )
-                  let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
-                  let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
-                      queueCutoff: cutoff,
-                      processedThrough: cutoff,
-                      authorityFence: fence,
-                      gate: &gate
-                  )
-                  let recorded = try await admission.recordBoundary(on: recorder)
-                  return try recorded.markBoundaryRecorded(
-                      on: &gate,
-                      lastProcessedQueueSequence: cutoff
-                  )
-              }
-          }
-          SWIFT
-
           python3 <<'PY'
           from pathlib import Path
-          s = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift').read_text()
+          s=Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift').read_text()
           assert 'uncommittedHorizonAbandonedBeforeRecorderMutation' in s
-          assert 'reopenAfterAbortedFreshTargetSession' in s
           assert 'PassiveCoreBluetoothAbortedFreshTargetSession.Receipt' in s
-          assert 'reopenAfterTerminalFreshTargetSession' in s
           assert 'PassiveCoreBluetoothTerminalFreshTargetSession.Receipt' in s
           assert 'terminalTransactionIdentity == transaction.identity' in s
           assert 'installedRecorderIdentity == fresh.recorderIdentity' in s
@@ -375,7 +55,6 @@ jobs:
           assert 'freshTargetSessionGeneration:' not in s[s.index('reopenAfterAbortedFreshTargetSession'):]
           PY
           git diff --check
-
       - name: Commit clean product checkpoint
         shell: bash
         run: |
@@ -383,7 +62,7 @@ jobs:
           git config user.name 'nembra-chat-gpt56'
           git config user.email 'nembra-chat-gpt56@users.noreply.github.com'
           rm .github/workflows/es80-installed-recorder-reopen-gate-v14.yml
-          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothInstalledRecorderRecoveryGateTests.swift .github/workflows/es80-installed-recorder-reopen-gate-v14.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift .github/workflows/es80-installed-recorder-reopen-gate-v14.yml
           git diff --cached --check
           git commit -m 'feat: reopen Capture only from installed fresh-recorder proof'
           git push origin HEAD:parallel/es80-recovery-installed-recorder-gate-v14/chat-gpt56
