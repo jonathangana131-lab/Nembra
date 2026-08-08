@@ -48,7 +48,10 @@ struct PassiveCoreBluetoothReadyPreAttemptAbandonmentTests {
         let abort = try gate.abortReadyBeforeRecorderAttempt(after: abandonment)
         #expect(abort.origin == .uncommittedReadyAbandonedBeforeRecorderAttempt)
         #expect(abort.abandonedReadyQueueCutoff == 2)
-        #expect(abort.abandonedEvidenceQueueCutoff == 0)
+        // The exact FIFO prefix may already have drained into the recorder before
+        // controller health failed; preserve that chronology without fabricating a
+        // durable finiteAcquisitionReady lifecycle marker.
+        #expect(abort.abandonedEvidenceQueueCutoff == 2)
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(!gate.isTerminal)
         #expect(!gate.resetForNewCaptureSession())
