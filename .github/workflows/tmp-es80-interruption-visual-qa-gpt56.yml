@@ -17,66 +17,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify exact visual-QA parent
-        run: test "$(git rev-parse HEAD^)" = "64760fb9f683ddf5cc8bc296283e4787675886f0"
+      - name: Verify exact visual-QA checkpoint
+        run: test "$(git rev-parse HEAD^)" = "94b069a85b3e302af615863a3c2552009de1f0b0"
 
       - name: Add interrupted-state visual acceptance
+        env:
+          TEST_B64: "ICAgIEBNYWluQWN0b3IKICAgIGZ1bmMgdGVzdFYxNFNpbXVsYXRvclFBRm9yZWdyb3VuZEludGVycnVwdGlvbktlZXBzVHJ1dGhBbmRSZWNvdmVyeVZpc2libGUoKSB7CiAgICAgICAgbGV0IGFwcCA9IFhDVUlBcHBsaWNhdGlvbigpCiAgICAgICAgYXBwLmxhdW5jaEFyZ3VtZW50cyA9IFsKICAgICAgICAgICAgIi0tZXM4MC1wYXNzaXZlLWNhcHR1cmUtc2ltdWxhdG9yLXFhIiwKICAgICAgICAgICAgIi0tZXM4MC1jYXB0dXJlLXFhLXNjZW5hcmlvPWZvcmVncm91bmRJbnRlcnJ1cHRlZCIKICAgICAgICBdCiAgICAgICAgYXBwLmxhdW5jaCgpCgogICAgICAgIGxldCBxYURpc2Nsb3N1cmUgPSBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUuc2ltdWxhdG9yLXFhIl0KICAgICAgICBsZXQgc3RvcHBlZFN0YXRlID0gYXBwLnN0YXRpY1RleHRzWyJDYXB0dXJlIHN0b3BwZWQgc2FmZWx5Il0KICAgICAgICBsZXQgcmVzdGFydCA9IGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5yZXN0YXJ0LWV4cGVyaW1lbnQiXQoKICAgICAgICBYQ1RBc3NlcnRUcnVlKHFhRGlzY2xvc3VyZS53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDUpKQogICAgICAgIFhDVEFzc2VydFRydWUoc3RvcHBlZFN0YXRlLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShyZXN0YXJ0LndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0RmFsc2UoYXBwLmRlc2NlbmRhbnRzKG1hdGNoaW5nOiAuYW55KVsiZXM4MC5jYXB0dXJlLmZpZWxkLW5vLWdvIl0uZXhpc3RzKQogICAgICAgIFhDVEFzc2VydEZhbHNlKGFwcC5idXR0b25zWyJWZWhpY2xlIGNvbnRyb2xzIl0uZXhpc3RzKQoKICAgICAgICBsZXQgYXR0YWNobWVudCA9IFhDVEF0dGFjaG1lbnQoc2NyZWVuc2hvdDogYXBwLnNjcmVlbnNob3QoKSkKICAgICAgICBhdHRhY2htZW50Lm5hbWUgPSAiTmVtYnJhIENhcHR1cmUgVjE0IOKAlCBTSU1VTEFUT1IgUUEg4oCUIEZvcmVncm91bmQgSW50ZXJydXB0ZWQiCiAgICAgICAgYXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKGF0dGFjaG1lbnQpCgogICAgICAgIGxldCB3aW5kb3dGcmFtZSA9IGFwcC53aW5kb3dzLmZpcnN0TWF0Y2guZnJhbWUKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHFhRGlzY2xvc3VyZSwKICAgICAgICAgICAgd2luZG93RnJhbWU6IHdpbmRvd0ZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAic3ludGhldGljIFNpbXVsYXRvciBRQSBkaXNjbG9zdXJlIGluIGludGVycnVwdGVkIHN0YXRlIgogICAgICAgICkKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHN0b3BwZWRTdGF0ZSwKICAgICAgICAgICAgd2luZG93RnJhbWU6IHdpbmRvd0ZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAiaW50ZXJydXB0ZWQgQ2FwdHVyZSBzdG9wcGVkIHN0YXRlIgogICAgICAgICkKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHJlc3RhcnQsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiB3aW5kb3dGcmFtZSwKICAgICAgICAgICAgY29udGV4dDogImZyZXNoLXJ1biByZWNvdmVyeSBhY3Rpb24gYWZ0ZXIgaW50ZXJydXB0aW9uIgogICAgICAgICkKICAgIH0KCg=="
         run: |
           python3 - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
           path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
           source = path.read_text(encoding="utf-8")
-          marker = '''    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {'''
-          test = '''    @MainActor
-    func testV14SimulatorQAForegroundInterruptionKeepsTruthAndRecoveryVisible() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--es80-passive-capture-simulator-qa",
-            "--es80-capture-qa-scenario=foregroundInterrupted"
-        ]
-        app.launch()
-
-        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
-        let stoppedState = app.staticTexts["Capture stopped safely"]
-        let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
-
-        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
-        XCTAssertTrue(stoppedState.waitForExistence(timeout: 3))
-        XCTAssertTrue(restart.waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        let windowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            qaDisclosure,
-            windowFrame: windowFrame,
-            context: "synthetic Simulator QA disclosure in interrupted state"
-        )
-        assertVisibleInScreenshotViewport(
-            stoppedState,
-            windowFrame: windowFrame,
-            context: "interrupted Capture stopped state"
-        )
-        assertVisibleInScreenshotViewport(
-            restart,
-            windowFrame: windowFrame,
-            context: "fresh-run recovery action after interruption"
-        )
-    }
-
-'''
+          marker = "    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {"
+          test = base64.b64decode(os.environ["TEST_B64"]).decode("utf-8")
           if marker not in source:
               raise SystemExit("expected Simulator QA source-contract marker not found")
           if "testV14SimulatorQAForegroundInterruptionKeepsTruthAndRecoveryVisible" in source:
               raise SystemExit("interruption visual gate already exists")
-          source = source.replace(marker, test + marker, 1)
-          path.write_text(source, encoding="utf-8")
+          path.write_text(source.replace(marker, test + marker, 1), encoding="utf-8")
           PY
 
       - name: Verify exact effective scope
