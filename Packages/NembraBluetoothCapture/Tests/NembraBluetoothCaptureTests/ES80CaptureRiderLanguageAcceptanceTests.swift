@@ -44,10 +44,15 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "package-owned physical execution gate",
             "producer's evidence clock",
             "producer accepts the window only from its own monotonic receipt boundary",
+            "The package producer, not this timer",
+            "package accepts the required monotonic observation duration",
             "full CoreBluetooth identifier",
+            "selectable full Bluetooth identifier",
+            "full Bluetooth identifier",
             "post-admission scan",
             "fresh scan epoch created after the sealed admission",
             "package-owned correlated target",
+            "application characteristic-value writes",
             "finite acquisition",
             "accepted Horizon authority",
             "accepted monotonic observation interval",
@@ -56,7 +61,12 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "immutable JSON artifact",
             "Evidence failed closed",
             "bounded CoreBluetooth advertisement catalog",
-            "package-owned outer, SoftwareExport, and immutable Capture integrity checks"
+            "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+            "FIELD AUTHORITY",
+            "PASSIVE ACQUISITION",
+            "HORIZON READY",
+            "healthItem(\"FINITE\"",
+            "healthItem(\"HORIZON\""
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -69,6 +79,12 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("PASSIVE / READ ONLY"))
         #expect(riderSurface.contains("Scooter OFF"))
         #expect(riderSurface.contains("Scooter ON"))
+        #expect(riderSurface.contains("CAPTURE LOCK"))
+        #expect(riderSurface.contains("READ-ONLY SETUP"))
+        #expect(riderSurface.contains("READY TO SEAL"))
+        #expect(riderSurface.contains("healthItem(\"SIGNAL\""))
+        #expect(riderSurface.contains("healthItem(\"SETUP\""))
+        #expect(riderSurface.contains("healthItem(\"OBSERVE\""))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
     }
