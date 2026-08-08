@@ -683,9 +683,32 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 throw error
             }
 
-            let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
-            try validateBoundaryAuthority(committedHorizon.authority)
-            try committedHorizon.completeHorizonArtifactFreeze(on: &observationBoundaryQueueGate)
+            let data: Data
+            do {
+                // Artifact materialization, final authority validation, and explicit
+                // terminal freeze form one committed-H pre-freeze transaction. Any
+                // failure here preserves H as durable incomplete evidence and must
+                // quarantine the exact producer-issued committed H rather than retry
+                // under a newer authority or fabricate terminal success.
+                data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                try validateBoundaryAuthority(committedHorizon.authority)
+                try committedHorizon.completeHorizonArtifactFreeze(
+                    on: &observationBoundaryQueueGate
+                )
+            } catch {
+                let artifactFailure = error
+                do {
+                    try observationBoundaryQueueGate.abortCommittedHorizonBeforeArtifactFreeze(
+                        committedHorizon
+                    )
+                } catch {
+                    // If exact quarantine itself cannot be established, surface that
+                    // stronger lifecycle failure; the outer failCapture path remains
+                    // closed and still never retires or terminalizes this epoch.
+                    throw error
+                }
+                throw artifactFailure
+            }
             retireQueuedEvidenceAfterTerminalHorizon()
             lastFinalizedArtifactAuthority = committedHorizon.authority
             return data
