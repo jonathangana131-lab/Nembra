@@ -34,6 +34,26 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
     }
 
     @Test
+    func finalShareIntegrityReportsExactOuterAndNestedCaptureFacts() throws {
+        let artifact = try makeArtifact()
+        let report = try PassiveBluetoothExperimentOneFinalShareArtifactIntegrity
+            .inspect(artifact.json)
+        let verified = try PassiveBluetoothExperimentOneFinalShareArtifactCodec
+            .decodeAndVerify(artifact.json)
+
+        #expect(report.finalShareSHA256 == sha256Hex(artifact.json))
+        #expect(report.finalShareByteCount == artifact.json.count)
+        #expect(report.experimentID == verified.experimentID)
+        #expect(report.experimentRecipeID == .es80FingerprintV1)
+        #expect(report.procedureVersion == "V14")
+        #expect(report.buildInstanceID == buildInstanceID.lowercased())
+        #expect(report.softwareExport.envelopeSHA256 == verified.softwareExportSHA256)
+        #expect(report.softwareExport.capture.captureSessionID == UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF"))
+        #expect(report.softwareExport.capture.recordCount == 2)
+        #expect(report.softwareExport.capture.rawValueRecordCount == 1)
+    }
+
+    @Test
     func procedureVersionTamperFailsClosed() throws {
         let artifact = try makeArtifact()
         var root = try jsonObject(artifact.json)
