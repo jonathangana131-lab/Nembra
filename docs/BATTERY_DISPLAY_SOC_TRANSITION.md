@@ -49,9 +49,11 @@ These rules preserve the visual one-percent experience where appropriate while k
 
 ## App-target visibility
 
-The Xcode app target currently compiles selected NembraCore source files through explicit `project.pbxproj` entries rather than automatically compiling every package source. The transition planner therefore lives in `BatteryPrimaryReadoutState.swift`, the same battery presentation source that the active Dashboard readout integration already wires into the app target. This avoids creating a second manual project-file entry and prevents a package-green/app-target-missing-source failure mode.
+The Xcode app target currently compiles selected NembraCore source files through explicit `project.pbxproj` entries rather than automatically compiling every package source. On current `main`, `BatteryPrimaryReadoutState.swift` remains package-domain source and is not yet part of the Nembra app target. The active battery readout/project-wiring integration owns that Class-A app-visibility boundary; this lane must not race it by editing `project.pbxproj` or Dashboard source.
 
-The transition types remain a package-domain boundary. This co-location is build integration only; it does not merge presentation frames with battery evidence or give the planner permission to mutate readout state.
+The transition planner is intentionally co-located in `BatteryPrimaryReadoutState.swift` so that, once the battery readout integration is accepted and that source becomes app-visible, these transition declarations can share the same source entry instead of requiring a second manual project-file entry. Until that integration lands, package tests prove the planner's software behavior, but an app build on this package-only composition does not prove that these declarations are compiled into `Nembra.app`.
+
+This co-location does not merge presentation frames with battery evidence or give the planner permission to mutate readout state.
 
 ## Rolling-number relationship
 
