@@ -4,7 +4,9 @@ Status: **CANDIDATE PRODUCTION / EVIDENCE ONLY — PHYSICAL EXPERIMENT ONE REMAI
 
 ## Canonical production chain
 
-`scripts/ci/xcode27_signed_field_candidate.sh` produces the real signed/exported iPhone Capture candidate. It builds from a fresh detached worktree at the exact source SHA, stamps the exact V14 Capture build tuple plus `NembraCaptureFieldRecipe=ES80-FINGERPRINT-v1`, exports one IPA, and passes that IPA into the canonical post-build inspector `scripts/ci/es80_signed_field_artifact_evidence.py`.
+`scripts/ci/xcode27_signed_field_candidate.sh` produces the real signed/exported iPhone Capture candidate. It builds from a fresh detached worktree at the exact source SHA, stamps the exact V14 Capture build tuple plus `NembraCaptureFieldRecipe=ES80-FINGERPRINT-v1`, exports one IPA, and passes that IPA through `scripts/ci/es80_signed_field_artifact_private_runner.py` into the canonical post-build inspector `scripts/ci/es80_signed_field_artifact_evidence.py`.
+
+The private runner exists only to keep the verification-only intended-device identifier out of exported environment values and OS-visible process argv. The producer passes a path to a private file; the runner opens that file no-follow, requires a current-user-owned regular file with no group/other access, rejects mutation during the bounded read, and calls the canonical inspector with the identifier only in an in-memory argument list. It does not create another evidence schema or another authority boundary.
 
 The field-recipe Info.plist value is launch routing only. It lets an accepted Release field build opened from the iPhone Home Screen enter the Capture instrument without a DEBUG-only Xcode launch argument. It cannot grant physical authority; the package field gate remains independently fail-closed.
 
@@ -14,6 +16,26 @@ The producer does not create another field evidence schema. The machine-readable
 - `NembraCaptureFieldBuildEvidenceRecord.json` — closed-world package field-build record binding the exact signed IPA digest;
 - `NembraCaptureSignedFieldArtifactInspection.json` — non-authorizing platform/signing/provisioning/launch diagnostics;
 - `build-evidence/NembraField.ipa` — retained exact exported signed installable.
+
+## Private intended-device verification input
+
+The intended iPhone identifier is an admission/check input only. It must not be exported as `NEMBRA_INTENDED_FIELD_DEVICE_UDID`, printed into logs, placed directly on a command line, or persisted into candidate evidence.
+
+Create one private file outside the repository and candidate-artifact directory. For an interactive field machine, one safe pattern is:
+
+```bash
+PRIVATE_DEVICE_FILE="$HOME/.nembra-es80-field-device"
+umask 077
+read -r -s -p "Intended field iPhone UDID: " NEMBRA_DEVICE_UDID; echo
+printf '%s' "$NEMBRA_DEVICE_UDID" > "$PRIVATE_DEVICE_FILE"
+unset NEMBRA_DEVICE_UDID
+chmod 600 "$PRIVATE_DEVICE_FILE"
+export NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE="$PRIVATE_DEVICE_FILE"
+```
+
+The file must contain exactly one nonblank UTF-8 value of at most 128 bytes, with no trailing newline or control character. It must be a regular non-symlink file owned by the current user and inaccessible to group/other. The producer validates that private input before spending an archive/export cycle, and the private runner validates it again immediately before the canonical signing/provisioning inspection. Only the **path** is supplied through process argv; the raw value stays inside the runner process during inspection.
+
+Remove the private file after the accepted field-production/installation workflow no longer needs it. Deleting this file does not change or revoke any already-produced evidence; it merely removes the local verification input.
 
 ## Exact external export policy
 
@@ -52,14 +74,17 @@ The candidate directory retains:
 - exact `ExportOptions.plist` bytes and SHA-256;
 - `logs/xcodebuild-archive.log`;
 - `logs/xcodebuild-export.log`;
-- the canonical inspector outputs listed above;
+- canonical inspector outputs under `inspection/`;
+- `inspection/build-evidence/NembraField.ipa`;
 - `field-candidate-environment.txt`, including source SHA, build identifier, build-instance ID, requested/verified team, provisioning-update setting, field-launch recipe, export-options digest, recipe/procedure, log paths, and `physical_authorization=not-granted`.
+
+The private intended-device identifier and its file path are deliberately absent from durable candidate provenance.
 
 The archive and export commands are piped through `tee`; failure from either Xcode or log capture is a producer failure. The detached source worktree is rechecked after archive/export and must still be the exact clean source SHA.
 
 ## Signed-device checks inherited from the canonical inspector
 
-The final exported IPA must satisfy the current canonical field-artifact inspector, including the exact field launch recipe, iPhoneOS rather than Simulator platform, strict code signing, matching signing/provisioning team identity, application-identifier binding, unexpired embedded provisioning profile, at least one provisioned device, and exact retained IPA/executable/Info.plist digests.
+The final exported IPA must satisfy the current canonical field-artifact inspector, including the exact field launch recipe, iPhoneOS rather than Simulator platform, strict code signing, matching signing/provisioning team identity, application-identifier binding, unexpired embedded provisioning profile, intended-device membership, and exact retained IPA/executable/Info.plist digests.
 
 Those facts remain evidence. They do not decide that the candidate was independently accepted, installed on the intended field iPhone, or authorized for Experiment One.
 
