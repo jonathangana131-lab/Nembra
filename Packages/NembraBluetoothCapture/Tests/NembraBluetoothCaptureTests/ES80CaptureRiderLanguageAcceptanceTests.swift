@@ -56,7 +56,19 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "immutable JSON artifact",
             "Evidence failed closed",
             "bounded CoreBluetooth advertisement catalog",
-            "package-owned outer, SoftwareExport, and immutable Capture integrity checks"
+            "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+            // These shorter remnants still expose implementation/research vocabulary on the
+            // primary field surface even after the first rider-language cleanup.
+            "FIELD AUTHORITY",
+            "package producer",
+            "selectable full Bluetooth identifier",
+            "application characteristic-value writes",
+            "PASSIVE ACQUISITION",
+            "HORIZON READY",
+            "protocol field meaning",
+            "final artifact",
+            "EXPERIMENT ONE",
+            "Experiment One"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
