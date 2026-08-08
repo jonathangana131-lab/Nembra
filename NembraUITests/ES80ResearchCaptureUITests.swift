@@ -9,7 +9,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     }
 
     @MainActor
-    func testV14ResearchLaunchShowsMechanicalCorrelationAndKeepsFinalSealLocked() {
+    func testV14ResearchLaunchMechanicallyBlocksPhysicalExperimentWhilePackageIsNoGo() {
         let app = XCUIApplication()
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
@@ -23,33 +23,45 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
+            app.staticTexts["Field capture locked"].waitForExistence(timeout: 3),
+            "The current package-owned NO-GO must be the primary product state."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
+            "The dedicated package-gated NO-GO surface must be active."
+        )
+        XCTAssertTrue(
             app.staticTexts["Physical Experiment One locked"].waitForExistence(timeout: 3),
-            "The app must expose the physical NO-GO boundary instead of implying a runnable experiment."
+            "The physical NO-GO boundary must remain explicit."
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.correlation-progress"].waitForExistence(timeout: 3),
-            "The primary workflow must expose the four-window OFF1/ON1/OFF2/ON2 correlation sequence."
-        )
-        XCTAssertTrue(
-            app.buttons["es80.capture.begin-window"].waitForExistence(timeout: 3),
-            "Preflight must lead to the first bounded OFF window instead of a generic manual candidate scan."
+            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
+            "The installed versioned procedure must be identified without becoming executable."
         )
 
         XCTAssertFalse(
+            app.buttons["Begin OFF 1 window"].exists,
+            "A NO-GO build must not expose the first physical OFF/ON action."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.begin-window"].exists,
+            "No hidden or differently-labeled correlation-window action may bypass the package gate."
+        )
+        XCTAssertFalse(
             app.buttons["Scan for scooter"].exists,
-            "The V13 generic manual-candidate scan must not remain the primary correlation path."
+            "The old generic manual-candidate scan must not become a fallback physical path."
         )
         XCTAssertFalse(
             app.buttons["Start passive capture"].exists,
-            "The app must not splice standalone correlation into a separately-issued capture authority."
+            "Standalone capture cannot bypass field authorization or Experiment One authority binding."
         )
         XCTAssertFalse(
             app.descendants(matching: .any)["es80.capture.start"].exists,
-            "No hidden or differently-labeled Start Capture action may bypass the Experiment One authority boundary."
+            "No hidden Start Capture action may bypass the Experiment One authority boundary."
         )
         XCTAssertFalse(
             app.buttons["Finish Capture"].exists,
-            "Finish must remain unavailable until the accepted Horizon/seal controller authority is app-visible."
+            "Finish cannot exist before field authorization and accepted Horizon/seal authority."
         )
         XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
@@ -61,7 +73,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Physical Run Locked"
+        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
