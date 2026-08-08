@@ -1,0 +1,79 @@
+name: Repair ES80 frozen source contracts
+
+on:
+  push:
+    branches:
+      - fix/es80-today-bcb-capture-package-gate/chatgpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 3
+
+      - name: Verify exact validated terminal-repair ancestry
+        run: |
+          test "$(git rev-parse HEAD^^)" = "7fc3c45efa84de3518bc8d802a2dc1064132e706"
+          test "$(git diff --name-only HEAD^^ HEAD^ )" = ".github/diagnostics/es80-source-contracts.patch.gz.b64"
+
+      - name: Apply exact frozen source-contract refresh
+        shell: bash
+        run: |
+          base64 --decode .github/diagnostics/es80-source-contracts.patch.gz.b64 | gzip -d > /tmp/source-contracts.patch
+          printf '%s  %s\n' "15ccf0dad19c3e7df9b088365c3b01a4960260008de7c0f0cf0549d64f4a2ff2" /tmp/source-contracts.patch | sha256sum --check
+          git apply --check /tmp/source-contracts.patch
+          git apply /tmp/source-contracts.patch
+          git diff --check
+
+      - name: Parse changed Swift tests
+        shell: bash
+        run: |
+          for file in $(git diff --name-only); do
+            case "$file" in
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/*.swift)
+                swiftc -parse "$file"
+                ;;
+            esac
+          done
+
+      - name: Run complete Capture package and retain output
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/Artifacts/CaptureSourceContractRepair"
+          set +e
+          swift test 2>&1 | tee "$GITHUB_WORKSPACE/Artifacts/CaptureSourceContractRepair/swift-test.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$GITHUB_WORKSPACE/Artifacts/CaptureSourceContractRepair/exit-code.txt"
+          exit "$status"
+
+      - name: Upload full Capture repair log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: es80-capture-source-contract-repair-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/CaptureSourceContractRepair
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit test-only repair after full package green
+        if: success()
+        shell: bash
+        run: |
+          rm .github/workflows/repair-es80-source-contracts-chatgpt56.yml
+          rm .github/diagnostics/es80-source-contracts.patch.gz.b64
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests
+          git add -u .github/workflows/repair-es80-source-contracts-chatgpt56.yml
+          git add -u .github/diagnostics/es80-source-contracts.patch.gz.b64
+          git diff --cached --check
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git commit -m "test(capture): refresh exact frozen V14 contracts"
+          git push origin HEAD
