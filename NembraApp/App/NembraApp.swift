@@ -273,6 +273,8 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    @State private var engineeringDetailsExpanded = false
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
@@ -338,40 +340,66 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
 
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("CAPTURE RECIPE")
-                            .font(.caption.monospaced().weight(.bold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("LOCKED")
-                            .font(.caption.monospaced().weight(.bold))
-                            .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 14) {
+                    Button {
+                        engineeringDetailsExpanded.toggle()
+                    } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Engineering details")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Text("Recipe and software authorization")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: engineeringDetailsExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint("Shows the exact software recipe and authorization state. It does not unlock scooter capture.")
+                    .accessibilityIdentifier("es80.capture.engineering-details")
 
-                    Text(recipeID)
-                        .font(.title3.monospaced().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("es80.capture.recipe-id")
+                    if engineeringDetailsExpanded {
+                        Divider().overlay(.white.opacity(0.12))
 
-                    Divider().overlay(.white.opacity(0.12))
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("Recipe")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text(recipeID)
+                                    .font(.subheadline.monospaced().weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.trailing)
+                                    .accessibilityIdentifier("es80.capture.recipe-id")
+                            }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.seal")
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        Text("Capture workflow installed")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.white)
-                    }
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("Physical authorization")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text("NO-GO")
+                                    .font(.subheadline.monospaced().weight(.bold))
+                                    .foregroundStyle(.orange)
+                            }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "lock.fill")
-                            .foregroundStyle(.orange)
-                            .accessibilityHidden(true)
-                        Text("Scooter capture unavailable on this build")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
+                            Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .padding(18)
