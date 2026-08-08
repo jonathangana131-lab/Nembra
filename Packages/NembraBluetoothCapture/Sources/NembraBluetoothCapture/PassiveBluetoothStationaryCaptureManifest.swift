@@ -4,10 +4,9 @@ import NembraCore
 
 /// Declared experiment-context binding for the first stationary physical ES80 capture.
 ///
-/// This sidecar never changes the raw capture JSON. It retains a small amount of
-/// structured, operator-declared setup context next to the exact immutable capture
-/// bytes. Those declarations are not independently authenticated by the capture;
-/// downstream code must not reinterpret them as scooter telemetry or OS attestation.
+/// This sidecar never changes the raw capture JSON. It retains structured procedure/setup
+/// provenance next to those exact immutable bytes. Operator declarations are not independently
+/// authenticated by the capture and must never be promoted into physical or protocol truth.
 public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Sendable {
     case invalidBuildCommitSHA(String)
     case invalidPreparedAt
@@ -27,16 +26,10 @@ public enum PassiveBluetoothStationaryCaptureExperimentKind: String, Codable, Se
 }
 
 public enum PassiveBluetoothStationaryCaptureReferenceSetup: String, Codable, Sendable {
-    /// No stock-app reference value was used for this capture.
     case none
-    /// The stock app was observed on the same phone before Nembra began capture.
     case sameDeviceBeforeCapture
-    /// The stock app was observed on the same phone only after Nembra ended capture.
     case sameDeviceAfterCapture
-    /// The stock app was observed on the same phone before and after capture,
-    /// never represented as a simultaneous same-phone Bluetooth observation.
     case sameDeviceBeforeAndAfterCapture
-    /// A physically separate observer device supplied legitimate visible stock-app references.
     case separateObserverDevice
 }
 
@@ -45,10 +38,7 @@ public enum PassiveBluetoothStationaryCaptureChargerState: String, Codable, Send
     case connected
 }
 
-/// Operator-declared execution conditions for this experiment. This is setup
-/// provenance only; it is not an iOS attestation that the condition held without
-/// interruption. Add new cases only when Nembra legitimately supports a different
-/// lifecycle for physical capture.
+/// Operator-declared execution conditions. This is provenance, not OS attestation.
 public enum PassiveBluetoothStationaryCaptureExecutionContext: String, Codable, Sendable {
     case foregroundUnlockedScreenOn
 }
@@ -69,15 +59,12 @@ public struct PassiveBluetoothStationaryCaptureSetup: Equatable, Codable, Sendab
     }
 }
 
-/// A capture-consistent sidecar projection for one stationary physical-capture artifact.
+/// Capture-consistent sidecar projection for the first stationary physical-capture artifact.
 ///
-/// Construction is intentionally sealed behind `PassiveBluetoothStationaryCaptureManifestBuilder`.
-/// The sidecar records SHA-256 of the exact capture bytes and recomputable capture-derived
-/// facts. Operator-declared build/setup fields are not cryptographically authenticated.
-/// Nothing here authenticates the scooter, proves ES80 identity, or verifies any
-/// battery/current/power/speed semantic.
+/// Schema v2 adds an exact stable experiment-recipe identifier. This records which sealed Nembra
+/// procedure the product intended to run; it is not evidence that the operator completed its steps.
 public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public struct SourceArtifact: Equatable, Sendable {
         public let sha256: String
@@ -99,15 +86,11 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     }
 
     public struct EvidenceSummary: Equatable, Sendable {
-        /// Target-attributable service/included-service/characteristic/descriptor/
-        /// subscription/value records. Advertisement and connection records do not
-        /// satisfy the target GATT gate.
         public let targetGATTRecordCount: Int
         public let targetValueRecordCount: Int
         public let stockAppMarkerCount: Int
-        /// Every structured disconnect plus every generic interruption marker.
-        /// A connection-only record never establishes target identity, but the core
-        /// capture domain still treats any captured disconnect as a byte-continuity break.
+        /// Every structured disconnect plus every generic interruption marker according to
+        /// `PassiveBluetoothCaptureEvent.breaksByteContinuity`.
         public let continuityBreakCount: Int
 
         fileprivate init(
@@ -125,6 +108,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 
     public let schemaVersion: Int
     public let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
+    public let recipeID: PassiveBluetoothExperimentRecipeID
     public let experimentID: UUID
     public let preparedAt: Date
     public let nembraBuildCommitSHA: String
@@ -135,6 +119,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     fileprivate init(
         schemaVersion: Int,
         experimentKind: PassiveBluetoothStationaryCaptureExperimentKind,
+        recipeID: PassiveBluetoothExperimentRecipeID,
         experimentID: UUID,
         preparedAt: Date,
         nembraBuildCommitSHA: String,
@@ -144,6 +129,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     ) {
         self.schemaVersion = schemaVersion
         self.experimentKind = experimentKind
+        self.recipeID = recipeID
         self.experimentID = experimentID
         self.preparedAt = preparedAt
         self.nembraBuildCommitSHA = nembraBuildCommitSHA
@@ -154,17 +140,19 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 }
 
 public enum PassiveBluetoothStationaryCaptureManifestBuilder {
-    /// Creates one machine-readable sidecar for the smallest useful physical
-    /// experiment: scooter stationary by procedure, Nembra build revision declared,
-    /// charger state explicitly declared, and one selected target already represented
-    /// by GATT evidence.
+    /// Creates the schema-v2 sidecar for the first stationary ES80 fingerprint procedure.
+    ///
+    /// `recipe` defaults to the sealed `ES80-FINGERPRINT-v1` contract so existing mechanical
+    /// callers cannot accidentally produce a recipe-less V14 manifest. The recipe object itself
+    /// has a private constructor, so callers cannot forge the official ID with altered ordering.
     public static func make(
         captureJSON: Data,
         experimentID: UUID = UUID(),
         preparedAt: Date = Date(),
         nembraBuildCommitSHA: String,
         selectedPeripheralIdentifier: String,
-        setup: PassiveBluetoothStationaryCaptureSetup
+        setup: PassiveBluetoothStationaryCaptureSetup,
+        recipe: PassiveBluetoothExperimentRecipe = .es80FingerprintV1
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
         let buildCommit = try validatedBuildCommitSHA(nembraBuildCommitSHA)
         guard preparedAt.timeIntervalSinceReferenceDate.isFinite else {
@@ -185,6 +173,7 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         return PassiveBluetoothStationaryCaptureManifest(
             schemaVersion: PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion,
             experimentKind: .stationaryBaseline,
+            recipeID: recipe.id,
             experimentID: experimentID,
             preparedAt: preparedAt,
             nembraBuildCommitSHA: buildCommit,
@@ -288,12 +277,8 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             case .stockAppState:
                 stockAppMarkerCount += 1
             case .connection, .interruption:
-                // These records do not establish selected-target GATT attribution.
-                // Continuity is counted above through NembraCore's authoritative
-                // `breaksByteContinuity` classification instead of duplicating it here.
                 continue
             case .advertisement:
-                // Broad-scan candidates intentionally cannot satisfy target attribution.
                 continue
             }
         }
@@ -340,6 +325,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
     private struct Wire: Codable {
         let schemaVersion: Int
         let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
+        let recipeID: PassiveBluetoothExperimentRecipeID
         let experimentID: UUID
         let preparedAt: Date
         let nembraBuildCommitSHA: String
@@ -350,6 +336,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         init(_ manifest: PassiveBluetoothStationaryCaptureManifest) {
             schemaVersion = manifest.schemaVersion
             experimentKind = manifest.experimentKind
+            recipeID = manifest.recipeID
             experimentID = manifest.experimentID
             preparedAt = manifest.preparedAt
             nembraBuildCommitSHA = manifest.nembraBuildCommitSHA
@@ -372,6 +359,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
             PassiveBluetoothStationaryCaptureManifest(
                 schemaVersion: schemaVersion,
                 experimentKind: experimentKind,
+                recipeID: recipeID,
                 experimentID: experimentID,
                 preparedAt: preparedAt,
                 nembraBuildCommitSHA: nembraBuildCommitSHA,
@@ -392,6 +380,21 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         }
     }
 
+    private static func declaredSchemaVersion(_ data: Data) throws -> Int {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let number = root["schemaVersion"] as? NSNumber else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.schemaVersion,
+                .init(codingPath: [], debugDescription: "Manifest schemaVersion is required")
+            )
+        }
+        return number.intValue
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+    }
+
     private static func validateSchemaShape(_ data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return
@@ -400,7 +403,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         try rejectUnexpectedKeys(
             in: root,
             allowed: [
-                "schemaVersion", "experimentKind", "experimentID", "preparedAt",
+                "schemaVersion", "experimentKind", "recipeID", "experimentID", "preparedAt",
                 "nembraBuildCommitSHA", "setup", "sourceArtifact", "evidenceSummary"
             ],
             path: ""
@@ -451,30 +454,33 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         _ manifest: PassiveBluetoothStationaryCaptureManifest,
         prettyPrinted: Bool = true
     ) throws -> Data {
+        guard manifest.schemaVersion == PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion else {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .unsupportedSchemaVersion(manifest.schemaVersion)
+        }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
         return try encoder.encode(Wire(manifest))
     }
 
-    /// Verifies the sidecar's capture binding and capture-derived fields against the
-    /// exact immutable capture bytes. A manifest is never accepted from JSON alone
-    /// for those facts. Operator-declared experiment ID/time/build/setup fields are
-    /// schema-checked and subject to direct consistency gates, but are not independently
-    /// authenticated by this function; that would require an external trust anchor.
+    /// Verifies schema-v2 procedure provenance plus capture-derived fields against the exact
+    /// immutable capture bytes. Build/setup values remain declarations unless a separate trusted
+    /// build/OS/physical attestation source exists.
     public static func verifyCaptureBinding(
         manifestJSON: Data,
         captureJSON: Data
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
+        let schemaVersion = try declaredSchemaVersion(manifestJSON)
+        guard schemaVersion == PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion else {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .unsupportedSchemaVersion(schemaVersion)
+        }
         try validateSchemaShape(manifestJSON)
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let wire = try decoder.decode(Wire.self, from: manifestJSON)
-        guard wire.schemaVersion == PassiveBluetoothStationaryCaptureManifest.currentSchemaVersion else {
-            throw PassiveBluetoothStationaryCaptureManifestError
-                .unsupportedSchemaVersion(wire.schemaVersion)
-        }
 
         let rebuilt = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
             captureJSON: captureJSON,
@@ -482,12 +488,22 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
             preparedAt: wire.preparedAt,
             nembraBuildCommitSHA: wire.nembraBuildCommitSHA,
             selectedPeripheralIdentifier: wire.sourceArtifact.selectedPeripheralIdentifier,
-            setup: wire.setup
+            setup: wire.setup,
+            recipe: recipe(for: wire.recipeID)
         )
 
         guard rebuilt == wire.exactManifest() else {
             throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
         }
         return rebuilt
+    }
+
+    private static func recipe(
+        for id: PassiveBluetoothExperimentRecipeID
+    ) -> PassiveBluetoothExperimentRecipe {
+        switch id {
+        case .es80FingerprintV1:
+            .es80FingerprintV1
+        }
     }
 }
