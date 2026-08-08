@@ -16,7 +16,7 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         guard PassiveBluetoothExperimentOneFieldExecutionGate.currentResearchBuildAdmission() != nil else {
             throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
         }
-        return try makeLiveES80Coordinator()
+        return try makeResearchBuildCoordinator()
     }
 
     /// Future public/release field-authorized construction seam.
@@ -42,5 +42,10 @@ public extension PassiveBluetoothExperimentOneCoordinator {
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
         return try PassiveBluetoothExperimentOneCoordinator(controller: controller)
+    }
+
+    @MainActor
+    private static func makeResearchBuildCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
+        try makeLiveES80Coordinator()
     }
 }
