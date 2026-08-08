@@ -3,20 +3,31 @@ import Testing
 
 @Suite("ES80 Capture Dynamic Type source acceptance")
 struct ES80CaptureDynamicTypeSourceAcceptanceTests {
+    private static func repositoryRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     private static func shellSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot
+        try String(
+            contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("Features")
                 .appendingPathComponent("Research")
                 .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func uiTestSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraUITests")
+                .appendingPathComponent("NembraUITests.swift"),
             encoding: .utf8
         )
     }
@@ -93,6 +104,28 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         #expect(
             Self.hasIntentionalAdaptiveLayout(health),
             "Target / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
+        )
+    }
+
+    @Test("real Capture shell is visually retained at Accessibility XXXL")
+    func accessibilityXXXLVisualEvidenceIsRequired() throws {
+        let source = try Self.uiTestSource()
+
+        #expect(
+            source.contains("-UIPreferredContentSizeCategoryName"),
+            "UI acceptance must launch the real Capture shell with an explicit Dynamic Type override."
+        )
+        #expect(
+            source.contains("UICTContentSizeCategoryAccessibilityXXXL"),
+            "The retained visual gate must exercise the largest accessibility text category, not only default-size accessibility audits."
+        )
+        #expect(
+            source.contains("keepScreenshot(named:") && source.localizedCaseInsensitiveContains("accessibility xxxl"),
+            "Accessibility XXXL must produce a retained screenshot artifact for human visual critique."
+        )
+        #expect(
+            source.contains("es80.capture-shell"),
+            "The Accessibility XXXL evidence path must remain anchored to the real Capture shell."
         )
     }
 }
