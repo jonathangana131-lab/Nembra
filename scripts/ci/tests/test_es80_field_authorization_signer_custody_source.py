@@ -47,6 +47,23 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must fail closed on writable executable/custody paths.",
         )
 
+    def test_openssl_executable_and_canonical_ancestors_are_root_custodied(self):
+        self.assertIn(
+            "executable_stat.st_uid != 0",
+            self.source,
+            "The executable itself must be root-owned; signing-user ownership leaves a replace-before-exec race.",
+        )
+        self.assertIn(
+            "directory_stat.st_uid != 0",
+            self.source,
+            "Every canonical parent directory must be root-owned so the signing user cannot replace the checked executable by renaming within an owned directory.",
+        )
+        self.assertNotIn(
+            "executable_stat.st_uid not in {0, signing_uid}",
+            self.source,
+            "A signing-user-owned executable is still caller-replaceable and must not be accepted as release authority tooling.",
+        )
+
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
             'stat.S_IMODE' in self.source or 'st_mode' in self.source,
