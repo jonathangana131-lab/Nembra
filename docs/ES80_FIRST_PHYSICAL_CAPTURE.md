@@ -48,9 +48,10 @@ Do not start the normal `AppRuntime`/vehicle-control surface alongside this rese
 
 For this experiment:
 
-- scooter remains powered on and **stationary** for the entire capture;
+- scooter remains physically stationary for the entire experiment;
 - charger remains **disconnected**;
 - rear wheel remains on the ground and no throttle/brake/control experiment is performed;
+- the only deliberate physical state change before target selection is normal scooter power-on used to correlate one newly appearing Bluetooth candidate;
 - Nembra performs only discovery, permitted reads, and permitted notification/indication subscriptions;
 - do not send any unknown characteristic-value write;
 - do not use a `.write` / `.writeWithoutResponse` property as authorization;
@@ -66,26 +67,28 @@ The V13 shell deliberately uses a foreground-only evidence lifecycle. While a li
 ## Physical setup
 
 1. Place the ES80 on stable level ground in a safe area away from traffic.
-2. Power the scooter on normally.
-3. Leave the charger disconnected.
-4. Keep the scooter untouched for about 30 seconds before opening the capture flow so transient power-on behavior can settle.
-5. Use the exact accepted Debug research build identified above on the iPhone 12.
-6. Keep only the physical target scooter intentionally under test. Nearby BLE devices may remain present; they are candidates only.
-7. Keep the stock app closed for this first fingerprint. Battery %, voltage, current, watts, and other stock-app displays are intentionally deferred to a later evidence-driven correlation experiment.
+2. Leave the scooter **powered off** initially and keep the charger disconnected.
+3. Use the exact accepted Debug research build identified above on the iPhone 12.
+4. Keep only one physical ES80 intentionally under test. Nearby BLE devices may remain present; they are unrelated candidates until evidence says otherwise.
+5. Keep the stock app closed for this first fingerprint. Battery %, voltage, current, watts, and other stock-app displays are intentionally deferred to a later evidence-driven correlation experiment.
 
-## Exact capture procedure
+## Exact target-correlation + capture procedure
 
 1. Open **Nembra Capture** through the accepted **Nembra ES80 Research** Debug launch and keep it foregrounded.
-2. Start one broad foreground scan with advertisement-cadence duplication left at its normal/off setting.
-3. Observe the candidate list. Use legitimate physical correlation to choose the likely scooter; do not select by local name alone.
-4. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
-5. Select that exact candidate and start the target-scoped capture.
-6. Keep the scooter stationary while Nembra performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
-7. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, becomes ambiguous, or reports foreground evidence-integrity loss, stop. Preserve failed diagnostics only as failure evidence; do not use the attempt to claim a service/field is absent.
-8. After readiness, leave the healthy foreground session running for **60 seconds** without touching scooter controls.
-9. Finish Capture **once** while still stationary.
-10. Export the prepared versioned JSON unchanged. If the provenance sidecar/manifest capability is available, export/preserve it with the exact JSON bytes.
-11. End the experiment. Do not immediately add a decoder or send a write from the phone.
+2. With the ES80 still powered **off**, start one broad foreground scan with advertisement-cadence duplication at its normal/off setting.
+3. Observe the candidate list for about **10 seconds**. This is only a nearby-device baseline; do not select anything yet.
+4. Without moving the scooter, power the ES80 on normally while the broad scan remains active.
+5. Watch for a newly appearing connectable candidate after scooter power-on. Treat power-on timing as physical-correlation evidence only—not authentication or permanent scooter identity.
+6. Continue scanning for about **10 seconds** after power-on. Proceed only if one candidate is uniquely attributable from that before/after observation. If no new candidate appears, or multiple plausible candidates appear together, stop the scan and classify target selection as ambiguous. Do not guess from local name or strongest RSSI.
+7. Leave the scooter powered on and untouched for about **30 seconds** before connecting so transient power-on behavior can settle. The scooter remains stationary throughout.
+8. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
+9. Select the uniquely correlated candidate and start the target-scoped capture.
+10. Keep the scooter stationary while Nembra performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
+11. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, becomes ambiguous, or reports foreground evidence-integrity loss, stop. Preserve failed diagnostics only as failure evidence; do not use the attempt to claim a service/field is absent.
+12. After readiness, leave the healthy foreground session running for **60 seconds** without touching scooter controls.
+13. Finish Capture **once** while still stationary. Keep Nembra foregrounded until artifact finalization/share UI is complete; do not switch apps or lock the phone during finalization.
+14. Export the prepared versioned JSON unchanged. If the provenance sidecar/manifest capability is available, export/preserve it with the exact JSON bytes.
+15. End the experiment. Do not immediately add a decoder or send a write from the phone.
 
 ## First-run provenance values
 
@@ -124,7 +127,7 @@ Keep together:
 - exact versioned capture JSON bytes;
 - exact Nembra Git commit/build identity;
 - full selected observed CoreBluetooth peripheral identifier from authoritative capture evidence/tooling, never a guessed expansion of a UI prefix;
-- capture start/end context;
+- the fact that target selection used the off-baseline -> normal power-on appearance correlation above, including any ambiguity/failure note;
 - explicit operator-declared state: `stationary`, `charger disconnected`, `foregroundUnlockedScreenOn`, `stock app unused`;
 - any generated stationary-capture manifest/sidecar;
 - any generated offline capture report as a separate derived artifact;
@@ -152,6 +155,7 @@ These answers may promote facts only to **OBSERVED ON PHYSICAL TARGET** / **PHYS
 
 Only if:
 
+- target selection was uniquely correlated by the off-baseline -> normal power-on observation rather than guessed from name/RSSI;
 - finite acquisition reached the controller's accepted ready state;
 - export completed from one immutable target-scoped artifact;
 - target attribution is non-ambiguous under the capture/analyzer policy;
@@ -162,13 +166,13 @@ Only if:
 
 A pass means: **Nembra has a usable passive physical fingerprint artifact for the selected observed target.**
 
-It does **not** mean: **Nembra has decoded the ES80 protocol.**
+It does **not** mean: **Nembra has decoded the ES80 protocol or permanently authenticated scooter identity.**
 
 ### FAIL / RETRY REQUIRED
 
 Retry later with a fresh session if:
 
-- the selected candidate was physically ambiguous;
+- power-on correlation did not produce one uniquely attributable candidate;
 - finite acquisition never became ready;
 - capture failed closed;
 - the shell reports foreground evidence-integrity loss or the phone left the required active foreground condition;
