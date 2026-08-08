@@ -9,9 +9,10 @@ import UIKit
 ///
 /// One package-owned coordinator now carries the complete software provenance life from
 /// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
-/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
-/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
-/// authoritative UUID, and never receives the sealed admission or mutable recorder.
+/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, immutable capture,
+/// and the package-owned final Share artifact. SwiftUI never constructs a second correlation
+/// producer, never selects an authoritative UUID, and never receives the sealed admission or
+/// mutable recorder.
 ///
 /// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
 /// not permanent hardware authentication, RF emission-time proof, protocol semantics, or telemetry.
@@ -52,7 +53,9 @@ struct ES80CaptureShellView: View {
     @State private var diagnosticMessage: String?
     @State private var localFailureMessage: String?
     @State private var shareURL: URL?
-    @State private var softwareExportData: Data?
+    @State private var finalShareData: Data?
+    @State private var finalShareSuggestedFilename: String?
+    @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
     @State private var sharePreparationWarning: String?
     @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var showingDetails = false
@@ -493,7 +496,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "SEALING",
                 title: "Freezing immutable evidence",
-                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.",
+                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable capture. Do not leave the app while this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -516,11 +519,11 @@ struct ES80CaptureShellView: View {
                 .accessibilityIdentifier("es80.capture.share")
             } else if coordinator.finalizedArtifact != nil {
                 primaryButton(
-                    "Prepare Share file",
+                    finalShareIntegrityReport == nil ? "Prepare evidence package" : "Retry Share file",
                     systemImage: "arrow.clockwise",
                     identifier: "es80.capture.prepare-share"
                 ) {
-                    prepareSoftwareExportForShare()
+                    prepareFinalShareForShare()
                 }
             } else {
                 primaryButton(
@@ -631,7 +634,7 @@ struct ES80CaptureShellView: View {
                     Circle()
                         .fill(.white)
                         .frame(width: 52, height: 52)
-                    Image(systemName: "checkmark")
+                    Image(systemName: finalShareIntegrityReport == nil ? "lock.fill" : "checkmark")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.black)
                 }
@@ -641,15 +644,19 @@ struct ES80CaptureShellView: View {
                     Text("CAPTURE COMPLETE")
                         .font(.caption.monospaced().weight(.bold))
                         .foregroundStyle(.secondary)
-                    Text("Ready for analysis")
+                    Text(finalShareIntegrityReport == nil ? "Capture sealed" : "Ready for analysis")
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
                 }
             }
 
-            if let artifact = coordinator.finalizedArtifact {
-                let exportDescription = softwareExportData.map { " Package-owned Share envelope: \($0.count.formatted()) bytes." } ?? ""
-                Text("\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Correlation evidence remains bound to the same run.\(exportDescription) No protocol field meaning is claimed yet.")
+            if let report = finalShareIntegrityReport {
+                Text("\(report.finalShareByteCount.formatted()) exact final-share bytes passed the package-owned outer procedure/build rendezvous, nested SoftwareExport verification, and nested Capture readability checks. The sealed Capture contains \(report.capture.recordCount.formatted()) records, including \(report.capture.rawValueRecordCount.formatted()) raw value records. Physical identity, protocol meaning, and field authorization remain unclaimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let artifact = coordinator.finalizedArtifact {
+                Text("\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Nembra has not yet established exact final-share integrity/readability, so this run is not labeled ready for analysis. Retry evidence-package preparation without rerunning the Bluetooth experiment.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -667,18 +674,43 @@ struct ES80CaptureShellView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Experiment One")
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
-                    detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
+                    detailRow("Recipe", value: finalShareIntegrityReport?.experimentRecipeID.rawValue
+                        ?? PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
                     detailRow("Correlation", value: correlationDetailValue)
                     if let artifact = coordinator.finalizedArtifact {
-                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+                        detailRow("Sealed capture bytes", value: artifact.captureJSON.count.formatted())
                         detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+                    }
+
+                    if let report = finalShareIntegrityReport {
+                        Divider()
+
+                        Text("Exact evidence package")
+                            .font(.headline)
+                        detailRow("Integrity", value: "Verified / readable")
+                        detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+                        detailRow("Final Share SHA-256", value: report.finalShareSHA256)
+                        detailRow("Experiment ID", value: report.experimentID.uuidString)
+                        detailRow("Procedure", value: report.procedureVersion)
+                        detailRow("SoftwareExport SHA-256", value: report.softwareExportSHA256)
+                        detailRow("Capture session", value: report.capture.captureSessionID.uuidString)
+                        detailRow("Capture SHA-256", value: report.capture.sha256)
+                        detailRow("Capture records", value: report.capture.recordCount.formatted())
+                        detailRow("Raw value records", value: report.capture.rawValueRecordCount.formatted())
+                        detailRow("Build", value: report.buildIdentifier)
+                        detailRow("Build instance", value: report.buildInstanceID)
+                        detailRow("Source commit", value: report.sourceCommitSHA)
+                        detailRow("Wire executable digest", value: report.executableSHA256)
+                    } else if coordinator.finalizedArtifact != nil {
+                        Divider()
+                        detailRow("Evidence package", value: "Integrity pending")
                     }
 
                     Divider()
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80. Exact package integrity proves software self-consistency/readability only; the wire-carried executable digest is not independent source-to-binary attestation and does not authorize a field run. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -832,29 +864,49 @@ struct ES80CaptureShellView: View {
                 return
             }
 
-            // Horizon is already immutable here. Export/temporary-file failure is a
-            // recoverable presentation problem and must never relabel seal truth.
+            // Horizon is already immutable here. Final-share verification or temporary-file failure
+            // is a recoverable post-seal problem and must never relabel legitimate seal truth.
             finalizationInFlight = false
-            prepareSoftwareExportForShare()
+            prepareFinalShareForShare()
         }
     }
 
-    private func prepareSoftwareExportForShare() {
+    private func prepareFinalShareForShare() {
         guard coordinator.finalizedArtifact != nil else { return }
         guard let setup = declaredStationarySetup else {
             sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
             return
         }
+
         do {
-            let data = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
-                setup: setup,
-                prettyPrinted: true
-            )
-            softwareExportData = data
-            shareURL = try persistShareArtifact(data)
+            let data: Data
+            let suggestedFilename: String
+            let integrity: PassiveBluetoothExperimentOneFinalShareIntegrityReport
+
+            if let retainedData = finalShareData,
+               let retainedFilename = finalShareSuggestedFilename,
+               let retainedIntegrity = finalShareIntegrityReport {
+                // A staging retry must use the exact bytes that already earned analysis readiness.
+                data = retainedData
+                suggestedFilename = retainedFilename
+                integrity = retainedIntegrity
+            } else {
+                let artifact = try coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)
+                let inspected = try PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)
+                data = artifact.json
+                suggestedFilename = artifact.suggestedFilename
+                integrity = inspected
+                finalShareData = data
+                finalShareSuggestedFilename = suggestedFilename
+                finalShareIntegrityReport = integrity
+            }
+
+            shareURL = try persistShareArtifact(data, suggestedFilename: suggestedFilename)
+            finalShareIntegrityReport = integrity
             sharePreparationWarning = nil
         } catch {
-            sharePreparationWarning = "Capture remains sealed, but the package-owned software Share envelope could not be prepared: \(experimentErrorMessage(error))"
+            shareURL = nil
+            sharePreparationWarning = "Capture remains sealed, but Nembra could not verify or stage the package-owned final Share artifact: \(experimentErrorMessage(error))"
         }
     }
 
@@ -865,7 +917,9 @@ struct ES80CaptureShellView: View {
         captureConnectionAttempted = false
         finalizationInFlight = false
         shareURL = nil
-        softwareExportData = nil
+        finalShareData = nil
+        finalShareSuggestedFilename = nil
+        finalShareIntegrityReport = nil
         sharePreparationWarning = nil
         declaredStationarySetup = nil
         showingDetails = false
@@ -944,9 +998,9 @@ struct ES80CaptureShellView: View {
         return Int((remaining + 999_999_999) / 1_000_000_000)
     }
 
-    private func persistShareArtifact(_ data: Data) throws -> URL {
+    private func persistShareArtifact(_ data: Data, suggestedFilename: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-FINGERPRINT-v1-SoftwareExport-\(UUID().uuidString).json")
+            .appendingPathComponent(suggestedFilename)
         try data.write(to: url, options: .atomic)
         return url
     }
@@ -1148,6 +1202,7 @@ struct ES80CaptureShellView: View {
             Text(value)
                 .font(.body.monospacedDigit().weight(.medium))
                 .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
         }
     }
 
@@ -1186,7 +1241,10 @@ struct ES80CaptureShellView: View {
         completedWindows: Int
     ) -> String {
         if status.artifactFinalized {
-            return "Experiment One progress, capture sealed and ready for analysis"
+            if finalShareIntegrityReport != nil {
+                return "Experiment One progress, capture sealed and exact evidence package verified, ready for analysis"
+            }
+            return "Experiment One progress, capture sealed; evidence-package integrity is not yet established"
         }
         if status.canFinalizeObservationHorizon {
             return "Experiment One progress, observation Horizon ready to seal"
@@ -1243,7 +1301,7 @@ struct ES80CaptureShellView: View {
         case .observing: return "Observation running"
         case .readyToSeal: return "Horizon ready"
         case .finalizing: return "Sealing artifact"
-        case .complete: return "Capture complete"
+        case .complete: return finalShareIntegrityReport == nil ? "Capture sealed" : "Evidence package verified"
         }
     }
 

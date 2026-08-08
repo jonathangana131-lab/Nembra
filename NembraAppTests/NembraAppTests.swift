@@ -308,7 +308,7 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellContinuesSameAuthorityThroughSealAndFinalShare() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
@@ -317,9 +317,28 @@ extension NembraAppTests {
         )
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+        XCTAssertFalse(shell.contains("encodedFinalizedObservationHorizonJSON"))
+        XCTAssertFalse(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+    }
+
+    func testCaptureAnalysisReadyClaimIsExactFinalShareIntegrityGated() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let shell = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(shell.contains("finalShareIntegrityReport"))
+        XCTAssertTrue(shell.contains("Capture sealed"))
+        XCTAssertTrue(shell.contains("Ready for analysis"))
+        XCTAssertTrue(shell.contains("exact evidence package verified"))
+        XCTAssertTrue(shell.contains("finalShareData"))
+        XCTAssertTrue(shell.contains("finalShareSuggestedFilename"))
     }
 }
