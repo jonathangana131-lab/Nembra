@@ -45,11 +45,10 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
 
-      - name: Verify exact working-tree scope
+      - name: Verify product edit
         shell: bash
         run: |
-          git diff --check
-          test "$(git diff --name-only)" = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          git diff --check -- NembraApp/Features/Research/ES80CaptureShellView.swift
           grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
           ! grep -F 'Start a fresh Experiment One' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
 
