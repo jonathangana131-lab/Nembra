@@ -417,50 +417,32 @@ public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public var sessionID: UUID { historyRecord.sessionID }
 }
 
-/// Capability required to construct the public coordinator restore surface.
-///
-/// The type is public so it can appear in the initializer signature, but its
-/// initializer is intentionally package-owned in SwiftPM and file-owned when this
-/// source is compiled directly into Nembra.app. Decoded checkpoint bytes alone
-/// therefore cannot be turned back into trusted runtime authority by an arbitrary
-/// package client or same-module app caller.
-public struct RideHistoryDistanceRestoreAuthority: Sendable {
-#if SWIFT_PACKAGE
-    package init() {}
-#else
-    fileprivate init() {}
-#endif
-}
-
 /// Persists only checkpoint inputs and remints trusted distance authority by
 /// independently loading immutable base history on every read.
+///
+/// Construction is deliberately sealed. External package clients can inspect
+/// checkpoint data and consume a coordinator intentionally handed to them, but
+/// decoded bytes plus caller-owned stores are not enough to create the restore
+/// surface themselves.
 public actor RideHistoryDistanceCommitCoordinator {
     private let historyStore: any RideHistoryStore
     private let distanceStore: any RideHistoryDistanceStore
 
-    /// Public shape, sealed construction: callers must possess package/file-owned
-    /// restore authority rather than merely decoded checkpoint bytes.
-    public init(
-        historyStore: any RideHistoryStore,
-        distanceStore: any RideHistoryDistanceStore,
-        restoreAuthority: RideHistoryDistanceRestoreAuthority
-    ) {
-        _ = restoreAuthority
-        self.historyStore = historyStore
-        self.distanceStore = distanceStore
-    }
-
 #if SWIFT_PACKAGE
-    /// Package-owned convenience used by trusted NembraCore adapters/tests.
     package init(
         historyStore: any RideHistoryStore,
         distanceStore: any RideHistoryDistanceStore
     ) {
-        self.init(
-            historyStore: historyStore,
-            distanceStore: distanceStore,
-            restoreAuthority: RideHistoryDistanceRestoreAuthority()
-        )
+        self.historyStore = historyStore
+        self.distanceStore = distanceStore
+    }
+#else
+    fileprivate init(
+        historyStore: any RideHistoryStore,
+        distanceStore: any RideHistoryDistanceStore
+    ) {
+        self.historyStore = historyStore
+        self.distanceStore = distanceStore
     }
 #endif
 
