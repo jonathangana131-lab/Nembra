@@ -1,0 +1,105 @@
+    @MainActor
+    func testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let shell = app.descendants(matching: .any)["es80.capture-shell"]
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        let readyState = app.staticTexts["Capture can be sealed"]
+        let health = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Capture health."))
+            .firstMatch
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertTrue(readyState.waitForExistence(timeout: 3))
+        XCTAssertTrue(health.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        bringIntoScreenshotViewport(
+            qaDisclosure,
+            in: app,
+            context: "synthetic Simulator QA disclosure at Horizon Ready Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "synthetic Simulator QA disclosure at Horizon Ready Accessibility XXXL"
+        )
+        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
+            progress,
+            in: app,
+            context: "Capture progress at Horizon Ready Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture progress at Horizon Ready Accessibility XXXL"
+        )
+        let progressAttachment = XCTAttachment(screenshot: app.screenshot())
+        progressAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Progress"
+        progressAttachment.lifetime = .keepAlways
+        add(progressAttachment)
+
+        bringIntoScreenshotViewport(
+            health,
+            in: app,
+            context: "Capture health at Horizon Ready Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            health,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture health at Horizon Ready Accessibility XXXL"
+        )
+        let healthAttachment = XCTAttachment(screenshot: app.screenshot())
+        healthAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Health"
+        healthAttachment.lifetime = .keepAlways
+        add(healthAttachment)
+
+        bringIntoScreenshotViewport(
+            readyState,
+            in: app,
+            context: "Horizon-ready status at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            readyState,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Horizon-ready status at Accessibility XXXL"
+        )
+        let readyAttachment = XCTAttachment(screenshot: app.screenshot())
+        readyAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Status"
+        readyAttachment.lifetime = .keepAlways
+        add(readyAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+            in: app,
+            context: "Seal Capture action at Horizon Ready Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Seal Capture action at Horizon Ready Accessibility XXXL"
+        )
+        let finishAttachment = XCTAttachment(screenshot: app.screenshot())
+        finishAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Seal"
+        finishAttachment.lifetime = .keepAlways
+        add(finishAttachment)
+    }
+
