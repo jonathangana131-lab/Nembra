@@ -17,11 +17,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)
+        self.assertIn('FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"', self.source)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
+        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
         self.assertIn('NembraCaptureExternalBuildRecord.json', self.source)
         self.assertIn('NembraCaptureFieldBuildEvidenceRecord.json', self.source)
         self.assertIn('NembraCaptureSignedFieldArtifactInspection.json', self.source)
@@ -33,6 +36,16 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('NembraCaptureSignedFieldArtifactEvidence.json', self.source)
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
+
+    def test_binds_verification_to_one_intended_field_device_without_persisting_udid(self):
+        self.assertIn(
+            '${NEMBRA_FIELD_DEVICE_UDID:?Set NEMBRA_FIELD_DEVICE_UDID to the intended field iPhone UDID.}',
+            self.source,
+        )
+        self.assertIn('--intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('field_device_udid=', self.source)
+        self.assertNotIn('intended_device_udid=', self.source)
+        self.assertNotIn('echo "$NEMBRA_FIELD_DEVICE_UDID"', self.source)
 
     def test_builds_from_fresh_detached_exact_commit_snapshot(self):
         self.assertIn('SOURCE_ROOT="$WORK_ROOT/source"', self.source)
@@ -48,7 +61,6 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_keeps_generated_evidence_out_of_source_identity(self):
         self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
         self.assertIn('git check-ignore -q', self.source)
-        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
         self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
 
     def test_never_mutates_physical_authorization(self):
