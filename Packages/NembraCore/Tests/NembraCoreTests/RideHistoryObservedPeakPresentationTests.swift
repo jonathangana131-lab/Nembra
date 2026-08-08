@@ -28,6 +28,19 @@ struct RideHistoryObservedPeakPresentationTests {
         #expect(!presentation.requiresQualityDisclosure)
     }
 
+    @Test("legitimate accepted zero stays distinct from unavailable peak")
+    func legitimateObservedZero() throws {
+        let fixture = try bluetoothFixture(speeds: [0, 0, 0])
+        let presentation = try RideHistoryObservedPeakPresenter.present(joined(fixture))
+
+        #expect(presentation.state == .qualifiedObservedMaximum)
+        #expect(presentation.acceptedObservedSpeedEvidenceMetersPerSecond == 0)
+        #expect(presentation.qualifiedObservedMaximumMetersPerSecond == 0)
+        #expect(presentation.observationContinuity == .noRecordedSelectedSourceEvidenceLoss)
+        #expect(presentation.permitsObservedMaximumWording)
+        #expect(!presentation.requiresQualityDisclosure)
+    }
+
     @Test("interrupted faster observation remains visible evidence but cannot become max wording")
     func interruptedObservationIsUnqualified() throws {
         let fixture = try bluetoothFixture(
