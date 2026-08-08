@@ -12,14 +12,14 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
     @Test("exactly one newly selectable full UUID becomes an operator-selection candidate")
     func singleCandidate() throws {
         let baseline = try snapshot(
-            epoch: 10,
+            sequence: 10,
             candidates: [
                 (baselineA, true),
                 (baselineB, nil)
             ]
         )
         let poweredOn = try snapshot(
-            epoch: 11,
+            sequence: 11,
             candidates: [
                 (baselineA, true),
                 (baselineB, nil),
@@ -32,8 +32,8 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
             poweredOn: poweredOn
         )
 
-        #expect(report.baselineEpoch.rawValue == 10)
-        #expect(report.poweredOnEpoch.rawValue == 11)
+        #expect(report.baselineWindowSequence.rawValue == 10)
+        #expect(report.poweredOnWindowSequence.rawValue == 11)
         #expect(report.baselineObservedIdentifiers == [baselineA, baselineB])
         #expect(report.poweredOnSelectableIdentifiers == [baselineA, baselineB, candidateC])
         #expect(report.newSelectableIdentifiers == [candidateC])
@@ -42,9 +42,9 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
 
     @Test("unknown connectability stays selectable instead of being silently discarded")
     func unknownConnectabilityCanRemainCandidate() throws {
-        let baseline = try snapshot(epoch: 20, candidates: [(baselineA, true)])
+        let baseline = try snapshot(sequence: 20, candidates: [(baselineA, true)])
         let poweredOn = try snapshot(
-            epoch: 21,
+            sequence: 21,
             candidates: [
                 (baselineA, true),
                 (candidateC, nil)
@@ -62,9 +62,9 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
 
     @Test("explicitly non-connectable arrivals cannot become target candidates")
     func nonConnectableArrivalIsIgnored() throws {
-        let baseline = try snapshot(epoch: 30, candidates: [(baselineA, true)])
+        let baseline = try snapshot(sequence: 30, candidates: [(baselineA, true)])
         let poweredOn = try snapshot(
-            epoch: 31,
+            sequence: 31,
             candidates: [
                 (baselineA, true),
                 (candidateC, false)
@@ -84,14 +84,14 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
     @Test("a peripheral seen while target is OFF never becomes new only because connectability changed")
     func baselinePresenceOutranksConnectabilityChange() throws {
         let baseline = try snapshot(
-            epoch: 40,
+            sequence: 40,
             candidates: [
                 (baselineA, true),
                 (candidateC, false)
             ]
         )
         let poweredOn = try snapshot(
-            epoch: 41,
+            sequence: 41,
             candidates: [
                 (baselineA, true),
                 (candidateC, true)
@@ -111,9 +111,9 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
 
     @Test("multiple new selectable UUIDs fail closed as ambiguous")
     func multipleCandidatesAreAmbiguous() throws {
-        let baseline = try snapshot(epoch: 50, candidates: [(baselineA, true)])
+        let baseline = try snapshot(sequence: 50, candidates: [(baselineA, true)])
         let poweredOn = try snapshot(
-            epoch: 51,
+            sequence: 51,
             candidates: [
                 (baselineA, true),
                 (candidateD, true),
@@ -130,13 +130,13 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
         #expect(report.disposition == .ambiguousNewSelectableCandidates([candidateC, candidateD]))
     }
 
-    @Test("same or older scan epoch cannot establish an OFF to ON delta")
-    func epochOrderMustAdvance() throws {
-        let baseline = try snapshot(epoch: 60, candidates: [(baselineA, true)])
+    @Test("same or older local window sequence cannot establish an OFF to ON delta")
+    func localWindowOrderMustAdvance() throws {
+        let baseline = try snapshot(sequence: 60, candidates: [(baselineA, true)])
 
-        for invalidEpoch in [60, 59] {
+        for invalidSequence in [60, 59] {
             let poweredOn = try snapshot(
-                epoch: UInt64(invalidEpoch),
+                sequence: UInt64(invalidSequence),
                 candidates: [
                     (baselineA, true),
                     (candidateC, true)
@@ -148,16 +148,16 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
             )
 
             #expect(report.newSelectableIdentifiers.isEmpty)
-            #expect(report.disposition == .invalidScanEpochOrder)
+            #expect(report.disposition == .invalidObservationWindowOrder)
         }
     }
 
     @Test("duplicate UUIDs in one snapshot are rejected rather than merged by guess")
     func duplicateSnapshotIdentifiersFailClosed() {
-        #expect(throws: PassiveBluetoothCandidateScanSnapshotError
+        #expect(throws: PassiveBluetoothCandidateObservationSnapshotError
             .duplicatePeripheralIdentifier(baselineA)) {
             _ = try snapshot(
-                epoch: 70,
+                sequence: 70,
                 candidates: [
                     (baselineA, false),
                     (baselineA, true)
@@ -170,9 +170,9 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
     func shortenedIdentifierCollisionDoesNotCollapseCandidates() throws {
         let first = UUID(uuidString: "12345678-0000-0000-0000-000000000001")!
         let second = UUID(uuidString: "12345678-0000-0000-0000-000000000002")!
-        let baseline = try snapshot(epoch: 80, candidates: [])
+        let baseline = try snapshot(sequence: 80, candidates: [])
         let poweredOn = try snapshot(
-            epoch: 81,
+            sequence: 81,
             candidates: [
                 (first, true),
                 (second, true)
@@ -191,13 +191,13 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
     @Test("powered-on disappearance or unchanged catalog cannot manufacture a candidate")
     func unchangedOrSmallerCatalogProducesNoCandidate() throws {
         let baseline = try snapshot(
-            epoch: 90,
+            sequence: 90,
             candidates: [
                 (baselineA, true),
                 (baselineB, true)
             ]
         )
-        let poweredOn = try snapshot(epoch: 91, candidates: [(baselineA, true)])
+        let poweredOn = try snapshot(sequence: 91, candidates: [(baselineA, true)])
 
         let report = PassiveBluetoothPowerCycleTargetCorrelation.assess(
             baseline: baseline,
@@ -209,11 +209,11 @@ struct PassiveBluetoothPowerCycleTargetCorrelationTests {
     }
 
     private func snapshot(
-        epoch: UInt64,
+        sequence: UInt64,
         candidates: [(UUID, Bool?)]
-    ) throws -> PassiveBluetoothCandidateScanSnapshot {
-        try PassiveBluetoothCandidateScanSnapshot(
-            epoch: PassiveBluetoothCandidateScanEpoch(rawValue: epoch),
+    ) throws -> PassiveBluetoothCandidateObservationSnapshot {
+        try PassiveBluetoothCandidateObservationSnapshot(
+            windowSequence: PassiveBluetoothCandidateObservationWindowSequence(rawValue: sequence),
             candidates: candidates.map {
                 .init(id: $0.0, isConnectable: $0.1)
             }
