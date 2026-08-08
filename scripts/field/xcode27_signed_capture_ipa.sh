@@ -9,7 +9,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
-for tool in git xcodebuild python3 shasum find cp tee; do
+for tool in git xcodebuild python3 shasum awk cp tee sw_vers; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Required tool is unavailable: $tool" >&2
     exit 3
@@ -43,35 +43,43 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 7
 fi
 
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldIPA}"
-DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-/tmp}/NembraFieldIPADerivedData}"
+BUNDLE_ID="com.jonathangana131.nembra"
+CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
+CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+if [[ ! "$CAPTURE_BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "Capture build instance must be one canonical lowercase UUID." >&2
+  exit 8
+fi
+
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldIPA-${CAPTURE_BUILD_COMMIT_SHA:0:12}-$CAPTURE_BUILD_INSTANCE_ID}"
+DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-/tmp}/NembraFieldIPADerivedData-$CAPTURE_BUILD_INSTANCE_ID}"
 ARCHIVE_PATH="$ARTIFACTS_DIR/NembraField.xcarchive"
 EXPORT_PATH="$ARTIFACTS_DIR/export"
 EVIDENCE_DIR="$ARTIFACTS_DIR/evidence"
 LOGS_DIR="$ARTIFACTS_DIR/logs"
 RETAINED_EXPORT_OPTIONS="$ARTIFACTS_DIR/ExportOptions.plist"
-BUNDLE_ID="com.jonathangana131.nembra"
-CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
-CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 
 require_safe_generated_path() {
   local path="$1"
   local label="$2"
+  if [[ -z "$path" || "$path" == "/" || "$path" == "$ROOT" ]]; then
+    echo "$label is not a safe generated-output path: $path" >&2
+    exit 9
+  fi
   if [[ "$path" == "$ROOT"/* ]]; then
     local relative_path="${path#"$ROOT"/}"
     if ! git check-ignore -q -- "$relative_path"; then
       echo "$label inside the repository must already be ignored by Git: $relative_path" >&2
-      exit 8
+      exit 10
     fi
+  fi
+  if [[ -e "$path" ]]; then
+    echo "$label already exists; refusing to delete or overwrite field-production state: $path" >&2
+    exit 11
   fi
 }
 require_safe_generated_path "$ARTIFACTS_DIR" "ARTIFACTS_DIR"
 require_safe_generated_path "$DERIVED_DATA" "DERIVED_DATA"
-
-if [[ ! "$CAPTURE_BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-  echo "Capture build instance must be one canonical lowercase UUID." >&2
-  exit 9
-fi
 
 # Export settings are an explicit external production input. Retain their exact bytes and reject a
 # conflicting team declaration without guessing what export methods Xcode 27 supports.
@@ -97,13 +105,12 @@ if method is not None and (not isinstance(method, str) or not method.strip()):
     raise SystemExit("Export options method, when present, must be a non-empty string")
 PY
 
-rm -rf "$ARTIFACTS_DIR" "$DERIVED_DATA"
-mkdir -p "$EXPORT_PATH" "$LOGS_DIR"
+mkdir -p "$EXPORT_PATH" "$LOGS_DIR" "$DERIVED_DATA"
 cp -p "$EXPORT_OPTIONS_PLIST" "$RETAINED_EXPORT_OPTIONS"
 EXPORT_OPTIONS_SHA256="$(shasum -a 256 "$RETAINED_EXPORT_OPTIONS" | awk '{print $1}')"
 if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive canonical export-options SHA-256." >&2
-  exit 10
+  exit 12
 fi
 
 {
@@ -148,7 +155,7 @@ POST_ARCHIVE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$POST_ARCHIVE_STATUS" ]]; then
   echo "Archive changed non-ignored repository state; refusing exact-HEAD production evidence." >&2
   printf '%s\n' "$POST_ARCHIVE_STATUS" >&2
-  exit 11
+  exit 13
 fi
 
 set +e
@@ -172,20 +179,21 @@ POST_EXPORT_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$POST_EXPORT_STATUS" ]]; then
   echo "Export changed non-ignored repository state; refusing exact-HEAD production evidence." >&2
   printf '%s\n' "$POST_EXPORT_STATUS" >&2
-  exit 12
+  exit 14
 fi
 
-IPA_FILES=()
-while IFS= read -r ipa_path; do
-  IPA_FILES+=("$ipa_path")
-done < <(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' -print | LC_ALL=C sort)
+EXPORTED_IPA="$(python3 - "$EXPORT_PATH" <<'PY'
+import sys
+from pathlib import Path
 
-if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
-  echo "Expected exactly one exported IPA; found ${#IPA_FILES[@]}." >&2
-  printf 'candidate: %s\n' "${IPA_FILES[@]:-<none>}" >&2
-  exit 13
-fi
-EXPORTED_IPA="${IPA_FILES[0]}"
+export_path = Path(sys.argv[1])
+candidates = sorted(path for path in export_path.iterdir() if path.is_file() and path.suffix.lower() == ".ipa")
+if len(candidates) != 1:
+    rendered = ", ".join(str(path) for path in candidates) or "<none>"
+    raise SystemExit(f"Expected exactly one exported IPA; found {len(candidates)}: {rendered}")
+print(candidates[0])
+PY
+)"
 
 # The flagship owns one canonical signed-IPA verifier/evidence format. Feed the exported IPA into it
 # instead of minting a second candidate schema here.
