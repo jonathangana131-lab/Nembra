@@ -386,22 +386,53 @@ def build_envelope(
 
 
 def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:
+    """Publish one complete envelope atomically without replacing an existing destination."""
     resolved = require_external_path(output, "signed authorization envelope output")
     resolved.parent.mkdir(parents=True, exist_ok=True)
+    staging_path: Path | None = None
+    descriptor = -1
+
     try:
-        with resolved.open("xb") as handle:
+        descriptor, staging_name = tempfile.mkstemp(
+            prefix=f".authorization-envelope-{resolved.name}.staging-",
+            dir=resolved.parent,
+        )
+        staging_path = Path(staging_name)
+        with os.fdopen(descriptor, "wb", closefd=True) as handle:
+            descriptor = -1
             handle.write(envelope)
             handle.flush()
             os.fsync(handle.fileno())
-    except FileExistsError as exc:
-        raise AuthorizationEnvelopeError(
-            f"refusing to overwrite existing signed authorization envelope: {resolved}"
-        ) from exc
+
+        if staging_path.read_bytes() != envelope:
+            raise AuthorizationEnvelopeError("staged authorization envelope bytes diverged")
+
+        try:
+            os.link(staging_path, resolved, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise AuthorizationEnvelopeError(
+                f"refusing to overwrite existing signed authorization envelope: {resolved}"
+            ) from exc
+
+        if resolved.read_bytes() != envelope:
+            raise AuthorizationEnvelopeError("published authorization envelope bytes diverged")
+        return resolved
+    except AuthorizationEnvelopeError:
+        raise
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not publish signed authorization envelope") from exc
-    if resolved.read_bytes() != envelope:
-        raise AuthorizationEnvelopeError("published authorization envelope bytes diverged")
-    return resolved
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if staging_path is not None:
+            try:
+                staging_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise AuthorizationEnvelopeError(
+                    "could not remove authorization envelope staging file"
+                ) from exc
 
 
 def create_envelope(
