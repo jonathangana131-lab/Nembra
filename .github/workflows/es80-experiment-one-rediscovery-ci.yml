@@ -40,6 +40,7 @@ jobs:
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStatusPromotionPolicyTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralEvidenceAssessmentTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralHorizonScopeTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralReceiptIntegrityTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneVehicleContextTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothPowerCycleScanDeliveryPolicyTests.swift' | sort)"
@@ -91,25 +92,36 @@ jobs:
             printf '%s' "$compact_run" | grep -Fq "$token"
           done
 
-      - name: Guard descriptive-only structural seam and non-public PASS
+      - name: Guard descriptive structural replay and Horizon scoping
         run: |
           structural='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneStructuralEvidenceAssessment.swift'
-          assessment='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift'
           compact_structural="$(tr -d '[:space:]' < "$structural")"
-          compact_assessment="$(tr -d '[:space:]' < "$assessment")"
+          printf '%s' "$compact_structural" | grep -Fq 'receipt.observedCandidateCount==snapshot.candidates.count'
+          printf '%s' "$compact_structural" | grep -Fq 'throughSequenceNumber:horizon.recordSequenceWatermark'
+          printf '%s' "$compact_structural" | grep -Fq 'record.sequenceNumber<=horizonWatermark'
           printf '%s' "$compact_structural" | grep -Fq 'casestructurallyCoherent(UUID)'
           if printf '%s' "$compact_structural" | grep -Fq 'casecoherentCaptureEvidence(UUID)'; then
             echo 'Descriptive structural evaluator must not expose authority/PASS wording.' >&2
             exit 1
           fi
+
+      - name: Guard unfinished authority/PASS surface from clients
+        run: |
+          compact_run="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift)"
+          compact_assessment="$(tr -d '[:space:]' < Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift)"
           forbidden=(
-            'publicstructPassiveBluetoothExperimentOneStructuralEvidenceAssessment'
+            'publicfinalclassPassiveBluetoothExperimentOneRun'
+            'publicstructPassiveBluetoothExperimentOnePowerCycleEvidence'
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidence'
+            'publicfuncbeginCaptureRecorder('
+            'publicfunccaptureEvidenceSnapshot('
+            'publicfunccaptureEvidenceAssessment('
             'publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment'
             'publicenumPassiveBluetoothExperimentOneStatusPromotionPolicy'
             'publicstaticfuncassess('
           )
           for token in "${forbidden[@]}"; do
-            if printf '%s%s' "$compact_structural" "$compact_assessment" | grep -Fq "$token"; then
+            if printf '%s%s' "$compact_run" "$compact_assessment" | grep -Fq "$token"; then
               echo "Unfinished Experiment One authority/PASS surface became public: $token" >&2
               exit 1
             fi
