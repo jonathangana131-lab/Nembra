@@ -1,0 +1,146 @@
+name: TEMP ES80 rider-language transform
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-rider-language/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Rewrite only primary Capture copy and validate the contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          text = path.read_text(encoding="utf-8")
+          start = text.index("    private var passiveSafetyPanel")
+          end = text.index("    private var captureDetailsSheet", start)
+          rider = text[start:end]
+
+          replacements = {
+              "One sealed evidence life": "One guided capture",
+              "package-owned Experiment One authority": "single protected Capture session",
+              "package-owned physical execution gate": "physical procedure lock",
+              "producer's evidence clock": "observation window",
+              "producer accepts the window only from its own monotonic receipt boundary": "Nembra accepts the window only after its required observation",
+              "full CoreBluetooth identifier": "Bluetooth target",
+              "post-admission scan": "fresh scan",
+              "fresh scan epoch created after the sealed admission": "fresh scan after the OFF / ON sequence",
+              "package-owned correlated target": "correlated scooter signal",
+              "finite acquisition": "passive discovery",
+              "accepted Horizon authority": "capture sealing readiness",
+              "accepted monotonic observation interval": "required observation period",
+              "package-owned Ready epoch": "observation-ready state",
+              "committing Horizon": "locking the observation boundary",
+              "immutable JSON artifact": "final capture file",
+              "Evidence failed closed": "Capture stopped safely",
+              "bounded CoreBluetooth advertisement catalog": "Bluetooth signals for this exact window",
+              "package-owned outer, SoftwareExport, and immutable Capture integrity checks": "required final Share integrity checks",
+              "EXPERIMENT ONE": "SCOOTER CAPTURE",
+              "Restart Experiment One": "Start over",
+              "Start a fresh Experiment One": "Start a fresh capture",
+              "this Experiment One run": "this capture",
+              "FIELD AUTHORITY": "CAPTURE LOCKED",
+              "HORIZON READY": "OBSERVATION READY",
+              "one immutable Horizon": "one final sealed capture",
+              "One target repeated twice": "Scooter signal repeated twice",
+              "Confirm correlated target": "Confirm scooter signal",
+              "CORRELATED TARGET": "SCOOTER SIGNAL FOUND",
+              "Opening the correlated target": "Opening the scooter signal",
+              "exact run-owned target session": "same capture session",
+          }
+          for old, new in replacements.items():
+              rider = rider.replace(old, new)
+
+          text = text[:start] + rider + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          forbidden = [
+              "One sealed evidence life",
+              "package-owned Experiment One authority",
+              "package-owned physical execution gate",
+              "producer's evidence clock",
+              "producer accepts the window only from its own monotonic receipt boundary",
+              "full CoreBluetooth identifier",
+              "post-admission scan",
+              "fresh scan epoch created after the sealed admission",
+              "package-owned correlated target",
+              "finite acquisition",
+              "accepted Horizon authority",
+              "accepted monotonic observation interval",
+              "package-owned Ready epoch",
+              "committing Horizon",
+              "immutable JSON artifact",
+              "Evidence failed closed",
+              "bounded CoreBluetooth advertisement catalog",
+              "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+          ]
+          required = [
+              "PASSIVE / READ ONLY",
+              "Scooter OFF",
+              "Scooter ON",
+              "Share Capture",
+              "View Details",
+              "es80.capture.begin-window",
+              "es80.capture.confirm-setup",
+              "es80.capture.complete-window",
+              "es80.capture.confirm-correlated-target",
+              "es80.capture.connect-prepared-target",
+              "es80.capture.finish",
+              "es80.capture.share",
+              "es80.capture.view-details",
+              "es80.capture.restart-experiment",
+              "es80.capture-shell",
+          ]
+          current = path.read_text(encoding="utf-8")
+          start = current.index("    private var passiveSafetyPanel")
+          end = current.index("    private var captureDetailsSheet", start)
+          primary = current[start:end]
+          remaining = [phrase for phrase in forbidden if phrase in primary]
+          if remaining:
+              raise SystemExit(f"engineering phrases remain in primary copy: {remaining}")
+          missing = [phrase for phrase in required if phrase not in current]
+          if missing:
+              raise SystemExit(f"required rider/truth/action contract missing: {missing}")
+
+          details = current[current.index("    private var captureDetailsSheet"):]
+          for phrase in (
+              "Truth boundary",
+              "CoreBluetooth",
+              "Software Export SHA-256",
+              "Runtime executable SHA-256",
+              "does not authenticate the physical ES80",
+          ):
+              if phrase not in details:
+                  raise SystemExit(f"engineering details truth disappeared: {phrase}")
+
+          for phrase in (
+              "guard status.physicalProcedurePermitted else",
+              "declaredStationarySetup = nil",
+              "PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)",
+              "finalShareIntegrityReport != nil",
+          ):
+              if phrase not in current:
+                  raise SystemExit(f"mechanical truth contract disappeared: {phrase}")
+          PY
+
+          git diff --check
+          rm .github/workflows/tmp-es80-rider-language-transform.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture product v14] Make primary capture copy rider-first"
+          git push origin HEAD:${{ github.ref_name }}
