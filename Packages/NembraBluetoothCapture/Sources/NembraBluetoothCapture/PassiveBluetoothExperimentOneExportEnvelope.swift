@@ -12,6 +12,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeError: Error, Equatable, 
     case correlationEvidenceInvalid
     case correlationNotUnique
     case powerCycleEvidenceMalformed
+    case experimentEvidenceNotStructurallyCoherent
     case captureHashMismatch
     case manifestBuildIdentityMismatch
     case manifestTargetMismatch
@@ -158,6 +159,37 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         "fieldAuthorizationRecordID",
     ]
 
+    private static let allowedBuildKeys: Set<String> = [
+        "buildIdentifier",
+        "buildInstanceID",
+        "sourceCommitSHA",
+        "executableSHA256",
+    ]
+
+    private static let allowedPowerCycleKeys: Set<String> = [
+        "windows",
+        "observationSnapshots",
+    ]
+
+    private static let allowedWindowKeys: Set<String> = [
+        "phaseRawValue",
+        "windowSequence",
+        "startedAtUptimeNanoseconds",
+        "endedAtUptimeNanoseconds",
+        "observedCandidateCount",
+    ]
+
+    private static let allowedSnapshotKeys: Set<String> = [
+        "observationSeriesIdentity",
+        "windowSequence",
+        "candidates",
+    ]
+
+    private static let allowedCandidateKeys: Set<String> = [
+        "peripheralIdentifier",
+        "isConnectable",
+    ]
+
     /// Produces the field-share envelope from the exact finalized coordinator artifact and the
     /// identity of the running application. Operator input is limited to declared stationary setup.
     /// Physical execution remains independently locked by `PassiveBluetoothExperimentOneFieldExecutionGate`.
@@ -168,7 +200,8 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
     ) throws -> Data {
         let runtimeIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
         return try make(
-            finalizedArtifact: finalizedArtifact,
+            captureJSON: finalizedArtifact.captureJSON,
+            powerCycleResult: finalizedArtifact.powerCycleResult,
             setup: setup,
             runtimeIdentity: runtimeIdentity,
             experimentID: UUID(),
@@ -177,32 +210,40 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         )
     }
 
-    /// Package-scoped deterministic seam for exact artifact/provenance tests. Runtime identity is
-    /// still non-constructible by external app code and should come from the accepted reader fixture.
+    /// Package-scoped deterministic seam for exact artifact/provenance tests. External app code
+    /// cannot use this overload to replace coordinator-issued finalization or runtime build identity.
     package static func make(
-        finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
+        captureJSON: Data,
+        powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
         setup: PassiveBluetoothStationaryCaptureSetup,
         runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
         experimentID: UUID,
         preparedAt: Date,
         prettyPrinted: Bool = true
     ) throws -> Data {
-        let result = finalizedArtifact.powerCycleResult
-        let replayed = try replayPowerCycleEvidence(PowerCycleEvidenceWire(result))
-        guard replayed == result else {
+        let replayed = try replayPowerCycleEvidence(PowerCycleEvidenceWire(powerCycleResult))
+        guard replayed == powerCycleResult else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.correlationEvidenceInvalid
         }
 
-        let target = try uniqueCorrelatedTarget(in: replayed)
+        let correlatedTarget = try uniqueCorrelatedTarget(in: replayed)
+        let structuralTarget = try structurallyCoherentTarget(
+            captureJSON: captureJSON,
+            powerCycleResult: replayed
+        )
+        guard correlatedTarget == structuralTarget else {
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.correlationEvidenceInvalid
+        }
+
         let manifest = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
-            captureJSON: finalizedArtifact.captureJSON,
+            captureJSON: captureJSON,
             experimentID: experimentID,
             experimentRecipe: .es80FingerprintV1,
             preparedAt: preparedAt,
             nembraBuildIdentifier: runtimeIdentity.buildIdentifier,
             nembraBuildInstanceID: runtimeIdentity.buildInstanceID,
             nembraBuildCommitSHA: runtimeIdentity.sourceCommitSHA,
-            selectedPeripheralIdentifier: target.uuidString,
+            selectedPeripheralIdentifier: structuralTarget.uuidString,
             setup: setup
         )
         let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(
@@ -210,7 +251,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
             prettyPrinted: false
         )
 
-        let captureHash = sha256Hex(finalizedArtifact.captureJSON)
+        let captureHash = sha256Hex(captureJSON)
         guard captureHash == manifest.sourceArtifact.sha256 else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.captureHashMismatch
         }
@@ -218,10 +259,10 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         let wire = EnvelopeWire(
             schemaVersion: currentSchemaVersion,
             recipeID: .es80FingerprintV1,
-            captureJSON: finalizedArtifact.captureJSON,
+            captureJSON: captureJSON,
             captureSHA256: captureHash,
             manifestJSON: manifestJSON,
-            powerCycleEvidence: PowerCycleEvidenceWire(result),
+            powerCycleEvidence: PowerCycleEvidenceWire(replayed),
             build: BuildWire(runtimeIdentity),
             fieldAuthorizationRecordID: nil
         )
@@ -231,7 +272,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         return try encoder.encode(wire)
     }
 
-    /// Verifies the closed-world envelope and replays every authority-bearing software binding.
+    /// Verifies the closed-world envelope and replays every software evidence binding.
     ///
     /// This proves only that the exported bytes are internally consistent with the package evidence
     /// recorded in the envelope. It is not a physical-GO check and deliberately rejects any caller-
@@ -278,8 +319,13 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         }
 
         let result = try replayPowerCycleEvidence(wire.powerCycleEvidence)
-        let target = try uniqueCorrelatedTarget(in: result)
-        guard manifest.sourceArtifact.selectedPeripheralIdentifier == target.uuidString else {
+        let correlatedTarget = try uniqueCorrelatedTarget(in: result)
+        let structuralTarget = try structurallyCoherentTarget(
+            captureJSON: wire.captureJSON,
+            powerCycleResult: result
+        )
+        guard correlatedTarget == structuralTarget,
+              manifest.sourceArtifact.selectedPeripheralIdentifier == structuralTarget.uuidString else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.manifestTargetMismatch
         }
 
@@ -301,8 +347,60 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return
         }
-        for key in root.keys.sorted() where !allowedTopLevelKeys.contains(key) {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError.unexpectedEnvelopeField(key)
+        try rejectUnexpectedKeys(root, allowed: allowedTopLevelKeys, path: "")
+
+        if let build = root["build"] as? [String: Any] {
+            try rejectUnexpectedKeys(build, allowed: allowedBuildKeys, path: "build")
+        }
+
+        if let powerCycle = root["powerCycleEvidence"] as? [String: Any] {
+            try rejectUnexpectedKeys(
+                powerCycle,
+                allowed: allowedPowerCycleKeys,
+                path: "powerCycleEvidence"
+            )
+
+            if let windows = powerCycle["windows"] as? [[String: Any]] {
+                for (index, window) in windows.enumerated() {
+                    try rejectUnexpectedKeys(
+                        window,
+                        allowed: allowedWindowKeys,
+                        path: "powerCycleEvidence.windows[\(index)]"
+                    )
+                }
+            }
+
+            if let snapshots = powerCycle["observationSnapshots"] as? [[String: Any]] {
+                for (snapshotIndex, snapshot) in snapshots.enumerated() {
+                    let snapshotPath = "powerCycleEvidence.observationSnapshots[\(snapshotIndex)]"
+                    try rejectUnexpectedKeys(
+                        snapshot,
+                        allowed: allowedSnapshotKeys,
+                        path: snapshotPath
+                    )
+                    if let candidates = snapshot["candidates"] as? [[String: Any]] {
+                        for (candidateIndex, candidate) in candidates.enumerated() {
+                            try rejectUnexpectedKeys(
+                                candidate,
+                                allowed: allowedCandidateKeys,
+                                path: "\(snapshotPath).candidates[\(candidateIndex)]"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static func rejectUnexpectedKeys(
+        _ object: [String: Any],
+        allowed: Set<String>,
+        path: String
+    ) throws {
+        for key in object.keys.sorted() where !allowed.contains(key) {
+            let qualified = path.isEmpty ? key : "\(path).\(key)"
+            throw PassiveBluetoothExperimentOneExportEnvelopeError
+                .unexpectedEnvelopeField(qualified)
         }
     }
 
@@ -370,6 +468,29 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
             observationSnapshots: snapshots,
             correlation: correlation
         )
+    }
+
+    private static func structurallyCoherentTarget(
+        captureJSON: Data,
+        powerCycleResult: PassiveBluetoothPowerCycleObservationResult
+    ) throws -> UUID {
+        let session: PassiveBluetoothCaptureSession
+        do {
+            session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
+        } catch {
+            throw PassiveBluetoothExperimentOneExportEnvelopeError
+                .experimentEvidenceNotStructurallyCoherent
+        }
+
+        let assessment = PassiveBluetoothExperimentOneStructuralEvidenceAssessment.assess(
+            powerCycleResult: powerCycleResult,
+            captureSession: session
+        )
+        guard case let .structurallyCoherent(target) = assessment.status else {
+            throw PassiveBluetoothExperimentOneExportEnvelopeError
+                .experimentEvidenceNotStructurallyCoherent
+        }
+        return target
     }
 
     private static func uniqueCorrelatedTarget(
