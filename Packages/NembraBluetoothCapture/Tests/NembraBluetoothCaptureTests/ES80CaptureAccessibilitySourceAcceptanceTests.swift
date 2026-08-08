@@ -24,10 +24,6 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
     @Test("Capture does not require custom spatial motion or transparency effects")
     func captureHasNoCustomMotionOrTransparencyDependency() throws {
         let source = try Self.shellSource()
-
-        // Capture is a measurement instrument. Its accepted state must remain readable when system
-        // motion/transparency accommodations are enabled, so the production shell deliberately does
-        // not depend on bespoke animation, blur, material, or glass effects to communicate state.
         let forbiddenPresentationDependencies = [
             "withAnimation",
             ".animation(",
@@ -58,8 +54,6 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
         #expect(source.contains("TimelineView(.periodic("))
         #expect(source.contains("static let statusPollInterval: TimeInterval = 0.5"))
 
-        // The six-segment rail changes with package state but must be one semantic progress element,
-        // not six independently focusable visual segments plus duplicate labels.
         let progressStart = try #require(source.range(of: "private func progressRail("))
         let progressEnd = try #require(
             source.range(
@@ -72,9 +66,6 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
         #expect(progressSource.contains("progressAccessibilityLabel("))
         #expect(progressSource.contains(".accessibilityIdentifier(\"es80.capture.experiment-progress\")"))
 
-        // The live OFF/ON observation card similarly supplies one label/value/hint rather than
-        // exposing its changing visual children individually. VoiceOver is part of the primary rider
-        // surface, so it must not fall back to protocol/acquisition vocabulary hidden from sighted copy.
         let primaryStart = try #require(source.range(of: "private func primaryContent("))
         let primaryEnd = try #require(
             source.range(
@@ -107,16 +98,14 @@ struct ES80CaptureAccessibilitySourceAcceptanceTests {
     func accessibilityLayerDoesNotBecomeCaptureAuthority() throws {
         let source = try Self.shellSource()
 
-        #expect(source.contains("The capture system, not this display timer, decides whether the window has enough evidence."))
-        #expect(source.contains("This countdown is display guidance only."))
+        #expect(source.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))
+        #expect(source.contains("This countdown is guidance only. Nembra accepts the check only after the required observation time is recorded; finishing early cannot create a valid result."))
         #expect(source.contains("The displayed timer is guidance only."))
 
-        // The view may request package operations, but accessibility modifiers and the 0.5-second
-        // presentation clock must never call recorder/evidence constructors directly.
         let bodyStart = try #require(source.range(of: "var body: some View"))
         let shellBody = source[bodyStart.lowerBound..<source.endIndex]
-        #expect(!shellBody.contains("PassiveBluetoothCaptureRecorder("))
-        #expect(!shellBody.contains("PassiveBluetoothCaptureEvent("))
-        #expect(!shellBody.contains("PassiveBluetoothCaptureArtifact("))
+        #expect(shellBody.range(of: "PassiveBluetoothCaptureRecorder(") == nil)
+        #expect(shellBody.range(of: "PassiveBluetoothCaptureEvent(") == nil)
+        #expect(shellBody.range(of: "PassiveBluetoothCaptureArtifact(") == nil)
     }
 }
