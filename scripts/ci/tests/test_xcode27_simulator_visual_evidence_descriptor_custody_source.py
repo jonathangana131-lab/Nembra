@@ -19,11 +19,14 @@ required_tokens = (
     "dir_fd=",
     "os.fstat(",
     "os.fdopen(os.dup(",
+    "st_nlink",
+    "visual-evidence directory changed during enumeration",
+    "Simulator artifact root changed during visual-evidence enumeration",
 )
 for token in required_tokens:
     if token not in visual:
         raise SystemExit(
-            f"visual-evidence manifest must bind retained bytes through no-follow descriptor ancestry: missing {token!r}"
+            f"visual-evidence manifest must bind and re-prove retained descriptor ancestry: missing {token!r}"
         )
 
 forbidden_path_reopen_tokens = (
@@ -36,9 +39,9 @@ for token in forbidden_path_reopen_tokens:
             f"visual-evidence manifest still measures/hashes mutable pathname state instead of one descriptor: {token!r}"
         )
 
-if visual.count("os.fstat(") < 2:
+if visual.count("os.fstat(") < 6:
     raise SystemExit(
-        "visual-evidence hashing must re-prove descriptor identity/size after reading, not only before it"
+        "visual-evidence custody must re-prove files plus retained directories/root, not only opened file bytes"
     )
 
 print("descriptor-bound Simulator visual-evidence custody source contract: PASS")
