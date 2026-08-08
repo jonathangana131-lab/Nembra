@@ -124,16 +124,26 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
         powerCycle == capture
     }
 
+    /// Replays correlation only when the preserved raw snapshots still match the canonical receipt
+    /// metadata that claims to describe them. Sequence equality alone is insufficient for imported
+    /// or corrupted artifacts: phase order and receipt candidate counts must also agree exactly.
     private static func replayedCorrelationIfConsistent(
         with result: PassiveBluetoothPowerCycleObservationResult
     ) -> PassiveBluetoothPowerCycleTargetCorrelationReport? {
-        let expectedCount = PassiveBluetoothPowerCycleObservationPhase.allCases.count
-        guard result.windows.count == expectedCount,
-              result.observationSnapshots.count == expectedCount,
-              zip(result.windows, result.observationSnapshots).allSatisfy({ pair in
-                  pair.0.windowSequence == pair.1.windowSequence
-              }) else {
+        let expectedPhases = PassiveBluetoothPowerCycleObservationPhase.allCases
+        guard result.windows.count == expectedPhases.count,
+              result.observationSnapshots.count == expectedPhases.count else {
             return nil
+        }
+
+        for index in expectedPhases.indices {
+            let receipt = result.windows[index]
+            let snapshot = result.observationSnapshots[index]
+            guard receipt.phase == expectedPhases[index],
+                  receipt.windowSequence == snapshot.windowSequence,
+                  receipt.observedCandidateCount == snapshot.candidates.count else {
+                return nil
+            }
         }
 
         return PassiveBluetoothPowerCycleTargetCorrelation.assess(
