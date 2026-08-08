@@ -94,6 +94,58 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        stat.S_IFMT(metadata.st_mode),
+    )
+
+
+def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
+    """Copy one stable exact IPA subject through one open file descriptor."""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(ipa_path, flags)
+    except OSError as exc:
+        raise EvidenceError(f"could not open exact IPA subject: {ipa_path}") from exc
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise EvidenceError("IPA input must be one regular file")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with os.fdopen(os.dup(descriptor), "rb") as source, destination.open("xb") as sink:
+                shutil.copyfileobj(source, sink, length=1024 * 1024)
+                sink.flush()
+                os.fsync(sink.fileno())
+        except OSError as exc:
+            destination.unlink(missing_ok=True)
+            raise EvidenceError("could not snapshot exact IPA subject") from exc
+
+        after = os.fstat(descriptor)
+        if _stable_file_identity(before) != _stable_file_identity(after):
+            destination.unlink(missing_ok=True)
+            raise EvidenceError("IPA input changed while exact inspection subject was snapshotted")
+        try:
+            snapshot_stat = destination.stat()
+        except OSError as exc:
+            destination.unlink(missing_ok=True)
+            raise EvidenceError("could not stat exact IPA inspection subject") from exc
+        if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size != before.st_size:
+            destination.unlink(missing_ok=True)
+            raise EvidenceError("exact IPA inspection subject does not match source byte count")
+        destination.chmod(0o600)
+        return destination
+    finally:
+        os.close(descriptor)
+
 def canonical_sha40(value: str) -> str:
     if not SHA40_RE.fullmatch(value):
         raise EvidenceError("expected source SHA must be one canonical lowercase 40-hex Git commit")
@@ -562,6 +614,17 @@ def reject_embedded_external_authority(app_path: Path) -> None:
 
 
 def inspect_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:
+    """Inspect one private exact snapshot so digest and signing facts share one subject."""
+    with tempfile.TemporaryDirectory(prefix="nembra-field-ipa-subject-") as temporary:
+        exact_subject = Path(temporary) / "NembraField.ipa"
+        snapshot_ipa_exact(ipa_path, exact_subject)
+        return _inspect_snapshotted_ipa(
+            exact_subject,
+            expected_source_sha,
+            intended_device_udid=intended_device_udid,
+        )
+
+def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:
     source_sha = canonical_sha40(expected_source_sha)
     if not ipa_path.is_file():
         raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
@@ -1120,12 +1183,16 @@ def main(argv: list[str]) -> int:
     if missing:
         raise EvidenceError(f"required arguments missing: {', '.join(missing)}")
 
-    inspection = inspect_ipa(
-        args.ipa.resolve(),
-        args.expected_source_sha,
-        intended_device_udid=args.intended_device_udid,
-    )
-    paths = write_outputs(args.ipa.resolve(), args.output_dir.resolve(), inspection)
+    ipa_input = args.ipa.expanduser().absolute()
+    with tempfile.TemporaryDirectory(prefix="nembra-field-ipa-subject-") as temporary:
+        exact_subject = Path(temporary) / "NembraField.ipa"
+        snapshot_ipa_exact(ipa_input, exact_subject)
+        inspection = _inspect_snapshotted_ipa(
+            exact_subject,
+            args.expected_source_sha,
+            intended_device_udid=args.intended_device_udid,
+        )
+        paths = write_outputs(exact_subject, args.output_dir.resolve(), inspection)
     summary = {
         "status": "EVIDENCE_ONLY_NOT_FIELD_AUTHORIZATION",
         "sourceCommitSHA": inspection["field_build_record"]["sourceCommitSHA"],
