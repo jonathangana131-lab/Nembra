@@ -69,6 +69,33 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         }
     }
 
+    /// Primary product share output. `shareJSON` is the closed-world package envelope; `captureJSON`
+    /// remains available only as the exact sealed source evidence for details/offline verification.
+    public struct FinalizedShareArtifact: Equatable, Sendable {
+        public let shareJSON: Data
+        public let captureJSON: Data
+        public let powerCycleResult: PassiveBluetoothPowerCycleObservationResult
+        public let stationaryManifest: PassiveBluetoothStationaryCaptureManifest
+        public let buildIdentifier: String
+        public let buildInstanceID: String
+        public let sourceCommitSHA: String
+        public let executableSHA256: String
+
+        fileprivate init(
+            shareJSON: Data,
+            verified: PassiveBluetoothExperimentOneVerifiedExport
+        ) {
+            self.shareJSON = shareJSON
+            captureJSON = verified.captureJSON
+            powerCycleResult = verified.powerCycleResult
+            stationaryManifest = verified.stationaryManifest
+            buildIdentifier = verified.buildIdentifier
+            buildInstanceID = verified.buildInstanceID
+            sourceCommitSHA = verified.sourceCommitSHA
+            executableSHA256 = verified.executableSHA256
+        }
+    }
+
     private let run: PassiveBluetoothExperimentOneRun
     private let controller: ForegroundCoreBluetoothCaptureController?
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
@@ -212,6 +239,28 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         finalizedArtifactStorage = artifact
         try? controller.teardownActiveConnectionAfterFinalization()
         return artifact
+    }
+
+    /// Seals the same immutable Horizon and immediately binds it into the only artifact the product
+    /// may label as primary Share. Runtime build identity is read before sealing so malformed/missing
+    /// embedded build provenance fails before immutable capture authority is consumed. `setup` is an
+    /// operator-declared execution context only; it never creates target, build, or physical authority.
+    public func finalizeObservationHorizonForShare(
+        setup: PassiveBluetoothStationaryCaptureSetup
+    ) async throws -> FinalizedShareArtifact {
+        try requireExecutionAuthority()
+        guard finalizedArtifactStorage == nil else { throw CoordinatorError.artifactAlreadyFinalized }
+
+        let buildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        let artifact = try await finalizeObservationHorizon()
+        let shareJSON = try PassiveBluetoothExperimentOneExportEnvelopeJSON.make(
+            captureJSON: artifact.captureJSON,
+            powerCycleResult: artifact.powerCycleResult,
+            setup: setup,
+            buildIdentity: buildIdentity
+        )
+        let verified = try PassiveBluetoothExperimentOneExportEnvelopeJSON.verifyAndDecode(shareJSON)
+        return FinalizedShareArtifact(shareJSON: shareJSON, verified: verified)
     }
 
     /// Destructive safety paths remain available regardless of GO because they cannot create authority.
