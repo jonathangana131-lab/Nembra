@@ -52,6 +52,39 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         nextSequenceNumber += 1
     }
 
+    /// Records a Nembra observation-session boundary on the same actor and
+    /// system-boot-relative monotonic clock as raw CoreBluetooth callback
+    /// receipts. The watermark is captured atomically from the final raw record
+    /// sequence already accepted by this recorder. This does not create a BLE
+    /// event, claim an RF emission time, or infer scooter state.
+    public func recordObservationBoundary(
+        _ kind: PassiveBluetoothObservationBoundaryKind
+    ) throws {
+        try recordObservationBoundary(
+            kind,
+            observedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            observedAtDate: Date()
+        )
+    }
+
+    /// Deterministic/testable observation-boundary path. Production callers
+    /// should normally use the clock-owning overload above.
+    public func recordObservationBoundary(
+        _ kind: PassiveBluetoothObservationBoundaryKind,
+        observedAtUptimeNanoseconds: UInt64,
+        observedAtDate: Date
+    ) throws {
+        let recordSequenceWatermark = nextSequenceNumber - 1
+        try session.appendObservationBoundary(
+            PassiveBluetoothObservationBoundary(
+                kind: kind,
+                recordSequenceWatermark: recordSequenceWatermark,
+                observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+                observedAtDate: observedAtDate
+            )
+        )
+    }
+
     public func snapshot() -> PassiveBluetoothCaptureSession {
         session
     }
