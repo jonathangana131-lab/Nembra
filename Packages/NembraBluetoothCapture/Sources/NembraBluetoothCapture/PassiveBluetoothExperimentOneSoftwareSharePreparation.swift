@@ -2,9 +2,9 @@ import Foundation
 
 /// One package-owned Share payload prepared from a finalized Experiment One evidence life.
 ///
-/// The encoded bytes are a verified `PassiveBluetoothExperimentOneSoftwareExport`, not raw
-/// controller capture JSON. They remain software evidence only: an independently accepted external
-/// field-build / GO record is still required before a physical experiment may be authorized.
+/// The encoded bytes are a self-consistency-checked `PassiveBluetoothExperimentOneSoftwareExport`,
+/// not raw controller capture JSON. They remain software evidence only: an independently accepted
+/// external field-build / GO record is still required before a physical experiment may be authorized.
 public struct PassiveBluetoothExperimentOnePreparedSoftwareShare: Equatable, Sendable {
     /// Exact bytes that product UI may stage into a temporary Share file.
     public let softwareExportJSON: Data
@@ -49,8 +49,8 @@ public enum PassiveBluetoothExperimentOneSoftwareSharePreparationError: Error, E
 ///
 /// Public app callers provide only the package-finalized evidence life plus the operator-declared
 /// stationary setup. Target identity, recipe identity, and runtime build provenance are derived by
-/// package-owned producers. The final encoded bytes are round-trip verified before they are returned
-/// to the app for file staging.
+/// package-owned producers. The final encoded bytes are round-trip self-consistency checked before
+/// they are returned to the app for file staging; that check is not external build attestation.
 public enum PassiveBluetoothExperimentOneSoftwareSharePreparation {
     @MainActor
     public static func prepare(
