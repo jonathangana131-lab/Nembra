@@ -51,7 +51,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         )
     }
 
-    @Test("completed framing summary retains exact scoped source provenance without raw byte duplication")
+    @Test("completed framing summary retains exact scoped software provenance without raw byte duplication")
     func completedReportRetainsProvenance() throws {
         var session = try makeSession()
         let rawCallbackPayload: [UInt8] = [0x00, 0x02, 0x30, 0xAA, 0xBB]
@@ -69,11 +69,12 @@ struct PassiveBluetoothTuyaCaptureReportTests {
             policy: policy()
         )
 
-        #expect(report.schemaVersion == 2)
+        #expect(report.schemaVersion == 3)
         #expect(report.capture.sessionID == session.id)
         #expect(report.capture.vehicleIdentity == identity)
         #expect(report.capture.sessionStartedAt == Date(timeIntervalSince1970: 1_000))
         #expect(report.capture.peripheralIdentifier == "target-A")
+        #expect(report.capture.provenanceClass == .validatedSoftwareSessionOnly)
         #expect(report.capture.totalCaptureRecordCount == 1)
         #expect(report.analysisPolicy.maximumEncryptedMessageBytes == 64)
         #expect(report.analysisPolicy.maximumFragmentCount == 8)
@@ -126,6 +127,7 @@ struct PassiveBluetoothTuyaCaptureReportTests {
         #expect(try decoder.decode(PassiveBluetoothTuyaCaptureReport.self, from: data) == report)
 
         let encodedJSON = String(decoding: data, as: UTF8.self)
+        #expect(encodedJSON.contains("validated-software-session-only"))
         #expect(encodedJSON.contains(Data(rawCallbackPayload).base64EncodedString()) == false)
         #expect(encodedJSON.contains(Data(candidateEncryptedPayload).base64EncodedString()) == false)
     }
