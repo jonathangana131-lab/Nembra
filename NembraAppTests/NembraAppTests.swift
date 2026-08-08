@@ -380,4 +380,13 @@ extension NembraAppTests {
         XCTAssertTrue(exportBody.contains("finalizedSoftwareExport = softwareExport"))
         XCTAssertTrue(exportBody.contains("finalizedExportData = data"))
     }
+
+    func testCaptureAnalysisReadinessRequiresPreparedPackageExport() throws {
+        let shell = try captureShellSource()
+
+        XCTAssertTrue(shell.contains("Text(finalizedExportData == nil ? \"Capture sealed\" : \"Ready for analysis\")"))
+        XCTAssertTrue(shell.contains("capture sealed; Share and analysis package preparation pending"))
+        XCTAssertTrue(shell.contains("capture sealed and analysis package ready"))
+        XCTAssertFalse(shell.contains("Text(\"Ready for analysis\")"))
+    }
 }
