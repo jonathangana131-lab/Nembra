@@ -573,7 +573,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
 
         guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds else {
+              latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds else {
             // The sealed admission must be joined to a controller observation received after
             // that handoff. Replaying an older cached advertisement would splice two software
             // chronology lives and could enqueue evidence that predates this recorder.

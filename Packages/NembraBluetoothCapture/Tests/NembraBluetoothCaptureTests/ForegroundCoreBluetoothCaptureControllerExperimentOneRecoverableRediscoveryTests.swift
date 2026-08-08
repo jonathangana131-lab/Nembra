@@ -43,7 +43,7 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscove
         let discovery = try #require(method.range(of: "latestDiscoveryByIdentifier["))
         let attempt = try #require(method.range(of: "targetState.validateCanBeginAttempt("))
         let advertisement = try #require(method.range(of: "latestAdvertisementByIdentifier["))
-        let freshness = try #require(method.range(of: "receivedAtUptimeNanoseconds >="))
+        let freshness = try #require(method.range(of: "receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds"))
         let consume = try #require(method.range(of: "admission.consume()"))
         let publication = try #require(method.range(of: "recorder = payload.recorder"))
 
@@ -55,6 +55,7 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscove
         #expect(attempt.lowerBound < consume.lowerBound)
         #expect(advertisement.lowerBound < consume.lowerBound)
         #expect(freshness.lowerBound < consume.lowerBound)
+        #expect(method.range(of: "receivedAtUptimeNanoseconds >=") == nil)
 
         // Consumption remains the irreversible ownership handoff and therefore
         // must still precede publication of the exact run-owned recorder.
