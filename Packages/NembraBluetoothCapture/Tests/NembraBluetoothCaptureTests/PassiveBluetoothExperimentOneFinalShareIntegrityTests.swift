@@ -76,7 +76,8 @@ struct PassiveBluetoothExperimentOneFinalShareIntegrityTests {
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
                     commit,
             ],
-            executableData: Data("final-share-integrity-test-executable".utf8)
+            executableData: Data("final-share-integrity-test-executable".utf8),
+            infoPlistData: Data("final-share-integrity-test-Info.plist".utf8)
         )
     }
 
