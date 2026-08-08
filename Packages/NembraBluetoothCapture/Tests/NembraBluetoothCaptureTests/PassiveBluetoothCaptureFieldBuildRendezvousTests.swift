@@ -155,14 +155,20 @@ struct PassiveBluetoothCaptureFieldBuildRendezvousTests {
     ) throws -> Data {
         let object: [String: Any] = [
             "schemaVersion": 1,
-            "externalBuildRecordSHA256": externalBuildRecordSHA256,
-            "signedInstallableSHA256": signedInstallableSHA256,
-            "signedInstallableKind": "ipa",
+            "authority": "signed-field-artifact-evidence-not-field-authorization",
             "buildIdentifier": buildIdentifier,
             "buildInstanceID": buildInstanceID,
             "sourceCommitSHA": sourceCommitSHA,
+            "bundleIdentifier": "com.jonathangana131.nembra",
+            "platformName": "iphoneos",
+            "supportedPlatforms": ["iPhoneOS"],
+            "teamIdentifier": "ABCDE12345",
+            "signingAuthorities": ["Apple Development: Nembra Test"],
+            "ipaSHA256": signedInstallableSHA256,
+            "ipaByteCount": 123_456,
             "executableSHA256": executableSHA256,
             "infoPlistSHA256": infoPlistSHA256,
+            "externalBuildRecordSHA256": externalBuildRecordSHA256,
             "experimentRecipeID": "ES80-FINGERPRINT-v1",
             "procedureVersion": "V14",
         ]
