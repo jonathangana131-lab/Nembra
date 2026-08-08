@@ -1,0 +1,77 @@
+name: ES80 pre-H observation abort exact-product QA v2
+
+on:
+  push:
+    branches:
+      - cell/es80-preh-observation-abort/ci/chat-k4m7v-2
+
+permissions:
+  contents: read
+
+jobs:
+  preh-observation-abort-qa:
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: a6a35db793e20279db447d0fb9470ae38ca50997
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-preh-observation-abort-chat-k4m7v-2.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Assert validation product excludes temporary worker workflows
+        run: |
+          set -euo pipefail
+          if find .github/workflows -maxdepth 1 -type f -name 'chat-k4m7v-*' -print | grep -q .; then
+            echo 'Temporary worker workflow leaked into exact product.' >&2
+            find .github/workflows -maxdepth 1 -type f -name 'chat-k4m7v-*' -print >&2
+            exit 1
+          fi
+
+      - name: Run NembraCore tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Run full capture package tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
