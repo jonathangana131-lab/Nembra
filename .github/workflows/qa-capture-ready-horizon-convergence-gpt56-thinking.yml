@@ -1,0 +1,93 @@
+name: Capture Ready-Horizon convergence exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/capture-ready-horizon-convergence/ci/gpt56-thinking
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-ready-horizon-convergence-gpt56-thinking
+  cancel-in-progress: true
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  exact-product-qa:
+    runs-on: xcode-27
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout immutable validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 02aa8a55b526b28a3b9506ef72cd8827bd7c269a
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-capture-ready-horizon-convergence-gpt56-thinking.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Validate project structure
+        run: |
+          set -euo pipefail
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate NembraCore warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Validate full capture package warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build, test, and capture real app Simulator states
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-ready-horizon-convergence-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
