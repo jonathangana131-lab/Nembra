@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -56,6 +57,29 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn('private signed-field inspector runner self-test: PASS', completed.stdout)
 
+    def test_pins_and_isolates_python_before_private_or_evidence_work(self):
+        self.assertIn('PYTHON3="/usr/bin/python3"', self.source)
+        self.assertIn('[[ ! -x "$PYTHON3" ]]', self.source)
+        self.assertNotRegex(
+            self.source,
+            re.compile(r'(?m)^\s*python3(?:\s|$)'),
+            "Field-candidate evidence must not execute Python through ambient PATH.",
+        )
+        self.assertNotIn('$(python3 ', self.source)
+
+        invocations = re.findall(r'(?m)^\s*"\$PYTHON3"[^\n]*', self.source)
+        self.assertTrue(invocations, "Expected field-candidate producer to invoke its pinned Python executable")
+        non_isolated = [line for line in invocations if not re.search(r'"\$PYTHON3"\s+-I(?:\s|$)', line)]
+        self.assertEqual(
+            non_isolated,
+            [],
+            "Every evidence-producing Python process must ignore caller PYTHON* startup authority: "
+            + " | ".join(non_isolated),
+        )
+        self.assertIn('"$PYTHON3" -I /dev/fd/7', self.source)
+        self.assertIn('"$PYTHON3" -I /dev/fd/9', self.source)
+        self.assertIn('"$PYTHON3" -I --version', self.source)
+
     def test_executes_inspection_code_from_exact_git_blob_descriptors(self):
         self.assertIn('PRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"', self.source)
         self.assertIn('INSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"', self.source)
@@ -67,12 +91,12 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('exec 8< "$INSPECTOR_SNAPSHOT"', self.source)
         self.assertIn('exec 9< "$PRIVATE_RUNNER_SNAPSHOT"', self.source)
         self.assertIn('rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"', self.source)
-        self.assertIn('python3 /dev/fd/7', self.source)
-        self.assertIn('python3 /dev/fd/9', self.source)
+        self.assertIn('"$PYTHON3" -I /dev/fd/7', self.source)
+        self.assertIn('"$PYTHON3" -I /dev/fd/9', self.source)
         self.assertIn('--canonical-inspector-fd 8', self.source)
         self.assertNotIn('python3 scripts/ci/es80_signed_field_artifact_private_runner.py', self.source)
-        self.assertLess(self.source.index('REPOSITORY_STATUS='), self.source.index('python3 /dev/fd/7'))
-        self.assertLess(self.source.index('python3 /dev/fd/7'), self.source.index('git worktree add --detach'))
+        self.assertLess(self.source.index('REPOSITORY_STATUS='), self.source.index('"$PYTHON3" -I /dev/fd/7'))
+        self.assertLess(self.source.index('"$PYTHON3" -I /dev/fd/7'), self.source.index('git worktree add --detach'))
         self.assertIn('load_canonical_inspector_from_fd', self.runner_source)
         self.assertIn('descriptor = os.dup(descriptor_number)', self.runner_source)
         self.assertIn('code = compile(raw, module.__file__, "exec")', self.runner_source)
