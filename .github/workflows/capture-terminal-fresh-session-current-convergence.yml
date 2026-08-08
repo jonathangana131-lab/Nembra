@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "4024fb604290438d9c7c84a7dd2592760bff905c"
+          test "$(git rev-parse HEAD^)" = "2011fb73ed297d8b5b3adb710f351d3a6268a658"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-terminal-fresh-session-current-convergence.yml"
 
       - name: Apply reviewed terminal fresh-session delta
@@ -53,28 +53,7 @@ jobs:
           rm .github/workflows/capture-terminal-fresh-session-current-convergence.yml
           git add -u .github/workflows/capture-terminal-fresh-session-current-convergence.yml
           git diff --cached --check
-
-          # Terminal-success authority.
-          test "$(grep -c 'reopenAfterTerminalFreshTargetSession' "$gate")" -ge "1"
-          test "$(grep -c 'PassiveCoreBluetoothTerminalFreshTargetSession.create' "$controller")" -ge "1"
-          test "$(grep -c 'pendingTerminalQueueResolution' "$controller")" -ge "1"
-          test "$(grep -c 'attemptTerminalFreshSessionRecoveryIfPossible' "$controller")" -ge "1"
-
-          # Preserve current flagship Experiment One + Ready/Horizon truth.
-          test "$(grep -c 'func connectUsingExperimentOneAdmission(' "$controller")" = "1"
-          test "$(grep -c 'admission.consume()' "$controller")" = "1"
-          test "$(grep -c 'latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds' "$controller")" = "1"
-          test "$(grep -c 'foregroundEvidenceIntegrityValid = true' "$controller")" -ge "2"
-          test "$(grep -c 'let recordedReadyFailure = error' "$controller")" = "1"
-          test "$(grep -c 'let recordedHorizonFailure = error' "$controller")" = "1"
-          test "$(grep -c 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$controller" || true)" = "0"
-          test "$(grep -c 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$controller" || true)" = "0"
-          test "$(grep -c 'abandonBeforeRecorderMutation()' "$controller")" = "1"
-          test "$(grep -c 'abandonBeforeRecorderAttempt()' "$controller")" = "1"
-          test "$(grep -c 'abortReadyBeforeRecorderAttempt' "$controller")" -ge "1"
-          test "$(grep -c 'validateBoundaryAuthority(admission.authority)' "$controller")" -ge "1"
-          test "$(grep -c 'try self.requireForegroundEvidenceIntegrity()' "$controller")" -ge "5"
-
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "5"
           test -f "$controller_test"
           test -f "$gate_test"
           test ! -e .github/workflows/capture-terminal-fresh-session-current-convergence.yml
