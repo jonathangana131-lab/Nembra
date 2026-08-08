@@ -1238,6 +1238,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         let disposition = targetState.completeDisconnect(from: identifier)
         guard disposition != .ignored else { return }
 
+        // Once Horizon is terminal, transport teardown may release CoreBluetooth
+        // state but must not revoke or mutate the already-finalized artifact authority.
+        if observationBoundaryQueueGate.isTerminal {
+            if targetState.selectedTargetIdentifier == identifier {
+                selectedTargetCancellationPending = false
+            }
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            return
+        }
+
         // A retired target may disconnect after the operator has already selected
         // B. Consume its quarantine but never append A evidence to B's recorder.
         if targetState.selectedTargetIdentifier == identifier {
@@ -1279,6 +1291,31 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         let receipt = callbackReceipt()
         let previous = bluetoothState
         bluetoothState = central.state
+
+        // A terminal Horizon freezes capture authority. Central-state callbacks may
+        // still clean up transport state, but they cannot create a new evidence epoch
+        // or invalidate the sealed artifact.
+        if observationBoundaryQueueGate.isTerminal {
+            hasObservedInitialCentralState = true
+            guard central.state != .poweredOn else { return }
+
+            scanRequested = false
+            if central.isScanning {
+                central.stopScan()
+            }
+            if activePeripheral != nil {
+                activePeripheral?.delegate = nil
+                activePeripheral = nil
+                connectionTimeoutTask?.cancel()
+                connectionTimeoutTask = nil
+                connectionPhase = .idle
+                clearAcquisitionObjects()
+            }
+            selectedTargetCancellationPending = false
+            targetState.resetForCentralInvalidation()
+            clearCandidateCatalog()
+            return
+        }
 
         if hasObservedInitialCentralState, previous != central.state {
             if hasTargetSession, !advanceArtifactAuthority() { return }
@@ -1817,6 +1854,11 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+
+        // Service invalidation after terminal Horizon is outside the accepted
+        // observation interval. Do not advance artifact authority or restart a
+        // finite acquisition inside the sealed recorder lifecycle.
+        guard !observationBoundaryQueueGate.isTerminal else { return }
 
         let uuids = invalidatedServices
             .map { CoreBluetoothCaptureMapping.normalizedUUID($0.uuid) }
