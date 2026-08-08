@@ -140,6 +140,17 @@ struct ES80CaptureShellView: View {
             }
             .onChange(of: currentPhase) { _, newPhase in
                 synchronizeIdleTimer(for: newPhase)
+                announceAccessibilityStatus(newPhase)
+            }
+            .onChange(of: diagnosticMessage) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: sharePreparationWarning) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: presentationAnalysisReady) { _, isReady in
+                guard isReady, currentPhase == .complete else { return }
+                announceAccessibilityAlert("Capture complete. Ready for analysis and sharing.")
             }
             .onChange(of: status.powerCycleProgress?.isScanning == true) { _, isScanning in
                 synchronizeObservedScanClock(isScanning: isScanning)
@@ -1541,6 +1552,33 @@ struct ES80CaptureShellView: View {
         }
         .padding(14)
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Capture alert")
+        .accessibilityValue(message)
+    }
+
+    /// Event-driven VoiceOver semantics stay separate from the 2 Hz presentation refresh.
+    private func announceAccessibilityStatus(_ phase: Phase) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let announcement: String?
+        switch phase {
+        case let .bluetoothUnavailable(message): announcement = "Bluetooth is not ready. \(message)"
+        case let .correlationFailed(message): announcement = "Capture stopped. \(message)"
+        case .noRepeatableTarget: announcement = "No unique scooter signal was found. Repeat the OFF / ON sequence."
+        case let .ambiguousTargets(count): announcement = "\(count) Bluetooth signals matched. Repeat the OFF / ON sequence."
+        case .readyToSeal: announcement = "Capture is ready to seal. Seal Capture is now available."
+        case .complete:
+            announcement = presentationAnalysisReady ? "Capture complete. Ready for analysis and sharing." : "Capture sealed. Final artifact verification is still required."
+        case let .failed(message): announcement = "Capture stopped safely. \(message)"
+        default: announcement = nil
+        }
+        guard let announcement else { return }
+        UIAccessibility.post(notification: .announcement, argument: announcement)
+    }
+
+    private func announceAccessibilityAlert(_ message: String?) {
+        guard UIAccessibility.isVoiceOverRunning, let message, !message.isEmpty else { return }
+        UIAccessibility.post(notification: .announcement, argument: "Capture alert. \(message)")
     }
 
     private func guidanceFootnote(_ text: String) -> some View {
