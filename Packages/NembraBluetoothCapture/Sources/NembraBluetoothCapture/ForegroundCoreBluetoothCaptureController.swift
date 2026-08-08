@@ -985,6 +985,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterTerminalFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -998,13 +1006,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             failCapture(error)
             throw ControllerError.captureFailed
@@ -1108,6 +1110,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -1121,13 +1131,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             lastDiagnostic = Self.diagnostic(
                 error,
