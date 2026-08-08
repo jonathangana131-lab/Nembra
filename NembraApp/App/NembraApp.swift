@@ -220,7 +220,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
                         chargerStateButton(
                             title: "Disconnected",
-                            detail: "Required for ES80-FINGERPRINT-v1",
+                            detail: "Required for this capture",
                             systemImage: "bolt.slash.fill",
                             state: .disconnected
                         )
@@ -264,7 +264,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                         }
                         disconnectedDeclarationAccepted = true
                     } label: {
-                        Label("Continue to setup confirmation", systemImage: "checkmark.shield.fill")
+                        Label("Confirm setup", systemImage: "checkmark.shield.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 56)
