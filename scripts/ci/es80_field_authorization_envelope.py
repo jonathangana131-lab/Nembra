@@ -32,6 +32,11 @@ DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
 DEFAULT_OPENSSL_PATH = "/usr/bin/openssl"
+OPENSSL_SUBPROCESS_ENVIRONMENT = {
+    "LANG": "C",
+    "LC_ALL": "C",
+    "OPENSSL_CONF": "/dev/null",
+}
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -119,23 +124,18 @@ def read_exact_subject(path: Path, label: str) -> bytes:
 
 
 def require_openssl() -> str:
-    """Resolve one explicitly controlled OpenSSL executable without consulting ambient PATH."""
-    configured = os.environ.get("NEMBRA_OPENSSL", DEFAULT_OPENSSL_PATH)
-    requested = Path(configured).expanduser()
-    if not requested.is_absolute():
+    """Resolve the fixed system OpenSSL subject and prove root-owned pathname custody."""
+    requested = Path(DEFAULT_OPENSSL_PATH)
+    if not requested.is_absolute() or requested.is_symlink():
         raise AuthorizationEnvelopeError(
-            "NEMBRA_OPENSSL must name one absolute OpenSSL executable path"
-        )
-    if requested.is_symlink():
-        raise AuthorizationEnvelopeError(
-            "OpenSSL executable must be an explicit non-symlink path"
+            "system OpenSSL must be one explicit absolute non-symlink path"
         )
     try:
         resolved = requested.resolve(strict=True)
         executable_stat = resolved.stat()
     except OSError as exc:
         raise AuthorizationEnvelopeError(
-            f"configured OpenSSL executable is unavailable: {requested}"
+            f"system OpenSSL executable is unavailable: {requested}"
         ) from exc
 
     if path_is_within(resolved, REPOSITORY_ROOT):
@@ -149,14 +149,11 @@ def require_openssl() -> str:
             "OpenSSL executable must not be writable by group or other users"
         )
     if executable_stat.st_mode & 0o111 == 0:
-        raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
-
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+        raise AuthorizationEnvelopeError("system OpenSSL file is not executable")
+    if not hasattr(os, "geteuid") or executable_stat.st_uid != 0:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root for release-authority custody"
+        )
 
     directory = resolved.parent
     while True:
@@ -166,6 +163,10 @@ def require_openssl() -> str:
             raise AuthorizationEnvelopeError(
                 "could not inspect OpenSSL executable custody path"
             ) from exc
+        if directory_stat.st_uid != 0:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must be root-owned: {directory}"
+            )
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
@@ -190,6 +191,7 @@ def run_openssl(
             check=False,
             stdout=subprocess.PIPE if capture_stdout else None,
             pass_fds=pass_fds,
+            env=OPENSSL_SUBPROCESS_ENVIRONMENT,
         )
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
