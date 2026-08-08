@@ -84,6 +84,7 @@ jobs:
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
           bash -n scripts/ci/xcode27_simulator_capture.sh
+          bash -n scripts/field/build_es80_capture_candidate.sh
           python3 -m py_compile \
             scripts/ci/verify_es80_field_artifact.py \
             scripts/ci/test_verify_es80_field_artifact.py
