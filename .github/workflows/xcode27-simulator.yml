@@ -9,6 +9,9 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: nembra-xcode27-${{ github.ref }}
@@ -39,6 +42,27 @@ jobs:
 
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Resolve Capture executable digest
+        id: capture-provenance
+        run: |
+          digest="$(python3 -c 'import json; print(json.load(open("Artifacts/Xcode27Simulator/capture-build-record.json", encoding="utf-8"))["executableSHA256"])')"
+          if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Capture build record did not contain a valid executable SHA-256." >&2
+            exit 1
+          fi
+          echo "executable_sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest Capture build record
+        uses: actions/attest@v4
+        with:
+          subject-path: Artifacts/Xcode27Simulator/capture-build-record.json
+
+      - name: Attest exact Capture executable digest
+        uses: actions/attest@v4
+        with:
+          subject-name: Nembra.capture-executable
+          subject-digest: sha256:${{ steps.capture-provenance.outputs.executable_sha256 }}
 
       - name: Upload Simulator screenshots and logs
         if: always()
