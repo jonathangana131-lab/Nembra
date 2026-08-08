@@ -31,7 +31,7 @@ AUTHORIZATION_PAYLOAD_SCHEMA_VERSION = 2
 DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
-DEFAULT_OPENSSL_PATH = "/usr/bin/openssl"
+DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -118,24 +118,25 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
-def require_openssl() -> str:
-    """Resolve one explicitly controlled OpenSSL executable without consulting ambient PATH."""
-    configured = os.environ.get("NEMBRA_OPENSSL", DEFAULT_OPENSSL_PATH)
-    requested = Path(configured).expanduser()
+def require_openssl(path: Path) -> str:
+    """Accept one explicit, canonical OpenSSL executable with controlled path custody.
+
+    Production signing never discovers OpenSSL through ambient PATH because the selected process
+    receives the inherited private-key descriptor. Release authority must provide the executable
+    path explicitly. The built-in self-test alone may use the fixed system default because it
+    creates only ephemeral fixture keys.
+    """
+    requested = path.expanduser()
     if not requested.is_absolute():
-        raise AuthorizationEnvelopeError(
-            "NEMBRA_OPENSSL must name one absolute OpenSSL executable path"
-        )
+        raise AuthorizationEnvelopeError("--openssl must name one absolute executable path")
     if requested.is_symlink():
-        raise AuthorizationEnvelopeError(
-            "OpenSSL executable must be an explicit non-symlink path"
-        )
+        raise AuthorizationEnvelopeError("OpenSSL executable must be an explicit non-symlink path")
     try:
         resolved = requested.resolve(strict=True)
         executable_stat = resolved.stat()
     except OSError as exc:
         raise AuthorizationEnvelopeError(
-            f"configured OpenSSL executable is unavailable: {requested}"
+            f"explicit OpenSSL executable is unavailable: {requested}"
         ) from exc
 
     if path_is_within(resolved, REPOSITORY_ROOT):
@@ -409,6 +410,7 @@ def create_envelope(
     field_evidence_path: Path,
     private_key_path: Path,
     output_path: Path,
+    openssl_path: Path,
 ) -> dict[str, str]:
     external_record = read_exact_subject(external_record_path, "external build record")
     field_evidence = read_exact_subject(field_evidence_path, "field-build evidence record")
@@ -418,7 +420,7 @@ def create_envelope(
         raise AuthorizationEnvelopeError("authorization output cannot replace the private key")
 
     payload = build_payload(external_record, field_evidence)
-    openssl = require_openssl()
+    openssl = require_openssl(openssl_path)
     signature, public_key_x963 = sign_payload(openssl, private_key, payload)
     envelope = build_envelope(external_record, field_evidence, payload, signature)
     published = write_envelope_no_replace(output, envelope)
@@ -435,14 +437,49 @@ def create_envelope(
     }
 
 
-def self_test() -> None:
-    openssl = require_openssl()
+def self_test(openssl_path: Path) -> None:
+    openssl = require_openssl(openssl_path)
+    trusted_openssl_path = Path(openssl)
+
+    try:
+        require_openssl(Path("openssl"))
+    except AuthorizationEnvelopeError as error:
+        if "absolute" not in str(error):
+            raise
+    else:
+        raise AssertionError("relative OpenSSL path was accepted")
+
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-self-test-") as temporary:
         directory = Path(temporary)
         private_key = directory / "candidate-authority-private-key.pem"
         external_record = directory / "NembraCaptureExternalBuildRecord.json"
         field_evidence = directory / "NembraCaptureFieldBuildEvidenceRecord.json"
         envelope_path = directory / "NembraCaptureFieldAuthorizationEnvelope.json"
+
+        unsafe_executable = directory / "unsafe-openssl"
+        unsafe_executable.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        unsafe_executable.chmod(0o777)
+        try:
+            require_openssl(unsafe_executable)
+        except AuthorizationEnvelopeError as error:
+            if "writable" not in str(error):
+                raise
+        else:
+            raise AssertionError("group/world-writable OpenSSL executable was accepted")
+
+        unsafe_directory = directory / "unsafe-custody"
+        unsafe_directory.mkdir(mode=0o777)
+        unsafe_directory.chmod(0o777)
+        custody_executable = unsafe_directory / "openssl"
+        custody_executable.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        custody_executable.chmod(0o755)
+        try:
+            require_openssl(custody_executable)
+        except AuthorizationEnvelopeError as error:
+            if "custody path" not in str(error):
+                raise
+        else:
+            raise AssertionError("OpenSSL executable under writable custody directory was accepted")
 
         run_openssl(
             openssl,
@@ -459,6 +496,7 @@ def self_test() -> None:
             field_evidence,
             private_key,
             envelope_path,
+            trusted_openssl_path,
         )
         envelope = json.loads(envelope_path.read_bytes())
         if set(envelope) != {
@@ -501,6 +539,7 @@ def self_test() -> None:
                 field_evidence,
                 private_key,
                 envelope_path,
+                trusted_openssl_path,
             )
         except AuthorizationEnvelopeError as error:
             if "refusing to overwrite" not in str(error):
@@ -520,6 +559,7 @@ def self_test() -> None:
                 field_evidence,
                 permissive_key,
                 directory / "permissive-key-envelope.json",
+                trusted_openssl_path,
             )
         except AuthorizationEnvelopeError as error:
             if "group or other" not in str(error):
@@ -569,6 +609,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field-evidence", type=Path)
     parser.add_argument("--private-key-pem", type=Path)
     parser.add_argument("--output-envelope", type=Path)
+    parser.add_argument(
+        "--openssl",
+        type=Path,
+        help="Explicit trusted OpenSSL executable path; production signing never searches PATH.",
+    )
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
@@ -576,7 +621,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     arguments = parse_args(argv)
     if arguments.self_test:
-        self_test()
+        self_test(arguments.openssl or DEFAULT_SELF_TEST_OPENSSL)
         print("field authorization envelope self-test: PASS")
         return 0
 
@@ -587,6 +632,7 @@ def main(argv: list[str]) -> int:
             ("--field-evidence", arguments.field_evidence),
             ("--private-key-pem", arguments.private_key_pem),
             ("--output-envelope", arguments.output_envelope),
+            ("--openssl", arguments.openssl),
         )
         if value is None
     ]
@@ -600,6 +646,7 @@ def main(argv: list[str]) -> int:
         arguments.field_evidence,
         arguments.private_key_pem,
         arguments.output_envelope,
+        arguments.openssl,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
