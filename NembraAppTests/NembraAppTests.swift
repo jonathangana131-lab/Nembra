@@ -300,6 +300,30 @@ extension NembraAppTests {
         XCTAssertEqual(ES80CaptureRefreshPolicy.statusPollInterval, 0.5)
     }
 
+    @MainActor
+    func testSignedFieldRecipeRoutesHomeScreenLaunchIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v1"
+            ]
+        )
+        XCTAssertEqual(mode, .es80PassiveCapture)
+    }
+
+    @MainActor
+    func testUnknownFieldRecipeDoesNotRouteIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v999"
+            ]
+        )
+        XCTAssertEqual(mode, .standard)
+    }
+
     func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
