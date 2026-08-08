@@ -20,7 +20,28 @@ jobs:
       - name: Apply, verify, and publish
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/v14_app_single_authority.py')
+          text = path.read_text()
+          start = text.index('shell = replace_once(\n    shell,\n    """        case .correlatedTarget, .targetReacquired:')
+          end = text.index('shell_path.write_text(shell)', start)
+          replacement = '''shell = replace_once(
+              shell,
+              '        case .correlatedTarget, .targetReacquired:\n            "checkmark.circle.fill"',
+              '        case .correlatedTarget, .targetReacquired:\n            "checkmark.circle.fill"\n        case .captureSessionArmed:\n            "wave.3.right.circle.fill"',
+              "status symbol",
+          )
+          shell = replace_once(
+              shell,
+              '        case .correlatedTarget:\n            .green',
+              '        case .correlatedTarget, .captureSessionArmed:\n            .green',
+              "status color",
+          )
+          '''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
           set +e
           python3 .github/scripts/v14_app_single_authority.py > /tmp/app-patch.log 2>&1
           code=$?
@@ -41,8 +62,8 @@ jobs:
           grep -q 'coordinator.prepareCaptureRediscovery()' NembraApp/Features/Research/ES80CaptureShellView.swift
           grep -q 'coordinator.connectPreparedCapture()' NembraApp/Features/Research/ES80CaptureShellView.swift
           git diff --check
-          rm .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
-          git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
+          rm -f .github/scripts/v14_app_patch_failure.txt .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
+          git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift .github/scripts/v14_app_patch_failure.txt .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
           git diff --cached --check
           git commit -m '[Capture v14] Wire package-owned Experiment One through app'
           git push origin HEAD:feature/es80-v14-app-single-authority-current/gpt56-thinking
