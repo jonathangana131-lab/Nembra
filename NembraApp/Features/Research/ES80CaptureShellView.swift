@@ -864,7 +864,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -898,7 +898,7 @@ struct ES80CaptureShellView: View {
             return .physicalProcedureLocked
         }
         if status.foregroundIntegrityLost {
-            return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")
+            return .failed("Nembra left the foreground after Experiment One began. This capture cannot safely continue; start a fresh Experiment One.")
         }
         if finalizationInFlight {
             return .finalizing
@@ -920,10 +920,10 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed(coordinator.lastDiagnostic ?? "The passive connection ended before observation could be sealed. Start a fresh Experiment One.")
             }
         case .unavailable:
-            return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")
+            return .bluetoothUnavailable("Bluetooth capture is unavailable in this build.")
         }
 
         if status.hasPreparedCaptureAdmission {
@@ -932,7 +932,7 @@ struct ES80CaptureShellView: View {
 
         switch status.correlation {
         case .invalidEvidence:
-            return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")
+            return .correlationFailed("The four windows did not preserve the required OFF 1, ON 1, OFF 2, ON 2 pattern. Start again from OFF 1.")
         case .noRepeatableCandidate:
             return .noRepeatableTarget
         case let .ambiguousRepeatableCandidates(count):
@@ -947,10 +947,10 @@ struct ES80CaptureShellView: View {
             return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
         }
         guard let progress = status.powerCycleProgress else {
-            return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")
+            return .correlationFailed("Experiment One has no active OFF / ON progress. Start a fresh run.")
         }
         if progress.isSeriesInvalidated {
-            return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")
+            return .correlationFailed("A Bluetooth, scanning, or foreground interruption invalidated this four-window sequence. Start again from OFF 1.")
         }
         if progress.isScanning {
             return .correlationObserving(progress.phase)
@@ -985,7 +985,7 @@ struct ES80CaptureShellView: View {
         case .captureComplete, .shareRetry:
             return .complete
         case .foregroundInterrupted:
-            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground interruption; it is not physical evidence.")
         }
     }
 #endif
