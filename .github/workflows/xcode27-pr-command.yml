@@ -85,6 +85,8 @@ jobs:
           python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
 
   simulator-qa:
     name: Build, test, and capture exact PR head
