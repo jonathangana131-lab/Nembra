@@ -21,6 +21,7 @@ import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
+from typing import Callable
 
 MAX_IDENTIFIER_BYTES = 128
 INSPECTOR_NAME = "es80_signed_field_artifact_evidence.py"
@@ -30,8 +31,44 @@ class PrivateInputError(RuntimeError):
     pass
 
 
+def _stable_metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    """Descriptor metadata that must remain stable across one private-input read."""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _read_stable_private_bytes(
+    descriptor: int,
+    metadata: os.stat_result,
+    *,
+    _after_read_for_test: Callable[[], None] | None = None,
+) -> bytes:
+    """Read bounded bytes and reject same-descriptor mutation across the admission read."""
+    with os.fdopen(descriptor, "rb", closefd=False) as handle:
+        raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
+
+    if _after_read_for_test is not None:
+        _after_read_for_test()
+
+    post_metadata = os.fstat(descriptor)
+    if (
+        len(raw) != metadata.st_size
+        or _stable_metadata_signature(post_metadata) != _stable_metadata_signature(metadata)
+    ):
+        raise PrivateInputError("intended-device verification file changed while being read")
+    return raw
+
+
 def read_private_identifier(path: Path) -> str:
-    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
+    """Read one opaque identifier through one no-follow stable descriptor without repairing bytes."""
     if not hasattr(os, "O_NOFOLLOW"):
         raise PrivateInputError("this platform cannot enforce no-follow private verification input")
 
@@ -53,10 +90,7 @@ def read_private_identifier(path: Path) -> str:
         if metadata.st_mode & 0o077:
             raise PrivateInputError("intended-device verification file must not be accessible by group/other")
 
-        with os.fdopen(descriptor, "rb", closefd=False) as handle:
-            raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
-        if len(raw) != metadata.st_size:
-            raise PrivateInputError("intended-device verification file changed while being read")
+        raw = _read_stable_private_bytes(descriptor, metadata)
     finally:
         os.close(descriptor)
 
@@ -180,6 +214,36 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("oversized verification input must fail closed")
+
+        same_size_mutation = root / "same-size-mutation"
+        same_size_mutation.write_text(expected, encoding="utf-8")
+        same_size_mutation.chmod(0o600)
+        descriptor = os.open(same_size_mutation, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            before = os.fstat(descriptor)
+            replacement = ("1" if expected[0] != "1" else "2") + expected[1:]
+            assert len(replacement.encode("utf-8")) == before.st_size
+
+            def mutate_same_inode() -> None:
+                same_size_mutation.write_text(replacement, encoding="utf-8")
+                same_size_mutation.chmod(0o600)
+                os.utime(
+                    same_size_mutation,
+                    ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000),
+                )
+
+            try:
+                _read_stable_private_bytes(
+                    descriptor,
+                    before,
+                    _after_read_for_test=mutate_same_inode,
+                )
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("same-size private-input mutation escaped descriptor stability checks")
+        finally:
+            os.close(descriptor)
 
     class ExplodingInspector:
         def main(self, argv: list[str]) -> int:
