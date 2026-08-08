@@ -1108,6 +1108,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            // Preflight every remaining fallible gate condition on a value copy before
+            // advancing the reference-backed canonical artifact-authority fence.
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+
+            // Final throwing install step. Everything after this transition is synchronous,
+            // non-failable publication of the already-validated fresh durable session.
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -1121,13 +1133,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             lastDiagnostic = Self.diagnostic(
                 error,
