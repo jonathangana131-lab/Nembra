@@ -11,6 +11,13 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         authorityGeneration: 11
     )
 
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
     @Test("captures queue prefix, authority, and trusted local clocks in one MainActor decision")
     func capturesDecisionAuthorityAndClocks() async throws {
         let beforeUptime = DispatchTime.now().uptimeNanoseconds
@@ -34,6 +41,32 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         #expect(decision.observedAtUptimeNanoseconds >= beforeUptime)
         #expect(decision.observedAtUptimeNanoseconds <= afterUptime)
         #expect(decision.observedAtDate.timeIntervalSinceReferenceDate.isFinite)
+    }
+
+    @Test("records the exact pre-await decision clocks through the recorder actor hop")
+    func recordsExactDecisionClocksWithoutResampling() async throws {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let decision = try await MainActor.run {
+            try PassiveCoreBluetoothObservationBoundaryDecision.capture(
+                kind: .finiteAcquisitionReady,
+                queueCutoff: 0,
+                processedThrough: 0,
+                authority: authority
+            )
+        }
+
+        try await decision.recordBoundary(on: recorder)
+
+        let session = await recorder.snapshot()
+        let boundary = try #require(session.observationBoundaries.first)
+        #expect(session.observationBoundaries.count == 1)
+        #expect(boundary.kind == .finiteAcquisitionReady)
+        #expect(boundary.recordSequenceWatermark == 0)
+        #expect(boundary.observedAtUptimeNanoseconds == decision.observedAtUptimeNanoseconds)
+        #expect(boundary.observedAtDate == decision.observedAtDate)
     }
 
     @Test("maps horizon intent mechanically into the durable observation vocabulary")
