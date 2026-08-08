@@ -4,7 +4,7 @@ set -euo pipefail
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 cd "$ROOT"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -24,7 +24,7 @@ if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
   exit 4
 fi
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
-EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
+EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd -P)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
 
 # A dirty invocation checkout is never accepted. This is defense in depth only: the actual build
 # below is performed from a fresh detached worktree at SOURCE_SHA so a later mutation, ignored file,
@@ -54,14 +54,20 @@ WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BU
 SOURCE_ROOT="$WORK_ROOT/source"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
-if [[ "$ARTIFACTS_DIR" != /* ]]; then
-  ARTIFACTS_DIR="$ROOT/$ARTIFACTS_DIR"
+RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
+if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
+  RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
 fi
+ARTIFACTS_DIR="$(python3 - "$RAW_ARTIFACTS_DIR" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve(strict=False))
+PY
+)"
 
-# Field-production evidence is immutable output. Never allow a root/repository target and never mix
-# a new candidate into an existing directory, even if the canonical verifier's own target files are
-# absent. This also avoids a caller typo turning a production run into broad filesystem writes.
+# Field-production evidence is immutable output. Resolve lexical traversal and existing symlink
+# ancestors before safety decisions; never allow a root/repository target and never mix a new
+# candidate into an existing directory, even if canonical verifier target files are absent.
 if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
   exit 8
