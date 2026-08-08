@@ -379,6 +379,30 @@ def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     return platform, supported
 
 
+def _trusted_system_apple_tool(path: Path, label: str) -> str:
+    """Return one explicit root-custodied Apple tool or fail closed."""
+    if not path.is_absolute():
+        raise EvidenceError(f"trusted {label} path must be absolute")
+    try:
+        metadata = path.lstat()
+        parent_metadata = path.parent.lstat()
+    except OSError as exc:
+        raise EvidenceError(f"trusted {label} system tool is unavailable: {path}") from exc
+    if not stat.S_ISREG(metadata.st_mode):
+        raise EvidenceError(f"trusted {label} system tool is not a regular file: {path}")
+    if metadata.st_uid != 0:
+        raise EvidenceError(f"trusted {label} system tool is not root-owned: {path}")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise EvidenceError(f"trusted {label} system tool is group/world writable: {path}")
+    if stat.S_IMODE(metadata.st_mode) & 0o111 == 0:
+        raise EvidenceError(f"trusted {label} system tool is not executable: {path}")
+    if not stat.S_ISDIR(parent_metadata.st_mode):
+        raise EvidenceError(f"trusted {label} system-tool parent is not a directory: {path.parent}")
+    if parent_metadata.st_uid != 0 or stat.S_IMODE(parent_metadata.st_mode) & 0o022:
+        raise EvidenceError(f"trusted {label} system-tool parent lacks root custody: {path.parent}")
+    return str(path)
+
+
 def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         command,
@@ -395,9 +419,7 @@ def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
 def run_codesign(app_path: Path) -> tuple[str, list[str], str]:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
-    codesign = shutil.which("codesign")
-    if not codesign:
-        raise EvidenceError("codesign is not available")
+    codesign = _trusted_system_apple_tool(Path("/usr/bin/codesign"), "codesign")
 
     _run_text(
         [
@@ -449,9 +471,7 @@ def _normalized_utc(value: datetime) -> datetime:
 def _codesign_tool() -> str:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS Apple signing tools")
-    codesign = shutil.which("codesign")
-    if not codesign:
-        raise EvidenceError("codesign is not available")
+    codesign = _trusted_system_apple_tool(Path("/usr/bin/codesign"), "codesign")
     return codesign
 
 
@@ -625,9 +645,7 @@ def verify_provisioning_profile(
 ) -> tuple[str, str, str, str]:
     if sys.platform != "darwin":
         raise EvidenceError("provisioning verification requires macOS Apple signing tools")
-    security = shutil.which("security")
-    if not security:
-        raise EvidenceError("security is not available for provisioning-profile verification")
+    security = _trusted_system_apple_tool(Path("/usr/bin/security"), "security")
 
     profile_path = app_path / "embedded.mobileprovision"
     if not profile_path.is_file():
