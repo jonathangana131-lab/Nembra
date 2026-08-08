@@ -21,7 +21,7 @@ jobs:
       - name: Merge exact canonical composition and remove superseded fence lineage
         shell: bash
         env:
-          EXPECTED_PARENT_SHA: 8ff2ee865c0c8546dce752e265df4c6aabcc7285
+          EXPECTED_PARENT_SHA: f16695270fdce3d103bbd67be9dc5d37bca8764b
         run: |
           set -euo pipefail
           git config user.name 'nembra-chat-k4m7v'
