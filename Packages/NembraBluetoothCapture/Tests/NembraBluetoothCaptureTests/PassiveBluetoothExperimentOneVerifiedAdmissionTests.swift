@@ -102,7 +102,10 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
+        // Defensive documentation is allowed to name UserDefaults while explaining why it cannot
+        // authorize this path. Reject executable preference access/construction instead of the word.
+        #expect(!source.contains("UserDefaults.standard"))
+        #expect(!source.contains("UserDefaults("))
         #expect(!source.contains("ProcessInfo"))
     }
 
