@@ -670,7 +670,7 @@ struct ES80CaptureShellView: View {
                 symbol: "exclamationmark.triangle"
             )
             primaryButton(
-                "Start a fresh Experiment One",
+                "Start a fresh Capture",
                 systemImage: "arrow.counterclockwise",
                 identifier: "es80.capture.restart-experiment"
             ) {
