@@ -10,6 +10,13 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         displayName: "AOVOPRO ES80",
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
+    private let deferredMaxshot = VehicleIdentity(
+        manufacturer: "MAXSHOT",
+        model: "V1S Pro",
+        displayName: "MAXSHOT V1S Pro",
+        protocolFamily: "Deferred / unverified"
+    )
+    private let defaultSessionID = UUID(uuidString: "00000000-0000-0000-0000-000000000363")!
 
     @Test("quiet exact-minimum interval is sufficient without inventing BLE events")
     func quietExactMinimumIsSufficient() throws {
@@ -25,6 +32,8 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
             minimumDurationNanoseconds: 60_000_000_000
         )
 
+        #expect(assessment.captureSessionID == session.id)
+        #expect(assessment.vehicleIdentity == session.vehicleIdentity)
         #expect(assessment.status == .sufficient)
         #expect(assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
@@ -32,6 +41,43 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         #expect(assessment.horizonBoundary?.recordSequenceWatermark == 0)
         #expect(assessment.continuityBreakSequenceNumbers.isEmpty)
         #expect(session.records.isEmpty)
+    }
+
+    @Test("producer-derived assessments stay bound to the exact source capture")
+    func assessmentPreservesSourceCaptureProvenance() throws {
+        let boundaries = [
+            boundary(.finiteAcquisitionReady, uptime: 1_000, date: 5_000),
+            boundary(.observationHorizon, uptime: 60_000_001_000, date: 5_060),
+        ]
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000364")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000365")!
+        let firstSession = try makeSession(
+            id: firstID,
+            vehicleIdentity: es80,
+            boundaries: boundaries
+        )
+        let secondSession = try makeSession(
+            id: secondID,
+            vehicleIdentity: deferredMaxshot,
+            boundaries: boundaries
+        )
+
+        let firstAssessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
+            session: firstSession,
+            minimumDurationNanoseconds: 60_000_000_000
+        )
+        let secondAssessment = PassiveBluetoothObservationWindowDurationAssessment.assess(
+            session: secondSession,
+            minimumDurationNanoseconds: 60_000_000_000
+        )
+
+        #expect(firstAssessment.status == .sufficient)
+        #expect(secondAssessment.status == .sufficient)
+        #expect(firstAssessment.captureSessionID == firstID)
+        #expect(secondAssessment.captureSessionID == secondID)
+        #expect(firstAssessment.vehicleIdentity == es80)
+        #expect(secondAssessment.vehicleIdentity == deferredMaxshot)
+        #expect(firstAssessment != secondAssessment)
     }
 
     @Test("sub-threshold interval fails closed")
@@ -174,6 +220,8 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
             minimumDurationNanoseconds: 0
         )
 
+        #expect(assessment.captureSessionID == session.id)
+        #expect(assessment.vehicleIdentity == session.vehicleIdentity)
         #expect(assessment.status == .invalidMinimumDuration)
         #expect(!assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == nil)
@@ -201,12 +249,14 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
     }
 
     private func makeSession(
+        id: UUID? = nil,
+        vehicleIdentity: VehicleIdentity? = nil,
         records: [PassiveBluetoothCaptureRecord] = [],
         boundaries: [PassiveBluetoothObservationBoundary]
     ) throws -> PassiveBluetoothCaptureSession {
         try PassiveBluetoothCaptureSession(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000363")!,
-            vehicleIdentity: es80,
+            id: id ?? defaultSessionID,
+            vehicleIdentity: vehicleIdentity ?? es80,
             startedAt: Date(timeIntervalSince1970: 4_000),
             records: records,
             observationBoundaries: boundaries

@@ -1,3 +1,5 @@
+import Foundation
+
 /// Fail-closed assessment of immutable passive-capture observation-window
 /// duration evidence.
 ///
@@ -5,6 +7,13 @@
 /// one unambiguous finite-acquisition-ready -> observation-horizon interval,
 /// free of known byte-continuity breaks, whose monotonic duration meets the
 /// caller-required minimum?
+///
+/// Every result retains the exact capture session identity and immutable vehicle
+/// context that earned it so a legitimate assessment cannot be silently detached
+/// from its source artifact across persistence, async, or UI boundaries. These
+/// fields preserve declared source-session provenance; they are not a hash or
+/// cryptographic binding of the raw capture bytes. Exact-byte binding belongs to
+/// the capture/provenance artifact layer.
 ///
 /// A sufficient result is Nembra lifecycle-duration evidence only. It does not
 /// prove continuous BLE traffic, RF emission, foreground authority, target
@@ -23,6 +32,9 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         case insufficientDuration
     }
 
+    /// Immutable source-capture provenance for this producer-derived assessment.
+    public let captureSessionID: UUID
+    public let vehicleIdentity: VehicleIdentity
     public let status: Status
     public let minimumRequiredDurationNanoseconds: UInt64
     public let observedDurationNanoseconds: UInt64?
@@ -40,6 +52,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
     }
 
     private init(
+        captureSessionID: UUID,
+        vehicleIdentity: VehicleIdentity,
         status: Status,
         minimumRequiredDurationNanoseconds: UInt64,
         observedDurationNanoseconds: UInt64?,
@@ -47,12 +61,35 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         horizonBoundary: PassiveBluetoothObservationBoundary?,
         continuityBreakSequenceNumbers: [UInt64] = []
     ) {
+        self.captureSessionID = captureSessionID
+        self.vehicleIdentity = vehicleIdentity
         self.status = status
         self.minimumRequiredDurationNanoseconds = minimumRequiredDurationNanoseconds
         self.observedDurationNanoseconds = observedDurationNanoseconds
         self.readyBoundary = readyBoundary
         self.horizonBoundary = horizonBoundary
         self.continuityBreakSequenceNumbers = continuityBreakSequenceNumbers
+    }
+
+    private static func result(
+        for session: PassiveBluetoothCaptureSession,
+        status: Status,
+        minimumRequiredDurationNanoseconds: UInt64,
+        observedDurationNanoseconds: UInt64?,
+        readyBoundary: PassiveBluetoothObservationBoundary?,
+        horizonBoundary: PassiveBluetoothObservationBoundary?,
+        continuityBreakSequenceNumbers: [UInt64] = []
+    ) -> Self {
+        Self(
+            captureSessionID: session.id,
+            vehicleIdentity: session.vehicleIdentity,
+            status: status,
+            minimumRequiredDurationNanoseconds: minimumRequiredDurationNanoseconds,
+            observedDurationNanoseconds: observedDurationNanoseconds,
+            readyBoundary: readyBoundary,
+            horizonBoundary: horizonBoundary,
+            continuityBreakSequenceNumbers: continuityBreakSequenceNumbers
+        )
     }
 
     /// Assesses a caller-defined minimum using the capture's monotonic uptime
@@ -78,7 +115,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         }
 
         guard minimumDurationNanoseconds > 0 else {
-            return Self(
+            return result(
+                for: session,
                 status: .invalidMinimumDuration,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -88,7 +126,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         }
 
         guard !readyMatches.isEmpty else {
-            return Self(
+            return result(
+                for: session,
                 status: .missingFiniteAcquisitionReady,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -97,7 +136,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
             )
         }
         guard readyMatches.count == 1 else {
-            return Self(
+            return result(
+                for: session,
                 status: .ambiguousFiniteAcquisitionReady,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -106,7 +146,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
             )
         }
         guard !horizonMatches.isEmpty else {
-            return Self(
+            return result(
+                for: session,
                 status: .missingObservationHorizon,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -115,7 +156,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
             )
         }
         guard horizonMatches.count == 1 else {
-            return Self(
+            return result(
+                for: session,
                 status: .ambiguousObservationHorizon,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -132,7 +174,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         guard horizonMatch.offset > readyMatch.offset,
               horizonBoundary.recordSequenceWatermark >= readyBoundary.recordSequenceWatermark,
               horizonBoundary.observedAtUptimeNanoseconds >= readyBoundary.observedAtUptimeNanoseconds else {
-            return Self(
+            return result(
+                for: session,
                 status: .horizonPrecedesReady,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -153,7 +196,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         }
 
         guard continuityBreakSequenceNumbers.isEmpty else {
-            return Self(
+            return result(
+                for: session,
                 status: .continuityBreakWithinWindow,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: observedDurationNanoseconds,
@@ -167,7 +211,8 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
             ? .sufficient
             : .insufficientDuration
 
-        return Self(
+        return result(
+            for: session,
             status: status,
             minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
             observedDurationNanoseconds: observedDurationNanoseconds,
