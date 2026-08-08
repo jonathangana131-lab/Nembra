@@ -3,8 +3,9 @@ import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
 
-private enum ES80ResearchBuildPreflightState: Equatable {
+private enum ES80ResearchBuildPreflightState: Equatable, Sendable {
     case notApplicable
+    case checking
     case matched(PassiveBluetoothCaptureRuntimeBuildBinding)
     case blocked(String)
 
@@ -23,7 +24,7 @@ struct NembraApp: App {
     }
 
     private let launchMode: LaunchMode
-    private let researchBuildPreflight: ES80ResearchBuildPreflightState
+    @State private var researchBuildPreflight: ES80ResearchBuildPreflightState
     @State private var runtime: AppRuntime?
     @State private var researchController: ForegroundCoreBluetoothCaptureController?
 
@@ -31,20 +32,10 @@ struct NembraApp: App {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-
-        let researchBuildPreflight: ES80ResearchBuildPreflightState = launchMode == .es80PassiveCapture
-            ? Self.resolveES80ResearchBuildPreflight()
-            : .notApplicable
-        self.researchBuildPreflight = researchBuildPreflight
-
-        let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
-            && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
-            && researchBuildPreflight.permitsFieldRuntime
-        _researchController = State(
-            initialValue: fieldCaptureAuthorized
-                ? Self.makeES80ResearchController()
-                : nil
+        _researchBuildPreflight = State(
+            initialValue: launchMode == .es80PassiveCapture ? .checking : .notApplicable
         )
+        _researchController = State(initialValue: nil)
     }
 
     var body: some Scene {
@@ -86,24 +77,48 @@ struct NembraApp: App {
                     }
                 }
                 .preferredColorScheme(.dark)
+                .task {
+                    await establishES80ResearchBuildPreflightIfNeeded()
+                }
             }
         }
     }
 
-    private static func resolveLaunchMode(
-        arguments: [String] = ProcessInfo.processInfo.arguments,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> LaunchMode {
-#if DEBUG
-        if arguments.contains("--es80-passive-capture")
-            || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
-            return .es80PassiveCapture
+    private func establishES80ResearchBuildPreflightIfNeeded() async {
+        guard launchMode == .es80PassiveCapture,
+              researchBuildPreflight == .checking else {
+            return
         }
-#endif
-        return .standard
+
+        let resolvedPreflight = await Self.readES80ResearchBuildPreflightOffMainActor()
+        guard !Task.isCancelled else { return }
+
+        // A future package-owned GO can create a controller only after the independently trusted
+        // runtime/build-record comparison succeeds. During `.checking` there is deliberately no
+        // controller and therefore no transient field-action window.
+        let resolvedController: ForegroundCoreBluetoothCaptureController?
+        if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure,
+           resolvedPreflight.permitsFieldRuntime {
+            resolvedController = Self.makeES80ResearchController()
+        } else {
+            resolvedController = nil
+        }
+
+        researchController = resolvedController
+        researchBuildPreflight = resolvedPreflight
     }
 
-    private static func resolveES80ResearchBuildPreflight() -> ES80ResearchBuildPreflightState {
+    private static func readES80ResearchBuildPreflightOffMainActor() async
+        -> ES80ResearchBuildPreflightState
+    {
+        await Task.detached(priority: .utility) {
+            Self.resolveES80ResearchBuildPreflight()
+        }.value
+    }
+
+    nonisolated private static func resolveES80ResearchBuildPreflight()
+        -> ES80ResearchBuildPreflightState
+    {
         do {
             return .matched(try PassiveBluetoothCaptureBuildPreflight.currentApplication())
         } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
@@ -125,6 +140,19 @@ struct NembraApp: App {
         } catch {
             return .blocked("Trusted field-build provenance could not be established for the running app.")
         }
+    }
+
+    private static func resolveLaunchMode(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> LaunchMode {
+#if DEBUG
+        if arguments.contains("--es80-passive-capture")
+            || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
+            return .es80PassiveCapture
+        }
+#endif
+        return .standard
     }
 
     private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
@@ -266,6 +294,40 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     @ViewBuilder
     private var buildPreflightPanel: some View {
         switch buildPreflight {
+        case .checking:
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("BUILD PREFLIGHT")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("CHECKING")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.white)
+                }
+
+                HStack(alignment: .top, spacing: 12) {
+                    ProgressView()
+                        .tint(.white)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Verifying exact field build")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text("Nembra is comparing the running executable bytes and embedded build declaration with the trusted V14 build record. No field capture controller exists while this check is running.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(18)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("es80.capture.build-preflight")
+
         case let .matched(binding):
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
