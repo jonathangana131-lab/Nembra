@@ -24,7 +24,7 @@ struct ForegroundCoreBluetoothCaptureControllerUncommittedHorizonRecoveryTests {
     func zeroHRejectionQuarantinesBeforeRecordedPath() throws {
         let source = try Self.controllerSource()
         let start = try #require(source.range(of: "            let horizonMutationOutcome = try await horizonAdmission")?.lowerBound)
-        let end = try #require(source.range(of: "            let data = try await recorder.encodedJSON", range: start..<source.endIndex)?.lowerBound)
+        let end = try #require(source.range(of: "            let data: Data", range: start..<source.endIndex)?.lowerBound)
         let section = source[start..<end]
 
         let outcome = try #require(section.range(of: "recordBoundaryWithMutationOutcome")?.lowerBound)
