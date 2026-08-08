@@ -12,7 +12,7 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         protocolFamily: "unknown-2025-es80"
     )
 
-    @Test("absent explicit target fails closed")
+    @Test("absent explicit target fails closed instead of looking like zero correlation evidence")
     func absentTargetFailsClosed() throws {
         var session = try makeSession()
         try appendConnection(
@@ -37,13 +37,102 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
 
         #expect(report.disposition == .invalidPeripheralScope)
         #expect(!report.isReadyForOfflineCorrelation)
+        #expect(report.stockAppMarkerCount == 1)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetValueObservationCount == 0)
         #expect(report.targetContinuityBreakCount == 0)
         #expect(report.knownByteContinuityBreakCount == 0)
+        #expect(report.correlationLookbackNanoseconds == 2_000_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 2_000_000_000)
     }
 
-    @Test("same-segment selected-target value is structurally ready")
-    func sameSegmentTargetValueIsReady() throws {
+    @Test("nonblank target identity is matched exactly instead of normalized")
+    func targetIdentityRemainsOpaque() throws {
+        var session = try makeSession()
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "VALUE",
+            payload: [0xAA],
+            sequence: 1,
+            uptime: 1_000,
+            to: &session
+        )
+        try appendMarker(
+            field: "Battery",
+            displayedValue: "73%",
+            sequence: 2,
+            uptime: 1_100,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: " target-a "
+        )
+
+        #expect(report.disposition == .invalidPeripheralScope)
+        #expect(report.peripheralIdentifier == " target-a ")
+        #expect(report.targetValueObservationCount == 0)
+        #expect(report.supportedMarkerCount == 0)
+    }
+
+    @Test("attributable target with no stock-app markers is not ready")
+    func noMarkers() throws {
+        var session = try makeSession()
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "VALUE",
+            payload: [0xAA],
+            origin: .subscriptionUpdate,
+            sequence: 1,
+            uptime: 1_000,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: "target-a"
+        )
+
+        #expect(report.disposition == .noStockAppMarkers)
+        #expect(report.stockAppMarkerCount == 0)
+        #expect(report.targetValueObservationCount == 1)
+        #expect(report.supportedMarkerCount == 0)
+        #expect(report.markerSupportFraction == 0)
+    }
+
+    @Test("connection-attributed target with markers but no values reports missing target values")
+    func noTargetValues() throws {
+        var session = try makeSession()
+        try appendConnection(
+            peripheral: "target-a",
+            state: .connected,
+            sequence: 1,
+            uptime: 1_000,
+            to: &session
+        )
+        try appendMarker(
+            field: "Voltage",
+            displayedValue: "39.8 V",
+            sequence: 2,
+            uptime: 1_100,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: "target-a"
+        )
+
+        #expect(report.disposition == .noTargetValueObservations)
+        #expect(report.stockAppMarkerCount == 1)
+        #expect(report.targetValueObservationCount == 0)
+        #expect(report.supportedMarkerCount == 0)
+        #expect(report.distinctMarkerFields == ["Voltage"])
+    }
+
+    @Test("nearby target value makes the artifact structurally ready without claiming semantics")
+    func localTargetValueIsReady() throws {
         var session = try makeSession()
         try appendValue(
             peripheral: "target-a",
@@ -70,34 +159,43 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         )
 
         #expect(report.disposition == .readyForOfflineCorrelation)
+        #expect(report.isReadyForOfflineCorrelation)
+        #expect(report.peripheralIdentifier == "target-a")
+        #expect(report.stockAppMarkerCount == 1)
         #expect(report.supportedMarkerCount == 1)
+        #expect(report.unsupportedMarkerCount == 0)
+        #expect(report.markerSupportFraction == 1)
         #expect(report.targetValueObservationCount == 1)
         #expect(report.targetContinuityBreakCount == 0)
         #expect(report.knownByteContinuityBreakCount == 0)
+        #expect(report.correlationLookbackNanoseconds == 500_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 500_000_000)
         #expect(report.targetValueOrigins == [.notification])
+        #expect(report.distinctMarkerFields == ["Battery"])
     }
 
-    @Test("unrelated structured disconnect still fences raw-byte readiness")
-    func unrelatedDisconnectFencesReadiness() throws {
+    @Test("nearby unrelated peripheral values never satisfy target readiness")
+    func unrelatedValuesDoNotSupportTargetMarkers() throws {
         var session = try makeSession()
         try appendValue(
             peripheral: "target-a",
-            characteristic: "BEFORE",
-            payload: [0x10],
+            characteristic: "TARGET-FAR",
+            payload: [0x01],
             sequence: 1,
-            uptime: 2_900_000_000,
+            uptime: 1_000_000_000,
             to: &session
         )
-        try appendConnection(
+        try appendValue(
             peripheral: "unrelated-b",
-            state: .disconnected,
+            characteristic: "OTHER-NEAR",
+            payload: [0x02],
             sequence: 2,
             uptime: 2_950_000_000,
             to: &session
         )
         try appendMarker(
-            field: "Power",
-            displayedValue: "167 W",
+            field: "Current",
+            displayedValue: "4.2 A",
             sequence: 3,
             uptime: 3_000_000_000,
             to: &session
@@ -106,19 +204,20 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
             session,
             peripheralIdentifier: "target-a",
-            lookbackNanoseconds: 500_000_000,
-            lookaheadNanoseconds: 500_000_000
+            lookbackNanoseconds: 200_000_000,
+            lookaheadNanoseconds: 200_000_000
         )
 
         #expect(report.disposition == .noMarkerLocalTargetValues)
         #expect(report.targetValueObservationCount == 1)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetValueOrigins == [.subscriptionUpdate])
         #expect(report.targetContinuityBreakCount == 0)
-        #expect(report.knownByteContinuityBreakCount == 1)
+        #expect(report.knownByteContinuityBreakCount == 0)
     }
 
-    @Test("selected-target disconnect fences readiness")
-    func targetDisconnectFencesReadiness() throws {
+    @Test("selected-target disconnect fences pre-disconnect values from later markers")
+    func targetDisconnectFencesCorrelation() throws {
         var session = try makeSession()
         try appendValue(
             peripheral: "target-a",
@@ -151,13 +250,14 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         )
 
         #expect(report.disposition == .noMarkerLocalTargetValues)
+        #expect(report.targetValueObservationCount == 1)
         #expect(report.supportedMarkerCount == 0)
         #expect(report.targetContinuityBreakCount == 1)
         #expect(report.knownByteContinuityBreakCount == 1)
     }
 
-    @Test("generic interruption fences readiness")
-    func interruptionFencesReadiness() throws {
+    @Test("global interruption fences correlation and is retained in readiness provenance")
+    func globalInterruptionFencesCorrelation() throws {
         var session = try makeSession()
         try appendValue(
             peripheral: "target-a",
@@ -194,29 +294,116 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.knownByteContinuityBreakCount == 1)
     }
 
-    @Test("unrelated values never satisfy selected-target readiness")
-    func unrelatedValuesDoNotSupportTarget() throws {
+    @Test("unrelated structured disconnect fences raw-byte readiness without becoming target attribution")
+    func unrelatedDisconnectFencesRawByteReadiness() throws {
         var session = try makeSession()
-        try appendConnection(
+        try appendValue(
             peripheral: "target-a",
-            state: .connected,
+            characteristic: "TARGET",
+            payload: [0x10],
             sequence: 1,
-            uptime: 2_800_000_000,
+            uptime: 2_900_000_000,
             to: &session
         )
-        try appendValue(
+        try appendConnection(
             peripheral: "unrelated-b",
-            characteristic: "OTHER",
-            payload: [0x02],
+            state: .disconnected,
             sequence: 2,
             uptime: 2_950_000_000,
             to: &session
         )
         try appendMarker(
-            field: "Current",
-            displayedValue: "4.2 A",
+            field: "Power",
+            displayedValue: "167 W",
             sequence: 3,
             uptime: 3_000_000_000,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: "target-a",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(report.disposition == .noMarkerLocalTargetValues)
+        #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetContinuityBreakCount == 0)
+        #expect(report.knownByteContinuityBreakCount == 1)
+    }
+
+    @Test("post-break target evidence may support a post-break marker")
+    func postBreakLocalEvidenceRemainsUsable() throws {
+        var session = try makeSession()
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "BEFORE",
+            payload: [0x10],
+            sequence: 1,
+            uptime: 2_800_000_000,
+            to: &session
+        )
+        try appendConnection(
+            peripheral: "unrelated-b",
+            state: .disconnected,
+            sequence: 2,
+            uptime: 2_900_000_000,
+            to: &session
+        )
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "AFTER",
+            payload: [0x11],
+            sequence: 3,
+            uptime: 2_980_000_000,
+            to: &session
+        )
+        try appendMarker(
+            field: "Power",
+            displayedValue: "167 W",
+            sequence: 4,
+            uptime: 3_000_000_000,
+            to: &session
+        )
+
+        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
+            session,
+            peripheralIdentifier: "target-a",
+            lookbackNanoseconds: 500_000_000,
+            lookaheadNanoseconds: 500_000_000
+        )
+
+        #expect(report.disposition == .readyForOfflineCorrelation)
+        #expect(report.supportedMarkerCount == 1)
+        #expect(report.targetValueObservationCount == 2)
+        #expect(report.targetContinuityBreakCount == 0)
+        #expect(report.knownByteContinuityBreakCount == 1)
+    }
+
+    @Test("post-gap lookahead value cannot support a pre-gap marker")
+    func lookaheadCandidateCannotCrossGap() throws {
+        var session = try makeSession()
+        try appendMarker(
+            field: "Power",
+            displayedValue: "167 W",
+            sequence: 1,
+            uptime: 3_000_000_000,
+            to: &session
+        )
+        try appendConnection(
+            peripheral: "unrelated-b",
+            state: .disconnected,
+            sequence: 2,
+            uptime: 3_050_000_000,
+            to: &session
+        )
+        try appendValue(
+            peripheral: "target-a",
+            characteristic: "AFTER",
+            payload: [0x11],
+            sequence: 3,
+            uptime: 3_100_000_000,
             to: &session
         )
 
@@ -227,17 +414,19 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
             lookaheadNanoseconds: 200_000_000
         )
 
-        #expect(report.disposition == .noTargetValueObservations)
-        #expect(report.targetValueObservationCount == 0)
+        #expect(report.disposition == .noMarkerLocalTargetValues)
         #expect(report.supportedMarkerCount == 0)
+        #expect(report.targetValueObservationCount == 1)
+        #expect(report.targetContinuityBreakCount == 0)
+        #expect(report.knownByteContinuityBreakCount == 1)
     }
 
-    @Test("partial marker support remains explicit")
-    func partialMarkerCoverage() throws {
+    @Test("partial marker coverage stays visible while preserving usable local evidence")
+    func partialCoverage() throws {
         var session = try makeSession()
         try appendValue(
             peripheral: "target-a",
-            characteristic: "BATTERY",
+            characteristic: "BATTERY-NEAR",
             payload: [0x49],
             origin: .readResponse,
             sequence: 1,
@@ -271,66 +460,10 @@ struct PassiveBluetoothCaptureCorrelationReadinessTests {
         #expect(report.supportedMarkerCount == 1)
         #expect(report.unsupportedMarkerCount == 1)
         #expect(report.markerSupportFraction == 0.5)
+        #expect(report.correlationLookbackNanoseconds == 100_000_000)
+        #expect(report.correlationLookaheadNanoseconds == 100_000_000)
         #expect(report.distinctMarkerFields == ["Battery", "Power"])
         #expect(report.targetValueOrigins == [.readResponse])
-    }
-
-    @Test("connection-attributed target with markers but no values stays unavailable")
-    func noTargetValues() throws {
-        var session = try makeSession()
-        try appendConnection(
-            peripheral: "target-a",
-            state: .connected,
-            sequence: 1,
-            uptime: 1_000,
-            to: &session
-        )
-        try appendMarker(
-            field: "Voltage",
-            displayedValue: "39.8 V",
-            sequence: 2,
-            uptime: 1_100,
-            to: &session
-        )
-
-        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
-            session,
-            peripheralIdentifier: "target-a"
-        )
-
-        #expect(report.disposition == .noTargetValueObservations)
-        #expect(report.stockAppMarkerCount == 1)
-        #expect(report.targetValueObservationCount == 0)
-        #expect(report.supportedMarkerCount == 0)
-    }
-
-    @Test("nonblank peripheral identity remains opaque")
-    func peripheralIdentityIsNotNormalized() throws {
-        var session = try makeSession()
-        try appendValue(
-            peripheral: "target-a",
-            characteristic: "VALUE",
-            payload: [0xAA],
-            sequence: 1,
-            uptime: 1_000,
-            to: &session
-        )
-        try appendMarker(
-            field: "Battery",
-            displayedValue: "73%",
-            sequence: 2,
-            uptime: 1_100,
-            to: &session
-        )
-
-        let report = PassiveBluetoothCaptureCorrelationReadiness.assess(
-            session,
-            peripheralIdentifier: " target-a "
-        )
-
-        #expect(report.disposition == .invalidPeripheralScope)
-        #expect(report.peripheralIdentifier == " target-a ")
-        #expect(report.supportedMarkerCount == 0)
     }
 
     private func makeSession() throws -> PassiveBluetoothCaptureSession {
