@@ -1,31 +1,66 @@
 import Foundation
 import NembraCore
 
+/// Whether two controlled captures can support direct raw-difference metrics.
+///
+/// Direct state-to-state metrics are available only when both captures carry
+/// the same immutable Nembra vehicle context, resolve to the same observed GATT
+/// target, and the relevant target timelines contain no known observation gap.
+/// Capture-context, identity, and continuity ambiguity remain distinct so
+/// downstream tooling can explain why Nembra withheld a score.
+public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable, Sendable {
+    case comparable
+    case captureContextMismatch
+    case identityAmbiguous
+    case continuityAmbiguous
+}
+
+/// Stable identity for one comparison stratum. Value origin is part of the
+/// identity so a read response can never be silently compared with a
+/// notification/subscription callback from the same GATT characteristic.
+///
+/// Construction is intentionally package-internal. Comparison identities are
+/// evidence-derived output from `PassiveBluetoothCaptureComparison.compare`,
+/// not caller-authored authority.
+public struct PassiveBluetoothValueStreamComparisonIdentity: Hashable, Sendable, Comparable {
+    public let key: PassiveBluetoothValueStreamKey
+    public let origin: PassiveBluetoothValueOrigin
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.key == rhs.key && lhs.origin.rawValue == rhs.origin.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(key)
+        hasher.combine(origin.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        if lhs.key != rhs.key { return lhs.key < rhs.key }
+        return lhs.origin.rawValue < rhs.origin.rawValue
+    }
+}
+
+/// Immutable evidence-derived snapshot for one canonical comparison stratum.
+/// The raw capture remains the authority for original GATT spelling and bytes.
 public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
     public let key: PassiveBluetoothValueStreamKey
+    public let origin: PassiveBluetoothValueOrigin
     public let sampleCount: Int
+    public let continuitySegmentCount: Int
     public let uniquePayloadCount: Int
     public let firstPayload: Data?
     public let lastPayload: Data?
     public let uniquePayloads: Set<Data>
 
-    public init(
-        key: PassiveBluetoothValueStreamKey,
-        sampleCount: Int,
-        uniquePayloadCount: Int,
-        firstPayload: Data?,
-        lastPayload: Data?,
-        uniquePayloads: Set<Data>
-    ) {
-        self.key = key
-        self.sampleCount = sampleCount
-        self.uniquePayloadCount = uniquePayloadCount
-        self.firstPayload = firstPayload
-        self.lastPayload = lastPayload
-        self.uniquePayloads = uniquePayloads
+    public var identity: PassiveBluetoothValueStreamComparisonIdentity {
+        PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 }
 
+/// Evidence-derived direct-comparison output. Construction is package-internal
+/// so external clients cannot manufacture `.comparable` metrics without passing
+/// through the producer's capture-context, identity, and continuity gates.
 public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identifiable {
     public enum Presence: String, Sendable {
         case baselineOnly
@@ -34,39 +69,31 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
     }
 
     public let key: PassiveBluetoothValueStreamKey
+    public let origin: PassiveBluetoothValueOrigin
     public let presence: Presence
+    public let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
     public let baseline: PassiveBluetoothValueStreamSnapshot?
     public let comparison: PassiveBluetoothValueStreamSnapshot?
-    public let sharedPayloadCount: Int
-    public let baselineOnlyPayloadCount: Int
-    public let comparisonOnlyPayloadCount: Int
+    public let sharedPayloadCount: Int?
+    public let baselineOnlyPayloadCount: Int?
+    public let comparisonOnlyPayloadCount: Int?
     public let lastPayloadChanged: Bool?
 
-    public var id: PassiveBluetoothValueStreamKey { key }
-
-    public init(
-        key: PassiveBluetoothValueStreamKey,
-        presence: Presence,
-        baseline: PassiveBluetoothValueStreamSnapshot?,
-        comparison: PassiveBluetoothValueStreamSnapshot?,
-        sharedPayloadCount: Int,
-        baselineOnlyPayloadCount: Int,
-        comparisonOnlyPayloadCount: Int,
-        lastPayloadChanged: Bool?
-    ) {
-        self.key = key
-        self.presence = presence
-        self.baseline = baseline
-        self.comparison = comparison
-        self.sharedPayloadCount = sharedPayloadCount
-        self.baselineOnlyPayloadCount = baselineOnlyPayloadCount
-        self.comparisonOnlyPayloadCount = comparisonOnlyPayloadCount
-        self.lastPayloadChanged = lastPayloadChanged
+    public var id: PassiveBluetoothValueStreamComparisonIdentity {
+        PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 
-    /// A descriptive sorting hint only. A high score means the raw stream
-    /// differed more between the controlled sessions; it does not establish why.
-    public var rawDifferenceScore: Int {
+    /// A descriptive sorting hint only when the captures carry the same Nembra
+    /// vehicle context, resolve to the same observed GATT target, and each
+    /// relevant timeline is uninterrupted. `nil` means Nembra deliberately
+    /// withheld a cross-capture score because attribution is ambiguous.
+    public var rawDifferenceScore: Int? {
+        guard differenceAvailability == .comparable,
+              let baselineOnlyPayloadCount,
+              let comparisonOnlyPayloadCount else {
+            return nil
+        }
+
         var score = baselineOnlyPayloadCount + comparisonOnlyPayloadCount
         if presence != .both { score += 2 }
         if lastPayloadChanged == true { score += 1 }
@@ -88,44 +115,46 @@ public enum PassiveBluetoothCapturePeripheralRelationship: String, Sendable {
     case unresolved
 }
 
+/// Top-level evidence-derived controlled-comparison report. Its memberwise
+/// initializer is intentionally package-internal: callers may inspect reports,
+/// but only `PassiveBluetoothCaptureComparison.compare` issues them.
+///
+/// The exact source session IDs and immutable Nembra vehicle identities are
+/// retained so a report is mechanically bound to the capture pair/context that
+/// earned it. Equality of vehicle metadata is a fail-closed software evidence
+/// gate only; it does not authenticate physical hardware.
 public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
+    public let baselineCaptureSessionID: UUID
+    public let comparisonCaptureSessionID: UUID
+    public let baselineVehicleIdentity: VehicleIdentity
+    public let comparisonVehicleIdentity: VehicleIdentity
     public let baselineRecordCount: Int
     public let comparisonRecordCount: Int
     public let baselinePeripheralIdentifier: String?
     public let comparisonPeripheralIdentifier: String?
     public let peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship
+
+    /// Relevant target continuity breaks in each capture. Generic interruption
+    /// events are global; structured disconnects count only for the resolved
+    /// GATT target when one exists, otherwise they fail closed as potentially
+    /// relevant.
+    public let baselineContinuityBreakCount: Int
+    public let comparisonContinuityBreakCount: Int
+    public let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
+
+    /// Ever-observed hosted GATT services for the resolved target in each
+    /// artifact. Advertisement-only UUIDs are deliberately excluded.
     public let baselineServices: Set<String>
     public let comparisonServices: Set<String>
-    public let addedServices: Set<String>
-    public let removedServices: Set<String>
-    public let sharedServices: Set<String>
-    public let streamComparisons: [PassiveBluetoothValueStreamComparison]
 
-    public init(
-        baselineRecordCount: Int,
-        comparisonRecordCount: Int,
-        baselinePeripheralIdentifier: String?,
-        comparisonPeripheralIdentifier: String?,
-        peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship,
-        baselineServices: Set<String>,
-        comparisonServices: Set<String>,
-        addedServices: Set<String>,
-        removedServices: Set<String>,
-        sharedServices: Set<String>,
-        streamComparisons: [PassiveBluetoothValueStreamComparison]
-    ) {
-        self.baselineRecordCount = baselineRecordCount
-        self.comparisonRecordCount = comparisonRecordCount
-        self.baselinePeripheralIdentifier = baselinePeripheralIdentifier
-        self.comparisonPeripheralIdentifier = comparisonPeripheralIdentifier
-        self.peripheralRelationship = peripheralRelationship
-        self.baselineServices = baselineServices
-        self.comparisonServices = comparisonServices
-        self.addedServices = addedServices
-        self.removedServices = removedServices
-        self.sharedServices = sharedServices
-        self.streamComparisons = streamComparisons
-    }
+    /// Direct topology deltas are available only for captures with the same
+    /// immutable Nembra vehicle context, the same observed GATT identity, and
+    /// uninterrupted evidence. `nil` means the comparison is not attributable
+    /// enough for a direct topology delta.
+    public let addedServices: Set<String>?
+    public let removedServices: Set<String>?
+    public let sharedServices: Set<String>?
+    public let streamComparisons: [PassiveBluetoothValueStreamComparison]
 }
 
 /// Compares two immutable passive captures from controlled states.
@@ -134,23 +163,57 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// `stationary/rested` vs `after a short ride`. The comparison is intentionally
 /// byte/statistics based. It never declares a stream to be voltage/current/etc.
 ///
+/// Direct payload/topology difference metrics are fail-closed unless both
+/// captures carry exactly equal immutable Nembra vehicle metadata, resolve to
+/// the same observed GATT peripheral, and both relevant target timelines remain
+/// uninterrupted. Exact vehicle-metadata equality is only a software capture-
+/// context consistency check; it is not physical scooter authentication.
+/// Nembra preserves descriptive per-capture evidence but does not invent target,
+/// vehicle-context, or segment correspondence.
+///
 /// The report also exposes whether both sessions conservatively resolved to the
-/// same CoreBluetooth peripheral identifier. That identifier is process/system
-/// evidence only; it is not promoted to a permanent physical scooter identity.
+/// same CoreBluetooth peripheral identifier from typed GATT-path evidence. That
+/// identifier is process/system evidence only; it is not promoted to a permanent
+/// physical scooter identity. Advertisement-only and connection-only neighbors
+/// never make an otherwise attributable GATT capture ambiguous.
 public enum PassiveBluetoothCaptureComparison {
     public static func compare(
         baseline: PassiveBluetoothCaptureSession,
         comparison: PassiveBluetoothCaptureSession
     ) -> PassiveBluetoothCaptureComparisonReport {
-        let baselineFingerprint = PassiveBluetoothTransportFingerprint.analyze(baseline)
-        let comparisonFingerprint = PassiveBluetoothTransportFingerprint.analyze(comparison)
+        let baselineIdentifier = resolvedGATTPeripheralIdentifier(in: baseline)
+        let comparisonIdentifier = resolvedGATTPeripheralIdentifier(in: comparison)
+        let peripheralRelationship = relationship(
+            baseline: baselineIdentifier,
+            comparison: comparisonIdentifier
+        )
+        let baselineContinuityBreakCount = continuityBreakCount(
+            in: baseline,
+            peripheralIdentifier: baselineIdentifier
+        )
+        let comparisonContinuityBreakCount = continuityBreakCount(
+            in: comparison,
+            peripheralIdentifier: comparisonIdentifier
+        )
+
+        let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
+        if baseline.vehicleIdentity != comparison.vehicleIdentity {
+            differenceAvailability = .captureContextMismatch
+        } else if peripheralRelationship != .sameObservedIdentifier {
+            differenceAvailability = .identityAmbiguous
+        } else if baselineContinuityBreakCount == 0 && comparisonContinuityBreakCount == 0 {
+            differenceAvailability = .comparable
+        } else {
+            differenceAvailability = .continuityAmbiguous
+        }
+
         let baselineStreams = valueStreamSnapshots(in: baseline)
         let comparisonStreams = valueStreamSnapshots(in: comparison)
         let allKeys = Set(baselineStreams.keys).union(comparisonStreams.keys)
 
-        let comparisons = allKeys.map { key -> PassiveBluetoothValueStreamComparison in
-            let lhs = baselineStreams[key]
-            let rhs = comparisonStreams[key]
+        let comparisons = allKeys.map { identity -> PassiveBluetoothValueStreamComparison in
+            let lhs = baselineStreams[identity]
+            let rhs = comparisonStreams[identity]
             let presence: PassiveBluetoothValueStreamComparison.Presence
             switch (lhs, rhs) {
             case (.some, .some): presence = .both
@@ -160,92 +223,168 @@ public enum PassiveBluetoothCaptureComparison {
                 preconditionFailure("union key must appear in at least one capture")
             }
 
-            let lhsPayloads = lhs?.uniquePayloads ?? []
-            let rhsPayloads = rhs?.uniquePayloads ?? []
-            let shared = lhsPayloads.intersection(rhsPayloads)
-            let lhsOnly = lhsPayloads.subtracting(rhsPayloads)
-            let rhsOnly = rhsPayloads.subtracting(lhsPayloads)
+            let payloadDifference = differenceAvailability == .comparable
+                ? payloadDifference(lhs: lhs, rhs: rhs)
+                : nil
 
             return PassiveBluetoothValueStreamComparison(
-                key: key,
+                key: identity.key,
+                origin: identity.origin,
                 presence: presence,
+                differenceAvailability: differenceAvailability,
                 baseline: lhs,
                 comparison: rhs,
-                sharedPayloadCount: shared.count,
-                baselineOnlyPayloadCount: lhsOnly.count,
-                comparisonOnlyPayloadCount: rhsOnly.count,
-                lastPayloadChanged: lastPayloadChanged(lhs: lhs, rhs: rhs)
+                sharedPayloadCount: payloadDifference?.shared,
+                baselineOnlyPayloadCount: payloadDifference?.baselineOnly,
+                comparisonOnlyPayloadCount: payloadDifference?.comparisonOnly,
+                lastPayloadChanged: differenceAvailability == .comparable
+                    ? lastPayloadChanged(lhs: lhs, rhs: rhs)
+                    : nil
             )
         }
-        .sorted { lhs, rhs in
-            if lhs.rawDifferenceScore != rhs.rawDifferenceScore {
-                return lhs.rawDifferenceScore > rhs.rawDifferenceScore
-            }
-            return lhs.key < rhs.key
-        }
+        .sorted(by: comparisonSort)
 
-        let baselineServices = baselineFingerprint.observedServiceUUIDs
-        let comparisonServices = comparisonFingerprint.observedServiceUUIDs
-        let baselineIdentifier = nonEmpty(baselineFingerprint.peripheralIdentifier)
-        let comparisonIdentifier = nonEmpty(comparisonFingerprint.peripheralIdentifier)
+        let baselineServices = hostedGATTServiceUUIDs(
+            in: baseline,
+            peripheralIdentifier: baselineIdentifier
+        )
+        let comparisonServices = hostedGATTServiceUUIDs(
+            in: comparison,
+            peripheralIdentifier: comparisonIdentifier
+        )
+
+        let topologyDelta: (added: Set<String>, removed: Set<String>, shared: Set<String>)? =
+            differenceAvailability == .comparable
+                ? (
+                    added: comparisonServices.subtracting(baselineServices),
+                    removed: baselineServices.subtracting(comparisonServices),
+                    shared: baselineServices.intersection(comparisonServices)
+                )
+                : nil
 
         return PassiveBluetoothCaptureComparisonReport(
+            baselineCaptureSessionID: baseline.id,
+            comparisonCaptureSessionID: comparison.id,
+            baselineVehicleIdentity: baseline.vehicleIdentity,
+            comparisonVehicleIdentity: comparison.vehicleIdentity,
             baselineRecordCount: baseline.records.count,
             comparisonRecordCount: comparison.records.count,
             baselinePeripheralIdentifier: baselineIdentifier,
             comparisonPeripheralIdentifier: comparisonIdentifier,
-            peripheralRelationship: relationship(
-                baseline: baselineIdentifier,
-                comparison: comparisonIdentifier
-            ),
+            peripheralRelationship: peripheralRelationship,
+            baselineContinuityBreakCount: baselineContinuityBreakCount,
+            comparisonContinuityBreakCount: comparisonContinuityBreakCount,
+            differenceAvailability: differenceAvailability,
             baselineServices: baselineServices,
             comparisonServices: comparisonServices,
-            addedServices: comparisonServices.subtracting(baselineServices),
-            removedServices: baselineServices.subtracting(comparisonServices),
-            sharedServices: baselineServices.intersection(comparisonServices),
+            addedServices: topologyDelta?.added,
+            removedServices: topologyDelta?.removed,
+            sharedServices: topologyDelta?.shared,
             streamComparisons: comparisons
         )
     }
 
+    private struct ContinuitySegment: Hashable {
+        let lastGlobalBoundarySequence: UInt64
+        let lastPeripheralDisconnectSequence: UInt64
+    }
+
+    private struct MutableSnapshot {
+        let key: PassiveBluetoothValueStreamKey
+        let origin: PassiveBluetoothValueOrigin
+        var sampleCount = 0
+        var segmentIdentifiers: Set<ContinuitySegment> = []
+        var firstPayload: Data?
+        var lastPayload: Data?
+        var uniquePayloads: Set<Data> = []
+
+        mutating func ingest(payload: Data, segment: ContinuitySegment) {
+            sampleCount += 1
+            segmentIdentifiers.insert(segment)
+            if firstPayload == nil { firstPayload = payload }
+            lastPayload = payload
+            uniquePayloads.insert(payload)
+        }
+
+        func finalize() -> PassiveBluetoothValueStreamSnapshot {
+            PassiveBluetoothValueStreamSnapshot(
+                key: key,
+                origin: origin,
+                sampleCount: sampleCount,
+                continuitySegmentCount: segmentIdentifiers.count,
+                uniquePayloadCount: uniquePayloads.count,
+                firstPayload: firstPayload,
+                lastPayload: lastPayload,
+                uniquePayloads: uniquePayloads
+            )
+        }
+    }
+
     private static func valueStreamSnapshots(
         in session: PassiveBluetoothCaptureSession
-    ) -> [PassiveBluetoothValueStreamKey: PassiveBluetoothValueStreamSnapshot] {
-        struct MutableSnapshot {
-            var sampleCount = 0
-            var firstPayload: Data?
-            var lastPayload: Data?
-            var uniquePayloads: Set<Data> = []
-        }
+    ) -> [PassiveBluetoothValueStreamComparisonIdentity: PassiveBluetoothValueStreamSnapshot] {
+        var lastGlobalBoundarySequence: UInt64 = 0
+        var lastDisconnectSequenceByPeripheral: [String: UInt64] = [:]
+        var mutable: [PassiveBluetoothValueStreamComparisonIdentity: MutableSnapshot] = [:]
 
-        var mutable: [PassiveBluetoothValueStreamKey: MutableSnapshot] = [:]
         for record in session.records {
-            guard case let .value(value) = record.event else { continue }
-            let key = PassiveBluetoothValueStreamKey(
-                peripheralIdentifier: value.peripheralIdentifier,
-                serviceUUID: value.serviceUUID,
-                characteristicUUID: value.characteristicUUID
-            )
-            var snapshot = mutable[key, default: MutableSnapshot()]
-            snapshot.sampleCount += 1
-            if snapshot.firstPayload == nil { snapshot.firstPayload = value.payload }
-            snapshot.lastPayload = value.payload
-            snapshot.uniquePayloads.insert(value.payload)
-            mutable[key] = snapshot
+            switch record.event {
+            case .interruption:
+                lastGlobalBoundarySequence = record.sequenceNumber
+
+            case let .connection(observation) where observation.state == .disconnected:
+                lastDisconnectSequenceByPeripheral[observation.peripheralIdentifier] = record.sequenceNumber
+
+            case let .value(value):
+                // CoreBluetooth UUID text is representation, not physical stream
+                // identity. Normalize only the GATT service/characteristic fields
+                // used by this comparison layer. The peripheral identifier remains
+                // opaque and exact, and the immutable raw capture retains the
+                // original strings for provenance/audit.
+                let key = PassiveBluetoothValueStreamKey(
+                    peripheralIdentifier: value.peripheralIdentifier,
+                    serviceUUID: normalize(value.serviceUUID),
+                    characteristicUUID: normalize(value.characteristicUUID)
+                )
+                let identity = PassiveBluetoothValueStreamComparisonIdentity(
+                    key: key,
+                    origin: value.origin
+                )
+                let segment = ContinuitySegment(
+                    lastGlobalBoundarySequence: lastGlobalBoundarySequence,
+                    lastPeripheralDisconnectSequence: lastDisconnectSequenceByPeripheral[
+                        value.peripheralIdentifier,
+                        default: 0
+                    ]
+                )
+                var snapshot = mutable[
+                    identity,
+                    default: MutableSnapshot(key: key, origin: value.origin)
+                ]
+                snapshot.ingest(payload: value.payload, segment: segment)
+                mutable[identity] = snapshot
+
+            default:
+                continue
+            }
         }
 
-        return Dictionary(uniqueKeysWithValues: mutable.map { key, snapshot in
-            (
-                key,
-                PassiveBluetoothValueStreamSnapshot(
-                    key: key,
-                    sampleCount: snapshot.sampleCount,
-                    uniquePayloadCount: snapshot.uniquePayloads.count,
-                    firstPayload: snapshot.firstPayload,
-                    lastPayload: snapshot.lastPayload,
-                    uniquePayloads: snapshot.uniquePayloads
-                )
-            )
+        return Dictionary(uniqueKeysWithValues: mutable.map { identity, snapshot in
+            (identity, snapshot.finalize())
         })
+    }
+
+    private static func payloadDifference(
+        lhs: PassiveBluetoothValueStreamSnapshot?,
+        rhs: PassiveBluetoothValueStreamSnapshot?
+    ) -> (shared: Int, baselineOnly: Int, comparisonOnly: Int) {
+        let lhsPayloads = lhs?.uniquePayloads ?? []
+        let rhsPayloads = rhs?.uniquePayloads ?? []
+        return (
+            shared: lhsPayloads.intersection(rhsPayloads).count,
+            baselineOnly: lhsPayloads.subtracting(rhsPayloads).count,
+            comparisonOnly: rhsPayloads.subtracting(lhsPayloads).count
+        )
     }
 
     private static func lastPayloadChanged(
@@ -260,8 +399,112 @@ public enum PassiveBluetoothCaptureComparison {
         return lhsLast != rhsLast
     }
 
-    private static func nonEmpty(_ value: String) -> String? {
-        value.isEmpty ? nil : value
+    private static func comparisonSort(
+        lhs: PassiveBluetoothValueStreamComparison,
+        rhs: PassiveBluetoothValueStreamComparison
+    ) -> Bool {
+        switch (lhs.rawDifferenceScore, rhs.rawDifferenceScore) {
+        case let (.some(lhsScore), .some(rhsScore)) where lhsScore != rhsScore:
+            return lhsScore > rhsScore
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            return lhs.id < rhs.id
+        }
+    }
+
+    /// Mirrors the package's conservative unscoped transport identity rule:
+    /// only typed GATT-path evidence can establish the comparison target.
+    /// Advertisement-only and connection-only nearby devices are not promoted
+    /// into target identity.
+    private static func resolvedGATTPeripheralIdentifier(
+        in session: PassiveBluetoothCaptureSession
+    ) -> String? {
+        var identifiers: Set<String> = []
+        for record in session.records {
+            switch record.event {
+            case let .service(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .includedService(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .characteristic(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .descriptor(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .subscription(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case let .value(observation):
+                identifiers.insert(observation.peripheralIdentifier)
+            case .advertisement, .connection, .stockAppState, .interruption:
+                continue
+            }
+        }
+        guard identifiers.count == 1 else { return nil }
+        return identifiers.first
+    }
+
+    private static func continuityBreakCount(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String?
+    ) -> Int {
+        session.records.reduce(into: 0) { count, record in
+            switch record.event {
+            case .interruption:
+                count += 1
+            case let .connection(observation) where observation.state == .disconnected:
+                if let peripheralIdentifier {
+                    if observation.peripheralIdentifier == peripheralIdentifier {
+                        count += 1
+                    }
+                } else {
+                    count += 1
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    private static func hostedGATTServiceUUIDs(
+        in session: PassiveBluetoothCaptureSession,
+        peripheralIdentifier: String?
+    ) -> Set<String> {
+        guard let peripheralIdentifier else { return [] }
+        var services: Set<String> = []
+
+        for record in session.records {
+            switch record.event {
+            case let .service(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.serviceUUID))
+
+            case let .includedService(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.parentServiceUUID))
+                services.insert(normalize(observation.includedServiceUUID))
+
+            case let .characteristic(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.serviceUUID))
+
+            case let .descriptor(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.serviceUUID))
+
+            case let .subscription(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.serviceUUID))
+
+            case let .value(observation) where observation.peripheralIdentifier == peripheralIdentifier:
+                services.insert(normalize(observation.serviceUUID))
+
+            default:
+                continue
+            }
+        }
+
+        return services
+    }
+
+    private static func normalize(_ identifier: String) -> String {
+        identifier.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     private static func relationship(
