@@ -2,7 +2,7 @@
 
 Continue the existing production iOS application **Nembra** in `jonathangana131-lab/Nembra`.
 
-Do not create another repository/app, restart accepted architecture, or ask the user to summarize previous work. Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.md`. This file is only a mutable resume aid.
+Do not create another repository/app, restart accepted architecture, or ask the user to summarize previous work. Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.md`. Concurrent-worker behavior additionally lives in `SWARM_COORDINATION.md`. This file is only a mutable resume aid.
 
 **Live GitHub always outranks this file.** If a branch, PR, SHA, CI state, dependency, or ownership statement below has changed, use the live state instead of trying to restore this snapshot.
 
@@ -24,14 +24,34 @@ Start with tools, not a giant plan:
 3. inspect recent commits;
 4. inspect newest Actions/Xcode runs;
 5. identify which lanes/files are actively owned;
-6. read `PROJECT_STATE.md` and this file only after live state is known;
-7. read only the relevant durable product/protocol/design docs;
-8. choose or recover one safe non-conflicting lane;
-9. execute immediately.
+6. read `SWARM_COORDINATION.md`;
+7. read `PROJECT_STATE.md` and this file only after live state is known;
+8. read only the relevant durable product/protocol/design docs;
+9. choose or recover one safe non-conflicting lane;
+10. execute immediately.
 
 One chat = one worker = one isolated branch/lane. Existing changing branches are presumed owned. Do not push to another worker's branch. If an old useful lane is clearly stopped, recover it on a **new** branch from its exact durable head.
 
 Before any substantial edit, compare likely changed paths with active PRs. Avoid `project.pbxproj`, app bootstrap/root composition, shared persistence factories, global project-memory files, Dashboard/Home, and shared registries when another worker owns them.
+
+## V14 large-swarm rule — DO NOT WAIT BEHIND ANOTHER WORKER
+
+When many SOL workers are active, especially 20+, they must fan out across the highest-value **safe independent lanes** rather than all choosing the same blocker.
+
+If the best-looking lane is already owned or would collide on the same high-contention paths:
+- do **not** wait for that worker;
+- do **not** duplicate the same implementation;
+- immediately self-reassign to the next highest-value non-conflicting lane inside the same flagship feature;
+- use adjacent lanes such as integration prep, app-visible wiring, visual polish, screenshot critique, accessibility, performance, adversarial QA, provenance/export, build acceptance, documentation/runbook truth, or cleanup when those are genuinely independent;
+- only overflow into a secondary flagship when the current flagship is actually saturated and another worker would create more coordination cost than useful progress.
+
+Workers have **feature gravity, not PR gravity**. If the original PR/lane finishes, blocks, becomes superseded, or is taken by another worker, refresh GitHub and keep working on another safe closure rung instead of ending the chat or polling.
+
+CI/build waiting is not a stop condition. While CI runs, do useful non-conflicting work in the same flagship rather than repeatedly polling.
+
+A `GO` session means continuous execution: inspect → choose safe lane → implement → test/review → checkpoint → refresh → self-reassign if needed → continue. One commit, PR, test, merge, screenshot, or green run never satisfies `GO` by itself while useful work remains.
+
+Read and obey `SWARM_COORDINATION.md` for the full durable anti-collision/saturation contract. Existing workers that refresh GitHub should adopt that contract immediately.
 
 ## Current checkpoint — 2026-08-07
 At this checkpoint:
