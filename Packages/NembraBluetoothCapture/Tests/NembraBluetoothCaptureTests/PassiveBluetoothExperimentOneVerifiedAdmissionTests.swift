@@ -12,6 +12,94 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
     private let infoPlistData = Data("verified-admission-info-plist".utf8)
     private let signedInstallableSHA256 = String(repeating: "c", count: 64)
 
+    @Test("TODAY research admission requires exact recipe plus exact canonical embedded build tuple")
+    func exactBuildTimeResearchConfigurationMintsPackageAdmission() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let infoDictionary = researchBuildInfoDictionary()
+
+        let admission = try #require(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: infoDictionary,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        )
+
+        #expect(admission.recipeID == .es80FingerprintV1)
+        #expect(admission.runtimeBuildIdentity == runtimeIdentity)
+    }
+
+    @Test("recipe marker alone cannot authorize a mismatched or noncanonical build")
+    func researchAdmissionRejectsBuildTupleDrift() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+
+        var wrongRecipe = researchBuildInfoDictionary()
+        wrongRecipe[PassiveBluetoothExperimentOneFieldExecutionGate.researchFieldRecipeInfoDictionaryKey]
+            = "ES80-ELECTRICAL-CORRELATION-v1"
+        #expect(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: wrongRecipe,
+                runtimeBuildIdentity: runtimeIdentity
+            ) == nil
+        )
+
+        var wrongBuildIdentifier = researchBuildInfoDictionary()
+        wrongBuildIdentifier[
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey
+        ] = "Capture Build V14-000000000000"
+        #expect(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: wrongBuildIdentifier,
+                runtimeBuildIdentity: runtimeIdentity
+            ) == nil
+        )
+
+        var wrongBuildInstance = researchBuildInfoDictionary()
+        wrongBuildInstance[
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey
+        ] = "11111111-2222-4333-8444-555555555555"
+        #expect(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: wrongBuildInstance,
+                runtimeBuildIdentity: runtimeIdentity
+            ) == nil
+        )
+
+        var wrongSource = researchBuildInfoDictionary()
+        wrongSource[
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey
+        ] = String(repeating: "0", count: 40)
+        #expect(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: wrongSource,
+                runtimeBuildIdentity: runtimeIdentity
+            ) == nil
+        )
+
+        let noncanonicalRuntimeIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .resolveEmbeddedMetadata(
+                infoDictionary: [
+                    PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
+                        "Capture Build V14-manual",
+                    PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
+                        buildInstanceID,
+                    PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
+                        sourceCommitSHA,
+                ],
+                executableData: executableData,
+                infoPlistData: infoPlistData
+            )
+        var noncanonicalInfo = researchBuildInfoDictionary()
+        noncanonicalInfo[
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey
+        ] = noncanonicalRuntimeIdentity.buildIdentifier
+        #expect(
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchBuildAdmission(
+                infoDictionary: noncanonicalInfo,
+                runtimeBuildIdentity: noncanonicalRuntimeIdentity
+            ) == nil
+        )
+    }
+
     @Test("verified signed authority can mint only an audit-bound package admission")
     func verifiedAuthorizationMintsAdmissionWithoutChangingDefaultNoGo() throws {
         let signingKey = P256.Signing.PrivateKey()
@@ -54,9 +142,9 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // field gate is NO-GO.
+        // The package-test host does not carry the canonical field-build recipe marker, so minting
+        // release-grade evidence inside this deterministic test does not mutate the running process
+        // into a TODAY research build.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -64,13 +152,14 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("future live factory requires admission plus final field GO and legacy factory stays sealed")
-    func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
+    @Test("canonical live factory is gated by process-owned research admission or sealed verified authority")
+    func canonicalFactoryKeepsBooleanPreferenceAndImportedEvidenceOut() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
 
-        let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
+        let gateGuard = "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
+        let researchGuard = "PassiveBluetoothExperimentOneFieldExecutionGate.currentResearchBuildAdmission != nil"
         let zeroFactoryStart = try #require(
             source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
         )
@@ -87,17 +176,20 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         )
 
         let zeroFactory = source[zeroFactoryStart..<verifiedFactoryStart]
-        #expect(zeroFactory.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
-        #expect(!zeroFactory.contains("makeLiveES80Coordinator()"))
-        #expect(!zeroFactory.contains(gateGuard))
+        let zeroResearchGuard = try #require(zeroFactory.range(of: researchGuard))
+        let zeroGateGuard = try #require(zeroFactory.range(of: gateGuard))
+        let zeroLiveConstruction = try #require(
+            zeroFactory.range(of: "return try makeLiveES80Coordinator()")
+        )
+        #expect(zeroResearchGuard.lowerBound < zeroLiveConstruction.lowerBound)
+        #expect(zeroGateGuard.lowerBound < zeroLiveConstruction.lowerBound)
 
         let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
         let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
-        let liveConstruction = try #require(
+        let verifiedLiveConstruction = try #require(
             verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
         )
-        #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
-        #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
+        #expect(verifiedGuard.lowerBound < verifiedLiveConstruction.lowerBound)
 
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
@@ -106,8 +198,8 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("ProcessInfo"))
     }
 
-    @Test("current app has no verified-admission consumption path")
-    func appRemainsOnLockedZeroArgumentFactory() throws {
+    @Test("current app consumes only the package-owned canonical factory")
+    func appUsesNoCallerConstructedAdmissionOrRuntimeToggle() throws {
         let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
         let zeroArgumentFactory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
 
@@ -115,6 +207,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("verifiedAdmission:"))
         #expect(!source.contains("PassiveBluetoothCaptureVerifiedFieldAuthorization"))
         #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
+        #expect(!source.contains("UserDefaults"))
     }
 
     private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
@@ -130,6 +223,19 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
             executableData: executableData,
             infoPlistData: infoPlistData
         )
+    }
+
+    private func researchBuildInfoDictionary() -> [String: Any] {
+        [
+            PassiveBluetoothExperimentOneFieldExecutionGate.researchFieldRecipeInfoDictionaryKey:
+                PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue,
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
+                buildIdentifier,
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
+                buildInstanceID,
+            PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
+                sourceCommitSHA,
+        ]
     }
 
     private func externalRecordObject() -> [String: Any] {
