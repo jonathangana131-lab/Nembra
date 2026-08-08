@@ -85,7 +85,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_bound_descriptor_execution_path_is_real_not_source_only(self):
         intended = "00008101-001234567890001E"
         with tempfile.TemporaryDirectory(prefix="nembra-bound-runner-test-") as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             private_file = root / "device-id"
             private_file.write_text(intended, encoding="utf-8")
             private_file.chmod(0o600)
