@@ -1,0 +1,89 @@
+name: Nembra Ready current-spine transform
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-ready-current-foreground/chat-gpt56-go3
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact staged ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "eec9cfe69b7c40cc338026e176dc9ea70d5796e5"
+
+      - name: Apply exact Ready pre-attempt recovery transform
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+          old = '''                do:
+'''
+          # Keep this assertion deliberately textual and narrow; the actual replacement
+          # below uses the exact Swift block on the pinned parent.
+          needle = '''                do {
+                    try self.ensureCaptureHealthy()
+                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+'''
+          replacement = '''                do {
+                    do {
+                        try self.requireForegroundEvidenceIntegrity()
+                        try self.ensureCaptureHealthy()
+                        try self.validateBoundaryAuthority(admission.authority)
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderMutation()
+                            try self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)
+                        } catch {
+                            // Exact quarantine failure is stronger than the triggering
+                            // pre-attempt failure because allocated Ready could not be
+                            // proven abandoned before recorder mutation.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
+                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+'''
+          if source.count(needle) != 1:
+              raise SystemExit(f"expected exactly one pinned Ready pre-attempt block, found {source.count(needle)}")
+          source = source.replace(needle, replacement, 1)
+          path.write_text(source)
+
+      - name: Assert exact recovery grammar
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq 'try self.requireForegroundEvidenceIntegrity()' "$file"
+          grep -Fq 'try self.validateBoundaryAuthority(admission.authority)' "$file"
+          grep -Fq 'let abandonment = try admission.abandonBeforeRecorderMutation()' "$file"
+          grep -Fq 'try self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)' "$file"
+          ! grep -Fq 'try? self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)' "$file"
+
+      - name: Remove one-shot workflow and commit product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-nembra-ready-current-foreground-transform.yml
+          git config user.name 'nembra-chatgpt56-go3'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  .github/workflows/zz-nembra-ready-current-foreground-transform.yml
+          git diff --cached --check
+          git commit -m 'fix: quarantine Ready before recorder attempt on exact authority drift'
+          git push origin HEAD:integration/es80-v14-ready-current-foreground/chat-gpt56-go3
