@@ -12,8 +12,10 @@ public enum PassiveBluetoothExperimentRecipeID: String, Codable, CaseIterable, S
 /// Ordered operator/product stages for Nembra's first stationary ES80 fingerprint procedure.
 ///
 /// Power-state names are procedure instructions only. Advancing a recipe never attests that the
-/// scooter was physically off/on or that RF non-observation proves absence.
-public enum PassiveBluetoothExperimentRecipeStep: String, Codable, CaseIterable, Sendable {
+/// scooter was physically off/on or that RF non-observation proves absence. Step cases are
+/// deliberately not Codable or raw-string backed: only the versioned recipe ID is a stable wire
+/// identity, so internal workflow names cannot accidentally become artifact/persistence schema.
+public enum PassiveBluetoothExperimentRecipeStep: CaseIterable, Sendable {
     case preflight
     case findScooter
     case powerOffFirst
