@@ -217,7 +217,7 @@ struct NavigationArrivalEvidenceRecoveryTests {
         )
     }
 
-    @Test("ambiguous progress and known continuity gaps reset an unconfirmed candidate")
+    @Test("ambiguous progress and guidance-only continuity gaps reset an unconfirmed candidate")
     func ambiguityAndGapResetCandidate() throws {
         let selectedRoute = try route()
         var guidance = NavigationGuidanceProgressTracker()
@@ -243,14 +243,36 @@ struct NavigationArrivalEvidenceRecoveryTests {
                 guidanceTracker: &guidance
             ) == .candidate
         )
-        arrival.markKnownContinuityGap()
+
+        // The consumer invokes only guidance's public continuity-gap operation.
+        // The next qualifying sample is deliberately only 400ns later, far below
+        // the 10_000ns accepted-sample gap policy, so only sealed continuity
+        // provenance can prevent the pre-gap candidate from carrying forward.
         guidance.markKnownContinuityGap()
-        #expect(arrival.state == .awaitingEvidence(token: token))
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 2_500),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
+        guard case let .candidate(restarted) = arrival.state else {
+            Issue.record("Expected candidate evidence to restart after guidance gap")
+            return
+        }
+        #expect(restarted.firstQualifyingObservationUptimeNanoseconds == 2_500)
+        #expect(restarted.qualifyingObservationCount == 1)
+
+        #expect(
+            try arrival.observe(
+                observation(token: token, uptime: 3_500),
+                guidanceTracker: &guidance
+            ) == .candidate
+        )
         #expect(
             try arrival.observe(
                 observation(token: token, uptime: 4_500),
                 guidanceTracker: &guidance
-            ) == .candidate
+            ) == .arrived
         )
     }
 
@@ -449,7 +471,6 @@ struct NavigationArrivalEvidenceRecoveryTests {
         )
 
         let confirmed = arrival.state
-        arrival.markKnownContinuityGap()
         guidance.markKnownContinuityGap()
         #expect(arrival.state == confirmed)
 
