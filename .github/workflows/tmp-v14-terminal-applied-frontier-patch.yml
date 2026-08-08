@@ -1,0 +1,222 @@
+name: TEMP V14 terminal applied-frontier patch
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-controller-resolution/chatgpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v6
+        with:
+          ref: integration/es80-v14-terminal-controller-resolution/chatgpt56-go
+          fetch-depth: 0
+
+      - name: Apply fail-closed terminal resolved-frontier authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          gate_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
+          gate = gate_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          gate = replace_once(
+              gate,
+              '        case freshTargetSessionRequired\n        case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)\n',
+              '        case freshTargetSessionRequired\n        case resolvedFrontierDoesNotMatchResolution(expected: UInt64, actual: UInt64)\n        case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)\n',
+              'state error insertion',
+          )
+          gate = replace_once(
+              gate,
+              '        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,\n        currentLastEnqueuedEventSequence: UInt64,\n        freshTargetSessionGeneration: UInt64\n',
+              '        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,\n        currentResolvedThroughQueueSequence: UInt64,\n        currentLastEnqueuedEventSequence: UInt64,\n        freshTargetSessionGeneration: UInt64\n',
+              'terminal reopen signature',
+          )
+          gate = replace_once(
+              gate,
+              '        guard resolution.terminalAuthority == transaction.authority else {\n            throw StateError.authorityChanged\n        }\n        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {\n',
+              '        guard resolution.terminalAuthority == transaction.authority else {\n            throw StateError.authorityChanged\n        }\n        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {\n            throw StateError.resolvedFrontierDoesNotMatchResolution(\n                expected: resolution.resolvedThroughQueueSequence,\n                actual: currentResolvedThroughQueueSequence\n            )\n        }\n        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {\n',
+              'applied frontier guard',
+          )
+          gate = replace_once(
+              gate,
+              '    /// transaction, including its process-local UUID, and the controller has already\n    /// created one strictly newer durable target session. The exact fresh generation\n',
+              '    /// transaction, including its process-local UUID. The controller must also have\n    /// applied the receipt\'s resolved-through frontier before admission can reopen, and\n    /// must already have created one strictly newer durable target session. The exact fresh generation\n',
+              'terminal reopen documentation',
+          )
+          gate_path.write_text(gate)
+
+          tests_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests.swift')
+          tests = tests_path.read_text()
+          pattern = re.compile(r'(?P<indent>^[ \t]*)(?P<var>resolution(?:A)?),\n(?P=indent)currentLastEnqueuedEventSequence:', re.MULTILINE)
+          def add_applied(match: re.Match[str]) -> str:
+              indent = match.group('indent')
+              var = match.group('var')
+              return (
+                  f'{indent}{var},\n'
+                  f'{indent}currentResolvedThroughQueueSequence: {var}.resolvedThroughQueueSequence,\n'
+                  f'{indent}currentLastEnqueuedEventSequence:'
+              )
+          tests, count = pattern.subn(add_applied, tests)
+          if count != 4:
+              raise SystemExit(f'existing reopen calls: expected 4 matches, found {count}')
+          tests_path.write_text(tests)
+
+          applied_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalResolutionAppliedFrontierTests.swift')
+          if applied_test.exists():
+              raise SystemExit('applied-frontier regression path already exists')
+          applied_test.write_text(r'''import Foundation
+import NembraCore
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Terminal resolution applied-frontier authority")
+struct PassiveCoreBluetoothTerminalResolutionAppliedFrontierTests {
+    private typealias Gate = PassiveCoreBluetoothObservationBoundaryQueueGate
+    private typealias Retirement = PassiveCoreBluetoothTerminalQueueRetirement
+    private typealias Resolution = PassiveCoreBluetoothTerminalQueueResolution
+
+    private struct Event: Equatable {
+        let queueSequence: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+    }
+
+    private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
+        targetSessionGeneration: 7,
+        authorityGeneration: 11
+    )
+
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
+    @Test("resolution receipt cannot reopen until controller applies resolved frontier")
+    @MainActor
+    func receiptAloneIsNotAppliedChronology() async throws {
+        var gate = try await terminalGate(horizon: 12)
+        let terminal = try #require(terminalTransaction(from: gate))
+
+        var pending = [
+            Event(queueSequence: 13, authority: authority),
+            Event(queueSequence: 14, authority: authority),
+        ]
+        let retirement = try Retirement.retire(
+            from: &pending,
+            currentLastEnqueuedEventSequence: 14,
+            terminalGate: gate
+        ) {
+            Retirement.PendingEvidenceIdentity(
+                queueSequence: $0.queueSequence,
+                authority: $0.authority
+            )
+        }
+        #expect(pending.isEmpty)
+
+        let resolution = try Resolution.resolve(
+            currentResolvedThroughQueueSequence: 12,
+            currentLastEnqueuedEventSequence: 14,
+            retirementReceipt: retirement,
+            terminalGate: gate
+        )
+        #expect(resolution.resolvedThroughQueueSequence == 14)
+
+        #expect(
+            throws: Gate.StateError.resolvedFrontierDoesNotMatchResolution(
+                expected: 14,
+                actual: 12
+            )
+        ) {
+            try gate.reopenAfterTerminalQueueResolution(
+                resolution,
+                currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 14,
+                freshTargetSessionGeneration: 8
+            )
+        }
+        #expect(gate.phase == .terminal(terminal))
+
+        try gate.reopenAfterTerminalQueueResolution(
+            resolution,
+            currentResolvedThroughQueueSequence: 14,
+            currentLastEnqueuedEventSequence: 14,
+            freshTargetSessionGeneration: 8
+        )
+        #expect(gate.phase == .awaitingReady)
+    }
+
+    @MainActor
+    private func terminalGate(horizon: UInt64) async throws -> Gate {
+        var gate = Gate()
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 5,
+            processedThrough: 5,
+            authorityFence: fence,
+            gate: &gate
+        )
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        let committedReady = try recordedReady.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 5
+        )
+        let horizonAdmission = try committedReady.beginHorizon(
+            queueCutoff: horizon,
+            processedThrough: horizon,
+            gate: &gate
+        )
+        let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)
+        let committedHorizon = try recordedHorizon.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: horizon
+        )
+        try committedHorizon.completeHorizonArtifactFreeze(on: &gate)
+        return gate
+    }
+
+    private func terminalTransaction(from gate: Gate) -> Gate.Transaction? {
+        guard case let .terminal(transaction) = gate.phase else { return nil }
+        return transaction
+    }
+}
+''')
+          PY
+
+          git diff --check
+          grep -q 'currentResolvedThroughQueueSequence: UInt64' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          grep -q 'resolvedFrontierDoesNotMatchResolution' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          test "$(grep -c 'currentResolvedThroughQueueSequence: .*resolvedThroughQueueSequence' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests.swift)" -eq 4
+
+      - name: Commit product patch and self-delete workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-terminal-applied-frontier-patch.yml
+          git config user.name 'nembra-v14-patch-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m '[Capture truth] require applied resolved frontier before terminal reopen'
+          git push origin HEAD:integration/es80-v14-terminal-controller-resolution/chatgpt56-go
