@@ -23,6 +23,27 @@ struct PassiveBluetoothCaptureArtifactInputPolicyTests {
         )
     }
 
+    @Test("same-length in-place mutation across admission fails closed")
+    func sameLengthMutationFailsClosed() throws {
+        let source = Data([0x10, 0x20, 0x30, 0x40, 0x50])
+        let replacement = Data([0x10, 0x20, 0x31, 0x40, 0x50])
+        let url = try writeTemporary(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(
+            throws: PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        ) {
+            try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+                at: url,
+                maximumBytes: source.count,
+                betweenVerificationPasses: {
+                    try replacement.write(to: url, options: [])
+                }
+            )
+        }
+    }
+
     @Test("bounded reader rejects the first byte beyond the configured limit")
     func oneByteOverFailsClosed() throws {
         let source = Data([0x10, 0x20, 0x30, 0x40, 0x50])
