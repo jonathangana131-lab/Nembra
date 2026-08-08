@@ -1,0 +1,74 @@
+name: ES80 Window Isolation Conformance Probe
+
+on:
+  push:
+    branches:
+      - 'cell/es80-window-isolation/compile-probe/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-window-isolation-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Probe MainActor CoreBluetooth delegate conformance
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout immutable probe head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only committed delta
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "60e1d682c0055de954cc79052bfe15a46386ffed"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-window-isolation-conformance-probe.yml"
+
+      - name: Apply one-line isolated-conformance compile probe
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift')
+          source = path.read_text()
+          old = 'public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCentralManagerDelegate {'
+          new = 'public final class PassiveBluetoothPowerCycleObservationSession: NSObject, @MainActor CBCentralManagerDelegate {'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one ordinary delegate conformance, found {source.count(old)}')
+          path.write_text(source.replace(old, new))
+          PY
+          test "$(git diff --name-only)" = "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift"
+          git diff --check
+          git diff -- Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 research package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraBluetoothCapture with isolated conformance probe
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build NembraBluetoothCapture for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
