@@ -30,6 +30,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_forwards_intended_device_through_private_path_only_runner(self):
         self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', self.source)
         self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
+        self.assertIn('--validate-private-input', self.source)
         self.assertIn('--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', self.source)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', self.source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
@@ -39,8 +41,10 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('field_device_udid=', self.source)
 
         self.assertIn('os.O_NOFOLLOW', self.runner_source)
-        self.assertIn('os.fstat(descriptor)', self.runner_source)
-        self.assertIn('metadata.st_mode & 0o077', self.runner_source)
+        self.assertIn('before = os.fstat(descriptor)', self.runner_source)
+        self.assertIn('after = os.fstat(descriptor)', self.runner_source)
+        self.assertIn('before.st_mode & 0o077', self.runner_source)
+        self.assertIn('before_identity != after_identity', self.runner_source)
         self.assertIn('inspector.main(inspector_arguments)', self.runner_source)
         self.assertNotIn('subprocess', self.runner_source)
         self.assertNotIn('os.environ', self.runner_source)
