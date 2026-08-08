@@ -121,6 +121,12 @@ final class VehicleStore {
             for await state in stream {
                 guard let self, !Task.isCancelled else { break }
                 self.state = state
+                if state.connection != .connected {
+                    // Connection loss can retire authority immediately on this
+                    // ordered state stream. It never promotes speed when a later
+                    // reconnect arrives; only source-owned evidence may do that.
+                    self.speedEvidenceAvailability = .unavailable
+                }
             }
         }
 
