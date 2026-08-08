@@ -67,7 +67,7 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         )
         return try PassiveBluetoothExperimentOneCoordinator(
             controller: controller,
-            fieldExecutionStatus: admission.status
+            researchAdmission: admission
         )
     }
 }
