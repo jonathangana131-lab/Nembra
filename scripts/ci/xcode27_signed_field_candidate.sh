@@ -24,12 +24,6 @@ if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* || ! -f "$NEMBRA_INTENDED_
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one absolute regular non-symlink private verification file." >&2
   exit 4
 fi
-if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
-  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
-then
-  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
-  exit 4
-fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
   echo "NEMBRA_EXPORT_OPTIONS_PLIST does not name an existing file." >&2
   exit 5
@@ -87,6 +81,11 @@ EXPORT_DIR="$WORK_ROOT/export"
 LOG_DIR="$WORK_ROOT/logs"
 INSPECTION_DIR="$WORK_ROOT/inspection"
 EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"
+INSPECTION_TOOL_ROOT="$WORK_ROOT/inspection-tools"
+PRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"
+INSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"
+PRIVATE_RUNNER_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_private_runner.py"
+INSPECTOR_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_evidence.py"
 RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
 if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
   RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
@@ -122,8 +121,54 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   fi
 fi
 
+cleanup() {
+  exec 7<&- 2>/dev/null || true
+  exec 8<&- 2>/dev/null || true
+  exec 9<&- 2>/dev/null || true
+  cd "$ROOT" >/dev/null 2>&1 || true
+  git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
+  rm -rf "$WORK_ROOT"
+  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
+    rm -rf "$FINAL_STAGING_DIR"
+  fi
+}
+trap cleanup EXIT
+
+umask 077
 rm -rf "$WORK_ROOT"
-mkdir -p "$WORK_ROOT" "$LOG_DIR" "$ARTIFACTS_PARENT"
+mkdir -p "$WORK_ROOT" "$LOG_DIR" "$INSPECTION_TOOL_ROOT" "$ARTIFACTS_PARENT"
+if ! git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH" > "$PRIVATE_RUNNER_SNAPSHOT" \
+  || ! git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH" > "$INSPECTOR_SNAPSHOT"
+then
+  echo "Could not materialize exact signed-field inspection tooling from SOURCE_SHA." >&2
+  exit 14
+fi
+PRIVATE_RUNNER_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"
+INSPECTOR_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"
+if [[ "$(git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \
+   || "$(git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]
+then
+  echo "Exact signed-field inspection tooling snapshot does not match SOURCE_SHA Git objects." >&2
+  exit 14
+fi
+chmod 0400 "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+
+# Bind exact source objects to inherited descriptors, then remove their mutable path names. FD 7 is
+# a one-shot preflight runner; FD 9 is the later evidence runner; FD 8 is the canonical inspector.
+exec 7< "$PRIVATE_RUNNER_SNAPSHOT"
+exec 8< "$INSPECTOR_SNAPSHOT"
+exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
+rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+rmdir "$INSPECTION_TOOL_ROOT"
+
+if ! python3 /dev/fd/7 \
+  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
+then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
+  exit 4
+fi
+exec 7<&-
+
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
 EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
@@ -152,16 +197,6 @@ if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 
 git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
-
-cleanup() {
-  cd "$ROOT" >/dev/null 2>&1 || true
-  git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
-  rm -rf "$WORK_ROOT"
-  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
-    rm -rf "$FINAL_STAGING_DIR"
-  fi
-}
-trap cleanup EXIT
 
 cd "$SOURCE_ROOT"
 IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
@@ -238,14 +273,17 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID remains behind the private mode-0600 file boundary. The producer passes
-# only the file path; the private runner opens it once with O_NOFOLLOW and hands the value to the
-# canonical inspector only in process memory. The inspector publishes under temporary WORK_ROOT.
-python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
+# The intended-device UDID remains behind the private mode-0600 file boundary. Both executable
+# Python subjects are exact SOURCE_SHA Git blobs held by descriptors whose path names were removed
+# before any build work; no mutable worktree path can swap the evidence implementation.
+python3 /dev/fd/9 \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+  --canonical-inspector-fd 8 \
   --output-dir "$INSPECTION_DIR"
+exec 8<&-
+exec 9<&-
 
 EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
 FIELD_BUILD_RECORD="$INSPECTION_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
@@ -422,6 +460,8 @@ cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
   echo "archive_log=logs/xcodebuild-archive.log"
   echo "export_log=logs/xcodebuild-export.log"
   echo "inspection_directory=inspection"
+  echo "private_runner_source_git_blob=$PRIVATE_RUNNER_BLOB_SHA"
+  echo "canonical_inspector_source_git_blob=$INSPECTOR_BLOB_SHA"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import io
-import importlib.util
 import os
 import stat
 import sys
@@ -94,20 +93,42 @@ def read_private_identifier(path: Path) -> str:
     return value
 
 
-def load_canonical_inspector() -> ModuleType:
-    inspector_path = Path(__file__).resolve().with_name(INSPECTOR_NAME)
-    try:
-        metadata = inspector_path.lstat()
-    except OSError as exc:
-        raise PrivateInputError("canonical signed-field inspector is missing") from exc
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise PrivateInputError("canonical signed-field inspector must be one regular non-symlink file")
+MAX_INSPECTOR_SOURCE_BYTES = 2 * 1024 * 1024
 
-    spec = importlib.util.spec_from_file_location("nembra_signed_field_artifact_evidence", inspector_path)
-    if spec is None or spec.loader is None:
-        raise PrivateInputError("canonical signed-field inspector could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+
+def load_canonical_inspector_from_fd(descriptor_number: int) -> ModuleType:
+    """Load one exact inspector source subject from an inherited regular-file descriptor."""
+    if descriptor_number < 3:
+        raise PrivateInputError("canonical inspector descriptor must not alias standard I/O")
+    try:
+        descriptor = os.dup(descriptor_number)
+    except OSError as exc:
+        raise PrivateInputError("canonical signed-field inspector descriptor is unavailable") from exc
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PrivateInputError("canonical signed-field inspector descriptor must name one regular file")
+        if metadata.st_size < 1 or metadata.st_size > MAX_INSPECTOR_SOURCE_BYTES:
+            raise PrivateInputError("canonical signed-field inspector source has an invalid bounded size")
+        with os.fdopen(os.dup(descriptor), "rb") as handle:
+            raw = handle.read(MAX_INSPECTOR_SOURCE_BYTES + 1)
+        final_metadata = os.fstat(descriptor)
+        if (
+            len(raw) != metadata.st_size
+            or _stable_file_identity(final_metadata) != _stable_file_identity(metadata)
+        ):
+            raise PrivateInputError("canonical signed-field inspector source changed while being read")
+    finally:
+        os.close(descriptor)
+
+    module = ModuleType("nembra_signed_field_artifact_evidence")
+    module.__file__ = f"<{INSPECTOR_NAME}:descriptor-bound>"
+    try:
+        code = compile(raw, module.__file__, "exec")
+        exec(code, module.__dict__)
+    except Exception as exc:
+        raise PrivateInputError("canonical signed-field inspector could not be loaded") from exc
     if not callable(getattr(module, "main", None)) or not hasattr(module, "EvidenceError"):
         raise PrivateInputError("canonical signed-field inspector does not expose the expected contract")
     return module
@@ -131,7 +152,7 @@ def invoke_inspector_redacted(inspector: ModuleType, inspector_arguments: list[s
 
 def run_inspector(args: argparse.Namespace) -> int:
     intended_device_identifier = read_private_identifier(args.intended_device_udid_file)
-    inspector = load_canonical_inspector()
+    inspector = load_canonical_inspector_from_fd(args.canonical_inspector_fd)
 
     # The raw identifier exists only in this process's memory. `main(argv)` consumes this explicit
     # list directly; `sys.argv` and the OS process table continue to contain only the private-file path.
@@ -201,6 +222,21 @@ def self_test() -> None:
         else:
             raise AssertionError("oversized verification input must fail closed")
 
+    with tempfile.TemporaryDirectory(prefix="nembra-inspector-source-") as temporary:
+        inspector_source = Path(temporary) / INSPECTOR_NAME
+        inspector_source.write_text(
+            "class EvidenceError(RuntimeError):\n    pass\n\ndef main(argv):\n    return 0\n",
+            encoding="utf-8",
+        )
+        inspector_source.chmod(0o400)
+        descriptor = os.open(inspector_source, os.O_RDONLY)
+        try:
+            loaded = load_canonical_inspector_from_fd(descriptor)
+        finally:
+            os.close(descriptor)
+        assert loaded.main([]) == 0
+        assert hasattr(loaded, "EvidenceError")
+
     class ExplodingInspector:
         def main(self, argv: list[str]) -> int:
             if expected not in argv:
@@ -262,6 +298,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="private mode-0600 file containing the verification-only intended field-device identifier",
     )
     parser.add_argument(
+        "--canonical-inspector-fd",
+        type=int,
+        help="inherited descriptor containing the exact canonical inspector source subject",
+    )
+    parser.add_argument(
         "--validate-intended-device-udid-file",
         type=Path,
         help="validate one private intended-device file and exit without invoking the signed-field inspector",
@@ -280,6 +321,7 @@ def main(argv: list[str]) -> int:
                 args.output_dir,
                 args.expected_source_sha,
                 args.intended_device_udid_file,
+                args.canonical_inspector_fd,
                 args.validate_intended_device_udid_file,
             )
         ):
@@ -296,6 +338,7 @@ def main(argv: list[str]) -> int:
                 args.output_dir,
                 args.expected_source_sha,
                 args.intended_device_udid_file,
+                args.canonical_inspector_fd,
             )
         ):
             raise PrivateInputError("private-input validation cannot be combined with inspector arguments")
@@ -310,6 +353,7 @@ def main(argv: list[str]) -> int:
             ("--output-dir", args.output_dir),
             ("--expected-source-sha", args.expected_source_sha),
             ("--intended-device-udid-file", args.intended_device_udid_file),
+            ("--canonical-inspector-fd", args.canonical_inspector_fd),
         )
         if value is None
     ]
