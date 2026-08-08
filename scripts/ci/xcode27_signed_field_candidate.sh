@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Retire the legacy raw-value environment seam before any child process starts. The producer accepts
+# only the private-file path below; a stale caller export must not propagate the raw device identifier.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
