@@ -47,11 +47,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateExactPrefixTests {
             lastProcessedQueueSequence: 2,
             currentAuthority: authority
         )
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: 6,
             processedThrough: 2,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
 
         do {
@@ -84,11 +85,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateExactPrefixTests {
             currentAuthority: authority
         )
 
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: 4,
             processedThrough: 4,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         try gate.markBoundaryRecorded(
             horizon,
