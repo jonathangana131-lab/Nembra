@@ -20,22 +20,29 @@ public extension PassiveBluetoothExperimentOneCoordinator {
             throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
         }
 
-        return try makeLiveES80Coordinator()
+        return try makeResearchFieldCoordinator()
     }
 
     /// Future public/release field-authorized construction seam.
     ///
     /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
-    /// verified external field authorization AND the package's production field-execution policy must
-    /// have deliberately reached GO. The private research-build exception cannot satisfy this guard.
+    /// verified external field authorization AND the package's final field-execution policy must have
+    /// deliberately reached GO. Signed evidence is necessary but not sufficient outside a deliberately
+    /// authorized private research build: ordinary builds remain fail-closed while the production
+    /// status is NO-GO.
     @MainActor
     static func makeAuthorizedES80(
         verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission
     ) throws -> PassiveBluetoothExperimentOneCoordinator {
-        guard PassiveBluetoothExperimentOneFieldExecutionGate.productionPermitsPhysicalProcedure else {
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
             throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
         }
 
+        return try makeLiveES80Coordinator()
+    }
+
+    @MainActor
+    private static func makeResearchFieldCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
         return try makeLiveES80Coordinator()
     }
 
