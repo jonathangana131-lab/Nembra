@@ -15,7 +15,10 @@ public struct PassiveBluetoothExperimentOneFinalShareIntegrityReport: Equatable,
     public let buildInstanceID: String
     public let softwareExport: PassiveBluetoothExperimentOneSoftwareExportIntegrityReport
 
-    public init(
+    // Package-owned construction is deliberate: product code treats possession of this value as
+    // evidence that inspect(_:) accepted the exact final Share bytes. Public clients may read the
+    // facts but cannot manufacture an analysis-ready report from caller-selected fields.
+    init(
         finalShareSHA256: String,
         finalShareByteCount: Int,
         experimentID: UUID,
