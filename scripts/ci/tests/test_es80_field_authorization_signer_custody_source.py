@@ -64,6 +64,23 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "A signing-user-owned executable is still caller-replaceable and must not be accepted as release authority tooling.",
         )
 
+    def test_openssl_executable_and_custody_ancestors_are_root_owned(self):
+        self.assertIn(
+            "executable_stat.st_uid != 0",
+            self.source,
+            "The release-authority executable must be root-owned, not merely signing-user-owned.",
+        )
+        self.assertIn(
+            "directory_stat.st_uid != 0",
+            self.source,
+            "Every canonical OpenSSL custody ancestor must be root-owned.",
+        )
+        self.assertNotIn(
+            "executable_stat.st_uid not in {0, signing_uid}",
+            self.source,
+            "A signing-user-owned executable remains replaceable by that identity between validation and exec.",
+        )
+
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
             'stat.S_IMODE' in self.source or 'st_mode' in self.source,

@@ -151,12 +151,14 @@ def require_openssl() -> str:
     if executable_stat.st_mode & 0o111 == 0:
         raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
 
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+    if not hasattr(os, "geteuid"):
+        raise AuthorizationEnvelopeError(
+            "platform cannot verify root custody for the OpenSSL executable"
+        )
+    if executable_stat.st_uid != 0:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root for field-authorization signing"
+        )
 
     directory = resolved.parent
     while True:
@@ -166,6 +168,14 @@ def require_openssl() -> str:
             raise AuthorizationEnvelopeError(
                 "could not inspect OpenSSL executable custody path"
             ) from exc
+        if not stat.S_ISDIR(directory_stat.st_mode):
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody ancestor is not a directory: {directory}"
+            )
+        if directory_stat.st_uid != 0:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must be root-owned: {directory}"
+            )
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
