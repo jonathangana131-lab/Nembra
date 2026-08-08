@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-/// Expected-red source contract for the first controller consumer of the sealed
-/// Experiment One admission. Software ownership/provenance only; no physical claim.
+/// Source contract for the controller consumer of the sealed Experiment One admission.
+/// Software ownership/provenance only; no physical claim.
 struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTests {
     private static func controllerSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
@@ -40,12 +40,15 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
         #expect(source.contains("let payload = try admission.consume()"))
     }
 
-    @Test("Experiment One target comes from consumed full UUID and must exist in the current controller catalog")
+    @Test("Experiment One target is staged from producer preview and the consumed payload must match it")
     func consumedTargetMustBeFreshlyDiscoveredByThisController() throws {
         let source = Self.codeOnly(try Self.controllerSource())
 
-        #expect(source.contains("peripheralByIdentifier[payload.peripheralIdentifier]"))
-        #expect(source.contains("latestDiscoveryByIdentifier[payload.peripheralIdentifier]"))
+        #expect(source.contains("let preview = try admission.previewForControllerStaging()"))
+        #expect(source.contains("peripheralByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("latestDiscoveryByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("latestAdvertisementByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("payload.peripheralIdentifier == preview.peripheralIdentifier"))
         #expect(source.contains("targetState.selectTarget(payload.peripheralIdentifier)"))
     }
 
@@ -56,9 +59,6 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
         #expect(source.contains("recorder = payload.recorder"))
         #expect(!source.contains("beginTargetSessionIfNeeded(for: payload.peripheralIdentifier)"))
         #expect(!source.contains("connect(to: payload.peripheralIdentifier"))
-
-        // The generic research path already owns one recorder constructor. The
-        // Experiment One consumer must not add a second constructor to this file.
         #expect(source.components(separatedBy: "PassiveCoreBluetoothCaptureRecorder(").count - 1 == 1)
     }
 }
