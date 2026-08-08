@@ -6,9 +6,9 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     private static func controllerSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
-            .deletingLastPathComponent() // NembraBluetoothCaptureTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // NembraBluetoothCapture package root
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let controller = packageRoot
             .appendingPathComponent("Sources")
             .appendingPathComponent("NembraBluetoothCapture")
@@ -19,9 +19,9 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     private static func researchViewSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
-            .deletingLastPathComponent() // NembraBluetoothCaptureTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // NembraBluetoothCapture package root
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let view = packageRoot
             .appendingPathComponent("Sources")
             .appendingPathComponent("NembraBluetoothCapture")
@@ -60,13 +60,15 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         for mutation in [
             "peripheralByIdentifier[peripheral.identifier] = peripheral",
             "latestDiscoveryByIdentifier[peripheral.identifier] = discovery",
-            "updateDiscoveryList()",
             "latestAdvertisementByIdentifier[peripheral.identifier] = CandidateAdvertisement(",
             "enqueue(.advertisement(observation), receipt: receipt)",
             "lastDiagnostic = Self.diagnostic(error, fallback: \"Candidate advertisement mapping failed.\")",
         ] {
             #expect(guardOffset < (try Self.offset(of: mutation, in: body)))
         }
+        // `discoveredPeripherals` is now a computed, sorted presentation projection;
+        // discovery callbacks must not pay a separate update/sort mutation on the hot path.
+        #expect(!body.contains("updateDiscoveryList()"))
     }
 
     @Test
@@ -163,31 +165,35 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         #expect(body.contains("cancelActiveConnection(cause: .finalizedArtifactTeardown)"))
         #expect(!body.contains("PassiveCoreBluetoothCancellationBoundary"))
 
+        let targetCancellation = try Self.section(
+            in: String(body),
+            from: "        if targetState.selectedTargetIdentifier == peripheral.identifier {",
+            to: "        _ = targetState.retireActiveAttempt()"
+        )
         let interruptionOffset = try Self.offset(
             of: "if let interruptionReason = cause.interruptionReason {",
-            in: body
+            in: targetCancellation
         )
         let pendingOffset = try Self.offset(
             of: "selectedTargetCancellationPending = true",
-            in: body
+            in: targetCancellation
         )
         let authorityOffset = try Self.offset(
             of: "guard advanceArtifactAuthority() else { return }",
-            in: body
+            in: targetCancellation
         )
-        let retirementOffset = try Self.offset(
-            of: "_ = targetState.retireActiveAttempt()",
+        #expect(interruptionOffset < pendingOffset)
+        #expect(interruptionOffset < authorityOffset)
+
+        let normalRetirementOffset = try Self.offset(
+            of: "        _ = targetState.retireActiveAttempt()",
             in: body
         )
         let transportCancelOffset = try Self.offset(
-            of: "centralManager.cancelPeripheralConnection(peripheral)",
+            of: "        centralManager.cancelPeripheralConnection(peripheral)",
             in: body
         )
-
-        #expect(interruptionOffset < pendingOffset)
-        #expect(interruptionOffset < authorityOffset)
-        #expect(interruptionOffset < retirementOffset)
-        #expect(interruptionOffset < transportCancelOffset)
+        #expect(normalRetirementOffset < transportCancelOffset)
     }
 
     @Test
@@ -198,20 +204,20 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
             from: "    public func teardownActiveConnectionAfterFinalization() throws {",
             to: "    private func cancelActiveConnection(cause:"
         )
-        let authorizationOffset = try Self.offset(
-            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+        let terminalGuardOffset = try Self.offset(
+            of: "guard observationBoundaryQueueGate.isTerminal else {",
             in: teardown
         )
-        let rejectionOffset = try Self.offset(
-            of: "throw ControllerError.artifactNotFinalized",
+        let authorizationOffset = try Self.offset(
+            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
             in: teardown
         )
         let transportOffset = try Self.offset(
             of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
             in: teardown
         )
-        #expect(authorizationOffset < rejectionOffset)
-        #expect(rejectionOffset < transportOffset)
+        #expect(terminalGuardOffset < authorizationOffset)
+        #expect(authorizationOffset < transportOffset)
 
         let artifactReads = try Self.section(
             in: source,
@@ -225,17 +231,22 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
         let authorityAdvance = try Self.section(
             in: source,
             from: "    private func advanceArtifactAuthority() -> Bool {",
-            to: "    private func scheduleConnectionTimeout("
+            to: "    private func currentArtifactAuthorityContext()"
+        )
+        let transitionOffset = try Self.offset(
+            of: "try artifactAuthorityFence.transition(",
+            in: authorityAdvance
+        )
+        let generationOffset = try Self.offset(
+            of: "artifactAuthorityGeneration = nextAuthority.authorityGeneration",
+            in: authorityAdvance
         )
         let revokeOffset = try Self.offset(
             of: "lastFinalizedArtifactAuthority = nil",
             in: authorityAdvance
         )
-        let generationOffset = try Self.offset(
-            of: "artifactAuthorityGeneration += 1",
-            in: authorityAdvance
-        )
-        #expect(revokeOffset < generationOffset)
+        #expect(transitionOffset < generationOffset)
+        #expect(generationOffset < revokeOffset)
     }
 
     @Test
@@ -263,20 +274,26 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
             in: teardown
         )
         #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)
+
         let cancellation = try Self.section(
             in: source,
             from: "    private func cancelActiveConnection(cause:",
             to: "    /// Adds a human-observed stock-app value"
         )
+        let targetCancellation = try Self.section(
+            in: String(cancellation),
+            from: "        if targetState.selectedTargetIdentifier == peripheral.identifier {",
+            to: "        _ = targetState.retireActiveAttempt()"
+        )
         let pendingOffset = try Self.offset(
             of: "selectedTargetCancellationPending = true",
-            in: cancellation
+            in: targetCancellation
         )
-        let retirementOffset = try Self.offset(
-            of: "_ = targetState.retireActiveAttempt()",
-            in: cancellation
+        let authorityOffset = try Self.offset(
+            of: "guard advanceArtifactAuthority() else { return }",
+            in: targetCancellation
         )
-        #expect(pendingOffset < retirementOffset)
+        #expect(pendingOffset < authorityOffset)
 
         let marker = try Self.section(
             in: source,
