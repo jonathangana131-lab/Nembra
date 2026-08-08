@@ -391,23 +391,111 @@ def build_envelope(
     )
 
 
-def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:
+def write_envelope_no_replace(
+    output: Path,
+    envelope: bytes,
+    *,
+    link_fn=os.link,
+) -> Path:
+    """Publish complete authority bytes atomically without replacing an existing subject.
+
+    The public output path remains absent while a private sibling is fully written, fsynced, and
+    re-read from its open descriptor. A same-filesystem hard link is then the single publication
+    operation; it fails if the destination already exists and cannot expose a partial final file.
+    """
     resolved = require_external_path(output, "signed authorization envelope output")
     resolved.parent.mkdir(parents=True, exist_ok=True)
+
+    staging_descriptor = -1
+    staging_path: Path | None = None
     try:
-        with resolved.open("xb") as handle:
-            handle.write(envelope)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except FileExistsError as exc:
-        raise AuthorizationEnvelopeError(
-            f"refusing to overwrite existing signed authorization envelope: {resolved}"
-        ) from exc
+        staging_descriptor, staging_name = tempfile.mkstemp(
+            prefix=f".{resolved.name}.staging-",
+            dir=resolved.parent,
+        )
+        staging_path = Path(staging_name)
+        os.fchmod(staging_descriptor, 0o600)
+
+        view = memoryview(envelope)
+        offset = 0
+        while offset < len(view):
+            written = os.write(staging_descriptor, view[offset:])
+            if written <= 0:
+                raise AuthorizationEnvelopeError(
+                    "could not stage complete signed authorization envelope bytes"
+                )
+            offset += written
+        os.fsync(staging_descriptor)
+
+        staged_stat = os.fstat(staging_descriptor)
+        if not stat.S_ISREG(staged_stat.st_mode) or staged_stat.st_size != len(envelope):
+            raise AuthorizationEnvelopeError(
+                "staged signed authorization envelope is not one exact regular-file subject"
+            )
+        os.lseek(staging_descriptor, 0, os.SEEK_SET)
+        with os.fdopen(os.dup(staging_descriptor), "rb", closefd=True) as staged_handle:
+            if staged_handle.read(len(envelope) + 1) != envelope:
+                raise AuthorizationEnvelopeError(
+                    "staged signed authorization envelope bytes diverged before publication"
+                )
+
+        try:
+            link_fn(staging_path, resolved)
+        except FileExistsError as exc:
+            raise AuthorizationEnvelopeError(
+                f"refusing to overwrite existing signed authorization envelope: {resolved}"
+            ) from exc
+        except OSError as exc:
+            raise AuthorizationEnvelopeError(
+                "could not atomically publish signed authorization envelope"
+            ) from exc
+
+        published_descriptor = -1
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            published_descriptor = os.open(resolved, flags)
+            published_stat = os.fstat(published_descriptor)
+            if (
+                published_stat.st_dev,
+                published_stat.st_ino,
+                published_stat.st_size,
+            ) != (
+                staged_stat.st_dev,
+                staged_stat.st_ino,
+                staged_stat.st_size,
+            ):
+                raise AuthorizationEnvelopeError(
+                    "published authorization envelope is not the exact staged file subject"
+                )
+            with os.fdopen(published_descriptor, "rb", closefd=True) as handle:
+                published_descriptor = -1
+                if handle.read(len(envelope) + 1) != envelope:
+                    raise AuthorizationEnvelopeError(
+                        "published authorization envelope bytes diverged"
+                    )
+        finally:
+            if published_descriptor >= 0:
+                os.close(published_descriptor)
+
+        return resolved
+    except AuthorizationEnvelopeError:
+        raise
     except OSError as exc:
-        raise AuthorizationEnvelopeError("could not publish signed authorization envelope") from exc
-    if resolved.read_bytes() != envelope:
-        raise AuthorizationEnvelopeError("published authorization envelope bytes diverged")
-    return resolved
+        raise AuthorizationEnvelopeError(
+            "could not stage signed authorization envelope for publication"
+        ) from exc
+    finally:
+        if staging_descriptor >= 0:
+            os.close(staging_descriptor)
+        if staging_path is not None:
+            try:
+                staging_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                # Publication, if it happened, already points at the complete staged inode. A
+                # cleanup failure must not become a false signer failure that encourages re-signing.
+                pass
 
 
 def create_envelope(
@@ -513,6 +601,30 @@ def self_test() -> None:
                 raise
         else:
             raise AssertionError("existing authorization envelope was overwritten")
+
+        if list(directory.glob(f".{envelope_path.name}.staging-*")):
+            raise AssertionError("successful/no-replace signer left a staging artifact behind")
+
+        failed_publication_path = directory / "failed-publication-envelope.json"
+
+        def reject_publication_link(_staging: Path, _output: Path) -> None:
+            raise OSError("simulated pre-publication link failure")
+
+        try:
+            write_envelope_no_replace(
+                failed_publication_path,
+                b"complete-but-unpublished-envelope\n",
+                link_fn=reject_publication_link,
+            )
+        except AuthorizationEnvelopeError as error:
+            if "atomically publish" not in str(error):
+                raise
+        else:
+            raise AssertionError("simulated publication failure unexpectedly succeeded")
+        if failed_publication_path.exists():
+            raise AssertionError("failed publication exposed a partial/final authority path")
+        if list(directory.glob(f".{failed_publication_path.name}.staging-*")):
+            raise AssertionError("failed publication left a staging artifact behind")
 
         permissive_key = directory / "permissive-private-key.pem"
         run_openssl(
