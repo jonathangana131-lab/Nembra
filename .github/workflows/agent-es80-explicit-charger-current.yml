@@ -1,0 +1,88 @@
+name: Agent ES80 explicit charger declaration
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-explicit-charger-current/chatgpt56
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-explicit-charger-current/chatgpt56
+          fetch-depth: 0
+      - name: Apply explicit charger-state declaration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          text = shell.read_text()
+
+          state_old = '''    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?\n    @State private var showingDetails = false'''
+          state_new = '''    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?\n    @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?\n    @State private var showingDetails = false'''
+          if text.count(state_old) != 1:
+              raise SystemExit(f'expected one stationary setup state anchor, found {text.count(state_old)}')
+          text = text.replace(state_old, state_new, 1)
+
+          preflight_old = '''                statePanel(\n                    eyebrow: "PREFLIGHT / DECLARATION",\n                    title: "Confirm stationary setup",\n                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",\n                    symbol: "checkmark.shield"\n                )\n                primaryButton(\n                    "Confirm setup",\n                    systemImage: "checkmark.circle.fill",\n                    identifier: "es80.capture.confirm-setup"\n                ) {\n                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(\n                        chargerState: .disconnected,\n                        executionContext: .foregroundUnlockedScreenOn,\n                        stockAppReferenceSetup: .none\n                    )\n                }\n                guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")'''
+          preflight_new = '''                statePanel(\n                    eyebrow: "PREFLIGHT / DECLARATION",\n                    title: "Declare stationary setup",\n                    message: "Choose the charger state you can physically see right now. Experiment One can continue only with the charger unplugged, Nembra foregrounded with the screen unlocked, and the stock scooter app closed.",\n                    symbol: "checkmark.shield"\n                )\n\n                chargerChoiceButton(\n                    "CHARGER UNPLUGGED",\n                    state: .disconnected,\n                    identifier: "es80.capture.charger-unplugged"\n                )\n                chargerChoiceButton(\n                    "CHARGER CONNECTED",\n                    state: .connected,\n                    identifier: "es80.capture.charger-connected"\n                )\n\n                if selectedChargerState == .disconnected {\n                    primaryButton(\n                        "Confirm stationary setup",\n                        systemImage: "checkmark.circle.fill",\n                        identifier: "es80.capture.confirm-setup"\n                    ) {\n                        declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(\n                            chargerState: .disconnected,\n                            executionContext: .foregroundUnlockedScreenOn,\n                            stockAppReferenceSetup: .none\n                        )\n                        selectedChargerState = nil\n                        diagnosticMessage = nil\n                    }\n                } else if selectedChargerState == .connected {\n                    diagnosticBanner("Charger connected. Unplug the scooter charger, then select CHARGER UNPLUGGED before confirming this Experiment One setup.")\n                }\n\n                guidanceFootnote("Your selection and confirmation are operator-declared setup provenance, not independent proof that these conditions held continuously.")'''
+          if text.count(preflight_old) != 1:
+              raise SystemExit(f'expected one one-tap preflight block, found {text.count(preflight_old)}')
+          text = text.replace(preflight_old, preflight_new, 1)
+
+          reset_old = '''        sharePreparationWarning = nil\n        declaredStationarySetup = nil\n        showingDetails = false'''
+          reset_new = '''        sharePreparationWarning = nil\n        declaredStationarySetup = nil\n        selectedChargerState = nil\n        showingDetails = false'''
+          if text.count(reset_old) != 1:
+              raise SystemExit(f'expected one setup reset anchor, found {text.count(reset_old)}')
+          text = text.replace(reset_old, reset_new, 1)
+
+          helper_anchor = '''    private func primaryButton(\n        _ title: String,'''
+          helper = '''    private func chargerChoiceButton(\n        _ title: String,\n        state: PassiveBluetoothStationaryCaptureChargerState,\n        identifier: String\n    ) -> some View {\n        let isSelected = selectedChargerState == state\n        return Button {\n            selectedChargerState = state\n            diagnosticMessage = nil\n        } label: {\n            HStack(spacing: 12) {\n                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")\n                    .font(.headline)\n                    .accessibilityHidden(true)\n                Text(title)\n                    .font(.subheadline.monospaced().weight(.bold))\n                Spacer(minLength: 8)\n                Text(state == .disconnected ? "Required" : "Blocked")\n                    .font(.caption.monospaced().weight(.semibold))\n                    .foregroundStyle(.secondary)\n            }\n            .foregroundStyle(.white)\n            .padding(.horizontal, 16)\n            .frame(maxWidth: .infinity)\n            .frame(minHeight: 52)\n            .background(\n                isSelected ? .white.opacity(0.14) : .white.opacity(0.065),\n                in: RoundedRectangle(cornerRadius: 14, style: .continuous)\n            )\n            .overlay {\n                RoundedRectangle(cornerRadius: 14, style: .continuous)\n                    .stroke(isSelected ? .white.opacity(0.42) : .white.opacity(0.10), lineWidth: 1)\n            }\n        }\n        .buttonStyle(.plain)\n        .accessibilityIdentifier(identifier)\n        .accessibilityValue(isSelected ? "Selected" : "Not selected")\n        .accessibilityHint(\n            state == .disconnected\n                ? "Select when the scooter charger is physically unplugged."\n                : "Selecting connected blocks Experiment One until the charger is unplugged."\n        )\n    }\n\n    private func primaryButton(\n        _ title: String,'''
+          if text.count(helper_anchor) != 1:
+              raise SystemExit(f'expected one primary button helper anchor, found {text.count(helper_anchor)}')
+          text = text.replace(helper_anchor, helper, 1)
+          shell.write_text(text)
+
+          test = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          test_text = test.read_text()
+          test_anchor = '''    private func captureShellSource() throws -> String {'''
+          test_case = '''    func testStationarySetupRequiresExplicitChargerDeclarationAndConnectedStateFailsClosed() throws {\n        let source = try captureShellSource()\n\n        XCTAssertTrue(\n            source.contains("@State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?"),\n            "The operator's visible charger choice must be retained separately from confirmed setup provenance."\n        )\n        XCTAssertTrue(source.contains("CHARGER UNPLUGGED"))\n        XCTAssertTrue(source.contains("CHARGER CONNECTED"))\n        XCTAssertTrue(source.contains("identifier: \\"es80.capture.charger-unplugged\\""))\n        XCTAssertTrue(source.contains("identifier: \\"es80.capture.charger-connected\\""))\n        XCTAssertTrue(\n            source.contains("if selectedChargerState == .disconnected"),\n            "Only an explicitly selected unplugged state may expose setup confirmation."\n        )\n        XCTAssertTrue(\n            source.contains("else if selectedChargerState == .connected"),\n            "A connected charger declaration must remain an explicit fail-closed product state."\n        )\n        XCTAssertTrue(\n            source.contains("Charger connected. Unplug the scooter charger"),\n            "The connected state must give a visible corrective action instead of silently coercing provenance."\n        )\n        XCTAssertTrue(\n            source.contains("chargerState: .disconnected"),\n            "Confirmed stationary setup must retain the exact allowed charger declaration."\n        )\n        XCTAssertTrue(\n            source.contains("selectedChargerState = nil"),\n            "A fresh Experiment One must not inherit an earlier charger choice."\n        )\n        XCTAssertFalse(\n            source.contains("Confirm only when those are your declared setup conditions"),\n            "The old one-tap path that silently wrote disconnected provenance must be removed."\n        )\n    }\n\n    private func captureShellSource() throws -> String {'''
+          if test_text.count(test_anchor) != 1:
+              raise SystemExit(f'expected one UI source helper anchor, found {test_text.count(test_anchor)}')
+          test.write_text(test_text.replace(test_anchor, test_case, 1))
+          PY
+      - name: Verify truth boundary and exact diff shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          shell=NembraApp/Features/Research/ES80CaptureShellView.swift
+          tests=NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -F '@State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?' "$shell"
+          grep -F 'CHARGER UNPLUGGED' "$shell"
+          grep -F 'CHARGER CONNECTED' "$shell"
+          grep -F 'if selectedChargerState == .disconnected' "$shell"
+          grep -F 'else if selectedChargerState == .connected' "$shell"
+          grep -F 'Charger connected. Unplug the scooter charger' "$shell"
+          grep -F 'chargerState: .disconnected' "$shell"
+          grep -F 'testStationarySetupRequiresExplicitChargerDeclarationAndConnectedStateFailsClosed' "$tests"
+          ! grep -F 'Confirm only when those are your declared setup conditions' "$shell"
+          git diff --check
+      - name: Remove temporary workflow and checkpoint product change
+        shell: bash
+        run: |
+          rm .github/workflows/agent-es80-explicit-charger-current.yml
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+            NembraUITests/ES80ResearchCaptureUITests.swift \
+            .github/workflows/agent-es80-explicit-charger-current.yml
+          git commit -m 'fix(capture): require explicit charger setup declaration'
+          git push origin HEAD:integration/es80-v14-explicit-charger-current/chatgpt56
