@@ -40,6 +40,10 @@ private struct PortraitRootView: View {
 
             NavigationStack {
                 RideHistoryView()
+                    // Match Home's deliberate clearance for iOS 27's floating
+                    // tab chrome. History rows remain reachable at the scroll end
+                    // instead of terminating under navigation controls.
+                    .safeAreaPadding(.bottom, 72)
             }
             .tabItem {
                 Label("Rides", systemImage: "clock.arrow.circlepath")
@@ -126,6 +130,7 @@ private struct RideHistoryView: View {
             }
         }
         .navigationTitle("Rides")
+        .navigationBarTitleDisplayMode(.large)
         .task(id: rides.lastCompletedSessionID) {
             await history.refresh()
         }
@@ -144,7 +149,7 @@ private struct RideHistoryView: View {
             ContentUnavailableView(
                 "No completed rides",
                 systemImage: "clock.arrow.circlepath",
-                description: Text("Safely saved rides will appear here. Nembra will not invent route or distance data that was never recorded.")
+                description: Text("Completed rides appear here automatically after Nembra safely saves them.")
             )
             .accessibilityIdentifier("rides.empty")
         case .unavailable, .failed:
@@ -165,6 +170,7 @@ private struct RideHistoryView: View {
                         history.lastErrorMessage ?? "Ride history could not be refreshed safely.",
                         systemImage: "exclamationmark.triangle"
                     )
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 }
             }
@@ -178,99 +184,135 @@ private struct RideHistoryView: View {
                     }
                     .accessibilityIdentifier("rides.completed-row")
                 }
-            } footer: {
-                Text("Distance sources stay separate until their coverage can be reconciled. A row never turns unreconciled evidence into a final ride total.")
+            } header: {
+                HStack {
+                    Text("Saved rides")
+                    Spacer()
+                    Text("\(history.records.count)")
+                        .monospacedDigit()
+                        .accessibilityLabel("\(history.records.count) saved rides")
+                }
             }
         }
+        .listStyle(.plain)
         .accessibilityIdentifier("rides.history")
     }
 }
 
 private struct RideHistoryRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let record: RideHistoryRecord
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: record.evidence.continuity == .recoveredCheckpoint
-                  ? "arrow.triangle.2.circlepath"
-                  : "checkmark.circle.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 28)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.headline)
-                Text(continuityLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    identityBlock
+                    distanceBlock(alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .center, spacing: 18) {
+                    identityBlock
+                    Spacer(minLength: 16)
+                    distanceBlock(alignment: .trailing)
+                }
             }
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel)
+        .accessibilityValue(rowAccessibilityValue)
+    }
 
-            Spacer(minLength: 12)
+    private var identityBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .omitted))
+                .font(.headline)
+                .foregroundStyle(.primary)
 
-            VStack(alignment: .trailing, spacing: 3) {
-                if let odometerDeltaKilometers {
-                    evidenceLine(
-                        label: "ODO",
-                        value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
-                    )
-                }
+            HStack(spacing: 8) {
+                Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
 
-                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-                    evidenceLine(
-                        label: "GPS",
-                        value: VehicleDisplayFormatting.distance(
-                            kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-                        )
-                    )
-                }
-
-                if !hasDistanceEvidence {
-                    Text("Distance —")
+                if isRecovered {
+                    Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Completed ride")
-        .accessibilityValue("\(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened)), \(distanceEvidenceAccessibilityValue), \(continuityLabel)")
     }
 
-    private func evidenceLine(label: String, value: String) -> some View {
-        HStack(spacing: 5) {
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+    @ViewBuilder
+    private func distanceBlock(alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 5) {
+            if let odometerDeltaKilometers {
+                distanceLine(
+                    label: "Scooter",
+                    value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
+                )
+            }
+
+            if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                distanceLine(
+                    label: "GPS",
+                    value: VehicleDisplayFormatting.distance(
+                        kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+                    )
+                )
+            }
+
+            if !hasDistanceEvidence {
+                Text("Distance unavailable")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    private var continuityLabel: String {
-        record.evidence.continuity == .recoveredCheckpoint
-            ? "Recovered ride"
-            : "Completed ride"
+    private func distanceLine(label: String, value: String) -> some View {
+        HStack(spacing: 7) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.primary)
+        }
     }
 
-    private var hasDistanceEvidence: Bool {
-        odometerDeltaKilometers != nil || record.evidence.qualityScreenedGPSDistanceMeters > 0
+    private var rowAccessibilityLabel: String {
+        "Ride on \(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .omitted))"
     }
 
-    private var distanceEvidenceAccessibilityValue: String {
-        var parts: [String] = []
+    private var rowAccessibilityValue: String {
+        var parts = [record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened)]
         if let odometerDeltaKilometers {
             parts.append(
-                "ODO evidence \(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))"
+                "scooter distance \(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))"
             )
         }
         if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
             parts.append(
-                "GPS distance evidence \(VehicleDisplayFormatting.distance(kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000))"
+                "GPS recorded distance \(VehicleDisplayFormatting.distance(kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000))"
             )
         }
-        return parts.isEmpty ? "distance evidence unavailable" : parts.joined(separator: ", ")
+        if !hasDistanceEvidence {
+            parts.append("distance unavailable")
+        }
+        if isRecovered {
+            parts.append("recovered after relaunch")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var isRecovered: Bool {
+        record.evidence.continuity == .recoveredCheckpoint
+    }
+
+    private var hasDistanceEvidence: Bool {
+        odometerDeltaKilometers != nil || record.evidence.qualityScreenedGPSDistanceMeters > 0
     }
 
     private var odometerDeltaKilometers: Double? {
@@ -284,60 +326,15 @@ private struct RideHistoryRowView: View {
 
 private struct RideHistoryDetailView: View {
     @Environment(RideRoutePresentationStore.self) private var routes
+    @State private var recordingDetailsExpanded = false
     let record: RideHistoryRecord
 
     var body: some View {
         List {
-            Section("Ride timeline") {
-                LabeledContent("Started") {
-                    Text(timestamp(record.evidence.beganAtDate))
-                }
-                LabeledContent("Confirmed") {
-                    Text(timestamp(record.evidence.confirmedAtDate))
-                }
-                LabeledContent("Ended") {
-                    Text(timestamp(record.evidence.endedAtDate))
-                }
-                LabeledContent("Continuity") {
-                    Text(record.evidence.continuity == .recoveredCheckpoint
-                         ? "Recovered after relaunch"
-                         : "Uninterrupted process")
-                }
-            }
-
-            Section {
-                if let odometerDeltaKilometers {
-                    LabeledContent("Scooter odometer delta") {
-                        Text(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))
-                            .monospacedDigit()
-                    }
-                    .accessibilityIdentifier("rides.evidence.odometer")
-                }
-
-                if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-                    LabeledContent("GPS distance evidence") {
-                        Text(
-                            VehicleDisplayFormatting.distance(
-                                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-                            )
-                        )
-                        .monospacedDigit()
-                    }
-                    .accessibilityIdentifier("rides.evidence.gps")
-                }
-
-                if odometerDeltaKilometers == nil,
-                   record.evidence.qualityScreenedGPSDistanceMeters == 0 {
-                    Text("No distance evidence was durably recorded for this ride.")
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Distance evidence")
-            } footer: {
-                Text("Nembra keeps independent sources separate until coverage can be reconciled. Neither value is silently promoted into a final ride distance.")
-            }
-
+            summarySection
             routeSection
+            distanceSection
+            recordingDetailsSection
         }
         .navigationTitle("Ride Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -348,35 +345,65 @@ private struct RideHistoryDetailView: View {
         }
     }
 
+    private var summarySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(record.evidence.endedAtDate.formatted(date: .complete, time: .omitted))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                HStack(spacing: 10) {
+                    Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+
+                    if isRecovered {
+                        Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
     @ViewBuilder
     private var routeSection: some View {
         Section("Route") {
             if let geometry = routes.geometry(sessionID: record.sessionID) {
                 if geometry.hasDrawablePath {
                     RideRouteMapView(geometry: geometry)
-                        .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .frame(height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Recorded ride route")
+                        .accessibilityValue(routeAccessibilityValue(geometry))
+                        .accessibilityHint("Shows only route points Nembra recorded for this ride.")
                         .accessibilityIdentifier("rides.route-map")
                 } else {
                     Label("Route points recorded", systemImage: "mappin.and.ellipse")
                         .font(.subheadline.weight(.semibold))
-                    Text("Nembra stored real coordinates, but this ride does not contain enough continuous points to draw a path.")
+                    Text("Recorded coordinates exist, but there are not enough continuous points to draw a route.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("rides.route-points-only")
                 }
 
-                LabeledContent("Coverage") {
-                    Text(routeCoverageLabel(geometry.coverage))
-                }
-                LabeledContent("Recorded points") {
-                    Text("\(geometry.pointCount)")
-                        .monospacedDigit()
-                }
-                if geometry.knownGapCount > 0 {
-                    LabeledContent("Known route gaps") {
-                        Text("\(geometry.knownGapCount)")
+                DisclosureGroup("Route recording") {
+                    LabeledContent("Coverage") {
+                        Text(routeCoverageLabel(geometry.coverage))
+                    }
+                    LabeledContent("Recorded points") {
+                        Text("\(geometry.pointCount)")
                             .monospacedDigit()
+                    }
+                    if geometry.knownGapCount > 0 {
+                        LabeledContent("Known gaps") {
+                            Text("\(geometry.knownGapCount)")
+                                .monospacedDigit()
+                        }
                     }
                 }
             } else {
@@ -402,11 +429,66 @@ private struct RideHistoryDetailView: View {
         }
     }
 
+    private var distanceSection: some View {
+        Section {
+            if let odometerDeltaKilometers {
+                LabeledContent("Scooter distance") {
+                    Text(VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers))
+                        .monospacedDigit()
+                }
+                .accessibilityIdentifier("rides.evidence.odometer")
+            }
+
+            if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
+                LabeledContent("GPS recorded distance") {
+                    Text(
+                        VehicleDisplayFormatting.distance(
+                            kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+                        )
+                    )
+                    .monospacedDigit()
+                }
+                .accessibilityIdentifier("rides.evidence.gps")
+            }
+
+            if odometerDeltaKilometers == nil,
+               record.evidence.qualityScreenedGPSDistanceMeters == 0 {
+                Text("No distance was durably recorded for this ride.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Distance")
+        } footer: {
+            Text("Recorded sources stay separate when Nembra cannot prove one final ride distance.")
+        }
+    }
+
+    private var recordingDetailsSection: some View {
+        Section {
+            DisclosureGroup("Recording details", isExpanded: $recordingDetailsExpanded) {
+                LabeledContent("Started") {
+                    Text(timestamp(record.evidence.beganAtDate))
+                }
+                LabeledContent("Confirmed") {
+                    Text(timestamp(record.evidence.confirmedAtDate))
+                }
+                LabeledContent("Ended") {
+                    Text(timestamp(record.evidence.endedAtDate))
+                }
+                LabeledContent("Continuity") {
+                    Text(isRecovered ? "Recovered after relaunch" : "Uninterrupted process")
+                }
+            }
+        } footer: {
+            Text("Recording details preserve source and continuity truth without changing the ride summary above.")
+        }
+    }
+
     private var routeUnavailableContent: some View {
         Group {
-            Label("No route geometry recorded", systemImage: "map")
+            Label("No route recorded", systemImage: "map")
                 .font(.subheadline.weight(.semibold))
-            Text("A map appears only when Nembra has durably stored real quality-screened route points. This record contains no coordinates to draw truthfully.")
+            Text("This ride has no stored coordinates to draw.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("rides.route-unavailable")
@@ -424,6 +506,16 @@ private struct RideHistoryDetailView: View {
         }
     }
 
+    private func routeAccessibilityValue(_ geometry: RideRouteGeometry) -> String {
+        var parts = [routeCoverageLabel(geometry.coverage)]
+        parts.append("\(geometry.pointCount) recorded points")
+        if geometry.knownGapCount > 0 {
+            let noun = geometry.knownGapCount == 1 ? "known gap" : "known gaps"
+            parts.append("\(geometry.knownGapCount) \(noun)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
     private func routeCoverageLabel(_ coverage: RideDistanceCoverage) -> String {
         switch coverage {
         case .complete:
@@ -433,6 +525,10 @@ private struct RideHistoryDetailView: View {
         case .unknown:
             "Coverage unknown"
         }
+    }
+
+    private var isRecovered: Bool {
+        record.evidence.continuity == .recoveredCheckpoint
     }
 
     private var odometerDeltaKilometers: Double? {
