@@ -18,6 +18,13 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         )
     }
 
+    private var nextSessionAuthority: PassiveCoreBluetoothArtifactAuthorityContext {
+        PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authorityA.targetSessionGeneration + 1,
+            authorityGeneration: 1
+        )
+    }
+
     private let es80 = VehicleIdentity(
         manufacturer: "AOVOPRO",
         model: "ES80",
@@ -227,8 +234,13 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
                 gate: &gate
             )
             Issue.record("Horizon must inherit the committed Ready fence identity, not an equal-valued second store.")
-        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
-            #expect(error == .authorityChanged)
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            #expect(
+                error == .authorityChanged(
+                    expected: authorityA,
+                    current: authorityB
+                )
+            )
         } catch {
             Issue.record("Unexpected Horizon admission error: \(error)")
         }
@@ -236,7 +248,71 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         #expect(gate.phase == .observing)
     }
 
-    @Test("Horizon admission inherits committed Ready authority, fence, and processed-prefix constraints")
+    @Test("retired Ready epoch cannot follow the canonical fence into a fresh lifecycle")
+    @MainActor
+    func retiredReadyEpochCannotMintLaterHorizon() async throws {
+        let oldRecorder = try makeRecorder()
+        var oldGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let fence = makeFence()
+
+        let oldReady = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &oldGate
+        )
+        let oldRecordedReady = try await oldReady.recordBoundary(on: oldRecorder)
+        let oldCommittedReady = try oldRecordedReady.markBoundaryRecorded(
+            on: &oldGate,
+            lastProcessedQueueSequence: 0
+        )
+
+        try fence.transition(from: authorityA, to: nextSessionAuthority)
+
+        let freshRecorder = try makeRecorder()
+        var freshGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let freshReady = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &freshGate
+        )
+        let freshRecordedReady = try await freshReady.recordBoundary(on: freshRecorder)
+        let freshCommittedReady = try freshRecordedReady.markBoundaryRecorded(
+            on: &freshGate,
+            lastProcessedQueueSequence: 0
+        )
+
+        #expect(freshCommittedReady.authority == nextSessionAuthority)
+        do {
+            _ = try oldCommittedReady.beginHorizon(
+                queueCutoff: 0,
+                processedThrough: 0,
+                gate: &freshGate
+            )
+            Issue.record("A retired Ready epoch must never inherit a later lifecycle's current authority.")
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            #expect(
+                error == .authorityChanged(
+                    expected: authorityA,
+                    current: nextSessionAuthority
+                )
+            )
+        } catch {
+            Issue.record("Unexpected stale-epoch error: \(error)")
+        }
+        #expect(freshGate.phase == .observing)
+
+        let freshHorizon = try freshCommittedReady.beginHorizon(
+            queueCutoff: 0,
+            processedThrough: 0,
+            gate: &freshGate
+        )
+        #expect(freshHorizon.authority == nextSessionAuthority)
+        #expect(freshGate.activeTransaction?.authority == nextSessionAuthority)
+    }
+
+    @Test("Horizon admission inherits committed Ready authority and processed-prefix constraints")
     @MainActor
     func horizonInheritsCommittedReadyEpoch() async throws {
         let recorder = try makeRecorder()
