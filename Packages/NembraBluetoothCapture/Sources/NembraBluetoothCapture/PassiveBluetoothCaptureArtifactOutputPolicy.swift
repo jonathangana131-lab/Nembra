@@ -66,7 +66,9 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         )
     }
 
-    public static func writeDerivedReport(
+    /// Package-internal compatibility seam for focused policy tests. Product and
+    /// executable targets outside this module must carry the admission receipt.
+    static func writeDerivedReport(
         _ data: Data,
         inputURL: URL,
         outputURL: URL,
@@ -158,9 +160,6 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
             throw posixError("verify derived report staging file")
         }
 
-        // Re-prove the admitted source subject immediately before publication so
-        // a pathname swap after report generation cannot redirect protection to a
-        // different inode while the derived bytes still describe the admitted one.
         let prePublishInputMetadata = try fileIdentity(canonicalInput)
         guard descriptorIdentity(prePublishInputMetadata) == expectedInputIdentity else {
             throw PassiveBluetoothCaptureArtifactOutputPolicyError.inputChangedSinceAdmission(
