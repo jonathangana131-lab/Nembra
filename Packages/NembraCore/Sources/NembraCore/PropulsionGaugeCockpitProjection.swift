@@ -8,6 +8,9 @@ public struct PropulsionGaugeCockpitAcceptedMeasurement: Equatable, Sendable {
     public let watts: Double
     public let receiptSequenceNumber: UInt64
     public let receivedAtUptimeNanoseconds: UInt64
+    /// Source continuity/clock generation of this accepted measurement. A newer generation may
+    /// legitimately restart receipt sequence and uptime, so detached measurements must preserve it.
+    public let continuityGeneration: UInt64
     public let authority: PropulsionPowerSampleAuthority
 
     fileprivate init(
@@ -15,12 +18,14 @@ public struct PropulsionGaugeCockpitAcceptedMeasurement: Equatable, Sendable {
         watts: Double,
         receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64,
         authority: PropulsionPowerSampleAuthority
     ) {
         self.identity = identity
         self.watts = watts
         self.receiptSequenceNumber = receiptSequenceNumber
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.continuityGeneration = continuityGeneration
         self.authority = authority
     }
 }
@@ -84,7 +89,7 @@ public extension PropulsionGaugeDisplayModel {
         // cockpit surface closed rather than showing moving presentation state without accepted truth.
         guard measurement != .unavailable || frame.availability == .unavailable else {
             return PropulsionGaugeCockpitSnapshot(
-                identity: identity,
+                identity: frame.identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
@@ -94,7 +99,7 @@ public extension PropulsionGaugeDisplayModel {
 
         guard frame.availability == .live else {
             return PropulsionGaugeCockpitSnapshot(
-                identity: identity,
+                identity: frame.identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
@@ -103,7 +108,7 @@ public extension PropulsionGaugeDisplayModel {
         }
 
         return PropulsionGaugeCockpitSnapshot(
-            identity: identity,
+            identity: frame.identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
@@ -118,15 +123,17 @@ public extension PropulsionGaugeDisplayModel {
               let watts = frame.latestAcceptedWatts,
               let receiptSequenceNumber = frame.latestAcceptedReceiptSequenceNumber,
               let receivedAtUptimeNanoseconds = frame.latestAcceptedUptimeNanoseconds,
+              let continuityGeneration = frame.latestAcceptedContinuityGeneration,
               let authority = frame.latestAuthority else {
             return .unavailable
         }
 
         let accepted = PropulsionGaugeCockpitAcceptedMeasurement(
-            identity: identity,
+            identity: frame.identity,
             watts: watts,
             receiptSequenceNumber: receiptSequenceNumber,
             receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration,
             authority: authority
         )
 
