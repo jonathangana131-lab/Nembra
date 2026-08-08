@@ -9,9 +9,10 @@ import UIKit
 ///
 /// One package-owned coordinator now carries the complete software provenance life from
 /// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
-/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
-/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
-/// authoritative UUID, and never receives the sealed admission or mutable recorder.
+/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, immutable
+/// finalization, and the package-owned software evidence export. SwiftUI never constructs a
+/// second correlation producer, never selects an authoritative UUID, and never invents an
+/// app-owned manifest or build-provenance schema.
 ///
 /// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
 /// not permanent hardware authentication, RF emission-time proof, protocol semantics, or telemetry.
@@ -47,11 +48,13 @@ struct ES80CaptureShellView: View {
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
     @State private var observationReadyBeganAtUptimeNanoseconds: UInt64?
+    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var captureConnectionAttempted = false
     @State private var finalizationInFlight = false
     @State private var diagnosticMessage: String?
     @State private var localFailureMessage: String?
-    @State private var shareURL: URL?
+    @State private var softwareExportURL: URL?
+    @State private var softwareExportByteCount: Int?
     @State private var showingDetails = false
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
@@ -270,13 +273,24 @@ struct ES80CaptureShellView: View {
             ) {}
 
         case let .correlationReady(window):
-            correlationReadyPanel(window)
-            primaryButton(
-                "Begin \(phaseShortName(window)) window",
-                systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
-                identifier: "es80.capture.begin-window"
-            ) {
-                beginCorrelationWindow()
+            if window == .firstPoweredOff && declaredStationarySetup == nil {
+                stationarySetupDeclarationPanel
+                primaryButton(
+                    "Confirm stationary setup",
+                    systemImage: "checkmark.shield",
+                    identifier: "es80.capture.confirm-stationary-setup"
+                ) {
+                    declareStationarySetup()
+                }
+            } else {
+                correlationReadyPanel(window)
+                primaryButton(
+                    "Begin \(phaseShortName(window)) window",
+                    systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
+                    identifier: "es80.capture.begin-window"
+                ) {
+                    beginCorrelationWindow()
+                }
             }
 
         case let .correlationStarting(window):
@@ -469,7 +483,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "SEALING",
                 title: "Freezing immutable evidence",
-                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.",
+                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable capture before preparing its software evidence bundle. Do not leave the app while this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -479,8 +493,8 @@ struct ES80CaptureShellView: View {
 
         case .complete:
             completionPanel
-            if let shareURL {
-                ShareLink(item: shareURL) {
+            if let softwareExportURL {
+                ShareLink(item: softwareExportURL) {
                     Label("Share Capture", systemImage: "square.and.arrow.up")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
@@ -492,11 +506,12 @@ struct ES80CaptureShellView: View {
                 .accessibilityIdentifier("es80.capture.share")
             } else {
                 primaryButton(
-                    "Share unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    disabled: true,
-                    identifier: "es80.capture.share-unavailable"
-                ) {}
+                    "Retry Share Preparation",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.retry-share"
+                ) {
+                    prepareSoftwareExportForShare()
+                }
             }
             secondaryButton(
                 "View Details",
@@ -520,6 +535,51 @@ struct ES80CaptureShellView: View {
             ) {
                 restartExperiment()
             }
+        }
+    }
+
+    private var stationarySetupDeclarationPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("STATIONARY SETUP")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "checklist")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+
+            Text("Declare the starting conditions")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text("Confirm only when the charger is disconnected, the stock scooter app is closed with no stock-app reference markers planned for this run, and Nembra is foregrounded on an unlocked screen. This declaration is setup provenance—not proof the conditions remain true by itself.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 10) {
+                setupConditionRow("Charger disconnected")
+                setupConditionRow("Stock app closed / no reference markers")
+                setupConditionRow("Nembra foreground / unlocked / screen on")
+            }
+        }
+        .padding(18)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.stationary-setup")
+    }
+
+    private func setupConditionRow(_ title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
         }
     }
 
@@ -613,8 +673,15 @@ struct ES80CaptureShellView: View {
             }
 
             if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable JSON bytes are sealed from this Experiment One authority. Correlation evidence is retained with the same package-owned result; no protocol field meaning is claimed yet.")
+                Text("\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. The share bundle keeps those exact bytes together with the same-run four-window correlation, recipe, stationary manifest, and produced-build provenance.")
                     .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let softwareExportByteCount {
+                Text("Software evidence bundle: \(softwareExportByteCount.formatted()) bytes. External accepted field-build / GO authority remains separate.")
+                    .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -637,12 +704,20 @@ struct ES80CaptureShellView: View {
                         detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
                         detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
                     }
+                    if declaredStationarySetup != nil {
+                        detailRow("Charger", value: "Disconnected — declared")
+                        detailRow("Stock app reference", value: "None — declared")
+                        detailRow("Execution context", value: "Foreground / unlocked / screen on")
+                    }
+                    if let softwareExportByteCount {
+                        detailRow("Share bundle bytes", value: softwareExportByteCount.formatted())
+                    }
 
                     Divider()
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This export is passive software evidence. The setup rows are operator-declared provenance, not continuous-condition attestation. Repeated full-UUID correlation does not authenticate the physical ES80, and the package-owned build rendezvous does not authorize a field run. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -734,8 +809,27 @@ struct ES80CaptureShellView: View {
         return .correlationReady(progress.phase)
     }
 
+    private func declareStationarySetup() {
+        diagnosticMessage = nil
+        guard coordinator.status.powerCycleProgress?.phase == .firstPoweredOff,
+              coordinator.powerCycleResult == nil else {
+            diagnosticMessage = "Stationary setup can be declared only before OFF 1 begins."
+            return
+        }
+
+        declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+            chargerState: .disconnected,
+            executionContext: .foregroundUnlockedScreenOn,
+            stockAppReferenceSetup: .none
+        )
+    }
+
     private func beginCorrelationWindow() {
         diagnosticMessage = nil
+        guard declaredStationarySetup != nil else {
+            diagnosticMessage = "Confirm the stationary setup before beginning OFF 1."
+            return
+        }
         do {
             try coordinator.startCurrentPowerCycleWindow()
         } catch {
@@ -788,13 +882,43 @@ struct ES80CaptureShellView: View {
 
         Task {
             do {
-                let artifact = try await coordinator.finalizeObservationHorizon()
-                shareURL = try persistShareArtifact(artifact.captureJSON)
-                finalizationInFlight = false
+                _ = try await coordinator.finalizeObservationHorizon()
             } catch {
                 finalizationInFlight = false
                 localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
+                return
             }
+
+            finalizationInFlight = false
+            prepareSoftwareExportForShare()
+        }
+    }
+
+    private func prepareSoftwareExportForShare() {
+        guard coordinator.finalizedArtifact != nil else {
+            diagnosticMessage = "Share preparation is available only after the immutable capture is sealed."
+            return
+        }
+        guard let declaredStationarySetup else {
+            diagnosticMessage = "Capture is sealed, but its original stationary setup declaration is unavailable. Share remains blocked rather than inventing setup provenance after the run."
+            return
+        }
+
+        diagnosticMessage = nil
+        do {
+            let exportJSON = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
+                setup: declaredStationarySetup
+            )
+            let newURL = try persistSoftwareExport(exportJSON)
+            if let previousURL = softwareExportURL, previousURL != newURL {
+                try? FileManager.default.removeItem(at: previousURL)
+            }
+            softwareExportURL = newURL
+            softwareExportByteCount = exportJSON.count
+        } catch {
+            softwareExportURL = nil
+            softwareExportByteCount = nil
+            diagnosticMessage = "Capture is sealed, but its software evidence bundle could not be prepared from this build's provenance. The immutable capture remains available in View Details; do not repeat the physical evidence run just to repair sharing."
         }
     }
 
@@ -802,9 +926,14 @@ struct ES80CaptureShellView: View {
         coordinator.abandonExperiment()
         diagnosticMessage = nil
         localFailureMessage = nil
+        declaredStationarySetup = nil
         captureConnectionAttempted = false
         finalizationInFlight = false
-        shareURL = nil
+        if let softwareExportURL {
+            try? FileManager.default.removeItem(at: softwareExportURL)
+        }
+        softwareExportURL = nil
+        softwareExportByteCount = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
@@ -881,9 +1010,9 @@ struct ES80CaptureShellView: View {
         return Int((remaining + 999_999_999) / 1_000_000_000)
     }
 
-    private func persistShareArtifact(_ data: Data) throws -> URL {
+    private func persistSoftwareExport(_ data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-Capture-\(UUID().uuidString).json")
+            .appendingPathComponent("Nembra-ES80-Experiment-One-Software-Export-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
     }
