@@ -307,7 +307,24 @@ extension NembraAppTests {
             contentsOf: root.appendingPathComponent("NembraApp/App/NembraApp.swift"),
             encoding: .utf8
         )
+
+        let authorizedFactory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
+        let authorizedFactoryOccurrences = app.components(separatedBy: authorizedFactory).count - 1
+
         XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
+        XCTAssertEqual(
+            authorizedFactoryOccurrences,
+            2,
+            "Field launch and fresh-experiment restart must both traverse the package-owned authorized ES80 factory."
+        )
+        XCTAssertFalse(
+            app.contains("try? PassiveBluetoothExperimentOneCoordinator()"),
+            "Production Capture app code must not regress to the inert ordinary coordinator initializer."
+        )
+        XCTAssertFalse(
+            app.contains("try PassiveBluetoothExperimentOneCoordinator()"),
+            "Production Capture app code must not regress to the inert ordinary coordinator initializer."
+        )
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
         XCTAssertTrue(
             app.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"),
