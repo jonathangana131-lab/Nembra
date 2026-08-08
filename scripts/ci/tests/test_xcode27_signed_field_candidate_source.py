@@ -80,6 +80,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('${PROVISIONING_ARGS[@]}', self.source)
         self.assertIn('allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES', self.source)
 
+    def test_exact_ipa_selection_avoids_optional_bash_arrays(self):
+        self.assertIn('IPA_PATH="$(python3 - "$EXPORT_DIR"', self.source)
+        self.assertIn('path.suffix.lower() == ".ipa"', self.source)
+        self.assertIn('Expected exactly one exported .ipa; found', self.source)
+        self.assertNotIn('IPA_FILES=(', self.source)
+        self.assertNotIn('shopt -s nullglob', self.source)
+        self.assertNotIn('${#IPA_FILES[@]}', self.source)
+
     def test_retains_archive_and_export_logs(self):
         self.assertIn('logs/xcodebuild-archive.log', self.source)
         self.assertIn('logs/xcodebuild-export.log', self.source)
