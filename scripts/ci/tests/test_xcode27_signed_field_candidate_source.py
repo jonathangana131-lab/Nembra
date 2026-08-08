@@ -102,6 +102,24 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             self.source.index('rename_exclusive(source, destination'),
         )
 
+    def test_cleanup_removes_final_staging_only_after_this_process_created_it(self):
+        self.assertIn('FINAL_STAGING_DIR_OWNED=0', self.source)
+        self.assertIn('FINAL_STAGING_DIR_OWNED=1', self.source)
+        self.assertIn('[[ "${FINAL_STAGING_DIR_OWNED:-0}" == "1" ]]', self.source)
+        self.assertNotIn('[[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]', self.source)
+        self.assertLess(
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('FINAL_STAGING_DIR_OWNED=1'),
+        )
+        self.assertLess(
+            self.source.index('FINAL_STAGING_DIR_OWNED=1'),
+            self.source.index('cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"'),
+        )
+        rename_position = self.source.index('rename_exclusive(source, destination')
+        ownership_release_position = self.source.rindex('FINAL_STAGING_DIR_OWNED=0')
+        self.assertLess(rename_position, ownership_release_position)
+        self.assertLess(ownership_release_position, self.source.rindex('FINAL_STAGING_DIR=""'))
+
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
         self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
