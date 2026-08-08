@@ -14,6 +14,8 @@ This runbook does **not** authorize a field run until the approval block below i
 - Xcode conclusion: `UNFILLED — must be SUCCESS`
 - Recipe: `ES80-FINGERPRINT-v1`
 - Procedure version: `V14`
+- Research build producer: `scripts/ci/xcode27_today_research_field_candidate.sh`
+- Required compiled capability: `NEMBRA_ES80_TODAY_RESEARCH`
 - Human-readable Capture build identifier: `UNFILLED`
 - Build-instance UUID: `UNFILLED`
 - Signed installable kind/path reference: `UNFILLED`
@@ -26,6 +28,8 @@ This runbook does **not** authorize a field run until the approval block below i
 - Exact build installed on intended device: `UNFILLED`
 - Retained pre-field screenshots/artifacts inspected: `UNFILLED`
 - Approver/freeze checkpoint: `UNFILLED`
+
+The TODAY wrapper must be the build entry point for the first private research IPA. It injects the dedicated compiled capability and delegates signing, exact-source, intended-device, recipe, hashing, and retained-evidence production to the canonical `scripts/ci/xcode27_signed_field_candidate.sh`. Ordinary Release builds intentionally lack this capability and remain mechanically NO-GO even if producer-shaped bundle metadata is present.
 
 Canonical signed-field producer evidence expected for the accepted build:
 - `NembraCaptureExternalBuildRecord.json`
@@ -129,6 +133,7 @@ Stop the experiment and do not call it accepted if any of the following occurs:
 - exact-head Xcode result is not terminal SUCCESS for the accepted source SHA;
 - signed installable or runtime provenance differs from the Approval block;
 - research recipe is missing or not exactly `ES80-FINGERPRINT-v1`;
+- the installed app lacks the dedicated `NEMBRA_ES80_TODAY_RESEARCH` compiled capability or was not produced through the TODAY wrapper;
 - app does not enter the dedicated research Capture path;
 - charger is connected or charger-disconnected status becomes uncertain;
 - scooter cannot remain stationary;
