@@ -1,0 +1,680 @@
+#!/bin/bash -p
+set -euo pipefail
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+
+# Retire caller-controlled startup/process seams before any child process starts. Privileged Bash
+# startup suppresses BASH_ENV/ENV and inherited shell-function startup authority before line 1; this
+# closed system PATH then prevents later executable selection from falling back to caller PATH.
+unset BASH_ENV ENV
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
+# Python participates directly in private-input validation and signed-field evidence admission.
+# Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
+# import state cannot execute before the exact descriptor-bound Nembra source.
+PYTHON3="/usr/bin/python3"
+validate_root_custodied_path() {
+  local candidate="$1"
+  local kind="$2"
+  local cursor="$candidate"
+  local owner_uid mode_text mode_value
+
+  if [[ "$kind" == "file" ]]; then
+    if [[ ! -f "$cursor" || ! -x "$cursor" || -L "$cursor" ]]; then
+      echo "Pinned producer executable must be one regular executable non-symlink: $cursor" >&2
+      return 1
+    fi
+  elif [[ "$kind" == "directory" ]]; then
+    if [[ ! -d "$cursor" || -L "$cursor" ]]; then
+      echo "Pinned producer custody directory must be one real non-symlink directory: $cursor" >&2
+      return 1
+    fi
+  else
+    echo "Unknown producer custody path kind: $kind" >&2
+    return 1
+  fi
+
+  while :; do
+    if [[ -L "$cursor" ]]; then
+      echo "Producer custody path contains a symlink: $cursor" >&2
+      return 1
+    fi
+    owner_uid="$(/usr/bin/stat -f '%u' "$cursor")" || return 1
+    mode_text="$(/usr/bin/stat -f '%Lp' "$cursor")" || return 1
+    if [[ ! "$owner_uid" =~ ^[0-9]+$ || ! "$mode_text" =~ ^[0-7]{3,4}$ ]]; then
+      echo "Could not derive canonical ownership/mode for producer custody path: $cursor" >&2
+      return 1
+    fi
+    mode_value=$((8#$mode_text))
+    if (( owner_uid != 0 )); then
+      echo "Producer custody path is not root-owned: $cursor" >&2
+      return 1
+    fi
+    if (( (mode_value & 0022) != 0 )); then
+      echo "Producer custody path is group/world writable: $cursor" >&2
+      return 1
+    fi
+    [[ "$cursor" == "/" ]] && break
+    cursor="$(/usr/bin/dirname "$cursor")"
+  done
+}
+if ! validate_root_custodied_path "$PYTHON3" file; then
+  echo "Signed field-candidate production requires a root-custodied sealed system Python 3 at $PYTHON3." >&2
+  exit 2
+fi
+for SYSTEM_PATH_COMPONENT in /usr/bin /bin /usr/sbin /sbin; do
+  if ! validate_root_custodied_path "$SYSTEM_PATH_COMPONENT" directory; then
+    echo "Signed field-candidate production requires one root-custodied closed system PATH." >&2
+    exit 2
+  fi
+done
+
+# Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
+# This script cannot authorize physical ES80 Experiment One.
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
+cd "$ROOT"
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "Signed iOS field-candidate production requires macOS." >&2
+  exit 2
+fi
+
+: "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
+: "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing the verification-only intended field iPhone UDID.}"
+
+if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
+  echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
+  exit 3
+fi
+if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* || ! -f "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" || -L "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" ]]; then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one absolute regular non-symlink private verification file." >&2
+  exit 4
+fi
+if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
+  echo "NEMBRA_EXPORT_OPTIONS_PLIST does not name an existing file." >&2
+  exit 5
+fi
+/usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
+EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd -P)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
+
+ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"
+case "$ALLOW_PROVISIONING_UPDATES" in
+  0|1) ;;
+  *)
+    echo "NEMBRA_ALLOW_PROVISIONING_UPDATES must be exactly 0 or 1." >&2
+    exit 6
+    ;;
+esac
+
+# Keep the producer compatible with the Bash 3.2 still shipped by macOS. Avoid optionally empty
+# arrays under nounset; pass provisioning updates through one explicit wrapper instead.
+run_xcodebuild() {
+  if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
+    xcodebuild -allowProvisioningUpdates "$@"
+  else
+    xcodebuild "$@"
+  fi
+}
+
+# A dirty invocation checkout is never accepted. The real build below is additionally produced from
+# a fresh detached worktree at SOURCE_SHA, preventing ignored/local/concurrent source mutation from
+# silently becoming bytes stamped as this exact commit.
+REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ -n "$REPOSITORY_STATUS" ]]; then
+  echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
+  printf '%s\n' "$REPOSITORY_STATUS" >&2
+  exit 7
+fi
+
+SOURCE_SHA="$(git rev-parse --verify HEAD^{commit})"
+if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Could not derive one exact lowercase 40-hex Git HEAD." >&2
+  exit 8
+fi
+
+BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
+FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
+BUILD_INSTANCE_ID="$("$PYTHON3" -I -c 'import uuid; print(str(uuid.uuid4()))')"
+if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
+  exit 9
+fi
+
+WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BUILD_INSTANCE_ID}"
+SOURCE_ROOT="$WORK_ROOT/source"
+ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
+EXPORT_DIR="$WORK_ROOT/export"
+LOG_DIR="$WORK_ROOT/logs"
+INSPECTION_DIR="$WORK_ROOT/inspection"
+EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"
+INSPECTION_TOOL_ROOT="$WORK_ROOT/inspection-tools"
+PRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"
+INSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"
+PRIVATE_RUNNER_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_private_runner.py"
+INSPECTOR_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_evidence.py"
+RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
+if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
+  RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
+fi
+ARTIFACTS_DIR="$("$PYTHON3" -I - "$RAW_ARTIFACTS_DIR" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve(strict=False))
+PY
+)"
+ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
+FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"
+FINAL_STAGING_OWNED=0
+
+# Candidate output is immutable and failure-atomic. The public destination does not exist until the
+# final exclusive rename after archive, export, inspector verification, and complete staging.
+if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
+  echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
+  exit 10
+fi
+if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
+  echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
+  exit 11
+fi
+if [[ -e "$FINAL_STAGING_DIR" || -L "$FINAL_STAGING_DIR" ]]; then
+  echo "Final field-candidate staging directory already exists; refusing reuse: $FINAL_STAGING_DIR" >&2
+  exit 12
+fi
+if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
+  RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
+  if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
+    echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
+    exit 13
+  fi
+fi
+
+umask 077
+rm -rf "$WORK_ROOT"
+mkdir -p "$WORK_ROOT" "$LOG_DIR" "$INSPECTION_TOOL_ROOT" "$ARTIFACTS_PARENT"
+if ! git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH" > "$PRIVATE_RUNNER_SNAPSHOT" \
+  || ! git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH" > "$INSPECTOR_SNAPSHOT"
+then
+  echo "Could not materialize exact signed-field inspection tooling from SOURCE_SHA." >&2
+  exit 14
+fi
+PRIVATE_RUNNER_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"
+INSPECTOR_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"
+PRIVATE_RUNNER_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA")"
+INSPECTOR_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA")"
+if [[ ! "$PRIVATE_RUNNER_BLOB_BYTES" =~ ^[1-9][0-9]*$ \
+   || ! "$INSPECTOR_BLOB_BYTES" =~ ^[1-9][0-9]*$ ]]
+then
+  echo "Accepted signed-field tool Git objects do not have valid positive byte sizes." >&2
+  exit 14
+fi
+if [[ "$(git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \
+   || "$(git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]
+then
+  echo "Exact signed-field inspection tooling snapshot does not match SOURCE_SHA Git objects." >&2
+  exit 14
+fi
+chmod 0400 "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+
+# Bind exact source objects to inherited descriptors, then remove their mutable path names. FD 7 is
+# a one-shot preflight runner; FD 9 is the later evidence runner; FD 8 is the canonical inspector.
+exec 7< "$PRIVATE_RUNNER_SNAPSHOT"
+exec 8< "$INSPECTOR_SNAPSHOT"
+exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
+
+# Re-bind each independently opened subject to the exact accepted Git blob. Path hashing before open
+# alone leaves a same-user pathname replacement race. os.pread preserves the shared execution offset.
+verify_open_git_blob_descriptor() {
+  local descriptor_path="$1"
+  local descriptor_number="$2"
+  local expected_blob_sha="$3"
+  local expected_blob_bytes="$4"
+  if ! "$PYTHON3" -I - "$descriptor_number" "$expected_blob_sha" "$expected_blob_bytes" <<'PYVERIFY'
+import hashlib
+import os
+import stat
+import sys
+
+fd = int(sys.argv[1])
+expected = sys.argv[2]
+expected_size = int(sys.argv[3])
+if expected_size < 1:
+    raise SystemExit("accepted Git object size must be positive")
+if len(expected) == 40:
+    digest = hashlib.sha1()
+elif len(expected) == 64:
+    digest = hashlib.sha256()
+else:
+    raise SystemExit("unsupported Git object ID width")
+
+def stable_identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+metadata = os.fstat(fd)
+if not stat.S_ISREG(metadata.st_mode):
+    raise SystemExit("opened tool descriptor is not a regular file")
+if metadata.st_size != expected_size:
+    raise SystemExit("opened tool descriptor size does not match accepted Git blob")
+
+before = os.lseek(fd, 0, os.SEEK_CUR)
+if before != 0:
+    raise SystemExit("tool descriptor was not positioned at byte zero")
+
+header = b"blob " + str(expected_size).encode("ascii") + b"\0"
+digest.update(header)
+offset = 0
+while offset < expected_size:
+    chunk = os.pread(fd, min(1024 * 1024, expected_size - offset), offset)
+    if not chunk:
+        raise SystemExit("opened tool descriptor ended before accepted Git blob size")
+    digest.update(chunk)
+    offset += len(chunk)
+if os.pread(fd, 1, expected_size):
+    raise SystemExit("opened tool descriptor exceeds accepted Git blob size")
+
+final_metadata = os.fstat(fd)
+if stable_identity(final_metadata) != stable_identity(metadata):
+    raise SystemExit("descriptor subject changed during verification")
+if digest.hexdigest() != expected:
+    raise SystemExit("opened tool descriptor does not match accepted Git blob")
+if os.lseek(fd, 0, os.SEEK_CUR) != before:
+    raise SystemExit("tool descriptor verification changed execution offset")
+PYVERIFY
+  then
+    echo "Opened signed-field tool failed exact Git-object custody: $descriptor_path" >&2
+    return 1
+  fi
+}
+verify_open_git_blob_descriptor "/dev/fd/7" 7 "$PRIVATE_RUNNER_BLOB_SHA" "$PRIVATE_RUNNER_BLOB_BYTES"
+verify_open_git_blob_descriptor "/dev/fd/8" 8 "$INSPECTOR_BLOB_SHA" "$INSPECTOR_BLOB_BYTES"
+verify_open_git_blob_descriptor "/dev/fd/9" 9 "$PRIVATE_RUNNER_BLOB_SHA" "$PRIVATE_RUNNER_BLOB_BYTES"
+rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+rmdir "$INSPECTION_TOOL_ROOT"
+
+if ! "$PYTHON3" -I /dev/fd/7 \
+  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+  --repository-root "$ROOT"
+then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
+  exit 4
+fi
+exec 7<&-
+
+cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
+/usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
+EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+import hashlib
+import plistlib
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+expected_team = sys.argv[2]
+raw = path.read_bytes()
+options = plistlib.loads(raw)
+if not isinstance(options, dict):
+    raise SystemExit("Export options plist root must be a dictionary")
+team = options.get("teamID")
+if team is not None and team != expected_team:
+    raise SystemExit("Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM")
+method = options.get("method")
+if method is not None and (not isinstance(method, str) or not method.strip()):
+    raise SystemExit("Export options method, when present, must be a non-empty string")
+print(hashlib.sha256(raw).hexdigest())
+PY
+)"
+if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive one canonical SHA-256 for retained ExportOptions.plist." >&2
+  exit 14
+fi
+
+git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
+
+cleanup() {
+  cd "$ROOT" >/dev/null 2>&1 || true
+  git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
+  rm -rf "$WORK_ROOT"
+  if [[ "${FINAL_STAGING_OWNED:-0}" == "1" && -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
+    rm -rf "$FINAL_STAGING_DIR"
+  fi
+}
+trap cleanup EXIT
+
+cd "$SOURCE_ROOT"
+IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
+IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
+  echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
+  exit 15
+fi
+mkdir -p "$EXPORT_DIR"
+
+set -o pipefail
+if ! run_xcodebuild \
+  -project Nembra.xcodeproj \
+  -scheme Nembra \
+  -configuration Release \
+  -destination "generic/platform=iOS" \
+  -archivePath "$ARCHIVE_PATH" \
+  "DEVELOPMENT_TEAM=$NEMBRA_DEVELOPMENT_TEAM" \
+  "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
+  "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
+  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
+  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
+  archive \
+  2>&1 | tee "$LOG_DIR/xcodebuild-archive.log"
+then
+  echo "Signed field-candidate archive or archive-log capture failed." >&2
+  exit 16
+fi
+
+if ! run_xcodebuild \
+  -exportArchive \
+  -archivePath "$ARCHIVE_PATH" \
+  -exportPath "$EXPORT_DIR" \
+  -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
+  2>&1 | tee "$LOG_DIR/xcodebuild-export.log"
+then
+  echo "Signed field-candidate export or export-log capture failed." >&2
+  exit 17
+fi
+
+POST_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
+  echo "Retained ExportOptions.plist changed during archive/export; refusing candidate evidence." >&2
+  exit 18
+fi
+
+POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
+if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
+  echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
+  printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
+  exit 19
+fi
+
+# Closed-world top-level IPA selection without nullglob/empty arrays under Bash 3.2 + nounset.
+IPA_PATH="$("$PYTHON3" -I - "$EXPORT_DIR" <<'PY'
+import sys
+from pathlib import Path
+export_dir = Path(sys.argv[1])
+candidates = sorted(
+    path for path in export_dir.iterdir()
+    if path.is_file() and path.suffix.lower() == ".ipa"
+)
+if len(candidates) != 1:
+    rendered = ", ".join(path.name for path in candidates) or "<none>"
+    raise SystemExit(f"Expected exactly one exported .ipa; found {len(candidates)}: {rendered}")
+print(candidates[0])
+PY
+)"
+
+# The intended-device UDID remains behind the private mode-0600 file boundary. Both executable
+# Python subjects are exact SOURCE_SHA Git blobs held by descriptors whose path names were removed
+# before build work; no mutable checkout path can swap the evidence implementation.
+"$PYTHON3" -I /dev/fd/9 \
+  --ipa "$IPA_PATH" \
+  --expected-source-sha "$SOURCE_SHA" \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
+  --repository-root "$ROOT" \
+  --canonical-inspector-fd 8 \
+  --output-dir "$INSPECTION_DIR"
+exec 8<&-
+exec 9<&-
+
+EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
+FIELD_BUILD_RECORD="$INSPECTION_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
+SIGNING_INSPECTION="$INSPECTION_DIR/NembraCaptureSignedFieldArtifactInspection.json"
+RETAINED_IPA="$INSPECTION_DIR/build-evidence/NembraField.ipa"
+
+"$PYTHON3" -I - \
+  "$EXTERNAL_RECORD" \
+  "$FIELD_BUILD_RECORD" \
+  "$SIGNING_INSPECTION" \
+  "$RETAINED_IPA" \
+  "$SOURCE_SHA" \
+  "$BUILD_IDENTIFIER" \
+  "$BUILD_INSTANCE_ID" \
+  "$NEMBRA_DEVELOPMENT_TEAM" \
+  "$FIELD_RECIPE_ID" <<'PY'
+import hashlib
+import json
+import pathlib
+import plistlib
+import re
+import sys
+import zipfile
+
+external_path = pathlib.Path(sys.argv[1])
+field_path = pathlib.Path(sys.argv[2])
+inspection_path = pathlib.Path(sys.argv[3])
+ipa_path = pathlib.Path(sys.argv[4])
+source_sha, build_identifier, build_instance_id, expected_team, field_recipe = sys.argv[5:10]
+
+external_bytes = external_path.read_bytes()
+field_bytes = field_path.read_bytes()
+field = json.loads(field_bytes)
+inspection = json.loads(inspection_path.read_bytes())
+
+expected_field_keys = {
+    "schemaVersion",
+    "externalBuildRecordSHA256",
+    "signedInstallableSHA256",
+    "signedInstallableKind",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
+if set(field) != expected_field_keys:
+    raise SystemExit(f"Canonical field-build evidence shape drifted: {sorted(field)!r}")
+
+expected_inspection_keys = {
+    "schemaVersion",
+    "authority",
+    "fieldBuildEvidenceRecordSHA256",
+    "externalBuildRecordSHA256",
+    "signedInstallableSHA256",
+    "signedInstallableKind",
+    "ipaByteCount",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "bundleIdentifier",
+    "platformName",
+    "supportedPlatforms",
+    "teamIdentifier",
+    "signingAuthorities",
+    "codeDirectoryHash",
+    "provisioningProfileSHA256",
+    "provisioningProfileUUID",
+    "provisioningProfileExpirationUTC",
+    "provisioningApplicationIdentifier",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
+if set(inspection) != expected_inspection_keys:
+    raise SystemExit(f"Signing inspection shape drifted: {sorted(inspection)!r}")
+
+shared_expected = {
+    "sourceCommitSHA": source_sha,
+    "buildIdentifier": build_identifier,
+    "buildInstanceID": build_instance_id,
+    "experimentRecipeID": field_recipe,
+    "procedureVersion": "V14",
+}
+for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
+    for key, value in shared_expected.items():
+        if record.get(key) != value:
+            raise SystemExit(f"{record_name} mismatch for {key}: {record.get(key)!r} != {value!r}")
+
+if field.get("signedInstallableKind") != "ipa" or inspection.get("signedInstallableKind") != "ipa":
+    raise SystemExit("Signed field evidence no longer describes one IPA installable")
+if inspection.get("authority") != "signed-field-artifact-inspection-not-field-authorization":
+    raise SystemExit("Signing inspection authority boundary changed unexpectedly")
+if inspection.get("teamIdentifier") != expected_team:
+    raise SystemExit("Signing inspection TeamIdentifier does not match requested development team")
+if inspection.get("bundleIdentifier") != "com.jonathangana131.nembra":
+    raise SystemExit("Signing inspection bundle identifier drifted")
+if inspection.get("platformName") != "iphoneos" or "iPhoneOS" not in inspection.get("supportedPlatforms", []):
+    raise SystemExit("Signing inspection no longer describes a physical iPhone build")
+if inspection.get("provisioningApplicationIdentifier") != f"{expected_team}.com.jonathangana131.nembra":
+    raise SystemExit("Provisioning application identifier does not match the requested signed Nembra app")
+if not re.fullmatch(r"[0-9a-f]{64}", inspection.get("provisioningProfileSHA256", "")):
+    raise SystemExit("Signed field candidate lacks exact embedded provisioning-profile digest evidence")
+if not isinstance(inspection.get("provisioningProfileUUID"), str) or not inspection["provisioningProfileUUID"].strip():
+    raise SystemExit("Signed field candidate lacks provisioning-profile identity")
+if not isinstance(inspection.get("provisioningProfileExpirationUTC"), str) or not inspection["provisioningProfileExpirationUTC"].endswith("Z"):
+    raise SystemExit("Signed field candidate lacks normalized provisioning-profile expiration")
+
+external_sha = hashlib.sha256(external_bytes).hexdigest()
+field_sha = hashlib.sha256(field_bytes).hexdigest()
+if field.get("externalBuildRecordSHA256") != external_sha:
+    raise SystemExit("Field-build evidence is not bound to the exact external build-record bytes")
+if inspection.get("externalBuildRecordSHA256") != external_sha:
+    raise SystemExit("Signing inspection is not bound to the exact external build-record bytes")
+if inspection.get("fieldBuildEvidenceRecordSHA256") != field_sha:
+    raise SystemExit("Signing inspection is not bound to the exact field-build evidence bytes")
+if inspection.get("signedInstallableSHA256") != field.get("signedInstallableSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on the exact IPA digest")
+if inspection.get("executableSHA256") != field.get("executableSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on executable bytes")
+if inspection.get("infoPlistSHA256") != field.get("infoPlistSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on raw Info.plist bytes")
+
+ipa_digest = hashlib.sha256()
+with ipa_path.open("rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        ipa_digest.update(chunk)
+if ipa_digest.hexdigest() != field.get("signedInstallableSHA256"):
+    raise SystemExit("Retained IPA bytes do not match canonical field-build evidence")
+
+# The canonical inspector has already rejected duplicate/colliding archive members. Re-open the exact
+# retained IPA only to prove the launch-routing marker in the signed Info.plist and bind those same
+# raw plist bytes to the field evidence digest.
+with zipfile.ZipFile(ipa_path) as archive:
+    plist_members = [
+        info for info in archive.infolist()
+        if len(pathlib.PurePosixPath(info.filename).parts) == 3
+        and pathlib.PurePosixPath(info.filename).parts[0] == "Payload"
+        and pathlib.PurePosixPath(info.filename).parts[1].endswith(".app")
+        and pathlib.PurePosixPath(info.filename).parts[2] == "Info.plist"
+    ]
+    if len(plist_members) != 1:
+        raise SystemExit("Retained IPA does not contain exactly one top-level signed Info.plist")
+    raw_info_plist = archive.read(plist_members[0])
+    info = plistlib.loads(raw_info_plist)
+if not isinstance(info, dict) or info.get("NembraCaptureFieldRecipe") != field_recipe:
+    raise SystemExit("Signed IPA does not contain the exact Nembra Capture field-launch recipe")
+if hashlib.sha256(raw_info_plist).hexdigest() != field.get("infoPlistSHA256"):
+    raise SystemExit("Signed field-launch recipe was not verified on the exact Info.plist evidence bytes")
+PY
+
+# Assemble the complete candidate on the destination filesystem while the public final path remains
+# absent. This preserves the current inspection/ layout without exposing partial evidence on failure.
+mkdir "$FINAL_STAGING_DIR"
+FINAL_STAGING_OWNED=1
+cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"
+mkdir "$FINAL_STAGING_DIR/logs"
+cp -p "$LOG_DIR/xcodebuild-archive.log" "$FINAL_STAGING_DIR/logs/xcodebuild-archive.log"
+cp -p "$LOG_DIR/xcodebuild-export.log" "$FINAL_STAGING_DIR/logs/xcodebuild-export.log"
+cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
+
+{
+  echo "source_commit_sha=$SOURCE_SHA"
+  echo "build_identifier=$BUILD_IDENTIFIER"
+  echo "build_instance_id=$BUILD_INSTANCE_ID"
+  echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
+  echo "allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES"
+  echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
+  echo "experiment_recipe_id=$FIELD_RECIPE_ID"
+  echo "export_options_file=ExportOptions.plist"
+  echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
+  echo "archive_log=logs/xcodebuild-archive.log"
+  echo "export_log=logs/xcodebuild-export.log"
+  echo "inspection_directory=inspection"
+  echo "private_runner_source_git_blob=$PRIVATE_RUNNER_BLOB_SHA"
+  echo "canonical_inspector_source_git_blob=$INSPECTOR_BLOB_SHA"
+  echo "procedure_version=V14"
+  echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
+  echo "physical_authorization=not-granted"
+  xcodebuild -version
+} > "$FINAL_STAGING_DIR/field-candidate-environment.txt"
+
+# Re-prove that final staging preserved exact inspector evidence bytes and exact export policy bytes.
+"$PYTHON3" -I - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+def manifest(root):
+    result = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise SystemExit(f"Unexpected symlink in candidate evidence: {path}")
+        if path.is_file():
+            result[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+if manifest(source) != manifest(destination):
+    raise SystemExit("Final candidate staging did not preserve exact canonical inspector bytes")
+PY
+
+FINAL_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+if [[ "$FINAL_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
+  echo "Final retained ExportOptions.plist does not match exact policy consumed by xcodebuild." >&2
+  exit 20
+fi
+
+# macOS renamex_np(RENAME_EXCL) publishes the complete directory atomically without replacement.
+"$PYTHON3" -I - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
+import ctypes
+import errno
+import os
+import sys
+source, destination = map(os.fsencode, sys.argv[1:3])
+libc = ctypes.CDLL(None, use_errno=True)
+rename_exclusive = libc.renamex_np
+rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+rename_exclusive.restype = ctypes.c_int
+if rename_exclusive(source, destination, 0x00000004) != 0:  # RENAME_EXCL
+    number = ctypes.get_errno()
+    if number in (errno.EEXIST, errno.ENOTEMPTY):
+        raise SystemExit("refusing to overwrite concurrently published field-candidate evidence")
+    raise OSError(number, os.strerror(number), os.fsdecode(destination))
+PY
+
+# Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.
+FINAL_STAGING_OWNED=0
+FINAL_STAGING_DIR=""
+
+echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
+echo "Exact ExportOptions.plist, archive/export logs, and failure-atomic signed evidence were retained."
+echo "Independent acceptance has NOT occurred."
+echo "PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN."

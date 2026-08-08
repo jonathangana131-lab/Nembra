@@ -60,13 +60,48 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
             executableSHA256: executableSHA256
         )
     }
+
+    /// Fail-closed mechanical comparison against the identity measured from the running app.
+    ///
+    /// Exact equality here proves only that this parsed declaration names the same build facts the
+    /// app can measure locally. It does **not** prove that the external record was independently
+    /// attested or accepted, and it never authorizes the physical Experiment One procedure.
+    public func validateRuntimeBinding(
+        to runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        guard buildIdentifier == runtimeIdentity.buildIdentifier else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.buildIdentifierMismatch
+        }
+        guard buildInstanceID == runtimeIdentity.buildInstanceID else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.buildInstanceIDMismatch
+        }
+        guard sourceCommitSHA == runtimeIdentity.sourceCommitSHA else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.sourceCommitSHAMismatch
+        }
+        guard executableSHA256 == runtimeIdentity.executableSHA256 else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.executableSHA256Mismatch
+        }
+        guard infoPlistSHA256 == runtimeIdentity.infoPlistSHA256 else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.infoPlistSHA256Mismatch
+        }
+    }
+}
+
+public enum PassiveBluetoothCaptureExternalBuildRuntimeBindingError: Error, Equatable, Sendable {
+    case buildIdentifierMismatch
+    case buildInstanceIDMismatch
+    case sourceCommitSHAMismatch
+    case executableSHA256Mismatch
+    case infoPlistSHA256Mismatch
 }
 
 public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, Sendable {
     case malformedJSON
     case unexpectedField(String)
+    case duplicateField(String)
     case unsupportedSchemaVersion(Int)
     case invalidBuildIdentifier
+    case buildIdentifierSourceMismatch
     case invalidBuildInstanceID
     case invalidSourceCommitSHA
     case invalidExecutableSHA256
@@ -119,6 +154,9 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
               normalizedSourceCommitSHA == wire.sourceCommitSHA else {
             throw PassiveBluetoothCaptureExternalBuildRecordError.invalidSourceCommitSHA
         }
+        guard wire.buildIdentifier == expectedBuildIdentifier(for: normalizedSourceCommitSHA) else {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch
+        }
         guard isCanonicalSHA256(wire.executableSHA256) else {
             throw PassiveBluetoothCaptureExternalBuildRecordError.invalidExecutableSHA256
         }
@@ -148,6 +186,9 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(duplicateKey)
+        }
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
@@ -171,6 +212,10 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
         for key in root.keys.sorted() where !allowed.contains(key) {
             throw PassiveBluetoothCaptureExternalBuildRecordError.unexpectedField(key)
         }
+    }
+
+    private static func expectedBuildIdentifier(for sourceCommitSHA: String) -> String {
+        "Capture Build V14-\(sourceCommitSHA.prefix(12))"
     }
 
     private static func isValidBuildIdentifier(_ value: String) -> Bool {

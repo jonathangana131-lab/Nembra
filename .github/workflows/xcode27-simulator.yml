@@ -53,26 +53,52 @@ jobs:
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 
-      - name: Resolve Capture executable digest
-        id: capture-provenance
+      - name: Verify retained Capture build evidence
         run: |
-          digest="$(python3 -c 'import json; print(json.load(open("Artifacts/Xcode27Simulator/NembraCaptureExternalBuildRecord.json", encoding="utf-8"))["executableSHA256"])')"
-          if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Capture external build record did not contain a valid executable SHA-256." >&2
-            exit 1
-          fi
-          echo "executable_sha256=$digest" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("Artifacts/Xcode27Simulator")
+          record = json.loads((root / "NembraCaptureExternalBuildRecord.json").read_text(encoding="utf-8"))
+          expected_keys = {
+              "schemaVersion",
+              "buildIdentifier",
+              "buildInstanceID",
+              "sourceCommitSHA",
+              "executableSHA256",
+              "infoPlistSHA256",
+              "experimentRecipeID",
+              "procedureVersion",
+          }
+          if set(record) != expected_keys or record.get("schemaVersion") != 3:
+              raise SystemExit("Capture external build record is not the exact closed-world schema v3 shape")
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          executable = root / "build-evidence" / "Nembra"
+          info_plist = root / "build-evidence" / "Info.plist"
+          if sha256(executable) != record["executableSHA256"]:
+              raise SystemExit("Retained Capture executable no longer matches the attested external record")
+          if sha256(info_plist) != record["infoPlistSHA256"]:
+              raise SystemExit("Retained Capture Info.plist no longer matches the attested external record")
+          PY
 
       - name: Attest external Capture build record
         uses: actions/attest@v4
         with:
           subject-path: Artifacts/Xcode27Simulator/NembraCaptureExternalBuildRecord.json
 
-      - name: Attest exact Capture executable digest
+      - name: Attest retained exact Capture executable
         uses: actions/attest@v4
         with:
-          subject-name: Nembra.capture-executable
-          subject-digest: sha256:${{ steps.capture-provenance.outputs.executable_sha256 }}
+          subject-path: Artifacts/Xcode27Simulator/build-evidence/Nembra
 
       - name: Upload Simulator screenshots and logs
         if: always()

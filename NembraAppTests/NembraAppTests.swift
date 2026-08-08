@@ -292,11 +292,38 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-
 /// V14 app-visible Experiment One authority regression. These source checks intentionally live in
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
 extension NembraAppTests {
+    func testCaptureShellUsesBoundedPresentationPolling() {
+        XCTAssertEqual(ES80CaptureRefreshPolicy.statusPollInterval, 0.5)
+    }
+
+    @MainActor
+    func testSignedFieldRecipeRoutesHomeScreenLaunchIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v1"
+            ]
+        )
+        XCTAssertEqual(mode, .es80PassiveCapture)
+    }
+
+    @MainActor
+    func testUnknownFieldRecipeDoesNotRouteIntoCapture() {
+        let mode = NembraApp.resolveLaunchMode(
+            arguments: ["Nembra"],
+            environment: [:],
+            infoDictionary: [
+                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v999"
+            ]
+        )
+        XCTAssertEqual(mode, .standard)
+    }
+
     func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
@@ -306,20 +333,59 @@ extension NembraAppTests {
         )
         XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
+        XCTAssertTrue(
+            app.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"),
+            "Fresh Experiment One must return through parent-owned stationary preflight."
+        )
+        XCTAssertTrue(app.contains("selectedChargerState = nil"))
+        XCTAssertTrue(app.contains("disconnectedDeclarationAccepted = false"))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellContinuesSameAuthorityThroughFinalShareIntegrity() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
             contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
             encoding: .utf8
         )
+
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
+        XCTAssertTrue(shell.contains("artifact.suggestedFilename"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+        XCTAssertTrue(shell.contains("finalShareIntegrityReport != nil"))
+        XCTAssertTrue(shell.contains("Integrity check required"))
+        XCTAssertTrue(shell.contains("Ready for analysis"))
+        XCTAssertTrue(
+            shell.contains("coordinator = try onFreshExperimentRequested()"),
+            "Shell restart must delegate fresh-run ownership to stationary preflight."
+        )
+        XCTAssertFalse(
+            shell.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"),
+            "The shell must not mint a fresh run behind an already-accepted charger declaration."
+        )
+        XCTAssertTrue(shell.contains("ES80CaptureRefreshPolicy.statusPollInterval"))
+        XCTAssertTrue(shell.contains("observation timer"))
+        XCTAssertTrue(shell.contains("seconds of display guidance remaining"))
+        XCTAssertTrue(shell.contains("The package producer, not this timer"))
+        XCTAssertTrue(shell.contains("Unavailable; waiting for accepted Horizon authority"))
+
+        XCTAssertFalse(
+            shell.contains("encodedFinalizedObservationHorizonJSON"),
+            "The app primary Share must not stop at raw Horizon JSON once the final V14 wrapper exists."
+        )
+        XCTAssertFalse(
+            shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"),
+            "The app primary Share must not stop at the inner SoftwareExport once the final V14 wrapper exists."
+        )
+        XCTAssertFalse(
+            shell.contains("persistShareArtifact(artifact.captureJSON"),
+            "Raw sealed controller JSON must never masquerade as the final analysis Share artifact."
+        )
     }
 }

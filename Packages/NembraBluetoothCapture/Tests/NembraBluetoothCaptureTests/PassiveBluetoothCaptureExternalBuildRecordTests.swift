@@ -4,6 +4,9 @@ import Testing
 @testable import NembraBluetoothCapture
 
 struct PassiveBluetoothCaptureExternalBuildRecordTests {
+    private typealias RuntimeReader = PassiveBluetoothCaptureRuntimeBuildIdentityReader
+    private typealias BindingError = PassiveBluetoothCaptureExternalBuildRuntimeBindingError
+
     private let buildIdentifier = "Capture Build V14-abcdef012345"
     private let buildInstanceID = "a1b2c3d4-e5f6-47a8-90bc-def123456789"
     private let sourceCommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
@@ -52,6 +55,74 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
     }
 
     @Test
+    func buildIdentifierMustDeriveFromTheExactSourceCommit() throws {
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(
+                    overrides: ["buildIdentifier": "Capture Build V14-111111111111"]
+                )
+            )
+        }
+
+        let differentSource = "123456789abc6789abcdef0123456789abcdef01"
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(overrides: ["sourceCommitSHA": differentSource])
+            )
+        }
+    }
+
+    @Test
+    func parsedRecordMechanicallyBindsEveryMeasuredRuntimeBuildFact() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
+
+        try record.validateRuntimeBinding(to: runtimeIdentity)
+    }
+
+    @Test
+    func runtimeBindingFailsClosedForEveryMismatchedBuildFact() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
+
+        try expectRuntimeBindingFailure(
+            .buildIdentifierMismatch,
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                buildIdentifier: "Capture Build V14-detached"
+            )
+        )
+        try expectRuntimeBindingFailure(
+            .buildInstanceIDMismatch,
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                buildInstanceID: "11111111-2222-3333-4444-555555555555"
+            )
+        )
+        try expectRuntimeBindingFailure(
+            .sourceCommitSHAMismatch,
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                sourceCommitSHA: String(repeating: "c", count: 40)
+            )
+        )
+        try expectRuntimeBindingFailure(
+            .executableSHA256Mismatch,
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                executableData: Data("different runtime executable".utf8)
+            )
+        )
+        try expectRuntimeBindingFailure(
+            .infoPlistSHA256Mismatch,
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                infoPlistData: Data("different runtime Info.plist".utf8)
+            )
+        )
+    }
+
+    @Test
     func authorityLookingUnknownFieldFailsClosed() throws {
         let data = try makeRecordJSON(overrides: ["physicalGO": true])
 
@@ -59,6 +130,41 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
             throws: PassiveBluetoothCaptureExternalBuildRecordError.unexpectedField("physicalGO")
         ) {
             _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(data)
+        }
+    }
+
+    @Test
+    func duplicateBuildRecordFieldsFailClosedBeforeDecoding() throws {
+        let canonical = try makeRecordJSON()
+        let decodedObject = try JSONSerialization.jsonObject(with: canonical)
+        let object = try #require(decodedObject as? [String: Any])
+
+        for field in baseRecordObject().keys.sorted() {
+            let duplicated = try insertingDuplicateField(
+                field,
+                value: try #require(object[field]),
+                into: canonical
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(duplicated)
+            }
+        }
+    }
+
+    @Test
+    func escapedDuplicateBuildRecordKeyFailsClosedBySemanticName() throws {
+        let canonical = String(decoding: try makeRecordJSON(), as: UTF8.self)
+        let duplicated = Data(
+            ("{\"sourceCommitSH\\u0041\":\"\(sourceCommitSHA)\"," + canonical.dropFirst()).utf8
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureExternalBuildRecordError
+                .duplicateField("sourceCommitSHA")
+        ) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(duplicated)
         }
     }
 
@@ -143,6 +249,51 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         }
     }
 
+    private func makeRuntimeIdentity(
+        buildIdentifier: String? = nil,
+        buildInstanceID: String? = nil,
+        sourceCommitSHA: String? = nil,
+        executableData: Data = Data("runtime executable fixture".utf8),
+        infoPlistData: Data = Data("runtime Info.plist fixture".utf8)
+    ) throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
+        try RuntimeReader.resolveEmbeddedMetadata(
+            infoDictionary: [
+                RuntimeReader.buildIdentifierInfoDictionaryKey: buildIdentifier ?? self.buildIdentifier,
+                RuntimeReader.buildInstanceIDInfoDictionaryKey: buildInstanceID ?? self.buildInstanceID,
+                RuntimeReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA ?? self.sourceCommitSHA,
+            ],
+            executableData: executableData,
+            infoPlistData: infoPlistData
+        )
+    }
+
+    private func makeRuntimeBoundRecord(
+        runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        overrides: [String: Any] = [:]
+    ) throws -> PassiveBluetoothCaptureExternalBuildRecord {
+        var runtimeOverrides: [String: Any] = [
+            "executableSHA256": runtimeIdentity.executableSHA256,
+            "infoPlistSHA256": runtimeIdentity.infoPlistSHA256,
+        ]
+        for (key, value) in overrides {
+            runtimeOverrides[key] = value
+        }
+        return try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+            try makeRecordJSON(overrides: runtimeOverrides)
+        )
+    }
+
+    private func expectRuntimeBindingFailure(
+        _ expected: BindingError,
+        record: PassiveBluetoothCaptureExternalBuildRecord,
+        runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws {
+        #expect(throws: expected, sourceLocation: sourceLocation) {
+            try record.validateRuntimeBinding(to: runtimeIdentity)
+        }
+    }
+
     private func makeRecordJSON(overrides: [String: Any] = [:]) throws -> Data {
         var object = baseRecordObject()
         for (key, value) in overrides {
@@ -164,9 +315,33 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         ]
     }
 
+    private func insertingDuplicateField(
+        _ field: String,
+        value: Any,
+        into objectData: Data
+    ) throws -> Data {
+        let canonicalObject = String(decoding: objectData, as: UTF8.self)
+        guard canonicalObject.first == "{" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+
+        let wrappedValue = try JSONSerialization.data(withJSONObject: [value])
+        let wrappedValueJSON = String(decoding: wrappedValue, as: UTF8.self)
+        guard wrappedValueJSON.first == "[", wrappedValueJSON.last == "]" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+        let valueJSON = wrappedValueJSON.dropFirst().dropLast()
+        return Data(
+            ("{\"\(field)\":\(valueJSON)," + canonicalObject.dropFirst()).utf8
+        )
+    }
+
     private func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+    private enum TestFixtureError: Error {
+        case expectedJSONObject
     }
 }

@@ -1,0 +1,40 @@
+name: Capture Simulator Visual Custody Source QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/xcode27_simulator_capture.sh
+      - scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+      - scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+      - scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
+      - .github/workflows/capture-simulator-visual-custody-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-source-contract:
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact PR head
+        run: |
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate Simulator visual-evidence custody
+        run: |
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py

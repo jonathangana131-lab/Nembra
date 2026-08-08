@@ -8,6 +8,7 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
+BUILD_EVIDENCE_DIR="$ARTIFACTS_DIR/build-evidence"
 BUNDLE_ID="com.jonathangana131.nembra"
 
 CAPTURE_BUILD_COMMIT_SHA="$(git rev-parse --verify HEAD^{commit})"
@@ -27,8 +28,17 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 9
 fi
 
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE"
+# Ignored output from an older local/self-hosted run must never be mixed into exact-head acceptance.
+# Refuse reuse instead of deleting it: existing evidence may itself be valuable and should not be
+# silently destroyed merely because a later run chose the same destination.
+if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
+  echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite Simulator evidence: $ARTIFACTS_DIR" >&2
+  exit 22
+fi
+ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
+mkdir -p "$ARTIFACTS_PARENT"
+mkdir "$ARTIFACTS_DIR"
+mkdir "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR" "$BUILD_EVIDENCE_DIR"
 
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
@@ -173,6 +183,39 @@ if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the built executable." >&2
   exit 13
 fi
+INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
+if [[ ! "$INFO_PLIST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a valid SHA-256 digest for the built Info.plist." >&2
+  exit 17
+fi
+
+# Retain the exact bytes whose identity is asserted by the external provenance record. A digest
+# alone is useful, but preserving these immutable copies lets a later reviewer independently
+# re-hash the same executable and inspect the exact generated build metadata after DerivedData is
+# gone. This is Simulator software evidence only; the physical pipeline must retain the exact final
+# signed field artifact (for example the accepted .ipa) rather than substituting these bytes.
+RETAINED_EXECUTABLE="$BUILD_EVIDENCE_DIR/Nembra"
+RETAINED_INFO_PLIST="$BUILD_EVIDENCE_DIR/Info.plist"
+cp -p "$EXECUTABLE_PATH" "$RETAINED_EXECUTABLE"
+cp -p "$INFO_PLIST" "$RETAINED_INFO_PLIST"
+if ! cmp -s "$EXECUTABLE_PATH" "$RETAINED_EXECUTABLE"; then
+  echo "Retained Capture executable bytes diverged from the measured build output." >&2
+  exit 18
+fi
+if ! cmp -s "$INFO_PLIST" "$RETAINED_INFO_PLIST"; then
+  echo "Retained Capture Info.plist bytes diverged from the measured build output." >&2
+  exit 19
+fi
+RETAINED_EXECUTABLE_SHA256="$(shasum -a 256 "$RETAINED_EXECUTABLE" | awk '{print $1}')"
+RETAINED_INFO_PLIST_SHA256="$(shasum -a 256 "$RETAINED_INFO_PLIST" | awk '{print $1}')"
+if [[ "$RETAINED_EXECUTABLE_SHA256" != "$EXECUTABLE_SHA256" ]]; then
+  echo "Retained Capture executable digest does not match the measured build output." >&2
+  exit 20
+fi
+if [[ "$RETAINED_INFO_PLIST_SHA256" != "$INFO_PLIST_SHA256" ]]; then
+  echo "Retained Capture Info.plist digest does not match the measured build output." >&2
+  exit 21
+fi
 
 # Keep the exact-executable digest record OUTSIDE the app bundle.
 #
@@ -196,6 +239,7 @@ python3 - \
   "$CAPTURE_BUILD_INSTANCE_ID" \
   "$CAPTURE_BUILD_COMMIT_SHA" \
   "$EXECUTABLE_SHA256" \
+  "$INFO_PLIST_SHA256" \
   "$CAPTURE_RECIPE_IDENTIFIER" \
   "$CAPTURE_PROCEDURE_VERSION" \
   "$BUNDLE_ID" \
@@ -212,6 +256,7 @@ import sys
     build_instance_id,
     source_commit_sha,
     executable_sha256,
+    info_plist_sha256,
     recipe_identifier,
     procedure_version,
     bundle_identifier,
@@ -220,11 +265,12 @@ import sys
 ) = sys.argv[1:]
 
 external_record = {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "buildIdentifier": build_identifier,
     "buildInstanceID": build_instance_id,
     "sourceCommitSHA": source_commit_sha,
     "executableSHA256": executable_sha256,
+    "infoPlistSHA256": info_plist_sha256,
     "experimentRecipeID": recipe_identifier,
     "procedureVersion": procedure_version,
 }
@@ -253,6 +299,9 @@ EXTERNAL_BUILD_RECORD_SHA256="$(shasum -a 256 "$EXTERNAL_BUILD_RECORD" | awk '{p
 
 printf '%s\n' \
   "capture_executable_sha256=$EXECUTABLE_SHA256" \
+  "capture_info_plist_sha256=$INFO_PLIST_SHA256" \
+  "capture_retained_executable=$RETAINED_EXECUTABLE" \
+  "capture_retained_info_plist=$RETAINED_INFO_PLIST" \
   "capture_external_build_record=$EXTERNAL_BUILD_RECORD" \
   "capture_external_build_record_sha256=$EXTERNAL_BUILD_RECORD_SHA256" \
   "capture_runner_metadata=$RUNNER_METADATA" \
@@ -323,3 +372,214 @@ capture_state reconnecting dark
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
+
+# Bind every retained visual/test attachment byte to this exact Simulator build without promoting
+# screenshots into physical or protocol authority. Every accepted evidence path is traversed from
+# one no-follow directory descriptor and every retained file is hashed from one no-follow file
+# descriptor whose identity is re-proved after the read. The manifest is external to the app and can
+# be independently re-hashed after the Actions artifact is downloaded for visual review.
+VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"
+VISUAL_EVIDENCE_MANIFEST_SHA256="$(python3 - \
+  "$VISUAL_EVIDENCE_MANIFEST" \
+  "$ARTIFACTS_DIR" \
+  "$CAPTURE_BUILD_IDENTIFIER" \
+  "$CAPTURE_BUILD_INSTANCE_ID" \
+  "$CAPTURE_BUILD_COMMIT_SHA" \
+  "$EXTERNAL_BUILD_RECORD_SHA256" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+
+(
+    manifest_path_text,
+    artifacts_root_text,
+    build_identifier,
+    build_instance_id,
+    source_commit_sha,
+    external_build_record_sha256,
+) = sys.argv[1:]
+
+O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+if O_DIRECTORY == 0 or O_NOFOLLOW == 0 or O_NONBLOCK == 0:
+    raise SystemExit("visual evidence custody requires O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK")
+
+artifacts_root = Path(artifacts_root_text)
+manifest_name = Path(manifest_path_text).name
+if manifest_name != "NembraCaptureSimulatorVisualEvidence.json":
+    raise SystemExit("unexpected Simulator visual evidence manifest filename")
+
+DIRECTORY_FLAGS = os.O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
+
+
+def stable_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_uid,
+        info.st_gid,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def digest_regular_file(parent_fd: int, name: str) -> tuple[int, str]:
+    try:
+        descriptor = os.open(name, FILE_FLAGS, dir_fd=parent_fd)
+    except OSError as exc:
+        raise SystemExit(f"could not open retained visual evidence without following links: {name}") from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise SystemExit(f"retained visual evidence must be a regular file: {name}")
+        if before.st_size <= 0:
+            raise SystemExit(f"visual evidence manifest refuses empty retained evidence files: {name}")
+
+        digest = hashlib.sha256()
+        bytes_read = 0
+        with os.fdopen(os.dup(descriptor), "rb", closefd=True) as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                bytes_read += len(chunk)
+                digest.update(chunk)
+        after = os.fstat(descriptor)
+
+        if stable_identity(before) != stable_identity(after) or bytes_read != before.st_size:
+            raise SystemExit(f"retained visual evidence changed while being hashed: {name}")
+        return before.st_size, digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def collect_directory(
+    directory_fd: int,
+    relative_parts: tuple[str, ...],
+    artifact_kind: str,
+    entries: list[dict[str, object]],
+) -> None:
+    directory_before = os.fstat(directory_fd)
+    if not stat.S_ISDIR(directory_before.st_mode):
+        raise SystemExit(f"visual-evidence ancestry is not a directory: {'/'.join(relative_parts)}")
+
+    for name in sorted(os.listdir(directory_fd)):
+        if name in {".", ".."} or "/" in name or "\x00" in name:
+            raise SystemExit(f"invalid retained visual evidence path component: {name!r}")
+
+        try:
+            child_directory_fd = os.open(name, DIRECTORY_FLAGS, dir_fd=directory_fd)
+        except NotADirectoryError:
+            child_directory_fd = -1
+        except OSError as exc:
+            raise SystemExit(f"retained visual evidence directory entry is not safely traversable: {name}") from exc
+
+        if child_directory_fd >= 0:
+            try:
+                collect_directory(
+                    child_directory_fd,
+                    (*relative_parts, name),
+                    artifact_kind,
+                    entries,
+                )
+            finally:
+                os.close(child_directory_fd)
+            continue
+
+        byte_count, digest = digest_regular_file(directory_fd, name)
+        entries.append({
+            "artifactKind": artifact_kind,
+            "relativePath": "/".join((*relative_parts, name)),
+            "byteCount": byte_count,
+            "sha256": digest,
+        })
+
+    directory_after = os.fstat(directory_fd)
+    if stable_identity(directory_before) != stable_identity(directory_after):
+        raise SystemExit(f"visual-evidence directory changed during enumeration: {'/'.join(relative_parts)}")
+
+
+try:
+    artifacts_fd = os.open(artifacts_root, DIRECTORY_FLAGS)
+except OSError as exc:
+    raise SystemExit("could not open Simulator artifact root with no-follow directory custody") from exc
+
+try:
+    root_before = os.fstat(artifacts_fd)
+    if not stat.S_ISDIR(root_before.st_mode):
+        raise SystemExit("Simulator artifact root is not one directory")
+
+    entries: list[dict[str, object]] = []
+    for artifact_kind, relative_root in (
+        ("simulatorScreenshot", "screenshots"),
+        ("xctestAttachment", "test-attachments"),
+    ):
+        try:
+            root_fd = os.open(relative_root, DIRECTORY_FLAGS, dir_fd=artifacts_fd)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise SystemExit(f"could not open retained visual evidence directory safely: {relative_root}") from exc
+        try:
+            collect_directory(root_fd, (relative_root,), artifact_kind, entries)
+        finally:
+            os.close(root_fd)
+
+    root_after = os.fstat(artifacts_fd)
+    if stable_identity(root_before) != stable_identity(root_after):
+        raise SystemExit("Simulator artifact root changed during visual-evidence enumeration")
+
+    entries.sort(key=lambda entry: (str(entry["artifactKind"]), str(entry["relativePath"])))
+    screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
+    if not screenshot_entries:
+        raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
+
+    manifest = {
+        "schemaVersion": 1,
+        "authority": "simulator-visual-evidence-not-physical-authorization",
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_commit_sha,
+        "externalBuildRecordSHA256": external_build_record_sha256,
+        "files": entries,
+    }
+    manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    manifest_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_NOFOLLOW | O_CLOEXEC
+    try:
+        manifest_fd = os.open(manifest_name, manifest_flags, 0o600, dir_fd=artifacts_fd)
+    except OSError as exc:
+        raise SystemExit("could not publish Simulator visual evidence manifest without replacement") from exc
+    try:
+        with os.fdopen(os.dup(manifest_fd), "wb", closefd=True) as handle:
+            handle.write(manifest_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        manifest_after = os.fstat(manifest_fd)
+        if (
+            not stat.S_ISREG(manifest_after.st_mode)
+            or manifest_after.st_size != len(manifest_bytes)
+            or manifest_after.st_nlink != 1
+        ):
+            raise SystemExit("published Simulator visual evidence manifest identity is invalid")
+    finally:
+        os.close(manifest_fd)
+
+    print(hashlib.sha256(manifest_bytes).hexdigest())
+finally:
+    os.close(artifacts_fd)
+PY
+)"
+if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
+  exit 23
+fi
+printf '%s\n' \
+  "capture_simulator_visual_evidence_manifest=$VISUAL_EVIDENCE_MANIFEST" \
+  "capture_simulator_visual_evidence_manifest_sha256=$VISUAL_EVIDENCE_MANIFEST_SHA256" \
+  >> "$ARTIFACTS_DIR/environment.txt"

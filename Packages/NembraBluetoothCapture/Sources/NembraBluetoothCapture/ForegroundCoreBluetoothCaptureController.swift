@@ -243,7 +243,25 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     public private(set) var connectionPhase: ConnectionPhase = .idle
-    public private(set) var discoveredPeripherals: [DiscoveredPeripheral] = []
+    /// Deterministic presentation snapshot. Sorting is deliberately paid by the
+    /// presentation reader, never by CoreBluetooth's high-cadence discovery callback.
+    public var discoveredPeripherals: [DiscoveredPeripheral] {
+        latestDiscoveryByIdentifier.values.sorted {
+            DiscoveredPeripheral.sortsBefore($0, $1)
+        }
+    }
+
+    /// Exact UUID rediscovery authority is dictionary-backed and does not materialize
+    /// or sort the presentation catalog.
+    func hasDiscoveredPeripheral(identifier: UUID) -> Bool {
+        latestDiscoveryByIdentifier[identifier] != nil
+    }
+
+    /// Read-only exact candidate lookup for coordinator connectability policy. This
+    /// remains presentation/candidate state, not physical scooter authentication.
+    func discoveredPeripheral(identifier: UUID) -> DiscoveredPeripheral? {
+        latestDiscoveryByIdentifier[identifier]
+    }
     public private(set) var lastDiagnostic: String?
     public private(set) var captureFailed = false
 
@@ -985,6 +1003,16 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            // Validate every still-throwing queue-gate condition on a value copy before the
+            // reference-backed canonical authority fence advances. Once transition succeeds,
+            // publication below is deliberately synchronous and non-failable.
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterTerminalFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -998,13 +1026,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             failCapture(error)
             throw ControllerError.captureFailed
@@ -1108,6 +1130,16 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            // `lastResolvedEventSequence` above is legitimate retired-FIFO chronology and may
+            // remain advanced if recovery fails. Canonical artifact authority must not advance
+            // until the exact queue-gate reopen has already succeeded on a detached value copy.
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -1121,13 +1153,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             lastDiagnostic = Self.diagnostic(
                 error,
@@ -1851,17 +1877,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func updateDiscoveryList() {
-        discoveredPeripherals = latestDiscoveryByIdentifier.values.sorted {
-            DiscoveredPeripheral.sortsBefore($0, $1)
-        }
-    }
-
     private func clearCandidateCatalog() {
         peripheralByIdentifier.removeAll()
         latestDiscoveryByIdentifier.removeAll()
         latestAdvertisementByIdentifier.removeAll()
-        updateDiscoveryList()
     }
 
     private func clearAcquisitionObjects() {
@@ -2046,7 +2065,6 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             isConnectable: connectable
         )
         latestDiscoveryByIdentifier[peripheral.identifier] = discovery
-        updateDiscoveryList()
 
         do {
             let observation = try CoreBluetoothCaptureMapping.advertisement(

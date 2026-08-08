@@ -1,0 +1,281 @@
+import Foundation
+import Testing
+
+@Suite("ES80 Capture rider-language acceptance")
+struct ES80CaptureRiderLanguageAcceptanceTests {
+    private static func repositoryRoot() -> URL {
+        let testFile = URL(fileURLWithPath: #filePath)
+        return testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func shellSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("Features")
+                .appendingPathComponent("Research")
+                .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func appSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("App")
+                .appendingPathComponent("NembraApp.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func riderSurface(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private func hero"))
+        let details = try #require(
+            source.range(
+                of: "private var captureDetailsSheet",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<details.lowerBound]
+    }
+
+    private static func detailsSurface(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private var captureDetailsSheet"))
+        let phase = try #require(
+            source.range(
+                of: "private func phase(",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<phase.lowerBound]
+    }
+
+    @Test("primary Capture states use rider language instead of implementation vocabulary")
+    func primaryStatesStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let riderSurface = try Self.riderSurface(in: source)
+
+        let engineeringPhrasesThatMustStayOutOfPrimaryCopy = [
+            "One sealed evidence life",
+            "package-owned Experiment One authority",
+            "package-owned physical execution gate",
+            "producer's evidence clock",
+            "producer accepts the window only from its own monotonic receipt boundary",
+            "full CoreBluetooth identifier",
+            "selectable full Bluetooth identifier",
+            "post-admission scan",
+            "fresh scan epoch created after the sealed admission",
+            "package-owned correlated target",
+            "finite acquisition",
+            "Finite acquisition",
+            "accepted Horizon authority",
+            "accepted monotonic observation interval",
+            "package-owned Ready epoch",
+            "committing Horizon",
+            "immutable JSON artifact",
+            "Evidence failed closed",
+            "bounded CoreBluetooth advertisement catalog",
+            "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+            "application characteristic-value writes",
+            "package producer",
+            "HORIZON READY",
+            "FIELD AUTHORITY",
+            "healthItem(\"FINITE\"",
+            "healthItem(\"HORIZON\"",
+            "Text(\"EXPERIMENT ONE\")",
+            "this Experiment One run",
+            "Restart Experiment One",
+            "Start a fresh Experiment One",
+            "Freezing final evidence",
+            "another Experiment One run"
+        ]
+
+        for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
+            #expect(
+                !riderSurface.contains(phrase),
+                "Primary Capture copy still exposes engineering vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(riderSurface.contains("PASSIVE / READ ONLY"))
+        #expect(riderSurface.contains("CAPTURE PROGRESS"))
+        #expect(riderSurface.contains("Scooter OFF"))
+        #expect(riderSurface.contains("Scooter ON"))
+        #expect(riderSurface.contains("Share Capture"))
+        #expect(riderSurface.contains("View Details"))
+        #expect(riderSurface.contains("DISCOVERY"))
+        #expect(riderSurface.contains("SEAL"))
+    }
+
+    @Test("stationary preflight keeps the internal recipe identifier out of rider copy")
+    func stationaryPreflightStaysHumanFirst() throws {
+        let source = try Self.appSource()
+        let preflightStart = try #require(source.range(of: "private struct ES80ExperimentOneStationaryPreflightView"))
+        let noGoStart = try #require(
+            source.range(
+                of: "private struct ES80ExperimentOneFieldNoGoView",
+                range: preflightStart.lowerBound..<source.endIndex
+            )
+        )
+        let preflight = source[preflightStart.lowerBound..<noGoStart.lowerBound]
+
+        #expect(preflight.contains("Stationary preflight"))
+        #expect(preflight.contains("Keep charger unplugged for the whole capture"))
+        #expect(preflight.contains("Unplug charger to continue"))
+        #expect(
+            !preflight.contains("ES80-FINGERPRINT-v1"),
+            "Stationary preflight must not expose the internal experiment recipe identifier."
+        )
+
+        // The exact recipe remains legitimate engineering truth in the locked Details surface.
+        let noGo = source[noGoStart.lowerBound..<source.endIndex]
+        #expect(noGo.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
+        #expect(noGo.contains("es80.capture.recipe-id"))
+    }
+
+    @Test("primary failure copy stays rider-readable and never dumps implementation errors")
+    func failureCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let beginning = try #require(source.range(of: "private func experimentErrorMessage"))
+        let end = try #require(
+            source.range(
+                of: "private func bluetoothUnavailableMessage",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        let failureCopy = source[beginning.lowerBound..<end.lowerBound]
+
+        let implementationPhrasesThatMustStayOutOfFailureCopy = [
+            "Experiment One",
+            "package-owned",
+            "CoreBluetooth",
+            "bounded window",
+            "bounded startup interval",
+            "local observation-window sequence",
+            "String(describing: error)"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfFailureCopy {
+            #expect(
+                !failureCopy.contains(phrase),
+                "Primary failure copy still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(failureCopy.contains("Start a fresh capture."))
+        #expect(failureCopy.contains("OFF / ON"))
+    }
+
+    @Test("phase and restart helpers stay rider-readable too")
+    func phaseAndRestartHelpersStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let phaseStart = try #require(source.range(of: "private func phase("))
+        let errorStart = try #require(
+            source.range(
+                of: "private func experimentErrorMessage",
+                range: phaseStart.lowerBound..<source.endIndex
+            )
+        )
+        let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
+
+        let implementationPhrasesThatMustStayOutOfHelpers = [
+            "evidence life",
+            "consumed authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow",
+            "fresh package-owned Experiment One workflow",
+            "coordinator.lastDiagnostic ??",
+            "scan-liveness",
+            "String(describing: error)"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfHelpers {
+            #expect(
+                !helperSurface.contains(phrase),
+                "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(helperSurface.contains("Start a fresh capture"))
+        #expect(helperSurface.contains("Bluetooth capture is unavailable"))
+        #expect(helperSurface.contains("OFF / ON"))
+        #expect(helperSurface.contains("Simulator QA interruption fixture"))
+    }
+
+    @Test("sealed-capture recovery stays rider-readable without weakening seal truth")
+    func sealedShareRecoveryStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let beginning = try #require(source.range(of: "private func prepareFinalShareForAnalysisAndSharing()"))
+        let restart = try #require(
+            source.range(
+                of: "private func restartExperiment()",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        let shareRecovery = source[beginning.lowerBound..<restart.lowerBound]
+
+        #expect(!shareRecovery.contains("retained operator setup declaration"))
+        #expect(!shareRecovery.contains("Start a fresh Experiment One"))
+        #expect(!shareRecovery.contains("inventing setup provenance"))
+        #expect(shareRecovery.contains("Capture is sealed, but its setup confirmation is missing."))
+        #expect(shareRecovery.contains("Start a fresh capture instead of exporting incomplete setup information."))
+
+        #expect(shareRecovery.contains("guard coordinator.finalizedArtifact != nil else { return }"))
+        #expect(shareRecovery.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
+        #expect(shareRecovery.contains("finalShareIntegrityReport = report"))
+    }
+
+    @Test("engineering truth remains inside the Details view instead of leaking from later source")
+    func technicalTruthRemainsInDetails() throws {
+        let source = try Self.shellSource()
+        let details = try Self.detailsSurface(in: source)
+
+        #expect(details.contains("Truth boundary"))
+        #expect(details.contains("CoreBluetooth"))
+        #expect(details.contains("full peripheral identity"))
+        #expect(details.contains("Software Export SHA-256"))
+        #expect(details.contains("Runtime executable SHA-256"))
+        #expect(details.contains("does not authenticate the physical ES80"))
+    }
+
+    @Test("language cleanup cannot weaken physical lock, evidence authority, or stable UI actions")
+    func truthAndActionContractsRemainStable() throws {
+        let source = try Self.shellSource()
+
+        #expect(source.contains("guard status.physicalProcedurePermitted else"))
+        #expect(source.contains("declaredStationarySetup = nil"))
+        #expect(source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
+        #expect(source.contains("finalShareIntegrityReport != nil"))
+
+        let stableActionIdentifiers = [
+            "es80.capture.begin-window",
+            "es80.capture.confirm-setup",
+            "es80.capture.complete-window",
+            "es80.capture.restart-correlation",
+            "es80.capture.confirm-correlated-target",
+            "es80.capture.restart-rediscovery",
+            "es80.capture.connect-prepared-target",
+            "es80.capture.finish",
+            "es80.capture.share",
+            "es80.capture.prepare-share",
+            "es80.capture.share-unavailable",
+            "es80.capture.view-details",
+            "es80.capture.restart-experiment",
+            "es80.capture.experiment-progress",
+            "es80.capture.single-authority",
+            "es80.capture.complete",
+            "es80.capture-shell"
+        ]
+
+        for identifier in stableActionIdentifiers {
+            #expect(source.contains(identifier), "Missing stable Capture action/state identifier: \(identifier)")
+        }
+    }
+}

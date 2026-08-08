@@ -1,0 +1,38 @@
+name: Capture Signed-Field Inspector Custody QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/es80_signed_field_artifact_evidence.py
+      - scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+      - .github/workflows/capture-signed-field-inspector-custody.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-inspector-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate closed Apple verifier process authority
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test

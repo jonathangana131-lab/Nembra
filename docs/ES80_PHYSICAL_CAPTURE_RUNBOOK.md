@@ -6,7 +6,7 @@ Primary physical target: the current/newer Tuya-generation AOVOPRO ES80.
 
 This document is the physical-procedure gate for Nembra Capture under the V14 product contract. It supersedes older V11-era timing/authorization wording in this file. Supporting passive research primitives may already exist, but package code, Simulator evidence, a passing child PR, or a visually complete research shell does not authorize a physical experiment.
 
-Only the **final composed exact build** may change this status from `NO-GO` to `GO` after every required software, app-visible, runtime, integrity, and safety gate below is satisfied.
+Only the **final composed exact build** may change this status from `NO-GO` to `GO` after every required software, app-visible, runtime, integrity, signed-device build-authority, and safety gate below is satisfied.
 
 ## Current NO-GO blockers
 
@@ -24,9 +24,13 @@ The current passive-foundation recovery does not by itself close the full V14 Ca
 - exact build/procedure/recipe provenance embedded in the exported artifact;
 - final exact-head Xcode 27 / iPhone 12 / iOS 27 acceptance for the composed app;
 - required visual, accessibility, performance, and recovery-state review for the app-visible Capture surface;
-- an explicit final runbook edit that names the accepted exact build/commit, procedure version, expected artifact, and stop conditions and changes this status to `GO`.
+- a final **signed physical-device/installable artifact** produced from that exact accepted composition, with the exact bytes/identity needed for independent acceptance retained rather than substituting Simulator build evidence;
+- independent external acceptance/attestation of that exact signed-device field artifact, correlated to its exact build-instance/build tuple and retained artifact evidence without treating arbitrary parsed JSON, a caller-supplied digest, a skipped/queued workflow, or the artifact's own self-description as authority;
+- an exact externally signed schema-v2 field-authorization envelope accepted as immutable bytes, with independently recomputed `envelopeSHA256`, `authorizationPayloadSHA256`, `externalBuildRecordSHA256`, and `fieldBuildEvidenceRecordSHA256`, plus the reviewed authority `authorityPublicKeyX963SHA256`; the package-pinned trust anchor on the final build must be that exact reviewed public key;
+- a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state that is mechanically tied to the independently accepted exact field-build authority and cannot be unlocked by a UI Boolean, launch argument, local preference, or caller-constructible token;
+- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, exact field-authorization envelope/trust-root bundle, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
 
-Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform it.
+Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform them.
 
 ## Safety and truth rules
 
@@ -45,19 +49,31 @@ Until those conditions are closed, all procedures below are **supporting experim
 13. A CoreBluetooth peripheral UUID is useful observed identity evidence but is not automatically a permanent physical-scooter identifier.
 14. If acquisition, foreground integrity, chronology, horizon duration, seal, integrity, or export readiness fails, treat the session as incomplete. Never interpret missing evidence as proof that a field/service/event does not exist.
 15. Never promote Simulator, public research, display interpolation, or derived UI motion into physical telemetry evidence.
+16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
+17. Never treat “signature valid” or a signer-generated summary alone as the final field handoff. Final GO must bind the exact retained authorization-envelope bytes and the exact reviewed package trust root by independently recomputed digests, and those identities must agree with the exact subjects accepted for the signed device build.
 
 ## Final GO record — intentionally blank while NO-GO
 
 When the software is actually ready, replace this section in the same acceptance change that flips the status above to `GO`.
 
 - Accepted exact build/commit: **NOT YET AUTHORIZED**
+- Accepted signed-device/installable artifact identity/digest: **NOT YET AUTHORIZED**
+- Independent field-build acceptance / attestation subject: **NOT YET AUTHORIZED**
+- Accepted field-authorization envelope SHA-256 (`envelopeSHA256`): **NOT YET AUTHORIZED**
+- Accepted authorization payload SHA-256 (`authorizationPayloadSHA256`): **NOT YET AUTHORIZED**
+- Accepted external build record SHA-256 (`externalBuildRecordSHA256`): **NOT YET AUTHORIZED**
+- Accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`): **NOT YET AUTHORIZED**
+- Accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`): **NOT YET AUTHORIZED**
+- Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**
 - Procedure version: **V14 / NOT YET AUTHORIZED**
 - Baseline device: iPhone 12 / iOS 27
 - Experiment recipe: **ES80-FINGERPRINT-v1 candidate; final recipe authority not yet issued**
 - Expected artifact: **NOT YET AUTHORIZED**
 - Physical result collected: **NO**
 
-No ancestor SHA, package-only green, child PR, Simulator run, or stale acceptance may be filled into this section as the final physical build.
+The five authorization-bundle digests above are identities for exact retained bytes, not values to trust merely because the signer printed them. Final acceptance must independently recompute them and confirm that the authority public-key digest matches the exact X9.63 key pinned in `PassiveBluetoothCaptureFieldAuthorizationTrustAnchor` on the accepted final build.
+
+No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, signer stdout by itself, or stale acceptance may be filled into this section as the final physical build authority.
 
 ## Intended preflight once GO is authorized
 
@@ -65,9 +81,14 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 
 - Bluetooth permission and powered-on state;
 - foreground evidence integrity;
-- exact build identity and capture schema compatibility;
+- exact runtime build identity and capture schema compatibility;
+- package-owned physical field-execution authority is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
+- the independently accepted signed-device/installable build authority matches the exact runtime/build-instance rendezvous required by the final accepted contract;
+- the field-authorization envelope being consumed is the exact accepted envelope bound by the final GO record, and its signed subject digests resolve to the exact accepted external-build and field-evidence bytes;
+- the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
+- an explicit fresh-run operator declaration that charger state is **Disconnected** for `ES80-FINGERPRINT-v1`; this is declared setup provenance, not a measured or sensed charger state, and `Connected` or undeclared state blocks `READY`;
 - any required stock-app/reference-marker setup;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
@@ -81,15 +102,17 @@ This is the smallest useful first physical experiment after the final runbook st
 
 ### A. Correlate the physical target
 
-Use the deterministic physical power sequence:
+Use the deterministic physical power sequence. Each OFF / ON observation window must span **at least 10 seconds** under the package-owned monotonic receipt-time policy:
 
-1. **OFF1** — scooter physically off; collect the accepted scan interval.
-2. **ON1** — power the scooter on; collect the accepted scan interval.
-3. **OFF2** — power the scooter off again; collect the accepted scan interval.
-4. **ON2** — power the scooter on again; collect the accepted scan interval.
+1. **OFF1** — scooter physically off; collect the accepted scan interval for at least 10 seconds.
+2. **ON1** — power the scooter on; collect the accepted scan interval for at least 10 seconds.
+3. **OFF2** — power the scooter off again; collect the accepted scan interval for at least 10 seconds.
+4. **ON2** — power the scooter on again; collect the accepted scan interval for at least 10 seconds.
 5. Let the accepted correlation logic compare full CoreBluetooth peripheral identity across the four intervals.
 6. If exactly one candidate satisfies the accepted repeatability rules, present it only as a **correlated Bluetooth target / scooter signal found**.
 7. The operator explicitly confirms that exact correlated candidate before a target-labeled durable capture session begins.
+
+The 10-second minimum is an Experiment One sampling-duration requirement enforced by the package evidence policy. A UI countdown may guide the operator, but it cannot shorten or mint accepted receipt-time evidence. This minimum is **not** a BLE cadence claim, RF-completeness proof, or proof that OFF-window non-observation means physical absence.
 
 Do not break ties using display name, RSSI, vague Tuya hints, service-name vibes, or short IDs. If the accepted correlation contract cannot produce one unambiguous candidate, stop. Do not guess.
 
@@ -224,6 +247,7 @@ Verify exact source/field, units/scale, cadence, freshness/currentness behavior,
 Stop the experiment and preserve only legitimate evidence if any required condition fails, including:
 
 - Bluetooth becomes unavailable or the accepted target cannot be correlated unambiguously;
+- any OFF / ON correlation window cannot prove the accepted **>=10-second** package monotonic receipt-time minimum;
 - the selected target/session changes unexpectedly;
 - acquisition never earns accepted Ready;
 - foreground integrity required by the recipe is lost;
@@ -231,10 +255,14 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - the accepted >=60-second post-Ready horizon cannot be proven;
 - Horizon/queue commit/immutable freeze cannot complete exactly;
 - artifact integrity or export readiness fails;
+- runtime build identity no longer matches the package-owned accepted field-build authority;
+- the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
+- the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
+- the operator-declared charger setup is no longer true; stop the current experiment, keep or return the charger to **Disconnected**, and restart with a fresh declaration rather than continuing the same evidence life;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
 
 ## Current physical conclusion
 
-**NO-GO.** The passive foundation is valuable software evidence, but it is not the final composed app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final build and procedure.
+**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, exact authorization-envelope/trust-root identities, and procedure.

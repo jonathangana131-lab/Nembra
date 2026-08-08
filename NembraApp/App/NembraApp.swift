@@ -5,10 +5,15 @@ import SwiftUI
 @main
 @MainActor
 struct NembraApp: App {
-    private enum LaunchMode: Equatable {
+    enum LaunchMode: Equatable {
         case standard
         case es80PassiveCapture
+#if DEBUG && targetEnvironment(simulator)
+        case es80PassiveCaptureSimulatorQA(String)
+#endif
     }
+
+    static let captureFieldRecipeInfoPlistKey = "NembraCaptureFieldRecipe"
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
@@ -18,11 +23,19 @@ struct NembraApp: App {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-        _researchCoordinator = State(
-            initialValue: launchMode == .es80PassiveCapture
-                ? try? PassiveBluetoothExperimentOneCoordinator()
-                : nil
-        )
+        let initialResearchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+        switch launchMode {
+        case .standard:
+            initialResearchCoordinator = nil
+        case .es80PassiveCapture:
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+#if DEBUG && targetEnvironment(simulator)
+        case .es80PassiveCaptureSimulatorQA:
+            // Synthetic QA uses the inert status-only coordinator: no live CoreBluetooth controller.
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+#endif
+        }
+        _researchCoordinator = State(initialValue: initialResearchCoordinator)
     }
 
     var body: some Scene {
@@ -48,12 +61,14 @@ struct NembraApp: App {
                 NavigationStack {
                     if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
                         if let researchCoordinator {
-                            ES80CaptureShellView(coordinator: researchCoordinator)
+                            ES80ExperimentOneStationaryPreflightView(
+                                coordinator: researchCoordinator
+                            )
                         } else {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The package-owned Experiment One workflow could not be created.")
+                                description: Text("The Experiment One capture workflow could not be created.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -63,14 +78,65 @@ struct NembraApp: App {
                     }
                 }
                 .preferredColorScheme(.dark)
+
+#if DEBUG && targetEnvironment(simulator)
+            case let .es80PassiveCaptureSimulatorQA(rawScenario):
+                let scenario = PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario(rawValue: rawScenario)
+                    ?? .stationaryPreflight
+                let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)
+                NavigationStack {
+                    if let researchCoordinator {
+                        if scenario == .stationaryPreflight {
+                            ES80ExperimentOneStationaryPreflightView(
+                                coordinator: researchCoordinator,
+                                simulatorQAEvidenceLabel: snapshot.evidenceLabel,
+                                freshExperimentCoordinatorFactory: { try PassiveBluetoothExperimentOneCoordinator() }
+                            )
+                        } else {
+                            ES80CaptureShellView(
+                                coordinator: researchCoordinator,
+                                simulatorQASnapshot: snapshot,
+                                onFreshExperimentRequested: { try PassiveBluetoothExperimentOneCoordinator() }
+                            )
+                        }
+                    } else {
+                        ContentUnavailableView(
+                            "Simulator QA unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text("The package-owned synthetic Capture presentation could not be created.")
+                        )
+                        .navigationTitle("Nembra Capture")
+                        .accessibilityIdentifier("es80.capture.simulator-qa-unavailable")
+                    }
+                }
+                .preferredColorScheme(.dark)
+#endif
             }
         }
     }
 
-    private static func resolveLaunchMode(
+    /// Routes the exact field-build recipe marker into Capture even in a Release archive.
+    /// The marker is launch routing only; it cannot mint package physical authority.
+    static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]
     ) -> LaunchMode {
+        if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
+           fieldRecipe == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue {
+            return .es80PassiveCapture
+        }
+#if DEBUG && targetEnvironment(simulator)
+        if arguments.contains("--es80-passive-capture-simulator-qa") {
+            let prefix = "--es80-capture-qa-scenario="
+            let raw = arguments.first(where: { $0.hasPrefix(prefix) })
+                .map { String($0.dropFirst(prefix.count)) }
+            let scenario = raw
+                .flatMap(PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.init(rawValue:))
+                ?? .stationaryPreflight
+            return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
+        }
+#endif
 #if DEBUG
         if arguments.contains("--es80-passive-capture")
             || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
@@ -81,14 +147,235 @@ struct NembraApp: App {
     }
 }
 
+/// Product-level prerequisite between accepted package field authority and the Experiment One shell.
+///
+/// The physical recipe requires the charger disconnected. The app therefore cannot turn a generic
+/// confirmation tap into `.disconnected` setup provenance: the operator first declares the actual
+/// charger state here. A connected declaration is a hard blocker. Only an explicit disconnected
+/// declaration can instantiate the shell, where the existing final setup confirmation records the
+/// same condition into the package-owned stationary setup object.
+///
+/// This remains an operator declaration, not electrical sensing or continuous-condition attestation.
+/// It cannot bypass the package-owned physical execution gate because this view is reachable only
+/// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
+@MainActor
+private struct ES80ExperimentOneStationaryPreflightView: View {
+    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+    @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
+    @State private var disconnectedDeclarationAccepted = false
+    private let simulatorQAEvidenceLabel: String?
+    private let freshExperimentCoordinatorFactory: () throws -> PassiveBluetoothExperimentOneCoordinator
+
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQAEvidenceLabel: String? = nil,
+        freshExperimentCoordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
+            try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        }
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.simulatorQAEvidenceLabel = simulatorQAEvidenceLabel
+        self.freshExperimentCoordinatorFactory = freshExperimentCoordinatorFactory
+    }
+
+    var body: some View {
+        if disconnectedDeclarationAccepted {
+            ES80CaptureShellView(
+                coordinator: coordinator,
+                onFreshExperimentRequested: makeFreshExperimentCoordinator
+            )
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let simulatorQAEvidenceLabel {
+                        Text("\(simulatorQAEvidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.orange.opacity(0.10), in: Capsule())
+                            .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
+                            .accessibilityIdentifier("es80.capture.simulator-qa")
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text("Stationary preflight")
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+
+                        Text("Confirm the charger state before OFF 1 becomes available.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("CHARGER STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+
+                        chargerStateButton(
+                            title: "Disconnected",
+                            detail: "Keep charger unplugged for the whole capture",
+                            systemImage: "bolt.slash.fill",
+                            state: .disconnected
+                        )
+
+                        chargerStateButton(
+                            title: "Connected",
+                            detail: "Unplug charger to continue",
+                            systemImage: "bolt.fill",
+                            state: .connected
+                        )
+                    }
+
+                    if selectedChargerState?.rawValue == PassiveBluetoothStationaryCaptureChargerState.connected.rawValue {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.lock.fill")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Disconnect charger to continue")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+
+                                Text("This capture requires the scooter to be unplugged. Unplug the charger, then select Disconnected.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(18)
+                        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("es80.capture.preflight.charger-blocked")
+                    }
+
+                    Button {
+                        guard selectedChargerState?.rawValue
+                                == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue else {
+                            return
+                        }
+                        disconnectedDeclarationAccepted = true
+                    } label: {
+                        Label("Continue to setup confirmation", systemImage: "checkmark.shield.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 56)
+                            .foregroundStyle(canContinue ? Color.black : Color.secondary)
+                            .background(
+                                canContinue ? Color.white : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canContinue)
+                    .accessibilityHint("Available only after declaring that the charger is disconnected.")
+                    .accessibilityIdentifier("es80.capture.preflight.continue")
+
+                    Text("Nembra cannot sense the charger directly. Keep it disconnected, keep Nembra open with the screen unlocked, and keep the stock scooter app closed for the whole capture.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: 660)
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 42)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Nembra Capture")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("es80.capture.stationary-preflight")
+        }
+    }
+
+    /// A new Experiment One is a new declared setup life. A restart may mint a fresh
+    /// package-owned coordinator, but it must also return through charger preflight instead of
+    /// carrying the previous run's disconnected declaration into new evidence.
+    private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
+        let freshCoordinator = try freshExperimentCoordinatorFactory()
+        coordinator = freshCoordinator
+        selectedChargerState = nil
+        disconnectedDeclarationAccepted = false
+        return freshCoordinator
+    }
+
+    private var canContinue: Bool {
+        selectedChargerState?.rawValue
+            == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue
+    }
+
+    private func chargerStateButton(
+        title: String,
+        detail: String,
+        systemImage: String,
+        state: PassiveBluetoothStationaryCaptureChargerState
+    ) -> some View {
+        let selected = selectedChargerState?.rawValue == state.rawValue
+
+        return Button {
+            selectedChargerState = state
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(selected ? Color.black : Color.secondary)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(selected ? Color.black.opacity(0.7) : Color.secondary)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .foregroundStyle(selected ? Color.black : Color.white)
+            .background(
+                selected ? Color.white : Color.white.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Charger \(title)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("es80.capture.preflight.charger-\(state.rawValue)")
+    }
+}
+
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    @State private var engineeringDetailsExpanded = false
+    @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
+    @State private var runtimeBuildIdentityCheckFinished = false
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+        "Capture locked on this build. This exact build has not been explicitly cleared for physical scooter capture. Final app and build checks are still in progress. No scooter action is needed yet."
+    }
+
+    private var buildIdentityAccessibilityLabel: String {
+        if let runtimeBuildIdentity {
+            return "Capture build, \(runtimeBuildIdentity.buildIdentifier)"
+        }
+        return runtimeBuildIdentityCheckFinished
+            ? "Capture build identity unavailable"
+            : "Capture build identity checking"
     }
 
     var body: some View {
@@ -113,16 +400,41 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Field capture locked")
+                            Text("Capture locked")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This exact build is not authorized to begin the physical ES80 procedure.")
+                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("BUILD")
+                            .font(.caption2.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+
+                        if let runtimeBuildIdentity {
+                            Text(runtimeBuildIdentity.buildIdentifier)
+                                .font(.caption.monospaced().weight(.semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        } else if runtimeBuildIdentityCheckFinished {
+                            Text("Identity unavailable")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        } else {
+                            Text("Checking…")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(buildIdentityAccessibilityLabel)
+                    .accessibilityIdentifier("es80.capture.build-identity")
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -132,11 +444,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Physical Experiment One locked")
+                        Text("Not ready for scooter capture yet")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
+                        Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -148,46 +460,124 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
 
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("PROCEDURE")
-                            .font(.caption.monospaced().weight(.bold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("NO-GO")
-                            .font(.caption.monospaced().weight(.bold))
-                            .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 14) {
+                    Button {
+                        engineeringDetailsExpanded.toggle()
+                    } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Engineering details")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Text("Recipe, build provenance, and authorization")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: engineeringDetailsExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
+                    .accessibilityIdentifier("es80.capture.engineering-details")
 
-                    Text(recipeID)
-                        .font(.title3.monospaced().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("es80.capture.recipe-id")
+                    if engineeringDetailsExpanded {
+                        Divider().overlay(.white.opacity(0.12))
 
-                    Divider().overlay(.white.opacity(0.12))
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("Recipe")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text(recipeID)
+                                    .font(.subheadline.monospaced().weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.trailing)
+                                    .accessibilityIdentifier("es80.capture.recipe-id")
+                            }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.seal")
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        Text("Single-authority workflow installed")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.white)
-                    }
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("Physical authorization")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 12)
+                                Text("NO-GO")
+                                    .font(.subheadline.monospaced().weight(.bold))
+                                    .foregroundStyle(.orange)
+                            }
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "lock.fill")
-                            .foregroundStyle(.orange)
-                            .accessibilityHidden(true)
-                        Text("Field execution unavailable on this build")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
+                            if let runtimeBuildIdentity {
+                                Divider().overlay(.white.opacity(0.12))
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("SOURCE COMMIT")
+                                        .font(.caption2.monospaced().weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                    Text(runtimeBuildIdentity.sourceCommitSHA)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.white)
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("es80.capture.build-source-sha")
+
+                                    Text("BUILD INSTANCE")
+                                        .font(.caption2.monospaced().weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                    Text(runtimeBuildIdentity.buildInstanceID)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.white)
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("es80.capture.build-instance-id")
+                                }
+                            } else if runtimeBuildIdentityCheckFinished {
+                                Divider().overlay(.white.opacity(0.12))
+
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("Build identity unavailable")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.orange)
+                                    Text("Nembra could not verify this running build's embedded identity. Capture stays locked and no exact source or build-instance claim is shown.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            } else {
+                                Divider().overlay(.white.opacity(0.12))
+
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .accessibilityHidden(true)
+                                    Text("Checking build identity…")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("Checking capture build identity")
+                            }
+
+                            Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
+                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -202,5 +592,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+        .task { await loadRuntimeBuildIdentity() }
+    }
+
+    private func loadRuntimeBuildIdentity() async {
+        guard runtimeBuildIdentity == nil, !runtimeBuildIdentityCheckFinished else { return }
+
+        let identity = await Task.detached(priority: .utility) {
+            try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        }.value
+
+        guard !Task.isCancelled else { return }
+        runtimeBuildIdentity = identity
+        runtimeBuildIdentityCheckFinished = true
     }
 }

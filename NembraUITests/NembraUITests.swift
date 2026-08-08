@@ -73,6 +73,37 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureCriticalSimulatorStatesPassSystemAccessibilityAudit() throws {
+        let scenarios = [
+            "stationaryPreflight",
+            "observationHorizonReady",
+            "captureComplete",
+            "foregroundInterrupted"
+        ]
+
+        for scenario in scenarios {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--es80-passive-capture-simulator-qa",
+                "--es80-capture-qa-scenario=\(scenario)"
+            ]
+            app.launch()
+
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                "Capture accessibility audit scenario \(scenario) must render the real Capture shell."
+            )
+            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                "Capture accessibility audit scenario \(scenario) must remain visibly synthetic and non-authorizing."
+            )
+
+            try app.performAccessibilityAudit()
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
