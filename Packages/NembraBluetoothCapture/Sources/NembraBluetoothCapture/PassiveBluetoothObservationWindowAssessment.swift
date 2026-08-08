@@ -23,6 +23,7 @@ public enum PassiveBluetoothObservationWindowDisposition: String, Equatable, Sen
     case missingFiniteAcquisitionReadyBoundary
     case ambiguousFiniteAcquisitionReadyBoundary
     case missingObservationHorizonBoundary
+    case invalidBoundaryChronology
     case observedDurationTooShort
 }
 
@@ -147,7 +148,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
             )
         guard !underflow else {
             return makeReport(
-                disposition: .observedDurationTooShort,
+                disposition: .invalidBoundaryChronology,
                 minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
                 observedDurationNanoseconds: nil,
                 readyBoundaries: readyBoundaries,
