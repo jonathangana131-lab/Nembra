@@ -56,29 +56,32 @@ struct PassiveBluetoothExperimentOneSoftwareExportIntegrityTests {
     }
 
     private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
-        var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        let duration = PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
+        var ledger = PassiveBluetoothPowerCycleObservationLedger(
+            minimumWindowDurationNanoseconds: duration
+        )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOff,
             startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
+            endedAtUptimeNanoseconds: 10 + duration,
             candidates: []
         )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
+            startedAtUptimeNanoseconds: 20_000_000_020,
+            endedAtUptimeNanoseconds: 20_000_000_020 + duration,
             candidates: [.init(id: scooter, isConnectable: true)]
         )
         _ = try ledger.completeWindow(
             phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
+            startedAtUptimeNanoseconds: 40_000_000_030,
+            endedAtUptimeNanoseconds: 40_000_000_030 + duration,
             candidates: []
         )
         return try #require(ledger.completeWindow(
             phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
+            startedAtUptimeNanoseconds: 60_000_000_040,
+            endedAtUptimeNanoseconds: 60_000_000_040 + duration,
             candidates: [.init(id: scooter, isConnectable: true)]
         ))
     }
