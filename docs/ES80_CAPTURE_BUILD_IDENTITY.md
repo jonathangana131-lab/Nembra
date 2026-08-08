@@ -55,9 +55,9 @@ The accepted topology is therefore:
 1. generate build label + build-instance ID + source SHA before build;
 2. embed those non-self-referential declarations in the app;
 3. produce/sign the final app artifact;
-4. measure the exact produced executable or final installable artifact after signing;
-5. create an **external** build record containing build label, build-instance ID, source SHA, exact artifact digest, recipe ID, and procedure version;
-6. independently sign/attest that external record and exact final artifact identity;
+4. measure and retain the exact produced executable or final installable artifact after signing;
+5. create an **external** build record containing build label, build-instance ID, source SHA, exact artifact digest, exact build-metadata digest, recipe ID, and procedure version;
+6. independently sign/attest that external record and the exact retained final artifact identity;
 7. use the shared build-instance ID to correlate app-visible preflight details with the accepted external GO record.
 
 The current Simulator pipeline exercises the same topology with `CODE_SIGNING_ALLOWED=NO`. Simulator attestation remains software evidence only and never authorizes hardware.
@@ -76,21 +76,24 @@ The runner must fail closed if the built app does not preserve the exact generat
 
 The app-visible preflight / `View Details` surface should expose the build label, safely inspectable exact source SHA, and build-instance ID as **software build evidence**. A future field-admission design must not relabel those declarations as physical authorization or recreate the signed-bundle self-reference through another resource.
 
-## External record
+## Retained evidence + external record
 
-The current runner emits `NembraCaptureExternalBuildRecord.json` outside the app bundle. Schema v2 carries:
+The runner retains immutable copies of the exact measured Simulator executable and generated `Info.plist` under `Artifacts/Xcode27Simulator/build-evidence/`. Each copy is byte-compared against the build output and re-hashed before any provenance record is accepted. This prevents a later reviewer from being left with only a digest string after DerivedData disappears.
 
-- `schemaVersion = 2`;
+`NembraCaptureExternalBuildRecord.json` remains outside the app bundle. Schema v3 carries:
+
+- `schemaVersion = 3`;
 - `buildIdentifier`;
 - `buildInstanceID`;
 - `sourceCommitSHA`;
 - `executableSHA256`;
+- `infoPlistSHA256`;
 - `experimentRecipeID = ES80-FINGERPRINT-v1`;
 - `procedureVersion = V14`.
 
-The workflow requests independent GitHub attestations for both the exact external record bytes and the exact executable digest. Those attestations are build-pipeline evidence; they are not physical scooter evidence.
+The workflow checks the retained executable and retained `Info.plist` against those exact record digests before attestation. It then requests independent GitHub attestations for the exact external-record bytes and the retained executable file itself. The uploaded QA artifact preserves the retained executable, `Info.plist`, record, runner metadata, screenshots, logs, and xcresult for later re-verification.
 
-A final physical-device pipeline still needs the same pattern applied to the exact **signed** field build or installable artifact, followed by exact-head product acceptance and a completed external GO record. The Simulator record cannot be promoted into that role.
+The retained Simulator executable is not a substitute for the eventual signed field artifact. A final physical-device pipeline must retain and attest the exact **final signed** field build or installable artifact (for example the accepted `.ipa`) and bind that artifact to the same pre-build build-instance rendezvous. That final pipeline must then receive exact-head product acceptance and a completed external GO record. Simulator evidence cannot be promoted into that role.
 
 ## Manifest integration
 
