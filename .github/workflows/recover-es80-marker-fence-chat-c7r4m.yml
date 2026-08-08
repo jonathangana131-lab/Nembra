@@ -15,16 +15,16 @@ jobs:
       - name: Checkout exact recovery trigger
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 8
 
-      - name: Verify immutable recovery parent
+      - name: Verify immutable recovery ancestry
         shell: bash
         run: |
           set -euo pipefail
           PRODUCT_PARENT=ed6864eb8d253801592461f32d57c3a1db6826f8
           WORKFLOW=.github/workflows/recover-es80-marker-fence-chat-c7r4m.yml
-          test "$(git rev-parse HEAD^)" = "$PRODUCT_PARENT"
-          test "$(git diff --name-only HEAD^ HEAD)" = "$WORKFLOW"
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test "$(git diff --name-only "$PRODUCT_PARENT" HEAD)" = "$WORKFLOW"
 
       - name: Apply marker quarantine fence and regression
         shell: bash
@@ -38,19 +38,19 @@ jobs:
 
           source = controller.read_text()
           old = '''        try ensureCaptureHealthy()
-          guard recorder != nil else { throw ControllerError.targetNotSelected }
-          let observation = try PassiveBluetoothStockAppObservation(
+                  guard recorder != nil else { throw ControllerError.targetNotSelected }
+                  let observation = try PassiveBluetoothStockAppObservation(
           '''
           new = '''        try ensureCaptureHealthy()
-          guard recorder != nil,
-                let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
-              throw ControllerError.targetNotSelected
-          }
-          guard !selectedTargetCancellationPending,
-                !targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier) else {
-              throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
-          }
-          let observation = try PassiveBluetoothStockAppObservation(
+                  guard recorder != nil,
+                        let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+                      throw ControllerError.targetNotSelected
+                  }
+                  guard !selectedTargetCancellationPending,
+                        !targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier) else {
+                      throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+                  }
+                  let observation = try PassiveBluetoothStockAppObservation(
           '''
           if source.count(old) != 1:
               raise SystemExit(f"expected one marker-admission seam, found {source.count(old)}")
