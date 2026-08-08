@@ -1,0 +1,56 @@
+name: Validate app foreground integrity exact product
+
+on:
+  push:
+    branches:
+      - feature/qa-es80-app-foreground-integrity-gpt56-d67
+    paths:
+      - .github/workflows/validate-app-foreground-integrity-exact.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-product-xcode27:
+    name: Exact product Xcode 27 package + Simulator
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      PRODUCT_SHA: d67e6df1610c595895a6768653ae61c211848254
+      ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+    steps:
+      - name: Checkout immutable product
+        uses: actions/checkout@v6
+        with:
+          ref: d67e6df1610c595895a6768653ae61c211848254
+          fetch-depth: 1
+
+      - name: Prove exact product and structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerForegroundFinalizationIntegrityTests.swift
+          grep -q 'private var foregroundEvidenceIntegrityValid = true' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'try requireForegroundEvidenceIntegrity()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          ! grep -R --include='*.swift' -n '\.writeValue(' Packages/NembraBluetoothCapture/Sources
+
+      - name: Test Capture package with warnings as errors
+        shell: bash
+        run: swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Run real iOS 27 Simulator build, tests, and screenshot capture
+        shell: bash
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload exact-product Simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-app-foreground-integrity-d67-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
