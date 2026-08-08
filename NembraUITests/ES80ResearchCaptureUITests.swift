@@ -48,6 +48,26 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "No hidden or differently-labeled correlation-window action may bypass the package gate."
         )
         XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.stationary-setup"].exists,
+            "Operator setup declaration is subordinate to physical GO and must not leak through NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.charger-disconnected"].exists,
+            "A NO-GO build must not expose a charger declaration as a back-door procedure start."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.charger-connected"].exists,
+            "A NO-GO build must not expose a charger declaration as a back-door procedure start."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.confirm-setup"].exists,
+            "No generic setup confirmation may bypass package field authority."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.charger-connected-blocker"].exists,
+            "The connected-charger blocker belongs only to an otherwise authorized preflight surface."
+        )
+        XCTAssertFalse(
             app.buttons["Scan for scooter"].exists,
             "The old generic manual-candidate scan must not become a fallback physical path."
         )
