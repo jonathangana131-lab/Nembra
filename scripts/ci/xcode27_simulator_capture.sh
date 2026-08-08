@@ -28,8 +28,17 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 9
 fi
 
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR" "$BUILD_EVIDENCE_DIR"
-rm -rf "$RESULT_BUNDLE"
+# Ignored output from an older local/self-hosted run must never be mixed into exact-head acceptance.
+# Refuse reuse instead of deleting it: existing evidence may itself be valuable and should not be
+# silently destroyed merely because a later run chose the same destination.
+if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
+  echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite Simulator evidence: $ARTIFACTS_DIR" >&2
+  exit 22
+fi
+ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
+mkdir -p "$ARTIFACTS_PARENT"
+mkdir "$ARTIFACTS_DIR"
+mkdir "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR" "$BUILD_EVIDENCE_DIR"
 
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
@@ -443,7 +452,7 @@ PY
 VISUAL_EVIDENCE_MANIFEST_SHA256="$(shasum -a 256 "$VISUAL_EVIDENCE_MANIFEST" | awk '{print $1}')"
 if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
-  exit 22
+  exit 23
 fi
 printf '%s\n' \
   "capture_simulator_visual_evidence_manifest=$VISUAL_EVIDENCE_MANIFEST" \
