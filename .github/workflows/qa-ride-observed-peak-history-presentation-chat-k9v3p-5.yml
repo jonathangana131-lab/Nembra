@@ -1,0 +1,45 @@
+name: Ride observed-peak history presentation exact-product QA v5
+
+on:
+  push:
+    branches:
+      - cell/ride-observed-peak-history-presentation/ci/chat-k9v3p-5
+
+permissions:
+  contents: read
+
+jobs:
+  observed-peak-history-presentation-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 49f71728ae6990b7d3cf52b34f2edb146026743e
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-ride-observed-peak-history-presentation-chat-k9v3p-5.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Run NembraCore tests with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
