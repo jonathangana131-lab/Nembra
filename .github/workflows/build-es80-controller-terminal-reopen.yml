@@ -1,0 +1,312 @@
+name: Build ES80 Controller Terminal Reopen Product
+
+on:
+  push:
+    branches:
+      - automation/es80-controller-terminal-reopen-build/gpt56-go2
+
+permissions:
+  contents: write
+
+jobs:
+  build-product:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - name: Checkout immutable terminal package product
+        uses: actions/checkout@v6
+        with:
+          ref: 1759e44707bef584135b4cc632b0abb4da96cea4
+          fetch-depth: 0
+
+      - name: Apply deterministic controller closure
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          controller = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          text = controller.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '    private var lastProcessedEventSequence: UInt64 = 0\n    private var artifactReadBarrier = PassiveCoreBluetoothArtifactReadBarrier()\n',
+              '    // Last queue sequence whose callback was actually attempted against its captured recorder.\n'
+              '    // This must remain distinct from callbacks resolved by terminal retirement.\n'
+              '    private var lastProcessedEventSequence: UInt64 = 0\n'
+              '    // Complete global FIFO prefix whose positions are no longer pending. Ordinary recorder\n'
+              '    // processing advances both frontiers; terminal retirement advances only this one.\n'
+              '    private var lastResolvedEventSequence: UInt64 = 0\n'
+              '    private var artifactReadBarrier = PassiveCoreBluetoothArtifactReadBarrier()\n',
+              'dual FIFO frontiers'
+          )
+
+          old = '            processedThrough: lastProcessedEventSequence,\n'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'boundary resolved frontier: expected two matches, found {count}')
+          text = text.replace(old, '            processedThrough: lastResolvedEventSequence,\n')
+
+          replace_once(
+              '                    lastProcessedQueueSequence: lastProcessedEventSequence\n',
+              '                    lastProcessedQueueSequence: lastResolvedEventSequence\n',
+              'H queue commit resolved frontier'
+          )
+          replace_once(
+              '                                lastProcessedQueueSequence: self.lastProcessedEventSequence\n',
+              '                                lastProcessedQueueSequence: self.lastResolvedEventSequence\n',
+              'Ready queue commit resolved frontier'
+          )
+
+          replace_once(
+              '            retireQueuedEvidenceAfterTerminalHorizon()\n'
+              '            lastFinalizedArtifactAuthority = committedHorizon.authority\n'
+              '            return data\n',
+              '            try completeTerminalHorizonLifecycle(committedHorizon: committedHorizon)\n'
+              '            lastFinalizedArtifactAuthority = committedHorizon.authority\n'
+              '            return data\n',
+              'terminal success consumer'
+          )
+
+          old_helper = '''    private func retireQueuedEvidenceAfterTerminalHorizon() {
+              pendingEvents.removeAll { pending in
+                  observationBoundaryQueueGate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                      queueSequence: pending.queueSequence,
+                      authority: pending.authority
+                  )
+              }
+          }
+          '''
+          new_helper = '''    /// Completes one successful terminal artifact lifecycle without laundering retired
+              /// post-H callbacks into recorder-written evidence. All authority-changing work here is
+              /// synchronous on MainActor after immutable H freeze: transport teardown -> exact FIFO
+              /// retirement -> explicit global resolution -> fresh durable recorder/session -> gate reopen.
+              private func completeTerminalHorizonLifecycle(
+                  committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+              ) throws {
+                  guard let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+                      throw ControllerError.targetNotSelected
+                  }
+                  guard targetSessionGeneration != UInt64.max else {
+                      throw ControllerError.captureFailed
+                  }
+                  let terminalAuthority = committedHorizon.authority
+                  guard currentArtifactAuthorityContext() == terminalAuthority,
+                        artifactAuthorityFence.currentAuthority == terminalAuthority else {
+                      throw ControllerError.targetSessionChanged
+                  }
+
+                  // The connection teardown itself is outside the immutable artifact. Do it while the
+                  // gate is still terminal so no cancellation interruption or replacement authority can
+                  // enter either the frozen recorder or the soon-to-be fresh session.
+                  cancelActiveConnection(cause: .finalizedArtifactTeardown)
+
+                  let retirement = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
+                      from: &pendingEvents,
+                      currentLastEnqueuedEventSequence: lastEnqueuedEventSequence,
+                      terminalGate: observationBoundaryQueueGate
+                  ) { pending in
+                      PassiveCoreBluetoothTerminalQueueRetirement.PendingEvidenceIdentity(
+                          queueSequence: pending.queueSequence,
+                          authority: pending.authority
+                      )
+                  }
+                  let resolution = try PassiveCoreBluetoothTerminalQueueResolution.resolve(
+                      currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                      currentLastEnqueuedEventSequence: lastEnqueuedEventSequence,
+                      retirementReceipt: retirement,
+                      terminalGate: observationBoundaryQueueGate
+                  )
+
+                  let nextTargetSessionGeneration = targetSessionGeneration + 1
+                  let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: nextTargetSessionGeneration,
+                      authorityGeneration: 1
+                  )
+                  let freshRecorder = try PassiveCoreBluetoothCaptureRecorder(
+                      id: UUID(),
+                      vehicleIdentity: vehicleIdentity,
+                      startedAt: Date()
+                  )
+
+                  // The physical candidate remains the same target. Rotate only durable capture-session
+                  // identity; do not replay the prior session's retained advertisement as fresh evidence.
+                  guard targetState.selectedTargetIdentifier == selectedTargetIdentifier else {
+                      throw ControllerError.targetSessionChanged
+                  }
+                  try artifactAuthorityFence.transition(
+                      from: terminalAuthority,
+                      to: freshAuthority
+                  )
+                  targetSessionGeneration = freshAuthority.targetSessionGeneration
+                  artifactAuthorityGeneration = freshAuthority.authorityGeneration
+                  committedReadyEpoch = nil
+                  acquisitionLedger.beginTargetSession()
+                  gattIdentityRegistry.reset()
+                  selectedTargetCancellationPending = false
+                  hasUsedInitialSessionIdentity = true
+                  recorder = freshRecorder
+
+                  // Retired positions are globally resolved but were never written into either recorder.
+                  // Preserve that distinction before admitting any callback into the fresh lifecycle.
+                  lastResolvedEventSequence = resolution.resolvedThroughQueueSequence
+                  try observationBoundaryQueueGate.reopenAfterTerminalQueueResolution(
+                      resolution,
+                      currentLastEnqueuedEventSequence: lastEnqueuedEventSequence,
+                      freshTargetSessionGeneration: nextTargetSessionGeneration
+                  )
+              }
+          '''
+          replace_once(old_helper, new_helper, 'terminal helper replacement')
+
+          replace_once(
+              '                self.lastProcessedEventSequence = max(\n'
+              '                    self.lastProcessedEventSequence,\n'
+              '                    next.queueSequence\n'
+              '                )\n',
+              '                self.lastProcessedEventSequence = max(\n'
+              '                    self.lastProcessedEventSequence,\n'
+              '                    next.queueSequence\n'
+              '                )\n'
+              '                self.lastResolvedEventSequence = max(\n'
+              '                    self.lastResolvedEventSequence,\n'
+              '                    next.queueSequence\n'
+              '                )\n',
+              'ordinary processing resolves FIFO'
+          )
+
+          if 'retireQueuedEvidenceAfterTerminalHorizon' in text:
+              raise SystemExit('legacy raw terminal queue deletion survived')
+          controller.write_text(text)
+          PY
+
+      - name: Add focused controller contract regression
+        shell: bash
+        run: |
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionIntegrationTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Foreground controller terminal retirement, resolution, and fresh-session integration")
+          struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionIntegrationTests {
+              private static func controllerSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let packageRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: packageRoot
+                          .appendingPathComponent("Sources")
+                          .appendingPathComponent("NembraBluetoothCapture")
+                          .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              private static func offset(of needle: String, in source: String) throws -> Int {
+                  let range = try #require(source.range(of: needle))
+                  return source.distance(from: source.startIndex, to: range.lowerBound)
+              }
+
+              @Test("successful terminal H consumes producer retirement and resolution before exact fresh reopen")
+              func terminalSuccessUsesSealedProducerChain() throws {
+                  let source = try Self.controllerSource()
+                  let freeze = try Self.offset(of: "completeHorizonArtifactFreeze(", in: source)
+                  let consumer = try Self.offset(of: "completeTerminalHorizonLifecycle(committedHorizon:", in: source)
+                  let teardown = try Self.offset(of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)", in: source)
+                  let retire = try Self.offset(of: "PassiveCoreBluetoothTerminalQueueRetirement.retire(", in: source)
+                  let resolve = try Self.offset(of: "PassiveCoreBluetoothTerminalQueueResolution.resolve(", in: source)
+                  let rotate = try Self.offset(of: "let freshRecorder = try PassiveCoreBluetoothCaptureRecorder(", in: source)
+                  let transition = try Self.offset(of: "try artifactAuthorityFence.transition(", in: source)
+                  let reopen = try Self.offset(of: "reopenAfterTerminalQueueResolution(", in: source)
+
+                  #expect(freeze < consumer)
+                  #expect(consumer < teardown)
+                  #expect(teardown < retire)
+                  #expect(retire < resolve)
+                  #expect(resolve < rotate)
+                  #expect(rotate < transition)
+                  #expect(transition < reopen)
+                  #expect(!source.contains("retireQueuedEvidenceAfterTerminalHorizon"))
+              }
+
+              @Test("retired FIFO positions advance only the global resolved frontier")
+              func recorderWrittenAndResolvedFrontiersStayDistinct() throws {
+                  let source = try Self.controllerSource()
+                  #expect(source.contains("private var lastProcessedEventSequence: UInt64 = 0"))
+                  #expect(source.contains("private var lastResolvedEventSequence: UInt64 = 0"))
+                  #expect(source.contains("lastResolvedEventSequence = resolution.resolvedThroughQueueSequence"))
+                  #expect(!source.contains("lastProcessedEventSequence = resolution.resolvedThroughQueueSequence"))
+                  #expect(source.contains("processedThrough: lastResolvedEventSequence"))
+                  #expect(source.contains("lastProcessedQueueSequence: self.lastResolvedEventSequence"))
+              }
+
+              @Test("fresh terminal successor does not reuse same-target shortcut or stale advertisement")
+              func terminalSuccessCreatesFreshDurableRecorder() throws {
+                  let source = try Self.controllerSource()
+                  let helperStart = try #require(source.range(of: "private func completeTerminalHorizonLifecycle("))
+                  let helperEnd = try #require(
+                      source.range(of: "private func scheduleConnectionTimeout", range: helperStart.lowerBound..<source.endIndex)
+                  )
+                  let helper = String(source[helperStart.lowerBound..<helperEnd.lowerBound])
+
+                  #expect(helper.contains("id: UUID()"))
+                  #expect(helper.contains("targetSessionGeneration: nextTargetSessionGeneration"))
+                  #expect(helper.contains("acquisitionLedger.beginTargetSession()"))
+                  #expect(helper.contains("recorder = freshRecorder"))
+                  #expect(!helper.contains("beginTargetSessionIfNeeded"))
+                  #expect(!helper.contains("latestAdvertisement"))
+              }
+          }
+          SWIFT
+
+      - name: Assert exact two-file product scope and no application writes
+        shell: bash
+        run: |
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift'
+          test "${changed[1]}" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionIntegrationTests.swift'
+          if grep -R -n -E 'writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive Capture package must not add application characteristic writes.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Test NembraCore with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Publish isolated product branch
+        shell: bash
+        run: |
+          git config user.name 'nembra-v14-builder'
+          git config user.email 'actions@users.noreply.github.com'
+          git checkout -B parallel/es80-controller-terminal-reopen-current/gpt56-go2
+          git add \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionIntegrationTests.swift
+          git commit -m '[Capture controller v14] Consume terminal resolution into fresh durable session'
+          git push origin HEAD:refs/heads/parallel/es80-controller-terminal-reopen-current/gpt56-go2
