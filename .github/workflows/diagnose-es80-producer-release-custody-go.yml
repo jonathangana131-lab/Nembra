@@ -19,7 +19,7 @@ jobs:
 
       - name: Verify repair parent
         run: |
-          test "$(git rev-parse HEAD^)" = "ae50629cc0cc5d1c3d3f7011a61fca223a0c66b8"
+          test "$(git rev-parse HEAD^)" = "f56819823b3b4cdc20004cf25395f790dd8e840f"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/diagnose-es80-producer-release-custody-go.yml"
 
       - name: Reuse exact guarded construction transform
@@ -52,20 +52,22 @@ jobs:
 
           path = Path('scripts/ci/xcode27_signed_field_candidate.sh')
           source = path.read_text(encoding='utf-8')
-          marker = '\n: "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"\n'
-          replacement = '''
-          SELECTED_XCODE_DEVELOPER_DIR="$DEVELOPER_DIR"
-          unset DEVELOPER_DIR
 
-          : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
-          '''
-          if source.count(marker) != 1:
-              raise SystemExit('expected exactly one post-Xcode-selection input marker')
-          source = source.replace(marker, replacement, 1)
+          signing_input = ': "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"'
+          if source.count(signing_input) != 1:
+              print(f'::error title=Selected Xcode repair anchor::signing_input_count={source.count(signing_input)}')
+              raise SystemExit(1)
+          source = source.replace(
+              signing_input,
+              'SELECTED_XCODE_DEVELOPER_DIR="$DEVELOPER_DIR"\nunset DEVELOPER_DIR\n\n' + signing_input,
+              1,
+          )
 
           inherited = 'DEVELOPER_DIR="$DEVELOPER_DIR"'
-          if source.count(inherited) != 2:
-              raise SystemExit(f'expected two closed-child developer-dir assignments, found {source.count(inherited)}')
+          inherited_count = source.count(inherited)
+          if inherited_count != 2:
+              print(f'::error title=Selected Xcode closed-child anchor::inherited_assignment_count={inherited_count}')
+              raise SystemExit(1)
           source = source.replace(
               inherited,
               'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"',
