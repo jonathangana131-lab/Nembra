@@ -280,7 +280,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Capture locked on this build. Nembra is still completing the final app and build checks required before the scooter capture can begin. No scooter action is needed yet."
+        "Capture locked on this build. This exact build has not been explicitly cleared for physical scooter capture. Final app and build checks are still in progress. No scooter action is needed yet."
     }
 
     var body: some View {
@@ -328,7 +328,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build has passed its required checks. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
+                        Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -405,7 +405,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock from an accepted Nembra build; changing a setting or preference cannot bypass this lock.")
+                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
