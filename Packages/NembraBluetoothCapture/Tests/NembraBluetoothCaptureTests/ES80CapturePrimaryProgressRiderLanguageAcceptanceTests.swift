@@ -42,8 +42,8 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let source = try Self.shellSource()
         let primary = try Self.slice(
             source,
-            from: "private func hero(for phase: Phase)",
-            to: "private var captureDetailsSheet"
+            from: "private func primaryContent(",
+            to: "private func correlationReadyPanel("
         )
 
         let leaks = [
@@ -84,8 +84,8 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let source = try Self.shellSource()
         let primary = try Self.slice(
             source,
-            from: "private func hero(for phase: Phase)",
-            to: "private var captureDetailsSheet"
+            from: "private func primaryContent(",
+            to: "private func correlationReadyPanel("
         )
 
         for leak in [
@@ -104,7 +104,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("signal matching and read-only capture"))
         #expect(primary.contains("Begin read-only observation"))
         #expect(primary.contains("Verify Capture file"))
-        #expect(primary.contains("Capture locked"))
+        #expect(primary.contains("CAPTURE LOCKED"))
 
         #expect(!source.contains("This OFF / ON series has an evidence gap."))
         #expect(source.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
