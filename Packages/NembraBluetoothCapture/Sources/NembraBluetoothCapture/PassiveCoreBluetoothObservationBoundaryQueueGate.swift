@@ -23,6 +23,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
+        case freshTargetSessionRequired
+        case abortResolutionReceiptMismatch
+        case abortQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -125,6 +128,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     private var nextRevision: UInt64 = 1
     private var committedReadyTransaction: Transaction?
 
+    /// Resolution-gated recovery binds one exact durable replacement target session.
+    /// The binding survives ordinary reset and is consumed only by that session's
+    /// first Ready admission. It is process-local lifecycle authority, not scooter identity.
+    private var requiredReadyTargetSessionGeneration: UInt64?
+
     var isTerminal: Bool {
         if case .terminal = phase { return true }
         return false
@@ -166,6 +174,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard processedQueueSequence == nil else {
             throw StateError.invalidTransition
         }
+        if let requiredReadyTargetSessionGeneration {
+            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {
+                throw StateError.freshTargetSessionRequired
+            }
+        }
         guard nextRevision != UInt64.max else {
             throw StateError.transactionRevisionExhausted
         }
@@ -176,6 +189,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             authority: authority,
             revision: nextRevision
         )
+        requiredReadyTargetSessionGeneration = nil
         phase = .drainingReady(transaction)
         nextRevision += 1
         return transaction
@@ -455,11 +469,44 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
-    /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
-    /// retirement alone cannot reopen lifecycle admission because retired positions
-    /// still need a separate globally-resolved frontier update. #450 owns that
-    /// producer and its successor integration must make fresh-session reopen consume
-    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
+    /// Reopens abort quarantine only after the dedicated resolver has proven that the
+    /// old session's retired FIFO suffix is globally resolved without being relabeled
+    /// as recorder-written evidence. The caller must consume the receipt synchronously
+    /// with an unchanged controller queue tail and an already-created strictly newer
+    /// durable target session/recorder generation.
+    ///
+    /// The exact fresh generation remains bound until its first Ready admission, so
+    /// neither the abandoned session nor an unrelated later session can consume the
+    /// recovery. No physical scooter or BLE identity claim is made by this transition.
+    @MainActor
+    mutating func reopenAfterAbortedQueueResolution(
+        _ resolution: PassiveCoreBluetoothAbortedQueueResolution.Receipt,
+        currentLastEnqueuedEventSequence: UInt64,
+        freshTargetSessionGeneration: UInt64
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else {
+            throw StateError.invalidTransition
+        }
+        guard resolution.abortReceipt == currentAbort else {
+            throw StateError.abortResolutionReceiptMismatch
+        }
+        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
+            throw StateError.abortQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    /// Normal reset may clear only an already-open lifecycle. It deliberately cannot
+    /// escape abort quarantine or erase a resolution-gated exact fresh-session bind.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
