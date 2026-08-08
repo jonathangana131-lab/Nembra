@@ -2,31 +2,23 @@ import CryptoKit
 import Foundation
 
 /// A field-authorization result minted only after a signed external GO envelope is verified against
-/// both Nembra's independent package-pinned authority and the exact build identity measured from the
-/// running application.
-///
-/// The authorization also carries the independently signed subjects for the exact retained field
-/// evidence record and exact retained IPA. These digests are authority/audit bindings; they do not
-/// make the running app capable of reconstructing or re-verifying the original IPA container after
-/// installation.
+/// Nembra's independent package-pinned authority, the exact retained signed-IPA evidence record,
+/// the exact schema-v3 build record, and the build identity measured from the running application.
 ///
 /// This is software field-build authority only. It does not authenticate an AOVOPRO ES80, prove RF
 /// completeness, establish protocol/telemetry semantics, or prove the physical procedure occurred.
 public struct PassiveBluetoothCaptureVerifiedFieldAuthorization: Equatable, Sendable {
     public let externalBuildRecord: PassiveBluetoothCaptureExternalBuildRecord
-    public let signedFieldArtifactEvidenceSHA256: String
-    public let retainedIPASHA256: String
+    public let fieldBuildEvidenceRecord: PassiveBluetoothCaptureFieldBuildEvidenceRecord
     public let authorizationPayloadSHA256: String
 
     fileprivate init(
         externalBuildRecord: PassiveBluetoothCaptureExternalBuildRecord,
-        signedFieldArtifactEvidenceSHA256: String,
-        retainedIPASHA256: String,
+        fieldBuildEvidenceRecord: PassiveBluetoothCaptureFieldBuildEvidenceRecord,
         authorizationPayloadSHA256: String
     ) {
         self.externalBuildRecord = externalBuildRecord
-        self.signedFieldArtifactEvidenceSHA256 = signedFieldArtifactEvidenceSHA256
-        self.retainedIPASHA256 = retainedIPASHA256
+        self.fieldBuildEvidenceRecord = fieldBuildEvidenceRecord
         self.authorizationPayloadSHA256 = authorizationPayloadSHA256
     }
 }
@@ -37,18 +29,23 @@ public enum PassiveBluetoothCaptureFieldAuthorizationError: Error, Equatable, Se
     case duplicateEnvelopeField(String)
     case unsupportedEnvelopeSchemaVersion(Int)
     case invalidExternalBuildRecordBase64
+    case invalidFieldBuildEvidenceRecordBase64
     case invalidAuthorizationPayloadBase64
     case invalidSignatureBase64
     case malformedAuthorizationPayload
     case unexpectedAuthorizationPayloadField(String)
     case duplicateAuthorizationPayloadField(String)
+    case duplicateExternalBuildRecordField(String)
+    case duplicateFieldBuildEvidenceRecordField(String)
     case unsupportedAuthorizationPayloadSchemaVersion(Int)
     case unsupportedDecision(String)
     case invalidExternalBuildRecordSHA256
-    case invalidSignedFieldArtifactEvidenceSHA256
-    case invalidRetainedIPASHA256
+    case invalidFieldBuildEvidenceRecordSHA256
     case externalBuildRecordDigestMismatch
+    case fieldBuildEvidenceRecordDigestMismatch
     case invalidExternalBuildRecord
+    case invalidFieldBuildEvidenceRecord
+    case fieldBuildEvidenceMismatch
     case authorizationTrustAnchorNotConfigured
     case invalidAuthorizationPublicKey
     case invalidSignature
@@ -67,25 +64,17 @@ enum PassiveBluetoothCaptureFieldAuthorizationTrustAnchor {
 }
 
 /// Verifies a post-build field-authorization envelope without embedding final artifact hashes back
-/// into the signed app. The external authority signs an exact GO payload only after the signed build,
-/// its retained signed-field-artifact evidence, and the schema-v3 external build record are known and
-/// independently accepted.
-///
-/// Authorization payload schema v2 is intentionally incompatible with the earlier build-record-only
-/// v1 shape: v2 requires the exact retained signed-field-evidence and retained-IPA digests as signed
-/// subjects. A legacy v1 GO therefore cannot silently acquire the stronger v2 meaning.
-///
-/// The exact field-evidence and IPA digests are deliberately part of the signed payload rather than
-/// inferred from a matching build tuple. This prevents a future GO issuer from accidentally blessing
-/// only build-label/runtime self-consistency while omitting the exact signed-installable evidence that
-/// V14 requires before physical execution can be considered.
+/// into the signed app. The external authority signs an exact GO payload only after the retained
+/// signed IPA, its closed-world field evidence, and the schema-v3 external build record are known
+/// and independently accepted.
 public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
     public static let envelopeSchemaVersion = 1
-    public static let authorizationPayloadSchemaVersion = 2
+    public static let authorizationPayloadSchemaVersion = 1
 
     private struct EnvelopeWire: Decodable {
         let schemaVersion: Int
         let externalBuildRecordBase64: String
+        let fieldBuildEvidenceRecordBase64: String
         let authorizationPayloadBase64: String
         let signatureDERBase64: String
     }
@@ -94,8 +83,7 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
         let schemaVersion: Int
         let decision: String
         let externalBuildRecordSHA256: String
-        let signedFieldArtifactEvidenceSHA256: String
-        let retainedIPASHA256: String
+        let fieldBuildEvidenceRecordSHA256: String
     }
 
     /// Production verification uses only the package-owned trust root and the canonical runtime
@@ -141,6 +129,11 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
         ) else {
             throw PassiveBluetoothCaptureFieldAuthorizationError.invalidExternalBuildRecordBase64
         }
+        guard let fieldBuildEvidenceRecordData = decodeCanonicalBase64(
+            envelope.fieldBuildEvidenceRecordBase64
+        ) else {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.invalidFieldBuildEvidenceRecordBase64
+        }
         guard let authorizationPayloadData = decodeCanonicalBase64(
             envelope.authorizationPayloadBase64
         ) else {
@@ -170,17 +163,17 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
         guard isCanonicalSHA256(payload.externalBuildRecordSHA256) else {
             throw PassiveBluetoothCaptureFieldAuthorizationError.invalidExternalBuildRecordSHA256
         }
-        guard isCanonicalSHA256(payload.signedFieldArtifactEvidenceSHA256) else {
-            throw PassiveBluetoothCaptureFieldAuthorizationError
-                .invalidSignedFieldArtifactEvidenceSHA256
-        }
-        guard isCanonicalSHA256(payload.retainedIPASHA256) else {
-            throw PassiveBluetoothCaptureFieldAuthorizationError.invalidRetainedIPASHA256
+        guard isCanonicalSHA256(payload.fieldBuildEvidenceRecordSHA256) else {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.invalidFieldBuildEvidenceRecordSHA256
         }
 
         let exactExternalRecordSHA256 = sha256Hex(externalBuildRecordData)
         guard exactExternalRecordSHA256 == payload.externalBuildRecordSHA256 else {
             throw PassiveBluetoothCaptureFieldAuthorizationError.externalBuildRecordDigestMismatch
+        }
+        let exactFieldEvidenceSHA256 = sha256Hex(fieldBuildEvidenceRecordData)
+        guard exactFieldEvidenceSHA256 == payload.fieldBuildEvidenceRecordSHA256 else {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.fieldBuildEvidenceRecordDigestMismatch
         }
 
         let publicKey: P256.Signing.PublicKey
@@ -199,6 +192,15 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             throw PassiveBluetoothCaptureFieldAuthorizationError.invalidSignature
         }
 
+        if let duplicateKey = duplicateTopLevelObjectKey(in: externalBuildRecordData) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateExternalBuildRecordField(duplicateKey)
+        }
+        if let duplicateKey = duplicateTopLevelObjectKey(in: fieldBuildEvidenceRecordData) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateFieldBuildEvidenceRecordField(duplicateKey)
+        }
+
         let externalBuildRecord: PassiveBluetoothCaptureExternalBuildRecord
         do {
             externalBuildRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON
@@ -207,32 +209,47 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             throw PassiveBluetoothCaptureFieldAuthorizationError.invalidExternalBuildRecord
         }
 
-        guard externalBuildRecord.buildIdentifier == runtimeBuildIdentity.buildIdentifier,
-              externalBuildRecord.buildInstanceID == runtimeBuildIdentity.buildInstanceID,
-              externalBuildRecord.sourceCommitSHA == runtimeBuildIdentity.sourceCommitSHA,
-              externalBuildRecord.executableSHA256 == runtimeBuildIdentity.executableSHA256 else {
-            throw PassiveBluetoothCaptureFieldAuthorizationError.runtimeBuildMismatch
+        let fieldBuildEvidenceRecord: PassiveBluetoothCaptureFieldBuildEvidenceRecord
+        do {
+            fieldBuildEvidenceRecord = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON
+                .decodeDeclaration(fieldBuildEvidenceRecordData)
+        } catch {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.invalidFieldBuildEvidenceRecord
         }
-        guard externalBuildRecord.infoPlistSHA256 == runtimeBuildIdentity.infoPlistSHA256 else {
+
+        do {
+            _ = try fieldBuildEvidenceRecord.makeSoftwareExportBuildReference(
+                matching: externalBuildRecord
+            )
+        } catch {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.fieldBuildEvidenceMismatch
+        }
+
+        do {
+            try externalBuildRecord.validateRuntimeBinding(to: runtimeBuildIdentity)
+        } catch PassiveBluetoothCaptureExternalBuildRuntimeBindingError.infoPlistSHA256Mismatch {
             throw PassiveBluetoothCaptureFieldAuthorizationError.runtimeInfoPlistMismatch
+        } catch {
+            throw PassiveBluetoothCaptureFieldAuthorizationError.runtimeBuildMismatch
         }
 
         return PassiveBluetoothCaptureVerifiedFieldAuthorization(
             externalBuildRecord: externalBuildRecord,
-            signedFieldArtifactEvidenceSHA256: payload.signedFieldArtifactEvidenceSHA256,
-            retainedIPASHA256: payload.retainedIPASHA256,
+            fieldBuildEvidenceRecord: fieldBuildEvidenceRecord,
             authorizationPayloadSHA256: sha256Hex(authorizationPayloadData)
         )
     }
 
     private static func validateClosedWorldEnvelope(_ data: Data) throws {
-        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
-            throw PassiveBluetoothCaptureFieldAuthorizationError.duplicateEnvelopeField(duplicateKey)
+        if let duplicateKey = duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateEnvelopeField(duplicateKey)
         }
         let root = try jsonObject(data, malformed: .malformedEnvelope)
         let allowed: Set<String> = [
             "schemaVersion",
             "externalBuildRecordBase64",
+            "fieldBuildEvidenceRecordBase64",
             "authorizationPayloadBase64",
             "signatureDERBase64",
         ]
@@ -242,7 +259,7 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
     }
 
     private static func validateClosedWorldAuthorizationPayload(_ data: Data) throws {
-        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+        if let duplicateKey = duplicateTopLevelObjectKey(in: data) {
             throw PassiveBluetoothCaptureFieldAuthorizationError
                 .duplicateAuthorizationPayloadField(duplicateKey)
         }
@@ -251,8 +268,7 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             "schemaVersion",
             "decision",
             "externalBuildRecordSHA256",
-            "signedFieldArtifactEvidenceSHA256",
-            "retainedIPASHA256",
+            "fieldBuildEvidenceRecordSHA256",
         ]
         for key in root.keys.sorted() where !allowed.contains(key) {
             throw PassiveBluetoothCaptureFieldAuthorizationError
@@ -282,6 +298,68 @@ public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
             return nil
         }
         return data
+    }
+
+    /// `JSONSerialization` and `JSONDecoder` both collapse object members into keyed storage. At
+    /// this signature boundary, accepting duplicate names would make authority depend on parser
+    /// duplicate-key precedence. Scan exact UTF-8 bytes first and reject any repeated semantic key
+    /// in the top-level object, including keys written with different JSON escape spellings.
+    private static func duplicateTopLevelObjectKey(in data: Data) -> String? {
+        let bytes = Array(data)
+        var objectDepth = 0
+        var seenKeys = Set<String>()
+        var index = 0
+
+        while index < bytes.count {
+            switch bytes[index] {
+            case 0x7B: // {
+                objectDepth += 1
+            case 0x7D: // }
+                objectDepth -= 1
+            case 0x22: // "
+                let stringStart = index
+                index += 1
+                var isEscaped = false
+
+                while index < bytes.count {
+                    let byte = bytes[index]
+                    if isEscaped {
+                        isEscaped = false
+                    } else if byte == 0x5C { // \
+                        isEscaped = true
+                    } else if byte == 0x22 {
+                        break
+                    }
+                    index += 1
+                }
+
+                guard index < bytes.count else { return nil }
+                let stringEnd = index
+
+                if objectDepth == 1 {
+                    var lookahead = index + 1
+                    while lookahead < bytes.count, isJSONWhitespace(bytes[lookahead]) {
+                        lookahead += 1
+                    }
+                    if lookahead < bytes.count, bytes[lookahead] == 0x3A { // :
+                        let encodedKey = Data(bytes[stringStart...stringEnd])
+                        if let key = try? JSONDecoder().decode(String.self, from: encodedKey),
+                           !seenKeys.insert(key).inserted {
+                            return key
+                        }
+                    }
+                }
+            default:
+                break
+            }
+            index += 1
+        }
+
+        return nil
+    }
+
+    private static func isJSONWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
     }
 
     private static func isCanonicalSHA256(_ value: String) -> Bool {
