@@ -44,6 +44,42 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(coordinator.powerCycleResult == nil)
     }
 
+    @Test("ordinary construction stays locked even under a future permissive field gate")
+    func futureGateCannotUnlockOrdinaryConstruction() {
+        let policy = PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.self
+
+        #expect(policy.permitsPhysicalProcedure(
+            hasCanonicalLiveController: false,
+            fieldGatePermitsPhysicalProcedure: false
+        ) == false)
+        #expect(policy.permitsPhysicalProcedure(
+            hasCanonicalLiveController: false,
+            fieldGatePermitsPhysicalProcedure: true
+        ) == false)
+        #expect(policy.permitsPhysicalProcedure(
+            hasCanonicalLiveController: true,
+            fieldGatePermitsPhysicalProcedure: false
+        ) == false)
+        #expect(policy.permitsPhysicalProcedure(
+            hasCanonicalLiveController: true,
+            fieldGatePermitsPhysicalProcedure: true
+        ) == true)
+    }
+
+    @Test("public coordinator construction never creates the live CoreBluetooth controller")
+    func ordinaryPublicInitializerIsPermanentlyStatusOnly() throws {
+        let source = try Self.coordinatorSource()
+        let start = try #require(source.range(of: "    public init() throws {")?.lowerBound)
+        let end = try #require(source.range(of: "    package init(controller:", range: start..<source.endIndex)?.lowerBound)
+        let initializer = source[start..<end]
+
+        #expect(initializer.contains("controller = nil"))
+        #expect(!initializer.contains("ForegroundCoreBluetoothCaptureController("))
+        #expect(!initializer.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+        #expect(source.contains("hasCanonicalLiveController: controller != nil"))
+        #expect(source.contains("guard physicalProcedurePermittedForThisCoordinator else"))
+    }
+
     @Test("public coordinator does not expose caller target controller vehicle timing recorder or admission")
     func publicSurfaceKeepsMutationAuthorityInsidePackage() throws {
         let source = try Self.coordinatorSource()
@@ -91,7 +127,7 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let connection = source[start...]
         #expect(!connection.contains("defer {"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
-        let preview = try #require(connection.range(of: "if (try? admission.stagingPreview()) == nil"))
+        let preview = try #require(connection.range(of: "admission.previewForControllerStaging()"))
         let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: preview.lowerBound..<connection.endIndex))
         #expect(connect.lowerBound < preview.lowerBound)
         #expect(preview.lowerBound < clear.lowerBound)
