@@ -220,7 +220,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
                         chargerStateButton(
                             title: "Disconnected",
-                            detail: "Required for ES80-FINGERPRINT-v1",
+                            detail: "Required for this capture",
                             systemImage: "bolt.slash.fill",
                             state: .disconnected
                         )
