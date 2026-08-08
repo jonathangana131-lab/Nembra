@@ -264,10 +264,12 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
             beginScanIfAwaiting(on: manager)
         case .poweredOff, .unauthorized, .unsupported:
             invalidateCurrentTransportForBluetoothState(manager)
+            throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
         case .unknown, .resetting:
             break
         @unknown default:
             invalidateCurrentTransportForBluetoothState(manager)
+            throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
         }
     }
 
@@ -295,7 +297,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
         let endedAt = DispatchTime.now().uptimeNanoseconds
         guard endedAt >= startedAt else {
-            ledger.invalidate()
+            retireCurrentTransport(manager, bluetoothFailure: false)
             throw PassiveBluetoothPowerCycleObservationSessionError.nonMonotonicWindowClock
         }
         guard endedAt - startedAt >= minimumWindowDurationNanoseconds else {
@@ -336,13 +338,17 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     /// permanently; prior completed windows cannot be reused. Construct a fresh session and restart
     /// the physical OFF₁ -> ON₁ -> OFF₂ -> ON₂ procedure.
     public func abandonCurrentWindow() {
-        activeManager?.stopScan()
-        activeManager = nil
-        awaitingPoweredOn = false
-        windowStartedAtUptimeNanoseconds = nil
-        candidatesByIdentifier.removeAll(keepingCapacity: true)
-        lastWindowInvalidatedByBluetooth = false
-        ledger.invalidate()
+        guard activeManager != nil || awaitingPoweredOn || windowStartedAtUptimeNanoseconds != nil else {
+            return
+        }
+        if let manager = activeManager {
+            retireCurrentTransport(manager, bluetoothFailure: false)
+        } else {
+            ledger.invalidate()
+            awaitingPoweredOn = false
+            windowStartedAtUptimeNanoseconds = nil
+            candidatesByIdentifier.removeAll(keepingCapacity: true)
+        }
     }
 
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -407,12 +413,19 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     }
 
     private func invalidateCurrentTransportForBluetoothState(_ manager: CBCentralManager) {
+        retireCurrentTransport(manager, bluetoothFailure: true)
+    }
+
+    private func retireCurrentTransport(
+        _ manager: CBCentralManager,
+        bluetoothFailure: Bool
+    ) {
         guard manager === activeManager else { return }
         if windowStartedAtUptimeNanoseconds != nil {
             manager.stopScan()
         }
         ledger.invalidate()
-        lastWindowInvalidatedByBluetooth = true
+        lastWindowInvalidatedByBluetooth = bluetoothFailure
         activeManager = nil
         awaitingPoweredOn = false
         windowStartedAtUptimeNanoseconds = nil
