@@ -1,9 +1,10 @@
-/// Duration-only assessment of immutable passive-capture observation boundaries.
+/// Fail-closed assessment of immutable passive-capture observation-window
+/// duration evidence.
 ///
-/// This type answers one deliberately narrow question: did Nembra preserve at
-/// least the caller-required amount of monotonic observation time between the
-/// latest accepted finite-acquisition-ready boundary and the terminal
-/// observation horizon?
+/// This type answers one deliberately narrow question: does the session contain
+/// one unambiguous finite-acquisition-ready -> observation-horizon interval,
+/// free of known byte-continuity breaks, whose monotonic duration meets the
+/// caller-required minimum?
 ///
 /// A sufficient result is Nembra lifecycle-duration evidence only. It does not
 /// prove continuous BLE traffic, RF emission, foreground authority, target
@@ -14,8 +15,11 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         case sufficient
         case invalidMinimumDuration
         case missingFiniteAcquisitionReady
+        case ambiguousFiniteAcquisitionReady
         case missingObservationHorizon
+        case ambiguousObservationHorizon
         case horizonPrecedesReady
+        case continuityBreakWithinWindow
         case insufficientDuration
     }
 
@@ -24,9 +28,12 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
     public let observedDurationNanoseconds: UInt64?
     public let readyBoundary: PassiveBluetoothObservationBoundary?
     public let horizonBoundary: PassiveBluetoothObservationBoundary?
+    /// Raw-record sequence numbers for known byte-continuity breaks strictly
+    /// after readiness and at/before the terminal horizon watermark.
+    public let continuityBreakSequenceNumbers: [UInt64]
 
-    /// Convenience only; the assessment itself remains duration evidence rather
-    /// than a declaration that the wider capture experiment is healthy/valid.
+    /// Convenience only; the assessment itself remains a narrow lifecycle gate
+    /// rather than a declaration that the wider capture experiment is healthy.
     public var isSufficient: Bool {
         status == .sufficient
     }
@@ -36,22 +43,25 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         minimumRequiredDurationNanoseconds: UInt64,
         observedDurationNanoseconds: UInt64?,
         readyBoundary: PassiveBluetoothObservationBoundary?,
-        horizonBoundary: PassiveBluetoothObservationBoundary?
+        horizonBoundary: PassiveBluetoothObservationBoundary?,
+        continuityBreakSequenceNumbers: [UInt64] = []
     ) {
         self.status = status
         self.minimumRequiredDurationNanoseconds = minimumRequiredDurationNanoseconds
         self.observedDurationNanoseconds = observedDurationNanoseconds
         self.readyBoundary = readyBoundary
         self.horizonBoundary = horizonBoundary
+        self.continuityBreakSequenceNumbers = continuityBreakSequenceNumbers
     }
 
-    /// Assesses a caller-defined minimum using only the capture's monotonic
-    /// uptime evidence. Wall-clock `Date` values are intentionally ignored.
+    /// Assesses a caller-defined minimum using the capture's monotonic uptime
+    /// clock and complete ordered raw-record/boundary evidence. Wall-clock
+    /// `Date` values are intentionally ignored for duration authority.
     ///
-    /// If multiple finite-acquisition-ready boundaries exist, the latest one is
-    /// authoritative for this duration calculation. This is conservative: a
-    /// repeated ready transition resets the duration window instead of allowing
-    /// an older/stale ready boundary to make a short final window appear long.
+    /// This evaluator never guesses among duplicate/nested ready boundaries.
+    /// Exactly one ready and one horizon are required. Any raw event whose
+    /// domain semantics break byte continuity inside that interval also blocks
+    /// sufficiency, even when the elapsed uptime exceeds the requested minimum.
     ///
     /// A zero minimum fails closed so an accidentally unconfigured product gate
     /// cannot silently accept an empty observation window.
@@ -59,11 +69,11 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
         session: PassiveBluetoothCaptureSession,
         minimumDurationNanoseconds: UInt64
     ) -> Self {
-        let readyBoundary = session.observationBoundaries.last {
-            $0.kind == .finiteAcquisitionReady
+        let readyMatches = session.observationBoundaries.enumerated().filter {
+            $0.element.kind == .finiteAcquisitionReady
         }
-        let horizonBoundary = session.observationBoundaries.last {
-            $0.kind == .observationHorizon
+        let horizonMatches = session.observationBoundaries.enumerated().filter {
+            $0.element.kind == .observationHorizon
         }
 
         guard minimumDurationNanoseconds > 0 else {
@@ -71,32 +81,56 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
                 status: .invalidMinimumDuration,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
-                readyBoundary: readyBoundary,
-                horizonBoundary: horizonBoundary
+                readyBoundary: readyMatches.count == 1 ? readyMatches[0].element : nil,
+                horizonBoundary: horizonMatches.count == 1 ? horizonMatches[0].element : nil
             )
         }
 
-        guard let readyBoundary else {
+        guard !readyMatches.isEmpty else {
             return Self(
                 status: .missingFiniteAcquisitionReady,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
                 readyBoundary: nil,
-                horizonBoundary: horizonBoundary
+                horizonBoundary: horizonMatches.count == 1 ? horizonMatches[0].element : nil
             )
         }
-
-        guard let horizonBoundary else {
+        guard readyMatches.count == 1 else {
+            return Self(
+                status: .ambiguousFiniteAcquisitionReady,
+                minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
+                observedDurationNanoseconds: nil,
+                readyBoundary: nil,
+                horizonBoundary: horizonMatches.count == 1 ? horizonMatches[0].element : nil
+            )
+        }
+        guard !horizonMatches.isEmpty else {
             return Self(
                 status: .missingObservationHorizon,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 observedDurationNanoseconds: nil,
-                readyBoundary: readyBoundary,
+                readyBoundary: readyMatches[0].element,
+                horizonBoundary: nil
+            )
+        }
+        guard horizonMatches.count == 1 else {
+            return Self(
+                status: .ambiguousObservationHorizon,
+                minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
+                observedDurationNanoseconds: nil,
+                readyBoundary: readyMatches[0].element,
                 horizonBoundary: nil
             )
         }
 
-        guard horizonBoundary.observedAtUptimeNanoseconds >= readyBoundary.observedAtUptimeNanoseconds else {
+        let readyMatch = readyMatches[0]
+        let horizonMatch = horizonMatches[0]
+        let readyBoundary = readyMatch.element
+        let horizonBoundary = horizonMatch.element
+
+        guard horizonMatch.offset > readyMatch.offset,
+              horizonBoundary.recordSequenceWatermark >= readyBoundary.recordSequenceWatermark,
+              horizonBoundary.observedAtUptimeNanoseconds >= readyBoundary.observedAtUptimeNanoseconds else {
             return Self(
                 status: .horizonPrecedesReady,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
@@ -108,6 +142,26 @@ public struct PassiveBluetoothObservationWindowDurationAssessment: Equatable, Se
 
         let observedDurationNanoseconds =
             horizonBoundary.observedAtUptimeNanoseconds - readyBoundary.observedAtUptimeNanoseconds
+        let continuityBreakSequenceNumbers = session.records.compactMap { record -> UInt64? in
+            guard record.sequenceNumber > readyBoundary.recordSequenceWatermark,
+                  record.sequenceNumber <= horizonBoundary.recordSequenceWatermark,
+                  record.event.breaksByteContinuity else {
+                return nil
+            }
+            return record.sequenceNumber
+        }
+
+        guard continuityBreakSequenceNumbers.isEmpty else {
+            return Self(
+                status: .continuityBreakWithinWindow,
+                minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
+                observedDurationNanoseconds: observedDurationNanoseconds,
+                readyBoundary: readyBoundary,
+                horizonBoundary: horizonBoundary,
+                continuityBreakSequenceNumbers: continuityBreakSequenceNumbers
+            )
+        }
+
         let status: Status = observedDurationNanoseconds >= minimumDurationNanoseconds
             ? .sufficient
             : .insufficientDuration
