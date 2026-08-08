@@ -50,6 +50,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
 
     enum StateError: Error, Equatable, Sendable {
         case resolvedFrontierDoesNotMatchHorizon(current: UInt64, horizon: UInt64)
+        case controllerQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)
         case retainedEvidenceRoutingRequired(retainedCount: Int)
         case invalidRetirementCoverage(
             horizon: UInt64,
@@ -66,6 +67,9 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     /// - the controller's already-resolved frontier must be *exactly* H. This
     ///   proves the terminal boundary did not leave an unresolved pre-H queue gap
     ///   and makes replay fail once the caller advances its frontier;
+    /// - the controller's current global queue tail must still equal the tail #419
+    ///   validated at retirement. Any newly accepted callback makes the receipt
+    ///   stale even when the old retirement itself was valid;
     /// - no retained pending evidence may remain. Preserved evidence requires the
     ///   separate routing/quarantine/adoption authority owned by #419's contract;
     /// - the retirement receipt must describe the complete contiguous H+1...tail
@@ -78,6 +82,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     @MainActor
     static func resolve(
         currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64,
         retirementReceipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt
     ) throws -> Receipt {
         let horizon = retirementReceipt.horizonQueueCutoff
@@ -85,6 +90,13 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
             throw StateError.resolvedFrontierDoesNotMatchHorizon(
                 current: currentResolvedThroughQueueSequence,
                 horizon: horizon
+            )
+        }
+
+        guard currentLastEnqueuedEventSequence == retirementReceipt.validatedQueueTailSequence else {
+            throw StateError.controllerQueueChangedAfterRetirement(
+                expected: retirementReceipt.validatedQueueTailSequence,
+                actual: currentLastEnqueuedEventSequence
             )
         }
 
