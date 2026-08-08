@@ -90,6 +90,30 @@ struct LiveDistanceCockpitPresentationTests {
         #expect(value.role == .partialObserved)
     }
 
+    @Test("leading and later interval gaps remain independently accounted partial evidence")
+    func leadingAndIntervalGapsRemainPartial() throws {
+        var accumulator = try makeAccumulator(
+            segmentStart: 100,
+            maximumIntervalNanoseconds: 1_500_000_000
+        )
+        _ = accumulator.record(try sample(speed: 1, uptime: 200))
+        _ = accumulator.record(try sample(speed: 1, uptime: 1_000_000_200))
+        let result = accumulator.record(try sample(speed: 1, uptime: 5_000_000_200))
+
+        #expect(result == .gapDetected(intervalNanoseconds: 4_000_000_000))
+
+        guard case let .observed(value) = LiveDistanceCockpitState(snapshot: accumulator.snapshot) else {
+            Issue.record("Expected partial observed live distance")
+            return
+        }
+
+        #expect(value.distanceMeters == 1)
+        #expect(value.acceptedSampleCount == 3)
+        #expect(value.integratedIntervalCount == 1)
+        #expect(value.knownCoverageGapCount == 2)
+        #expect(value.role == .partialObserved)
+    }
+
     @Test("contradictory empty snapshot fails closed")
     func contradictoryEmptySnapshotFailsClosed() {
         let snapshot = LiveDistanceSegmentSnapshot(
@@ -155,6 +179,24 @@ struct LiveDistanceCockpitPresentationTests {
             distanceMeters: 1,
             hasKnownCoverageGap: true,
             acceptedSampleCount: 4,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 1
+        )
+
+        #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
+    }
+
+    @Test("a leading gap cannot stand in for a separate missing accepted interval")
+    func leadingGapCannotPayForMissingAcceptedInterval() {
+        let snapshot = LiveDistanceSegmentSnapshot(
+            source: .gps,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 100,
+            firstAcceptedSampleUptimeNanoseconds: 200,
+            lastAcceptedSampleUptimeNanoseconds: 2_000_000_200,
+            distanceMeters: 1,
+            hasKnownCoverageGap: true,
+            acceptedSampleCount: 3,
             integratedIntervalCount: 1,
             knownCoverageGapCount: 1
         )
