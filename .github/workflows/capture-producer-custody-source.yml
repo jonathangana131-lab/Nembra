@@ -1,0 +1,41 @@
+name: Capture Producer Custody Source QA
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - scripts/ci/xcode27_signed_field_candidate.sh
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+      - .github/workflows/capture-producer-custody-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-source-contract:
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact PR head
+        run: |
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate signed-field producer custody
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
