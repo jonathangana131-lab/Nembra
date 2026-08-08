@@ -227,6 +227,17 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         let eventWatermark: UInt64
     }
 
+    /// Provenance retained beside the exact run-owned recorder for one
+    /// admitted Experiment One target session. This is software authority
+    /// only; it does not authenticate the physical scooter.
+    private struct ExperimentOneCaptureAuthority {
+        let admissionIdentity: UUID
+        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
+        let peripheralIdentifier: UUID
+        let recorder: PassiveCoreBluetoothCaptureRecorder
+        let issuedAtUptimeNanoseconds: UInt64
+    }
+
     public private(set) var bluetoothState: CBManagerState = .unknown
 
     /// True while Nembra still owns an explicit foreground scan request. This is
@@ -312,6 +323,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private let acquisitionProgressTimeoutNanoseconds: UInt64
     private var hasUsedInitialSessionIdentity = false
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
+    private var experimentOneCaptureAuthority: ExperimentOneCaptureAuthority?
     private var targetSessionGeneration: UInt64 = 0
     private var artifactAuthorityGeneration: UInt64 = 0
     private let artifactAuthorityFence = PassiveCoreBluetoothArtifactAuthorityFence(
@@ -498,18 +510,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
 
-    /// Connects the exact correlated Experiment One target using the mutable recorder
-    /// already owned by that same sealed run. This package-internal bridge is the only
-    /// controller path that may turn `PassiveBluetoothExperimentOneCaptureAdmission`
-    /// into live capture ownership; app/UI code cannot call it directly.
+    /// Connects the exact correlated Experiment One target using the recorder and
+    /// provenance sealed by that same run. The admission is package-internal and
+    /// consumed exactly once; app/UI code cannot forge this authority.
     ///
-    /// The admission is consumed once only after controller-global preconditions that
-    /// do not depend on its hidden target have passed. The consumed full CoreBluetooth
-    /// UUID must then exist in this controller's *current* candidate catalog. A repeatable
-    /// UUID is still only a correlated Bluetooth target, never authenticated ES80 identity.
-    /// No application characteristic write is performed by this path.
-    func connectUsingExperimentOneAdmission(
-        _ admission: PassiveBluetoothExperimentOneCaptureAdmission,
+    /// Repeated full CoreBluetooth UUID is still only a correlated Bluetooth target.
+    /// This path performs no application characteristic-value write.
+    func connect(
+        using admission: PassiveBluetoothExperimentOneCaptureAdmission,
         timeout: TimeInterval = 12
     ) throws {
         try ensureCaptureHealthy()
@@ -531,8 +539,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard connectionPhase == .idle else {
             throw ControllerError.connectionAlreadyActive
         }
-        // Experiment One is one provenance life. Do not replace an already-installed
-        // generic or prior recorder with a newly consumed sealed admission.
         guard recorder == nil,
               targetState.selectedTargetIdentifier == nil else {
             throw ControllerError.connectionAlreadyActive
@@ -547,12 +553,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               correlatedIdentifier == payload.peripheralIdentifier else {
             throw ControllerError.targetSessionChanged
         }
-        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],
-              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
-        }
-        if discovery.isConnectable == false {
+
+        let peripheral = try connectionCandidate(for: payload.peripheralIdentifier)
+        if latestDiscoveryByIdentifier[payload.peripheralIdentifier]?.isConnectable == false {
             throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+        }
+        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
         }
 
         do {
@@ -565,53 +573,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
-        }
-        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
-            throw ControllerError.captureIncomplete
-        }
-        committedReadyEpoch = nil
-
-        let previousAuthority = currentArtifactAuthorityContext()
-        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
-            targetSessionGeneration: targetSessionGeneration + 1,
-            authorityGeneration: 1
-        )
-        do {
-            try artifactAuthorityFence.transition(
-                from: previousAuthority,
-                to: freshAuthority
-            )
-        } catch {
-            failCapture(error)
-            throw ControllerError.captureFailed
-        }
-        targetSessionGeneration = freshAuthority.targetSessionGeneration
-        artifactAuthorityGeneration = freshAuthority.authorityGeneration
-        lastFinalizedArtifactAuthority = nil
-
-        targetState.selectTarget(payload.peripheralIdentifier)
-        acquisitionLedger.beginTargetSession()
-        gattIdentityRegistry.reset()
-        selectedTargetCancellationPending = false
-        // This sealed admission publishes a genuinely fresh durable recorder/session,
-        // so it is the same authority boundary that may restore foreground evidence
-        // validity after a prior scene loss. Transport retry alone never does this.
-        foregroundEvidenceIntegrityValid = true
-        hasUsedInitialSessionIdentity = true
-        recorder = payload.recorder
-
-        enqueue(
-            .advertisement(latestAdvertisement.observation),
-            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
-            receivedAtDate: latestAdvertisement.receivedAtDate
-        )
-
+        try beginExperimentOneTargetSession(using: payload)
         do {
             _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
         } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
@@ -634,6 +596,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         peripheral.delegate = self
         centralManager.connect(peripheral, options: nil)
         scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)
+    }
+
+    private func connectionCandidate(for peripheralIdentifier: UUID) throws -> CBPeripheral {
+        guard let peripheral = peripheralByIdentifier[peripheralIdentifier],
+              latestDiscoveryByIdentifier[peripheralIdentifier] != nil else {
+            throw ControllerError.unknownPeripheral(peripheralIdentifier)
+        }
+        return peripheral
     }
 
     /// Cancels the active attempt without allowing a subsequent attempt to the
@@ -938,6 +908,43 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             startedAt: startedAt
         )
 
+        try publishTargetSession(
+            identifier: identifier,
+            newRecorder: newRecorder,
+            latestAdvertisement: latestAdvertisement,
+            experimentOneAuthority: nil
+        )
+    }
+
+    private func beginExperimentOneTargetSession(
+        using payload: PassiveBluetoothExperimentOneCaptureAdmission.Payload
+    ) throws {
+        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]
+        guard let latestAdvertisement,
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        }
+        let authority = ExperimentOneCaptureAuthority(
+            admissionIdentity: payload.admissionIdentity,
+            powerCycleEvidence: payload.powerCycleEvidence,
+            peripheralIdentifier: payload.peripheralIdentifier,
+            recorder: payload.recorder,
+            issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
+        )
+        try publishTargetSession(
+            identifier: payload.peripheralIdentifier,
+            newRecorder: payload.recorder,
+            latestAdvertisement: latestAdvertisement,
+            experimentOneAuthority: authority
+        )
+    }
+
+    private func publishTargetSession(
+        identifier: UUID,
+        newRecorder: PassiveCoreBluetoothCaptureRecorder,
+        latestAdvertisement: CandidateAdvertisement?,
+        experimentOneAuthority: ExperimentOneCaptureAuthority?
+    ) throws {
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
@@ -950,8 +957,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             authorityGeneration: 1
         )
         do {
-            // Transition the canonical fence first, then publish the complete
-            // durable-session authority pair synchronously with no actor hop.
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -968,15 +973,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
-        // Only publication of a genuinely fresh durable recorder/session may
-        // restore foreground-only evidence validity after a prior scene loss.
         foregroundEvidenceIntegrityValid = true
         hasUsedInitialSessionIdentity = true
-        recorder = newRecorder
+        experimentOneCaptureAuthority = experimentOneAuthority
+        self.recorder = newRecorder
 
-        // Preserve at most the selected candidate's latest already-observed
-        // advertisement, with the exact callback clocks from when it was actually
-        // received. Other broad-scan devices remain candidate-catalog entries only.
         if let latestAdvertisement {
             enqueue(
                 .advertisement(latestAdvertisement.observation),
