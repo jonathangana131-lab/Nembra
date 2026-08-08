@@ -45,14 +45,13 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
         )
         #expect(secondOff == nil)
 
-        let result = try #require(
-            ledger.completeWindow(
-                phase: .secondPoweredOn,
-                startedAtUptimeNanoseconds: 400,
-                endedAtUptimeNanoseconds: 410,
-                candidates: [candidate(stableNeighbor), candidate(scooter)]
-            )
+        let completedSeries = try ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 400,
+            endedAtUptimeNanoseconds: 410,
+            candidates: [candidate(stableNeighbor), candidate(scooter)]
         )
+        let result = try #require(completedSeries)
 
         #expect(result.windows.map(\.phase) == PassiveBluetoothPowerCycleObservationPhase.allCases)
         #expect(result.windows.map { $0.windowSequence.rawValue } == [1, 2, 3, 4])
@@ -105,14 +104,13 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
             endedAtUptimeNanoseconds: 31,
             candidates: []
         )
-        let result = try #require(
-            ledger.completeWindow(
-                phase: .secondPoweredOn,
-                startedAtUptimeNanoseconds: 40,
-                endedAtUptimeNanoseconds: 41,
-                candidates: [candidate(scooter)]
-            )
+        let completedSeries = try ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 40,
+            endedAtUptimeNanoseconds: 41,
+            candidates: [candidate(scooter)]
         )
+        let result = try #require(completedSeries)
 
         #expect(result.correlation.repeatableCandidateIdentifiers == [scooter])
         #expect(result.correlation.disposition == .singleRepeatableCandidate(scooter))
@@ -142,14 +140,13 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
             endedAtUptimeNanoseconds: 31,
             candidates: [candidate(scooter)]
         )
-        let result = try #require(
-            ledger.completeWindow(
-                phase: .secondPoweredOn,
-                startedAtUptimeNanoseconds: 40,
-                endedAtUptimeNanoseconds: 41,
-                candidates: [candidate(scooter)]
-            )
+        let completedSeries = try ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 40,
+            endedAtUptimeNanoseconds: 41,
+            candidates: [candidate(scooter)]
         )
+        let result = try #require(completedSeries)
 
         #expect(result.correlation.repeatableCandidateIdentifiers.isEmpty)
         #expect(result.correlation.disposition == .noRepeatableCandidate)
@@ -226,14 +223,13 @@ struct PassiveBluetoothPowerCycleObservationSessionTests {
             endedAtUptimeNanoseconds: 6,
             candidates: []
         )
-        let result = try #require(
-            ledger.completeWindow(
-                phase: .secondPoweredOn,
-                startedAtUptimeNanoseconds: 7,
-                endedAtUptimeNanoseconds: 8,
-                candidates: [candidate(scooter)]
-            )
+        let completedSeries = try ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 7,
+            endedAtUptimeNanoseconds: 8,
+            candidates: [candidate(scooter)]
         )
+        let result = try #require(completedSeries)
 
         #expect(result.correlation.disposition == .noRepeatableCandidate)
     }
