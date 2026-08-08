@@ -79,8 +79,10 @@ struct RideCheckpointClearMonotonicityTests {
             endingOdometer: 101,
             gpsMeters: 1_000
         )
-        let fileManager = FailOnNthCheckpointRemovalFileManager(failOnRemoval: 2)
-        let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
+        let store = AtomicRideCheckpointStore(
+            directoryURL: dir,
+            fileManager: FailOnNthCheckpointRemovalFileManager(failOnRemoval: 2)
+        )
 
         try await store.save(
             .inProgress(
@@ -96,7 +98,11 @@ struct RideCheckpointClearMonotonicityTests {
         await #expect(throws: FailOnNthCheckpointRemovalFileManager.InjectedFailure.removal(2)) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames == [AtomicRideCheckpointStore.slotAFileName])
+
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        #expect(!FileManager.default.fileExists(atPath: slotA.path))
+        #expect(FileManager.default.fileExists(atPath: slotB.path))
 
         let freshStore = AtomicRideCheckpointStore(directoryURL: dir)
         #expect(try await freshStore.load() == .completedPendingCommit(completion))
@@ -114,8 +120,10 @@ struct RideCheckpointClearMonotonicityTests {
             endingOdometer: 101.4,
             gpsMeters: 1_400
         )
-        let fileManager = FailOnNthCheckpointRemovalFileManager(failOnRemoval: 2)
-        let store = AtomicRideCheckpointStore(directoryURL: dir, fileManager: fileManager)
+        let store = AtomicRideCheckpointStore(
+            directoryURL: dir,
+            fileManager: FailOnNthCheckpointRemovalFileManager(failOnRemoval: 2)
+        )
 
         try await store.save(
             .inProgress(
@@ -140,7 +148,11 @@ struct RideCheckpointClearMonotonicityTests {
         await #expect(throws: FailOnNthCheckpointRemovalFileManager.InjectedFailure.removal(2)) {
             try await store.clear()
         }
-        #expect(fileManager.removedFileNames == [AtomicRideCheckpointStore.slotBFileName])
+
+        let slotA = slotURL(AtomicRideCheckpointStore.slotAFileName, in: dir)
+        let slotB = slotURL(AtomicRideCheckpointStore.slotBFileName, in: dir)
+        #expect(FileManager.default.fileExists(atPath: slotA.path))
+        #expect(!FileManager.default.fileExists(atPath: slotB.path))
 
         let freshStore = AtomicRideCheckpointStore(directoryURL: dir)
         #expect(try await freshStore.load() == .completedPendingCommit(completion))
@@ -282,14 +294,13 @@ struct RideCheckpointClearMonotonicityTests {
     }
 }
 
-private final class FailOnNthCheckpointRemovalFileManager: FileManager, @unchecked Sendable {
+private final class FailOnNthCheckpointRemovalFileManager: FileManager {
     enum InjectedFailure: Error, Equatable {
         case removal(Int)
     }
 
     private let failOnRemoval: Int
     private var removalCount = 0
-    private(set) var removedFileNames: [String] = []
 
     init(failOnRemoval: Int) {
         self.failOnRemoval = failOnRemoval
@@ -302,6 +313,5 @@ private final class FailOnNthCheckpointRemovalFileManager: FileManager, @uncheck
             throw InjectedFailure.removal(removalCount)
         }
         try super.removeItem(at: URL)
-        removedFileNames.append(URL.lastPathComponent)
     }
 }
