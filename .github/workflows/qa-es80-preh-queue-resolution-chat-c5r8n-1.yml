@@ -1,0 +1,84 @@
+name: ES80 pre-H queue resolution exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/es80-preh-queue-resolution/ci/chat-c5r8n-1
+
+permissions:
+  contents: read
+
+jobs:
+  preh-queue-resolution-qa:
+    runs-on: xcode-27
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: df960567c55ac4c91eed61a18616cf1fa390c770
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-preh-queue-resolution-chat-c5r8n-1.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Verify pre-H resolution truth boundary
+        run: |
+          set -euo pipefail
+          source='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothAbortedQueueResolution.swift'
+          test -f "$source"
+          grep -q 'currentResolvedThroughQueueSequence' "$source"
+          grep -q 'currentLastEnqueuedEventSequence' "$source"
+          grep -q 'controllerQueueChangedAfterRetirement' "$source"
+          grep -q 'retainedPendingEvidenceCount' "$source"
+          grep -q 'retiredEvidenceCount' "$source"
+          if grep -q 'lastProcessedEventSequence' "$source"; then
+            echo 'Resolution primitive must not relabel retired FIFO as recorder-processed evidence.' >&2
+            exit 1
+          fi
+
+      - name: Run NembraCore tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Run full capture package tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
