@@ -16,8 +16,8 @@ It:
 - mints an opaque identity for one app-local user request;
 - permits only one unresolved local request, matching Nembra's current serialized vehicle-command policy;
 - accepts only the exact current request identity when the command owner later supplies an already-accepted outcome;
-- rejects foreign/recreated coordinator tokens even when their visible sequence number matches;
-- rejects stale and duplicate resolution;
+- rejects foreign/recreated or stale request identities;
+- rejects duplicate resolution;
 - permits lifecycle/cancellation abandonment without manufacturing a success or failure event;
 - carries no haptic pattern so each product surface can choose whether a confirmed outcome merits selection/success feedback or no tactile feedback.
 
@@ -38,6 +38,6 @@ A future app integration should begin the correlation only for an actual local c
 
 ## Acceptance
 
-The additive source/test slice is designed for NembraCore package validation. Supplemental Swift 6.2.1 warnings-as-errors testing covers exact confirmation, failure, duplicate begin, foreign-owner identity, stale-request rejection, exact abandonment, and mismatched abandonment preserving the real pending request.
+The additive source/test slice is designed for NembraCore package validation. Supplemental Swift 6.2.1 warnings-as-errors testing covers exact confirmation, failure, duplicate begin, foreign request identity, stale-request rejection, exact abandonment, and mismatched abandonment preserving the real pending request.
 
 Repository/Xcode exact-head validation remains the integration authority. This software primitive does not require or claim physical ES80 validation.
