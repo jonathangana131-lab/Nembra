@@ -38,6 +38,33 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(PassiveBluetoothExperimentOneFieldExecutionGate.recipeID == .es80FingerprintV1)
     }
 
+    @Test("authoritative OFF ON window timing remains the V14 ten-second procedure")
+    func runbookAndCompiledPolicyAgreeOnCorrelationWindowDuration() throws {
+        let runbook = try physicalRunbook()
+        let tenSecondsInNanoseconds: UInt64 = 10_000_000_000
+
+        #expect(
+            PassiveBluetoothExperimentOneCapturePolicy
+                .minimumPowerCycleWindowDurationNanoseconds
+                == tenSecondsInNanoseconds
+        )
+        #expect(
+            runbook.contains(
+                "Each OFF / ON observation window must span **at least 10 seconds** under the package-owned monotonic receipt-time policy"
+            )
+        )
+        #expect(
+            runbook.contains(
+                "This minimum is **not** a BLE cadence claim, RF-completeness proof, or proof that OFF-window non-observation means physical absence."
+            )
+        )
+        #expect(
+            runbook.contains(
+                "any OFF / ON correlation window cannot prove the accepted **>=10-second** package monotonic receipt-time minimum"
+            )
+        )
+    }
+
     @Test("authoritative Ready to Horizon timing remains the V14 sixty-second procedure")
     func runbookAndCompiledPolicyAgreeOnObservationDuration() throws {
         let runbook = try physicalRunbook()
