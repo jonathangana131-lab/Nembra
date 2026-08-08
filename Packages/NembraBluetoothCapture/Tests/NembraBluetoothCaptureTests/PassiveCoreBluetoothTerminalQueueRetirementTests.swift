@@ -97,6 +97,35 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
     }
 
     @Test
+    func foreignAuthorityAtOrBeforeHorizonAlsoFailsWithoutMutation() throws {
+        let foreignAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 5,
+            authorityGeneration: 10
+        )
+        var events = [
+            Event(queueSequence: 12, authority: foreignAuthority, label: "foreign-at-h"),
+            Event(queueSequence: 13, authority: terminalAuthority, label: "post-h")
+        ]
+        let before = events
+
+        do {
+            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
+                from: &events,
+                terminalGate: try terminalGate(horizonQueueCutoff: 12),
+                identity: identity
+            )
+            Issue.record("Expected any undrained global FIFO prefix to fail closed.")
+        } catch {
+            #expect(
+                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
+                    == .terminalPrefixStillPending(queueSequence: 12)
+            )
+        }
+
+        #expect(events == before)
+    }
+
+    @Test
     func nonterminalGateFailsWithoutMutation() throws {
         var events = [
             Event(queueSequence: 13, authority: terminalAuthority, label: "old")
