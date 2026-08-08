@@ -89,7 +89,8 @@ struct NembraApp: App {
                         if scenario == .stationaryPreflight {
                             ES80ExperimentOneStationaryPreflightView(
                                 coordinator: researchCoordinator,
-                                simulatorQAEvidenceLabel: snapshot.evidenceLabel
+                                simulatorQAEvidenceLabel: snapshot.evidenceLabel,
+                                freshExperimentCoordinatorFactory: { try PassiveBluetoothExperimentOneCoordinator() }
                             )
                         } else {
                             ES80CaptureShellView(
@@ -163,13 +164,18 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
     private let simulatorQAEvidenceLabel: String?
+    private let freshExperimentCoordinatorFactory: () throws -> PassiveBluetoothExperimentOneCoordinator
 
     init(
         coordinator: PassiveBluetoothExperimentOneCoordinator,
-        simulatorQAEvidenceLabel: String? = nil
+        simulatorQAEvidenceLabel: String? = nil,
+        freshExperimentCoordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
+            try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        }
     ) {
         _coordinator = State(initialValue: coordinator)
         self.simulatorQAEvidenceLabel = simulatorQAEvidenceLabel
+        self.freshExperimentCoordinatorFactory = freshExperimentCoordinatorFactory
     }
 
     var body: some View {
@@ -295,7 +301,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     /// package-owned coordinator, but it must also return through charger preflight instead of
     /// carrying the previous run's disconnected declaration into new evidence.
     private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
-        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        let freshCoordinator = try freshExperimentCoordinatorFactory()
         coordinator = freshCoordinator
         selectedChargerState = nil
         disconnectedDeclarationAccepted = false
