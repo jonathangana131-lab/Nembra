@@ -23,7 +23,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
     }
 
     private static func riderSurface(in source: String) throws -> Substring {
-        let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))
+        let beginning = try #require(source.range(of: "private func hero(for phase: Phase)"))
         let details = try #require(
             source.range(
                 of: "private var captureDetailsSheet",
