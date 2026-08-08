@@ -541,22 +541,25 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.captureFailed
         }
 
-        let payload = try admission.consume()
+        // Inspect only immutable producer-owned staging metadata first. A target that has
+        // not reappeared yet is recoverable by continuing passive scan and retrying this same
+        // sealed admission, so do not burn its one-shot ownership handoff here.
+        let preview = admission.preview
         guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                payload.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == payload.peripheralIdentifier else {
+                preview.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == preview.peripheralIdentifier else {
             throw ControllerError.targetSessionChanged
         }
-        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],
-              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        guard let peripheral = peripheralByIdentifier[preview.peripheralIdentifier],
+              let discovery = latestDiscoveryByIdentifier[preview.peripheralIdentifier] else {
+            throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
         }
         if discovery.isConnectable == false {
-            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+            throw ControllerError.peripheralNotConnectable(preview.peripheralIdentifier)
         }
 
         do {
-            try targetState.validateCanBeginAttempt(for: payload.peripheralIdentifier)
+            try targetState.validateCanBeginAttempt(for: preview.peripheralIdentifier)
         } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
             throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
         } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
@@ -565,12 +568,23 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+        guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds else {
             // The sealed admission must be joined to a controller observation received after
             // that handoff. Replaying an older cached advertisement would splice two software
             // chronology lives and could enqueue evidence that predates this recorder.
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+            throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
+        }
+
+        // Every recoverable controller-local staging check has passed. Consume exactly once
+        // at the irreversible ownership handoff and bind the consumed payload back to the
+        // same producer preview before publishing the run-owned recorder.
+        let payload = try admission.consume()
+        guard payload.admissionIdentity == preview.admissionIdentity,
+              payload.powerCycleEvidence == preview.powerCycleEvidence,
+              payload.peripheralIdentifier == preview.peripheralIdentifier,
+              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds else {
+            throw ControllerError.targetSessionChanged
         }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
