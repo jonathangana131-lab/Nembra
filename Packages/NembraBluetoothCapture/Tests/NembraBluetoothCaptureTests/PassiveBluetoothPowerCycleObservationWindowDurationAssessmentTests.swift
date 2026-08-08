@@ -40,6 +40,7 @@ struct PassiveBluetoothPowerCycleObservationWindowDurationAssessmentTests {
 
         #expect(assessment.status == .insufficientDuration)
         #expect(!assessment.isDurationSufficient)
+        #expect(assessment.observationResult == result)
         #expect(assessment.minimumRequiredDurationNanoseconds == 10_000_000_000)
         #expect(assessment.windows.map(\.observedDurationNanoseconds) == [
             2_000_000_000,
@@ -63,8 +64,35 @@ struct PassiveBluetoothPowerCycleObservationWindowDurationAssessmentTests {
 
         #expect(assessment.status == .sufficient)
         #expect(assessment.isDurationSufficient)
+        #expect(assessment.observationResult == result)
         #expect(assessment.windows.map(\.phase) == PassiveBluetoothPowerCycleObservationPhase.allCases)
         #expect(assessment.windows.map { $0.windowSequence.rawValue } == [1, 2, 3, 4])
+    }
+
+    @Test("assessment remains bound to the exact package-issued observation result")
+    func assessmentCannotLoseItsSourceResult() throws {
+        let first = try completedResult(
+            producerMinimumNanoseconds: 1,
+            observedDurationNanoseconds: 10_000_000_000
+        )
+        let second = try completedResult(
+            producerMinimumNanoseconds: 1,
+            observedDurationNanoseconds: 10_000_000_000
+        )
+
+        let firstAssessment = PassiveBluetoothPowerCycleObservationWindowDurationAssessment.assess(
+            result: first,
+            minimumDurationNanoseconds: 10_000_000_000
+        )
+        let secondAssessment = PassiveBluetoothPowerCycleObservationWindowDurationAssessment.assess(
+            result: second,
+            minimumDurationNanoseconds: 10_000_000_000
+        )
+
+        #expect(first != second)
+        #expect(firstAssessment.observationResult == first)
+        #expect(secondAssessment.observationResult == second)
+        #expect(firstAssessment != secondAssessment)
     }
 
     @Test("zero required minimum fails closed")
@@ -81,6 +109,7 @@ struct PassiveBluetoothPowerCycleObservationWindowDurationAssessmentTests {
 
         #expect(assessment.status == .invalidMinimumDuration)
         #expect(!assessment.isDurationSufficient)
+        #expect(assessment.observationResult == result)
         #expect(assessment.minimumRequiredDurationNanoseconds == 0)
         #expect(assessment.windows.isEmpty)
     }
