@@ -1,0 +1,51 @@
+name: ES80 V14 Adaptive Layout Gaps
+
+on:
+  push:
+    branches:
+      - "qa/es80-v14-adaptive-layout-gaps/chatgpt56-thinking-go"
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "qa/es80-v14-adaptive-layout-gaps/chatgpt56-thinking-go"
+
+      - name: Apply guarded adaptive-layout recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_es80_adaptive_layout_gaps.py
+          git diff --check
+          test ! -e .github/workflows/es80-v14-adaptive-layout-gaps.yml
+          test ! -e scripts/ci/tmp_es80_adaptive_layout_gaps.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraUITests/ES80ResearchCaptureUITests.swift").read_text(encoding="utf-8")
+          names = [
+              "testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates",
+              "testV14SimulatorQACaptureCompleteRemainsActionableAtAccessibilityExtraExtraExtraLarge",
+              "testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible",
+              "testV14SimulatorQAHorizonReadyAtAccessibilityExtraExtraExtraLarge",
+              "testV14SimulatorQACompleteLandscapeKeepsShareAndDetailsReachable",
+          ]
+          for name in names:
+              if s.count(name) != 1:
+                  raise SystemExit(f"expected exactly one {name}, got {s.count(name)}")
+          PY
+
+      - name: Commit clean test-only result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Close remaining adaptive layout gaps"
+          git push origin HEAD:"qa/es80-v14-adaptive-layout-gaps/chatgpt56-thinking-go"
