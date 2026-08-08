@@ -1,5 +1,13 @@
 # CONTINUATION PROMPT
 
+## ACTIVE TODAY DIRECTIVE — READ BEFORE CHOOSING WORK
+
+Until the first successful stationary passive ES80 artifact is collected, read and obey `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md` immediately after resolving live GitHub.
+
+**Current closure objective: get one safe, installable, READ-ONLY Research Field Build collecting real ES80 data today.** Freeze noncritical Capture scope. Do not keep moving the flagship for release-grade hostile-host hardening, optional accessibility polish, haptics, forensic filesystem edge cases, analyzer hardening, or cosmetic perfection unless a demonstrated defect can block/crash/corrupt/mis-target the normal private stationary capture path.
+
+Once an integration closer declares a TODAY freeze candidate, stop landing noncritical changes, earn one exact-head trusted Xcode 27 acceptance, produce the exact signed developer/research build, deliberately authorize only the stationary passive `ES80-FINGERPRINT-v1` procedure, record the runbook, and collect the first artifact. Release-grade external cryptographic/hostile-environment hardening can resume after the data unlock.
+
 Continue the existing production iOS application **Nembra** in `jonathangana131-lab/Nembra`.
 
 Do not create another repository/app, restart accepted architecture, or ask the user to summarize previous work. Permanent product/execution requirements live in `MASTER_CONTINUATION_DIRECTIVE.md`. Concurrent-worker behavior additionally lives in `SWARM_COORDINATION.md`. This file is only a mutable resume aid.
@@ -24,11 +32,12 @@ Start with tools, not a giant plan:
 3. inspect recent commits;
 4. inspect newest Actions/Xcode runs;
 5. identify which lanes/files are actively owned;
-6. read `SWARM_COORDINATION.md`;
-7. read `PROJECT_STATE.md` and this file only after live state is known;
-8. read only the relevant durable product/protocol/design docs;
-9. choose or recover one safe non-conflicting lane;
-10. execute immediately.
+6. read `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md` while it is active;
+7. read `SWARM_COORDINATION.md`;
+8. read `PROJECT_STATE.md` and this file only after live state is known;
+9. read only the relevant durable product/protocol/design docs;
+10. choose or recover one safe non-conflicting lane;
+11. execute immediately.
 
 One chat = one worker = one isolated branch/lane. Existing changing branches are presumed owned. Do not push to another worker's branch. If an old useful lane is clearly stopped, recover it on a **new** branch from its exact durable head.
 
