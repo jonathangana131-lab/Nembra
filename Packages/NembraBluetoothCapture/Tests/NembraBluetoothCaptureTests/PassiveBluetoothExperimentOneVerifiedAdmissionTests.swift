@@ -54,9 +54,9 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // field gate is NO-GO.
+        // Minting a capability in a deterministic package test does not mutate runtime build
+        // authority. The ordinary test host lacks the exact TODAY signed-field metadata shape and
+        // therefore remains mechanically NO-GO.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -64,13 +64,13 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("future live factory requires admission plus final field GO and legacy factory stays sealed")
-    func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
+    @Test("TODAY research factory and release verified-admission factory remain separately gated")
+    func canonicalFactoriesKeepBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
 
-        let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
+        let permitGuard = "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
         let zeroFactoryStart = try #require(
             source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
         )
@@ -87,17 +87,26 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         )
 
         let zeroFactory = source[zeroFactoryStart..<verifiedFactoryStart]
+        let researchStatusGuard = try #require(
+            zeroFactory.range(
+                of: "guard case .researchBuildAuthorized = PassiveBluetoothExperimentOneFieldExecutionGate.status"
+            )
+        )
+        let researchPermitGuard = try #require(zeroFactory.range(of: permitGuard))
+        let researchLiveConstruction = try #require(
+            zeroFactory.range(of: "return try makeLiveES80Coordinator()")
+        )
+        #expect(researchStatusGuard.lowerBound < researchPermitGuard.lowerBound)
+        #expect(researchPermitGuard.lowerBound < researchLiveConstruction.lowerBound)
         #expect(zeroFactory.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
-        #expect(!zeroFactory.contains("makeLiveES80Coordinator()"))
-        #expect(!zeroFactory.contains(gateGuard))
 
         let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
-        let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
-        let liveConstruction = try #require(
+        let verifiedGuard = try #require(verifiedFactory.range(of: permitGuard))
+        let verifiedLiveConstruction = try #require(
             verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
         )
-        #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
-        #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
+        #expect(verifiedGuard.lowerBound < verifiedLiveConstruction.lowerBound)
+        #expect(source.components(separatedBy: permitGuard).count - 1 == 2)
 
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
@@ -107,7 +116,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
     }
 
     @Test("current app has no verified-admission consumption path")
-    func appRemainsOnLockedZeroArgumentFactory() throws {
+    func appRemainsOnBuildAuthorizedZeroArgumentFactory() throws {
         let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
         let zeroArgumentFactory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
 
