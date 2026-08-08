@@ -49,6 +49,11 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             '--intended-device-udid "$NEMBRA_INTENDED_DEVICE_UDID"',
             self.source,
         )
+        self.assertEqual(
+            self.source.count('NEMBRA_INTENDED_DEVICE_UDID'),
+            2,
+            "The intended-device UDID may appear only at required input and inspector passthrough.",
+        )
         self.assertIn('verification-only and is never', self.source)
         self.assertIn('persist intended-device identifiers', self.source)
         self.assertNotIn('echo "intended_device_udid=', self.source)
