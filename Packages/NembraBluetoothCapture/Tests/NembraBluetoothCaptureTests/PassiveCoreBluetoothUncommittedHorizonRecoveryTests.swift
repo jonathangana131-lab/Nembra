@@ -5,6 +5,11 @@ import Testing
 
 @Suite("Passive CoreBluetooth uncommitted Horizon recovery")
 struct PassiveCoreBluetoothUncommittedHorizonRecoveryTests {
+    private struct PendingEvent: Equatable {
+        let queueSequence: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+    }
+
     private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
         targetSessionGeneration: 7,
         authorityGeneration: 11
@@ -94,6 +99,25 @@ struct PassiveCoreBluetoothUncommittedHorizonRecoveryTests {
             _ = try await horizon.recordBoundaryWithMutationOutcome(on: recorder)
         }
         #expect((await recorder.snapshot()).observationBoundaries.count == 1)
+
+        // Raw-event chronology may already be settled through the attempted H cutoff,
+        // but that must not promote H into durable lifecycle evidence. Only the still-
+        // pending suffix is retired, and the producer receipt keeps Ready as the
+        // furthest durable observation boundary.
+        var pending = [PendingEvent(queueSequence: 5, authority: replacement)]
+        let retirement = try PassiveCoreBluetoothAbortedObservationQueueRetirement.retire(
+            from: &pending,
+            currentLastEnqueuedEventSequence: 5,
+            currentSettledQueueSequence: 4,
+            drainIsIdle: true,
+            abortedGate: gate,
+            identity: { .init(queueSequence: $0.queueSequence, authority: $0.authority) }
+        )
+        #expect(pending.isEmpty)
+        #expect(retirement.abortReceipt == abort)
+        #expect(retirement.validatedSettledQueueSequence == 4)
+        #expect(retirement.abortReceipt.abandonedEvidenceQueueCutoff == 2)
+        #expect(retirement.retiredEvidenceCount == 1)
     }
 
     @Test("equal-scalar foreign zero-H rejection cannot quarantine another gate")
