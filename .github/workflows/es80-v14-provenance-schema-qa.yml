@@ -1,0 +1,69 @@
+name: ES80 V14 Provenance Schema QA
+
+on:
+  push:
+    branches:
+      - 'cell/es80-v14-provenance-schema/ci/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-v14-provenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Validate exact provenance product
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable checkout and exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "a3bb943712c357b56336c6c8b9100c5c8df3214d"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-v14-provenance-schema-qa.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 research package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Verify recipe-bound schema source
+        run: |
+          set -euo pipefail
+          grep -F 'public static let currentSchemaVersion = 2' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift
+          grep -F 'public let recipeID: PassiveBluetoothExperimentRecipeID' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift
+          grep -F 'recipeID: .es80FingerprintV1' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift
+
+      - name: Test NembraCore with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build NembraBluetoothCapture for iOS Simulator with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build
