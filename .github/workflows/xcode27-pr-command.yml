@@ -79,6 +79,11 @@ jobs:
           printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
 
+      - name: Validate signed field candidate Python custody
+        run: |
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+
       - name: Validate offline field authorization signer
         run: |
           python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
@@ -140,6 +145,8 @@ jobs:
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
 
       - name: Validate offline field authorization signer
         run: |
