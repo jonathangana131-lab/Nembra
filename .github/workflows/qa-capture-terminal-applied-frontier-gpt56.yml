@@ -1,0 +1,62 @@
+name: Capture terminal applied-frontier exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/capture-terminal-applied-frontier/ci/gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  terminal-frontier-qa:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "fa8be64126d804d7f7541ded91c4ed09b8889952"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/qa-capture-terminal-applied-frontier-gpt56.yml"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected.' >&2
+            exit 1
+          fi
+
+      - name: Verify applied-frontier contract is present
+        run: |
+          set -euo pipefail
+          grep -q 'currentResolvedThroughQueueSequence: UInt64' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          grep -q 'resolvedFrontierDoesNotMatchResolution' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          grep -q 'unappliedResolutionKeepsTerminalClosed' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalResolutionAppliedFrontierTests.swift
+
+      - name: Run NembraCore warnings-as-errors tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Run full capture warnings-as-errors tests
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' SWIFT_TREAT_WARNINGS_AS_ERRORS=YES CODE_SIGNING_ALLOWED=NO build
