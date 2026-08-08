@@ -20,7 +20,9 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import warnings
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
@@ -35,6 +37,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+TEAM_IDENTIFIER_RE = re.compile(r"^[A-Z0-9]{10}$")
 
 
 class EvidenceError(RuntimeError):
@@ -97,9 +100,17 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
+    seen_members: set[str] = set()
     with archive:
         for info in archive.infolist():
             member = _safe_member_path(info.filename.rstrip("/"))
+            normalized_member = member.as_posix()
+            if normalized_member in seen_members:
+                raise EvidenceError(
+                    f"IPA contains duplicate ZIP member path: {normalized_member!r}"
+                )
+            seen_members.add(normalized_member)
+
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
                 raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
@@ -169,12 +180,74 @@ def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     return platform, supported_values
 
 
-def run_codesign(app_path: Path) -> tuple[str, list[str]]:
+def validate_signing_contract(
+    team_identifier: str,
+    bundle_identifier: str,
+    provisioning_profile: dict,
+    signed_entitlements: dict,
+    *,
+    now: datetime | None = None,
+) -> None:
+    if not TEAM_IDENTIFIER_RE.fullmatch(team_identifier):
+        raise EvidenceError("field IPA code signature TeamIdentifier is malformed")
+
+    profile_teams = provisioning_profile.get("TeamIdentifier")
+    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+        raise EvidenceError(
+            "embedded provisioning profile TeamIdentifier does not match the code signature"
+        )
+
+    expiration = provisioning_profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise EvidenceError("embedded provisioning profile ExpirationDate is missing")
+    if expiration.tzinfo is None:
+        expiration_utc = expiration.replace(tzinfo=timezone.utc)
+    else:
+        expiration_utc = expiration.astimezone(timezone.utc)
+    comparison_time = now or datetime.now(timezone.utc)
+    if comparison_time.tzinfo is None:
+        comparison_time = comparison_time.replace(tzinfo=timezone.utc)
+    else:
+        comparison_time = comparison_time.astimezone(timezone.utc)
+    if expiration_utc <= comparison_time:
+        raise EvidenceError("embedded provisioning profile is expired")
+
+    profile_entitlements = provisioning_profile.get("Entitlements")
+    if not isinstance(profile_entitlements, dict):
+        raise EvidenceError("embedded provisioning profile Entitlements are missing")
+
+    expected_application_identifier = f"{team_identifier}.{bundle_identifier}"
+    if profile_entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError(
+            "embedded provisioning profile application-identifier does not match the signed Nembra bundle"
+        )
+    if (
+        profile_entitlements.get("com.apple.developer.team-identifier")
+        != team_identifier
+    ):
+        raise EvidenceError(
+            "embedded provisioning profile developer team entitlement does not match the code signature"
+        )
+
+    if signed_entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError(
+            "signed app effective application-identifier does not match the code signature and bundle"
+        )
+    if signed_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+        raise EvidenceError(
+            "signed app effective developer team entitlement does not match the code signature"
+        )
+
+
+def run_codesign(app_path: Path, bundle_identifier: str) -> tuple[str, list[str]]:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
     codesign = shutil.which("codesign")
+    security = shutil.which("security")
     if not codesign:
         raise EvidenceError("codesign is not available")
+    if not security:
+        raise EvidenceError("security is not available")
 
     verify = subprocess.run(
         [codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)],
@@ -210,6 +283,50 @@ def run_codesign(app_path: Path) -> tuple[str, list[str]]:
     authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
     if not authorities:
         raise EvidenceError("codesign metadata does not contain a signing authority chain")
+
+    profile_path = app_path / "embedded.mobileprovision"
+    if not profile_path.is_file():
+        raise EvidenceError("signed field IPA is missing embedded.mobileprovision")
+    decoded_profile = subprocess.run(
+        [security, "cms", "-D", "-i", str(profile_path)],
+        capture_output=True,
+        check=False,
+    )
+    if decoded_profile.returncode != 0:
+        detail = (decoded_profile.stderr or decoded_profile.stdout).decode(
+            "utf-8", errors="replace"
+        ).strip()
+        raise EvidenceError(f"embedded provisioning profile could not be decoded: {detail}")
+    try:
+        provisioning_profile = plistlib.loads(decoded_profile.stdout)
+    except Exception as exc:
+        raise EvidenceError("decoded embedded provisioning profile is not a valid plist") from exc
+    if not isinstance(provisioning_profile, dict):
+        raise EvidenceError("decoded embedded provisioning profile root is not a dictionary")
+
+    entitlements_result = subprocess.run(
+        [codesign, "-d", "--entitlements", ":-", str(app_path)],
+        capture_output=True,
+        check=False,
+    )
+    if entitlements_result.returncode != 0:
+        detail = (entitlements_result.stderr or entitlements_result.stdout).decode(
+            "utf-8", errors="replace"
+        ).strip()
+        raise EvidenceError(f"signed app entitlements inspection failed: {detail}")
+    try:
+        signed_entitlements = plistlib.loads(entitlements_result.stdout)
+    except Exception as exc:
+        raise EvidenceError("signed app effective entitlements are not a readable plist") from exc
+    if not isinstance(signed_entitlements, dict):
+        raise EvidenceError("signed app effective entitlements root is not a dictionary")
+
+    validate_signing_contract(
+        team_identifier,
+        bundle_identifier,
+        provisioning_profile,
+        signed_entitlements,
+    )
     return team_identifier, authorities
 
 
@@ -272,7 +389,7 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not executable_path.is_file():
             raise EvidenceError("signed app executable is missing")
 
-        team_identifier, signing_authorities = run_codesign(app_path)
+        team_identifier, signing_authorities = run_codesign(app_path, bundle_id)
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
@@ -369,6 +486,58 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-self-test-") as temporary:
+        duplicate_ipa = Path(temporary) / "duplicate.ipa"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(duplicate_ipa, "w") as archive:
+                archive.writestr("Payload/Nembra.app/Info.plist", b"first")
+                archive.writestr("Payload/Nembra.app/Info.plist", b"second")
+        try:
+            extract_ipa_safely(duplicate_ipa, Path(temporary) / "extract")
+        except EvidenceError as error:
+            assert "duplicate ZIP member path" in str(error)
+        else:
+            raise AssertionError("duplicate ZIP member path must fail closed")
+
+    team = "ABCDEFGHIJ"
+    bundle = BUNDLE_ID
+    expected_application_identifier = f"{team}.{bundle}"
+    profile = {
+        "TeamIdentifier": [team],
+        "ExpirationDate": datetime(2100, 1, 1, tzinfo=timezone.utc),
+        "Entitlements": {
+            "application-identifier": expected_application_identifier,
+            "com.apple.developer.team-identifier": team,
+        },
+    }
+    signed_entitlements = {
+        "application-identifier": expected_application_identifier,
+        "com.apple.developer.team-identifier": team,
+    }
+    validate_signing_contract(
+        team,
+        bundle,
+        profile,
+        signed_entitlements,
+        now=datetime(2099, 1, 1, tzinfo=timezone.utc),
+    )
+    try:
+        validate_signing_contract(
+            team,
+            bundle,
+            profile,
+            {
+                **signed_entitlements,
+                "application-identifier": f"{team}.example.detached",
+            },
+            now=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("detached signed application-identifier must fail closed")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
