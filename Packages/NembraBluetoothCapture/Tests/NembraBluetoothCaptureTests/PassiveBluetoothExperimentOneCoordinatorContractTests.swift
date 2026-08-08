@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Experiment One app coordinator authority contract")
 struct PassiveBluetoothExperimentOneCoordinatorContractTests {
-    private static func coordinatorSource() throws -> String {
+    private static func source(named name: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
             .deletingLastPathComponent()
@@ -13,9 +13,13 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
             contentsOf: packageRoot
                 .appendingPathComponent("Sources")
                 .appendingPathComponent("NembraBluetoothCapture")
-                .appendingPathComponent("PassiveBluetoothExperimentOneCoordinator.swift"),
+                .appendingPathComponent(name),
             encoding: .utf8
         )
+    }
+
+    private static func coordinatorSource() throws -> String {
+        try source(named: "PassiveBluetoothExperimentOneCoordinator.swift")
     }
 
     @Test("public coordinator owns one internal run and never exposes admission recorder or vehicle injection")
@@ -57,7 +61,7 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(restart.contains("controller.startScanning(captureAdvertisementCadence: true)"))
     }
 
-    @Test("connect waits for exact rediscovery before consuming opaque admission")
+    @Test("connect waits for exact rediscovery before attempting opaque admission")
     func connectionDoesNotBurnAdmissionBeforeTargetReappears() throws {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture(")?.lowerBound)
@@ -68,20 +72,30 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(catalogGuard.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered(identifier)"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable(identifier)"))
+        #expect(!connection.contains("defer {"))
     }
 
-    @Test("controller staging failure keeps coordinator handoff only while admission is unconsumed")
+    @Test("controller rejection keeps coordinator handoff only while sealed admission is unconsumed")
     func connectionFailurePreservesOnlyUnconsumedAuthority() throws {
-        let source = try Self.coordinatorSource()
-        let start = try #require(source.range(of: "    public func connectPreparedCapture(")?.lowerBound)
-        let connection = source[start...]
+        let coordinator = try Self.coordinatorSource()
+        let run = try Self.source(named: "PassiveBluetoothExperimentOneRun.swift")
+        let start = try #require(coordinator.range(of: "    public func connectPreparedCapture(")?.lowerBound)
+        let connection = coordinator[start...]
 
-        #expect(!connection.contains("defer {"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)"))
-        let preview = try #require(connection.range(of: "if (try? admission.stagingPreview()) == nil"))
-        let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: preview.lowerBound..<connection.endIndex))
-        #expect(connect.lowerBound < preview.lowerBound)
-        #expect(preview.lowerBound < clear.lowerBound)
+        let consumed = try #require(connection.range(of: "if admission.isConsumed {"))
+        let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: consumed.lowerBound..<connection.endIndex))
+        let rethrow = try #require(connection.range(of: "throw error", range: clear.upperBound..<connection.endIndex))
+        #expect(connect.lowerBound < consumed.lowerBound)
+        #expect(consumed.lowerBound < clear.lowerBound)
+        #expect(clear.lowerBound < rethrow.lowerBound)
         #expect(connection.contains("preparedCorrelatedTargetIdentifier = nil"))
+        #expect(!connection.contains("stagingPreview()"))
+
+        // Consumption state is package-internal and derived only from the exact one-shot bit.
+        #expect(run.contains("var isConsumed: Bool {\n        hasBeenConsumed\n    }"))
+        #expect(!run.contains("public var isConsumed"))
+        #expect(run.contains("guard !hasBeenConsumed else"))
+        #expect(run.contains("hasBeenConsumed = true"))
     }
 }
