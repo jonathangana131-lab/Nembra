@@ -132,6 +132,10 @@ def require_private_key(path: Path) -> Path:
         raise AuthorizationEnvelopeError(
             "P-256 private key must be one regular non-symlink file outside the repository"
         )
+    if key_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise AuthorizationEnvelopeError(
+            "P-256 private key permissions must deny all group/other access (for example chmod 600)"
+        )
     return resolved
 
 
@@ -381,6 +385,15 @@ def self_test() -> None:
                 raise
         else:
             raise AssertionError("existing authorization envelope was overwritten")
+
+        private_key.chmod(0o644)
+        try:
+            require_private_key(private_key)
+        except AuthorizationEnvelopeError as error:
+            if "permissions must deny all group/other access" not in str(error):
+                raise
+        else:
+            raise AssertionError("group/world-readable authorization private key was accepted")
 
     repository_private_key = REPOSITORY_ROOT / "never-create-this-private-key.pem"
     try:
