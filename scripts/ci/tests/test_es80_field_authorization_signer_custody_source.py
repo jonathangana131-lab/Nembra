@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+import os
 from pathlib import Path
 import re
+import runpy
 import unittest
+from unittest.mock import patch
 
 SIGNER = Path(__file__).resolve().parents[1] / "es80_field_authorization_envelope.py"
 
@@ -61,6 +64,45 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             self.source,
             "Signing-user executable ownership reintroduces a validate-to-exec replacement race.",
         )
+
+    def test_openssl_subprocess_does_not_inherit_ambient_process_control(self):
+        namespace = runpy.run_path(str(SIGNER))
+        run_openssl = namespace["run_openssl"]
+        expected_environment = namespace["OPENSSL_SUBPROCESS_ENVIRONMENT"]
+        captured = {}
+
+        class Completed:
+            returncode = 0
+            stdout = b"fixture"
+
+        def fake_run(*args, **kwargs):
+            captured.update(kwargs)
+            return Completed()
+
+        hostile_environment = {
+            "OPENSSL_CONF": "/tmp/attacker-openssl.cnf",
+            "OPENSSL_MODULES": "/tmp/attacker-modules",
+            "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
+            "LD_PRELOAD": "/tmp/attacker.so",
+            "PYTHONPATH": "/tmp/attacker-python",
+        }
+        previous = {name: os.environ.get(name) for name in hostile_environment}
+        os.environ.update(hostile_environment)
+        try:
+            with patch("subprocess.run", side_effect=fake_run):
+                result = run_openssl("/usr/bin/openssl", ["version"], capture_stdout=True)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        self.assertEqual(result, b"fixture")
+        self.assertEqual(captured.get("env"), expected_environment)
+        self.assertEqual(expected_environment.get("OPENSSL_CONF"), "/dev/null")
+        for name in ("OPENSSL_MODULES", "DYLD_INSERT_LIBRARIES", "LD_PRELOAD", "PYTHONPATH"):
+            self.assertNotIn(name, expected_environment)
 
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(

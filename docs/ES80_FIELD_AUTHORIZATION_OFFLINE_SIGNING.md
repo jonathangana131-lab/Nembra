@@ -63,6 +63,18 @@ A signing-user-owned executable is deliberately rejected even if its mode is `07
 
 Do not point `NEMBRA_OPENSSL` at a user-managed toolchain, Homebrew cellar under a user-writable prefix, repository helper, shell wrapper, or other path the signing identity can replace. An override is acceptable only when its actual live executable and complete canonical parent chain satisfy the same root-custody checks.
 
+### OpenSSL process-environment custody
+
+A trusted executable pathname is not the whole process boundary. Every OpenSSL invocation runs with one deliberately minimal fixed environment rather than inheriting the release operator's shell environment:
+
+- `LANG=C`;
+- `LC_ALL=C`;
+- `OPENSSL_CONF=/dev/null`.
+
+The signer does not pass through ambient OpenSSL module/configuration variables, dynamic-loader variables, Python/repository variables, `PATH`, `HOME`, or other caller environment state. In particular, caller values such as `OPENSSL_MODULES`, `OPENSSL_ENGINES`, `DYLD_*`, `LD_*`, and `PYTHONPATH` are not inherited by the subprocess that receives the private-key descriptor.
+
+This keeps unreviewed caller configuration, provider/module paths, loader injection, and repository-controlled process state outside the signing authority boundary. A custom root-custodied `NEMBRA_OPENSSL` executable that depends on caller-supplied config/module environment is intentionally unsupported by this contract; supporting such a toolchain would require a separately reviewed, custody-checked fixed environment rather than ambient inheritance.
+
 ## One semantic parser
 
 The offline signer intentionally does **not** decode or reinterpret either evidence record.
@@ -115,6 +127,7 @@ The tool:
 - uses `/usr/bin/openssl` by default and never searches ambient `PATH`;
 - accepts only an absolute explicit `NEMBRA_OPENSSL` override that passes the same custody checks;
 - requires the selected OpenSSL executable and every canonical parent directory to be root-owned and not group/world-writable;
+- invokes every OpenSSL command with the fixed minimal environment `LANG=C`, `LC_ALL=C`, `OPENSSL_CONF=/dev/null`, without inheriting caller config/module/loader/Python variables;
 - requires a P-256 / `prime256v1` private key;
 - requires an owner-only external private-key file and fails closed on group/other access;
 - opens the authority key once with no-follow semantics and snapshots that exact descriptor into a private operation-local key file;
@@ -147,7 +160,7 @@ python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
 The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
 
-The trusted exact-head Xcode 27 workflow compiles the signer, executes the dedicated signer-custody source regression, and then executes the signer self-test. The source regression pins the no-ambient-PATH and root-owned executable/canonical-ancestor contract. A passing source regression or self-test is still software acceptance evidence only; neither creates or accepts a production authority.
+The trusted exact-head Xcode 27 workflow compiles the signer, executes the dedicated signer-custody regression, and then executes the signer self-test. The custody regression pins the no-ambient-PATH and root-owned executable/canonical-ancestor contract and behaviorally poisons ambient `OPENSSL_CONF`, `OPENSSL_MODULES`, `DYLD_INSERT_LIBRARIES`, `LD_PRELOAD`, and `PYTHONPATH` to prove those values are not inherited by `run_openssl()`. A passing custody regression or self-test is still software acceptance evidence only; neither creates or accepts a production authority.
 
 ## What a cryptographically valid envelope still does not prove
 
