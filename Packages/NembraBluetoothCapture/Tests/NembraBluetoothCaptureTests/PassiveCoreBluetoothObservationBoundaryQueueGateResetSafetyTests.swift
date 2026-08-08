@@ -1,0 +1,131 @@
+import NembraCore
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Passive CoreBluetooth observation-boundary queue gate reset safety")
+struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
+    private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
+        targetSessionGeneration: 7,
+        authorityGeneration: 11
+    )
+
+    @Test("reset cannot release an unresolved ready cutoff")
+    func resetDuringReadyDrainPreservesBarrier() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 4,
+            authority: authority
+        )
+
+        #expect(gate.permittedDrainUpperBound(firstPending: 1, pendingTail: 6) == 4)
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .drainingReady(ready))
+        #expect(gate.activeTransaction == ready)
+        #expect(gate.permittedDrainUpperBound(firstPending: 1, pendingTail: 6) == 4)
+    }
+
+    @Test("reset cannot erase committed ready authority while observing")
+    func resetDuringObservationPreservesReadyAuthority() throws {
+        let changedAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authority.targetSessionGeneration,
+            authorityGeneration: authority.authorityGeneration + 1
+        )
+
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 4,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            ready,
+            lastProcessedQueueSequence: 4,
+            currentAuthority: authority
+        )
+
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .observing)
+
+        do {
+            _ = try gate.begin(
+                .observationHorizon,
+                through: 5,
+                authority: changedAuthority
+            )
+            Issue.record("Reset while observing must not detach the committed ready authority.")
+        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+            #expect(error == .authorityChanged)
+        }
+
+        let horizon = try gate.begin(
+            .observationHorizon,
+            through: 5,
+            authority: authority
+        )
+        #expect(horizon.revision == ready.revision + 1)
+    }
+
+    @Test("reset cannot release an unresolved horizon cutoff")
+    func resetDuringHorizonDrainPreservesBarrier() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 2,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            ready,
+            lastProcessedQueueSequence: 2,
+            currentAuthority: authority
+        )
+        let horizon = try gate.begin(
+            .observationHorizon,
+            through: 6,
+            authority: authority
+        )
+
+        #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .drainingHorizon(horizon))
+        #expect(gate.activeTransaction == horizon)
+        #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
+    }
+
+    @Test("reset cannot release post-horizon evidence before artifact freeze")
+    func resetAfterHorizonBoundaryPreservesFreezeBarrier() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 2,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            ready,
+            lastProcessedQueueSequence: 2,
+            currentAuthority: authority
+        )
+        let horizon = try gate.begin(
+            .observationHorizon,
+            through: 6,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            horizon,
+            lastProcessedQueueSequence: 6,
+            currentAuthority: authority
+        )
+
+        #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .horizonBoundaryRecorded(horizon))
+        #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
+
+        try gate.completeHorizonArtifactFreeze(
+            horizon,
+            currentAuthority: authority
+        )
+        #expect(gate.resetForNewCaptureSession())
+        #expect(gate.phase == .awaitingReady)
+    }
+}
