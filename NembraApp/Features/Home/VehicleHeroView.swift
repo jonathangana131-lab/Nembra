@@ -12,8 +12,8 @@ struct VehicleHeroView: View {
     var body: some View {
         vehicleArtwork
             // The art is designed around the iPhone portrait proportions. Cap
-            // its canvas on wider layouts so landscape/iPad width cannot stretch
-            // the wheelbase while wheel diameter remains height-limited.
+            // its canvas on unusually wide/future containers so wheelbase does
+            // not stretch while wheel diameter remains height-limited.
             .frame(maxWidth: 420)
             .frame(maxWidth: .infinity, alignment: .center)
             .accessibilityHidden(true)
@@ -23,37 +23,24 @@ struct VehicleHeroView: View {
     @ViewBuilder
     private var vehicleArtwork: some View {
         if profile.identity.manufacturer == "AOVOPRO" && profile.identity.model == "ES80" {
-            AOVOPROES80SideArtwork(
-                headlightOn: hasLiveHeadlightOnEvidence,
-                connected: state.connection == .connected
-            )
+            AOVOPROES80SideArtwork(connected: state.connection == .connected)
         } else if profile.identity.manufacturer == "MAXSHOT" && profile.identity.model == "V1S Pro" {
-            MaxshotV1SProSideArtwork(
-                headlightOn: hasLiveHeadlightOnEvidence,
-                connected: state.connection == .connected
-            )
+            MaxshotV1SProSideArtwork(connected: state.connection == .connected)
         } else {
             GenericScooterArtwork(connected: state.connection == .connected)
         }
-    }
-
-    /// Decorative illumination has no stale/retained qualifier of its own, so it
-    /// must fail closed unless the whole vehicle state is currently live. A last-
-    /// known `true` after disconnect/reconnect remains valid retained evidence for
-    /// semantic UI that labels it as such, but it must not look like a fresh
-    /// physical lamp state in artwork.
-    private var hasLiveHeadlightOnEvidence: Bool {
-        state.dataAvailability == .live && state.isHeadlightOn == true
     }
 }
 
 /// Presentation-only silhouette for the primary AOVOPRO ES80 target. Public
 /// product appearance informs the compact dark frame, reflector/cable detailing,
-/// front lamp, mudguard and rear disc hardware. Decorative details stay neutral so
-/// semantic green/amber/red remains reserved for meaningful product state. No
-/// Bluetooth capability or telemetry meaning is inferred from the drawing.
+/// front lamp housing, mudguard and rear disc hardware. Decorative details stay
+/// neutral so semantic green/amber/red remains reserved for meaningful product
+/// state. The lamp is intentionally not illuminated from `VehicleState` yet:
+/// current domain state cannot prove field-specific headlight freshness after a
+/// reconnect, so artwork must not promote a carried boolean into a fresh physical
+/// light claim. No Bluetooth capability or telemetry meaning is inferred here.
 private struct AOVOPROES80SideArtwork: View {
-    let headlightOn: Bool
     let connected: Bool
 
     var body: some View {
@@ -145,14 +132,6 @@ private struct AOVOPROES80SideArtwork: View {
                     .frame(width: w * 0.052, height: 4)
                     .rotationEffect(.degrees(-5))
                     .position(x: w * 0.73, y: h * 0.67)
-
-                if headlightOn {
-                    Circle()
-                        .fill(.yellow)
-                        .frame(width: 7, height: 7)
-                        .position(x: w * 0.395, y: h * 0.24)
-                        .shadow(color: .yellow.opacity(0.68), radius: 9, x: -5, y: 0)
-                }
             }
         }
     }
@@ -184,7 +163,6 @@ private struct AOVOPROES80SideArtwork: View {
 }
 
 private struct MaxshotV1SProSideArtwork: View {
-    let headlightOn: Bool
     let connected: Bool
 
     var body: some View {
@@ -272,14 +250,6 @@ private struct MaxshotV1SProSideArtwork: View {
                     .fill(.secondary.opacity(0.48))
                     .frame(width: w * 0.055, height: 4)
                     .position(x: w * 0.70, y: h * 0.70)
-
-                if headlightOn {
-                    Circle()
-                        .fill(.yellow)
-                        .frame(width: 7, height: 7)
-                        .position(x: w * 0.355, y: h * 0.18)
-                        .shadow(color: .yellow.opacity(0.65), radius: 9, x: -6, y: 0)
-                }
             }
         }
     }
