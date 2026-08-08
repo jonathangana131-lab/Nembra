@@ -1,37 +1,122 @@
-/// Package-owned field-execution lock for the first physical ES80 experiment.
+import Foundation
+
+/// Package-owned field-execution policy for the first physical ES80 experiment.
 ///
-/// The default V14 product state remains mechanically NO-GO. The zero-argument status and Boolean
-/// intentionally cannot be changed by app preferences, launch markers, Info.plist values, typed
-/// identifiers, or caller-supplied flags.
+/// V14's normal product/test state remains mechanically NO-GO. For the private first-capture field
+/// window, the active TODAY directive permits one narrower authority: an exact build-time research
+/// configuration for `ES80-FINGERPRINT-v1`. That configuration is admitted only when the running
+/// application's embedded recipe marker and complete embedded build tuple agree with the exact
+/// runtime build identity read from the running executable + raw Info.plist.
 ///
-/// A future accepted field build may present a `PassiveBluetoothCaptureVerifiedFieldAuthorization`
-/// minted by the package's independent-signature verifier. `admit(verifiedAuthorization:)` turns
-/// only that non-forgeable verifier output into a package-owned `VerifiedAdmission` capability.
-/// The capability has no public initializer and is the only value a future live-controller factory
-/// may accept. Production cannot mint one today because the package trust root is deliberately
-/// unconfigured.
+/// The research path cannot be toggled by app preferences, launch arguments, environment variables,
+/// or imported JSON. It is a build-time property of the installed app. Signed-installable and
+/// intended-device acceptance remain separate required field/runbook gates; this package check does
+/// not pretend to verify an IPA signature by itself.
 ///
-/// This is build/procedure authority only. Possession of a valid admission does not authenticate an
-/// AOVOPRO ES80, prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write
-/// callback into physical acknowledgement.
+/// The stronger release-grade path remains available: a future accepted release may present a
+/// `PassiveBluetoothCaptureVerifiedFieldAuthorization` minted by the package's independent-signature
+/// verifier. `admit(verifiedAuthorization:)` still turns only that verifier output into a
+/// `VerifiedAdmission` capability. The external P-256 trust root may remain unconfigured while the
+/// private TODAY research path is used; that does not weaken the later release-grade boundary.
+///
+/// This is build/procedure authority only. A permitted build does not authenticate an AOVOPRO ES80,
+/// prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write callback into
+/// physical acknowledgement.
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
-    public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
 
-    /// Current product state. This deliberately remains false until the app is explicitly wired to
-    /// consume a separately verified field-authorization capability in a later accepted change.
+    /// The exact Info.plist build-time marker already stamped by the canonical field-build producer.
+    /// Normal Settings/preferences and imported artifacts cannot create or mutate this value.
+    public static let researchFieldRecipeInfoDictionaryKey = "NembraCaptureFieldRecipe"
+
+    /// One process-lifetime admission for the app that is actually running.
+    ///
+    /// Check the cheap recipe marker before hashing the executable/Info.plist so ordinary app and
+    /// package-test launches stay inert and do not perform unnecessary build-identity I/O.
+    package static let currentResearchBuildAdmission: ResearchBuildAdmission? = {
+        let infoDictionary = Bundle.main.infoDictionary ?? [:]
+        guard let fieldRecipe = infoDictionary[researchFieldRecipeInfoDictionaryKey] as? String,
+              fieldRecipe == recipeID.rawValue,
+              let runtimeBuildIdentity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader
+                .currentApplication() else {
+            return nil
+        }
+
+        return researchBuildAdmission(
+            infoDictionary: infoDictionary,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
+    }()
+
+    public static let status: Status = {
+        if currentResearchBuildAdmission != nil {
+            return .go(.buildTimeResearchConfiguration)
+        }
+        return .noGo(.finalComposedBuildNotAuthorized)
+    }()
+
     public static var permitsPhysicalProcedure: Bool {
         switch status {
         case .noGo:
             return false
+        case .go:
+            return true
         }
+    }
+
+    /// Package-only capability for the TODAY private research build.
+    ///
+    /// It deliberately carries the exact runtime identity instead of a Boolean. The live controller
+    /// factory can therefore require that this process actually passed the package's build-time
+    /// research admission rather than trusting a caller-supplied `true` value.
+    package struct ResearchBuildAdmission: Equatable, Sendable {
+        let recipeID: PassiveBluetoothExperimentRecipeID
+        let runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    }
+
+    /// Deterministic admission logic shared by the running-app producer and package tests.
+    ///
+    /// The canonical producer names builds `Capture Build V14-<first 12 source SHA>` and stamps the
+    /// same build identifier, build-instance UUID and full source SHA into Info.plist. Requiring the
+    /// complete tuple here prevents a recipe marker copied onto an ordinary/mismatched build from
+    /// becoming research authority.
+    package static func researchBuildAdmission(
+        infoDictionary: [String: Any],
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) -> ResearchBuildAdmission? {
+        guard let embeddedRecipe = infoDictionary[researchFieldRecipeInfoDictionaryKey] as? String,
+              embeddedRecipe == recipeID.rawValue,
+              let embeddedBuildIdentifier = infoDictionary[
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey
+              ] as? String,
+              let embeddedBuildInstanceID = infoDictionary[
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey
+              ] as? String,
+              let embeddedSourceCommitSHA = infoDictionary[
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey
+              ] as? String,
+              embeddedBuildIdentifier == runtimeBuildIdentity.buildIdentifier,
+              embeddedBuildInstanceID == runtimeBuildIdentity.buildInstanceID,
+              embeddedSourceCommitSHA == runtimeBuildIdentity.sourceCommitSHA else {
+            return nil
+        }
+
+        let expectedBuildIdentifier = "Capture Build V14-\(runtimeBuildIdentity.sourceCommitSHA.prefix(12))"
+        guard runtimeBuildIdentity.buildIdentifier == expectedBuildIdentifier else {
+            return nil
+        }
+
+        return ResearchBuildAdmission(
+            recipeID: recipeID,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
     }
 
     /// Non-forgeable package capability derived only from a verified signed field authorization.
     ///
     /// Its initializer is private to this source file. Public callers can obtain an instance only by
     /// first producing a `PassiveBluetoothCaptureVerifiedFieldAuthorization` through the package's
-    /// public production verifier, which currently fails closed while the trust anchor is nil.
+    /// public production verifier.
     public struct VerifiedAdmission: Equatable, Sendable {
         public let buildIdentifier: String
         public let buildInstanceID: String
@@ -51,11 +136,10 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         }
     }
 
-    /// Convert only already-verified external authority into a package-owned execution capability.
-    ///
-    /// The verifier currently enforces these relationships too; the gate repeats the final recipe,
-    /// procedure and exact-rendezvous checks so a later verifier evolution cannot silently broaden
-    /// physical execution policy.
+    /// Convert only already-verified external authority into a package-owned release-grade execution
+    /// capability. The verifier currently enforces these relationships too; the gate repeats the
+    /// final recipe, procedure and exact-rendezvous checks so a later verifier evolution cannot
+    /// silently broaden physical execution policy.
     public static func admit(
         verifiedAuthorization authorization: PassiveBluetoothCaptureVerifiedFieldAuthorization
     ) -> VerifiedAdmission? {
@@ -81,10 +165,18 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
 
     public enum Status: Equatable, Sendable {
         case noGo(NoGoBlocker)
+        case go(GoAuthority)
+    }
+
+    public enum GoAuthority: Equatable, Sendable {
+        /// Private first-capture authority allowed by `CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md`.
+        /// Signed-installable acceptance and the final runbook still gate whether the operator may
+        /// actually perform the experiment.
+        case buildTimeResearchConfiguration
     }
 
     public enum NoGoBlocker: Equatable, Sendable {
-        /// The final app-visible Capture composition has not yet earned the V14 physical GO record.
+        /// The running app is not the exact canonical build-time research configuration.
         case finalComposedBuildNotAuthorized
     }
 }
