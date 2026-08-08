@@ -10,7 +10,10 @@ import Foundation
 ///
 /// Every result retains the exact capture session identity and immutable vehicle
 /// context that earned it so a legitimate assessment cannot be silently detached
-/// from its source artifact across persistence, async, or UI boundaries.
+/// from its source artifact across persistence, async, or UI boundaries. These
+/// fields preserve declared source-session provenance; they are not a hash or
+/// cryptographic binding of the raw capture bytes. Exact-byte binding belongs to
+/// the capture/provenance artifact layer.
 ///
 /// A sufficient result is Nembra lifecycle-duration evidence only. It does not
 /// prove continuous BLE traffic, RF emission, foreground authority, target
