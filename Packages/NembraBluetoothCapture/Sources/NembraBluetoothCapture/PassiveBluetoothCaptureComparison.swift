@@ -326,15 +326,11 @@ public enum PassiveBluetoothCaptureComparison {
                 origin: origin,
                 sampleCount: sampleCount,
                 continuitySegmentCount: segmentIdentifiers.count,
-                uniquePayloadCount: uniquePayloadCount,
+                uniquePayloadCount: uniquePayloads.count,
                 firstPayload: firstPayload,
                 lastPayload: lastPayload,
                 uniquePayloads: uniquePayloads
             )
-        }
-
-        private var uniquePayloadCount: Int {
-            uniquePayloads.count
         }
     }
 
