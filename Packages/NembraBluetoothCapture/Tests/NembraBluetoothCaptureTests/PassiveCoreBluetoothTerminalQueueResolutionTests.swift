@@ -119,7 +119,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
     }
 
     @Test
-    func differentTerminalAuthorityCannotResolveRetirementReceipt() throws {
+    func foreignTerminalGateWithDifferentAuthorityRejectsAsStaleTransactionFirst() throws {
         var events = [
             Event(queueSequence: 13, authority: terminalAuthority)
         ]
@@ -146,7 +146,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             )
         }
 
-        #expect(error == .terminalAuthorityChanged)
+        #expect(error == .staleTerminalTransaction)
     }
 
     @Test
