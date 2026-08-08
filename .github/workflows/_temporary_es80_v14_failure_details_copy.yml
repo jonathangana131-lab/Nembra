@@ -1,0 +1,68 @@
+name: Temporary ES80 V14 failure and Details copy repair
+
+on:
+  push:
+    branches:
+      - product/es80-v14-rider-language-failure-details/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded rider-visible failure copy repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          source = path.read_text()
+          replacements = {
+              'This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.':
+              'This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.',
+              'Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.':
+              'Nembra left the foreground after Experiment One began. This capture cannot safely continue; start a fresh Experiment One.',
+              'The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.':
+              'The passive connection ended before observation could be sealed. Start a fresh Experiment One.',
+              'The package-owned CoreBluetooth controller is unavailable for this coordinator.':
+              'Bluetooth capture is unavailable in this build.',
+              'The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.':
+              'The four windows did not preserve the required OFF 1, ON 1, OFF 2, ON 2 pattern. Start again from OFF 1.',
+              'The package-owned Experiment One workflow has no active correlation progress and no final result.':
+              'Experiment One has no active OFF / ON progress. Start a fresh run.',
+              'A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.':
+              'A Bluetooth, scanning, or foreground interruption invalidated this four-window sequence. Start again from OFF 1.',
+              'Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.':
+              'Simulator QA interruption fixture. This synthetic state represents a foreground interruption; it is not physical evidence.'
+          }
+
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one current-head copy anchor, found {count}: {old}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Commit exact product repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/_temporary_es80_v14_failure_details_copy.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): make failure states human-first'
+          git push origin HEAD:product/es80-v14-rider-language-failure-details/gpt56-thinking-go
