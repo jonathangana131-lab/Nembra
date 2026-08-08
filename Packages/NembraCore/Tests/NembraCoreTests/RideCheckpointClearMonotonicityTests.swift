@@ -294,7 +294,7 @@ struct RideCheckpointClearMonotonicityTests {
     }
 }
 
-private final class FailOnNthCheckpointRemovalFileManager: FileManager {
+private final class FailOnNthCheckpointRemovalFileManager: FileManager, @unchecked Sendable {
     enum InjectedFailure: Error, Equatable {
         case removal(Int)
     }
