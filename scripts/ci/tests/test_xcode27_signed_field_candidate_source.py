@@ -21,7 +21,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
-        self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
+        self.assertIn('es80_signed_field_artifact_evidence_private_device.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
         self.assertIn('NembraCaptureExternalBuildRecord.json', self.source)
@@ -35,6 +35,15 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('NembraCaptureSignedFieldArtifactEvidence.json', self.source)
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
+
+    def test_requires_device_membership_proof_without_raw_udid_argv(self):
+        self.assertIn('NEMBRA_INTENDED_DEVICE_UDID_FILE', self.source)
+        self.assertIn('INTENDED_DEVICE_UDID_FILE="$NEMBRA_INTENDED_DEVICE_UDID_FILE"', self.source)
+        self.assertIn('--intended-device-udid-file "$INTENDED_DEVICE_UDID_FILE"', self.source)
+        self.assertNotIn('--intended-device-udid "$NEMBRA_', self.source)
+        self.assertNotIn('echo "$NEMBRA_INTENDED_DEVICE', self.source)
+        self.assertNotIn('intended_device_udid=', self.source.lower())
+        self.assertIn('the identifier was not persisted', self.source)
 
     def test_builds_from_fresh_detached_exact_commit_snapshot(self):
         self.assertIn('SOURCE_ROOT="$WORK_ROOT/source"', self.source)

@@ -14,6 +14,7 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
+: "${NEMBRA_INTENDED_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_DEVICE_UDID_FILE to a private file containing the intended field-device identifier.}"
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
@@ -23,8 +24,13 @@ if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
   echo "NEMBRA_EXPORT_OPTIONS_PLIST does not name an existing file." >&2
   exit 4
 fi
+if [[ ! -f "$NEMBRA_INTENDED_DEVICE_UDID_FILE" ]]; then
+  echo "NEMBRA_INTENDED_DEVICE_UDID_FILE does not name an existing regular file." >&2
+  exit 5
+fi
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
 EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
+INTENDED_DEVICE_UDID_FILE="$NEMBRA_INTENDED_DEVICE_UDID_FILE"
 
 # A dirty invocation checkout is never accepted. This is defense in depth only: the actual build
 # below is performed from a fresh detached worktree at SOURCE_SHA so a later mutation, ignored file,
@@ -33,13 +39,13 @@ REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
   printf '%s\n' "$REPOSITORY_STATUS" >&2
-  exit 5
+  exit 6
 fi
 
 SOURCE_SHA="$(git rev-parse --verify HEAD^{commit})"
 if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Could not derive one exact lowercase 40-hex Git HEAD." >&2
-  exit 6
+  exit 7
 fi
 
 # These spellings are owned by the accepted V14 field-candidate/build-evidence contracts.
@@ -48,7 +54,7 @@ FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
 BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
-  exit 7
+  exit 8
 fi
 
 WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BUILD_INSTANCE_ID}"
@@ -66,7 +72,7 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
-    exit 8
+    exit 9
   fi
 fi
 
@@ -86,7 +92,7 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 9
+  exit 10
 fi
 mkdir -p "$EXPORT_DIR"
 
@@ -124,7 +130,7 @@ POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 10
+  exit 11
 fi
 
 shopt -s nullglob
@@ -133,17 +139,18 @@ shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 11
+  exit 12
 fi
 IPA_PATH="${IPA_FILES[0]}"
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
-# snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
-# exact final bytes, retains the IPA, and emits the one package-decodable field-build record plus a
-# separate signing-inspection companion. Neither record grants physical GO.
-python3 scripts/ci/es80_signed_field_artifact_evidence.py \
+# snapshot that produced the archive. The raw field-device identifier is read only inside the
+# private-device wrapper; it never becomes a shell variable, process argument, evidence value,
+# artifact name, or producer log field. The canonical inspector still owns every evidence semantic.
+python3 scripts/ci/es80_signed_field_artifact_evidence_private_device.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
+  --intended-device-udid-file "$INTENDED_DEVICE_UDID_FILE" \
   --output-dir "$ARTIFACTS_DIR"
 
 EXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
@@ -236,9 +243,9 @@ PY
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
-  echo "field_recipe_id=$FIELD_RECIPE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
-  echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
+  echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
+  echo "experiment_recipe_id=$FIELD_RECIPE_ID"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
@@ -246,5 +253,6 @@ PY
 } > "$ARTIFACTS_DIR/field-candidate-environment.txt"
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
+echo "Intended field-device membership was checked from private file input; the identifier was not persisted."
 echo "Independent acceptance has NOT occurred."
 echo "PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN."
