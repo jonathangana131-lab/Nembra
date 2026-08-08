@@ -26,7 +26,7 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must select its OpenSSL executable through an explicit release-authority input.",
         )
 
-    def test_explicit_openssl_is_canonical_and_not_repository_controlled(self):
+    def test_explicit_openssl_is_canonical_and_root_custodied(self):
         self.assertIn(
             '.resolve(',
             self.source,
@@ -47,9 +47,19 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must fail closed on writable executable/custody paths.",
         )
         self.assertIn(
-            'directory_stat.st_uid not in {0, signing_uid}',
+            'executable_stat.st_uid != 0',
             self.source,
-            "Every OpenSSL custody directory must be owned by root or the signing user; mode-only checks leave a pathname replacement surface for an unrelated directory owner.",
+            "The selected OpenSSL executable must be root-owned so the signing identity cannot replace its own executable after validation.",
+        )
+        self.assertIn(
+            'directory_stat.st_uid != 0',
+            self.source,
+            "Every canonical OpenSSL custody directory must be root-owned; mode-only or signing-user-owned custody leaves a validate-to-exec pathname replacement surface.",
+        )
+        self.assertNotIn(
+            'executable_stat.st_uid not in {0, signing_uid}',
+            self.source,
+            "Signing-user-owned OpenSSL is caller-replaceable and must not be an accepted production authority executable.",
         )
 
     def test_private_key_requires_owner_only_posix_access(self):
