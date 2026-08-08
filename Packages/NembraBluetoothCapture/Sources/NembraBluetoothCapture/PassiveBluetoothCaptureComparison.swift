@@ -5,10 +5,10 @@ import NembraCore
 ///
 /// Direct state-to-state metrics are available only when the captures represent
 /// distinct observation sessions, carry the same immutable Nembra vehicle
-/// context, resolve to the same observed GATT target, and the relevant target
-/// timelines contain no known observation gap. Capture-session, capture-context,
-/// identity, and continuity ambiguity remain distinct so downstream tooling can
-/// explain why Nembra withheld a score.
+/// context, resolve to the same observed GATT target, and contain no known raw
+/// byte-continuity gap. Capture-session, capture-context, identity, and
+/// continuity ambiguity remain distinct so downstream tooling can explain why
+/// Nembra withheld a score.
 public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable, Sendable {
     case comparable
     case sameCaptureSession
@@ -88,9 +88,9 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
 
     /// A descriptive sorting hint only when the captures represent distinct
     /// observation sessions, carry the same Nembra vehicle context, resolve to
-    /// the same observed GATT target, and each relevant timeline is
-    /// uninterrupted. `nil` means Nembra deliberately withheld a cross-capture
-    /// score because attribution is ambiguous.
+    /// the same observed GATT target, and each capture is uninterrupted. `nil`
+    /// means Nembra deliberately withheld a cross-capture score because
+    /// attribution is ambiguous.
     public var rawDifferenceScore: Int? {
         guard differenceAvailability == .comparable,
               let baselineOnlyPayloadCount,
@@ -140,10 +140,10 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let comparisonPeripheralIdentifier: String?
     public let peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship
 
-    /// Relevant target continuity breaks in each capture. Generic interruption
-    /// events are global; structured disconnects count only for the resolved
-    /// GATT target when one exists, otherwise they fail closed as potentially
-    /// relevant.
+    /// Authoritative raw-byte continuity breaks in each capture. Continuity is
+    /// capture-wide and intentionally separate from target attribution: every
+    /// Core event classified `breaksByteContinuity` counts even when a structured
+    /// disconnect names another peripheral.
     public let baselineContinuityBreakCount: Int
     public let comparisonContinuityBreakCount: Int
     public let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
@@ -172,10 +172,11 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// Direct payload/topology difference metrics are fail-closed unless the inputs
 /// claim distinct observation-session identities, carry exactly equal immutable
 /// Nembra vehicle metadata, resolve to the same observed GATT peripheral, and
-/// both relevant target timelines remain uninterrupted. Distinct session IDs are
-/// only a software provenance consistency check; they do not authenticate or
-/// prove separate physical captures. Exact vehicle-metadata equality is likewise
-/// only a software capture-context consistency check, not physical scooter
+/// both capture timelines remain uninterrupted under Core's authoritative
+/// raw-byte continuity policy. Distinct session IDs are only a software
+/// provenance consistency check; they do not authenticate or prove separate
+/// physical captures. Exact vehicle-metadata equality is likewise only a
+/// software capture-context consistency check, not physical scooter
 /// authentication. Nembra preserves descriptive per-capture evidence but does
 /// not invent session, target, vehicle-context, or segment correspondence.
 ///
@@ -195,14 +196,8 @@ public enum PassiveBluetoothCaptureComparison {
             baseline: baselineIdentifier,
             comparison: comparisonIdentifier
         )
-        let baselineContinuityBreakCount = continuityBreakCount(
-            in: baseline,
-            peripheralIdentifier: baselineIdentifier
-        )
-        let comparisonContinuityBreakCount = continuityBreakCount(
-            in: comparison,
-            peripheralIdentifier: comparisonIdentifier
-        )
+        let baselineContinuityBreakCount = continuityBreakCount(in: baseline)
+        let comparisonContinuityBreakCount = continuityBreakCount(in: comparison)
 
         let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
         if baseline.id == comparison.id {
@@ -295,8 +290,7 @@ public enum PassiveBluetoothCaptureComparison {
     }
 
     private struct ContinuitySegment: Hashable {
-        let lastGlobalBoundarySequence: UInt64
-        let lastPeripheralDisconnectSequence: UInt64
+        let lastKnownByteContinuityBreakSequence: UInt64
     }
 
     private struct MutableSnapshot {
@@ -333,50 +327,38 @@ public enum PassiveBluetoothCaptureComparison {
     private static func valueStreamSnapshots(
         in session: PassiveBluetoothCaptureSession
     ) -> [PassiveBluetoothValueStreamComparisonIdentity: PassiveBluetoothValueStreamSnapshot] {
-        var lastGlobalBoundarySequence: UInt64 = 0
-        var lastDisconnectSequenceByPeripheral: [String: UInt64] = [:]
+        var lastKnownByteContinuityBreakSequence: UInt64 = 0
         var mutable: [PassiveBluetoothValueStreamComparisonIdentity: MutableSnapshot] = [:]
 
         for record in session.records {
-            switch record.event {
-            case .interruption:
-                lastGlobalBoundarySequence = record.sequenceNumber
-
-            case let .connection(observation) where observation.state == .disconnected:
-                lastDisconnectSequenceByPeripheral[observation.peripheralIdentifier] = record.sequenceNumber
-
-            case let .value(value):
-                // CoreBluetooth UUID text is representation, not physical stream
-                // identity. Normalize only the GATT service/characteristic fields
-                // used by this comparison layer. The peripheral identifier remains
-                // opaque and exact, and the immutable raw capture retains the
-                // original strings for provenance/audit.
-                let key = PassiveBluetoothValueStreamKey(
-                    peripheralIdentifier: value.peripheralIdentifier,
-                    serviceUUID: normalize(value.serviceUUID),
-                    characteristicUUID: normalize(value.characteristicUUID)
-                )
-                let identity = PassiveBluetoothValueStreamComparisonIdentity(
-                    key: key,
-                    origin: value.origin
-                )
-                let segment = ContinuitySegment(
-                    lastGlobalBoundarySequence: lastGlobalBoundarySequence,
-                    lastPeripheralDisconnectSequence: lastDisconnectSequenceByPeripheral[
-                        value.peripheralIdentifier,
-                        default: 0
-                    ]
-                )
-                var snapshot = mutable[
-                    identity,
-                    default: MutableSnapshot(key: key, origin: value.origin)
-                ]
-                snapshot.ingest(payload: value.payload, segment: segment)
-                mutable[identity] = snapshot
-
-            default:
-                continue
+            if record.event.breaksByteContinuity {
+                lastKnownByteContinuityBreakSequence = record.sequenceNumber
             }
+
+            guard case let .value(value) = record.event else { continue }
+            // CoreBluetooth UUID text is representation, not physical stream
+            // identity. Normalize only the GATT service/characteristic fields
+            // used by this comparison layer. The peripheral identifier remains
+            // opaque and exact, and the immutable raw capture retains the
+            // original strings for provenance/audit.
+            let key = PassiveBluetoothValueStreamKey(
+                peripheralIdentifier: value.peripheralIdentifier,
+                serviceUUID: normalize(value.serviceUUID),
+                characteristicUUID: normalize(value.characteristicUUID)
+            )
+            let identity = PassiveBluetoothValueStreamComparisonIdentity(
+                key: key,
+                origin: value.origin
+            )
+            let segment = ContinuitySegment(
+                lastKnownByteContinuityBreakSequence: lastKnownByteContinuityBreakSequence
+            )
+            var snapshot = mutable[
+                identity,
+                default: MutableSnapshot(key: key, origin: value.origin)
+            ]
+            snapshot.ingest(payload: value.payload, segment: segment)
+            mutable[identity] = snapshot
         }
 
         return Dictionary(uniqueKeysWithValues: mutable.map { identity, snapshot in
@@ -456,23 +438,11 @@ public enum PassiveBluetoothCaptureComparison {
     }
 
     private static func continuityBreakCount(
-        in session: PassiveBluetoothCaptureSession,
-        peripheralIdentifier: String?
+        in session: PassiveBluetoothCaptureSession
     ) -> Int {
         session.records.reduce(into: 0) { count, record in
-            switch record.event {
-            case .interruption:
+            if record.event.breaksByteContinuity {
                 count += 1
-            case let .connection(observation) where observation.state == .disconnected:
-                if let peripheralIdentifier {
-                    if observation.peripheralIdentifier == peripheralIdentifier {
-                        count += 1
-                    }
-                } else {
-                    count += 1
-                }
-            default:
-                break
             }
         }
     }
