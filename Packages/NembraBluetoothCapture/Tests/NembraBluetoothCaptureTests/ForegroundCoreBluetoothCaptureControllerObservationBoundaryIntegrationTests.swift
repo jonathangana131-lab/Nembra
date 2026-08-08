@@ -75,22 +75,24 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
             to: "    private func validateBoundaryAuthority("
         )
 
-        let decisionOffset = try Self.offset(
-            of: "let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(",
+        let admissionOffset = try Self.offset(
+            of: "let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(",
             in: pipeline
         )
         let cutoffOffset = try Self.offset(of: "queueCutoff: lastEnqueuedEventSequence", in: pipeline)
         let frontierOffset = try Self.offset(of: "processedThrough: lastProcessedEventSequence", in: pipeline)
-        let beginOffset = try Self.offset(of: "let transaction = try observationBoundaryQueueGate.begin(", in: pipeline)
+        let authorityOffset = try Self.offset(of: "authorityFence: artifactAuthorityFence", in: pipeline)
+        let gateOffset = try Self.offset(of: "gate: &observationBoundaryQueueGate", in: pipeline)
         let taskOffset = try Self.offset(of: "observationBoundaryTask = Task", in: pipeline)
-        let awaitOffset = try Self.offset(of: "await self.flushPendingEvents(through: decision.queueCutoff)", in: pipeline)
-        let recordOffset = try Self.offset(of: "try await decision.recordBoundary(on: recorder)", in: pipeline)
-        let commitOffset = try Self.offset(of: "try self.observationBoundaryQueueGate.markBoundaryRecorded(", in: pipeline)
+        let awaitOffset = try Self.offset(of: "await self.flushPendingEvents(through: admission.queueCutoff)", in: pipeline)
+        let recordOffset = try Self.offset(of: "recordBoundaryWithMutationOutcome(on: recorder)", in: pipeline)
+        let commitOffset = try Self.offset(of: "recordedReady.markBoundaryRecorded(", in: pipeline)
 
-        #expect(decisionOffset < cutoffOffset)
+        #expect(admissionOffset < cutoffOffset)
         #expect(cutoffOffset < frontierOffset)
-        #expect(frontierOffset < beginOffset)
-        #expect(beginOffset < taskOffset)
+        #expect(frontierOffset < authorityOffset)
+        #expect(authorityOffset < gateOffset)
+        #expect(gateOffset < taskOffset)
         #expect(taskOffset < awaitOffset)
         #expect(awaitOffset < recordOffset)
         #expect(recordOffset < commitOffset)
@@ -137,9 +139,17 @@ struct ForegroundCoreBluetoothCaptureControllerObservationBoundaryIntegrationTes
             of: "guard observationBoundaryQueueGate.resetForNewCaptureSession() else {",
             in: session
         )
+        let fenceOffset = try Self.offset(
+            of: "try artifactAuthorityFence.transition(",
+            in: session
+        )
+        let generationOffset = try Self.offset(
+            of: "targetSessionGeneration = freshAuthority.targetSessionGeneration",
+            in: session
+        )
         let targetOffset = try Self.offset(of: "targetState.selectTarget(identifier)", in: session)
-        let generationOffset = try Self.offset(of: "targetSessionGeneration += 1", in: session)
-        #expect(resetOffset < targetOffset)
-        #expect(targetOffset < generationOffset)
+        #expect(resetOffset < fenceOffset)
+        #expect(fenceOffset < generationOffset)
+        #expect(generationOffset < targetOffset)
     }
 }
