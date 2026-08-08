@@ -56,7 +56,23 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
         #expect(controller.contains("isSelectedTargetAwaitingTerminalCallback"))
         #expect(controller.contains("eventDrainTask == nil"))
         #expect(controller.contains("scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("connectionPhase = .idle\n        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
+
+        let disconnectStart = try #require(
+            controller.range(of: "    private func handleDisconnect(")?.lowerBound
+        )
+        let disconnectEnd = try #require(
+            controller.range(
+                of: "    private static func stateDescription(",
+                range: disconnectStart..<controller.endIndex
+            )?.lowerBound
+        )
+        let disconnect = controller[disconnectStart..<disconnectEnd]
+        let idle = try #require(disconnect.range(of: "connectionPhase = .idle"))
+        let scheduleRecovery = try #require(
+            disconnect.range(of: "scheduleAbortedFreshTargetSessionRecoveryIfNeeded()")
+        )
+        #expect(idle.lowerBound < scheduleRecovery.lowerBound)
+
         #expect(controller.contains("captureFailed = false"))
         #expect(controller.contains("case .abortQuarantined"))
     }
