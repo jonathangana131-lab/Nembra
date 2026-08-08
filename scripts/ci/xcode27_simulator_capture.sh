@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
