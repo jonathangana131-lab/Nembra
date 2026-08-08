@@ -322,4 +322,33 @@ extension NembraAppTests {
         XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
         XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
     }
+
+    func testCaptureSealTruthSurvivesShareFileStagingFailure() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let shell = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+        let finalizeStart = try XCTUnwrap(shell.range(of: "    private func finalizeCapture()"))
+        let finalizeEnd = try XCTUnwrap(shell.range(
+            of: "\n    private func handleScenePhaseChange",
+            range: finalizeStart.upperBound..<shell.endIndex
+        ))
+        let finalize = shell[finalizeStart.lowerBound..<finalizeEnd.lowerBound]
+
+        let seal = try XCTUnwrap(finalize.range(of: "encodedFinalizedObservationHorizonJSON"))
+        let promote = try XCTUnwrap(finalize.range(of: "finalizedCaptureData = data"))
+        let teardown = try XCTUnwrap(finalize.range(of: "teardownActiveConnectionAfterFinalization"))
+        let shareStage = try XCTUnwrap(finalize.range(of: "finalizedCaptureURL = try makeShareFile(for: data)"))
+
+        XCTAssertLessThan(seal.lowerBound, promote.lowerBound)
+        XCTAssertLessThan(promote.lowerBound, teardown.lowerBound)
+        XCTAssertLessThan(teardown.lowerBound, shareStage.lowerBound)
+        XCTAssertTrue(finalize.contains("sharePreparationWarning"))
+        XCTAssertTrue(shell.contains("private func prepareShareFile()"))
+        XCTAssertTrue(shell.contains("The capture remains sealed"))
+        XCTAssertTrue(shell.contains("isShowingCaptureDetails ? \"Hide details\" : \"View details\""))
+        XCTAssertTrue(shell.contains("es80.capture.view-details"))
+    }
 }
