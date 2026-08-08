@@ -9,7 +9,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
-for tool in git xcodebuild xcrun python3 shasum codesign ditto; do
+for tool in git xcodebuild xcrun python3 shasum codesign ditto awk; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Required tool is unavailable: $tool" >&2
     exit 3
@@ -24,7 +24,7 @@ fi
 
 DEVELOPMENT_TEAM="${NEMBRA_DEVELOPMENT_TEAM:-}"
 if [[ ! "$DEVELOPMENT_TEAM" =~ ^[A-Za-z0-9]{10}$ ]]; then
-  echo "Set NEMBRA_DEVELOPMENT_TEAM to the exact 10-character Apple Developer Team ID used to sign the candidate." >&2
+  echo "Set NEMBRA_DEVELOPMENT_TEAM to the exact 10-character Apple Developer Team ID intended to sign the candidate." >&2
   exit 5
 fi
 
@@ -43,7 +43,7 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 7
 fi
 
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27FieldCandidate}"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
 DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-/tmp}/NembraFieldDerivedData}"
 ARCHIVE_PATH="$ARTIFACTS_DIR/NembraFieldCandidate.xcarchive"
 BUILD_EVIDENCE_DIR="$ARTIFACTS_DIR/build-evidence"
@@ -54,9 +54,26 @@ CAPTURE_PROCEDURE_VERSION="V14"
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 
+# Any build/output directory created inside the repository must already be ignored. Otherwise the
+# build itself could create new non-HEAD files after the pristine-source check and weaken the exact
+# source claim. Callers may instead point either directory outside the repository.
+require_safe_generated_path() {
+  local path="$1"
+  local label="$2"
+  if [[ "$path" == "$ROOT"/* ]]; then
+    local relative_path="${path#"$ROOT"/}"
+    if ! git check-ignore -q -- "$relative_path"; then
+      echo "$label inside the repository must already be ignored by Git: $relative_path" >&2
+      exit 8
+    fi
+  fi
+}
+require_safe_generated_path "$ARTIFACTS_DIR" "ARTIFACTS_DIR"
+require_safe_generated_path "$DERIVED_DATA" "DERIVED_DATA"
+
 if [[ ! "$CAPTURE_BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Capture build instance must be one canonical lowercase UUID; got: $CAPTURE_BUILD_INSTANCE_ID" >&2
-  exit 8
+  exit 9
 fi
 
 rm -rf "$ARTIFACTS_DIR" "$DERIVED_DATA"
@@ -69,7 +86,7 @@ mkdir -p "$BUILD_EVIDENCE_DIR" "$LOGS_DIR"
   echo "capture_build_commit_sha=$CAPTURE_BUILD_COMMIT_SHA"
   echo "capture_recipe_identifier=$CAPTURE_RECIPE_IDENTIFIER"
   echo "capture_procedure_version=$CAPTURE_PROCEDURE_VERSION"
-  echo "development_team=$DEVELOPMENT_TEAM"
+  echo "requested_development_team=$DEVELOPMENT_TEAM"
   sw_vers
   xcodebuild -version
 } > "$ARTIFACTS_DIR/environment.txt"
@@ -100,16 +117,26 @@ if [[ "$ARCHIVE_STATUS" -ne 0 ]]; then
   exit "$ARCHIVE_STATUS"
 fi
 
+# Re-prove exact source after the archive. With generated paths constrained to ignored/outside-repo
+# locations, any newly visible tracked/untracked delta is an unexpected source mutation and the
+# resulting archive must not be promoted as an exact-HEAD field candidate.
+POST_BUILD_REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ -n "$POST_BUILD_REPOSITORY_STATUS" ]]; then
+  echo "The archive process changed non-ignored repository state; refusing exact-HEAD candidate evidence." >&2
+  printf '%s\n' "$POST_BUILD_REPOSITORY_STATUS" >&2
+  exit 10
+fi
+
 APP_PATH="$ARCHIVE_PATH/Products/Applications/Nembra.app"
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Expected signed app was not found at $APP_PATH" >&2
-  exit 9
+  exit 11
 fi
 
 INFO_PLIST="$APP_PATH/Info.plist"
 if [[ ! -f "$INFO_PLIST" ]]; then
   echo "Expected signed app Info.plist was not found." >&2
-  exit 10
+  exit 12
 fi
 
 EMBEDDED_BUILD_IDENTIFIER="$($PLIST_BUDDY -c 'Print :NembraCaptureBuildIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
@@ -119,47 +146,61 @@ EMBEDDED_BUNDLE_ID="$($PLIST_BUDDY -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 
 
 if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
   echo "Signed app did not preserve the exact Capture build identifier." >&2
-  exit 11
+  exit 13
 fi
 if [[ "$EMBEDDED_BUILD_INSTANCE_ID" != "$CAPTURE_BUILD_INSTANCE_ID" ]]; then
   echo "Signed app did not preserve the exact Capture build-instance identifier." >&2
-  exit 12
+  exit 14
 fi
 if [[ "$EMBEDDED_BUILD_COMMIT_SHA" != "$CAPTURE_BUILD_COMMIT_SHA" ]]; then
   echo "Signed app did not preserve the exact Capture source commit SHA." >&2
-  exit 13
+  exit 15
 fi
 if [[ "$EMBEDDED_BUNDLE_ID" != "$BUNDLE_ID" ]]; then
   echo "Signed app bundle identifier changed unexpectedly: $EMBEDDED_BUNDLE_ID" >&2
-  exit 14
+  exit 16
 fi
 
 # Final digest-bearing provenance must remain external. Embedding a digest of the final signed
 # executable inside the same signed bundle creates a code-signing self-reference and is forbidden.
 if [[ -e "$APP_PATH/NembraCaptureTrustedBuildRecord.json" || -e "$APP_PATH/NembraCaptureExternalBuildRecord.json" ]]; then
   echo "Executable-digest provenance record must remain external to the signed app bundle." >&2
-  exit 15
+  exit 17
 fi
 
 if ! codesign --verify --deep --strict --verbose=2 "$APP_PATH" > "$LOGS_DIR/codesign-verify.log" 2>&1; then
   cat "$LOGS_DIR/codesign-verify.log" >&2 || true
   echo "Signed Capture candidate failed strict code-signature verification." >&2
-  exit 16
+  exit 18
 fi
 codesign -d --verbose=4 "$APP_PATH" > "$LOGS_DIR/codesign-details.log" 2>&1 || true
+
+# DEVELOPMENT_TEAM is a requested build input, not evidence about the resulting signature. Read the
+# TeamIdentifier from the final signed app and require exact equality before recording that team in
+# candidate evidence.
+ACTUAL_SIGNING_TEAM="$(awk -F= '$1 == "TeamIdentifier" { print $2; exit }' "$LOGS_DIR/codesign-details.log")"
+if [[ ! "$ACTUAL_SIGNING_TEAM" =~ ^[A-Za-z0-9]{10}$ ]]; then
+  echo "Could not recover one canonical TeamIdentifier from the final app code signature." >&2
+  exit 19
+fi
+if [[ "$ACTUAL_SIGNING_TEAM" != "$DEVELOPMENT_TEAM" ]]; then
+  echo "Final app code-signature TeamIdentifier does not match requested DEVELOPMENT_TEAM." >&2
+  exit 20
+fi
+echo "code_signature_team_identifier=$ACTUAL_SIGNING_TEAM" >> "$ARTIFACTS_DIR/environment.txt"
 
 EXECUTABLE_NAME="$($PLIST_BUDDY -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
 EXECUTABLE_PATH="$APP_PATH/$EXECUTABLE_NAME"
 if [[ ! -f "$EXECUTABLE_PATH" ]]; then
   echo "Expected signed executable was not found at $EXECUTABLE_PATH" >&2
-  exit 17
+  exit 21
 fi
 
 EXECUTABLE_SHA256="$(shasum -a 256 "$EXECUTABLE_PATH" | awk '{print $1}')"
 INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
 if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ || ! "$INFO_PLIST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive canonical SHA-256 digests for the signed executable/build metadata." >&2
-  exit 18
+  exit 22
 fi
 
 RETAINED_EXECUTABLE="$BUILD_EVIDENCE_DIR/Nembra"
@@ -170,15 +211,15 @@ cp -p "$INFO_PLIST" "$RETAINED_INFO_PLIST"
 
 if ! cmp -s "$EXECUTABLE_PATH" "$RETAINED_EXECUTABLE" || ! cmp -s "$INFO_PLIST" "$RETAINED_INFO_PLIST"; then
   echo "Retained signed build evidence diverged from the exact archived app." >&2
-  exit 19
+  exit 23
 fi
 if [[ "$(shasum -a 256 "$RETAINED_EXECUTABLE" | awk '{print $1}')" != "$EXECUTABLE_SHA256" ]]; then
   echo "Retained signed executable digest mismatch." >&2
-  exit 20
+  exit 24
 fi
 if [[ "$(shasum -a 256 "$RETAINED_INFO_PLIST" | awk '{print $1}')" != "$INFO_PLIST_SHA256" ]]; then
   echo "Retained signed Info.plist digest mismatch." >&2
-  exit 21
+  exit 25
 fi
 
 # Preserve the exact signed .app as one transferable file without pretending that the zip itself is
@@ -188,7 +229,7 @@ ditto -c -k --keepParent "$APP_PATH" "$SIGNED_APP_ARCHIVE"
 SIGNED_APP_ARCHIVE_SHA256="$(shasum -a 256 "$SIGNED_APP_ARCHIVE" | awk '{print $1}')"
 if [[ ! "$SIGNED_APP_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive signed app archive SHA-256." >&2
-  exit 22
+  exit 26
 fi
 
 REHYDRATED_DIR="$ARTIFACTS_DIR/.signed-app-verification"
@@ -198,16 +239,16 @@ ditto -x -k "$SIGNED_APP_ARCHIVE" "$REHYDRATED_DIR"
 REHYDRATED_APP="$REHYDRATED_DIR/Nembra.app"
 if [[ ! -d "$REHYDRATED_APP" ]]; then
   echo "Transfer archive did not rehydrate the expected Nembra.app." >&2
-  exit 23
+  exit 27
 fi
 if ! cmp -s "$EXECUTABLE_PATH" "$REHYDRATED_APP/$EXECUTABLE_NAME" || ! cmp -s "$INFO_PLIST" "$REHYDRATED_APP/Info.plist"; then
   echo "Transfer archive did not preserve the exact signed executable/build metadata bytes." >&2
-  exit 24
+  exit 28
 fi
 if ! codesign --verify --deep --strict --verbose=2 "$REHYDRATED_APP" > "$LOGS_DIR/codesign-rehydrated-verify.log" 2>&1; then
   cat "$LOGS_DIR/codesign-rehydrated-verify.log" >&2 || true
   echo "Rehydrated signed app failed strict code-signature verification." >&2
-  exit 25
+  exit 29
 fi
 rm -rf "$REHYDRATED_DIR"
 
@@ -223,7 +264,7 @@ python3 - \
   "$INFO_PLIST_SHA256" \
   "$SIGNED_APP_ARCHIVE_SHA256" \
   "$BUNDLE_ID" \
-  "$DEVELOPMENT_TEAM" \
+  "$ACTUAL_SIGNING_TEAM" \
   "$CAPTURE_RECIPE_IDENTIFIER" \
   "$CAPTURE_PROCEDURE_VERSION" <<'PY'
 import json
@@ -239,7 +280,7 @@ import sys
     info_plist_sha256,
     signed_app_archive_sha256,
     bundle_identifier,
-    development_team,
+    actual_signing_team,
     recipe_identifier,
     procedure_version,
 ) = sys.argv[1:]
@@ -268,13 +309,50 @@ field_candidate = {
     "infoPlistSHA256": info_plist_sha256,
     "signedAppArchiveSHA256": signed_app_archive_sha256,
     "bundleIdentifier": bundle_identifier,
-    "developmentTeam": development_team,
+    "developmentTeam": actual_signing_team,
     "experimentRecipeID": recipe_identifier,
     "procedureVersion": procedure_version,
 }
 with open(field_candidate_path, "w", encoding="utf-8") as handle:
     json.dump(field_candidate, handle, indent=2, sort_keys=True)
     handle.write("\n")
+PY
+
+# Read the generated record back from disk and re-hash the retained bytes it names. This is still
+# self-checking producer evidence, not independent acceptance, but it prevents a malformed/stale
+# schema-v3 record from leaving this producer as a candidate artifact.
+python3 - "$EXTERNAL_BUILD_RECORD" "$RETAINED_EXECUTABLE" "$RETAINED_INFO_PLIST" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record_path, executable_path, info_plist_path = map(Path, sys.argv[1:])
+record = json.loads(record_path.read_text(encoding="utf-8"))
+expected_keys = {
+    "schemaVersion",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
+if set(record) != expected_keys or record.get("schemaVersion") != 3:
+    raise SystemExit("Signed candidate external build record is not the exact closed-world schema v3 shape")
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+if sha256(executable_path) != record["executableSHA256"]:
+    raise SystemExit("Signed candidate retained executable does not match schema-v3 record")
+if sha256(info_plist_path) != record["infoPlistSHA256"]:
+    raise SystemExit("Signed candidate retained Info.plist does not match schema-v3 record")
 PY
 
 EXTERNAL_BUILD_RECORD_SHA256="$(shasum -a 256 "$EXTERNAL_BUILD_RECORD" | awk '{print $1}')"
@@ -303,7 +381,7 @@ if [[ -n "${NEMBRA_INSTALL_DEVICE_ID:-}" ]]; then
     cat "$INSTALL_LOG" >&2 || true
     rm -f "$INSTALL_LOG"
     echo "The exact signed candidate did not install successfully on the requested device." >&2
-    exit 26
+    exit 30
   fi
   rm -f "$INSTALL_LOG"
   echo "device_install_requested=true" >> "$ARTIFACTS_DIR/environment.txt"
@@ -316,6 +394,7 @@ cat <<EOF
 SIGNED CAPTURE FIELD CANDIDATE PRODUCED
 source: $CAPTURE_BUILD_COMMIT_SHA
 build instance: $CAPTURE_BUILD_INSTANCE_ID
+code-signature team: $ACTUAL_SIGNING_TEAM
 signed executable sha256: $EXECUTABLE_SHA256
 signed app archive sha256: $SIGNED_APP_ARCHIVE_SHA256
 external schema-v3 record: $EXTERNAL_BUILD_RECORD
