@@ -20,19 +20,24 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import Callable
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
 FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 1
-SIGNING_INSPECTION_SCHEMA_VERSION = 1
+SIGNING_INSPECTION_SCHEMA_VERSION = 2
 SIGNED_INSTALLABLE_KIND = "ipa"
 INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+TEAM_RE = re.compile(r"^[A-Z0-9]{10}$")
+CDHASH_RE = re.compile(r"^[0-9a-f]{40,64}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
@@ -40,6 +45,16 @@ UUID_RE = re.compile(
 
 class EvidenceError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class SigningInspection:
+    team_identifier: str
+    signing_authorities: list[str]
+    code_directory_hash: str
+    provisioning_profile_uuid: str
+    provisioning_profile_expiration_utc: str
+    provisioning_application_identifier: str
 
 
 def sha256_file(path: Path) -> str:
@@ -199,12 +214,95 @@ def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     return platform, supported_values
 
 
-def run_codesign(app_path: Path) -> tuple[str, list[str]]:
+def _required_command(name: str) -> str:
+    path = shutil.which(name)
+    if not path:
+        raise EvidenceError(f"{name} is not available")
+    return path
+
+
+def _profile_expiration_utc(value: object) -> str:
+    if not isinstance(value, datetime):
+        raise EvidenceError("embedded provisioning profile does not contain ExpirationDate")
+    if value.tzinfo is None:
+        normalized = value.replace(tzinfo=timezone.utc)
+    else:
+        normalized = value.astimezone(timezone.utc)
+    if normalized <= datetime.now(timezone.utc):
+        raise EvidenceError("embedded provisioning profile is expired")
+    return normalized.isoformat().replace("+00:00", "Z")
+
+
+def parse_signing_inspection(
+    codesign_metadata: str,
+    provisioning_profile: dict,
+    bundle_identifier: str,
+) -> SigningInspection:
+    if re.search(r"(?m)^Signature=adhoc\s*$", codesign_metadata):
+        raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
+
+    team_match = re.search(r"(?m)^TeamIdentifier=([^\r\n]+)$", codesign_metadata)
+    if not team_match:
+        raise EvidenceError("codesign metadata does not contain TeamIdentifier")
+    team_identifier = team_match.group(1).strip()
+    if not TEAM_RE.fullmatch(team_identifier):
+        raise EvidenceError("field IPA does not carry a canonical 10-character signing TeamIdentifier")
+
+    authorities = [
+        match.group(1).strip()
+        for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", codesign_metadata)
+    ]
+    if not authorities or any(not authority for authority in authorities):
+        raise EvidenceError("codesign metadata does not contain a concrete signing authority chain")
+
+    cdhash_match = re.search(r"(?m)^CDHash=([^\r\n]+)$", codesign_metadata)
+    if not cdhash_match:
+        raise EvidenceError("codesign metadata does not contain CDHash")
+    code_directory_hash = cdhash_match.group(1).strip().lower()
+    if not CDHASH_RE.fullmatch(code_directory_hash):
+        raise EvidenceError("codesign metadata CDHash is not canonical hexadecimal evidence")
+
+    profile_teams = provisioning_profile.get("TeamIdentifier")
+    if (
+        not isinstance(profile_teams, list)
+        or not profile_teams
+        or not all(isinstance(item, str) and TEAM_RE.fullmatch(item) for item in profile_teams)
+        or team_identifier not in profile_teams
+    ):
+        raise EvidenceError("embedded provisioning profile TeamIdentifier does not match code signature")
+
+    profile_uuid = provisioning_profile.get("UUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+        raise EvidenceError("embedded provisioning profile UUID is missing")
+    profile_uuid = profile_uuid.strip()
+
+    expiration_utc = _profile_expiration_utc(provisioning_profile.get("ExpirationDate"))
+
+    entitlements = provisioning_profile.get("Entitlements")
+    expected_application_identifier = f"{team_identifier}.{bundle_identifier}"
+    if (
+        not isinstance(entitlements, dict)
+        or entitlements.get("application-identifier") != expected_application_identifier
+    ):
+        raise EvidenceError(
+            "embedded provisioning profile application-identifier does not match signed Nembra bundle"
+        )
+
+    return SigningInspection(
+        team_identifier=team_identifier,
+        signing_authorities=authorities,
+        code_directory_hash=code_directory_hash,
+        provisioning_profile_uuid=profile_uuid,
+        provisioning_profile_expiration_utc=expiration_utc,
+        provisioning_application_identifier=expected_application_identifier,
+    )
+
+
+def run_signing_inspection(app_path: Path, bundle_identifier: str) -> SigningInspection:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
-    codesign = shutil.which("codesign")
-    if not codesign:
-        raise EvidenceError("codesign is not available")
+    codesign = _required_command("codesign")
+    security = _required_command("security")
 
     verify = subprocess.run(
         [codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)],
@@ -225,22 +323,27 @@ def run_codesign(app_path: Path) -> tuple[str, list[str]]:
     if display.returncode != 0:
         detail = (display.stderr or display.stdout).strip()
         raise EvidenceError(f"codesign metadata inspection failed: {detail}")
-
     metadata = "\n".join(part for part in (display.stdout, display.stderr) if part)
-    if re.search(r"(?m)^Signature=adhoc\s*$", metadata):
-        raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
 
-    team_match = re.search(r"(?m)^TeamIdentifier=([^\r\n]+)$", metadata)
-    if not team_match:
-        raise EvidenceError("codesign metadata does not contain TeamIdentifier")
-    team_identifier = team_match.group(1).strip()
-    if not team_identifier or team_identifier.lower() in {"not set", "none", "-"}:
-        raise EvidenceError("field IPA does not carry a concrete signing TeamIdentifier")
+    profile_path = app_path / "embedded.mobileprovision"
+    if not profile_path.is_file():
+        raise EvidenceError("signed field app is missing embedded.mobileprovision")
+    profile_result = subprocess.run(
+        [security, "cms", "-D", "-i", str(profile_path)],
+        capture_output=True,
+        check=False,
+    )
+    if profile_result.returncode != 0:
+        detail = profile_result.stderr.decode("utf-8", errors="replace").strip()
+        raise EvidenceError(f"embedded provisioning profile decode failed: {detail}")
+    try:
+        provisioning_profile = plistlib.loads(profile_result.stdout)
+    except plistlib.InvalidFileException as exc:
+        raise EvidenceError("embedded provisioning profile is not a readable plist") from exc
+    if not isinstance(provisioning_profile, dict):
+        raise EvidenceError("embedded provisioning profile root is not a dictionary")
 
-    authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
-    if not authorities:
-        raise EvidenceError("codesign metadata does not contain a signing authority chain")
-    return team_identifier, authorities
+    return parse_signing_inspection(metadata, provisioning_profile, bundle_identifier)
 
 
 def reject_embedded_external_authority(app_path: Path) -> None:
@@ -259,7 +362,12 @@ def reject_embedded_external_authority(app_path: Path) -> None:
         )
 
 
-def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
+def inspect_ipa(
+    ipa_path: Path,
+    expected_source_sha: str,
+    *,
+    signing_probe: Callable[[Path, str], SigningInspection] = run_signing_inspection,
+) -> dict:
     source_sha = canonical_sha40(expected_source_sha)
     if not ipa_path.is_file():
         raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
@@ -304,7 +412,7 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not executable_path.is_file():
             raise EvidenceError("signed app executable is missing")
 
-        team_identifier, signing_authorities = run_codesign(app_path)
+        signing = signing_probe(app_path, bundle_id)
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
@@ -355,8 +463,12 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "bundleIdentifier": bundle_id,
         "platformName": platform_name,
         "supportedPlatforms": supported_platforms,
-        "teamIdentifier": team_identifier,
-        "signingAuthorities": signing_authorities,
+        "teamIdentifier": signing.team_identifier,
+        "signingAuthorities": signing.signing_authorities,
+        "codeDirectoryHash": signing.code_directory_hash,
+        "provisioningProfileUUID": signing.provisioning_profile_uuid,
+        "provisioningProfileExpirationUTC": signing.provisioning_profile_expiration_utc,
+        "provisioningApplicationIdentifier": signing.provisioning_application_identifier,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
         "experimentRecipeID": RECIPE_ID,
