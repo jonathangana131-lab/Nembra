@@ -69,6 +69,54 @@ struct PassiveBluetoothPowerCycleObservationWindowDurationAssessmentTests {
         #expect(assessment.windows.map { $0.windowSequence.rawValue } == [1, 2, 3, 4])
     }
 
+    @Test("self-consistent renumbering cannot impersonate one package-issued four-window life")
+    func selfConsistentRenumberingFailsClosed() throws {
+        let original = try completedResult(
+            producerMinimumNanoseconds: 1,
+            observedDurationNanoseconds: 10_000_000_000
+        )
+        let renumberedSequences: [UInt64] = [10, 20, 30, 40]
+
+        let windows = zip(original.windows, renumberedSequences).map { receipt, rawSequence in
+            PassiveBluetoothPowerCycleObservationWindowReceipt(
+                phase: receipt.phase,
+                windowSequence: .init(rawValue: rawSequence),
+                startedAtUptimeNanoseconds: receipt.startedAtUptimeNanoseconds,
+                endedAtUptimeNanoseconds: receipt.endedAtUptimeNanoseconds,
+                observedCandidateCount: receipt.observedCandidateCount
+            )
+        }
+        let snapshots = try zip(original.observationSnapshots, renumberedSequences).map {
+            snapshot, rawSequence in
+            try PassiveBluetoothCandidateObservationSnapshot(
+                observationSeriesIdentity: snapshot.observationSeriesIdentity,
+                windowSequence: .init(rawValue: rawSequence),
+                candidates: snapshot.candidates
+            )
+        }
+        let correlation = PassiveBluetoothPowerCycleTargetCorrelation.assess(
+            firstOff: snapshots[0],
+            firstOn: snapshots[1],
+            secondOff: snapshots[2],
+            secondOn: snapshots[3]
+        )
+        let renumbered = PassiveBluetoothPowerCycleObservationResult(
+            windows: windows,
+            observationSnapshots: snapshots,
+            correlation: correlation
+        )
+
+        let assessment = PassiveBluetoothPowerCycleObservationWindowDurationAssessment.assess(
+            result: renumbered,
+            minimumDurationNanoseconds: 10_000_000_000
+        )
+
+        #expect(assessment.status == .invalidWindowSet)
+        #expect(!assessment.isDurationSufficient)
+        #expect(assessment.observationResult == renumbered)
+        #expect(assessment.windows.isEmpty)
+    }
+
     @Test("assessment remains bound to the exact package-issued observation result")
     func assessmentCannotLoseItsSourceResult() throws {
         let first = try completedResult(
