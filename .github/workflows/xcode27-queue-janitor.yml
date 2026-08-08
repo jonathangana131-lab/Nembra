@@ -1,0 +1,51 @@
+name: Xcode 27 Queue Janitor
+
+on:
+  push:
+    branches:
+      - main
+      - ci/xcode27-queue-janitor-v14-gpt56-go
+    paths:
+      - scripts/ci/xcode27_queue_janitor.py
+      - .github/workflows/xcode27-queue-janitor.yml
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: nembra-xcode27-queue-janitor
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Self-test fail-closed classifier
+        run: python3 scripts/ci/xcode27_queue_janitor.py --self-test
+
+      - name: Audit branch candidate without mutation
+        if: github.ref != 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci/xcode27_queue_janitor.py
+          --minimum-age-seconds 120
+          --max-cancellations 200
+
+      - name: Cancel only proven-stale queued Xcode runs
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/ci/xcode27_queue_janitor.py
+          --apply
+          --minimum-age-seconds 120
+          --max-cancellations 200
