@@ -375,6 +375,98 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     }
 
     @MainActor
+    func testV14SimulatorQAInterruptionFailsClosedAndCapturesRecoveryState() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=foregroundInterrupted"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Capture stopped safely"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.restart-experiment"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.finish"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.share"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let simulatorBadge = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let shell = app.descendants(matching: .any)["es80.capture-shell"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        XCTAssertTrue(simulatorBadge.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Capture can be sealed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Top"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        if !finish.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(finish.exists)
+
+        let actionAttachment = XCTAttachment(screenshot: app.screenshot())
+        actionAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Accessibility XXXL — Action"
+        actionAttachment.lifetime = .keepAlways
+        add(actionAttachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQACompleteLandscapeKeepsShareAndDetailsReachable() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=captureComplete"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let share = app.descendants(matching: .any)["es80.capture.share"]
+        let details = app.descendants(matching: .any)["es80.capture.view-details"]
+        XCTAssertTrue(app.staticTexts["CAPTURE COMPLETE"].waitForExistence(timeout: 3))
+        XCTAssertTrue(share.waitForExistence(timeout: 3))
+        XCTAssertTrue(details.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Landscape"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        if !share.isHittable || !details.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(share.exists)
+        XCTAssertTrue(details.exists)
+    }
+
+    @MainActor
     func testV14SimulatorQACaptureCompleteRemainsActionableAtAccessibilityExtraExtraExtraLarge() {
         let app = XCUIApplication()
         app.launchArguments = [
