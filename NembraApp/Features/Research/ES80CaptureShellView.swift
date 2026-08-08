@@ -19,6 +19,7 @@ import UIKit
 struct ES80CaptureShellView: View {
     private enum Phase: Equatable {
         case physicalProcedureLocked
+        case setupPreflight
         case bluetoothUnavailable(String)
         case correlationReady(PassiveBluetoothPowerCycleObservationPhase)
         case correlationStarting(PassiveBluetoothPowerCycleObservationPhase)
@@ -53,6 +54,13 @@ struct ES80CaptureShellView: View {
     @State private var localFailureMessage: String?
     @State private var shareURL: URL?
     @State private var showingDetails = false
+    @State private var chargerDisconnectedConfirmed = false
+    @State private var stockAppClosedConfirmed = false
+    @State private var declaredCaptureSetup: PassiveBluetoothStationaryCaptureSetup?
+    @State private var finalizedSoftwareExport: PassiveBluetoothExperimentOneSoftwareExport?
+    @State private var finalizedExportData: Data?
+    @State private var exportPreparationWarning: String?
+    @State private var sharePreparationWarning: String?
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
         _coordinator = State(initialValue: coordinator)
@@ -254,6 +262,57 @@ struct ES80CaptureShellView: View {
                 message: "The package-owned physical execution gate is closed. No OFF / ON window, connection, capture, or seal action can advance through this coordinator.",
                 symbol: "lock.shield.fill"
             )
+
+        case .setupPreflight:
+            statePanel(
+                eyebrow: "FIELD PREFLIGHT",
+                title: "Confirm the stationary setup",
+                message: "Experiment One records these conditions as operator-declared provenance. They are not inferred from Bluetooth traffic and are not proof that the conditions held continuously.",
+                symbol: "checklist"
+            )
+
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle(isOn: $chargerDisconnectedConfirmed) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Charger disconnected")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("Disconnect the scooter from charging before OFF 1.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.white)
+                .accessibilityIdentifier("es80.capture.preflight.charger-disconnected")
+
+                Divider().overlay(.white.opacity(0.12))
+
+                Toggle(isOn: $stockAppClosedConfirmed) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Stock scooter app closed")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("This fingerprint run records no stock-app reference marker. Keep the stock app closed throughout all four windows and passive capture.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.white)
+                .accessibilityIdentifier("es80.capture.preflight.stock-app-closed")
+            }
+            .padding(16)
+            .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            primaryButton(
+                "Lock setup for Experiment One",
+                systemImage: "lock.shield",
+                disabled: !chargerDisconnectedConfirmed || !stockAppClosedConfirmed,
+                identifier: "es80.capture.preflight.lock-setup"
+            ) {
+                lockDeclaredCaptureSetup()
+            }
+
+            guidanceFootnote("Nembra remains foreground-only with the screen awake during active evidence windows. If these declared conditions change, abandon this run and start a fresh Experiment One rather than relabeling the existing evidence life.")
 
         case let .bluetoothUnavailable(message):
             statePanel(
@@ -479,6 +538,7 @@ struct ES80CaptureShellView: View {
 
         case .complete:
             completionPanel
+
             if let shareURL {
                 ShareLink(item: shareURL) {
                     Label("Share Capture", systemImage: "square.and.arrow.up")
@@ -490,14 +550,28 @@ struct ES80CaptureShellView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("es80.capture.share")
+            } else if finalizedExportData != nil {
+                secondaryButton(
+                    "Prepare share file",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.prepare-share-file"
+                ) {
+                    prepareShareFile()
+                }
             } else {
-                primaryButton(
-                    "Share unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    disabled: true,
-                    identifier: "es80.capture.share-unavailable"
-                ) {}
+                secondaryButton(
+                    "Prepare Share Capture",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.prepare-export"
+                ) {
+                    prepareSoftwareExportAndShare()
+                }
             }
+
+            if let warning = captureCompletionWarning {
+                diagnosticBanner(warning)
+            }
+
             secondaryButton(
                 "View Details",
                 systemImage: "doc.text.magnifyingglass",
@@ -612,8 +686,13 @@ struct ES80CaptureShellView: View {
                 }
             }
 
-            if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable JSON bytes are sealed from this Experiment One authority. Correlation evidence is retained with the same package-owned result; no protocol field meaning is claimed yet.")
+            if let finalizedExportData {
+                Text("\(finalizedExportData.count.formatted()) package-owned Share Capture bytes are retained. The export binds the immutable controller capture, same-run four-window correlation evidence, ES80-FINGERPRINT-v1, stationary setup manifest, and runtime build provenance.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let artifact = coordinator.finalizedArtifact {
+                Text("The immutable controller capture is sealed (\(artifact.captureJSON.count.formatted()) raw bytes), but the package-owned Share Capture envelope is not prepared yet. Retry export preparation without re-running Horizon finalization.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -634,15 +713,26 @@ struct ES80CaptureShellView: View {
                     detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
                     detailRow("Correlation", value: correlationDetailValue)
                     if let artifact = coordinator.finalizedArtifact {
-                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+                        detailRow("Raw capture bytes", value: artifact.captureJSON.count.formatted())
                         detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+                    }
+                    if let finalizedExportData {
+                        detailRow("Share artifact bytes", value: finalizedExportData.count.formatted())
+                    }
+                    if let export = finalizedSoftwareExport {
+                        detailRow("Build", value: export.build.buildIdentifier)
+                        detailRow("Source commit", value: export.build.sourceCommitSHA)
+                    }
+                    if let setup = declaredCaptureSetup {
+                        detailRow("Charger", value: setup.chargerState == .disconnected ? "Disconnected" : "Connected")
+                        detailRow("Stock app reference", value: setup.stockAppReferenceSetup == .none ? "None / app closed" : setup.stockAppReferenceSetup.rawValue)
                     }
 
                     Divider()
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics. Build metadata and setup declarations are provenance, not physical authorization.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -678,6 +768,9 @@ struct ES80CaptureShellView: View {
         }
         if status.artifactFinalized || coordinator.finalizedArtifact != nil {
             return .complete
+        }
+        guard declaredCaptureSetup != nil else {
+            return .setupPreflight
         }
 
         switch status.connection {
@@ -734,6 +827,16 @@ struct ES80CaptureShellView: View {
         return .correlationReady(progress.phase)
     }
 
+    private func lockDeclaredCaptureSetup() {
+        guard chargerDisconnectedConfirmed, stockAppClosedConfirmed else { return }
+        diagnosticMessage = nil
+        declaredCaptureSetup = PassiveBluetoothStationaryCaptureSetup(
+            chargerState: .disconnected,
+            executionContext: .foregroundUnlockedScreenOn,
+            stockAppReferenceSetup: .none
+        )
+    }
+
     private func beginCorrelationWindow() {
         diagnosticMessage = nil
         do {
@@ -784,18 +887,78 @@ struct ES80CaptureShellView: View {
     private func finalizeCapture() {
         guard !finalizationInFlight else { return }
         diagnosticMessage = nil
+        exportPreparationWarning = nil
+        sharePreparationWarning = nil
         finalizationInFlight = true
 
         Task {
             do {
-                let artifact = try await coordinator.finalizeObservationHorizon()
-                shareURL = try persistShareArtifact(artifact.captureJSON)
+                _ = try await coordinator.finalizeObservationHorizon()
                 finalizationInFlight = false
+                prepareSoftwareExportAndShare()
             } catch {
                 finalizationInFlight = false
                 localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
             }
         }
+    }
+
+    private func prepareSoftwareExportAndShare() {
+        guard let artifact = coordinator.finalizedArtifact else {
+            exportPreparationWarning = "The package does not expose a finalized artifact for this run. Start a fresh Experiment One rather than manufacturing Share evidence."
+            return
+        }
+        guard let setup = declaredCaptureSetup else {
+            exportPreparationWarning = "The immutable capture is sealed, but its operator-declared stationary setup is unavailable. Nembra will not invent setup provenance for Share Capture."
+            return
+        }
+
+        do {
+            let softwareExport = try PassiveBluetoothExperimentOneSoftwareExportCodec.makeForCurrentApplication(
+                finalizedArtifact: artifact,
+                setup: setup
+            )
+            let data = try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(
+                softwareExport,
+                prettyPrinted: true
+            )
+            finalizedSoftwareExport = softwareExport
+            finalizedExportData = data
+            exportPreparationWarning = nil
+
+            do {
+                shareURL = try persistShareArtifact(data)
+                sharePreparationWarning = nil
+            } catch {
+                shareURL = nil
+                sharePreparationWarning = "Capture and package-owned export are retained, but the temporary Share file could not be prepared. Retry staging without re-running Horizon finalization."
+            }
+        } catch {
+            finalizedSoftwareExport = nil
+            finalizedExportData = nil
+            shareURL = nil
+            exportPreparationWarning = "The immutable controller capture is sealed, but its package-owned Share Capture envelope could not be verified/prepared: \(String(describing: error)). Retry export preparation; do not re-run Horizon finalization."
+        }
+    }
+
+    private func prepareShareFile() {
+        guard let data = finalizedExportData else {
+            prepareSoftwareExportAndShare()
+            return
+        }
+        do {
+            shareURL = try persistShareArtifact(data)
+            sharePreparationWarning = nil
+        } catch {
+            shareURL = nil
+            sharePreparationWarning = "The package-owned Share Capture bytes remain retained, but the temporary Share file still could not be prepared. The retained bytes are unchanged."
+        }
+    }
+
+    private var captureCompletionWarning: String? {
+        let messages = [exportPreparationWarning, sharePreparationWarning].compactMap { $0 }
+        guard !messages.isEmpty else { return nil }
+        return messages.joined(separator: " ")
     }
 
     private func restartExperiment() {
@@ -806,6 +969,13 @@ struct ES80CaptureShellView: View {
         finalizationInFlight = false
         shareURL = nil
         showingDetails = false
+        chargerDisconnectedConfirmed = false
+        stockAppClosedConfirmed = false
+        declaredCaptureSetup = nil
+        finalizedSoftwareExport = nil
+        finalizedExportData = nil
+        exportPreparationWarning = nil
+        sharePreparationWarning = nil
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
 
@@ -883,7 +1053,7 @@ struct ES80CaptureShellView: View {
 
     private func persistShareArtifact(_ data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-Capture-\(UUID().uuidString).json")
+            .appendingPathComponent("Nembra-ES80-FINGERPRINT-v1-SoftwareExport-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
     }
@@ -1110,6 +1280,7 @@ struct ES80CaptureShellView: View {
         completedWindows: Int
     ) -> String {
         if status.artifactFinalized { return "SEALED" }
+        if declaredCaptureSetup == nil { return "PREFLIGHT" }
         if status.canFinalizeObservationHorizon { return "H READY" }
         if status.observationReady { return "OBSERVE" }
         if status.connection == .connected { return "ACQUIRE" }
@@ -1124,6 +1295,9 @@ struct ES80CaptureShellView: View {
     ) -> String {
         if status.artifactFinalized {
             return "Experiment One progress, capture sealed and ready for analysis"
+        }
+        if declaredCaptureSetup == nil {
+            return "Experiment One progress, stationary setup preflight required"
         }
         if status.canFinalizeObservationHorizon {
             return "Experiment One progress, observation Horizon ready to seal"
@@ -1155,6 +1329,7 @@ struct ES80CaptureShellView: View {
 
     private func heroTitle(for phase: Phase) -> String {
         switch phase {
+        case .setupPreflight: return "Set the evidence conditions."
         case .complete: return "Evidence, sealed."
         case .readyToSeal, .observing: return "Hold the evidence line."
         case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."
@@ -1165,6 +1340,7 @@ struct ES80CaptureShellView: View {
     private func statusTitle(for phase: Phase) -> String {
         switch phase {
         case .physicalProcedureLocked: return "Field procedure locked"
+        case .setupPreflight: return "Stationary setup required"
         case .bluetoothUnavailable: return "Preflight required"
         case let .correlationReady(window): return "Ready for \(phaseShortName(window))"
         case let .correlationStarting(window): return "Starting \(phaseShortName(window))"

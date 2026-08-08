@@ -292,11 +292,19 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-
 /// V14 app-visible Experiment One authority regression. These source checks intentionally live in
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
 extension NembraAppTests {
+    private func captureShellSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
     func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
@@ -308,18 +316,68 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let shell = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
-            encoding: .utf8
-        )
+    func testCaptureShellLocksExplicitStationarySetupBeforeCorrelation() throws {
+        let shell = try captureShellSource()
+
+        XCTAssertTrue(shell.contains("case setupPreflight"))
+        XCTAssertTrue(shell.contains("es80.capture.preflight.charger-disconnected"))
+        XCTAssertTrue(shell.contains("es80.capture.preflight.stock-app-closed"))
+        XCTAssertTrue(shell.contains("guard declaredCaptureSetup != nil else"))
+        XCTAssertTrue(shell.contains("declaredCaptureSetup = PassiveBluetoothStationaryCaptureSetup("))
+        XCTAssertTrue(shell.contains("chargerState: .disconnected"))
+        XCTAssertTrue(shell.contains("executionContext: .foregroundUnlockedScreenOn"))
+        XCTAssertTrue(shell.contains("stockAppReferenceSetup: .none"))
+    }
+
+    func testCaptureShellContinuesPackageAuthorityThroughSealAndBoundShareExport() throws {
+        let shell = try captureShellSource()
+
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneSoftwareExportCodec.makeForCurrentApplication("))
+        XCTAssertTrue(shell.contains("finalizedArtifact: artifact"))
+        XCTAssertTrue(shell.contains("setup: setup"))
+        XCTAssertTrue(shell.contains("finalizedExportData = data"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+        XCTAssertFalse(shell.contains("persistShareArtifact(artifact.captureJSON)"))
+    }
+
+    func testCaptureShareRetryUsesRetainedExportBytesWithoutResealing() throws {
+        let shell = try captureShellSource()
+        let retryStart = try XCTUnwrap(shell.range(of: "private func prepareShareFile()"))
+        let retryEnd = try XCTUnwrap(
+            shell.range(of: "private var captureCompletionWarning", range: retryStart.upperBound..<shell.endIndex)
+        )
+        let retryBody = String(shell[retryStart.lowerBound..<retryEnd.lowerBound])
+
+        XCTAssertTrue(retryBody.contains("guard let data = finalizedExportData"))
+        XCTAssertTrue(retryBody.contains("persistShareArtifact(data)"))
+        XCTAssertFalse(retryBody.contains("finalizeObservationHorizon"))
+        XCTAssertFalse(retryBody.contains("artifact.captureJSON"))
+    }
+
+    func testCaptureSealFailureIsDistinctFromExportAndSharePreparationFailures() throws {
+        let shell = try captureShellSource()
+        let sealStart = try XCTUnwrap(shell.range(of: "private func finalizeCapture()"))
+        let sealEnd = try XCTUnwrap(
+            shell.range(of: "private func prepareSoftwareExportAndShare()", range: sealStart.upperBound..<shell.endIndex)
+        )
+        let sealBody = String(shell[sealStart.lowerBound..<sealEnd.lowerBound])
+
+        XCTAssertTrue(sealBody.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(sealBody.contains("prepareSoftwareExportAndShare()"))
+        XCTAssertTrue(sealBody.contains("localFailureMessage = \"Capture sealing failed:"))
+
+        let exportStart = sealEnd
+        let shareRetryStart = try XCTUnwrap(
+            shell.range(of: "private func prepareShareFile()", range: exportStart.upperBound..<shell.endIndex)
+        )
+        let exportBody = String(shell[exportStart.lowerBound..<shareRetryStart.lowerBound])
+        XCTAssertFalse(exportBody.contains("localFailureMessage = \"Capture sealing failed:"))
+        XCTAssertTrue(exportBody.contains("finalizedSoftwareExport = softwareExport"))
+        XCTAssertTrue(exportBody.contains("finalizedExportData = data"))
     }
 }
