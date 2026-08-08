@@ -6,8 +6,7 @@ on:
       - fix/es80-v14-auth-envelope-exclusive-rename-live2/gpt56-thinking
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   compose:
@@ -22,12 +21,12 @@ jobs:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
 
-      - name: Verify exact live parent
+      - name: Verify branch contains only composer over live parent
         env:
           EXPECTED_PARENT: dbdc82d305244bd045ce428f813aa07b00777e85
         run: |
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/es80-auth-envelope-live2-compose.yml"
+          git merge-base --is-ancestor "$EXPECTED_PARENT" HEAD
+          test "$(git diff --name-only "$EXPECTED_PARENT"..HEAD)" = ".github/workflows/es80-auth-envelope-live2-compose.yml"
 
       - name: Compose validated atomic publication change
         run: |
@@ -57,8 +56,7 @@ jobs:
           if 'test_es80_field_authorization_atomic_publication.py' in block:
               raise SystemExit('atomic regression unexpectedly already in fast authority gate')
           block = block.replace(marker, marker + compile_line + run_line, 1)
-          source = source[:start] + block + source[end:]
-          path.write_text(source, encoding='utf-8')
+          path.write_text(source[:start] + block + source[end:], encoding='utf-8')
           PY
 
       - name: Validate combined authority contract
@@ -77,24 +75,18 @@ jobs:
           PY
           git diff --check
 
-      - name: Stage product-only cleanup
+      - name: Export exact validated source subjects
         run: |
-          set -euxo pipefail
-          rm .github/workflows/es80-auth-envelope-live2-compose.yml
-          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
-          git add -A
-          git diff --cached --check
-          git status --short
+          mkdir -p export/.github/workflows export/scripts/ci/tests export/scripts/ci
+          cp .github/workflows/xcode27-pr-command.yml export/.github/workflows/
+          cp scripts/ci/es80_field_authorization_envelope.py export/scripts/ci/
+          cp scripts/ci/tests/test_es80_field_authorization_atomic_publication.py export/scripts/ci/tests/
+          find export -type f -print -exec sha256sum {} \;
 
-      - name: Commit product-only cleanup
-        run: |
-          set -euxo pipefail
-          git config user.name "Nembra V14 Capture Worker"
-          git config user.email "nembra-v14@users.noreply.github.com"
-          git commit -m "Gate atomic publication in fast authority QA" \
-            -m "Remove the temporary composer and run the authorization-envelope atomic publication regression in the fast exact-head authority job as well as final Mac QA. Physical Experiment One remains NO-GO."
-
-      - name: Push composed checkpoint
-        run: |
-          set -euxo pipefail
-          git push origin HEAD:${GITHUB_REF_NAME}
+      - name: Upload validated composition
+        uses: actions/upload-artifact@v4
+        with:
+          name: es80-auth-envelope-atomic-dbdc82d3
+          path: export
+          if-no-files-found: error
+          retention-days: 7
