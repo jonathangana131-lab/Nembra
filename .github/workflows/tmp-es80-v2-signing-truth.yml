@@ -1,0 +1,308 @@
+name: Temporary ES80 schema-v2 signing truth hardening
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-field-evidence-v2-closure-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/es80-v14-field-evidence-v2-closure-gpt56
+
+      - name: Bind evidence generation to effective entitlements and intended device provisioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          p = Path('scripts/ci/es80_signed_field_artifact_evidence.py')
+          text = p.read_text()
+
+          start = text.index('def verify_signing(app_path: Path, bundle_id: str) -> SigningEvidence:')
+          end = text.index('\n\ndef reject_embedded_external_authority', start)
+          replacement = textwrap.dedent('''
+          def _valid_intended_device_udid(value: str | None) -> bool:
+              if value is None or not value or len(value.encode("utf-8")) > 128 or value != value.strip():
+                  return False
+              return not any(ord(character) < 33 or ord(character) == 127 for character in value)
+
+
+          def _decode_codesign_entitlements(result: subprocess.CompletedProcess[str]) -> dict:
+              for output in (result.stdout, result.stderr):
+                  start = output.find("<?xml")
+                  end = output.rfind("</plist>")
+                  if start < 0 or end < start:
+                      continue
+                  payload = output[start : end + len("</plist>")].encode("utf-8")
+                  try:
+                      value = plistlib.loads(payload)
+                  except Exception:
+                      continue
+                  if isinstance(value, dict):
+                      return value
+              raise EvidenceError("could not decode effective entitlements from signed app")
+
+
+          def _validate_signed_entitlements_and_device(
+              profile: dict,
+              effective_entitlements: dict,
+              team_identifier: str,
+              bundle_id: str,
+              intended_device_udid: str | None,
+          ) -> None:
+              expected_application_identifier = f"{team_identifier}.{bundle_id}"
+              profile_entitlements = profile.get("Entitlements")
+              if (
+                  not isinstance(profile_entitlements, dict)
+                  or profile_entitlements.get("application-identifier") != expected_application_identifier
+              ):
+                  raise EvidenceError("provisioning profile application-identifier does not match signed Nembra bundle")
+
+              if effective_entitlements.get("application-identifier") != expected_application_identifier:
+                  raise EvidenceError("effective signed application-identifier does not match signed Nembra bundle")
+              if effective_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+                  raise EvidenceError("effective signed team identifier does not match code-signing team")
+
+              if not _valid_intended_device_udid(intended_device_udid):
+                  raise EvidenceError("one valid intended field-device UDID is required for provisioning verification")
+
+              if profile.get("ProvisionsAllDevices") is True:
+                  return
+              provisioned_devices = profile.get("ProvisionedDevices")
+              if (
+                  not isinstance(provisioned_devices, list)
+                  or not all(isinstance(device, str) for device in provisioned_devices)
+                  or intended_device_udid not in provisioned_devices
+              ):
+                  raise EvidenceError("provisioning profile does not include the intended field device")
+
+
+          def verify_signing(
+              app_path: Path,
+              bundle_id: str,
+              intended_device_udid: str | None,
+          ) -> SigningEvidence:
+              if sys.platform != "darwin":
+                  raise EvidenceError("signed field IPA inspection requires macOS Apple signing tools")
+              codesign = shutil.which("codesign")
+              security = shutil.which("security")
+              if not codesign or not security:
+                  raise EvidenceError("codesign and security are required")
+
+              _run([codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)])
+              display = _run([codesign, "-d", "--verbose=4", str(app_path)])
+              metadata = "\\n".join(part for part in (display.stdout, display.stderr) if part)
+              if re.search(r"(?m)^Signature=adhoc\\s*$", metadata):
+                  raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
+
+              team_match = re.search(r"(?m)^TeamIdentifier=([^\\r\\n]+)$", metadata)
+              cdhash_match = re.search(r"(?m)^CDHash=([^\\r\\n]+)$", metadata)
+              if not team_match or not cdhash_match:
+                  raise EvidenceError("codesign metadata must contain TeamIdentifier and CDHash")
+              team_identifier = team_match.group(1).strip()
+              code_directory_hash = cdhash_match.group(1).strip().lower()
+              if not TEAM_RE.fullmatch(team_identifier):
+                  raise EvidenceError("codesign TeamIdentifier is malformed")
+              if not CDHASH_RE.fullmatch(code_directory_hash):
+                  raise EvidenceError("codesign CDHash is malformed")
+
+              authorities = [
+                  match.group(1).strip()
+                  for match in re.finditer(r"(?m)^Authority=([^\\r\\n]+)$", metadata)
+              ]
+              if not authorities or any(not authority for authority in authorities):
+                  raise EvidenceError("codesign metadata does not contain a signing authority chain")
+
+              profile_path = app_path / "embedded.mobileprovision"
+              if not profile_path.is_file():
+                  raise EvidenceError("signed field app is missing embedded.mobileprovision")
+              decoded = _run([security, "cms", "-D", "-i", str(profile_path)]).stdout.encode("utf-8")
+              try:
+                  profile = plistlib.loads(decoded)
+              except Exception as exc:
+                  raise EvidenceError("could not decode embedded provisioning profile") from exc
+              if not isinstance(profile, dict):
+                  raise EvidenceError("embedded provisioning profile root is not a dictionary")
+
+              profile_teams = profile.get("TeamIdentifier")
+              if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+                  raise EvidenceError("provisioning profile TeamIdentifier does not match code signature")
+              profile_uuid = profile.get("UUID")
+              if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+                  raise EvidenceError("provisioning profile UUID is missing")
+
+              expiration = profile.get("ExpirationDate")
+              if not isinstance(expiration, datetime):
+                  raise EvidenceError("provisioning profile ExpirationDate is missing")
+              if expiration.tzinfo is None:
+                  expiration = expiration.replace(tzinfo=timezone.utc)
+              else:
+                  expiration = expiration.astimezone(timezone.utc)
+              if expiration <= datetime.now(timezone.utc):
+                  raise EvidenceError("provisioning profile is expired")
+
+              signed_entitlements_result = _run(
+                  [codesign, "-d", "--entitlements", ":-", "--xml", str(app_path)]
+              )
+              effective_entitlements = _decode_codesign_entitlements(signed_entitlements_result)
+              _validate_signed_entitlements_and_device(
+                  profile,
+                  effective_entitlements,
+                  team_identifier,
+                  bundle_id,
+                  intended_device_udid,
+              )
+
+              return SigningEvidence(
+                  team_identifier=team_identifier,
+                  signing_authorities=authorities,
+                  code_directory_hash=code_directory_hash,
+                  provisioning_profile_uuid=profile_uuid.strip(),
+                  provisioning_profile_expiration_utc=expiration.isoformat().replace("+00:00", "Z"),
+              )
+          ''').lstrip()
+          text = text[:start] + replacement + text[end:]
+
+          text = text.replace(
+              '    signing_probe: Callable[[Path, str], SigningEvidence] = verify_signing,\n',
+              '    intended_device_udid: str | None = None,\n    signing_probe: Callable[[Path, str, str | None], SigningEvidence] = verify_signing,\n',
+              1,
+          )
+          text = text.replace(
+              '        signing = signing_probe(app_path, bundle_id)\n',
+              '        signing = signing_probe(app_path, bundle_id, intended_device_udid)\n',
+              1,
+          )
+          text = text.replace(
+              '    parser.add_argument("--expected-source-sha", help="exact accepted lowercase 40-hex source commit expected inside the field build")\n',
+              '    parser.add_argument("--expected-source-sha", help="exact accepted lowercase 40-hex source commit expected inside the field build")\n    parser.add_argument("--intended-device-udid", help="verification-only UDID of the intended field iPhone; never persisted")\n',
+              1,
+          )
+          text = text.replace(
+              'for name, value in (("--ipa", args.ipa), ("--output-dir", args.output_dir), ("--expected-source-sha", args.expected_source_sha))\n',
+              'for name, value in (("--ipa", args.ipa), ("--output-dir", args.output_dir), ("--expected-source-sha", args.expected_source_sha), ("--intended-device-udid", args.intended_device_udid))\n',
+              1,
+          )
+          text = text.replace(
+              '    inspection = inspect_ipa(args.ipa.resolve(), args.expected_source_sha)\n',
+              '    inspection = inspect_ipa(\n        args.ipa.resolve(),\n        args.expected_source_sha,\n        intended_device_udid=args.intended_device_udid,\n    )\n',
+              1,
+          )
+          p.write_text(text)
+
+          t = Path('scripts/ci/tests/test_es80_signed_field_artifact_evidence.py')
+          tests = t.read_text()
+          tests = tests.replace(
+              'def fake_signing_probe(app_path: Path, bundle_id: str):\n',
+              'def fake_signing_probe(app_path: Path, bundle_id: str, intended_device_udid: str | None):\n',
+              1,
+          )
+          anchor = '    def test_valid_ipa_emits_one_schema_v2_non_authorizing_evidence_format(self):\n'
+          methods = textwrap.dedent('''
+              def test_effective_signed_entitlements_and_intended_device_are_required_but_udid_is_not_persisted(self):
+                  team = "ABCDEFGHIJ"
+                  bundle = signed_field_evidence.BUNDLE_ID
+                  device = "00008101-001234567890001E"
+                  profile = {
+                      "Entitlements": {"application-identifier": f"{team}.{bundle}"},
+                      "ProvisionedDevices": [device],
+                  }
+                  effective = {
+                      "application-identifier": f"{team}.{bundle}",
+                      "com.apple.developer.team-identifier": team,
+                  }
+                  signed_field_evidence._validate_signed_entitlements_and_device(
+                      profile, effective, team, bundle, device
+                  )
+
+                  bad_effective = dict(effective)
+                  bad_effective["application-identifier"] = f"{team}.example.detached"
+                  with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "effective signed application-identifier"):
+                      signed_field_evidence._validate_signed_entitlements_and_device(
+                          profile, bad_effective, team, bundle, device
+                      )
+
+                  bad_team = dict(effective)
+                  bad_team["com.apple.developer.team-identifier"] = "ZZZZZZZZZZ"
+                  with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "effective signed team identifier"):
+                      signed_field_evidence._validate_signed_entitlements_and_device(
+                          profile, bad_team, team, bundle, device
+                      )
+
+                  with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "intended field device"):
+                      signed_field_evidence._validate_signed_entitlements_and_device(
+                          profile, effective, team, bundle, "00008101-NOT-PROVISIONED"
+                      )
+
+                  all_devices = dict(profile)
+                  all_devices.pop("ProvisionedDevices")
+                  all_devices["ProvisionsAllDevices"] = True
+                  signed_field_evidence._validate_signed_entitlements_and_device(
+                      all_devices, effective, team, bundle, device
+                  )
+
+                  with tempfile.TemporaryDirectory() as temp:
+                      ipa = Path(temp) / "Nembra.ipa"
+                      make_ipa(ipa)
+                      inspection = signed_field_evidence.inspect_ipa(
+                          ipa,
+                          HEAD,
+                          intended_device_udid=device,
+                          signing_probe=fake_signing_probe,
+                      )
+                      evidence_text = json.dumps(inspection["field_evidence"], sort_keys=True)
+                      self.assertNotIn(device, evidence_text)
+                      self.assertNotIn("deviceUDID", evidence_text)
+
+              def test_codesign_entitlements_decoder_rejects_missing_or_non_dictionary_plist(self):
+                  valid = subprocess.CompletedProcess(
+                      args=["codesign"],
+                      returncode=0,
+                      stdout=plistlib.dumps({"application-identifier": "ABCDEFGHIJ.example"}).decode("utf-8"),
+                      stderr="",
+                  )
+                  self.assertEqual(
+                      signed_field_evidence._decode_codesign_entitlements(valid)["application-identifier"],
+                      "ABCDEFGHIJ.example",
+                  )
+                  invalid = subprocess.CompletedProcess(args=["codesign"], returncode=0, stdout="noise", stderr="")
+                  with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "effective entitlements"):
+                      signed_field_evidence._decode_codesign_entitlements(invalid)
+          ''')
+          methods = textwrap.indent(methods.strip() + '\n\n', '    ')
+          if 'import subprocess\n' not in tests:
+              tests = tests.replace('import sys\n', 'import sys\nimport subprocess\n', 1)
+          if anchor not in tests:
+              raise SystemExit('test insertion anchor changed')
+          tests = tests.replace(anchor, methods + anchor, 1)
+          t.write_text(tests)
+          PY
+
+      - name: Run focused producer regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_evidence.py
+          python3 -m unittest discover -s scripts/ci/tests -p 'test_es80_signed_field_artifact_evidence.py' -v
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+
+      - name: Commit tested delta and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-es80-v2-signing-truth.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_evidence.py .github/workflows/tmp-es80-v2-signing-truth.yml
+          git diff --cached --check
+          git commit -m '[Capture field provenance v14] Verify signed entitlements and intended device'
+          git push origin HEAD:recovery/es80-v14-field-evidence-v2-closure-gpt56
