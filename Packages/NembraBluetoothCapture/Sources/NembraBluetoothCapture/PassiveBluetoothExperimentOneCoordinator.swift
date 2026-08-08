@@ -50,10 +50,10 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         try self.init(controller: controller)
     }
 
-    /// Internal composition seam retained for package tests and reviewed package-owned construction.
+    /// Explicit controller injection remains available for package tests and reviewed composition.
     /// Normal app code should use the zero-argument initializer so one package owner creates the
     /// controller and Experiment One run together.
-    init(controller: ForegroundCoreBluetoothCaptureController) throws {
+    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
