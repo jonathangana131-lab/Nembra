@@ -95,8 +95,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
     }
 
-    @Test("reset cannot release post-horizon evidence before artifact freeze")
-    func resetAfterHorizonBoundaryPreservesFreezeBarrier() throws {
+    @Test("terminal freeze does not release quarantined post-horizon evidence")
+    func terminalResetRequiresExplicitQueueRetirement() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let ready = try gate.begin(
             .finiteAcquisitionReady,
@@ -123,13 +123,35 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
         #expect(!gate.resetForNewCaptureSession())
         #expect(gate.phase == .horizonBoundaryRecorded(horizon))
-        #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
 
         try gate.completeHorizonArtifactFreeze(
             horizon,
             currentAuthority: authority
         )
-        #expect(gate.resetForNewCaptureSession())
-        #expect(gate.phase == .awaitingReady)
+
+        #expect(gate.phase == .terminal(horizon))
+        #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
+        #expect(
+            gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                queueSequence: 7,
+                authority: authority
+            )
+        )
+        #expect(
+            gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                queueSequence: 8,
+                authority: authority
+            )
+        )
+
+        #expect(!gate.resetForNewCaptureSession())
+        #expect(gate.phase == .terminal(horizon))
+        #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
+        #expect(
+            gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
+                queueSequence: 7,
+                authority: authority
+            )
+        )
     }
 }
