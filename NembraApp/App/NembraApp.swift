@@ -55,7 +55,7 @@ struct NembraApp: App {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The package-owned Experiment One workflow could not be created.")
+                                description: Text("Nembra Capture could not start. Restart the app and try again.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -131,14 +131,12 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                         chargerStateButton(
                             title: "Disconnected",
                             detail: "Required for ES80-FINGERPRINT-v1",
-                            systemImage: "bolt.slash.fill",
                             state: .disconnected
                         )
 
                         chargerStateButton(
                             title: "Connected",
                             detail: "Experiment One remains blocked",
-                            systemImage: "bolt.fill",
                             state: .connected
                         )
                     }
@@ -215,7 +213,6 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     private func chargerStateButton(
         title: String,
         detail: String,
-        systemImage: String,
         state: PassiveBluetoothStationaryCaptureChargerState
     ) -> some View {
         let selected = selectedChargerState?.rawValue == state.rawValue
@@ -261,7 +258,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+        "Physical capture locked. The OFF and ON steps stay unavailable until this exact Nembra build passes final device checks and is approved for the ES80 field procedure."
     }
 
     var body: some View {
@@ -286,13 +283,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Field capture locked")
+                            Text("Physical capture locked")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This exact build is not authorized to begin the physical ES80 procedure.")
+                    Text("This build has not been approved for a physical ES80 capture.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -305,11 +302,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Physical Experiment One locked")
+                        Text("Physical capture unavailable")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
+                        Text("The OFF and ON steps will appear only after this exact Nembra build passes final device checks and is approved for field use.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -327,7 +324,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("NO-GO")
+                        Text("LOCKED")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.orange)
                     }
@@ -343,7 +340,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Single-authority workflow installed")
+                        Text("Passive capture safeguards ready")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -352,7 +349,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Field execution unavailable on this build")
+                        Text("Physical steps locked on this build")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -360,7 +357,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
+                Text("No physical action is needed. When an approved field build is installed, Nembra will unlock this screen automatically. There is no manual override.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
