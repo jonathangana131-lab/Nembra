@@ -1,0 +1,57 @@
+name: ES80 Correlation Readiness QA
+
+on:
+  push:
+    branches:
+      - 'cell/es80-readiness/ci/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-correlation-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Test capture-wide readiness continuity
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable checkout and exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "8b868ab084552346670c3c85153cbc386e5abf86"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-correlation-readiness-qa.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 research package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build NembraBluetoothCapture for iOS Simulator with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build
