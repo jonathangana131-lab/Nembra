@@ -3,13 +3,15 @@ import NembraCore
 
 /// Whether two controlled captures can support direct raw-difference metrics.
 ///
-/// Direct state-to-state metrics are available only when both captures carry
-/// the same immutable Nembra vehicle context, resolve to the same observed GATT
-/// target, and the relevant target timelines contain no known observation gap.
-/// Capture-context, identity, and continuity ambiguity remain distinct so
-/// downstream tooling can explain why Nembra withheld a score.
+/// Direct state-to-state metrics are available only when the captures represent
+/// distinct observation sessions, carry the same immutable Nembra vehicle
+/// context, resolve to the same observed GATT target, and the relevant target
+/// timelines contain no known observation gap. Capture-session, capture-context,
+/// identity, and continuity ambiguity remain distinct so downstream tooling can
+/// explain why Nembra withheld a score.
 public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable, Sendable {
     case comparable
+    case sameCaptureSession
     case captureContextMismatch
     case identityAmbiguous
     case continuityAmbiguous
@@ -60,7 +62,8 @@ public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
 
 /// Evidence-derived direct-comparison output. Construction is package-internal
 /// so external clients cannot manufacture `.comparable` metrics without passing
-/// through the producer's capture-context, identity, and continuity gates.
+/// through the producer's capture-session, capture-context, identity, and
+/// continuity gates.
 public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identifiable {
     public enum Presence: String, Sendable {
         case baselineOnly
@@ -83,10 +86,11 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
         PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 
-    /// A descriptive sorting hint only when the captures carry the same Nembra
-    /// vehicle context, resolve to the same observed GATT target, and each
-    /// relevant timeline is uninterrupted. `nil` means Nembra deliberately
-    /// withheld a cross-capture score because attribution is ambiguous.
+    /// A descriptive sorting hint only when the captures represent distinct
+    /// observation sessions, carry the same Nembra vehicle context, resolve to
+    /// the same observed GATT target, and each relevant timeline is
+    /// uninterrupted. `nil` means Nembra deliberately withheld a cross-capture
+    /// score because attribution is ambiguous.
     public var rawDifferenceScore: Int? {
         guard differenceAvailability == .comparable,
               let baselineOnlyPayloadCount,
@@ -121,8 +125,10 @@ public enum PassiveBluetoothCapturePeripheralRelationship: String, Sendable {
 ///
 /// The exact source session IDs and immutable Nembra vehicle identities are
 /// retained so a report is mechanically bound to the capture pair/context that
-/// earned it. Equality of vehicle metadata is a fail-closed software evidence
-/// gate only; it does not authenticate physical hardware.
+/// earned it. Distinct session IDs are a fail-closed software provenance gate,
+/// not proof that two physical captures/rides/devices were actually distinct.
+/// Equality of vehicle metadata is likewise only a software evidence gate; it
+/// does not authenticate physical hardware.
 public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let baselineCaptureSessionID: UUID
     public let comparisonCaptureSessionID: UUID
@@ -147,10 +153,10 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let baselineServices: Set<String>
     public let comparisonServices: Set<String>
 
-    /// Direct topology deltas are available only for captures with the same
-    /// immutable Nembra vehicle context, the same observed GATT identity, and
-    /// uninterrupted evidence. `nil` means the comparison is not attributable
-    /// enough for a direct topology delta.
+    /// Direct topology deltas are available only for distinct observation
+    /// sessions with the same immutable Nembra vehicle context, the same observed
+    /// GATT identity, and uninterrupted evidence. `nil` means the comparison is
+    /// not attributable enough for a direct topology delta.
     public let addedServices: Set<String>?
     public let removedServices: Set<String>?
     public let sharedServices: Set<String>?
@@ -163,13 +169,15 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// `stationary/rested` vs `after a short ride`. The comparison is intentionally
 /// byte/statistics based. It never declares a stream to be voltage/current/etc.
 ///
-/// Direct payload/topology difference metrics are fail-closed unless both
-/// captures carry exactly equal immutable Nembra vehicle metadata, resolve to
-/// the same observed GATT peripheral, and both relevant target timelines remain
-/// uninterrupted. Exact vehicle-metadata equality is only a software capture-
-/// context consistency check; it is not physical scooter authentication.
-/// Nembra preserves descriptive per-capture evidence but does not invent target,
-/// vehicle-context, or segment correspondence.
+/// Direct payload/topology difference metrics are fail-closed unless the inputs
+/// claim distinct observation-session identities, carry exactly equal immutable
+/// Nembra vehicle metadata, resolve to the same observed GATT peripheral, and
+/// both relevant target timelines remain uninterrupted. Distinct session IDs are
+/// only a software provenance consistency check; they do not authenticate or
+/// prove separate physical captures. Exact vehicle-metadata equality is likewise
+/// only a software capture-context consistency check, not physical scooter
+/// authentication. Nembra preserves descriptive per-capture evidence but does
+/// not invent session, target, vehicle-context, or segment correspondence.
 ///
 /// The report also exposes whether both sessions conservatively resolved to the
 /// same CoreBluetooth peripheral identifier from typed GATT-path evidence. That
@@ -197,7 +205,9 @@ public enum PassiveBluetoothCaptureComparison {
         )
 
         let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
-        if baseline.vehicleIdentity != comparison.vehicleIdentity {
+        if baseline.id == comparison.id {
+            differenceAvailability = .sameCaptureSession
+        } else if baseline.vehicleIdentity != comparison.vehicleIdentity {
             differenceAvailability = .captureContextMismatch
         } else if peripheralRelationship != .sameObservedIdentifier {
             differenceAvailability = .identityAmbiguous
