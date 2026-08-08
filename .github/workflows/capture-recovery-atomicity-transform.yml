@@ -1,0 +1,191 @@
+name: Capture Recovery Atomicity Transform
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-build-record-on-current-shell/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-build-record-on-current-shell/gpt56-go
+          fetch-depth: 0
+
+      - name: Apply failure-atomic fresh-session publication repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          controller_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          source = controller_path.read_text()
+
+          def patch_method(source: str, start_marker: str, end_marker: str, reopen_name: str) -> str:
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              method = source[start:end]
+
+              direct_call = f'''            try observationBoundaryQueueGate.{reopen_name}(
+                  freshSession.receipt,
+                  installedRecorder: freshSession.recorder,
+                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+              )'''
+              if direct_call not in method:
+                  raise SystemExit(f'missing direct live-gate call in {start_marker}')
+
+              do_marker = '''        do {
+              try artifactAuthorityFence.transition('''
+              if do_marker not in method:
+                  raise SystemExit(f'missing fence transition opening in {start_marker}')
+
+              staged_open = f'''        do {{
+              // Validate the complete reopen transaction on a value copy first. If any
+              // producer receipt/frontier/tail check fails, canonical artifact authority
+              // and the installed durable recorder remain untouched.
+              var reopenedGate = observationBoundaryQueueGate
+              try reopenedGate.{reopen_name}(
+                  freshSession.receipt,
+                  installedRecorder: freshSession.recorder,
+                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+              )
+
+              // The reference-backed fence is the final throwing mutation. Once this
+              // succeeds, every mirrored MainActor publication below is synchronous and
+              // non-failable, including publication of the already-validated gate copy.
+              try artifactAuthorityFence.transition('''
+
+              method = method.replace(do_marker, staged_open, 1)
+              method = method.replace(direct_call, '            observationBoundaryQueueGate = reopenedGate', 1)
+              return source[:start] + method + source[end:]
+
+          source = patch_method(
+              source,
+              '    private func completeTerminalFreshTargetSessionIfReady(',
+              '    private func scheduleAbortedFreshTargetSessionRecoveryIfNeeded()',
+              'reopenAfterTerminalFreshTargetSession'
+          )
+          source = patch_method(
+              source,
+              '    private func completeAbortedFreshTargetSessionIfReady(',
+              '    private func beginTargetSessionIfNeeded(',
+              'reopenAfterAbortedFreshTargetSession'
+          )
+          controller_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerFreshSessionAtomicityTests.swift')
+          test_path.write_text(r'''import Foundation
+          import Testing
+
+          @Suite("Fresh-session failure-atomic publication")
+          struct ForegroundCoreBluetoothCaptureControllerFreshSessionAtomicityTests {
+              private static func controllerSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let packageRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: packageRoot.appendingPathComponent(
+                          "Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift"
+                      ),
+                      encoding: .utf8
+                  )
+              }
+
+              private static func method(
+                  start startMarker: String,
+                  end endMarker: String,
+                  in source: String
+              ) throws -> Substring {
+                  let start = try #require(source.range(of: startMarker))
+                  let tail = source[start.lowerBound...]
+                  let end = try #require(tail.range(of: endMarker))
+                  return tail[..<end.lowerBound]
+              }
+
+              private static func requireAtomicOrdering(
+                  in method: Substring,
+                  reopenName: String
+              ) throws {
+                  let stagedGateDeclaration = try #require(
+                      method.range(of: "var reopenedGate = observationBoundaryQueueGate")
+                  )
+                  let stagedGateValidation = try #require(
+                      method.range(of: "try reopenedGate.\(reopenName)(")
+                  )
+                  let fenceTransition = try #require(
+                      method.range(of: "try artifactAuthorityFence.transition(")
+                  )
+                  let stagedGatePublication = try #require(
+                      method.range(of: "observationBoundaryQueueGate = reopenedGate")
+                  )
+
+                  #expect(stagedGateDeclaration.lowerBound < stagedGateValidation.lowerBound)
+                  #expect(stagedGateValidation.lowerBound < fenceTransition.lowerBound)
+                  #expect(fenceTransition.lowerBound < stagedGatePublication.lowerBound)
+                  #expect(!method.contains("try observationBoundaryQueueGate.\(reopenName)("))
+              }
+
+              @Test("abort recovery preflights gate before irreversible authority transition")
+              func abortRecoveryIsFailureAtomic() throws {
+                  let source = try Self.controllerSource()
+                  let method = try Self.method(
+                      start: "private func completeAbortedFreshTargetSessionIfReady(",
+                      end: "private func beginTargetSessionIfNeeded(",
+                      in: source
+                  )
+                  try Self.requireAtomicOrdering(
+                      in: method,
+                      reopenName: "reopenAfterAbortedFreshTargetSession"
+                  )
+              }
+
+              @Test("terminal recovery preflights gate before irreversible authority transition")
+              func terminalRecoveryIsFailureAtomic() throws {
+                  let source = try Self.controllerSource()
+                  let method = try Self.method(
+                      start: "private func completeTerminalFreshTargetSessionIfReady(",
+                      end: "private func scheduleAbortedFreshTargetSessionRecoveryIfNeeded()",
+                      in: source
+                  )
+                  try Self.requireAtomicOrdering(
+                      in: method,
+                      reopenName: "reopenAfterTerminalFreshTargetSession"
+                  )
+              }
+          }
+          '''.replace('          ', ''))
+          PY
+
+      - name: Verify intended source shape
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift').read_text()
+          for name in ('reopenAfterAbortedFreshTargetSession', 'reopenAfterTerminalFreshTargetSession'):
+              assert f'try reopenedGate.{name}(' in s
+              assert f'try observationBoundaryQueueGate.{name}(' not in s
+          assert s.count('observationBoundaryQueueGate = reopenedGate') >= 2
+          PY
+
+      - name: Commit product repair and self-delete transform
+        shell: bash
+        run: |
+          git config user.name 'nembra-capture-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/capture-recovery-atomicity-transform.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerFreshSessionAtomicityTests.swift
+          git diff --cached --check
+          git commit -m '[Capture recovery v14] Make fresh-session publication failure-atomic'
+          git push origin HEAD:integration/es80-v14-build-record-on-current-shell/gpt56-go
