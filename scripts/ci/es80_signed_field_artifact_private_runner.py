@@ -180,6 +180,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         help="private mode-0600 file containing the verification-only intended field-device identifier",
     )
+    parser.add_argument(
+        "--validate-intended-device-udid-file",
+        type=Path,
+        help="validate one private intended-device file and exit without invoking the signed-field inspector",
+    )
     parser.add_argument("--self-test", action="store_true", help="run platform-independent private-input checks")
     return parser.parse_args(argv)
 
@@ -187,8 +192,34 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if args.self_test:
+        if any(
+            value is not None
+            for value in (
+                args.ipa,
+                args.output_dir,
+                args.expected_source_sha,
+                args.intended_device_udid_file,
+                args.validate_intended_device_udid_file,
+            )
+        ):
+            raise PrivateInputError("--self-test cannot be combined with field-candidate arguments")
         self_test()
         print("private signed-field inspector runner self-test: PASS")
+        return 0
+
+    if args.validate_intended_device_udid_file is not None:
+        if any(
+            value is not None
+            for value in (
+                args.ipa,
+                args.output_dir,
+                args.expected_source_sha,
+                args.intended_device_udid_file,
+            )
+        ):
+            raise PrivateInputError("private-input validation cannot be combined with inspector arguments")
+        read_private_identifier(args.validate_intended_device_udid_file)
+        print("private intended-device verification input: PASS")
         return 0
 
     missing = [
