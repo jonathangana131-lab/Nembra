@@ -24,7 +24,7 @@ struct ForegroundCoreBluetoothCaptureControllerUncommittedHorizonRecoveryTests {
     func zeroHRejectionQuarantinesBeforeRecordedPath() throws {
         let source = try Self.controllerSource()
         let start = try #require(source.range(of: "            let horizonMutationOutcome = try await horizonAdmission")?.lowerBound)
-        let end = try #require(source.range(of: "            let data = try await recorder.encodedJSON", range: start..<source.endIndex)?.lowerBound)
+        let end = try #require(source.range(of: "            let data: Data", range: start..<source.endIndex)?.lowerBound)
         let section = source[start..<end]
 
         let outcome = try #require(section.range(of: "recordBoundaryWithMutationOutcome")?.lowerBound)
@@ -32,9 +32,9 @@ struct ForegroundCoreBluetoothCaptureControllerUncommittedHorizonRecoveryTests {
         let quarantine = try #require(section.range(of: "abortUncommittedHorizon(after: rejection)")?.lowerBound)
         let recordedCommit = try #require(section.range(of: "recordedHorizon.markBoundaryRecorded")?.lowerBound)
 
-        #expect(section.distance(from: section.startIndex, to: outcome) < section.distance(from: section.startIndex, to: rejection))
-        #expect(section.distance(from: section.startIndex, to: rejection) < section.distance(from: section.startIndex, to: quarantine))
-        #expect(section.distance(from: section.startIndex, to: quarantine) < section.distance(from: section.startIndex, to: recordedCommit))
-        #expect(!section.contains("horizonAdmission.recordBoundary(on: recorder)"))
+        #expect(outcome < rejection)
+        #expect(rejection < quarantine)
+        #expect(quarantine < recordedCommit)
+        #expect(section.range(of: "horizonAdmission.recordBoundary(on: recorder)") == nil)
     }
 }
