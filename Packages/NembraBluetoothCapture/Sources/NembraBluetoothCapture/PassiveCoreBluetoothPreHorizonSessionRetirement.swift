@@ -65,6 +65,7 @@ struct PassiveCoreBluetoothPreHorizonSessionRetirement: Sendable {
         case processedFrontierBeyondQueueTail(processedThrough: UInt64, queueTail: UInt64)
         case unaccountedQueueRange(processedThrough: UInt64, queueTail: UInt64)
         case invalidQueueSequence(UInt64)
+        case queueSequenceExhausted
         case nonContiguousQueueSequence(expected: UInt64, actual: UInt64)
         case queueTailMismatch(expected: UInt64, actual: UInt64)
         case foreignSessionEvidence(queueSequence: UInt64, targetSessionGeneration: UInt64)
@@ -134,13 +135,10 @@ struct PassiveCoreBluetoothPreHorizonSessionRetirement: Sendable {
         }
 
         guard lastProcessedQueueSequence != UInt64.max else {
-            throw StateError.unaccountedQueueRange(
-                processedThrough: lastProcessedQueueSequence,
-                queueTail: lastEnqueuedQueueSequence
-            )
+            throw StateError.queueSequenceExhausted
         }
 
-        var expectedQueueSequence = lastProcessedQueueSequence + 1
+        var previousQueueSequence = lastProcessedQueueSequence
         var firstRetiredQueueSequence: UInt64?
         var lastRetiredQueueSequence: UInt64?
 
@@ -149,6 +147,11 @@ struct PassiveCoreBluetoothPreHorizonSessionRetirement: Sendable {
             guard evidence.queueSequence > 0 else {
                 throw StateError.invalidQueueSequence(evidence.queueSequence)
             }
+            guard previousQueueSequence != UInt64.max else {
+                throw StateError.queueSequenceExhausted
+            }
+
+            let expectedQueueSequence = previousQueueSequence + 1
             guard evidence.queueSequence == expectedQueueSequence else {
                 throw StateError.nonContiguousQueueSequence(
                     expected: expectedQueueSequence,
@@ -164,10 +167,7 @@ struct PassiveCoreBluetoothPreHorizonSessionRetirement: Sendable {
 
             firstRetiredQueueSequence = firstRetiredQueueSequence ?? evidence.queueSequence
             lastRetiredQueueSequence = evidence.queueSequence
-
-            if evidence.queueSequence != UInt64.max {
-                expectedQueueSequence = evidence.queueSequence + 1
-            }
+            previousQueueSequence = evidence.queueSequence
         }
 
         guard let lastRetiredQueueSequence else {
