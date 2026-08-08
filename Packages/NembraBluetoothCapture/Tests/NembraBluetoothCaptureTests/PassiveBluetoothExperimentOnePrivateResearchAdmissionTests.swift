@@ -105,6 +105,36 @@ struct PassiveBluetoothExperimentOnePrivateResearchAdmissionTests {
         }
     }
 
+    @Test("live research admission exists only in physical iOS Release builds")
+    func liveResearchAdmissionIsMechanicallyFencedFromDebugAndSimulator() throws {
+        let source = try sourceFile(
+            "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift"
+        )
+        let liveStart = try #require(
+            source.range(of: "static func researchAdmissionForCurrentApplication() throws")?.lowerBound
+        )
+        let deterministicStart = try #require(
+            source.range(
+                of: "static func researchAdmission(\n        infoDictionary: [String: Any]",
+                range: liveStart..<source.endIndex
+            )?.lowerBound
+        )
+        let liveProducer = source[liveStart..<deterministicStart]
+        let deterministicSeam = source[deterministicStart...]
+
+        let fence = try #require(
+            liveProducer.range(of: "#if os(iOS) && !targetEnvironment(simulator) && !DEBUG")
+        )
+        let rejection = try #require(
+            liveProducer.range(of: "throw ResearchAdmissionError.nonResearchBuildConfiguration")
+        )
+        let fenceEnd = try #require(liveProducer.range(of: "#endif"))
+
+        #expect(fence.lowerBound < rejection.lowerBound)
+        #expect(rejection.lowerBound < fenceEnd.lowerBound)
+        #expect(!deterministicSeam.contains("#if os(iOS) && !targetEnvironment(simulator) && !DEBUG"))
+    }
+
     @Test("research factory acquires package admission before any CoreBluetooth construction")
     func researchFactoryOrdersAuthorityBeforeTransport() throws {
         let source = try sourceFile(
