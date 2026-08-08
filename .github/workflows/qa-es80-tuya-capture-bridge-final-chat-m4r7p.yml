@@ -1,0 +1,82 @@
+name: ES80 Tuya capture bridge final QA
+
+on:
+  push:
+    branches:
+      - cell/es80-tuya-capture-bridge-final/ci/chat-m4r7p-1
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-package-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 5
+
+      - name: Verify exact product parent and three-path bridge delta
+        env:
+          EXPECTED_PRODUCT_SHA: 8864fa1b8f0bc11354380dd2417eff8c3efc062d
+          EXPECTED_PASSIVE_PARENT: ebdb543bdd3885f4359fd6965644a7d2d65a48b3
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-tuya-capture-bridge-final-chat-m4r7p.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+
+          validation_delta="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$validation_delta"
+          test "$validation_delta" = "$EXPECTED_WORKFLOW_PATH"
+
+          changed="$(git diff --name-only "$EXPECTED_PASSIVE_PARENT" "$EXPECTED_PRODUCT_SHA")"
+          expected="$(printf '%s\n%s\n%s' \
+            'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothTuyaCandidateBridge.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothTuyaCandidateBridgeTests.swift' \
+            'docs/ES80_TUYA_CAPTURE_BRIDGE.md' | sort)"
+          actual="$(printf '%s\n' "$changed" | sort)"
+          printf 'Bridge product delta:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Test NembraCore with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraCore \
+            -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            -Xswiftc -warnings-as-errors
+
+      - name: Build NembraBluetoothCapture for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
