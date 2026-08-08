@@ -40,21 +40,57 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.build-identity"].waitForExistence(timeout: 3),
-            "The locked surface must expose the running build identity or its fail-closed unavailable state."
+            "The locked field surface must expose the running build identity or a fail-closed unavailable state rather than making the exact-build claim invisible."
         )
 
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.charger-disconnected"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.charger-connected"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.preflight.continue"].exists)
-        XCTAssertFalse(app.buttons["Begin OFF 1 window"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
-        XCTAssertFalse(app.buttons["Scan for scooter"].exists)
-        XCTAssertFalse(app.buttons["Start passive capture"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.start"].exists)
-        XCTAssertFalse(app.buttons["Finish Capture"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-        XCTAssertFalse(app.buttons["Advanced details"].exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
+            "The charger declaration is downstream of package field authority and must not appear while the package gate is NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-disconnected"].exists,
+            "Even the accepted charger choice must not become a UI-level bypass around package NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-connected"].exists,
+            "The blocked charger choice must remain unreachable until package field authority exists."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.continue"].exists,
+            "No local preflight state may instantiate the physical shell while the package field gate is closed."
+        )
+        XCTAssertFalse(
+            app.buttons["Begin OFF 1 window"].exists,
+            "A NO-GO build must not expose the first physical OFF/ON action."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.begin-window"].exists,
+            "No hidden or differently-labeled correlation-window action may bypass the package gate."
+        )
+        XCTAssertFalse(
+            app.buttons["Scan for scooter"].exists,
+            "The old generic manual-candidate scan must not become a fallback physical path."
+        )
+        XCTAssertFalse(
+            app.buttons["Start passive capture"].exists,
+            "Standalone capture cannot bypass field authorization or Experiment One authority binding."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.start"].exists,
+            "No hidden Start Capture action may bypass the Experiment One authority boundary."
+        )
+        XCTAssertFalse(
+            app.buttons["Finish Capture"].exists,
+            "Finish cannot exist before field authorization and accepted Horizon/seal authority."
+        )
+        XCTAssertFalse(
+            app.buttons["Vehicle controls"].exists,
+            "Research capture must not silently expose the normal vehicle-control experience."
+        )
+        XCTAssertFalse(
+            app.buttons["Advanced details"].exists,
+            "The control-capable package research console must not become a second acquisition workflow."
+        )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
@@ -88,8 +124,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let windowFrame = app.windows.firstMatch.frame
         for element in [lockedState, physicalBoundary, recipe, buildIdentity] {
-            XCTAssertGreaterThanOrEqual(element.frame.minX, windowFrame.minX - 1)
-            XCTAssertLessThanOrEqual(element.frame.maxX, windowFrame.maxX + 1)
+            XCTAssertGreaterThanOrEqual(
+                element.frame.minX,
+                windowFrame.minX - 1,
+                "Required NO-GO content must not clip off the leading edge at accessibility sizes."
+            )
+            XCTAssertLessThanOrEqual(
+                element.frame.maxX,
+                windowFrame.maxX + 1,
+                "Required NO-GO content must not clip off the trailing edge at accessibility sizes."
+            )
         }
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
@@ -109,7 +153,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 5)
+        )
 
         XCUIDevice.shared.orientation = .landscapeLeft
 
@@ -133,41 +180,87 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
         let source = try captureShellSource()
-        XCTAssertTrue(source.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
-        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
-        XCTAssertTrue(source.contains("Text(analysisReady ? \"Ready for analysis\" : \"Integrity check required\")"))
-        XCTAssertTrue(source.contains("if let data = finalShareData"))
-        XCTAssertTrue(source.contains("finalShareIntegrityReport = report"))
-        XCTAssertTrue(source.contains("coordinator.status.finalizationCleanup == .failed"))
-        XCTAssertFalse(source.contains("prepareSoftwareExportForShare()"))
-        XCTAssertFalse(source.contains("softwareExportData"))
+
+        XCTAssertTrue(
+            source.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"),
+            "The app must prepare the package-owned final Share artifact, not stage raw capture or inner export bytes directly."
+        )
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"),
+            "Analysis readiness must come from inspection of the exact final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("Text(analysisReady ? \"Ready for analysis\" : \"Integrity check required\")"),
+            "Horizon seal alone must not render Ready for analysis."
+        )
+        XCTAssertTrue(
+            source.contains("if let data = finalShareData"),
+            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport = report"),
+            "The exact integrity report must be retained as the app's analysis-readiness authority."
+        )
+        XCTAssertTrue(
+            source.contains("coordinator.status.finalizationCleanup == .failed"),
+            "Post-seal cleanup failure must remain visible without revoking the sealed artifact."
+        )
+        XCTAssertFalse(
+            source.contains("prepareSoftwareExportForShare()"),
+            "The superseded inner-SoftwareExport-only Share path must not remain callable."
+        )
+        XCTAssertFalse(
+            source.contains("softwareExportData"),
+            "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
     }
 
     func testNoGoSourceUsesPackageRuntimeBuildIdentityReader() throws {
         let source = try nembraAppSource()
-        XCTAssertTrue(source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"))
-        XCTAssertTrue(source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildIdentifier"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.sourceCommitSHA"))
-        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildInstanceID"))
-        XCTAssertTrue(source.contains("Build identity unavailable"))
+
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"),
+            "The field lock must consume the package-owned fail-closed runtime build identity reader rather than reconstruct build provenance in SwiftUI."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"),
+            "The app-visible build identity must remain a stable acceptance surface."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildIdentifier"),
+            "The human-readable build identifier must be visible without rider transcription."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.sourceCommitSHA"),
+            "The exact embedded source commit must remain visible without rider transcription."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildInstanceID"),
+            "The produced-build rendezvous identity must remain visible without granting field authority."
+        )
+        XCTAssertTrue(
+            source.contains("Build identity unavailable"),
+            "Failure to read exact runtime build identity must remain an explicit fail-closed product state."
+        )
     }
 
     private func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
-            encoding: .utf8
-        )
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private func nembraAppSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/NembraApp.swift"),
-            encoding: .utf8
-        )
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/App/NembraApp.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
