@@ -23,6 +23,18 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         return try makeResearchFieldCoordinator()
     }
 
+#if DEBUG && targetEnvironment(simulator)
+    /// Package-owned inert construction path for synthetic Simulator presentation QA.
+    ///
+    /// Keeping this factory inside the Capture package prevents the app from constructing an
+    /// Experiment One coordinator directly. It exists only in DEBUG Simulator builds and does not
+    /// create a CoreBluetooth controller, consume field-build authority, or enable physical capture.
+    @MainActor
+    static func makeSimulatorQA() throws -> PassiveBluetoothExperimentOneCoordinator {
+        try PassiveBluetoothExperimentOneCoordinator()
+    }
+#endif
+
     /// Future public/release field-authorized construction seam.
     ///
     /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
