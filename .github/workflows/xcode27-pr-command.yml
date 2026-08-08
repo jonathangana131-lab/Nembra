@@ -120,9 +120,11 @@ jobs:
         working-directory: Packages/NembraCore
         run: swift test
 
-      - name: Validate Capture package
+      - name: Validate Capture package and offline report executable
         working-directory: Packages/NembraBluetoothCapture
-        run: swift test
+        run: |
+          swift test
+          swift build --product nembra-es80-capture-report
 
       - name: Validate signed field evidence tooling
         run: |
