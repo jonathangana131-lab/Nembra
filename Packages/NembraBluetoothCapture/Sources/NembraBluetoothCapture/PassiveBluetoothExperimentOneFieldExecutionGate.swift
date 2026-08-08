@@ -4,22 +4,23 @@
 /// intentionally cannot be changed by app preferences, launch markers, Info.plist values, typed
 /// identifiers, or caller-supplied flags.
 ///
-/// A future accepted field build may present a `PassiveBluetoothCaptureVerifiedFieldAuthorization`
-/// minted by the package's independent-signature verifier. `admit(verifiedAuthorization:)` turns
-/// only that non-forgeable verifier output into a package-owned `VerifiedAdmission` capability.
-/// The capability has no public initializer and is the only value a future live-controller factory
-/// may accept. Production cannot mint one today because the package trust root is deliberately
-/// unconfigured.
+/// Public/release authorization remains the independent P-256 path: a verified signed envelope may
+/// be converted into `VerifiedAdmission` only after the package trust root is configured.
 ///
-/// This is build/procedure authority only. Possession of a valid admission does not authenticate an
-/// AOVOPRO ES80, prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write
-/// callback into physical acknowledgement.
+/// TODAY's first private research artifact has a separate, deliberately narrower admission path.
+/// `PrivateResearchAdmission` can be minted only from
+/// `PassiveBluetoothCaptureVerifiedPrivateResearchAuthorization`, which is derived from the exact
+/// running build identity and a recipe/source/build-instance marker embedded at build time. This
+/// does not change the public `status` or `permitsPhysicalProcedure` values and is not a Settings or
+/// imported-JSON escape hatch.
+///
+/// Both capabilities are build/procedure authority only. Neither authenticates an AOVOPRO ES80,
+/// proves RF completeness, establishes GATT/Tuya/telemetry semantics, or authorizes a write.
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
     public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
 
-    /// Current product state. This deliberately remains false until the app is explicitly wired to
-    /// consume a separately verified field-authorization capability in a later accepted change.
+    /// Public/release product state. Private research admission does not mutate this global value.
     public static var permitsPhysicalProcedure: Bool {
         switch status {
         case .noGo:
@@ -28,10 +29,6 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     }
 
     /// Non-forgeable package capability derived only from a verified signed field authorization.
-    ///
-    /// Its initializer is private to this source file. Public callers can obtain an instance only by
-    /// first producing a `PassiveBluetoothCaptureVerifiedFieldAuthorization` through the package's
-    /// public production verifier, which currently fails closed while the trust anchor is nil.
     public struct VerifiedAdmission: Equatable, Sendable {
         public let buildIdentifier: String
         public let buildInstanceID: String
@@ -51,7 +48,30 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         }
     }
 
-    /// Convert only already-verified external authority into a package-owned execution capability.
+    /// Non-caller-constructible capability for the first private stationary read-only research run.
+    ///
+    /// Its initializer is private to this source file. App code can receive one only after the
+    /// package verifies the exact running build's embedded private-research marker.
+    public struct PrivateResearchAdmission: Equatable, Sendable {
+        public let recipeID: PassiveBluetoothExperimentRecipeID
+        public let buildIdentifier: String
+        public let buildInstanceID: String
+        public let sourceCommitSHA: String
+        public let executableSHA256: String
+        public let infoPlistSHA256: String
+
+        fileprivate init(authorization: PassiveBluetoothCaptureVerifiedPrivateResearchAuthorization) {
+            let identity = authorization.runtimeBuildIdentity
+            recipeID = authorization.recipeID
+            buildIdentifier = identity.buildIdentifier
+            buildInstanceID = identity.buildInstanceID
+            sourceCommitSHA = identity.sourceCommitSHA
+            executableSHA256 = identity.executableSHA256
+            infoPlistSHA256 = identity.infoPlistSHA256
+        }
+    }
+
+    /// Convert only already-verified external authority into a package-owned release capability.
     ///
     /// The verifier currently enforces these relationships too; the gate repeats the final recipe,
     /// procedure and exact-rendezvous checks so a later verifier evolution cannot silently broaden
@@ -79,12 +99,30 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         return VerifiedAdmission(authorization: authorization)
     }
 
+    /// Convert only the package-verified exact running private research build into an admission.
+    ///
+    /// Repeating recipe/build-identifier binding here keeps the coordinator seam fail-closed if the
+    /// build-time reader is ever broadened. The production gate remains NO-GO throughout.
+    public static func admit(
+        privateResearchAuthorization authorization: PassiveBluetoothCaptureVerifiedPrivateResearchAuthorization
+    ) -> PrivateResearchAdmission? {
+        let identity = authorization.runtimeBuildIdentity
+        let expectedBuildIdentifier = "Capture Build V14-\(identity.sourceCommitSHA.prefix(12))"
+
+        guard authorization.recipeID == recipeID,
+              identity.buildIdentifier == expectedBuildIdentifier else {
+            return nil
+        }
+
+        return PrivateResearchAdmission(authorization: authorization)
+    }
+
     public enum Status: Equatable, Sendable {
         case noGo(NoGoBlocker)
     }
 
     public enum NoGoBlocker: Equatable, Sendable {
-        /// The final app-visible Capture composition has not yet earned the V14 physical GO record.
+        /// The final app-visible Capture composition has not yet earned the V14 public/release GO record.
         case finalComposedBuildNotAuthorized
     }
 }
