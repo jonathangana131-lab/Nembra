@@ -1,0 +1,105 @@
+name: ES80 offline artifact ingress QA v2
+
+on:
+  push:
+    branches:
+      - cell/es80-offline-artifact-ingress/ci/chat-m4r7p-2
+
+permissions:
+  contents: read
+
+jobs:
+  offline-artifact-ingress-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 3
+
+      - name: Prove exact product plus validation-only compatibility delta
+        env:
+          EXPECTED_PRODUCT_SHA: f22f88e4f6072d5bbfeb20069e592fea79d971c3
+          EXPECTED_COMPAT_PATH: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothAcquisitionReadinessTests.swift
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-offline-artifact-ingress-chat-m4r7p-v2.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          actual_product="$(git rev-parse HEAD^^)"
+          printf 'Expected product: %s\nActual product:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_product"
+          test "$actual_product" = "$EXPECTED_PRODUCT_SHA"
+
+          changed="$(git diff --name-only "$EXPECTED_PRODUCT_SHA" HEAD)"
+          expected="$(printf '%s\n%s' "$EXPECTED_WORKFLOW_PATH" "$EXPECTED_COMPAT_PATH" | sort)"
+          actual="$(printf '%s\n' "$changed" | sort)"
+          printf 'Validation-only delta:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+
+          git diff --exit-code "$EXPECTED_PRODUCT_SHA" HEAD -- \
+            Packages/NembraBluetoothCapture/Sources \
+            Packages/NembraES80CaptureReport \
+            docs/ES80_OFFLINE_CAPTURE_REPORT.md
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in NembraBluetoothCapture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in NembraBluetoothCapture Sources.'
+
+      - name: Run full capture package tests with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            -Xswiftc -warnings-as-errors
+
+      - name: Build offline report executable with warnings as errors
+        run: |
+          set -euo pipefail
+          swift build \
+            --package-path Packages/NembraBluetoothCapture \
+            --product nembra-es80-capture-report \
+            -Xswiftc -warnings-as-errors
+
+      - name: Smoke CLI help and bounded ingress failure
+        run: |
+          set -euo pipefail
+          bin_dir="$(swift build --package-path Packages/NembraBluetoothCapture --show-bin-path)"
+          binary="$bin_dir/nembra-es80-capture-report"
+
+          "$binary" --help | grep -F -- '--max-artifact-bytes'
+
+          input="$(mktemp)"
+          stdout="$(mktemp)"
+          stderr="$(mktemp)"
+          trap 'rm -f "$input" "$stdout" "$stderr"' EXIT
+          printf 'not-json' > "$input"
+
+          if "$binary" "$input" --max-artifact-bytes 3 >"$stdout" 2>"$stderr"; then
+            echo 'Expected oversized source artifact to fail closed.' >&2
+            exit 1
+          fi
+
+          grep -F 'source capture exceeds configured offline artifact limit of 3 bytes' "$stderr"
+          test ! -s "$stdout"
+
+      - name: Build capture library for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
