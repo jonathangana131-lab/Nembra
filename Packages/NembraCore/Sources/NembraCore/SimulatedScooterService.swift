@@ -555,7 +555,8 @@ public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     }
 
     private func ensureQualifiedLiveStoppedSpeed() throws {
-        guard case let .live(sample) = speedEvidenceTruth.availability,
+        guard profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceTruth.availability,
               sample.source == .simulatorQA,
               sample.provenance == .absoluteMeasurement else {
             throw ScooterCommandError.commandRejected
