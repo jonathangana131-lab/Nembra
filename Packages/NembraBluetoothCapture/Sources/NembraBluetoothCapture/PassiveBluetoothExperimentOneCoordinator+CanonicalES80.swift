@@ -1,22 +1,25 @@
 import NembraCore
 
 public extension PassiveBluetoothExperimentOneCoordinator {
-    /// Creates the canonical ES80 Experiment One owner, including its foreground
-    /// controller, inside the capture package.
+    enum CanonicalES80ConstructionError: Error, Equatable, Sendable {
+        case fieldExecutionNotAuthorized
+    }
+
+    /// The only production construction path for the physical ES80 Experiment One owner.
     ///
-    /// Product UI should prefer this initializer so it cannot accidentally splice a
-    /// separately-created generic controller into the package-owned Experiment One
-    /// provenance life. The canonical software vehicle context is still not physical
-    /// scooter authentication.
+    /// The package-owned mechanical field gate must already permit the physical procedure before a
+    /// live CoreBluetooth controller is created. In the current V14 build the gate has no GO case,
+    /// so this factory fails closed and SwiftUI cannot expose OFF/ON field actions merely because it
+    /// knows the coordinator type exists.
     @MainActor
-    convenience init() throws {
-        let vehicleIdentity = VehicleProfile.aovoproES80.identity
+    static func makeAuthorizedES80() throws -> PassiveBluetoothExperimentOneCoordinator {
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
+            throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
+        }
+
         let controller = try ForegroundCoreBluetoothCaptureController(
-            vehicleIdentity: vehicleIdentity
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
-        try self.init(
-            controller: controller,
-            vehicleIdentity: vehicleIdentity
-        )
+        return try PassiveBluetoothExperimentOneCoordinator(controller: controller)
     }
 }
