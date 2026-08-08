@@ -18,7 +18,9 @@ public struct PassiveBluetoothExperimentOneSoftwareExportIntegrityReport: Equata
     public let sourceCommitSHA: String
     public let executableSHA256: String
 
-    public init(
+    // Keep the evidence-bearing value package-constructed. Public clients may inspect verified
+    // facts but cannot mint a report that bypasses SoftwareExportIntegrity.inspect(_:).
+    init(
         envelopeSHA256: String,
         envelopeByteCount: Int,
         capture: PassiveBluetoothFinalizedArtifactIntegrityReport,
