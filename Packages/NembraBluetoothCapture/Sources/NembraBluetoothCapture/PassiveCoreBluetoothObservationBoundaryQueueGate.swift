@@ -24,6 +24,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffOverrun
         case horizonArtifactNotReady
         case freshTargetSessionRequired
+        case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
         case resolvedQueueTailChanged(expected: UInt64, actual: UInt64)
     }
 
@@ -522,17 +523,22 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         phase = .awaitingReady
     }
 
-    /// Reopens a successful terminal Horizon only from exact terminal-resolution
-    /// proof, unchanged global tail, and one already-created newer durable session.
+    /// Reopens a successful terminal Horizon only from producer-issued proof that a
+    /// real exact-next recorder was created from this exact UUID-bound terminal
+    /// resolution. The controller must already have applied the resolution to its
+    /// distinct global FIFO frontier, and the enqueue tail must still be unchanged.
     mutating func reopenAfterTerminalQueueResolution(
-        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
-        currentLastEnqueuedEventSequence: UInt64,
-        freshTargetSessionGeneration: UInt64
+        _ freshSession: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
     ) throws {
         guard case let .terminal(transaction) = phase else {
             throw StateError.invalidTransition
         }
+
+        let resolution = freshSession.terminalResolution
         guard resolution.terminalTransactionRevision == transaction.revision,
+              resolution.terminalTransactionIdentity == transaction.identity,
               resolution.horizonQueueCutoff == transaction.queueCutoff,
               resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
             throw StateError.staleTransaction
@@ -540,18 +546,25 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard resolution.terminalAuthority == transaction.authority else {
             throw StateError.authorityChanged
         }
+        guard resolution.resolvedThroughQueueSequence == currentResolvedThroughQueueSequence else {
+            throw StateError.terminalResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
         guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
             throw StateError.resolvedQueueTailChanged(
                 expected: resolution.resolvedThroughQueueSequence,
                 actual: currentLastEnqueuedEventSequence
             )
         }
-        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {
+        guard transaction.authority.targetSessionGeneration != UInt64.max,
+              freshSession.targetSessionGeneration == transaction.authority.targetSessionGeneration + 1 else {
             throw StateError.freshTargetSessionRequired
         }
 
         committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
+        requiredReadyTargetSessionGeneration = freshSession.targetSessionGeneration
         phase = .awaitingReady
     }
 
