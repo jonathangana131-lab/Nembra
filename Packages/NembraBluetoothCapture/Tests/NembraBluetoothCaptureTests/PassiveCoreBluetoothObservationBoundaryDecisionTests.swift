@@ -43,11 +43,14 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         #expect(decision.observedAtDate.timeIntervalSinceReferenceDate.isFinite)
     }
 
-    @Test("records the exact pre-await decision clocks through the recorder actor hop")
+    @Test("records the exact pre-await decision clocks through an authority-fenced recorder hop")
     func recordsExactDecisionClocksWithoutResampling() async throws {
         let recorder = try PassiveCoreBluetoothCaptureRecorder(
             vehicleIdentity: es80,
             startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fence = PassiveCoreBluetoothArtifactAuthorityMutationFence(
+            initialAuthority: authority
         )
         let decision = try await MainActor.run {
             try PassiveCoreBluetoothObservationBoundaryDecision.capture(
@@ -58,7 +61,10 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
             )
         }
 
-        try await decision.recordBoundary(on: recorder)
+        try await decision.recordBoundary(
+            on: recorder,
+            authorityFence: fence
+        )
 
         let session = await recorder.snapshot()
         let boundary = try #require(session.observationBoundaries.first)
@@ -67,6 +73,47 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         #expect(boundary.recordSequenceWatermark == 0)
         #expect(boundary.observedAtUptimeNanoseconds == decision.observedAtUptimeNanoseconds)
         #expect(boundary.observedAtDate == decision.observedAtDate)
+    }
+
+    @Test("authority change before recorder mutation rejects stale decision without durable evidence")
+    @MainActor
+    func authorityDriftFailsAtMutationPoint() async throws {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fence = PassiveCoreBluetoothArtifactAuthorityMutationFence(
+            initialAuthority: authority
+        )
+        let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(
+            kind: .finiteAcquisitionReady,
+            queueCutoff: 0,
+            processedThrough: 0,
+            authority: authority
+        )
+        let replacement = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 7,
+            authorityGeneration: 12
+        )
+        try fence.replace(
+            expectedCurrent: authority,
+            with: replacement
+        )
+
+        do {
+            try await decision.recordBoundary(
+                on: recorder,
+                authorityFence: fence
+            )
+            Issue.record("A stale decision must not append after its artifact authority is retired.")
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityMutationFence.StateError {
+            #expect(error == .authorityChanged)
+        } catch {
+            Issue.record("Unexpected authority-fence error: \(error)")
+        }
+
+        let session = await recorder.snapshot()
+        #expect(session.observationBoundaries.isEmpty)
     }
 
     @Test("maps horizon intent mechanically into the durable observation vocabulary")
