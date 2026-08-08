@@ -1,0 +1,31 @@
+name: Agent ES80 compose provenance on current flagship
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-share-structural-exact-sequence/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-share-structural-exact-sequence/gpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Merge current additive provenance lanes
+        shell: bash
+        run: |
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git fetch origin feature/es80-v14-export-build-reference-gpt56 feature/es80-v14-external-build-record-declaration-gpt56
+          git merge --no-ff origin/feature/es80-v14-export-build-reference-gpt56 -m 'merge(capture): compose external exact-build comparison'
+          git merge --no-ff origin/feature/es80-v14-external-build-record-declaration-gpt56 -m 'merge(capture): compose exact external build-record declaration'
+          rm .github/workflows/agent-es80-compose-provenance-current-flagship.yml
+          git add .github/workflows/agent-es80-compose-provenance-current-flagship.yml
+          git commit -m 'chore(capture): remove temporary provenance compose workflow'
+          git push origin HEAD:integration/es80-v14-share-structural-exact-sequence/gpt56-thinking-go
