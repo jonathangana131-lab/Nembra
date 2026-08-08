@@ -242,17 +242,25 @@ def plist_string(info: dict, key: str) -> str:
 def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     platform = info.get("DTPlatformName")
     supported = info.get("CFBundleSupportedPlatforms")
-    supported_values = [item for item in supported if isinstance(item, str)] if isinstance(supported, list) else []
-
+    if not isinstance(supported, list) or not supported or not all(isinstance(item, str) for item in supported):
+        raise EvidenceError("field IPA must carry a non-empty string CFBundleSupportedPlatforms array")
+    if len(set(supported)) != len(supported):
+        raise EvidenceError("field IPA CFBundleSupportedPlatforms must not contain duplicate values")
+    for item in supported:
+        if (
+            not item
+            or len(item.encode("utf-8")) > 256
+            or item != item.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in item)
+        ):
+            raise EvidenceError("field IPA CFBundleSupportedPlatforms contains a malformed value")
     if platform != "iphoneos":
         raise EvidenceError(f"field IPA must declare DTPlatformName=iphoneos; got {platform!r}")
-    if "iPhoneOS" not in supported_values:
-        raise EvidenceError(
-            f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported_values!r}"
-        )
-    if any("Simulator" in item for item in supported_values):
+    if "iPhoneOS" not in supported:
+        raise EvidenceError(f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported!r}")
+    if any("simulator" in item.casefold() for item in supported):
         raise EvidenceError("Simulator platform declaration is forbidden in field IPA evidence")
-    return platform, supported_values
+    return platform, supported
 
 
 def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -322,11 +330,92 @@ def _normalized_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _codesign_tool() -> str:
+    if sys.platform != "darwin":
+        raise EvidenceError("signed field IPA inspection requires macOS Apple signing tools")
+    codesign = shutil.which("codesign")
+    if not codesign:
+        raise EvidenceError("codesign is not available")
+    return codesign
+
+
+def _decode_codesign_entitlements(result: subprocess.CompletedProcess[str]) -> dict:
+    for output in (result.stdout, result.stderr):
+        start = output.find("<?xml")
+        end = output.rfind("</plist>")
+        if start < 0 or end < start:
+            continue
+        payload = output[start : end + len("</plist>")].encode("utf-8")
+        try:
+            value = plistlib.loads(payload)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise EvidenceError("could not decode effective entitlements sealed into signed app")
+
+
+def read_effective_signed_entitlements(app_path: Path) -> dict:
+    result = _run_text(
+        [_codesign_tool(), "-d", "--entitlements", ":-", "--xml", str(app_path)]
+    )
+    return _decode_codesign_entitlements(result)
+
+
+def read_leaf_signing_certificate_der(app_path: Path) -> bytes:
+    codesign = _codesign_tool()
+    with tempfile.TemporaryDirectory(prefix="nembra-field-cert-") as temporary:
+        prefix = Path(temporary) / "signing-cert"
+        _run_text([codesign, "-d", "--extract-certificates", str(prefix), str(app_path)])
+        leaf = Path(f"{prefix}0")
+        if not leaf.is_file():
+            raise EvidenceError("codesign did not expose the leaf signing certificate")
+        data = leaf.read_bytes()
+        if not data:
+            raise EvidenceError("leaf signing certificate is empty")
+        return data
+
+
+def _profile_value_authorizes(profile_value: object, signed_value: object) -> bool:
+    if isinstance(signed_value, str):
+        if isinstance(profile_value, str):
+            if profile_value.endswith("*"):
+                return signed_value.startswith(profile_value[:-1])
+            return signed_value == profile_value
+        if isinstance(profile_value, list):
+            return any(_profile_value_authorizes(candidate, signed_value) for candidate in profile_value)
+        return False
+    if isinstance(signed_value, list):
+        if not isinstance(profile_value, list):
+            return False
+        return all(
+            any(_profile_value_authorizes(candidate, item) for candidate in profile_value)
+            for item in signed_value
+        )
+    if isinstance(signed_value, dict):
+        if not isinstance(profile_value, dict):
+            return False
+        return all(
+            key in profile_value and _profile_value_authorizes(profile_value[key], value)
+            for key, value in signed_value.items()
+        )
+    return profile_value == signed_value
+
+
+def _valid_intended_device_udid(value: str | None) -> bool:
+    if value is None or not value or len(value.encode("utf-8")) > 128 or value != value.strip():
+        return False
+    return not any(ord(character) < 33 or ord(character) == 127 for character in value)
+
+
 def validate_provisioning_profile(
     profile: dict,
     *,
     team_identifier: str,
     bundle_identifier: str,
+    signed_entitlements: dict,
+    signing_certificate_der: bytes,
+    intended_device_udid: str,
     now: datetime | None = None,
 ) -> tuple[str, str, str]:
     profile_teams = profile.get("TeamIdentifier")
@@ -345,6 +434,15 @@ def validate_provisioning_profile(
     if expiration_utc <= current_utc:
         raise EvidenceError("provisioning profile is expired")
 
+    developer_certificates = profile.get("DeveloperCertificates")
+    if (
+        not isinstance(developer_certificates, list)
+        or not developer_certificates
+        or not all(isinstance(certificate, bytes) and certificate for certificate in developer_certificates)
+        or signing_certificate_der not in developer_certificates
+    ):
+        raise EvidenceError("provisioning profile does not authorize the leaf signing certificate")
+
     entitlements = profile.get("Entitlements")
     if not isinstance(entitlements, dict):
         raise EvidenceError("provisioning profile Entitlements are missing")
@@ -356,6 +454,27 @@ def validate_provisioning_profile(
     entitlement_team = entitlements.get("com.apple.developer.team-identifier")
     if entitlement_team is not None and entitlement_team != team_identifier:
         raise EvidenceError("provisioning profile entitlement TeamIdentifier does not match code signing")
+
+    if signed_entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError("effective signed application-identifier does not match Nembra bundle")
+    if signed_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+        raise EvidenceError("effective signed TeamIdentifier does not match code signing")
+    for key, value in signed_entitlements.items():
+        if key not in entitlements or not _profile_value_authorizes(entitlements[key], value):
+            raise EvidenceError(
+                f"effective signed entitlement is not authorized by provisioning profile: {key}"
+            )
+
+    if not _valid_intended_device_udid(intended_device_udid):
+        raise EvidenceError("one valid intended field-device UDID is required for provisioning verification")
+    if profile.get("ProvisionsAllDevices") is not True:
+        provisioned_devices = profile.get("ProvisionedDevices")
+        if (
+            not isinstance(provisioned_devices, list)
+            or not all(isinstance(device, str) for device in provisioned_devices)
+            or intended_device_udid not in provisioned_devices
+        ):
+            raise EvidenceError("provisioning profile does not include the intended field device")
 
     return (
         profile_uuid.strip(),
@@ -369,6 +488,7 @@ def verify_provisioning_profile(
     *,
     team_identifier: str,
     bundle_identifier: str,
+    intended_device_udid: str,
 ) -> tuple[str, str, str, str]:
     if sys.platform != "darwin":
         raise EvidenceError("provisioning verification requires macOS Apple signing tools")
@@ -401,6 +521,9 @@ def verify_provisioning_profile(
         profile,
         team_identifier=team_identifier,
         bundle_identifier=bundle_identifier,
+        signed_entitlements=read_effective_signed_entitlements(app_path),
+        signing_certificate_der=read_leaf_signing_certificate_der(app_path),
+        intended_device_udid=intended_device_udid,
     )
     return profile_sha256, profile_uuid, expiration_utc, application_identifier
 
@@ -421,7 +544,7 @@ def reject_embedded_external_authority(app_path: Path) -> None:
         )
 
 
-def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
+def inspect_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:
     source_sha = canonical_sha40(expected_source_sha)
     if not ipa_path.is_file():
         raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
@@ -476,6 +599,7 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
             app_path,
             team_identifier=team_identifier,
             bundle_identifier=bundle_id,
+            intended_device_udid=intended_device_udid,
         )
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
@@ -761,56 +885,142 @@ def self_test() -> None:
     assert "authorized" not in fixture_field
 
     team = "ABCDE12345"
+    device = "00008101-001234567890001E"
+    leaf_certificate = b"leaf-signing-certificate-der"
     expiry = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    valid_entitlements = {
+        "application-identifier": f"{team}.{BUNDLE_ID}",
+        "com.apple.developer.team-identifier": team,
+        "get-task-allow": False,
+        "keychain-access-groups": [f"{team}.{BUNDLE_ID}"],
+    }
     valid_profile = {
         "TeamIdentifier": [team],
         "UUID": "PROFILE-UUID",
         "ExpirationDate": expiry,
+        "DeveloperCertificates": [leaf_certificate],
+        "ProvisionedDevices": [device],
         "Entitlements": {
             "application-identifier": f"{team}.{BUNDLE_ID}",
             "com.apple.developer.team-identifier": team,
+            "get-task-allow": False,
+            "keychain-access-groups": [f"{team}.*"],
         },
     }
     profile_uuid, expiration_utc, application_id = validate_provisioning_profile(
         valid_profile,
         team_identifier=team,
         bundle_identifier=BUNDLE_ID,
+        signed_entitlements=valid_entitlements,
+        signing_certificate_der=leaf_certificate,
+        intended_device_udid=device,
         now=datetime(2098, 1, 1, tzinfo=timezone.utc),
     )
     assert profile_uuid == "PROFILE-UUID"
     assert expiration_utc == "2099-01-01T00:00:00Z"
     assert application_id == f"{team}.{BUNDLE_ID}"
 
-    invalid_profiles = (
+    bad_profiles = (
         {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
         {**valid_profile, "ExpirationDate": datetime(2097, 1, 1, tzinfo=timezone.utc)},
-        {
-            **valid_profile,
-            "Entitlements": {
-                **valid_profile["Entitlements"],
-                "application-identifier": f"{team}.com.example.other",
-            },
-        },
-        {
-            **valid_profile,
-            "Entitlements": {
-                **valid_profile["Entitlements"],
-                "com.apple.developer.team-identifier": "OTHER12345",
-            },
-        },
+        {**valid_profile, "DeveloperCertificates": [b"different-certificate"]},
     )
-    for malformed in invalid_profiles:
+    for malformed in bad_profiles:
         try:
             validate_provisioning_profile(
                 malformed,
                 team_identifier=team,
                 bundle_identifier=BUNDLE_ID,
+                signed_entitlements=valid_entitlements,
+                signing_certificate_der=leaf_certificate,
+                intended_device_udid=device,
                 now=datetime(2098, 1, 1, tzinfo=timezone.utc),
             )
         except EvidenceError:
             pass
         else:
             raise AssertionError("invalid provisioning profile relationship was accepted")
+
+    bad_signed_entitlements = (
+        {**valid_entitlements, "application-identifier": f"{team}.com.example.other"},
+        {**valid_entitlements, "com.apple.developer.team-identifier": "OTHER12345"},
+        {**valid_entitlements, "get-task-allow": True},
+        {**valid_entitlements, "com.apple.developer.healthkit": True},
+    )
+    for malformed in bad_signed_entitlements:
+        try:
+            validate_provisioning_profile(
+                valid_profile,
+                team_identifier=team,
+                bundle_identifier=BUNDLE_ID,
+                signed_entitlements=malformed,
+                signing_certificate_der=leaf_certificate,
+                intended_device_udid=device,
+                now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("unauthorized effective signed entitlement was accepted")
+
+    try:
+        validate_provisioning_profile(
+            valid_profile,
+            team_identifier=team,
+            bundle_identifier=BUNDLE_ID,
+            signed_entitlements=valid_entitlements,
+            signing_certificate_der=leaf_certificate,
+            intended_device_udid="00008101-NOT-PROVISIONED",
+            now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+        )
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("unprovisioned intended field device was accepted")
+
+    all_devices_profile = {**valid_profile, "ProvisionsAllDevices": True}
+    all_devices_profile.pop("ProvisionedDevices", None)
+    validate_provisioning_profile(
+        all_devices_profile,
+        team_identifier=team,
+        bundle_identifier=BUNDLE_ID,
+        signed_entitlements=valid_entitlements,
+        signing_certificate_der=leaf_certificate,
+        intended_device_udid=device,
+        now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+    )
+
+    verify_device_platform({
+        "DTPlatformName": "iphoneos",
+        "CFBundleSupportedPlatforms": ["iPhoneOS"],
+    })
+    invalid_platforms = (
+        {"DTPlatformName": "iphoneos", "CFBundleSupportedPlatforms": ["iPhoneOS", "iPhoneOS"]},
+        {"DTPlatformName": "iphoneos", "CFBundleSupportedPlatforms": ["iPhoneOS", "iphonesimulator"]},
+        {"DTPlatformName": "iphoneos", "CFBundleSupportedPlatforms": ["iPhoneOS", 7]},
+        {"DTPlatformName": "iphoneos", "CFBundleSupportedPlatforms": ["iPhoneOS", " WatchOS"]},
+    )
+    for malformed in invalid_platforms:
+        try:
+            verify_device_platform(malformed)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("consumer-incompatible platform declaration was accepted")
+
+    xml = plistlib.dumps(valid_entitlements, fmt=plistlib.FMT_XML).decode("utf-8")
+    decoded = _decode_codesign_entitlements(
+        subprocess.CompletedProcess(args=["codesign"], returncode=0, stdout=xml, stderr="")
+    )
+    assert decoded == valid_entitlements
+    try:
+        _decode_codesign_entitlements(
+            subprocess.CompletedProcess(args=["codesign"], returncode=0, stdout="noise", stderr="")
+        )
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("missing effective signed entitlements were accepted")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -820,6 +1030,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--expected-source-sha",
         help="exact accepted lowercase 40-hex source commit expected inside the field build",
+    )
+    parser.add_argument(
+        "--intended-device-udid",
+        help="verification-only UDID of the intended field iPhone; never persisted or printed",
     )
     parser.add_argument("--self-test", action="store_true", help="run platform-independent contract checks")
     return parser.parse_args(argv)
@@ -838,13 +1052,18 @@ def main(argv: list[str]) -> int:
             ("--ipa", args.ipa),
             ("--output-dir", args.output_dir),
             ("--expected-source-sha", args.expected_source_sha),
+            ("--intended-device-udid", args.intended_device_udid),
         )
         if value is None
     ]
     if missing:
         raise EvidenceError(f"required arguments missing: {', '.join(missing)}")
 
-    inspection = inspect_ipa(args.ipa.resolve(), args.expected_source_sha)
+    inspection = inspect_ipa(
+        args.ipa.resolve(),
+        args.expected_source_sha,
+        intended_device_udid=args.intended_device_udid,
+    )
     paths = write_outputs(args.ipa.resolve(), args.output_dir.resolve(), inspection)
     summary = {
         "status": "EVIDENCE_ONLY_NOT_FIELD_AUTHORIZATION",
