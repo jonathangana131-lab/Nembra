@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Adversarial regression for exact signed-IPA subject binding.
-
-The signed-field inspector must never emit a digest for one IPA byte sequence after validating
-code-signing/provisioning facts from a different byte sequence read through the same mutable path.
-"""
+"""Adversarial regressions for exact signed-IPA subject binding."""
 
 from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
+import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,12 +25,18 @@ def load_inspector():
     return module
 
 
+def make_minimal_ipa(marker: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Payload/Nembra.app/marker.bin", marker)
+    return buffer.getvalue()
+
+
 class SignedFieldArtifactExactSubjectTests(unittest.TestCase):
-    def test_digest_subject_and_extracted_subject_are_the_same_exact_bytes(self) -> None:
+    def test_field_evidence_digest_is_owned_by_descriptor_bound_extractor(self) -> None:
         inspector = load_inspector()
         source_sha = "a" * 40
         original_ipa = b"exact signed candidate bytes"
-        transient_other_ipa = b"different bytes observed by inspection"
 
         with tempfile.TemporaryDirectory(prefix="nembra-exact-subject-test-") as temporary:
             root = Path(temporary)
@@ -44,7 +49,6 @@ class SignedFieldArtifactExactSubjectTests(unittest.TestCase):
             executable_path.write_bytes(b"signed executable fixture")
             info_path = app_path / "Info.plist"
             info_path.write_bytes(b"signed info plist fixture")
-
             info = {
                 "CFBundleIdentifier": inspector.BUNDLE_ID,
                 "DTPlatformName": "iphoneos",
@@ -54,41 +58,18 @@ class SignedFieldArtifactExactSubjectTests(unittest.TestCase):
                 "NembraCaptureBuildCommitSHA": source_sha,
                 "CFBundleExecutable": "Nembra",
             }
+            observed_identities = []
 
-            real_sha256_file = inspector.sha256_file
-            first_input_hash = True
-            extracted_bytes: list[bytes] = []
-
-            def racing_sha256_file(path: Path) -> str:
-                nonlocal first_input_hash
-                if path == ipa_path and first_input_hash:
-                    first_input_hash = False
-                    digest = hashlib.sha256(original_ipa).hexdigest()
-                    path.write_bytes(transient_other_ipa)
-                    return digest
-                return real_sha256_file(path)
-
-            def observing_extract(path: Path, destination: Path) -> Path:
-                extracted_bytes.append(path.read_bytes())
-                if path == ipa_path:
-                    ipa_path.write_bytes(original_ipa)
-                return app_path
+            def observing_extract(path: Path, destination: Path, *, expected_identity):
+                observed_identities.append(expected_identity)
+                return app_path, hashlib.sha256(original_ipa).hexdigest(), len(original_ipa)
 
             with (
-                patch.object(inspector, "sha256_file", side_effect=racing_sha256_file),
                 patch.object(inspector, "extract_ipa_safely", side_effect=observing_extract),
                 patch.object(inspector, "reject_embedded_external_authority"),
                 patch.object(inspector, "read_info_plist", return_value=(info, info_path)),
-                patch.object(
-                    inspector,
-                    "verify_device_platform",
-                    return_value=("iphoneos", ["iPhoneOS"]),
-                ),
-                patch.object(
-                    inspector,
-                    "run_codesign",
-                    return_value=("ABCDE12345", ["Apple Development: Fixture"], "b" * 40),
-                ),
+                patch.object(inspector, "verify_device_platform", return_value=("iphoneos", ["iPhoneOS"])),
+                patch.object(inspector, "run_codesign", return_value=("ABCDE12345", ["Apple Development: Fixture"], "b" * 40)),
                 patch.object(
                     inspector,
                     "verify_provisioning_profile",
@@ -105,11 +86,97 @@ class SignedFieldArtifactExactSubjectTests(unittest.TestCase):
                 inspection["field_build_record"]["signedInstallableSHA256"],
                 hashlib.sha256(original_ipa).hexdigest(),
             )
+            self.assertEqual(len(observed_identities), 1)
+
+    def test_path_replacement_before_descriptor_open_fails_closed(self) -> None:
+        inspector = load_inspector()
+        original_ipa = make_minimal_ipa(b"original")
+        replacement_ipa = make_minimal_ipa(b"replacement")
+        with tempfile.TemporaryDirectory(prefix="nembra-preopen-swap-test-") as temporary:
+            root = Path(temporary)
+            subject = root / "NembraField.ipa"
+            held = root / "held.ipa"
+            subject.write_bytes(original_ipa)
+            subject.chmod(0o400)
+            expected_identity = inspector._stable_file_identity(subject.lstat())
+            subject.rename(held)
+            subject.write_bytes(replacement_ipa)
+            with self.assertRaisesRegex(inspector.EvidenceError, "changed before descriptor-bound extraction"):
+                inspector.extract_ipa_safely(
+                    subject,
+                    root / "extract",
+                    expected_identity=expected_identity,
+                )
+
+    def test_path_replacement_after_open_never_steers_extraction(self) -> None:
+        inspector = load_inspector()
+        original_ipa = make_minimal_ipa(b"original exact subject")
+        replacement_ipa = make_minimal_ipa(b"replacement pathname subject")
+        with tempfile.TemporaryDirectory(prefix="nembra-postopen-swap-test-") as temporary:
+            root = Path(temporary)
+            subject = root / "NembraField.ipa"
+            held = root / "held.ipa"
+            extraction = root / "extract"
+            subject.write_bytes(original_ipa)
+            subject.chmod(0o400)
+            expected_identity = inspector._stable_file_identity(subject.lstat())
+            real_fdopen = os.fdopen
+            replaced = False
+
+            def replace_path_then_fdopen(descriptor: int, *args, **kwargs):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    subject.rename(held)
+                    subject.write_bytes(replacement_ipa)
+                return real_fdopen(descriptor, *args, **kwargs)
+
+            try:
+                with patch.object(inspector.os, "fdopen", side_effect=replace_path_then_fdopen):
+                    inspector.extract_ipa_safely(
+                        subject,
+                        extraction,
+                        expected_identity=expected_identity,
+                    )
+            except inspector.EvidenceError as error:
+                self.assertIn("changed during descriptor-bound extraction", str(error))
+
+            self.assertTrue(replaced)
             self.assertEqual(
-                extracted_bytes,
-                [original_ipa],
-                "The code-signing/provisioning inspection must consume the same exact IPA bytes whose digest becomes field evidence.",
+                (extraction / "Payload" / "Nembra.app" / "marker.bin").read_bytes(),
+                b"original exact subject",
             )
+            self.assertEqual(subject.read_bytes(), replacement_ipa)
+
+    def test_in_place_mutation_during_extraction_fails_closed(self) -> None:
+        inspector = load_inspector()
+        original_ipa = make_minimal_ipa(b"original exact subject")
+        with tempfile.TemporaryDirectory(prefix="nembra-in-place-mutation-test-") as temporary:
+            root = Path(temporary)
+            subject = root / "NembraField.ipa"
+            subject.write_bytes(original_ipa)
+            subject.chmod(0o400)
+            expected_identity = inspector._stable_file_identity(subject.lstat())
+            real_copy = inspector.shutil.copyfileobj
+            mutated = False
+
+            def mutate_after_copy(source, sink, *args, **kwargs):
+                nonlocal mutated
+                result = real_copy(source, sink, *args, **kwargs)
+                if not mutated:
+                    mutated = True
+                    subject.chmod(0o600)
+                    with subject.open("ab") as handle:
+                        handle.write(b"mutation")
+                return result
+
+            with patch.object(inspector.shutil, "copyfileobj", side_effect=mutate_after_copy):
+                with self.assertRaisesRegex(inspector.EvidenceError, "changed during descriptor-bound extraction"):
+                    inspector.extract_ipa_safely(
+                        subject,
+                        root / "extract",
+                        expected_identity=expected_identity,
+                    )
 
 
 if __name__ == "__main__":

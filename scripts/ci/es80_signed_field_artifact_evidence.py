@@ -328,41 +328,92 @@ def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, Pu
     return result
 
 
-def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
+def extract_ipa_safely(
+    ipa_path: Path,
+    destination: Path,
+    *,
+    expected_identity: tuple[int, int, int, int, int, int],
+) -> tuple[Path, str, int]:
+    """Hash and extract one exact IPA through one already-open no-follow descriptor."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise EvidenceError("platform cannot enforce no-follow exact IPA inspection input")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
     try:
-        archive = zipfile.ZipFile(ipa_path)
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
+        descriptor = os.open(ipa_path, flags)
+    except OSError as exc:
+        raise EvidenceError("could not open exact IPA inspection subject for extraction") from exc
 
     app_roots: set[str] = set()
-    with archive:
-        infos = archive.infolist()
-        validated_paths = _validated_unique_member_paths(infos)
-        for info in infos:
-            member = validated_paths[info.filename]
-            mode = (info.external_attr >> 16) & 0o177777
-            if stat.S_ISLNK(mode):
-                raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
+            raise EvidenceError("exact IPA inspection subject must remain one non-empty regular file")
+        if _stable_file_identity(before) != expected_identity:
+            raise EvidenceError("exact IPA inspection subject changed before descriptor-bound extraction")
 
-            parts = member.parts
-            if len(parts) >= 2 and parts[0] == "Payload" and parts[1].endswith(".app"):
-                app_roots.add(parts[1])
+        ipa_sha256, ipa_byte_count = _sha256_descriptor(descriptor)
+        after_pre_hash = os.fstat(descriptor)
+        if (
+            _stable_file_identity(before) != _stable_file_identity(after_pre_hash)
+            or ipa_byte_count != before.st_size
+            or not SHA256_RE.fullmatch(ipa_sha256)
+        ):
+            raise EvidenceError("exact IPA inspection subject changed before descriptor-bound extraction")
 
-            target = destination.joinpath(*parts)
-            resolved_parent = target.parent.resolve()
-            if destination.resolve() not in (resolved_parent, *resolved_parent.parents):
-                raise EvidenceError(f"IPA member escapes extraction root: {info.filename}")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        try:
+            subject = os.fdopen(os.dup(descriptor), "rb")
+        except OSError as exc:
+            raise EvidenceError("could not duplicate exact IPA inspection descriptor") from exc
+        with subject:
+            try:
+                archive = zipfile.ZipFile(subject)
+            except (OSError, zipfile.BadZipFile) as exc:
+                raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
+            with archive:
+                infos = archive.infolist()
+                validated_paths = _validated_unique_member_paths(infos)
+                for info in infos:
+                    member = validated_paths[info.filename]
+                    mode = (info.external_attr >> 16) & 0o177777
+                    if stat.S_ISLNK(mode):
+                        raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
 
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(info, "r") as source, target.open("wb") as sink:
-                shutil.copyfileobj(source, sink)
-            permissions = mode & 0o777
-            if permissions:
-                target.chmod(permissions)
+                    parts = member.parts
+                    if len(parts) >= 2 and parts[0] == "Payload" and parts[1].endswith(".app"):
+                        app_roots.add(parts[1])
+
+                    target = destination.joinpath(*parts)
+                    resolved_parent = target.parent.resolve()
+                    if destination.resolve() not in (resolved_parent, *resolved_parent.parents):
+                        raise EvidenceError(f"IPA member escapes extraction root: {info.filename}")
+
+                    if info.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(info, "r") as source, target.open("wb") as sink:
+                        shutil.copyfileobj(source, sink)
+                    permissions = mode & 0o777
+                    if permissions:
+                        target.chmod(permissions)
+
+        after_extract = os.fstat(descriptor)
+        post_sha256, post_byte_count = _sha256_descriptor(descriptor)
+        after_post_hash = os.fstat(descriptor)
+        if (
+            _stable_file_identity(before) != _stable_file_identity(after_extract)
+            or _stable_file_identity(after_extract) != _stable_file_identity(after_post_hash)
+            or post_byte_count != ipa_byte_count
+            or post_sha256 != ipa_sha256
+        ):
+            raise EvidenceError("exact IPA inspection subject changed during descriptor-bound extraction")
+    finally:
+        os.close(descriptor)
 
     if len(app_roots) != 1:
         raise EvidenceError(
@@ -371,8 +422,7 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
     app_path = destination / "Payload" / next(iter(app_roots))
     if not app_path.is_dir():
         raise EvidenceError("IPA app bundle was not extracted as a directory")
-    return app_path
-
+    return app_path, ipa_sha256, ipa_byte_count
 
 def read_info_plist(app_path: Path) -> tuple[dict, Path]:
     info_path = app_path / "Info.plist"
@@ -736,14 +786,15 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         raise EvidenceError("exact IPA inspection subject must remain one regular file")
     ipa_identity_before = _stable_file_identity(ipa_stat_before)
 
-    ipa_sha = sha256_file(ipa_path)
-    ipa_size = ipa_stat_before.st_size
-    if not SHA256_RE.fullmatch(ipa_sha):
-        raise EvidenceError("could not derive canonical IPA SHA-256")
-
     with tempfile.TemporaryDirectory(prefix="nembra-field-ipa-") as temporary:
         root = Path(temporary)
-        app_path = extract_ipa_safely(ipa_path, root)
+        app_path, ipa_sha, ipa_size = extract_ipa_safely(
+            ipa_path,
+            root,
+            expected_identity=ipa_identity_before,
+        )
+        if not SHA256_RE.fullmatch(ipa_sha):
+            raise EvidenceError("could not derive canonical IPA SHA-256")
         extracted_tree_manifest = capture_extracted_tree_integrity(root)
         reject_embedded_external_authority(app_path)
         info, info_path = read_info_plist(app_path)
