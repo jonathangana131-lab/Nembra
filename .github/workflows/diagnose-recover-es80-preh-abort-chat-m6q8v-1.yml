@@ -1,0 +1,49 @@
+name: Diagnose ES80 pre-H recovery capture tests
+
+on:
+  push:
+    branches:
+      - cell/recover-es80-preh-observation-abort/diagnose/chat-m6q8v-1
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-capture-tests:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 71d0e3f32e63d7d096f66e0d2ece990cacb70455
+          EXPECTED_WORKFLOW_PATH: .github/workflows/diagnose-recover-es80-preh-abort-chat-m6q8v-1.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$EXPECTED_WORKFLOW_PATH"
+      - name: Run capture tests and expose failure tail
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/capture-tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo '::group::Failure tail'
+            tail -n 160 /tmp/capture-tests.log
+            echo '::endgroup::'
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          text = Path('/tmp/capture-tests.log').read_text(errors='replace').splitlines()
+          interesting = [line for line in text if any(token in line.lower() for token in ('error:', 'failed', 'failure', 'issue recorded', 'expectation failed'))]
+          if not interesting:
+              interesting = text[-80:]
+          payload = '\n'.join(interesting[-80:])
+          payload = payload.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error file=Packages/NembraBluetoothCapture::capture test failure:%0A{payload}')
+          PY
+            exit "$status"
+          fi
