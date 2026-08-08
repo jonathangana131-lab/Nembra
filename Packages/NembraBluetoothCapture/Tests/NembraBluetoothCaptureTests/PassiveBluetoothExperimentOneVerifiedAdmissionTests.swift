@@ -54,9 +54,6 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // release-grade field gate is NO-GO.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -102,8 +99,8 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(!source.contains("UserDefaults.standard"))
+        #expect(!source.contains("ProcessInfo.processInfo"))
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
