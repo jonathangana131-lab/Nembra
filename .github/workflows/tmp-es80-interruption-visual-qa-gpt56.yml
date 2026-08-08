@@ -1,0 +1,94 @@
+name: Temporary ES80 interruption visual QA patch
+
+on:
+  push:
+    branches:
+      - test/es80-v14-interruption-visual-qa/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact visual-QA parent
+        run: test "$(git rev-parse HEAD^)" = "64760fb9f683ddf5cc8bc296283e4787675886f0"
+
+      - name: Add interrupted-state visual acceptance
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          source = path.read_text(encoding="utf-8")
+          marker = '''    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {'''
+          test = '''    @MainActor
+    func testV14SimulatorQAForegroundInterruptionKeepsTruthAndRecoveryVisible() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=foregroundInterrupted"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let stoppedState = app.staticTexts["Capture stopped safely"]
+        let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
+
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(stoppedState.waitForExistence(timeout: 3))
+        XCTAssertTrue(restart.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: windowFrame,
+            context: "synthetic Simulator QA disclosure in interrupted state"
+        )
+        assertVisibleInScreenshotViewport(
+            stoppedState,
+            windowFrame: windowFrame,
+            context: "interrupted Capture stopped state"
+        )
+        assertVisibleInScreenshotViewport(
+            restart,
+            windowFrame: windowFrame,
+            context: "fresh-run recovery action after interruption"
+        )
+    }
+
+'''
+          if marker not in source:
+              raise SystemExit("expected Simulator QA source-contract marker not found")
+          if "testV14SimulatorQAForegroundInterruptionKeepsTruthAndRecoveryVisible" in source:
+              raise SystemExit("interruption visual gate already exists")
+          source = source.replace(marker, test + marker, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Verify exact effective scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only)" = "NembraUITests/ES80ResearchCaptureUITests.swift"
+
+      - name: Commit visual gate and self-delete
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-interruption-visual-qa-gpt56.yml
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git commit -m "Capture visual QA: retain interruption recovery screenshot"
+          git push origin HEAD:test/es80-v14-interruption-visual-qa/gpt56-thinking
