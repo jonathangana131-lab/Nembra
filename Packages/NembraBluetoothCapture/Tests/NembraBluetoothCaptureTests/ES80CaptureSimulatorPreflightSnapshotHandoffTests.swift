@@ -39,7 +39,7 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
         let launch = try Self.section(
             source,
             from: "case let .es80PassiveCaptureSimulatorQA(rawScenario):",
-            to: "case .es80PassiveCapture:" // resolveLaunchMode occurs after the scene switch
+            to: "    /// Routes the exact field-build recipe marker"
         )
 
         #expect(launch.contains("let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)"))
@@ -66,15 +66,15 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
     @Test("accepted charger preflight forwards the same snapshot into the Capture shell")
     func acceptedPreflightDoesNotDropSyntheticScenario() throws {
         let source = try Self.appSource()
-        let handoff = try Self.section(
+        let preflight = try Self.section(
             source,
-            from: "var body: some View {",
-            to: "private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator"
+            from: "private struct ES80ExperimentOneStationaryPreflightView: View",
+            to: "private struct ES80ExperimentOneFieldNoGoView: View"
         )
 
-        #expect(handoff.contains("if disconnectedDeclarationAccepted"))
-        #expect(handoff.contains("if let simulatorQASnapshot"))
-        #expect(handoff.contains("simulatorQASnapshot: simulatorQASnapshot"))
-        #expect(handoff.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
+        #expect(preflight.contains("if disconnectedDeclarationAccepted"))
+        #expect(preflight.contains("if let simulatorQASnapshot"))
+        #expect(preflight.contains("simulatorQASnapshot: simulatorQASnapshot"))
+        #expect(preflight.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
     }
 }
