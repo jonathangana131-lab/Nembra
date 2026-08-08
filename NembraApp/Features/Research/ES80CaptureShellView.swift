@@ -81,6 +81,9 @@ struct ES80CaptureShellView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            let currentPhase = phase
+            let currentCandidateIdentifiers = controller.discoveredPeripherals.map(\.id)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     hero
@@ -97,6 +100,17 @@ struct ES80CaptureShellView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.black.ignoresSafeArea())
+            .onAppear {
+                synchronizeIdleTimer(for: currentPhase)
+            }
+            .onChange(of: currentPhase) { _, newPhase in
+                synchronizeIdleTimer(for: newPhase)
+            }
+            .onChange(of: currentCandidateIdentifiers) { _, identifiers in
+                guard let selectedCandidateIdentifier,
+                      !identifiers.contains(selectedCandidateIdentifier) else { return }
+                self.selectedCandidateIdentifier = nil
+            }
         }
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
@@ -113,22 +127,11 @@ struct ES80CaptureShellView: View {
                 diagnosticMessage = "The capture is still prepared, but export did not finish: \(error.localizedDescription)"
             }
         }
-        .onAppear {
-            synchronizeIdleTimer(for: phase)
-        }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
         }
-        .onChange(of: phase) { _, newPhase in
-            synchronizeIdleTimer(for: newPhase)
-        }
         .onChange(of: scenePhase) { _, newScenePhase in
             handleScenePhaseChange(newScenePhase)
-        }
-        .onChange(of: controller.discoveredPeripherals.map(\.id)) { _, identifiers in
-            guard let selectedCandidateIdentifier,
-                  !identifiers.contains(selectedCandidateIdentifier) else { return }
-            self.selectedCandidateIdentifier = nil
         }
         .accessibilityIdentifier("es80.capture-shell")
     }
