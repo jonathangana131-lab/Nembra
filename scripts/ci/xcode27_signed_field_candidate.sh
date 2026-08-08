@@ -137,28 +137,97 @@ IPA_PATH="${IPA_FILES[0]}"
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
 # snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
-# exact final bytes, retains the IPA, and emits schema-v3 + field companion evidence without GO.
+# exact final bytes, retains the IPA, and emits the one package-decodable field-build record plus a
+# separate signing-inspection companion. Neither record grants physical GO.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --output-dir "$ARTIFACTS_DIR"
 
-FIELD_RECORD="$ARTIFACTS_DIR/NembraCaptureSignedFieldArtifactEvidence.json"
-python3 - "$FIELD_RECORD" "$SOURCE_SHA" "$BUILD_IDENTIFIER" "$BUILD_INSTANCE_ID" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
-import json, pathlib, sys
-record = json.loads(pathlib.Path(sys.argv[1]).read_text())
-expected = {
-    "authority": "signed-field-artifact-evidence-not-field-authorization",
-    "sourceCommitSHA": sys.argv[2],
-    "buildIdentifier": sys.argv[3],
-    "buildInstanceID": sys.argv[4],
-    "teamIdentifier": sys.argv[5],
+EXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
+FIELD_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
+SIGNING_INSPECTION="$ARTIFACTS_DIR/NembraCaptureSignedFieldArtifactInspection.json"
+RETAINED_IPA="$ARTIFACTS_DIR/build-evidence/NembraField.ipa"
+
+python3 - \
+  "$EXTERNAL_RECORD" \
+  "$FIELD_BUILD_RECORD" \
+  "$SIGNING_INSPECTION" \
+  "$RETAINED_IPA" \
+  "$SOURCE_SHA" \
+  "$BUILD_IDENTIFIER" \
+  "$BUILD_INSTANCE_ID" \
+  "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+external_path = pathlib.Path(sys.argv[1])
+field_path = pathlib.Path(sys.argv[2])
+inspection_path = pathlib.Path(sys.argv[3])
+ipa_path = pathlib.Path(sys.argv[4])
+source_sha, build_identifier, build_instance_id, expected_team = sys.argv[5:9]
+
+external_bytes = external_path.read_bytes()
+field_bytes = field_path.read_bytes()
+field = json.loads(field_bytes)
+inspection = json.loads(inspection_path.read_bytes())
+
+expected_field_keys = {
+    "schemaVersion",
+    "externalBuildRecordSHA256",
+    "signedInstallableSHA256",
+    "signedInstallableKind",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
+if set(field) != expected_field_keys:
+    raise SystemExit(f"Canonical field-build evidence shape drifted: {sorted(field)!r}")
+
+shared_expected = {
+    "sourceCommitSHA": source_sha,
+    "buildIdentifier": build_identifier,
+    "buildInstanceID": build_instance_id,
     "experimentRecipeID": "ES80-FINGERPRINT-v1",
     "procedureVersion": "V14",
 }
-for key, value in expected.items():
-    if record.get(key) != value:
-        raise SystemExit(f"Signed-field evidence mismatch for {key}: {record.get(key)!r} != {value!r}")
+for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
+    for key, value in shared_expected.items():
+        if record.get(key) != value:
+            raise SystemExit(f"{record_name} mismatch for {key}: {record.get(key)!r} != {value!r}")
+
+if field.get("signedInstallableKind") != "ipa":
+    raise SystemExit("Canonical field-build evidence no longer describes an IPA installable")
+if inspection.get("authority") != "signed-field-artifact-inspection-not-field-authorization":
+    raise SystemExit("Signing inspection authority boundary changed unexpectedly")
+if inspection.get("teamIdentifier") != expected_team:
+    raise SystemExit(
+        f"Signing inspection TeamIdentifier mismatch: {inspection.get('teamIdentifier')!r} != {expected_team!r}"
+    )
+
+external_sha = hashlib.sha256(external_bytes).hexdigest()
+field_sha = hashlib.sha256(field_bytes).hexdigest()
+if field.get("externalBuildRecordSHA256") != external_sha:
+    raise SystemExit("Field-build evidence is not bound to the exact external build-record bytes")
+if inspection.get("externalBuildRecordSHA256") != external_sha:
+    raise SystemExit("Signing inspection is not bound to the exact external build-record bytes")
+if inspection.get("fieldBuildEvidenceRecordSHA256") != field_sha:
+    raise SystemExit("Signing inspection is not bound to the exact field-build evidence bytes")
+if inspection.get("signedInstallableSHA256") != field.get("signedInstallableSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on the exact IPA digest")
+
+ipa_digest = hashlib.sha256()
+with ipa_path.open("rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        ipa_digest.update(chunk)
+if ipa_digest.hexdigest() != field.get("signedInstallableSHA256"):
+    raise SystemExit("Retained IPA bytes do not match canonical field-build evidence")
 PY
 
 {
@@ -168,7 +237,8 @@ PY
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
   echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
   echo "procedure_version=V14"
-  echo "authority=signed-field-artifact-evidence-not-field-authorization"
+  echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
+  echo "physical_authorization=not-granted"
   xcodebuild -version
 } > "$ARTIFACTS_DIR/field-candidate-environment.txt"
 
