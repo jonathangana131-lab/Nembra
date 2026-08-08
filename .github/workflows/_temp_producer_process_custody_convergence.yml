@@ -1,0 +1,151 @@
+name: Temp Producer Process Custody Convergence
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-producer-process-custody-current-gpt56-go
+    paths:
+      - .github/workflows/_temp_producer_process_custody_convergence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Converge signed-field producer process authority
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          text = path.read_text(encoding="utf-8")
+
+          prologue = "#!/bin/bash\nset -euo pipefail\n"
+          replacement = '''#!/bin/bash -p\nset -euo pipefail\nPATH="/usr/bin:/bin:/usr/sbin:/sbin"\nexport PATH\n'''
+          if text.count(prologue) != 1:
+              raise SystemExit("could not uniquely locate producer startup prologue")
+          text = text.replace(prologue, replacement, 1)
+
+          old_python = '''PYTHON3="/usr/bin/python3"\nif [[ ! -x "$PYTHON3" || -L "$PYTHON3" ]]; then\n  echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2\n  exit 2\nfi\n'''
+          new_python = '''validate_root_custodied_path() {\n  local subject_path="$1"\n  local subject_kind="$2"\n  local current_path="$subject_path"\n  local owner_uid\n  local mode_value\n\n  if [[ "$subject_path" != /* || -L "$subject_path" ]]; then\n    echo "Release executable custody requires one absolute non-symlink path: $subject_path" >&2\n    return 1\n  fi\n  if [[ "$subject_kind" == "file" && ( ! -f "$subject_path" || ! -x "$subject_path" ) ]]; then\n    echo "Release executable custody requires one regular executable file: $subject_path" >&2\n    return 1\n  fi\n\n  while :; do\n    if [[ -L "$current_path" ]]; then\n      echo "Release executable custody path contains a symlink: $current_path" >&2\n      return 1\n    fi\n    owner_uid="$(/usr/bin/stat -f %u "$current_path")" || return 1\n    mode_value="$(/usr/bin/stat -f %Lp "$current_path")" || return 1\n    if (( owner_uid != 0 )); then\n      echo "Release executable custody path is not root-owned: $current_path" >&2\n      return 1\n    fi\n    if [[ ! "$mode_value" =~ ^[0-7]{3,4}$ ]]; then\n      echo "Release executable custody mode is not canonical octal: $current_path" >&2\n      return 1\n    fi\n    if (( (8#$mode_value & 0022) != 0 )); then\n      echo "Release executable custody path is group/world writable: $current_path" >&2\n      return 1\n    fi\n    [[ "$current_path" == "/" ]] && break\n    current_path="$(/usr/bin/dirname "$current_path")"\n  done\n}\n\nPYTHON3="/usr/bin/python3"\nif ! validate_root_custodied_path "$PYTHON3" file; then\n  exit 2\nfi\n\nrun_git() {\n  env -i \\\n    PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n    HOME=/var/empty \\\n    LC_ALL=C \\\n    GIT_CONFIG_NOSYSTEM=1 \\\n    GIT_CONFIG_GLOBAL=/dev/null \\\n    GIT_NO_REPLACE_OBJECTS=1 \\\n    /usr/bin/git "$@"\n}\n'''
+          if text.count(old_python) != 1:
+              raise SystemExit("could not uniquely locate current Python admission block")
+          text = text.replace(old_python, new_python, 1)
+
+          lines = []
+          for line in text.splitlines(keepends=True):
+              if line.lstrip().startswith("#") or "/usr/bin/git" in line or line.startswith("run_git()"):
+                  lines.append(line)
+                  continue
+              lines.append(re.sub(r"(?<![/A-Za-z0-9_])git(?=\s)", "run_git", line))
+          text = "".join(lines)
+
+          old_xcode = '''run_xcodebuild() {\n  if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then\n    xcodebuild -allowProvisioningUpdates "$@"\n  else\n    xcodebuild "$@"\n  fi\n}\n'''
+          new_xcode = '''NEMBRA_BUILD_HOME="$("$PYTHON3" -I -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"\nDEVELOPER_DIR="$(env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/xcode-select -p)"\nif [[ "$DEVELOPER_DIR" != /* || ! -d "$DEVELOPER_DIR" || -L "$DEVELOPER_DIR" ]]; then\n  echo "Could not select one absolute non-symlink Xcode developer directory." >&2\n  exit 6\nfi\n\nrun_xcodebuild() {\n  if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" && "${1:-}" != "-version" ]]; then\n    env -i \\\n      PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n      HOME="$NEMBRA_BUILD_HOME" \\\n      LC_ALL=C \\\n      DEVELOPER_DIR="$DEVELOPER_DIR" \\\n      TMPDIR="${XCODE_TMPDIR:-/tmp}" \\\n      /usr/bin/xcodebuild -allowProvisioningUpdates "$@"\n  else\n    env -i \\\n      PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n      HOME="$NEMBRA_BUILD_HOME" \\\n      LC_ALL=C \\\n      DEVELOPER_DIR="$DEVELOPER_DIR" \\\n      TMPDIR="${XCODE_TMPDIR:-/tmp}" \\\n      /usr/bin/xcodebuild "$@"\n  fi\n}\n\nXCODE_VERSION_OUTPUT="$(run_xcodebuild -version)"\ncase "$XCODE_VERSION_OUTPUT" in\n  "Xcode 27"*) ;;\n  *)\n    echo "Signed field-candidate production requires the selected toolchain to report Xcode 27." >&2\n    printf '%s\\n' "$XCODE_VERSION_OUTPUT" >&2\n    exit 6\n    ;;\nesac\n'''
+          if text.count(old_xcode) != 1:
+              raise SystemExit("could not uniquely locate ambient Xcode wrapper")
+          text = text.replace(old_xcode, new_xcode, 1)
+
+          worktree = 'run_git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"\n\n'
+          audit = '''run_git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"\n\n# git status remains supplementary evidence; exact tracked bytes are independently bound to SOURCE_SHA.\naudit_exact_source_tree_blobs() {\n  local phase="$1"\n  local listing="$WORK_ROOT/source-tree-$phase.lst"\n  local record\n  local metadata\n  local relative_path\n  local mode\n  local object_type\n  local expected_oid\n  local actual_oid\n  local absolute_path\n  local audited=0\n\n  if ! run_git -C "$ROOT" ls-tree -rz --full-tree "$SOURCE_SHA" > "$listing"; then\n    echo "Could not enumerate exact SOURCE_SHA tree for raw-byte audit ($phase)." >&2\n    return 1\n  fi\n\n  while IFS= read -r -d '' record; do\n    metadata="${record%%$'\\t'*}"\n    relative_path="${record#*$'\\t'}"\n    mode="${metadata%% *}"\n    metadata="${metadata#* }"\n    object_type="${metadata%% *}"\n    expected_oid="${metadata##* }"\n    absolute_path="$SOURCE_ROOT/$relative_path"\n\n    if [[ "$object_type" != "blob" ]]; then\n      echo "Unsupported non-blob SOURCE_SHA tree entry during raw-byte audit: $relative_path ($object_type)" >&2\n      rm -f "$listing"\n      return 1\n    fi\n\n    case "$mode" in\n      100644|100755)\n        if [[ ! -f "$absolute_path" || -L "$absolute_path" ]]; then\n          echo "Tracked SOURCE_SHA file changed kind during raw-byte audit: $relative_path" >&2\n          rm -f "$listing"\n          return 1\n        fi\n        actual_oid="$(run_git -C "$SOURCE_ROOT" hash-object --no-filters -- "$relative_path")" || { rm -f "$listing"; return 1; }\n        ;;\n      120000)\n        if [[ ! -L "$absolute_path" ]]; then\n          echo "Tracked SOURCE_SHA symlink changed kind during raw-byte audit: $relative_path" >&2\n          rm -f "$listing"\n          return 1\n        fi\n        actual_oid="$("$PYTHON3" -I - "$absolute_path" <<'PYLINK' | run_git hash-object --stdin\nimport os\nimport sys\nsys.stdout.buffer.write(os.fsencode(os.readlink(sys.argv[1])))\nPYLINK\n)" || { rm -f "$listing"; return 1; }\n        ;;\n      *)\n        echo "Unsupported SOURCE_SHA file mode during raw-byte audit: $relative_path ($mode)" >&2\n        rm -f "$listing"\n        return 1\n        ;;\n    esac\n\n    if [[ "$actual_oid" != "$expected_oid" ]]; then\n      echo "Detached build-tree bytes do not match SOURCE_SHA blob during $phase audit: $relative_path" >&2\n      rm -f "$listing"\n      return 1\n    fi\n    audited=$((audited + 1))\n  done < "$listing"\n  rm -f "$listing"\n\n  if (( audited < 1 )); then\n    echo "Exact SOURCE_SHA raw-byte audit found no tracked blobs ($phase)." >&2\n    return 1\n  fi\n}\n\n'''
+          if text.count(worktree) != 1:
+              raise SystemExit("could not uniquely locate detached worktree creation")
+          text = text.replace(worktree, audit, 1)
+
+          clean_gate = '''if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then\n  echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2\n  exit 15\nfi\nmkdir -p "$EXPORT_DIR"\n'''
+          clean_replacement = '''if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then\n  echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2\n  exit 15\nfi\nif ! audit_exact_source_tree_blobs prearchive; then\n  exit 15\nfi\nmkdir -p "$EXPORT_DIR"\nXCODE_TMPDIR="$WORK_ROOT/xcode-tmp"\nmkdir -p "$XCODE_TMPDIR"\n'''
+          if text.count(clean_gate) != 1:
+              raise SystemExit("could not uniquely locate prearchive source gate")
+          text = text.replace(clean_gate, clean_replacement, 1)
+
+          post_gate = '''if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then\n  echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2\n  printf '%s\\n' "$POST_BUILD_SOURCE_STATUS" >&2\n  exit 19\nfi\n'''
+          post_replacement = post_gate + '''if ! audit_exact_source_tree_blobs postexport; then\n  exit 19\nfi\n'''
+          if text.count(post_gate) != 1:
+              raise SystemExit("could not uniquely locate post-export source gate")
+          text = text.replace(post_gate, post_replacement, 1)
+
+          if text.count("  xcodebuild -version\n") != 1:
+              raise SystemExit("could not uniquely locate final ambient xcodebuild version output")
+          text = text.replace("  xcodebuild -version\n", "  printf '%s\\n' \"$XCODE_VERSION_OUTPUT\"\n", 1)
+
+          raw_git = [line for line in text.splitlines() if not line.lstrip().startswith("#") and "/usr/bin/git" not in line and re.search(r"(^|[;&|$(]\\s*)git\\s", line)]
+          raw_xcode = [line for line in text.splitlines() if not line.lstrip().startswith("#") and "/usr/bin/xcodebuild" not in line and re.search(r"(^|[;&|$(]\\s*)xcodebuild(?:\\s|$)", line)]
+          if raw_git:
+              raise SystemExit(f"raw Git invocation remains: {raw_git}")
+          if raw_xcode:
+              raise SystemExit(f"raw xcodebuild invocation remains: {raw_xcode}")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Wire exact producer custody gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_gate = Path(".github/workflows/capture-producer-custody-source.yml")
+          source = source_gate.read_text(encoding="utf-8")
+          path_anchor = '      - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py\n'
+          path_add = path_anchor + '''      - scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py\n      - scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py\n      - scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py\n      - scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py\n'''
+          if source.count(path_anchor) != 1:
+              raise SystemExit("could not locate producer source-gate path anchor")
+          source = source.replace(path_anchor, path_add, 1)
+          run_anchor = '          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py\n'
+          run_add = run_anchor + '''          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py\n'''
+          if source.count(run_anchor) != 1:
+              raise SystemExit("could not locate producer source-gate run anchor")
+          source_gate.write_text(source.replace(run_anchor, run_add, 1), encoding="utf-8")
+
+          exact_gate = Path(".github/workflows/xcode27-pr-command.yml")
+          exact = exact_gate.read_text(encoding="utf-8")
+          tests = '''          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py\n          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py\n          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py\n'''
+          fast_anchor = '          python3 scripts/ci/es80_field_authorization_envelope.py --self-test\n'
+          if exact.count(fast_anchor) < 1:
+              raise SystemExit("could not locate exact-head Ubuntu authority anchor")
+          exact = exact.replace(fast_anchor, fast_anchor + tests, 1)
+          mac_anchor = '          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py\n'
+          if exact.count(mac_anchor) != 1:
+              raise SystemExit("could not locate exact-head Mac producer anchor")
+          exact = exact.replace(mac_anchor, mac_anchor + tests, 1)
+          exact_gate.write_text(exact, encoding="utf-8")
+          PY
+
+      - name: Validate all converged producer contracts
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py
+          git diff --check
+
+      - name: Commit converged candidate for connector re-anchor
+        run: |
+          rm .github/workflows/_temp_producer_process_custody_convergence.yml
+          git config user.name "nembra-v14-bot"
+          git config user.email "nembra-v14-bot@users.noreply.github.com"
+          git add scripts/ci/xcode27_signed_field_candidate.sh \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py \
+                  .github/workflows/capture-producer-custody-source.yml \
+                  .github/workflows/xcode27-pr-command.yml \
+                  .github/workflows/_temp_producer_process_custody_convergence.yml
+          git commit -m "[Capture red-team v14] Close producer release-process custody"
+          git push origin HEAD:integration/es80-v14-producer-process-custody-current-gpt56-go || true
+          git rev-parse HEAD
