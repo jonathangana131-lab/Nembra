@@ -226,7 +226,20 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     public private(set) var bluetoothState: CBManagerState = .unknown
-    public private(set) var isScanning = false
+
+    /// True while Nembra still owns an explicit foreground scan request. This is
+    /// request intent only; use `isScanning` for CoreBluetooth's current state.
+    public var isScanRequested: Bool {
+        scanRequested
+    }
+
+    /// True only when Nembra owns the request and the exact CoreBluetooth
+    /// manager currently reports that it is scanning. This is software transport
+    /// state, not RF completeness or scan-generation provenance.
+    public var isScanning: Bool {
+        scanRequested && centralManager?.isScanning == true
+    }
+
     public private(set) var connectionPhase: ConnectionPhase = .idle
     public private(set) var discoveredPeripherals: [DiscoveredPeripheral] = []
     public private(set) var lastDiagnostic: String?
@@ -279,6 +292,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
     private var selectedTargetCancellationPending = false
+    private var scanRequested = false
 
     private var centralManager: CBCentralManager!
     private var peripheralByIdentifier: [UUID: CBPeripheral] = [:]
@@ -351,18 +365,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
 
         clearCandidateCatalog()
+        scanRequested = true
         centralManager.scanForPeripherals(
             withServices: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchServiceFilter,
             options: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchScanOptions(
                 captureAdvertisementCadence: captureAdvertisementCadence
             )
         )
-        isScanning = true
     }
 
     public func stopScanning() {
+        scanRequested = false
         centralManager.stopScan()
-        isScanning = false
     }
 
     /// Explicitly selects the observed peripheral as the current research target
@@ -936,8 +950,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         } else {
             lastDiagnostic = "Capture stopped after evidence/acquisition failure: \(String(describing: error))"
         }
+        scanRequested = false
         centralManager.stopScan()
-        isScanning = false
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         if let activePeripheral {
@@ -1071,9 +1085,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         hasObservedInitialCentralState = true
 
         guard central.state == .poweredOn else {
-            if isScanning {
+            scanRequested = false
+            if central.isScanning {
                 central.stopScan()
-                isScanning = false
             }
             if activePeripheral != nil {
                 activePeripheral?.delegate = nil
@@ -1104,7 +1118,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         guard PassiveCoreBluetoothDiscoveryAdmissionPolicy.accepts(
             callbackIsFromActiveManager: central === centralManager,
             isPoweredOn: central.state == .poweredOn,
-            isScanning: isScanning
+            isScanning: scanRequested && central.isScanning
         ) else { return }
 
         let receipt = callbackReceipt()
