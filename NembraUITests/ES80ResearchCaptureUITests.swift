@@ -24,7 +24,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts["Capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned NO-GO must be the primary product state."
+            "The current package-owned NO-GO must remain the primary product state."
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
@@ -34,9 +34,19 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3),
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
+
+        let engineeringDetails = app.buttons["es80.capture.engineering-details"]
         XCTAssertTrue(
-            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
-            "The installed versioned procedure must be identified without becoming executable."
+            engineeringDetails.waitForExistence(timeout: 3),
+            "Exact recipe and authorization truth must remain available behind Engineering details."
+        )
+        XCTAssertFalse(
+            app.staticTexts["ES80-FINGERPRINT-v1"].exists,
+            "Raw recipe vocabulary must not compete with the primary locked-state message before details are requested."
+        )
+        XCTAssertFalse(
+            app.staticTexts["NO-GO"].exists,
+            "Literal authorization vocabulary must remain secondary until Engineering details are requested."
         )
 
         XCTAssertFalse(
@@ -89,9 +99,36 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — Product Physical NO-GO"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @MainActor
+    func testV14EngineeringDetailsKeepExactTruthSecondaryWithoutUnlockingFieldFlow() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--es80-passive-capture"]
+        app.launch()
+
+        let engineeringDetails = app.buttons["es80.capture.engineering-details"]
+        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 5))
+        XCTAssertEqual(engineeringDetails.value as? String, "Collapsed")
+        XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
+        XCTAssertFalse(app.staticTexts["NO-GO"].exists)
+
+        engineeringDetails.tap()
+
+        XCTAssertEqual(engineeringDetails.value as? String, "Expanded")
+        XCTAssertTrue(
+            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
+            "The exact recipe must remain inspectable after deliberately opening Engineering details."
+        )
+        XCTAssertTrue(
+            app.staticTexts["NO-GO"].waitForExistence(timeout: 3),
+            "The exact software authorization state must remain inspectable after deliberate expansion."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
     }
 
     @MainActor
@@ -106,11 +143,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let engineeringDetails = app.buttons["es80.capture.engineering-details"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
@@ -124,22 +162,22 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             context: "physical-run boundary at Accessibility XXXL"
         )
         assertVisibleInScreenshotViewport(
-            recipe,
+            engineeringDetails,
             windowFrame: windowFrame,
-            context: "recipe identity at Accessibility XXXL"
+            context: "Engineering details disclosure at Accessibility XXXL"
         )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Accessibility XXXL"
+        attachment.name = "Nembra Capture V14 — Product NO-GO — Accessibility XXXL"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
     @MainActor
-    func testV14NoGoLandscapeKeepsAuthorityAndProcedureVisible() {
+    func testV14NoGoLandscapeKeepsAuthorityAndEngineeringDisclosureVisible() {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -155,10 +193,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let engineeringDetails = app.buttons["es80.capture.engineering-details"]
         XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
@@ -172,16 +211,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             context: "physical-run boundary in landscape"
         )
         assertVisibleInScreenshotViewport(
-            recipe,
+            engineeringDetails,
             windowFrame: windowFrame,
-            context: "recipe identity in landscape"
+            context: "Engineering details disclosure in landscape"
         )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Landscape"
+        attachment.name = "Nembra Capture V14 — Product NO-GO — Landscape"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
