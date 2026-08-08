@@ -55,6 +55,24 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
     }
 
     @Test
+    func buildIdentifierMustDeriveFromTheExactSourceCommit() throws {
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(
+                    overrides: ["buildIdentifier": "Capture Build V14-111111111111"]
+                )
+            )
+        }
+
+        let differentSource = "123456789abc6789abcdef0123456789abcdef01"
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(overrides: ["sourceCommitSHA": differentSource])
+            )
+        }
+    }
+
+    @Test
     func parsedRecordMechanicallyBindsEveryMeasuredRuntimeBuildFact() throws {
         let runtimeIdentity = try makeRuntimeIdentity()
         let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
@@ -65,31 +83,42 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
     @Test
     func runtimeBindingFailsClosedForEveryMismatchedBuildFact() throws {
         let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
 
         try expectRuntimeBindingFailure(
             .buildIdentifierMismatch,
-            overrides: ["buildIdentifier": "Capture Build V14-other"],
-            runtimeIdentity: runtimeIdentity
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                buildIdentifier: "Capture Build V14-detached"
+            )
         )
         try expectRuntimeBindingFailure(
             .buildInstanceIDMismatch,
-            overrides: ["buildInstanceID": "11111111-2222-3333-4444-555555555555"],
-            runtimeIdentity: runtimeIdentity
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                buildInstanceID: "11111111-2222-3333-4444-555555555555"
+            )
         )
         try expectRuntimeBindingFailure(
             .sourceCommitSHAMismatch,
-            overrides: ["sourceCommitSHA": String(repeating: "c", count: 40)],
-            runtimeIdentity: runtimeIdentity
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                sourceCommitSHA: String(repeating: "c", count: 40)
+            )
         )
         try expectRuntimeBindingFailure(
             .executableSHA256Mismatch,
-            overrides: ["executableSHA256": String(repeating: "d", count: 64)],
-            runtimeIdentity: runtimeIdentity
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                executableData: Data("different runtime executable".utf8)
+            )
         )
         try expectRuntimeBindingFailure(
             .infoPlistSHA256Mismatch,
-            overrides: ["infoPlistSHA256": String(repeating: "e", count: 64)],
-            runtimeIdentity: runtimeIdentity
+            record: record,
+            runtimeIdentity: makeRuntimeIdentity(
+                infoPlistData: Data("different runtime Info.plist".utf8)
+            )
         )
     }
 
@@ -185,15 +214,21 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         }
     }
 
-    private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
+    private func makeRuntimeIdentity(
+        buildIdentifier: String? = nil,
+        buildInstanceID: String? = nil,
+        sourceCommitSHA: String? = nil,
+        executableData: Data = Data("runtime executable fixture".utf8),
+        infoPlistData: Data = Data("runtime Info.plist fixture".utf8)
+    ) throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
         try RuntimeReader.resolveEmbeddedMetadata(
             infoDictionary: [
-                RuntimeReader.buildIdentifierInfoDictionaryKey: buildIdentifier,
-                RuntimeReader.buildInstanceIDInfoDictionaryKey: buildInstanceID,
-                RuntimeReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA,
+                RuntimeReader.buildIdentifierInfoDictionaryKey: buildIdentifier ?? self.buildIdentifier,
+                RuntimeReader.buildInstanceIDInfoDictionaryKey: buildInstanceID ?? self.buildInstanceID,
+                RuntimeReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA ?? self.sourceCommitSHA,
             ],
-            executableData: Data("runtime executable fixture".utf8),
-            infoPlistData: Data("runtime Info.plist fixture".utf8)
+            executableData: executableData,
+            infoPlistData: infoPlistData
         )
     }
 
@@ -215,14 +250,10 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
 
     private func expectRuntimeBindingFailure(
         _ expected: BindingError,
-        overrides: [String: Any],
+        record: PassiveBluetoothCaptureExternalBuildRecord,
         runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
         sourceLocation: SourceLocation = #_sourceLocation
     ) throws {
-        let record = try makeRuntimeBoundRecord(
-            runtimeIdentity: runtimeIdentity,
-            overrides: overrides
-        )
         #expect(throws: expected, sourceLocation: sourceLocation) {
             try record.validateRuntimeBinding(to: runtimeIdentity)
         }
