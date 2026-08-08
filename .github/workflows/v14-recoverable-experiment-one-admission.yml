@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - feature/es80-v14-recoverable-admission-current/gpt56-thinking-r6
-    paths:
-      - .github/workflows/v14-recoverable-experiment-one-admission.yml
 
 permissions:
   contents: write
@@ -17,208 +15,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply recoverable admission repair
-        shell: bash
+      - name: Apply product repair
+        run: python3 scripts/ci/v14_recoverable_admission_patch.py
+      - name: Validate and publish product tree
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          run = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift')
-          s = run.read_text()
-          old = '''    struct Payload {
-        let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
-        let peripheralIdentifier: UUID
-        let recorder: PassiveCoreBluetoothCaptureRecorder
-        /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
-        let issuedAtUptimeNanoseconds: UInt64
-'''
-          new = '''    struct Preview: Equatable, Sendable {
-        let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
-        let peripheralIdentifier: UUID
-        /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
-        let issuedAtUptimeNanoseconds: UInt64
-    }
-
-    struct Payload {
-        let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
-        let peripheralIdentifier: UUID
-        let recorder: PassiveCoreBluetoothCaptureRecorder
-        /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
-        let issuedAtUptimeNanoseconds: UInt64
-'''
-          if s.count(old) != 1:
-              raise SystemExit('unexpected admission Payload declaration')
-          s = s.replace(old, new, 1)
-
-          old = '''    func consume() throws -> Payload {
-        guard !hasBeenConsumed else {
-            throw ConsumptionError.alreadyConsumed
-        }
-        hasBeenConsumed = true
-        return payload
-    }
-'''
-          new = '''    /// Read-only producer-owned staging view. This exposes only the exact target and
-    /// chronology/evidence identity needed to decide whether controller-local rediscovery is ready.
-    /// Reading it does not consume the one-shot ownership handoff.
-    var preview: Preview {
-        Preview(
-            admissionIdentity: payload.admissionIdentity,
-            powerCycleEvidence: payload.powerCycleEvidence,
-            peripheralIdentifier: payload.peripheralIdentifier,
-            issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
-        )
-    }
-
-    func consume() throws -> Payload {
-        guard !hasBeenConsumed else {
-            throw ConsumptionError.alreadyConsumed
-        }
-        hasBeenConsumed = true
-        return payload
-    }
-'''
-          if s.count(old) != 1:
-              raise SystemExit('unexpected admission consume declaration')
-          run.write_text(s.replace(old, new, 1))
-
-          controller = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
-          s = controller.read_text()
-          start = s.index('    func connectUsingExperimentOneAdmission(')
-          end = s.index('    /// Cancels the active attempt', start)
-          method = s[start:end]
-
-          old = '''        let payload = try admission.consume()
-        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                payload.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == payload.peripheralIdentifier else {
-            throw ControllerError.targetSessionChanged
-        }
-        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],
-              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
-        }
-        if discovery.isConnectable == false {
-            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
-        }
-
-        do {
-            try targetState.validateCanBeginAttempt(for: payload.peripheralIdentifier)
-        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
-            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
-        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
-            throw ControllerError.attemptGenerationExhausted
-        } catch {
-            throw ControllerError.targetNotSelected
-        }
-
-        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.
-            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
-        }
-'''
-          new = '''        // Inspect only producer-owned immutable target/chronology metadata first. A target
-        // that has not yet reappeared after the sealed handoff is recoverable by continuing
-        // passive scanning; it must not burn the one-shot admission before any session exists.
-        let preview = admission.preview
-        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                preview.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == preview.peripheralIdentifier else {
-            throw ControllerError.targetSessionChanged
-        }
-        guard let peripheral = peripheralByIdentifier[preview.peripheralIdentifier],
-              let discovery = latestDiscoveryByIdentifier[preview.peripheralIdentifier] else {
-            throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
-        }
-        if discovery.isConnectable == false {
-            throw ControllerError.peripheralNotConnectable(preview.peripheralIdentifier)
-        }
-
-        do {
-            try targetState.validateCanBeginAttempt(for: preview.peripheralIdentifier)
-        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
-            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
-        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
-            throw ControllerError.attemptGenerationExhausted
-        } catch {
-            throw ControllerError.targetNotSelected
-        }
-
-        guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.
-            throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
-        }
-
-        // All recoverable controller-local staging checks have passed. Consume exactly once at
-        // the irreversible ownership handoff, then prove the consumed producer payload is the
-        // same immutable authority that was previewed before publishing its recorder.
-        let payload = try admission.consume()
-        guard payload.admissionIdentity == preview.admissionIdentity,
-              payload.powerCycleEvidence == preview.powerCycleEvidence,
-              payload.peripheralIdentifier == preview.peripheralIdentifier,
-              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds else {
-            throw ControllerError.targetSessionChanged
-        }
-'''
-          if method.count(old) != 1:
-              raise SystemExit('unexpected Experiment One consumer staging block')
-          method = method.replace(old, new, 1)
-          s = s[:start] + method + s[end:]
-          controller.write_text(s)
-          PY
-
-          git show 313f9aeb52c550c350c819996c434b6076447a9d:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift
-
-          python3 - <<'PY'
-          from pathlib import Path
-          c = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift').read_text()
-          a = c.index('func connectUsingExperimentOneAdmission(')
-          b = c.index('public func cancelActiveConnection()', a)
-          m = c[a:b]
-          for token in [
-              'let preview = admission.preview',
-              'peripheralByIdentifier[preview.peripheralIdentifier]',
-              'latestDiscoveryByIdentifier[preview.peripheralIdentifier]',
-              'targetState.validateCanBeginAttempt(for: preview.peripheralIdentifier)',
-              'latestAdvertisementByIdentifier[preview.peripheralIdentifier]',
-              'receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds',
-              'let payload = try admission.consume()',
-              'payload.admissionIdentity == preview.admissionIdentity',
-              'recorder = payload.recorder',
-          ]:
-              assert token in m, token
-          assert m.index('peripheralByIdentifier[') < m.index('admission.consume()')
-          assert m.index('latestDiscoveryByIdentifier[') < m.index('admission.consume()')
-          assert m.index('targetState.validateCanBeginAttempt(') < m.index('admission.consume()')
-          assert m.index('latestAdvertisementByIdentifier[') < m.index('admission.consume()')
-          assert m.index('receivedAtUptimeNanoseconds >=') < m.index('admission.consume()')
-          assert m.index('admission.consume()') < m.index('recorder = payload.recorder')
-          assert m.count('admission.consume()') == 1
-          r = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift').read_text()
-          assert 'struct Preview: Equatable, Sendable' in r
-          assert 'var preview: Preview' in r
-          assert r.count('func consume() throws -> Payload') == 1
-          PY
-
           git diff --check
-      - name: Commit product and remove staging workflow
-        shell: bash
-        run: |
-          set -euo pipefail
           rm .github/workflows/v14-recoverable-experiment-one-admission.yml
+          rm scripts/ci/v14_recoverable_admission_patch.py
           git add -A
           git diff --cached --check
           git config user.name nembra-v14-gpt56
           git config user.email actions@users.noreply.github.com
-          git commit -m 'Capture: preserve admission across recoverable rediscovery'
+          git commit -m "Capture: preserve admission across recoverable rediscovery"
           git push origin HEAD:feature/es80-v14-recoverable-admission-current/gpt56-thinking-r6
