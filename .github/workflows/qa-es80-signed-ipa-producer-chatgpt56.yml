@@ -1,0 +1,86 @@
+name: ES80 Signed IPA Producer Source QA
+
+on:
+  push:
+    branches:
+      - cell/es80-v14-signed-ipa-producer/ci/chatgpt56-thinking-go
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Prove exact product parent and workflow-only mirror delta
+        env:
+          EXPECTED_PRODUCT_HEAD: efa284e104ff676456c75f10c2790418c102e0cc
+          EXPECTED_WORKFLOW: .github/workflows/qa-es80-signed-ipa-producer-chatgpt56.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_HEAD"
+          changed_paths="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed_paths" = "$EXPECTED_WORKFLOW"
+
+      - name: Parse producer shell
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/xcode27_signed_capture_ipa.sh
+
+      - name: Run canonical field-evidence self-test
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+
+      - name: Assert single-format and fail-closed producer contract
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path("scripts/field/xcode27_signed_capture_ipa.sh").read_text(encoding="utf-8")
+          doc = Path("docs/ES80_SIGNED_FIELD_IPA_PRODUCTION.md").read_text(encoding="utf-8")
+
+          required_script = [
+              "-exportArchive",
+              "NEMBRA_EXPORT_OPTIONS_PLIST",
+              "refusing to delete or overwrite field-production state",
+              "scripts/ci/es80_signed_field_artifact_evidence.py",
+              '"authority"',
+              "signed-field-artifact-evidence-not-field-authorization",
+              'field.get("teamIdentifier") != expected_team',
+              "externalBuildRecordSHA256",
+              "THIS IS PRODUCER + EVIDENCE OUTPUT ONLY, NOT PHYSICAL FIELD AUTHORIZATION.",
+          ]
+          for fragment in required_script:
+              if fragment not in script:
+                  raise SystemExit(f"missing IPA-producer truth guard: {fragment}")
+
+          forbidden_script = [
+              "rm -rf",
+              "NembraCaptureSignedFieldCandidateEvidence.json",
+              '"decision": "GO"',
+              "PassiveBluetoothExperimentOneFieldExecutionGate",
+          ]
+          for fragment in forbidden_script:
+              if fragment in script:
+                  raise SystemExit(f"forbidden competing/destructive/authority material: {fragment}")
+
+          required_doc = [
+              "one canonical signed-IPA evidence verifier",
+              "does **not** create a parallel signed-candidate JSON schema",
+              "PHYSICAL EXPERIMENT ONE REMAINS NO-GO",
+              "refuses an artifact or DerivedData path that already exists",
+              "intended installation route",
+          ]
+          for fragment in required_doc:
+              if fragment not in doc:
+                  raise SystemExit(f"missing IPA-production truth documentation: {fragment}")
+          PY
