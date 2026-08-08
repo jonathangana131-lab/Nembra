@@ -45,7 +45,10 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
             source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(")?.lowerBound
         )
         let end = try #require(
-            source.range(of: "    private func beginTargetSessionIfNeeded", range: start..<source.endIndex)?.lowerBound
+            source.range(
+                of: "    private func scheduleAbortedFreshTargetSessionRecoveryIfNeeded()",
+                range: start..<source.endIndex
+            )?.lowerBound
         )
         let recovery = source[start..<end]
 
