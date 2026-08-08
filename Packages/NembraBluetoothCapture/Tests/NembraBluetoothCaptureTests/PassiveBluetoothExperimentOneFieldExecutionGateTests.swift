@@ -17,6 +17,17 @@ struct PassiveBluetoothExperimentOneFieldExecutionGateTests {
         #expect(!Gate.permitsPhysicalProcedure)
     }
 
+    @Test("ordinary package/test build cannot construct live CoreBluetooth")
+    @MainActor
+    func ordinaryBuildCannotConstructLiveCoordinator() {
+        #expect(
+            throws: PassiveBluetoothExperimentOneCoordinator.CanonicalES80ConstructionError
+                .fieldExecutionNotAuthorized
+        ) {
+            _ = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        }
+    }
+
     @Test("canonical exact-source signed research metadata admits the compiled passive recipe")
     func canonicalResearchBuildAdmits() throws {
         let info = researchInfoDictionary()
