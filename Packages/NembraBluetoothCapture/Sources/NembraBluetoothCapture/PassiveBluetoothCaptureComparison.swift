@@ -53,7 +53,7 @@ public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
     public let lastPayload: Data?
     public let uniquePayloads: Set<Data>
 
-    public init(
+    fileprivate init(
         key: PassiveBluetoothValueStreamKey,
         origin: PassiveBluetoothValueOrigin,
         sampleCount: Int,
@@ -100,7 +100,7 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
         PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 
-    public init(
+    fileprivate init(
         key: PassiveBluetoothValueStreamKey,
         origin: PassiveBluetoothValueOrigin,
         presence: Presence,
@@ -184,7 +184,7 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let sharedServices: Set<String>?
     public let streamComparisons: [PassiveBluetoothValueStreamComparison]
 
-    public init(
+    fileprivate init(
         baselineRecordCount: Int,
         comparisonRecordCount: Int,
         baselinePeripheralIdentifier: String?,
@@ -389,8 +389,8 @@ public enum PassiveBluetoothCaptureComparison {
             case let .value(value):
                 let key = PassiveBluetoothValueStreamKey(
                     peripheralIdentifier: value.peripheralIdentifier,
-                    serviceUUID: value.serviceUUID,
-                    characteristicUUID: value.characteristicUUID
+                    serviceUUID: normalize(value.serviceUUID),
+                    characteristicUUID: normalize(value.characteristicUUID)
                 )
                 let identity = PassiveBluetoothValueStreamComparisonIdentity(
                     key: key,
