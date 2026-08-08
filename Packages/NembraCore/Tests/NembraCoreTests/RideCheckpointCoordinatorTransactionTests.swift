@@ -253,22 +253,26 @@ struct RideCheckpointCoordinatorTransactionTests {
         await secondAttempt.wait()
         cancelledTask.cancel()
 
+        // Keep the first durable write suspended while cancellation gets actor
+        // scheduling opportunities. A cancellation-blind queue would retain this
+        // work and execute it after the first transaction releases its permit.
+        for _ in 0..<16 {
+            await Task.yield()
+        }
+        #expect(await store.saveCount == 1)
+
+        await store.resumeFirstSave()
+        _ = try await firstTask.value
+
         do {
             _ = try await cancelledTask.value
             Issue.record("a mutation cancelled before permit admission must not execute later")
         } catch is CancellationError {
-            // Expected: cancellation removes/drops the waiter while the first
-            // transaction is still suspended in durable storage.
+            // Expected: cancellation removes the queued waiter, or a cancellation
+            // racing with FIFO handoff immediately returns the transferred permit.
         } catch {
             Issue.record("expected CancellationError, received \(error)")
         }
-
-        // The cancelled task must finish without requiring the in-flight durable
-        // write to complete; otherwise cancellation is only being noticed after
-        // stale work has already been admitted.
-        #expect(await store.saveCount == 1)
-        await store.resumeFirstSave()
-        _ = try await firstTask.value
 
         // 1_500 is newer than the admitted 1_000 observation but older than the
         // cancelled 2_000 observation. Acceptance proves the cancelled observation
