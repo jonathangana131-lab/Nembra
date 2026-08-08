@@ -249,28 +249,21 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return queueSequence > transaction.queueCutoff
     }
 
-    /// Requests a fresh lifecycle grammar after the previous capture has either not
-    /// started its ready transaction or has reached terminal immutable-artifact freeze.
+    /// Requests a fresh lifecycle grammar only when no observation transaction has
+    /// begun yet. Once Ready starts, this gate remains closed through terminal freeze.
     ///
-    /// An unresolved ready/horizon transaction must never lose its cutoff merely
-    /// because another capture session is being prepared. Likewise, `.observing`
-    /// retains the committed ready authority until a terminal horizon is established.
-    /// A future explicit abort/detach contract may add another authorized reset path;
-    /// absent that authority, refusing the reset is the fail-closed behavior.
+    /// Terminal artifact freeze proves the immutable artifact is sealed; it does NOT
+    /// prove callbacks intentionally withheld after Horizon have been retired from
+    /// the controller FIFO. Reopening here would erase their terminal quarantine and
+    /// make old-generation post-cut evidence drainable again. A future explicit
+    /// controller-owned retirement/abort operation must prove the old queue generation
+    /// is gone before this gate gains a terminal -> awaitingReady transition.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
-        switch phase {
-        case .awaitingReady:
-            committedReadyTransaction = nil
-            return true
-
-        case .terminal:
-            committedReadyTransaction = nil
-            phase = .awaitingReady
-            return true
-
-        case .drainingReady, .observing, .drainingHorizon, .horizonBoundaryRecorded:
+        guard phase == .awaitingReady else {
             return false
         }
+        committedReadyTransaction = nil
+        return true
     }
 }
