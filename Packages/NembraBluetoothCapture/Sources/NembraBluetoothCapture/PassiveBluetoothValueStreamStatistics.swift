@@ -56,9 +56,13 @@ public struct PassiveBluetoothValueStreamStatistics: Equatable, Sendable {
 }
 
 public enum PassiveBluetoothValueStreamAnalysis {
+    /// Raw callback cadence is meaningful only within one authoritative byte-
+    /// continuity segment. The boundary is capture-wide: every Core event marked
+    /// `breaksByteContinuity` starts a new segment for every stream, regardless of
+    /// which peripheral supplied that boundary event. Stream identity remains
+    /// target-specific; continuity truth and target attribution are separate.
     private struct ContinuitySegment: Hashable {
-        let lastGlobalBoundarySequence: UInt64
-        let lastPeripheralDisconnectSequence: UInt64
+        let lastKnownByteContinuityBreakSequence: UInt64
     }
 
     private struct Accumulator {
@@ -115,23 +119,28 @@ public enum PassiveBluetoothValueStreamAnalysis {
     }
 
     public static func summarize(_ session: PassiveBluetoothCaptureSession) -> [PassiveBluetoothValueStreamStatistics] {
-        var lastGlobalBoundarySequence: UInt64 = 0
-        var lastDisconnectSequenceByPeripheral: [String: UInt64] = [:]
+        var lastKnownByteContinuityBreakSequence: UInt64 = 0
         var accumulators: [PassiveBluetoothValueStreamKey: Accumulator] = [:]
 
         for record in session.records {
-            switch record.event {
-            case .interruption:
-                lastGlobalBoundarySequence = record.sequenceNumber
-            case let .connection(observation) where observation.state == .disconnected:
-                lastDisconnectSequenceByPeripheral[observation.peripheralIdentifier] = record.sequenceNumber
-            case let .value(value):
-                let key = PassiveBluetoothValueStreamKey(peripheralIdentifier: value.peripheralIdentifier, serviceUUID: value.serviceUUID, characteristicUUID: value.characteristicUUID)
-                let segment = ContinuitySegment(lastGlobalBoundarySequence: lastGlobalBoundarySequence, lastPeripheralDisconnectSequence: lastDisconnectSequenceByPeripheral[value.peripheralIdentifier, default: 0])
-                accumulators[key, default: Accumulator()].ingest(value, uptime: record.receivedAtUptimeNanoseconds, segment: segment)
-            default:
-                continue
+            if record.event.breaksByteContinuity {
+                lastKnownByteContinuityBreakSequence = record.sequenceNumber
             }
+
+            guard case let .value(value) = record.event else { continue }
+            let key = PassiveBluetoothValueStreamKey(
+                peripheralIdentifier: value.peripheralIdentifier,
+                serviceUUID: value.serviceUUID,
+                characteristicUUID: value.characteristicUUID
+            )
+            let segment = ContinuitySegment(
+                lastKnownByteContinuityBreakSequence: lastKnownByteContinuityBreakSequence
+            )
+            accumulators[key, default: Accumulator()].ingest(
+                value,
+                uptime: record.receivedAtUptimeNanoseconds,
+                segment: segment
+            )
         }
 
         return accumulators.keys.sorted().compactMap { key in accumulators[key]?.finalize(key: key) }
