@@ -1,0 +1,107 @@
+name: ES80 Finalization Authority Patch
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-capture/patch/chat-n7q4m-finalization-auth-1'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-owned-controller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: parallel/es80-passive-lifecycle-fences/chat-n7q4m
+      EXPECTED_TARGET_HEAD: f1771cab72d3219953892658c6b59d9bc1230130
+      EXPECTED_CONTROLLER_BLOB: 67ae8be047a57b31b97bd9839b89c293cb0835c8
+      CONTROLLER_PATH: Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Patch exact owned controller atomically
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse "origin/$TARGET_BRANCH")" = "$EXPECTED_TARGET_HEAD"
+          git checkout -B product "origin/$TARGET_BRANCH"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+
+          def replace_once(old, new, label):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one source match, got {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "        case artifactReadAlreadyActive\n        case captureIncomplete\n",
+              "        case artifactReadAlreadyActive\n        case artifactNotFinalized\n        case captureIncomplete\n",
+              "controller error",
+          )
+          replace_once(
+              "    private var artifactAuthorityGeneration: UInt64 = 0\n    private var targetState = PassiveCoreBluetoothTargetState()\n",
+              "    private var artifactAuthorityGeneration: UInt64 = 0\n    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    private var targetState = PassiveCoreBluetoothTargetState()\n",
+              "finalization authority state",
+          )
+
+          teardown_start = source.index("    public func teardownActiveConnectionAfterFinalization() {\n")
+          teardown_end = source.index("    private func cancelActiveConnection(cause:", teardown_start)
+          teardown_lines = [
+              "    public func teardownActiveConnectionAfterFinalization() throws {",
+              "        guard activePeripheral != nil else { return }",
+              "        guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+              "              finalizedAuthority.matches(",
+              "                targetSessionGeneration: targetSessionGeneration,",
+              "                authorityGeneration: artifactAuthorityGeneration",
+              "              ) else {",
+              "            throw ControllerError.artifactNotFinalized",
+              "        }",
+              "        cancelActiveConnection(cause: .finalizedArtifactTeardown)",
+              "    }",
+              "",
+          ]
+          source = source[:teardown_start] + "\n".join(teardown_lines) + "\n" + source[teardown_end:]
+
+          replace_once(
+              "        let snapshot = await context.recorder.snapshot()\n        try validate(context)\n        return snapshot\n",
+              "        let snapshot = await context.recorder.snapshot()\n        try validate(context)\n        lastFinalizedArtifactAuthority = context.authority\n        return snapshot\n",
+              "snapshot authorization",
+          )
+          replace_once(
+              "        let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)\n        try validate(context)\n        return data\n",
+              "        let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)\n        try validate(context)\n        lastFinalizedArtifactAuthority = context.authority\n        return data\n",
+              "encoded authorization",
+          )
+          replace_once(
+              "        artifactAuthorityGeneration += 1\n        return true\n",
+              "        lastFinalizedArtifactAuthority = nil\n        artifactAuthorityGeneration += 1\n        return true\n",
+              "authority revocation",
+          )
+
+          path.write_text(source)
+          PY
+
+          git diff --check
+          test "$(git hash-object "$CONTROLLER_PATH")" = "$EXPECTED_CONTROLLER_BLOB"
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "1"
+          test "$(git diff --name-only)" = "$CONTROLLER_PATH"
+          if grep -n -E '\.writeValue[[:space:]]*\(' "$CONTROLLER_PATH"; then
+            echo 'Passive ES80 capture controller must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+          git config user.name 'nembra-lifecycle-bot'
+          git config user.email 'nembra-lifecycle-bot@users.noreply.github.com'
+          git add "$CONTROLLER_PATH"
+          git commit -m '[es80 passive lifecycle] Gate finalized teardown on frozen artifact'
+          git push origin HEAD:"$TARGET_BRANCH"
