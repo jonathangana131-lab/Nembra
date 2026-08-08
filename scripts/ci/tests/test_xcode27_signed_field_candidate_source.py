@@ -63,12 +63,11 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('IPA_FILES=(', self.source)
         self.assertIn('Expected exactly one exported .ipa', self.source)
 
-    def test_retains_external_export_policy_and_logs(self):
-        self.assertIn('ExportOptions.plist', self.source)
-        self.assertIn('EXPORT_OPTIONS_SHA256=', self.source)
-        self.assertIn('xcodebuild-archive.log', self.source)
-        self.assertIn('xcodebuild-export.log', self.source)
+    def test_preserves_inspector_owned_failure_atomic_publication(self):
+        self.assertIn('Do not pre-create this path', self.source)
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
+        self.assertNotIn('mkdir -p "$ARTIFACTS_DIR', self.source)
+        self.assertNotIn('cp -p "$NEMBRA_EXPORT_OPTIONS_PLIST" "$ARTIFACTS_DIR', self.source)
 
     def test_keeps_generated_evidence_out_of_source_identity(self):
         self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID', self.source)
