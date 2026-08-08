@@ -157,6 +157,34 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "duplicate ZIP member"):
                 signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
 
+    def test_case_or_unicode_aliasing_archive_namespace_fails_closed(self):
+        cases = [
+            [("Payload/nembra.app/Other", b"alias")],
+            [
+                ("Payload/Nembra.app/Café", b"first"),
+                ("Payload/Nembra.app/Café", b"second"),
+            ],
+        ]
+        for members in cases:
+            with self.subTest(members=members), tempfile.TemporaryDirectory() as temp:
+                ipa = Path(temp) / "Nembra.ipa"
+                make_ipa(ipa, extra_members=members)
+                with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "filesystem-aliasing"):
+                    signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
+    def test_platform_array_matches_closed_world_consumer_rules(self):
+        cases = [
+            (["iPhoneOS", "iPhoneOS"], "duplicate"),
+            (["iPhoneOS", "iphonesimulator"], "Simulator"),
+            (["iPhoneOS", " WatchOS"], "malformed"),
+        ]
+        for supported, message in cases:
+            with self.subTest(supported=supported), tempfile.TemporaryDirectory() as temp:
+                ipa = Path(temp) / "Nembra.ipa"
+                make_ipa(ipa, extra_plist={"CFBundleSupportedPlatforms": supported})
+                with self.assertRaisesRegex(signed_field_evidence.EvidenceError, message):
+                    signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
     def test_duplicate_app_payload_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             ipa = Path(temp) / "Nembra.ipa"

@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -102,9 +103,29 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
-def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
+def _filesystem_alias_key(parts: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(unicodedata.normalize("NFC", part).casefold() for part in parts)
+
+
+def _require_unique_member_path(
+    member: PurePosixPath,
+    seen_members: set[PurePosixPath],
+    seen_aliases: dict[tuple[str, ...], PurePosixPath],
+) -> None:
     if member in seen_members:
         raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
+
+    parts = member.parts
+    for depth in range(1, len(parts) + 1):
+        prefix = PurePosixPath(*parts[:depth])
+        key = _filesystem_alias_key(parts[:depth])
+        previous = seen_aliases.get(key)
+        if previous is not None and previous != prefix:
+            raise EvidenceError(
+                "IPA contains filesystem-aliasing ZIP member path: "
+                f"{str(prefix)!r} aliases {str(previous)!r}"
+            )
+        seen_aliases[key] = prefix
     seen_members.add(member)
 
 
@@ -116,10 +137,11 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
 
     app_roots: set[str] = set()
     seen_members: set[PurePosixPath] = set()
+    seen_aliases: dict[tuple[str, ...], PurePosixPath] = {}
     with archive:
         for info in archive.infolist():
             member = _safe_member_path(info.filename.rstrip("/"))
-            _require_unique_member_path(member, seen_members)
+            _require_unique_member_path(member, seen_members, seen_aliases)
 
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
@@ -176,13 +198,23 @@ def plist_string(info: dict, key: str) -> str:
 def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     platform = info.get("DTPlatformName")
     supported = info.get("CFBundleSupportedPlatforms")
-    if not isinstance(supported, list) or not all(isinstance(item, str) for item in supported):
-        raise EvidenceError("field IPA must carry a string CFBundleSupportedPlatforms array")
+    if not isinstance(supported, list) or not supported or not all(isinstance(item, str) for item in supported):
+        raise EvidenceError("field IPA must carry a non-empty string CFBundleSupportedPlatforms array")
+    if len(set(supported)) != len(supported):
+        raise EvidenceError("field IPA CFBundleSupportedPlatforms must not contain duplicate values")
+    for item in supported:
+        if (
+            not item
+            or len(item.encode("utf-8")) > 256
+            or item != item.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in item)
+        ):
+            raise EvidenceError("field IPA CFBundleSupportedPlatforms contains a malformed value")
     if platform != "iphoneos":
         raise EvidenceError(f"field IPA must declare DTPlatformName=iphoneos; got {platform!r}")
     if "iPhoneOS" not in supported:
         raise EvidenceError(f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported!r}")
-    if any("Simulator" in item for item in supported):
+    if any("simulator" in item.casefold() for item in supported):
         raise EvidenceError("Simulator platform declaration is forbidden in field IPA evidence")
     return platform, supported
 
