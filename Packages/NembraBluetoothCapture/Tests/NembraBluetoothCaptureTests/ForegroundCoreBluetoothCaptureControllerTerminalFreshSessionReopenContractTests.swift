@@ -45,17 +45,29 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionReopenContrac
         #expect(finalization.contains("lastFinalizedArtifactAuthority = committedHorizon.authority"))
     }
 
-    @Test("fresh-session reopen proves applied chronology and waits out same-target terminal callback quarantine")
+    @Test("fresh-session reopen proves applied chronology, real recorder provisioning, and cleared callback quarantine")
     func freshRecoveryConsumesExactAppliedResolution() throws {
         let source = try Self.controllerSource()
 
         // The old same-target helper deliberately returns while a recorder exists and
         // calls raw reset, so it cannot be the terminal-recovery path. Recovery needs
-        // an explicit fresh durable recorder/session before reopening the preserved gate.
+        // producer-issued proof that a new recorder was actually constructed.
         #expect(source.contains("guard !isSelectedTargetAwaitingTerminalCallback else"))
+        #expect(source.contains("PassiveCoreBluetoothTerminalFreshTargetSession.create("))
+        #expect(source.contains("recorder = freshTargetSession.recorder"))
         #expect(source.contains("reopenAfterTerminalQueueResolution("))
         #expect(source.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(source.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
-        #expect(source.contains("freshTargetSessionGeneration: targetSessionGeneration"))
+
+        // Accept the current scalar-shaped gate only when the scalar is derived from
+        // the producer-issued fresh-recorder receipt, while allowing a stronger gate
+        // successor to consume that receipt directly.
+        let scalarReceiptConsumption = source.contains(
+            "freshTargetSessionGeneration: freshTargetSession.receipt.targetSessionGeneration"
+        )
+        let directReceiptConsumption = source.contains(
+            "freshTargetSession: freshTargetSession.receipt"
+        )
+        #expect(scalarReceiptConsumption || directReceiptConsumption)
     }
 }
