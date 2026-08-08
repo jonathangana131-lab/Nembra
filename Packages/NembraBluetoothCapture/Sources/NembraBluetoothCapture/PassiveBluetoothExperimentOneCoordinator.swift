@@ -88,9 +88,11 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     /// controller catalog created after admission issuance. Calling this too early therefore fails
     /// without consuming the one-shot handoff.
     ///
-    /// Once controller consumption is attempted, this coordinator clears its local admission even
-    /// if the controller fails: downstream failures may have consumed package authority, so retrying
-    /// the same opaque handoff would be ambiguous. A new Experiment One run is the fail-closed path.
+    /// Controller-side staging may still fail after this coordinator's descriptive catalog check
+    /// (for example because the exact post-admission advertisement has not reached the controller's
+    /// accepted freshness boundary yet). Those failures remain retryable only while the producer-owned
+    /// admission itself is still unconsumed. Once the controller consumes the admission, the local
+    /// handoff is cleared fail-closed even if a later irreversible step throws.
     public func connectPreparedCapture(
         timeout: TimeInterval = 12
     ) throws {
@@ -105,10 +107,19 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             throw CoordinatorError.targetNotConnectable(identifier)
         }
 
-        defer {
+        do {
+            try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
+        } catch {
+            // `stagingPreview()` is producer-owned and read-only. It succeeds only while this exact
+            // one-shot admission remains unconsumed. Preserve the handoff for a legitimate retry in
+            // that case; otherwise clear it because downstream ownership may already have changed.
+            if (try? admission.stagingPreview()) == nil {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            }
+            throw error
         }
-        try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
     }
 }
