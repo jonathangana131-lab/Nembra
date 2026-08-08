@@ -38,7 +38,7 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
         let fixture = PassiveBluetoothExperimentOneSimulatorQAFixture.make()
         var visited: [PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario] = []
 
-        for expected in PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.allCases {
+        for expected in PassiveBluetoothExperimentOneSimulatorQAFixture.happyPathScenarios {
             let snapshot = fixture.snapshot
             visited.append(snapshot.scenario)
 
@@ -55,8 +55,17 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
             _ = fixture.advance()
         }
 
-        #expect(visited == PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.allCases)
-        #expect(fixture.snapshot.scenario == .foregroundInterrupted)
+        #expect(visited == PassiveBluetoothExperimentOneSimulatorQAFixture.happyPathScenarios)
+        #expect(fixture.snapshot.scenario == .shareRetry)
+
+        let interrupted = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(
+            for: .foregroundInterrupted
+        )
+        #expect(interrupted.artifactState == .invalidated)
+        #expect(interrupted.correlation == .invalidEvidence)
+        #expect(interrupted.connection == .unavailable)
+        #expect(!interrupted.physicalProcedurePermitted)
+        #expect(!interrupted.mayUseBluetoothTransport)
 
         let reset = fixture.reset()
         #expect(reset.scenario == .stationaryPreflight)
