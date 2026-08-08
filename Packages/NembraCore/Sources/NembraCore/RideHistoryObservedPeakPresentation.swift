@@ -1,6 +1,6 @@
 import Foundation
 
-public enum RideHistoryObservedPeakPresentationError: Error, Equatable, Sendable {
+enum RideHistoryObservedPeakPresentationError: Error, Equatable, Sendable {
     case invalidJoinedEvidence
 }
 
@@ -20,12 +20,15 @@ public enum RideHistoryObservedPeakPresentationState: String, Equatable, Sendabl
     case qualifiedObservedMaximum
 }
 
-/// Stable semantic projection for Ride Details / accessibility consumers.
+/// Stable semantic projection for a future sealed Ride Details / accessibility
+/// integration.
 ///
 /// This type is intentionally not Codable. Durable history stores the raw evidence
 /// required to recompute qualification; it never stores this derived presentation
-/// verdict. `acceptedObservedSpeedEvidenceMetersPerSecond` may be present in the
-/// unqualified state because the observation itself is real. Only
+/// verdict. External callers can read a projection produced by NembraCore, but they
+/// cannot invoke the module-owned presenter on caller-authored durable history.
+/// `acceptedObservedSpeedEvidenceMetersPerSecond` may be present in the unqualified
+/// state because the observation itself is real. Only
 /// `qualifiedObservedMaximumMetersPerSecond` may be paired with observed-maximum
 /// wording.
 public struct RideHistoryObservedPeakPresentation: Equatable, Sendable {
@@ -73,13 +76,16 @@ public struct RideHistoryObservedPeakPresentation: Equatable, Sendable {
     }
 }
 
-public enum RideHistoryObservedPeakPresenter {
+/// Module-owned promotion from structurally joined durable evidence into product
+/// wording authority. This deliberately is not public: a future package-owned
+/// persistence adapter must be the only public route that can mint this projection.
+enum RideHistoryObservedPeakPresenter {
     /// Revalidates durable raw evidence every time it creates a product projection.
     ///
-    /// Qualification is never read from a cached/persisted boolean. The trusted
-    /// joined record has already proven the attachment belongs to the exact
-    /// immutable completed ride; this layer then reruns its retained quality policy.
-    public static func present(
+    /// Qualification is never read from a cached/persisted boolean. The joined
+    /// record has proven structural completed-ride binding, and NembraCore then
+    /// reruns its retained quality policy before any observed-max wording is minted.
+    static func present(
         _ joined: RideHistoryObservedPeakJoinedRecord
     ) throws -> RideHistoryObservedPeakPresentation {
         let evidence = joined.observedPeakRecord.evidence
@@ -95,7 +101,7 @@ public enum RideHistoryObservedPeakPresenter {
             throw RideHistoryObservedPeakPresentationError.invalidJoinedEvidence
         }
 
-        guard assessment.isReadinessReady == assessment.failures.isEmpty else {
+        guard assessment.telemetryQuality.source == evidence.source else {
             throw RideHistoryObservedPeakPresentationError.invalidJoinedEvidence
         }
 
@@ -117,7 +123,8 @@ public enum RideHistoryObservedPeakPresenter {
             )
         }
 
-        guard completedPeak.sessionID == joined.sessionID,
+        guard !assessment.failures.contains(.peakUnavailable),
+              completedPeak.sessionID == joined.sessionID,
               completedPeak.source == evidence.source,
               completedPeak.source != .motionAssist,
               completedPeak.metersPerSecond.isFinite,
