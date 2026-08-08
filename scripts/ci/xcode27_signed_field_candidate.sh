@@ -24,7 +24,11 @@ if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
   exit 4
 fi
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
+EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
 
+# A dirty invocation checkout is never accepted. This is defense in depth only: the actual build
+# below is performed from a fresh detached worktree at SOURCE_SHA so a later mutation, ignored file,
+# or concurrent worker cannot silently become bytes stamped as this exact commit.
 REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
@@ -47,12 +51,16 @@ if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 fi
 
 WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BUILD_INSTANCE_ID}"
+SOURCE_ROOT="$WORK_ROOT/source"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
+if [[ "$ARTIFACTS_DIR" != /* ]]; then
+  ARTIFACTS_DIR="$ROOT/$ARTIFACTS_DIR"
+fi
 
-# Candidate evidence written inside the checkout must already be ignored. Otherwise a successful
-# producer run would silently dirty the exact source checkout after admission and weaken provenance.
+# Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a
+# successful producer run would silently dirty the operator checkout after admission.
 if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
@@ -62,6 +70,23 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
 fi
 
 rm -rf "$WORK_ROOT"
+mkdir -p "$WORK_ROOT"
+git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
+
+cleanup() {
+  cd "$ROOT" >/dev/null 2>&1 || true
+  git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
+  rm -rf "$WORK_ROOT"
+}
+trap cleanup EXIT
+
+cd "$SOURCE_ROOT"
+IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
+IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
+  echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
+  exit 9
+fi
 mkdir -p "$EXPORT_DIR"
 
 PROVISIONING_ARGS=()
@@ -86,16 +111,18 @@ xcodebuild \
   -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist "$NEMBRA_EXPORT_OPTIONS_PLIST" \
+  -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
   "${PROVISIONING_ARGS[@]}"
 
-# Re-prove exact source after archive/export but before writing field-candidate evidence. All Xcode
-# output above lives outside the checkout, so any visible delta is an unexpected source mutation.
-POST_BUILD_REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
-if [[ -n "$POST_BUILD_REPOSITORY_STATUS" ]]; then
-  echo "Archive/export changed non-ignored repository state; refusing exact-HEAD candidate evidence." >&2
-  printf '%s\n' "$POST_BUILD_REPOSITORY_STATUS" >&2
-  exit 9
+# The detached worktree itself must still be clean after archive/export. Xcode products live under
+# WORK_ROOT outside SOURCE_ROOT, so a visible source delta means the exact-commit build boundary was
+# violated and no candidate evidence is allowed to be emitted.
+POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
+if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
+  echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
+  printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
+  exit 10
 fi
 
 shopt -s nullglob
@@ -104,13 +131,13 @@ shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 10
+  exit 11
 fi
 IPA_PATH="${IPA_FILES[0]}"
 
-# Reuse the current flagship's canonical post-build evidence owner instead of creating a
-# competing signed-field record/verifier. It reopens the final IPA, verifies iphoneos/codesign,
-# hashes the exact final bytes, retains the IPA, and emits schema-v3 + field companion evidence.
+# Reuse the exact canonical post-build evidence implementation from the same immutable source
+# snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
+# exact final bytes, retains the IPA, and emits schema-v3 + field companion evidence without GO.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
