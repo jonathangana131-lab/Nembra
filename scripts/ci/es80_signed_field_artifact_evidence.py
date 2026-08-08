@@ -9,8 +9,11 @@ and emits external evidence that a separate trusted acceptance step may attest/r
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
+import os
 import plistlib
 import re
 import shutil
@@ -40,6 +43,42 @@ UUID_RE = re.compile(
 
 class EvidenceError(RuntimeError):
     pass
+
+
+def publish_directory_no_replace(staging_dir: Path, output_dir: Path) -> None:
+    """Atomically rename a complete directory while refusing any existing destination."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    source = os.fsencode(staging_dir)
+    destination = os.fsencode(output_dir)
+
+    if sys.platform == "darwin":
+        rename_exclusive = libc.renamex_np
+        rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(source, destination, 0x00000004)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename_exclusive = libc.renameat2
+        rename_exclusive.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(-100, source, -100, destination, 0x00000001)  # RENAME_NOREPLACE
+    else:
+        raise EvidenceError(
+            f"atomic no-replace evidence publication is unsupported on {sys.platform!r}"
+        )
+
+    if result != 0:
+        error_number = ctypes.get_errno()
+        if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+            raise EvidenceError(
+                f"refusing to overwrite concurrently created field evidence: {output_dir}"
+            )
+        raise OSError(error_number, os.strerror(error_number), str(output_dir))
 
 
 def sha256_file(path: Path) -> str:
@@ -405,7 +444,7 @@ def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[st
             raise EvidenceError("written field-build evidence digest diverged from signing inspection")
 
         signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
-        staging_dir.replace(output_dir)
+        publish_directory_no_replace(staging_dir, output_dir)
         published = True
     finally:
         if not published:
@@ -492,6 +531,21 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("existing evidence directory must never be overwritten")
+
+        competing_staging = root / ".competing.staging"
+        competing_staging.mkdir()
+        (competing_staging / "complete").write_text("candidate", encoding="utf-8")
+        competing_output = root / "competing-output"
+        competing_output.mkdir()
+        (competing_output / "owner").write_text("incumbent", encoding="utf-8")
+        try:
+            publish_directory_no_replace(competing_staging, competing_output)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("no-replace publication must reject a competing destination")
+        assert (competing_output / "owner").read_text(encoding="utf-8") == "incumbent"
+        assert (competing_staging / "complete").read_text(encoding="utf-8") == "candidate"
 
     duplicate = [zipfile.ZipInfo("Payload/Nembra.app/Nembra"), zipfile.ZipInfo("Payload/Nembra.app/Nembra")]
     try:
