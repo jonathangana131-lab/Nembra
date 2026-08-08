@@ -32,7 +32,7 @@ struct PassiveBluetoothExperimentOneAuthorityContinuityTests {
         )
         #expect(firstSeries != secondSeries)
 
-        let capture = try captureSession()
+        let capture = try callerBuiltCaptureSession()
         let firstAssessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
             powerCycleResult: firstPowerCycle,
             captureSession: capture
@@ -50,6 +50,23 @@ struct PassiveBluetoothExperimentOneAuthorityContinuityTests {
         // closes that join; it only requires whole-experiment coherence to fail closed when the
         // same capture is detached and paired with multiple distinct series authorities.
         #expect(!(firstAssessment.isCaptureEvidenceCoherent && secondAssessment.isCaptureEvidenceCoherent))
+    }
+
+    @Test("a structurally valid caller-built capture is not experiment-one PASS authority")
+    func barePublicCaptureSessionCannotEarnWholeExperimentCoherence() throws {
+        let powerCycle = try powerCycleResult()
+
+        // This fixture intentionally constructs the capture side only from NembraCore's public raw
+        // schema initializers. Public/importable structural evidence is useful for offline analysis,
+        // but experiment-one PASS must require a package/controller-issued authority proving that
+        // this exact artifact actually crossed the trusted recorder/finalization boundary.
+        let capture = try callerBuiltCaptureSession()
+        let assessment = PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
+            powerCycleResult: powerCycle,
+            captureSession: capture
+        )
+
+        #expect(!assessment.isCaptureEvidenceCoherent)
     }
 
     private func powerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
@@ -86,7 +103,9 @@ struct PassiveBluetoothExperimentOneAuthorityContinuityTests {
         PassiveBluetoothCandidateObservationSnapshot.Candidate(id: id, isConnectable: true)
     }
 
-    private func captureSession() throws -> PassiveBluetoothCaptureSession {
+    /// The capture side deliberately uses only public NembraCore evidence constructors. The test
+    /// target needs `@testable` solely to obtain a deterministic package-issued power-cycle result.
+    private func callerBuiltCaptureSession() throws -> PassiveBluetoothCaptureSession {
         let record = PassiveBluetoothCaptureRecord(
             sequenceNumber: 1,
             receivedAtUptimeNanoseconds: 100,
