@@ -52,6 +52,72 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         #expect(manifest.setup == declaredSetup)
     }
 
+    @Test("construction rejects a power-cycle window one nanosecond below the accepted minimum")
+    func shortPowerCycleWindowFailsClosed() throws {
+        let result = try makePowerCycleResult(
+            windowDurationNanoseconds:
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds - 1
+        )
+
+        #expect(throws: ExportError.experimentEvidenceNotStructurallyCoherent) {
+            _ = try Codec.make(
+                captureJSON: makeCaptureJSON(),
+                powerCycleResult: result,
+                runtimeBuildIdentity: makeBuildIdentity(),
+                setup: setup()
+            )
+        }
+    }
+
+    @Test("construction rejects overlapping power-cycle windows even when each window is long enough")
+    func overlappingPowerCycleWindowsFailClosed() throws {
+        let duration = PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
+        let result = try makePowerCycleResult(
+            windowDurationNanoseconds: duration,
+            windowStartStrideNanoseconds: duration / 2
+        )
+
+        #expect(throws: ExportError.experimentEvidenceNotStructurallyCoherent) {
+            _ = try Codec.make(
+                captureJSON: makeCaptureJSON(),
+                powerCycleResult: result,
+                runtimeBuildIdentity: makeBuildIdentity(),
+                setup: setup()
+            )
+        }
+    }
+
+    @Test("construction rejects a Ready-to-Horizon interval one nanosecond below the accepted minimum")
+    func shortObservationHorizonFailsClosed() throws {
+        let captureJSON = try makeCaptureJSON(
+            postReadyDurationNanoseconds:
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds - 1
+        )
+
+        #expect(throws: ExportError.experimentEvidenceNotStructurallyCoherent) {
+            _ = try Codec.make(
+                captureJSON: captureJSON,
+                powerCycleResult: makePowerCycleResult(),
+                runtimeBuildIdentity: makeBuildIdentity(),
+                setup: setup()
+            )
+        }
+    }
+
+    @Test("offline verification rechecks accepted window chronology instead of trusting encoded timing")
+    func encodedOverlapFailsClosed() throws {
+        var root = try exportJSONObject()
+        var windows = try #require(root["correlationWindows"] as? [[String: Any]])
+        let firstEnd = try #require(windows[0]["endedAtUptimeNanoseconds"] as? NSNumber).uint64Value
+        windows[1]["startedAtUptimeNanoseconds"] = NSNumber(value: firstEnd - 1)
+        root["correlationWindows"] = windows
+
+        let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        #expect(throws: ExportError.experimentEvidenceNotStructurallyCoherent) {
+            _ = try Codec.decodeAndVerify(tampered)
+        }
+    }
+
     @Test("wire replay cannot mint one authority over catalogs from different producer lives")
     func mixedObservationAuthorityFailsClosed() throws {
         var root = try exportJSONObject()
@@ -172,41 +238,92 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         )
     }
 
-    private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
+    private func makePowerCycleResult(
+        windowDurationNanoseconds: UInt64 =
+            PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds,
+        windowStartStrideNanoseconds: UInt64 = 20_000_000_000
+    ) throws -> PassiveBluetoothPowerCycleObservationResult {
         var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
-        _ = try ledger.completeWindow(
-            phase: .firstPoweredOff,
-            startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
-            candidates: [candidate(neighbor)]
-        )
-        _ = try ledger.completeWindow(
-            phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
-            candidates: [candidate(neighbor), candidate(scooter)]
-        )
-        _ = try ledger.completeWindow(
-            phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
-            candidates: [candidate(neighbor)]
-        )
-        return try #require(ledger.completeWindow(
-            phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
-            candidates: [candidate(neighbor), candidate(scooter)]
-        ))
+        var result: PassiveBluetoothPowerCycleObservationResult?
+
+        for (index, phase) in PassiveBluetoothPowerCycleObservationPhase.allCases.enumerated() {
+            let start = UInt64(index) * windowStartStrideNanoseconds
+            let candidates = phase.operatorExpectedPowerOn
+                ? [candidate(neighbor), candidate(scooter)]
+                : [candidate(neighbor)]
+            result = try ledger.completeWindow(
+                phase: phase,
+                startedAtUptimeNanoseconds: start,
+                endedAtUptimeNanoseconds: start + windowDurationNanoseconds,
+                candidates: candidates
+            ) ?? result
+        }
+
+        return try #require(result)
     }
 
     private func candidate(_ id: UUID) -> PassiveBluetoothCandidateObservationSnapshot.Candidate {
         .init(id: id, isConnectable: true)
     }
 
-    private func makeCaptureJSON() throws -> Data {
+    private func makeCaptureJSON(
+        postReadyDurationNanoseconds: UInt64 =
+            PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds
+    ) throws -> Data {
         let startedAt = Date(timeIntervalSince1970: 1_750_000_000)
-        var session = try PassiveBluetoothCaptureSession(
+        let service = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: startedAt,
+            event: .service(
+                try PassiveBluetoothServiceObservation(
+                    peripheralIdentifier: scooter.uuidString,
+                    serviceUUID: "FFE0",
+                    isPrimary: true
+                )
+            )
+        )
+        let characteristic = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: startedAt.addingTimeInterval(1),
+            event: .characteristic(
+                try PassiveBluetoothCharacteristicObservation(
+                    peripheralIdentifier: scooter.uuidString,
+                    serviceUUID: "FFE0",
+                    characteristicUUID: "FFE1",
+                    properties: [.notify]
+                )
+            )
+        )
+        let value = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3,
+            receivedAtDate: startedAt.addingTimeInterval(2),
+            event: .value(
+                try PassiveBluetoothValueObservation(
+                    peripheralIdentifier: scooter.uuidString,
+                    serviceUUID: "FFE0",
+                    characteristicUUID: "FFE1",
+                    origin: .subscriptionUpdate,
+                    payload: Data([0x01, 0x02])
+                )
+            )
+        )
+        let readyUptime: UInt64 = 1_000
+        let ready = PassiveBluetoothObservationBoundary(
+            kind: .finiteAcquisitionReady,
+            recordSequenceWatermark: 3,
+            observedAtUptimeNanoseconds: readyUptime,
+            observedAtDate: startedAt.addingTimeInterval(3)
+        )
+        let horizon = PassiveBluetoothObservationBoundary(
+            kind: .observationHorizon,
+            recordSequenceWatermark: 3,
+            observedAtUptimeNanoseconds: readyUptime + postReadyDurationNanoseconds,
+            observedAtDate: startedAt.addingTimeInterval(63)
+        )
+        let session = try PassiveBluetoothCaptureSession(
             id: UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!,
             vehicleIdentity: VehicleIdentity(
                 manufacturer: "AOVOPRO",
@@ -214,40 +331,9 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
                 displayName: "AOVOPRO ES80",
                 protocolFamily: "unverified-tuya"
             ),
-            startedAt: startedAt
-        )
-        try session.append(
-            .service(try PassiveBluetoothServiceObservation(
-                peripheralIdentifier: scooter.uuidString,
-                serviceUUID: "FFE0",
-                isPrimary: true
-            )),
-            sequenceNumber: 1,
-            receivedAtUptimeNanoseconds: 1,
-            receivedAtDate: startedAt
-        )
-        try session.append(
-            .characteristic(try PassiveBluetoothCharacteristicObservation(
-                peripheralIdentifier: scooter.uuidString,
-                serviceUUID: "FFE0",
-                characteristicUUID: "FFE1",
-                properties: [.notify]
-            )),
-            sequenceNumber: 2,
-            receivedAtUptimeNanoseconds: 2,
-            receivedAtDate: startedAt.addingTimeInterval(1)
-        )
-        try session.append(
-            .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: scooter.uuidString,
-                serviceUUID: "FFE0",
-                characteristicUUID: "FFE1",
-                origin: .subscriptionUpdate,
-                payload: Data([0x01, 0x02])
-            )),
-            sequenceNumber: 3,
-            receivedAtUptimeNanoseconds: 3,
-            receivedAtDate: startedAt.addingTimeInterval(2)
+            startedAt: startedAt,
+            records: [service, characteristic, value],
+            observationBoundaries: [ready, horizon]
         )
         return try PassiveBluetoothCaptureJSON.encode(session)
     }
