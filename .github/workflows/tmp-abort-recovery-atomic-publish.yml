@@ -1,165 +1,42 @@
-name: Temporary abort recovery repair
+name: Agent ES80 abort recovery atomic publish
 
-on: push
+on:
+  push:
+    branches:
+      - review/es80-v14-abort-recovery-atomic-publish/chatgpt56-thinking-go
 
 permissions:
   contents: write
 
 jobs:
-  patch:
-    if: github.ref == 'refs/heads/review/es80-v14-abort-recovery-atomic-publish/chatgpt56-thinking-go'
+  repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: review/es80-v14-abort-recovery-atomic-publish/chatgpt56-thinking-go
           fetch-depth: 0
-
-      - name: Patch exact reviewed block
+      - name: Apply reviewed failure-atomic repair
+        shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
-          s = p.read_text()
-          old = """        do {
-            try artifactAuthorityFence.transition(
-                from: previousAuthority,
-                to: freshAuthority
-            )
-            targetSessionGeneration = freshAuthority.targetSessionGeneration
-            artifactAuthorityGeneration = freshAuthority.authorityGeneration
-            recorder = freshSession.recorder
-            hasUsedInitialSessionIdentity = true
-            acquisitionLedger.beginTargetSession()
-            gattIdentityRegistry.reset()
-            selectedTargetCancellationPending = false
-            foregroundEvidenceIntegrityValid = true
-            committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
-        } catch {
-"""
-          new = """        do {
-            // Preflight every remaining fallible gate condition on a value copy before
-            // advancing the reference-backed canonical artifact-authority fence.
-            var reopenedGate = observationBoundaryQueueGate
-            try reopenedGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
-
-            // Final throwing install step. Everything after this transition is synchronous,
-            // non-failable publication of the already-validated fresh durable session.
-            try artifactAuthorityFence.transition(
-                from: previousAuthority,
-                to: freshAuthority
-            )
-            targetSessionGeneration = freshAuthority.targetSessionGeneration
-            artifactAuthorityGeneration = freshAuthority.authorityGeneration
-            recorder = freshSession.recorder
-            hasUsedInitialSessionIdentity = true
-            acquisitionLedger.beginTargetSession()
-            gattIdentityRegistry.reset()
-            selectedTargetCancellationPending = false
-            foregroundEvidenceIntegrityValid = true
-            committedReadyEpoch = nil
-            observationBoundaryQueueGate = reopenedGate
-        } catch {
-"""
-          if s.count(old) != 1:
-              raise SystemExit(f'exact reviewed block count was {s.count(old)}, expected 1')
-          p.write_text(s.replace(old, new))
-
-          t = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortRecoveryAtomicityTests.swift')
-          t.write_text('''import Foundation
-import Testing
-
-@Suite("Abort recovery failure-atomic publication")
-struct ForegroundCoreBluetoothCaptureControllerAbortRecoveryAtomicityTests {
-    private static func controllerSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: packageRoot.appendingPathComponent(
-                "Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift"
-            ),
-            encoding: .utf8
-        )
-    }
-
-    private static func abortRecoveryMethod(in source: String) throws -> Substring {
-        let start = try #require(source.range(
-            of: "private func completeAbortedFreshTargetSessionIfReady("
-        ))
-        let tail = source[start.lowerBound...]
-        let end = try #require(tail.range(
-            of: "private func beginTargetSessionIfNeeded("
-        ))
-        return tail[..<end.lowerBound]
-    }
-
-    @Test("queue gate preflights before irreversible canonical fence transition")
-    func queueGatePreflightsBeforeFenceTransition() throws {
-        let method = try Self.abortRecoveryMethod(in: Self.controllerSource())
-        let declaration = try #require(method.range(
-            of: "var reopenedGate = observationBoundaryQueueGate"
-        ))
-        let validation = try #require(method.range(
-            of: "try reopenedGate.reopenAfterAbortedFreshTargetSession("
-        ))
-        let transition = try #require(method.range(
-            of: "try artifactAuthorityFence.transition("
-        ))
-        let publication = try #require(method.range(
-            of: "observationBoundaryQueueGate = reopenedGate"
-        ))
-
-        #expect(declaration.lowerBound < validation.lowerBound)
-        #expect(validation.lowerBound < transition.lowerBound)
-        #expect(transition.lowerBound < publication.lowerBound)
-        #expect(!method.contains(
-            "try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession("
-        ))
-    }
-
-    @Test("canonical fence transition is the final fallible install step")
-    func fenceTransitionIsFinalFallibleInstallStep() throws {
-        let method = try Self.abortRecoveryMethod(in: Self.controllerSource())
-        let transition = try #require(method.range(
-            of: "try artifactAuthorityFence.transition("
-        ))
-        let catchRange = try #require(method.range(
-            of: "        } catch {",
-            range: transition.upperBound..<method.endIndex
-        ))
-        let publication = method[transition.upperBound..<catchRange.lowerBound]
-
-        #expect(!publication.contains("try "))
-        #expect(!publication.contains("await "))
-        #expect(publication.contains("recorder = freshSession.recorder"))
-        #expect(publication.contains("observationBoundaryQueueGate = reopenedGate"))
-    }
-}
-''')
-          PY
+          set -euo pipefail
+          python3 .github/patches/apply_abort_recovery_atomic.py
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'var reopenedGate = observationBoundaryQueueGate' "$controller"
+          grep -F 'try reopenedGate.reopenAfterAbortedFreshTargetSession(' "$controller"
+          grep -F 'observationBoundaryQueueGate = reopenedGate' "$controller"
+          ! grep -F 'try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(' "$controller"
           git diff --check
-          grep -q 'var reopenedGate = observationBoundaryQueueGate' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
-          test "$(grep -c 'try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift || true)" = 0
-
-      - name: Commit product repair and self-delete
+      - name: Remove temporary machinery and checkpoint product repair
+        shell: bash
         run: |
           rm .github/workflows/tmp-abort-recovery-atomic-publish.yml
-          git config user.name nembra-swarm
-          git config user.email actions@users.noreply.github.com
-          git add -A
-          git commit -m '[capture recovery] make abort fresh-session publication failure-atomic [skip ci]'
+          rm .github/patches/apply_abort_recovery_atomic.py
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortRecoveryAtomicityTests.swift \
+            .github/workflows/tmp-abort-recovery-atomic-publish.yml \
+            .github/patches/apply_abort_recovery_atomic.py
+          git commit -m 'fix(capture): publish abort recovery failure-atomically'
           git push origin HEAD:review/es80-v14-abort-recovery-atomic-publish/chatgpt56-thinking-go
