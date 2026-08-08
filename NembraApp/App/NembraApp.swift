@@ -95,6 +95,18 @@ struct NembraApp: App {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    private enum RuntimeBuildIdentityState: Equatable {
+        case available(PassiveBluetoothCaptureRuntimeBuildIdentity)
+        case unavailable(String)
+    }
+
+    @State private var showsBuildDetails = false
+    private let runtimeBuildIdentityState: RuntimeBuildIdentityState
+
+    init() {
+        runtimeBuildIdentityState = Self.readRuntimeBuildIdentity()
+    }
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
@@ -199,6 +211,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
+                buildDetails
+
                 Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag or local preference cannot do it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -214,5 +228,128 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+    }
+
+    private var buildDetails: some View {
+        DisclosureGroup(isExpanded: $showsBuildDetails) {
+            VStack(alignment: .leading, spacing: 14) {
+                Divider().overlay(.white.opacity(0.12))
+
+                switch runtimeBuildIdentityState {
+                case let .available(identity):
+                    buildProvenanceStatus(
+                        symbol: "checkmark.circle",
+                        title: "Runtime identity present",
+                        message: "Nembra hashed the exact executable bytes currently running. The embedded build label and source commit remain declarations until an independently trusted build record matches this executable digest. This does not authorize the physical procedure."
+                    )
+                    buildDetailRow("BUILD", value: identity.buildIdentifier)
+                    buildDetailRow("SOURCE DECLARATION", value: identity.sourceCommitSHA)
+                    buildDetailRow("EXECUTABLE SHA-256", value: identity.executableSHA256)
+
+                case let .unavailable(reason):
+                    buildProvenanceStatus(
+                        symbol: "exclamationmark.triangle",
+                        title: "Runtime provenance unavailable",
+                        message: "\(reason) This is a preflight blocker, so physical execution remains locked."
+                    )
+                }
+
+                buildDetailRow("PROCEDURE", value: recipeID)
+
+                Text("Build metadata is evidence about this app build only. It is not scooter identity, GATT/Tuya truth, telemetry truth, or physical authorization.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 12)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                Text("VIEW DETAILS")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                Spacer(minLength: 8)
+
+                Text("PREFLIGHT")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .tint(.white)
+        .padding(18)
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityIdentifier("es80.capture.view-details")
+    }
+
+    private func buildProvenanceStatus(
+        symbol: String,
+        title: String,
+        message: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.build-provenance-status")
+    }
+
+    private func buildDetailRow(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.footnote.monospaced())
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private static func readRuntimeBuildIdentity() -> RuntimeBuildIdentityState {
+        do {
+            return .available(try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication())
+        } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
+            return .unavailable(runtimeBuildIdentityFailureMessage(for: error))
+        } catch {
+            return .unavailable("Nembra could not verify the running build identity.")
+        }
+    }
+
+    private static func runtimeBuildIdentityFailureMessage(
+        for error: PassiveBluetoothCaptureRuntimeBuildIdentityError
+    ) -> String {
+        switch error {
+        case .missingBuildIdentifier:
+            "The running app has no embedded Nembra capture build identifier."
+        case .invalidBuildIdentifier:
+            "The embedded Nembra capture build identifier is malformed."
+        case .missingSourceCommitSHA:
+            "The running app has no embedded exact source commit declaration."
+        case .invalidSourceCommitSHA:
+            "The embedded source commit declaration is not a full 40-character Git SHA."
+        case .executableUnavailable:
+            "The running app executable cannot be located."
+        case .executableNotRegularFile:
+            "The running app executable is not a regular file."
+        case .executableUnreadable:
+            "The running app executable cannot be read for hashing."
+        }
     }
 }
