@@ -61,6 +61,17 @@ The projector rejects contradictory snapshot shapes, including:
 
 These checks are defense in depth. Normal production snapshots are minted by `LiveDistanceSegmentAccumulator`.
 
+## Snapshot authority boundary
+
+`LiveDistanceSegmentSnapshot` is also compiled directly into Nembra.app, so a normal synthesized internal memberwise initializer would be callable by unrelated same-module app/UI code. That would let a caller manufacture apparently accepted live-distance evidence before it reaches the presentation projector.
+
+The snapshot constructor is therefore explicitly scoped in `LiveDistanceIntegration.swift`:
+
+- `package init` under SwiftPM, so deterministic NembraCore fixtures can model malformed inputs and verify fail-closed behavior;
+- `fileprivate init` in the direct app build, so only the integration implementation in that source file can mint production snapshots.
+
+This mirrors the existing direct-app authority seal on `FinalizedLiveDistanceSegment`. Repository search found no legitimate production construction site outside `LiveDistanceSegmentAccumulator.snapshot`, so the seal narrows authority without changing accepted runtime behavior.
+
 ## Integration boundary
 
 The intended later product flow is:
@@ -75,8 +86,14 @@ For rides that cross process/recovery boundaries, the current segment must not s
 
 Dashboard integration should occur only after the active Dashboard/source owners can consume this contract without racing their current work. Until then the legacy `vehicle.state.tripKilometers` presentation remains a known product integration gap.
 
+## Source visibility boundary
+
+The Swift package auto-discovers `LiveDistanceCockpitPresentation.swift`, but Nembra.app manually compiles selected NembraCore files through `project.pbxproj`. This PR deliberately does not edit that high-contention project file while multiple app-surface workers are active.
+
+A later coordinated Dashboard integration slice must add the accepted presentation source to the direct app target and prove the exact app build before consuming it. Package acceptance alone is not app visibility.
+
 ## Truth boundary
 
-Software presentation semantics only.
+Software presentation semantics and constructor authority only.
 
 No physical AOVOPRO ES80 speed source, cadence, latency, accuracy, BLE/Tuya field, odometer source, GPS quality threshold, or distance accuracy is claimed verified. Display formatting never becomes telemetry evidence, persistence evidence, or range-learning evidence.
