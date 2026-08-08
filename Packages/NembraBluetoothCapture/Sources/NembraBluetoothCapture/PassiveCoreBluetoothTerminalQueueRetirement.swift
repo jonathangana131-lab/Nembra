@@ -74,6 +74,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
         case invalidQueueSequence(UInt64)
         case nonIncreasingQueueSequence(previous: UInt64, current: UInt64)
         case terminalPrefixStillPending(queueSequence: UInt64)
+        case nonContiguousPendingQueueSequence(expected: UInt64, actual: UInt64)
         case pendingQueueTailMismatch(expectedControllerTail: UInt64, actualPendingTail: UInt64?)
     }
 
@@ -85,10 +86,11 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
     /// MainActor-owned monotonic queue counter in the same synchronous operation.
     /// The helper never reconstructs that authority from the pending array. While
     /// the gate is terminal, every callback after H is withheld, so a non-empty
-    /// pending FIFO must end at exactly the controller tail; an empty FIFO can be
-    /// authoritative only when the controller tail is exactly H. This rejects a
-    /// truncated queue, manual pre-retirement deletion, and accidental reuse after
-    /// a prior retirement removed the old global tail.
+    /// pending FIFO must contain the complete contiguous suffix H+1...controllerTail;
+    /// an empty FIFO can be authoritative only when the controller tail is exactly H.
+    /// This rejects missing interior/prefix entries, truncated queues, manual
+    /// pre-retirement deletion, and accidental reuse after a prior retirement removed
+    /// the old global tail.
     ///
     /// Validation is fail-closed and atomic. The terminal transaction's H is a
     /// global controller-FIFO cutoff: every callback at or before H was required to
@@ -135,13 +137,29 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
                     current: evidence.queueSequence
                 )
             }
-            previousQueueSequence = evidence.queueSequence
 
             guard evidence.queueSequence > transaction.queueCutoff else {
                 throw StateError.terminalPrefixStillPending(
                     queueSequence: evidence.queueSequence
                 )
             }
+
+            // A terminal gate withholds every accepted callback after H. Therefore
+            // the pending queue is not merely sorted: it must be the complete global
+            // FIFO suffix H+1...lastEnqueuedEventSequence with no missing sequence.
+            // The strict-increase check above guarantees these additions cannot
+            // overflow: a first post-H event implies H < UInt64.max, and a successor
+            // greater than `previousQueueSequence` implies the previous value < max.
+            let expectedQueueSequence = previousQueueSequence.map { $0 + 1 }
+                ?? (transaction.queueCutoff + 1)
+            guard evidence.queueSequence == expectedQueueSequence else {
+                throw StateError.nonContiguousPendingQueueSequence(
+                    expected: expectedQueueSequence,
+                    actual: evidence.queueSequence
+                )
+            }
+            previousQueueSequence = evidence.queueSequence
+
             guard evidence.authority == transaction.authority else {
                 continue
             }
