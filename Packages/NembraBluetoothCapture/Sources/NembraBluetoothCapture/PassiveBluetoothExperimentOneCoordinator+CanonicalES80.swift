@@ -21,17 +21,14 @@ public extension PassiveBluetoothExperimentOneCoordinator {
 
     /// Release-grade field-authorized construction seam.
     ///
-    /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
+    /// The caller may only possess a `VerifiedAdmission` minted from the package's cryptographically
     /// verified external field authorization. That release/public path remains deliberately NO-GO
-    /// while the independent trust root is unconfigured; it is separate from today's exact signed
-    /// private-research build admission.
+    /// until the independent trust root is configured and separately accepted; today's private
+    /// research marker must never promote this release seam.
     @MainActor
     static func makeAuthorizedES80(
         verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission
     ) throws -> PassiveBluetoothExperimentOneCoordinator {
-        guard case .noGo = PassiveBluetoothExperimentOneFieldExecutionGate.status else {
-            return try makeLiveES80Coordinator()
-        }
         throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
     }
 
