@@ -1,0 +1,37 @@
+name: V14 terminal controller fresh handoff
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact controller consumer
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/v14_terminal_controller_fresh_handoff_patch.py
+          git diff --check
+          grep -q 'pendingTerminalQueueResolution = terminalResolution' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'reopenAfterTerminalFreshTargetSession' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'installedRecorder: freshSession.recorder' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'guard !isSelectedTargetAwaitingTerminalCallback else' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+      - name: Commit product and remove staging files
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-terminal-controller-fresh-handoff.yml
+          rm scripts/ci/v14_terminal_controller_fresh_handoff_patch.py
+          git add -A
+          git diff --cached --check
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git commit -m 'Capture: consume terminal resolution after real transport teardown'
+          git push origin HEAD:integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
