@@ -87,6 +87,7 @@ public struct PassiveBluetoothCaptureFieldBuildEvidenceRecord: Equatable, Sendab
 
 public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordError: Error, Equatable, Sendable {
     case malformedJSON
+    case duplicateField(String)
     case unexpectedField(String)
     case unsupportedSchemaVersion(Int)
     case invalidExternalBuildRecordSHA256
@@ -194,6 +195,14 @@ public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        do {
+            try PassiveBluetoothCaptureStrictJSON.validateNoDuplicateObjectKeys(data)
+        } catch PassiveBluetoothCaptureStrictJSONError.duplicateObjectKey(let key) {
+            throw PassiveBluetoothCaptureFieldBuildEvidenceRecordError.duplicateField(key)
+        } catch {
+            throw PassiveBluetoothCaptureFieldBuildEvidenceRecordError.malformedJSON
+        }
+
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
