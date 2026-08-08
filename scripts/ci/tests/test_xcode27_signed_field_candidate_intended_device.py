@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
+import importlib.util
+import os
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
 PRIVATE_RUNNER = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_private_runner.py"
+
+
+def load_private_runner():
+    spec = importlib.util.spec_from_file_location("nembra_private_field_runner_test", PRIVATE_RUNNER)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load private signed-field runner")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
@@ -28,6 +42,9 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         # It must never become an OS-visible child-process argument or environment value.
         self.assertIn('os.O_NOFOLLOW', runner)
         self.assertIn('os.fstat(descriptor)', runner)
+        self.assertIn('metadata.st_uid != os.geteuid()', runner)
+        self.assertIn('_stable_file_identity(final_metadata)', runner)
+        self.assertIn('_stable_file_identity(metadata)', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
         self.assertNotIn('subprocess', runner)
         self.assertNotIn('os.environ', runner)
@@ -39,6 +56,59 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', source)
         self.assertNotIn('ARTIFACTS_DIR="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', source)
         self.assertNotIn('BUILD_INSTANCE_ID="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', source)
+
+    def test_private_input_must_be_owned_by_current_user(self) -> None:
+        runner = load_private_runner()
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-owner-test-") as temporary:
+            private_file = Path(temporary) / "device-id"
+            private_file.write_text("00008101-001234567890001E", encoding="utf-8")
+            private_file.chmod(0o600)
+            owner = os.stat(private_file).st_uid
+
+            with mock.patch.object(runner.os, "geteuid", return_value=owner + 1):
+                with self.assertRaisesRegex(
+                    runner.PrivateInputError,
+                    "must be owned by the current user",
+                ):
+                    runner.read_private_identifier(private_file)
+
+    def test_same_size_in_place_mutation_fails_closed(self) -> None:
+        runner = load_private_runner()
+        real_fstat = os.fstat
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-input-test-") as temporary:
+            private_file = Path(temporary) / "device-id"
+            private_file.write_text("00008101-001234567890001E", encoding="utf-8")
+            private_file.chmod(0o600)
+
+            call_count = 0
+
+            def fstat_with_changed_metadata(descriptor):
+                nonlocal call_count
+                call_count += 1
+                metadata = real_fstat(descriptor)
+                if call_count != 2:
+                    return metadata
+                return SimpleNamespace(
+                    st_dev=metadata.st_dev,
+                    st_ino=metadata.st_ino,
+                    st_mode=metadata.st_mode,
+                    st_uid=metadata.st_uid,
+                    st_gid=metadata.st_gid,
+                    st_size=metadata.st_size,
+                    st_mtime_ns=metadata.st_mtime_ns + 1,
+                    st_ctime_ns=metadata.st_ctime_ns,
+                )
+
+            with mock.patch.object(runner.os, "fstat", side_effect=fstat_with_changed_metadata):
+                with self.assertRaisesRegex(
+                    runner.PrivateInputError,
+                    "changed while being read",
+                ):
+                    runner.read_private_identifier(private_file)
+
+            self.assertEqual(call_count, 2)
 
 
 if __name__ == "__main__":
