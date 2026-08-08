@@ -45,11 +45,13 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_uses_unique_non_destructive_evidence_directory(self):
+    def test_canonicalizes_unique_non_destructive_evidence_directory(self):
+        self.assertIn('pwd -P', self.source)
         self.assertIn(
-            '$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID',
+            'RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"',
             self.source,
         )
+        self.assertIn('Path(sys.argv[1]).resolve(strict=False)', self.source)
         self.assertIn('"$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT"', self.source)
         self.assertIn('if [[ -e "$ARTIFACTS_DIR" ]]', self.source)
         self.assertIn('refusing to mix or overwrite field-production evidence', self.source)
