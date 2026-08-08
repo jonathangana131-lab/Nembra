@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -117,6 +118,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     private let payload: Payload
     private var hasBeenConsumed = false
 
+    /// Package-internal lifecycle truth only. This does not expose the sealed payload, recorder,
+    /// correlated target, or any mutation authority. The package-owned coordinator uses it solely
+    /// to distinguish a recoverable controller rejection before `consume()` from a failure after
+    /// irreversible ownership handoff.
+    var isConsumed: Bool {
+        hasBeenConsumed
+    }
+
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
@@ -210,8 +219,8 @@ final class PassiveBluetoothExperimentOneRun {
     /// The only same-module bridge from completed correlation into live capture ownership.
     ///
     /// Callers provide only a local recorder start timestamp. The target UUID, producer authority,
-    /// and mutable recorder all come from this exact run. A second call fails because the recorder is
-    /// one-shot per run, and the returned admission itself can also be consumed only once.
+    /// and mutable recorder all come from this exact run. A second call fails because the recorder
+    /// is one-shot per run, and the returned admission itself can also be consumed only once.
     func issueCaptureAdmission(
         startedAt: Date = Date()
     ) throws -> PassiveBluetoothExperimentOneCaptureAdmission {
