@@ -1,0 +1,38 @@
+name: ES80 Producer Output Topology Transform
+
+on:
+  push:
+    branches:
+      - agent/es80-producer-inspector-output-separation
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/es80-producer-inspector-output-separation
+          fetch-depth: 0
+
+      - name: Transform and validate producer topology
+        shell: bash
+        run: |
+          python3 scripts/ci/es80_producer_output_topology_transform.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 -m py_compile scripts/ci/es80_producer_output_topology_transform.py scripts/ci/tests/test_xcode27_signed_field_candidate_source.py scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+
+      - name: Publish product delta
+        shell: bash
+        run: |
+          rm .github/workflows/es80-producer-output-topology-transform.yml
+          rm scripts/ci/es80_producer_output_topology_transform.py
+          git config user.name "nembra-v14-transform"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/xcode27_signed_field_candidate.sh scripts/ci/tests/test_xcode27_signed_field_candidate_source.py docs/ES80_SIGNED_FIELD_CANDIDATE_PRODUCTION.md .github/workflows/es80-producer-output-topology-transform.yml scripts/ci/es80_producer_output_topology_transform.py
+          git commit -m "[Capture field v14] Separate producer provenance from atomic inspector evidence"
+          git push origin HEAD:agent/es80-producer-inspector-output-separation
