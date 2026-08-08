@@ -42,6 +42,14 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
         #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
+
+        let validHorizon = try gate.begin(
+            .observationHorizon,
+            through: 12,
+            authority: authority
+        )
+        #expect(validHorizon.revision == ready.revision + 1)
+        #expect(gate.phase == .drainingHorizon(validHorizon))
     }
 
     @Test("horizon must retain the exact authority that committed ready")
@@ -82,5 +90,13 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
         #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
+
+        let validHorizon = try gate.begin(
+            .observationHorizon,
+            through: 12,
+            authority: authority
+        )
+        #expect(validHorizon.revision == ready.revision + 1)
+        #expect(gate.phase == .drainingHorizon(validHorizon))
     }
 }
