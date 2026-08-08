@@ -7,17 +7,13 @@ import UIKit
 
 /// Product-facing Nembra Capture shell for the first ES80 evidence workflow.
 ///
-/// This surface consumes the accepted public four-window CoreBluetooth producer directly:
-/// OFF1 -> ON1 -> OFF2 -> ON2. A single repeatable UUID is only correlated Bluetooth-target
-/// evidence. It is never presented as authenticated/permanent ES80 identity.
+/// This surface is only presented behind the package-owned field-execution gate and consumes one
+/// `PassiveBluetoothExperimentOneCoordinator` from OFF1 -> ON1 -> OFF2 -> ON2 correlation through
+/// sealed admission, exact-target rediscovery, passive finite acquisition, monotonic Ready/Horizon,
+/// immutable JSON seal, and Share. SwiftUI never receives the hidden admission or mutable recorder.
 ///
-/// Critical authority boundary: the current package-owned `PassiveBluetoothExperimentOneRun`
-/// creates and owns its own four-window producer, and its recorder/final H-bounded seal remains
-/// intentionally internal. This app must not take an independently-created public correlation
-/// result and start a separate capture recorder as if those two evidence lives were one Experiment
-/// One authority. Therefore this shell can complete real correlation and exact read-only target
-/// reacquisition, but it deliberately does not expose Start Capture, Finish, or Share until the
-/// accepted controller composes the same package-issued Experiment One run end-to-end.
+/// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. Nothing on
+/// this surface authenticates permanent AOVOPRO ES80 identity, RF completeness, or protocol meaning.
 @MainActor
 struct ES80CaptureShellView: View {
     private enum Phase: Equatable {
@@ -79,7 +75,6 @@ struct ES80CaptureShellView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     hero(for: currentPhase)
-                    physicalRunLock
                     correlationProgress
                     primaryContent(
                         for: currentPhase,
@@ -166,30 +161,6 @@ struct ES80CaptureShellView: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var physicalRunLock: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "lock.shield.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Physical Experiment One locked")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .accessibilityIdentifier("es80.capture.physical-run-locked")
-
-                Text("This build can complete the real repeated Bluetooth correlation step. Passive capture remains locked until one package-owned Experiment One authority spans correlation, Ready, Horizon, immutable seal, and export. Nembra will not splice separate evidence lives just to make the workflow look complete.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(16)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     private var correlationProgress: some View {
@@ -963,7 +934,8 @@ struct ES80CaptureShellView: View {
 
     private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
         if newScenePhase == .active {
-            if let identifier = correlatedTargetIdentifier,
+            if !controller.hasTargetSession,
+               let identifier = correlatedTargetIdentifier,
                !rediscoveryRequested,
                lifecycleFailureMessage == nil {
                 startExactTargetRediscovery(identifier)

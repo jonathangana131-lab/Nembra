@@ -115,10 +115,30 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             throw CoordinatorError.targetNotConnectable(identifier)
         }
 
-        defer {
+        do {
+            try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
+        } catch let error as ForegroundCoreBluetoothCaptureController.ControllerError {
+            // These failures happen before the controller's irreversible admission.consume().
+            // Preserve the same sealed evidence life so passive scanning / terminal-callback
+            // recovery can continue without forcing the rider to repeat four valid windows.
+            switch error {
+            case .unknownPeripheral,
+                 .peripheralNotConnectable,
+                 .peripheralAwaitingTerminalCallback:
+                throw error
+            default:
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+                throw error
+            }
+        } catch {
+            // Unknown downstream failure may have crossed the one-shot handoff. Fail closed.
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
+            throw error
         }
-        try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
+
+        pendingCaptureAdmission = nil
+        preparedCorrelatedTargetIdentifier = nil
     }
 }

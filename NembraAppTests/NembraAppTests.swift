@@ -291,3 +291,35 @@ final class NembraAppTests: XCTestCase {
         )
     }
 }
+
+
+/// V14 app-visible Experiment One authority regression. These source checks intentionally live in
+/// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
+/// physical scooter identity or runtime BLE behavior.
+extension NembraAppTests {
+    func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let app = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraApp.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
+        XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
+    }
+
+    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let shell = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
+        XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
+        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
+        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
+        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+    }
+}
