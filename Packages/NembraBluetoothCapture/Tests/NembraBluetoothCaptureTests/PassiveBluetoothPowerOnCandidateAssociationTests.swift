@@ -8,20 +8,20 @@ struct PassiveBluetoothPowerOnCandidateAssociationTests {
     private let third = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
 
     @Test
-    func exactlyOneNewConnectableIdentifierResolvesUniquely() {
+    func exactlyOneNewEligibleIdentifierResolvesUniquely() {
         let resolution = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [first],
-            refreshedConnectableIdentifiers: [first, second]
+            baselineEligibleIdentifiers: [first],
+            refreshedEligibleIdentifiers: [first, second]
         )
 
         #expect(resolution == .uniqueNewCandidate(second))
     }
 
     @Test
-    func noNewConnectableIdentifierFailsClosed() {
+    func noNewEligibleIdentifierFailsClosed() {
         let resolution = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [first, second],
-            refreshedConnectableIdentifiers: [first, second]
+            baselineEligibleIdentifiers: [first, second],
+            refreshedEligibleIdentifiers: [first, second]
         )
 
         #expect(resolution == .noNewCandidate)
@@ -30,18 +30,18 @@ struct PassiveBluetoothPowerOnCandidateAssociationTests {
     @Test
     func disappearingBaselineIdentifiersDoNotBecomePositiveEvidence() {
         let resolution = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [first, second],
-            refreshedConnectableIdentifiers: [second]
+            baselineEligibleIdentifiers: [first, second],
+            refreshedEligibleIdentifiers: [second]
         )
 
         #expect(resolution == .noNewCandidate)
     }
 
     @Test
-    func multipleNewConnectableIdentifiersRemainAmbiguous() {
+    func multipleNewEligibleIdentifiersRemainAmbiguous() {
         let resolution = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [first],
-            refreshedConnectableIdentifiers: [first, third, second]
+            baselineEligibleIdentifiers: [first],
+            refreshedEligibleIdentifiers: [first, third, second]
         )
 
         #expect(resolution == .ambiguousNewCandidates([second, third]))
@@ -50,12 +50,12 @@ struct PassiveBluetoothPowerOnCandidateAssociationTests {
     @Test
     func ambiguityOrderingIsDeterministicAcrossInputOrder() {
         let forward = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [],
-            refreshedConnectableIdentifiers: [third, first, second]
+            baselineEligibleIdentifiers: [],
+            refreshedEligibleIdentifiers: [third, first, second]
         )
         let reverse = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [],
-            refreshedConnectableIdentifiers: [second, first, third]
+            baselineEligibleIdentifiers: [],
+            refreshedEligibleIdentifiers: [second, first, third]
         )
 
         let expected = PassiveBluetoothPowerOnCandidateAssociation.Resolution
@@ -65,10 +65,10 @@ struct PassiveBluetoothPowerOnCandidateAssociationTests {
     }
 
     @Test
-    func preexistingStrongCandidateCannotWinOverOneNewCandidate() {
+    func preexistingCandidatesCannotWinOverOneNewCandidate() {
         let resolution = PassiveBluetoothPowerOnCandidateAssociation.resolve(
-            baselineConnectableIdentifiers: [first, second],
-            refreshedConnectableIdentifiers: [first, second, third]
+            baselineEligibleIdentifiers: [first, second],
+            refreshedEligibleIdentifiers: [first, second, third]
         )
 
         #expect(resolution == .uniqueNewCandidate(third))
