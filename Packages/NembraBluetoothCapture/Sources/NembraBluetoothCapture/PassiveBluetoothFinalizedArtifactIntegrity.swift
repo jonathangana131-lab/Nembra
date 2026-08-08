@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import NembraCore
 
 /// Exact-file integrity facts for one already-finalized passive Capture artifact.
 ///
