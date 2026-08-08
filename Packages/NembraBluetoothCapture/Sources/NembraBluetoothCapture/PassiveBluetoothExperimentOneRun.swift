@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -106,6 +107,23 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         }
     }
 
+    /// Read-only package-owned staging view used by the foreground controller before
+    /// it burns the one-shot admission. It exposes only the exact producer identity,
+    /// correlated full CoreBluetooth UUID, and local monotonic issuance boundary needed
+    /// to prove that recoverable current-catalog checks refer to this same admission.
+    /// It carries no recorder and cannot be constructed outside this producer file.
+    struct StagingPreview: Equatable, Sendable {
+        let admissionIdentity: UUID
+        let peripheralIdentifier: UUID
+        let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(payload: Payload) {
+            admissionIdentity = payload.admissionIdentity
+            peripheralIdentifier = payload.peripheralIdentifier
+            issuedAtUptimeNanoseconds = payload.issuedAtUptimeNanoseconds
+        }
+    }
+
     private let payload: Payload
     private var hasBeenConsumed = false
 
@@ -121,6 +139,16 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
             recorder: recorder,
             issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
+    }
+
+    /// Allows the package controller to perform only recoverable staging checks before
+    /// the irreversible ownership handoff. Aliases of an already-consumed admission
+    /// cannot obtain a fresh preview.
+    func previewForControllerStaging() throws -> StagingPreview {
+        guard !hasBeenConsumed else {
+            throw ConsumptionError.alreadyConsumed
+        }
+        return StagingPreview(payload: payload)
     }
 
     func consume() throws -> Payload {
