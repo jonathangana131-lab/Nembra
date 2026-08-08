@@ -296,6 +296,10 @@ final class NembraAppTests: XCTestCase {
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
 extension NembraAppTests {
+    func testCaptureShellUsesBoundedPresentationPolling() {
+        XCTAssertEqual(ES80CaptureRefreshPolicy.statusPollInterval, 0.5)
+    }
+
     func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
@@ -341,6 +345,11 @@ extension NembraAppTests {
             shell.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"),
             "The shell must not mint a fresh run behind an already-accepted charger declaration."
         )
+        XCTAssertTrue(shell.contains("ES80CaptureRefreshPolicy.statusPollInterval"))
+        XCTAssertTrue(shell.contains("observation timer"))
+        XCTAssertTrue(shell.contains("seconds of display guidance remaining"))
+        XCTAssertTrue(shell.contains("The package producer, not this timer"))
+        XCTAssertTrue(shell.contains("Unavailable; waiting for accepted Horizon authority"))
 
         XCTAssertFalse(
             shell.contains("encodedFinalizedObservationHorizonJSON"),
