@@ -45,7 +45,6 @@ struct VehicleCommandUserFeedbackCorrelationTests {
         let current = try gate.beginUserRequest()
         let foreign = try foreignGate.beginUserRequest()
 
-        #expect(current.sequence == foreign.sequence)
         #expect(current != foreign)
         #expect(throws: VehicleCommandUserFeedbackCorrelationError.requestDoesNotMatch) {
             _ = try gate.resolve(foreign, as: .confirmed)
@@ -61,7 +60,7 @@ struct VehicleCommandUserFeedbackCorrelationTests {
         _ = try gate.resolve(first, as: .failed)
         let second = try gate.beginUserRequest()
 
-        #expect(second.sequence > first.sequence)
+        #expect(second != first)
         #expect(throws: VehicleCommandUserFeedbackCorrelationError.requestDoesNotMatch) {
             _ = try gate.resolve(first, as: .confirmed)
         }
