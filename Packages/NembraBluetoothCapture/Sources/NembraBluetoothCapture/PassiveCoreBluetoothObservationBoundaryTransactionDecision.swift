@@ -321,6 +321,8 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
 
         var queueCutoff: UInt64 { decision.queueCutoff }
         var authority: PassiveCoreBluetoothArtifactAuthorityContext { decision.authority }
+        var transactionRevision: UInt64 { transaction.revision }
+        var transactionIdentity: UUID { transaction.identity }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.decision == rhs.decision
