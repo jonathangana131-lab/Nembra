@@ -99,6 +99,8 @@ jobs:
           python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
 
       - name: Validate signed field candidate producer source
         run: |
