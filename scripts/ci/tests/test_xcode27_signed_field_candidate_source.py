@@ -83,6 +83,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('INSPECTION_DIR="$WORK_ROOT/inspection"', self.source)
         self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"', self.source)
         self.assertIn('FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"', self.source)
+        self.assertIn('FINAL_STAGING_OWNED=0', self.source)
         self.assertNotIn('INSPECTION_DIR="$ARTIFACTS_DIR/inspection"', self.source)
         self.assertNotIn('mkdir "$ARTIFACTS_DIR/logs"', self.source)
         self.assertNotIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
@@ -92,14 +93,27 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('renamex_np', self.source)
         self.assertIn('RENAME_EXCL', self.source)
         self.assertIn('refusing to overwrite concurrently published field-candidate evidence', self.source)
-        self.assertIn('FINAL_STAGING_DIR=""', self.source)
+        self.assertIn('if ! mkdir "$FINAL_STAGING_DIR"; then', self.source)
+        self.assertIn('refusing to delete or reuse unowned staging', self.source)
+        self.assertIn('FINAL_STAGING_OWNED=1', self.source)
+        self.assertIn('if [[ "${FINAL_STAGING_OWNED:-0}" == "1"', self.source)
+        self.assertNotIn('if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then', self.source)
+        self.assertIn('FINAL_STAGING_OWNED=0\nFINAL_STAGING_DIR=""', self.source)
         self.assertLess(
             self.source.index('es80_signed_field_artifact_private_runner.py'),
             self.source.index('mkdir "$FINAL_STAGING_DIR"'),
         )
         self.assertLess(
-            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('if ! mkdir "$FINAL_STAGING_DIR"; then'),
+            self.source.index('FINAL_STAGING_OWNED=1'),
+        )
+        self.assertLess(
+            self.source.index('FINAL_STAGING_OWNED=1'),
             self.source.index('rename_exclusive(source, destination'),
+        )
+        self.assertLess(
+            self.source.index('rename_exclusive(source, destination'),
+            self.source.rindex('FINAL_STAGING_OWNED=0'),
         )
 
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
