@@ -4,6 +4,7 @@ public enum AccelerationMilestoneAttemptArchiveError: Error, Equatable, Sendable
     case unsupportedSchemaVersion(Int)
     case invalidArchivedAt
     case requestedTargetsRequired
+    case invalidRequestedTarget(Double)
     case requestedTargetsMustBeStrictlyIncreasing(previous: Double, current: Double)
     case invalidPolicy
     case inconsistentSuitePolicy(targetMetersPerSecond: Double)
@@ -417,9 +418,7 @@ public struct AccelerationMilestoneAttemptArchive: Codable, Equatable, Sendable 
         var previousRequested: Double?
         for target in requestedTargetsMetersPerSecond {
             guard target.isFinite, target > 0 else {
-                throw AccelerationMilestoneAttemptArchiveError.invalidQualifiedMilestone(
-                    targetMetersPerSecond: target
-                )
+                throw AccelerationMilestoneAttemptArchiveError.invalidRequestedTarget(target)
             }
             if let previousRequested, target <= previousRequested {
                 throw AccelerationMilestoneAttemptArchiveError
@@ -471,7 +470,7 @@ public struct AccelerationMilestoneAttemptArchive: Codable, Equatable, Sendable 
                     quality: milestone.quality.acceptedSampleCount
                 )
             }
-            guard approximatelyEqual(
+            guard Self.approximatelyEqual(
                 milestone.stationaryToTargetObservationElapsedSeconds,
                 milestone.quality.observedDurationSeconds
             ) else {
@@ -491,8 +490,8 @@ public struct AccelerationMilestoneAttemptArchive: Codable, Equatable, Sendable 
         self.qualifiedMilestones = qualifiedMilestones
     }
 
-    private func approximatelyEqual(_ lhs: Double, _ rhs: Double) -> Bool {
-        let scale = max(1, abs(lhs), abs(rhs))
+    private static func approximatelyEqual(_ lhs: Double, _ rhs: Double) -> Bool {
+        let scale = max(1, max(abs(lhs), abs(rhs)))
         return abs(lhs - rhs) <= scale * 1e-9
     }
 }
