@@ -40,6 +40,40 @@ struct PassiveBluetoothExperimentOneStructuralReceiptIntegrityTests {
         #expect(!assessment.isStructurallyCoherent)
     }
 
+    @Test("later receipt cannot overlap or regress behind the prior monotonic window")
+    func crossWindowChronologyRegressionFailsClosed() throws {
+        let original = try powerCycleResult()
+        var windows = original.windows
+        let first = windows[0]
+        let second = windows[1]
+        let duration = second.endedAtUptimeNanoseconds - second.startedAtUptimeNanoseconds
+        let regressedStart = first.endedAtUptimeNanoseconds - 1
+        windows[1] = PassiveBluetoothPowerCycleObservationWindowReceipt(
+            phase: second.phase,
+            windowSequence: second.windowSequence,
+            startedAtUptimeNanoseconds: regressedStart,
+            endedAtUptimeNanoseconds: regressedStart + duration,
+            observedCandidateCount: second.observedCandidateCount
+        )
+        let tampered = PassiveBluetoothPowerCycleObservationResult(
+            windows: windows,
+            observationSnapshots: original.observationSnapshots,
+            correlation: original.correlation
+        )
+
+        // The lower duration primitive intentionally validates each receipt independently; this
+        // reconstructed artifact therefore still passes that narrow gate. Experiment One's raw
+        // structural replay must add the serial-producer chronology invariant and reject it.
+        let assessment = PassiveBluetoothExperimentOneStructuralEvidenceAssessment.assess(
+            powerCycleResult: tampered,
+            captureSession: try captureSession()
+        )
+
+        #expect(assessment.powerCycleDurationAssessment.isDurationSufficient)
+        #expect(assessment.status == .powerCycleEvidenceInconsistent)
+        #expect(!assessment.isStructurallyCoherent)
+    }
+
     private func powerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
         var ledger = PassiveBluetoothPowerCycleObservationLedger(
             minimumWindowDurationNanoseconds: 1
