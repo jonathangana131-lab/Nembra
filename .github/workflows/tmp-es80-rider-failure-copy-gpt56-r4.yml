@@ -1,0 +1,90 @@
+name: Temporary ES80 rider failure-copy transform r4
+
+on:
+  push:
+    branches:
+      - product/es80-v14-rider-failure-copy-gpt56-r4
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rewrite rendered failure copy only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          expected_parent = "64760fb9f683ddf5cc8bc296283e4787675886f0"
+          workflow = ".github/workflows/tmp-es80-rider-failure-copy-gpt56-r4.yml"
+          if subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip() != expected_parent:
+              raise SystemExit("transformer parent drifted")
+          changed = subprocess.check_output(["git", "diff", "--name-only", "HEAD^..HEAD"], text=True).splitlines()
+          if changed != [workflow]:
+              raise SystemExit(f"transformer scope drifted: {changed!r}")
+
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  'return .failed("Nembra left the active foreground after Experiment One began. This capture cannot resume safely; start a fresh Experiment One.")',
+                  'return .failed("Nembra left the foreground after capture began. This run can no longer continue; start a fresh capture.")',
+              ),
+              (
+                  'return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")',
+                  'return .failed("The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.")',
+              ),
+              (
+                  'return .correlationFailed("This Experiment One run has no active progress and no final result. Start a fresh run.")',
+                  'return .correlationFailed("The OFF / ON setup is unavailable for this run. Start a fresh capture.")',
+              ),
+              (
+                  'return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")',
+                  'return .correlationFailed("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series. Start a fresh capture.")',
+              ),
+              (
+                  'return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")',
+                  'return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted capture; it is not physical evidence.")',
+              ),
+              (
+                  'localFailureMessage = "Nembra could not create a fresh Experiment One run: \\(String(describing: error))"',
+                  'localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."',
+              ),
+          ]
+          for old, new in replacements:
+              if source.count(old) != 1:
+                  raise SystemExit(f"expected current rider failure copy not found exactly once: {old}")
+              source = source.replace(old, new, 1)
+
+          forbidden = [
+              "coordinator.lastDiagnostic ??",
+              "foreground-invalidated evidence life",
+              "Nembra could not create a fresh Experiment One run",
+              "scan-liveness",
+          ]
+          leftovers = [value for value in forbidden if value in source]
+          if leftovers:
+              raise SystemExit(f"stale rendered failure seams remain: {leftovers}")
+          path.write_text(source, encoding="utf-8")
+          subprocess.run(["git", "diff", "--check"], check=True)
+          PY
+
+      - name: Commit shell copy and self-delete transformer
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-rider-failure-copy-gpt56-r4.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Capture: keep rendered failure copy rider-first"
+          git push origin HEAD:product/es80-v14-rider-failure-copy-gpt56-r4
