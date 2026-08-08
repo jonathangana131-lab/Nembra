@@ -1,0 +1,58 @@
+name: Capture TODAY package diagnostics v2
+
+on:
+  push:
+    branches:
+      - cell/capture-today-package-diagnostics/ci/gpt56-2
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostics:
+    runs-on: xcode-27
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact repaired parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: ee21c57ebc3b0cd6a742875d9cb0a476a71e41f6
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-capture-today-package-diagnostics-gpt56-v2.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+          printf 'Exact repaired product parent: %s\nDiagnostic-only delta: %s\n' "$actual_parent" "$changed"
+
+      - name: Run Capture package and surface first semantic compiler errors
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/capture-package.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          lines = Path('/tmp/capture-package.log').read_text(errors='replace').splitlines()
+          semantic = [
+              line for line in lines
+              if re.search(r'\.swift:\d+:\d+: (?:error|warning):', line)
+          ]
+          if not semantic:
+              semantic = [line for line in lines if 'error:' in line or 'warning:' in line]
+          for line in semantic[:10]:
+              safe = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Capture semantic compiler diagnostic::{safe}')
+          PY
+            exit "$status"
+          fi
