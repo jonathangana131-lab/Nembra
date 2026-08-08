@@ -160,14 +160,13 @@ public enum PassiveBluetoothTuyaCandidateBridge {
     /// invents a substitute clock/scope. Uptime and wall-clock Date remain the
     /// original capture metadata.
     ///
-    /// Continuity generations advance only for gaps that are already explicit
-    /// in the capture domain:
-    /// - a structured disconnect for the selected peripheral; or
-    /// - a global capture interruption.
-    ///
-    /// An unrelated peripheral's disconnect does not break the selected target.
-    /// Empty raw value payloads fail the whole projection rather than being
-    /// dropped and accidentally allowing fragments on either side to splice.
+    /// Continuity generations advance for every gap already classified by the
+    /// authoritative capture domain as `breaksByteContinuity`. Target attribution
+    /// remains separate: a disconnect carrying another peripheral identifier is
+    /// not relabeled as an ES80 disconnect, but its already-issued raw-byte gap is
+    /// still preserved for downstream framing. Empty raw value payloads fail the
+    /// whole projection rather than being dropped and accidentally allowing
+    /// fragments on either side to splice.
     public static func transcripts(
         in session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String
@@ -195,25 +194,15 @@ public enum PassiveBluetoothTuyaCandidateBridge {
         var builderIndexByKey: [StreamKey: Int] = [:]
 
         for (recordIndex, record) in session.records.enumerated() {
+            if record.event.breaksByteContinuity {
+                continuityGeneration = try advancedContinuityGeneration(
+                    continuityGeneration,
+                    recordIndex: recordIndex,
+                    sequenceNumber: record.sequenceNumber
+                )
+            }
+
             switch record.event {
-            case let .connection(observation):
-                guard observation.state == .disconnected,
-                      observation.peripheralIdentifier == peripheralIdentifier else {
-                    continue
-                }
-                continuityGeneration = try advancedContinuityGeneration(
-                    continuityGeneration,
-                    recordIndex: recordIndex,
-                    sequenceNumber: record.sequenceNumber
-                )
-
-            case .interruption:
-                continuityGeneration = try advancedContinuityGeneration(
-                    continuityGeneration,
-                    recordIndex: recordIndex,
-                    sequenceNumber: record.sequenceNumber
-                )
-
             case let .value(value):
                 guard value.peripheralIdentifier == peripheralIdentifier else { continue }
                 guard !value.payload.isEmpty else {
@@ -265,12 +254,14 @@ public enum PassiveBluetoothTuyaCandidateBridge {
                 }
 
             case .advertisement,
+                 .connection,
                  .service,
                  .includedService,
                  .characteristic,
                  .descriptor,
                  .subscription,
-                 .stockAppState:
+                 .stockAppState,
+                 .interruption:
                 continue
             }
         }
