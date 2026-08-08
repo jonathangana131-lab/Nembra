@@ -593,6 +593,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
+        // This sealed admission publishes a genuinely fresh durable recorder/session,
+        // so it is the same authority boundary that may restore foreground evidence
+        // validity after a prior scene loss. Transport retry alone never does this.
+        foregroundEvidenceIntegrityValid = true
         hasUsedInitialSessionIdentity = true
         recorder = payload.recorder
 
