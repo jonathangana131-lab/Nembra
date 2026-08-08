@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# The superseded raw-value input must never leak into child-process environments. Scrub it before
+# dirname/pwd/uname or any later process is spawned; the producer accepts only the private file path.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
