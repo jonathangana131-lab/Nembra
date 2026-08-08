@@ -35,6 +35,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
         XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-preflight"].waitForExistence(timeout: 3),
+            "The running app's independent trusted-build preflight must be visible on the field lock surface."
+        )
+        XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
         )
@@ -73,7 +77,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — Physical + Build-Provenance NO-GO"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
