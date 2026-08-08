@@ -129,11 +129,15 @@ public enum LiveDistanceCockpitState: Equatable, Sendable {
                 }
             }
 
-            // The accumulator records an initial coverage gap whenever its first
-            // accepted sample arrives after the segment boundary. Do not let a
-            // malformed projection erase that gap and manufacture a clean role.
-            if firstAcceptedSampleUptimeNanoseconds > snapshot.segmentStartUptimeNanoseconds,
-               snapshot.knownCoverageGapCount == 0 {
+            // A leading hole before the first accepted sample is a distinct
+            // coverage event from every accepted-sample adjacency that could not
+            // be integrated. Do not let one recorded leading gap conceal a later
+            // missing accepted interval (or vice versa).
+            let leadingGapCount = firstAcceptedSampleUptimeNanoseconds > snapshot.segmentStartUptimeNanoseconds
+                ? 1
+                : 0
+            let minimumKnownCoverageGapCount = missingAcceptedIntervals + leadingGapCount
+            guard snapshot.knownCoverageGapCount >= minimumKnownCoverageGapCount else {
                 self = .unavailable
                 return
             }
