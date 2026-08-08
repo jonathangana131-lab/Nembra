@@ -1,0 +1,101 @@
+name: Capture producer provenance final composition
+
+on:
+  push:
+    branches:
+      - agent/capture-producer-provenance-final-v14
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact composed flagship parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "88227946e160f72b936d464d21194dc5a12ee6cd"
+
+      - name: Compose reviewed producer delta without stale ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_HEAD="6938bcc002c30c30c731d9c94466de681b90e965"
+          COMMON_BASE="e3f54210f897890706f26ba477fbbce17285cbc6"
+          git fetch --no-tags origin "$SOURCE_HEAD"
+          git fetch --no-tags origin "$COMMON_BASE"
+          test "$(git cat-file -t "$SOURCE_HEAD")" = commit
+          test "$(git cat-file -t "$COMMON_BASE")" = commit
+
+          merge_path() {
+            path="$1"
+            current="$(mktemp)"
+            base="$(mktemp)"
+            other="$(mktemp)"
+            merged="$(mktemp)"
+            git show "HEAD:$path" > "$current"
+            git show "$COMMON_BASE:$path" > "$base"
+            git show "$SOURCE_HEAD:$path" > "$other"
+            cp "$current" "$merged"
+            git merge-file "$merged" "$base" "$other"
+            if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$merged"; then
+              echo "Three-way source merge conflicted: $path" >&2
+              exit 1
+            fi
+            cp "$merged" "$path"
+            rm -f "$current" "$base" "$other" "$merged"
+          }
+
+          merge_path scripts/ci/es80_signed_field_artifact_private_runner.py
+          merge_path scripts/ci/xcode27_signed_field_candidate.sh
+          merge_path scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/ci/xcode27_signed_field_candidate.sh").read_text(encoding="utf-8")
+          executable = [
+              line.strip() for line in source.splitlines()
+              if line.strip() and not line.lstrip().startswith("#")
+          ]
+          assert executable[:2] == ["set -euo pipefail", "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID"]
+          assert 'FINAL_STAGING_DIR_OWNED=1' in source
+          assert 'python3 /dev/fd/9' in source
+          assert '--canonical-inspector-fd 8' in source
+          PY
+
+      - name: Validate latest-inspector plus producer composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit only final composed product hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-capture-producer-provenance-final.yml
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_private_runner.py \
+                  scripts/ci/xcode27_signed_field_candidate.sh \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+                  .github/workflows/zz-capture-producer-provenance-final.yml
+          git diff --cached --check
+          git commit -m "fix(capture): close producer provenance and cleanup races"
+          git push origin HEAD:agent/capture-producer-provenance-final-v14
