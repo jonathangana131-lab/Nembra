@@ -68,11 +68,12 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         )
     }
 
-    @Test("six-stage experiment rail has an accessibility-size composition")
+    @Test("six-stage capture rail has an accessibility-size composition")
     func progressRailRecomposes() throws {
         let source = try Self.shellSource()
         let rail = try Self.section(source, from: "private func progressRail(", to: "@ViewBuilder")
 
+        #expect(rail.contains("CAPTURE PROGRESS"))
         for label in ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"] {
             #expect(rail.contains(label))
         }
@@ -87,12 +88,19 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         let source = try Self.shellSource()
         let health = try Self.section(source, from: "private func observationHealthStrip(", to: "private var completionPanel")
 
-        #expect(health.contains("TARGET"))
+        #expect(
+            health.contains("SIGNAL"),
+            "The Dynamic Type contract must follow the accepted rider-facing SIGNAL label rather than reviving the superseded TARGET implementation term."
+        )
         #expect(health.contains("DISCOVERY"))
         #expect(health.contains("SEAL"))
         #expect(
+            !health.contains("healthItem(\"TARGET\""),
+            "Accessibility acceptance must not regress the rider-facing health strip back to TARGET vocabulary."
+        )
+        #expect(
             Self.hasIntentionalAdaptiveLayout(health),
-            "Target / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
+            "Signal / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
         )
     }
 }
