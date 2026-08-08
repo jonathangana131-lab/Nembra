@@ -84,6 +84,39 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("SEAL"))
     }
 
+    @Test("primary failure copy stays rider-readable and never dumps implementation errors")
+    func failureCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let beginning = try #require(source.range(of: "private func experimentErrorMessage"))
+        let end = try #require(
+            source.range(
+                of: "private func bluetoothUnavailableMessage",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        let failureCopy = source[beginning.lowerBound..<end.lowerBound]
+
+        let implementationPhrasesThatMustStayOutOfFailureCopy = [
+            "Experiment One",
+            "package-owned",
+            "CoreBluetooth",
+            "bounded window",
+            "bounded startup interval",
+            "local observation-window sequence",
+            "String(describing: error)"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfFailureCopy {
+            #expect(
+                !failureCopy.contains(phrase),
+                "Primary failure copy still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(failureCopy.contains("Start a fresh capture."))
+        #expect(failureCopy.contains("OFF / ON"))
+    }
+
     @Test("engineering truth remains available in Details instead of being deleted")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
