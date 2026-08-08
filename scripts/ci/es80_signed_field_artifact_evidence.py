@@ -22,6 +22,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -134,14 +135,20 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
+def _filesystem_collision_key(path: PurePosixPath) -> tuple[str, ...]:
+    return tuple(unicodedata.normalize("NFC", part).casefold() for part in path.parts)
+
+
 def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, PurePosixPath]:
     """Reject archive ambiguity before any member is read or extracted.
 
-    Exact duplicate member names are ambiguous to zip readers, while case-fold collisions can
-    overwrite one another on the default case-insensitive filesystems commonly used by macOS.
+    Exact duplicate member names are ambiguous to zip readers. Distinct ZIP names can also alias
+    on normal case-insensitive, Unicode-normalizing macOS filesystems. Validate every path prefix,
+    not only each complete filename, so differently-spelled parent directories cannot merge during
+    extraction before code-signing verification.
     """
     exact: set[str] = set()
-    folded: dict[str, str] = {}
+    filesystem_paths: dict[tuple[str, ...], PurePosixPath] = {}
     result: dict[str, PurePosixPath] = {}
     for info in infos:
         raw_name = info.filename.rstrip("/")
@@ -150,13 +157,19 @@ def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, Pu
         if canonical in exact:
             raise EvidenceError(f"IPA contains duplicate ZIP member path: {canonical!r}")
         exact.add(canonical)
-        casefolded = canonical.casefold()
-        previous = folded.get(casefolded)
-        if previous is not None and previous != canonical:
-            raise EvidenceError(
-                f"IPA contains case-fold-colliding ZIP member paths: {previous!r} and {canonical!r}"
-            )
-        folded[casefolded] = canonical
+
+        parts = member.parts
+        for depth in range(1, len(parts) + 1):
+            prefix = PurePosixPath(*parts[:depth])
+            collision_key = _filesystem_collision_key(prefix)
+            previous = filesystem_paths.get(collision_key)
+            if previous is not None and previous != prefix:
+                raise EvidenceError(
+                    "IPA contains filesystem-aliasing ZIP member paths: "
+                    f"{str(previous)!r} and {str(prefix)!r}"
+                )
+            filesystem_paths[collision_key] = prefix
+
         result[info.filename] = member
     return result
 
@@ -680,16 +693,31 @@ def self_test() -> None:
     else:
         raise AssertionError("duplicate ZIP member path must fail closed")
 
-    case_collision = [
-        zipfile.ZipInfo("Payload/Nembra.app/Info.plist"),
-        zipfile.ZipInfo("payload/nembra.app/info.plist"),
-    ]
-    try:
-        _validated_unique_member_paths(case_collision)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("case-fold-colliding ZIP member paths must fail closed")
+    def assert_alias_rejected(first: str, second: str) -> None:
+        infos = [zipfile.ZipInfo(first), zipfile.ZipInfo(second)]
+        try:
+            _validated_unique_member_paths(infos)
+        except EvidenceError as error:
+            assert "filesystem-aliasing" in str(error)
+        else:
+            raise AssertionError(f"filesystem-aliasing ZIP paths must fail closed: {first!r}, {second!r}")
+
+    assert_alias_rejected(
+        "Payload/Nembra.app/Info.plist",
+        "Payload/Nembra.app/info.plist",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Nembra",
+        "Payload/Nembra.app/nembra",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Info.plist",
+        "Payload/nembra.app/Other",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Caf\u00e9",
+        "Payload/Nembra.app/Cafe\u0301",
+    )
 
     exact_field_keys = {
         "schemaVersion",
