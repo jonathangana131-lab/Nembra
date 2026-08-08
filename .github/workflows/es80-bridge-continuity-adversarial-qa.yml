@@ -1,0 +1,67 @@
+name: ES80 Bridge Continuity Expected-Red QA
+
+on:
+  push:
+    branches:
+      - 'cell/es80-bridge-continuity-adversarial/ci/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-bridge-continuity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expected-red:
+    name: Reproduce capture-to-Tuya continuity blocker
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable diagnostic parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "8da3777d5f6d22961d776c55bd2fbbed9080bfec"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-bridge-continuity-adversarial-qa.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 research package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Prove incumbent bridge suite still passes
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter PassiveBluetoothTuyaCandidateBridgeTests
+
+      - name: Reproduce expected-red continuity contract
+        run: |
+          set -euo pipefail
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter PassiveBluetoothTuyaCandidateBridgeContinuityContractTests 2>&1 | tee /tmp/bridge-continuity.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected-red suite unexpectedly passed; dependency source may already be repaired.' >&2
+            exit 1
+          fi
+
+          grep -F 'unrelatedStructuredDisconnectAdvancesCandidateContinuity' /tmp/bridge-continuity.log >/dev/null
+          echo 'EXPECTED-RED REPRODUCED: current bridge weakens a NembraCore-declared raw-byte continuity break.'
+          echo 'This green diagnostic means the known defect reproduced; it is NOT product acceptance.'
