@@ -63,7 +63,7 @@ struct RideHistoryObservedPeakPresentationTests {
     @Test("missing peak stays unavailable and never becomes fake zero")
     func missingPeakIsUnavailable() throws {
         let ride = try completedRide()
-        var accumulator = RideSpeedEvidenceSessionAccumulator(
+        let accumulator = RideSpeedEvidenceSessionAccumulator(
             sessionID: sessionID,
             peakPolicy: try PeakSpeedPolicy(source: .scooterBluetooth)
         )
