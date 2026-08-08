@@ -401,6 +401,29 @@ public struct PassiveBluetoothCaptureInterruption: Equatable, Codable, Sendable 
     }
 }
 
+/// Nembra-generated lifecycle boundaries that share the exact ordered receipt
+/// clock with raw Bluetooth evidence. These are observation-session evidence,
+/// never scooter telemetry, RF packet timestamps, or proof of physical state.
+///
+/// `finiteAcquisitionReady` means Nembra's finite passive GATT acquisition
+/// ledger reached its accepted ready state at this receipt boundary.
+/// `observationHorizon` means Nembra froze the end of the observation interval
+/// while capture authority was still valid, before later transport teardown.
+/// A quiet interval therefore remains representable without inventing periodic
+/// Bluetooth callbacks merely to make elapsed time visible.
+public enum PassiveBluetoothCaptureBoundaryKind: String, CaseIterable, Codable, Sendable {
+    case finiteAcquisitionReady
+    case observationHorizon
+}
+
+public struct PassiveBluetoothCaptureBoundaryObservation: Equatable, Codable, Sendable {
+    public let kind: PassiveBluetoothCaptureBoundaryKind
+
+    public init(kind: PassiveBluetoothCaptureBoundaryKind) {
+        self.kind = kind
+    }
+}
+
 public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case advertisement(PassiveBluetoothAdvertisementObservation)
     case connection(PassiveBluetoothConnectionObservation)
@@ -412,11 +435,13 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
     case value(PassiveBluetoothValueObservation)
     case stockAppState(PassiveBluetoothStockAppObservation)
     case interruption(PassiveBluetoothCaptureInterruption)
+    case captureBoundary(PassiveBluetoothCaptureBoundaryObservation)
 
     /// Whether raw value evidence on opposite sides of this event must be
     /// analyzed as separate continuity segments. Structured disconnects carry
     /// this semantic directly; generic interruption events cover every other
-    /// known observation gap.
+    /// known observation gap. Capture boundaries are Nembra lifecycle evidence,
+    /// not discontinuities, so they deliberately fall through as `false`.
     public var breaksByteContinuity: Bool {
         switch self {
         case let .connection(observation):
@@ -512,6 +537,8 @@ public enum PassiveBluetoothCaptureEvent: Equatable, Codable, Sendable {
             )
         case let .interruption(observation):
             _ = try PassiveBluetoothCaptureInterruption(reason: observation.reason)
+        case .captureBoundary:
+            break
         }
     }
 }
@@ -604,11 +631,13 @@ public struct PassiveBluetoothCaptureSession: Equatable, Sendable {
 /// physical-device sessions and offline parser/tests. Sorted keys plus explicit
 /// deterministic characteristic-property encoding keep semantically identical
 /// artifacts reviewable while millisecond epoch dates preserve sub-second
-/// correlation metadata. Schema v2 adds structured connection/subscription
-/// evidence; v1 remains readable so existing raw evidence is not discarded.
+/// correlation metadata. Schema v2 added structured connection/subscription
+/// evidence. Schema v3 adds Nembra-generated capture lifecycle boundaries so a
+/// quiet observation interval can be preserved without fabricating BLE events.
+/// v1 and v2 remain readable so existing raw evidence is not discarded.
 public enum PassiveBluetoothCaptureJSON {
-    public static let currentSchemaVersion = 2
-    private static let supportedSchemaVersions: Set<Int> = [1, 2]
+    public static let currentSchemaVersion = 3
+    private static let supportedSchemaVersions: Set<Int> = [1, 2, 3]
 
     private struct VersionProbe: Decodable {
         let schemaVersion: Int
@@ -672,11 +701,16 @@ public enum PassiveBluetoothCaptureJSON {
         in session: PassiveBluetoothCaptureSession,
         schemaVersion: Int
     ) throws {
-        guard schemaVersion == 1 else { return }
         for record in session.records {
             switch record.event {
             case .connection, .subscription:
-                throw PassiveBluetoothCaptureValidationError.eventNotSupportedBySchemaVersion(schemaVersion)
+                guard schemaVersion >= 2 else {
+                    throw PassiveBluetoothCaptureValidationError.eventNotSupportedBySchemaVersion(schemaVersion)
+                }
+            case .captureBoundary:
+                guard schemaVersion >= 3 else {
+                    throw PassiveBluetoothCaptureValidationError.eventNotSupportedBySchemaVersion(schemaVersion)
+                }
             default:
                 continue
             }
