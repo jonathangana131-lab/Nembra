@@ -1,4 +1,4 @@
-name: Capture terminal fresh-session exact-current convergence
+name: Capture terminal fresh-session gate exact-current convergence
 
 on:
   push:
@@ -11,10 +11,10 @@ permissions:
   contents: write
 
 jobs:
-  compose:
+  compose-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: feature/capture-v14-terminal-fresh-handoff-current-gpt56
           fetch-depth: 2
@@ -23,66 +23,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "0ea49c0ab180e34f025a695c1634bc6f7ef6092f"
+          test "$(git rev-parse HEAD^)" = "c31d27823639f6de2ff9f9b79386281e46627149"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-terminal-fresh-session-current-gpt56.yml"
 
-      - name: Compose reviewed terminal fresh-session product delta
+      - name: Compose terminal gate authority only
         shell: bash
         run: |
           set -euo pipefail
           base=50732571e01929ef22c79bd7f99178cf4f78a6bf
           source=28c9dde0398d14f353415b860d806215d597792b
-          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
           gate=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
-          controller_test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests.swift
           gate_test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalRealRecorderReopenTests.swift
 
           git fetch --no-tags origin "$base" "$source"
-          git diff --binary "$base" "$source" -- "$controller" > /tmp/terminal-controller.patch
           git diff --binary "$base" "$source" -- "$gate" > /tmp/terminal-gate.patch
-          test -s /tmp/terminal-controller.patch
           test -s /tmp/terminal-gate.patch
-          git apply --3way --index /tmp/terminal-controller.patch
           git apply --3way --index /tmp/terminal-gate.patch
-
-          git show "$source:$controller_test" > "$controller_test"
           git show "$source:$gate_test" > "$gate_test"
-          git add "$controller_test" "$gate_test"
+          git add "$gate_test"
 
           rm .github/workflows/capture-terminal-fresh-session-current-gpt56.yml
           git add -u .github/workflows/capture-terminal-fresh-session-current-gpt56.yml
           git diff --cached --check
 
-          # Terminal-success authority must be composed.
-          grep -q 'pendingTerminalQueueResolution' "$controller"
-          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create' "$controller"
-          grep -q 'reopenAfterTerminalFreshTargetSession' "$controller"
+          grep -q 'case freshTargetSessionRequired' "$gate"
+          grep -q 'case freshRecorderIdentityMismatch' "$gate"
+          grep -q 'terminalResolvedFrontierNotApplied' "$gate"
+          grep -q 'terminalQueueChangedAfterResolution' "$gate"
+          grep -q 'requiredReadyTargetSessionGeneration' "$gate"
           grep -q 'reopenAfterTerminalFreshTargetSession' "$gate"
-
-          # Preserve exact-current Experiment One chronology and ownership.
-          test "$(grep -c 'func connectUsingExperimentOneAdmission(' "$controller")" = "1"
-          test "$(grep -c 'admission.consume()' "$controller")" = "1"
-          grep -q 'latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds' "$controller"
-          grep -q 'recorder = payload.recorder' "$controller"
-
-          # Preserve Ready/Horizon + foreground-integrity truth repairs.
-          grep -q 'validateBoundaryAuthority(admission.authority)' "$controller"
-          test "$(grep -c 'try self.requireForegroundEvidenceIntegrity()' "$controller")" -ge "4"
-          grep -q 'let recordedReadyFailure = error' "$controller"
-          grep -q 'let recordedHorizonFailure = error' "$controller"
-          test "$(grep -c 'foregroundEvidenceIntegrityValid = false' "$controller")" = "1"
-          test "$(grep -c 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$controller" || true)" = "0"
-          test "$(grep -c 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$controller" || true)" = "0"
-
-          test -f "$controller_test"
+          grep -q 'freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder)' "$gate"
           test -f "$gate_test"
           test ! -e .github/workflows/capture-terminal-fresh-session-current-gpt56.yml
 
-      - name: Commit product-only convergence
+      - name: Commit product-only gate convergence
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "nembra-chatgpt56-thinking"
           git config user.email "actions@users.noreply.github.com"
-          git commit -m "feat: consume terminal resolution into exact fresh recorder on current flagship"
+          git commit -m "feat: require exact fresh recorder before terminal gate reopen"
           git push origin HEAD:feature/capture-v14-terminal-fresh-handoff-current-gpt56
