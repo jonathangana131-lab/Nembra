@@ -13,7 +13,7 @@ It is intentionally stationary and foreground-only. It is not a riding test, bat
 Do not run this experiment until all of the following are true:
 
 - the accepted passive-capture parent includes the hardened finite acquisition, target attribution, immutable artifact-read boundary, and same-target terminal-callback quarantine used by the current recovery line;
-- the product-facing Nembra Capture shell has been reconciled onto that accepted parent and has passed its exact-head iPhone 12 / iOS 27 app gate;
+- the V13 product-facing Nembra Capture shell (current recovery line: #350 or its accepted descendant) has been reconciled onto the accepted passive runtime and has passed its exact-head iPhone 12 / iOS 27 app gate;
 - any known shell blockers that could misstate evidence continuity or artifact finalization have been closed;
 - the exact Nembra build/commit used on the phone is known;
 - the capture can be exported unchanged for offline analysis.
@@ -30,7 +30,7 @@ Use the accepted product-facing capture integration, not the normal Nembra runti
 2. Open the existing Nembra Xcode project in Xcode 27.
 3. Select the shared **Nembra ES80 Research** scheme.
 4. Run the existing `Nembra.app` Debug build on the iPhone 12 used for the experiment.
-5. Confirm the app opens the dedicated **Nembra Capture** surface and visibly shows its passive-evidence-only boundary before scanning.
+5. Confirm the app opens the dedicated **Nembra Capture** surface and visibly shows its passive-evidence-only / foreground-only boundary before scanning.
 
 That shared research scheme selects the dedicated Debug launch mode (`--es80-passive-capture`). The same mode may be selected by the Debug-only `NEMBRA_ES80_PASSIVE_CAPTURE=1` environment selector for automation. Release builds ignore those selectors and launch the normal product runtime, so a Release launch is not this experiment's capture tool.
 
@@ -49,10 +49,11 @@ For this experiment:
 - do not enable lock, light, cruise, speed-limit, start-mode, or motor commands from Nembra;
 - do not open or use the stock Tuya/AOVOPRO app on any device as part of this first fingerprint experiment;
 - do not insert stock-app state/reference markers into this first capture;
-- do not lock the iPhone, background Nembra, or let the screen auto-lock during the capture;
+- keep Nembra in the active foreground for the entire live selected-target session;
+- if the accepted shell reports that foreground evidence integrity was lost, treat the session as permanently failed, allow its connection cancellation to stand, and do not resume/reconstruct/export it as a valid capture;
 - if Bluetooth, the app, or the selected connection becomes unavailable before finite acquisition is ready, treat the attempt as incomplete rather than filling the gap with assumptions.
 
-The current capture path is foreground research software. This first experiment therefore keeps the iPhone unlocked, screen on, and Nembra Capture visible for a short stationary session.
+The V13 shell deliberately uses a foreground-only evidence lifecycle. While a live selected-target capture is active it keeps the screen awake and fails closed if the scene leaves active foreground; this is a capture-integrity guard, not proof of background capability.
 
 ## Physical setup
 
@@ -72,7 +73,7 @@ The current capture path is foreground research software. This first experiment 
 4. Treat any short UUID prefix shown in the product shell as display-only disambiguation. Provenance/manifest tooling must use the controller's **full canonical CoreBluetooth UUID** for the selected target. Never reconstruct or guess the full identifier from an 8-character prefix. If the integrated tooling cannot bind the full selected identifier automatically, keep the raw artifact and defer manifest creation until offline tooling can read the exact target identity from evidence.
 5. Select that exact candidate and start the target-scoped capture.
 6. Keep the scooter stationary while Nembra performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
-7. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, or becomes ambiguous, stop. Preserve the failed artifact only as failure evidence; do not use it to claim a service/field is absent.
+7. Wait until Nembra reports that the finite passive acquisition is complete/ready. If it fails closed, times out, disconnects before readiness, becomes ambiguous, or reports foreground evidence-integrity loss, stop. Preserve failed diagnostics only as failure evidence; do not use the attempt to claim a service/field is absent.
 8. After readiness, leave the healthy foreground session running for **60 seconds** without touching scooter controls.
 9. Finish Capture **once** while still stationary.
 10. Export the prepared versioned JSON unchanged. If the provenance sidecar/manifest capability is available, export/preserve it with the exact JSON bytes.
@@ -80,15 +81,15 @@ The current capture path is foreground research software. This first experiment 
 
 ## First-run provenance values
 
-For a stationary-capture manifest/sidecar that implements the accepted provenance contract, the first experiment's intended operator setup is:
+For the accepted stationary-capture manifest/sidecar contract, the first experiment's intended operator setup is:
 
 - experiment kind: `stationaryBaseline`;
 - charger state: `disconnected`;
+- execution context: `foregroundUnlockedScreenOn`;
 - stock-app reference setup: `none`;
-- stock-app marker count expected from the raw artifact: `0`;
-- capture execution context: foreground + screen on, if/when that operator-declared field exists in the accepted manifest schema.
+- stock-app marker count expected from the raw artifact: `0`.
 
-Those values describe intended procedure/provenance. They are not proof that the scooter was physically stationary, not scooter authentication, and not telemetry semantics. If the exact raw artifact contradicts the setup metadata, fail closed rather than forcing the sidecar to verify.
+Those values describe intended procedure/provenance. They are not proof that the scooter was physically stationary, not OS attestation of uninterrupted foreground execution, not scooter authentication, and not telemetry semantics. If the exact raw artifact contradicts the setup metadata, fail closed rather than forcing the sidecar to verify.
 
 ## Automated offline handoff
 
@@ -116,7 +117,7 @@ Keep together:
 - exact Nembra Git commit/build identity;
 - full selected observed CoreBluetooth peripheral identifier from authoritative capture evidence/tooling, never a guessed expansion of a UI prefix;
 - capture start/end context;
-- explicit state: `stationary`, `charger disconnected`, `foreground`, `screen remained on`, `stock app unused`;
+- explicit operator-declared state: `stationary`, `charger disconnected`, `foregroundUnlockedScreenOn`, `stock app unused`;
 - any generated stationary-capture manifest/sidecar;
 - any generated offline capture report as a separate derived artifact;
 - any failure diagnostic shown by Nembra;
@@ -147,7 +148,7 @@ Only if:
 - export completed from one immutable target-scoped artifact;
 - target attribution is non-ambiguous under the capture/analyzer policy;
 - no capture-integrity failure occurred;
-- the phone stayed foreground with no known suspension/background gap;
+- the accepted shell did not report foreground evidence-integrity loss;
 - the stock app was unused and the raw artifact contains no stock-app reference markers;
 - the raw artifact can be opened by Nembra's offline tooling.
 
@@ -162,7 +163,7 @@ Retry later with a fresh session if:
 - the selected candidate was physically ambiguous;
 - finite acquisition never became ready;
 - capture failed closed;
-- the phone locked/backgrounded or continuity is uncertain;
+- the shell reports foreground evidence-integrity loss or the phone left the required active foreground condition;
 - Bluetooth became unavailable during the required acquisition window;
 - stock-app markers appear despite this run's declared no-reference setup;
 - export failed or the raw file changed after export;
