@@ -31,8 +31,8 @@ struct NembraApp: App {
             initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
 #if DEBUG && targetEnvironment(simulator)
         case .es80PassiveCaptureSimulatorQA:
-            // Synthetic QA uses the inert status-only coordinator: no live CoreBluetooth controller.
-            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+            // Synthetic QA uses the package-owned inert coordinator: no live CoreBluetooth controller.
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.makeSimulatorQA()
 #endif
         }
         _researchCoordinator = State(initialValue: initialResearchCoordinator)
@@ -90,13 +90,17 @@ struct NembraApp: App {
                             ES80ExperimentOneStationaryPreflightView(
                                 coordinator: researchCoordinator,
                                 simulatorQAEvidenceLabel: snapshot.evidenceLabel,
-                                freshExperimentCoordinatorFactory: { try PassiveBluetoothExperimentOneCoordinator() }
+                                freshExperimentCoordinatorFactory: {
+                                    try PassiveBluetoothExperimentOneCoordinator.makeSimulatorQA()
+                                }
                             )
                         } else {
                             ES80CaptureShellView(
                                 coordinator: researchCoordinator,
                                 simulatorQASnapshot: snapshot,
-                                onFreshExperimentRequested: { try PassiveBluetoothExperimentOneCoordinator() }
+                                onFreshExperimentRequested: {
+                                    try PassiveBluetoothExperimentOneCoordinator.makeSimulatorQA()
+                                }
                             )
                         }
                     } else {
