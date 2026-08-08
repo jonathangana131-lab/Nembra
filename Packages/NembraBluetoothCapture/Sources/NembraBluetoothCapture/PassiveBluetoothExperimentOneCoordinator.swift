@@ -49,6 +49,16 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         )
     }
 
+    /// Creates the complete app-facing ES80 Experiment One software owner. Both the
+    /// controller and run are minted inside this package boundary so SwiftUI cannot
+    /// splice a separately-created generic controller into field provenance.
+    public convenience init() throws {
+        let controller = try ForegroundCoreBluetoothCaptureController(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
+        try self.init(controller: controller)
+    }
+
     /// Seals completed four-window correlation into this run's exact one-shot capture admission,
     /// then opens a new controller scan epoch. `startScanning` clears the controller's candidate
     /// catalog synchronously, so any target later accepted by `connectPreparedCapture` was received
