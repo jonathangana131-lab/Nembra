@@ -1,0 +1,389 @@
+name: Capture Ready pre-attempt product patch
+
+on:
+  push:
+    branches:
+      - agent/es80-app-spine-preH-controller-v14
+    paths:
+      - .github/workflows/capture-ready-pre-attempt-product-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/es80-app-spine-preH-controller-v14
+          fetch-depth: 2
+
+      - name: Verify exact app-visible product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "4f510588c7b23bee694d5a8e666c5cb35e1aad70"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-ready-pre-attempt-product-patch.yml"
+
+      - name: Apply Ready pre-attempt authority and controller consumption
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          decision_path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift")
+          decision = decision_path.read_text()
+
+          marker = "    enum ReadyRecorderMutationOutcome: Equatable, Sendable {"
+          receipt = '''    /// Producer-issued proof that the exact Ready admission was deliberately
+              /// abandoned before any recorder attempt. Claiming this receipt consumes the
+              /// same shared one-shot permit as recording, so no copy can later append Ready.
+              struct ReadyPreAttemptAbandonmentReceipt: Equatable, Sendable {
+                  let queueCutoff: UInt64
+                  let authority: PassiveCoreBluetoothArtifactAuthorityContext
+                  let transactionRevision: UInt64
+                  let transactionIdentity: UUID
+
+                  fileprivate init(
+                      decision: PassiveCoreBluetoothObservationBoundaryDecision,
+                      transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
+                  ) {
+                      queueCutoff = decision.queueCutoff
+                      authority = decision.authority
+                      transactionRevision = transaction.revision
+                      transactionIdentity = transaction.identity
+                  }
+              }
+
+          '''
+          if decision.count(marker) != 1:
+              raise SystemExit(f"expected one Ready outcome marker, found {decision.count(marker)}")
+          decision = decision.replace(marker, receipt + marker)
+
+          ready_record = '''    func recordBoundary(
+                  on recorder: PassiveCoreBluetoothCaptureRecorder
+              ) async throws -> RecordedReadyBoundary {'''
+          ready_abandon = '''    /// Deliberately abandons this exact Ready admission before any recorder call.
+              /// The shared permit proves no value copy has already attempted Ready mutation
+              /// and is consumed permanently so later recording/rejection cannot be fabricated.
+              func abandonBeforeRecorderAttempt() throws -> ReadyPreAttemptAbandonmentReceipt {
+                  try mutationPermit.claim()
+                  return ReadyPreAttemptAbandonmentReceipt(
+                      decision: decision,
+                      transaction: transaction
+                  )
+              }
+
+          '''
+          if decision.count(ready_record) != 1:
+              raise SystemExit(f"expected one outer Ready record method, found {decision.count(ready_record)}")
+          decision = decision.replace(ready_record, ready_abandon + ready_record)
+          decision_path.write_text(decision)
+
+          gate_path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift")
+          gate = gate_path.read_text()
+          origin_old = "            case uncommittedReadyRejectedBeforeRecorderMutation\n"
+          origin_new = "            case uncommittedReadyAbandonedBeforeRecorderAttempt\n" + origin_old
+          if gate.count(origin_old) != 1:
+              raise SystemExit(f"expected one Ready rejection origin, found {gate.count(origin_old)}")
+          gate = gate.replace(origin_old, origin_new)
+
+          evidence_old = '''        /// Furthest queue prefix already represented by durable lifecycle evidence in
+                  /// this abandoned epoch. Recorded/committed Horizon extends it through H; a
+                  /// zero-mutation Horizon abandonment/rejection leaves Ready as the boundary.
+                  var abandonedEvidenceQueueCutoff: UInt64 {
+          '''
+          evidence_new = '''        /// Furthest queue prefix already settled before quarantine and therefore no longer
+                  /// allowed to re-enter the pending FIFO. For pre-attempt Ready abandonment this
+                  /// is drained raw-event chronology only and MUST NOT be read as a durable
+                  /// `finiteAcquisitionReady` marker. Recorded/committed Horizon extends the
+                  /// settled prefix through H; zero-H abandonment/rejection leaves it at Ready.
+                  var abandonedEvidenceQueueCutoff: UInt64 {
+          '''
+          if gate.count(evidence_old) != 1:
+              raise SystemExit(f"expected one evidence-cutoff doc block, found {gate.count(evidence_old)}")
+          gate = gate.replace(evidence_old, evidence_new)
+
+          ready_abort_marker = '''    /// Abandons Ready only when #440 proves its authority-fenced recorder mutation was
+              /// rejected before the mutation body executed.
+          '''
+          ready_abort = '''    /// Abandons an exact Ready admission before any recorder attempt only when the
+              /// admission itself proves its shared one-shot mutation permit was still unused and
+              /// is now permanently consumed. The Ready cutoff may already be FIFO-settled, but
+              /// this receipt never fabricates a durable finiteAcquisitionReady lifecycle marker.
+              @discardableResult
+              mutating func abortReadyBeforeRecorderAttempt(
+                  after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.ReadyPreAttemptAbandonmentReceipt
+              ) throws -> ObservationEpochAbortReceipt {
+                  guard case let .drainingReady(current) = phase else {
+                      throw StateError.invalidTransition
+                  }
+                  guard current.authority == abandonment.authority,
+                        current.queueCutoff == abandonment.queueCutoff,
+                        current.revision == abandonment.transactionRevision,
+                        current.identity == abandonment.transactionIdentity else {
+                      throw StateError.staleTransaction
+                  }
+                  let receipt = ObservationEpochAbortReceipt(
+                      abandonedReadyTransaction: current,
+                      origin: .uncommittedReadyAbandonedBeforeRecorderAttempt
+                  )
+                  phase = .abortQuarantined(receipt)
+                  return receipt
+              }
+
+          '''
+          if gate.count(ready_abort_marker) != 1:
+              raise SystemExit(f"expected one Ready abort marker, found {gate.count(ready_abort_marker)}")
+          gate = gate.replace(ready_abort_marker, ready_abort + ready_abort_marker)
+          gate_path.write_text(gate)
+
+          controller_path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          controller = controller_path.read_text()
+          controller_old = '''                do {
+                              try self.ensureCaptureHealthy()
+                              let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+          '''
+          controller_new = '''                do {
+                              // Ready allocation has already moved the queue gate into its exact
+                              // draining transaction. If the drained prefix reveals capture failure
+                              // before the first recorder attempt, consume the producer-owned unused
+                              // admission and quarantine that exact zero-Ready-mutation transaction.
+                              do {
+                                  try self.ensureCaptureHealthy()
+                              } catch {
+                                  let preAttemptFailure = error
+                                  do {
+                                      let abandonment = try admission.abandonBeforeRecorderAttempt()
+                                      try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(
+                                          after: abandonment
+                                      )
+                                  } catch {
+                                      // Failure to prove/quarantine the exact unused Ready is stronger
+                                      // than the triggering health failure. Keep capture fail-closed.
+                                      throw error
+                                  }
+                                  throw preAttemptFailure
+                              }
+
+                              let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+          '''
+          if controller.count(controller_old) != 1:
+              raise SystemExit(f"expected one Ready controller patch site, found {controller.count(controller_old)}")
+          controller_path.write_text(controller.replace(controller_old, controller_new))
+
+          ready_test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothReadyPreAttemptAbandonmentTests.swift")
+          if ready_test.exists():
+              raise SystemExit(f"refusing to overwrite existing {ready_test}")
+          ready_test.write_text(r'''import Foundation
+          import NembraCore
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Passive CoreBluetooth Ready pre-attempt abandonment")
+          struct PassiveCoreBluetoothReadyPreAttemptAbandonmentTests {
+              private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
+                  targetSessionGeneration: 7,
+                  authorityGeneration: 11
+              )
+
+              private let es80 = VehicleIdentity(
+                  manufacturer: "AOVOPRO",
+                  model: "ES80",
+                  displayName: "AOVOPRO ES80",
+                  protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+              )
+
+              @Test("unused Ready admission can quarantine before any recorder attempt")
+              @MainActor
+              func exactUnusedReadyQuarantinesWithoutFabricatingDurableReady() async throws {
+                  let recorder = try PassiveCoreBluetoothCaptureRecorder(
+                      vehicleIdentity: es80,
+                      startedAt: Date(timeIntervalSince1970: 1)
+                  )
+                  let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+                  var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+                  let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+                      queueCutoff: 2,
+                      processedThrough: 2,
+                      authorityFence: fence,
+                      gate: &gate
+                  )
+
+                  #expect((await recorder.snapshot()).observationBoundaries.isEmpty)
+
+                  let copiedReady = ready
+                  let abandonment = try ready.abandonBeforeRecorderAttempt()
+                  #expect(abandonment.queueCutoff == 2)
+                  #expect(abandonment.authority == authority)
+
+                  let abort = try gate.abortReadyBeforeRecorderAttempt(after: abandonment)
+                  #expect(abort.origin == .uncommittedReadyAbandonedBeforeRecorderAttempt)
+                  #expect(abort.abandonedReadyQueueCutoff == 2)
+                  // This cutoff preserves settled FIFO chronology only. No Ready boundary
+                  // was recorded and the artifact remains incomplete evidence.
+                  #expect(abort.abandonedEvidenceQueueCutoff == 2)
+                  #expect(gate.phase == .abortQuarantined(abort))
+                  #expect(!gate.isTerminal)
+                  #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 3) == nil)
+                  #expect(!gate.resetForNewCaptureSession())
+                  #expect((await recorder.snapshot()).observationBoundaries.isEmpty)
+
+                  #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
+                      _ = try copiedReady.abandonBeforeRecorderAttempt()
+                  }
+                  await #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
+                      _ = try await copiedReady.recordBoundaryWithMutationOutcome(on: recorder)
+                  }
+                  #expect((await recorder.snapshot()).observationBoundaries.isEmpty)
+              }
+
+              @Test("a Ready recorder attempt consumes the same permit before abandonment can win")
+              @MainActor
+              func recorderAttemptAndPreAttemptAbandonmentAreMutuallyExclusive() async throws {
+                  let recorder = try PassiveCoreBluetoothCaptureRecorder(
+                      vehicleIdentity: es80,
+                      startedAt: Date(timeIntervalSince1970: 1)
+                  )
+                  let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+                  var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+                  let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+                      queueCutoff: 0,
+                      processedThrough: 0,
+                      authorityFence: fence,
+                      gate: &gate
+                  )
+
+                  let recorded = try await ready.recordBoundary(on: recorder)
+                  #expect((await recorder.snapshot()).observationBoundaries.map(\.kind) == [.finiteAcquisitionReady])
+
+                  #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
+                      _ = try ready.abandonBeforeRecorderAttempt()
+                  }
+                  #expect(!gate.isAbortQuarantined)
+
+                  let committed = try recorded.markBoundaryRecorded(
+                      on: &gate,
+                      lastProcessedQueueSequence: 0
+                  )
+                  #expect(gate.phase == .observing)
+                  #expect(committed.queueCutoff == 0)
+              }
+
+              @Test("equal-scalar foreign Ready abandonment cannot quarantine another gate")
+              @MainActor
+              func foreignPreAttemptReceiptFailsExactTransactionIdentity() async throws {
+                  let fenceA = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+                  let fenceB = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+                  var gateA = PassiveCoreBluetoothObservationBoundaryQueueGate()
+                  var gateB = PassiveCoreBluetoothObservationBoundaryQueueGate()
+
+                  let readyA = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+                      queueCutoff: 2,
+                      processedThrough: 2,
+                      authorityFence: fenceA,
+                      gate: &gateA
+                  )
+                  _ = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+                      queueCutoff: 2,
+                      processedThrough: 2,
+                      authorityFence: fenceB,
+                      gate: &gateB
+                  )
+
+                  let abandonmentA = try readyA.abandonBeforeRecorderAttempt()
+                  #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.staleTransaction) {
+                      _ = try gateB.abortReadyBeforeRecorderAttempt(after: abandonmentA)
+                  }
+                  #expect(!gateB.isAbortQuarantined)
+              }
+          }
+          ''')
+
+          controller_test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerPreAttemptReadyRecoveryTests.swift")
+          if controller_test.exists():
+              raise SystemExit(f"refusing to overwrite existing {controller_test}")
+          controller_test.write_text(r'''import Foundation
+          import Testing
+
+          @Suite("Foreground CoreBluetooth pre-attempt Ready recovery")
+          struct ForegroundCoreBluetoothCaptureControllerPreAttemptReadyRecoveryTests {
+              private static func controllerSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let packageRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: packageRoot
+                          .appendingPathComponent("Sources")
+                          .appendingPathComponent("NembraBluetoothCapture")
+                          .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              @Test("allocated Ready quarantines before first recorder attempt when drained health fails")
+              func controllerConsumesExactUnusedReadyBeforeRecorderAttempt() throws {
+                  let source = try Self.controllerSource()
+                  let ready = try #require(source.range(of: "let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady("))
+                  let flush = try #require(source.range(
+                      of: "await self.flushPendingEvents(through: admission.queueCutoff)",
+                      range: ready.lowerBound..<source.endIndex
+                  ))
+                  let failure = try #require(source.range(
+                      of: "let preAttemptFailure = error",
+                      range: flush.lowerBound..<source.endIndex
+                  ))
+                  let abandonment = try #require(source.range(
+                      of: "let abandonment = try admission.abandonBeforeRecorderAttempt()",
+                      range: failure.lowerBound..<source.endIndex
+                  ))
+                  let quarantine = try #require(source.range(
+                      of: "try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(",
+                      range: abandonment.lowerBound..<source.endIndex
+                  ))
+                  let recorderAttempt = try #require(source.range(
+                      of: "admission.recordBoundaryWithMutationOutcome(on: recorder)",
+                      range: quarantine.lowerBound..<source.endIndex
+                  ))
+
+                  #expect(ready.lowerBound < flush.lowerBound)
+                  #expect(flush.lowerBound < failure.lowerBound)
+                  #expect(failure.lowerBound < abandonment.lowerBound)
+                  #expect(abandonment.lowerBound < quarantine.lowerBound)
+                  #expect(quarantine.lowerBound < recorderAttempt.lowerBound)
+              }
+
+              @Test("pre-attempt Ready abandonment stays distinct from mutation-point rejection")
+              func controllerPreservesDistinctZeroReadyOrigins() throws {
+                  let source = try Self.controllerSource()
+                  #expect(source.components(separatedBy: "admission.abandonBeforeRecorderAttempt()").count - 1 == 1)
+                  #expect(source.components(separatedBy: "abortReadyBeforeRecorderAttempt(").count - 1 == 1)
+                  #expect(source.contains("case let .rejectedBeforeMutation(rejection):"))
+                  #expect(source.contains("abortUncommittedReady(after: rejection)"))
+              }
+          }
+          ''')
+
+          Path(".github/workflows/capture-ready-pre-attempt-product-patch.yml").unlink()
+          PY
+
+          git diff --check
+          test "$(grep -c 'func abandonBeforeRecorderAttempt() throws -> ReadyPreAttemptAbandonmentReceipt' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift)" = "1"
+          test "$(grep -c 'abortReadyBeforeRecorderAttempt(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift)" = "1"
+          test "$(grep -c 'admission.abandonBeforeRecorderAttempt()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "1"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothReadyPreAttemptAbandonmentTests.swift
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerPreAttemptReadyRecoveryTests.swift
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: quarantine Ready abandoned before recorder attempt"
+          git push origin HEAD:agent/es80-app-spine-preH-controller-v14
