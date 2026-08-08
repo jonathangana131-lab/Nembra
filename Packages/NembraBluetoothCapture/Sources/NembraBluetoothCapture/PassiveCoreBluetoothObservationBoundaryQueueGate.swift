@@ -23,6 +23,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
+        case freshTargetSessionRequired
+        case freshRecorderIdentityMismatch
+        case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -56,6 +60,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// remains incomplete evidence; this receipt never upgrades it into a terminal artifact.
     struct ObservationEpochAbortReceipt: Equatable, Sendable {
         enum Origin: Equatable, Sendable {
+            case uncommittedReadyAbandonedBeforeRecorderMutation
             case uncommittedReadyRejectedBeforeRecorderMutation
             case recordedReadyInvalidatedBeforeGateCommit
             case committedReadyInvalidated
@@ -84,9 +89,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let abandonedHorizonTransactionIdentity: UUID?
         let origin: Origin
 
-        /// Furthest queue prefix already represented by durable lifecycle evidence in
-        /// this abandoned epoch. Recorded/committed Horizon extends it through H; a
-        /// zero-mutation Horizon abandonment/rejection leaves Ready as the boundary.
+        /// Furthest queue prefix already represented by durable capture evidence in
+        /// this abandoned epoch. A pre-mutation Ready abandonment may preserve raw FIFO
+        /// evidence through the Ready cutoff without fabricating a durable Ready marker;
+        /// recorded/committed Horizon extends the evidence prefix through H.
         var abandonedEvidenceQueueCutoff: UInt64 {
             abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
         }
@@ -125,6 +131,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     private(set) var phase: Phase = .awaitingReady
     private var nextRevision: UInt64 = 1
     private var committedReadyTransaction: Transaction?
+    /// Exact already-provisioned durable target session required after terminal
+    /// recovery. Weak reset cannot erase this one-shot generation bind.
+    private var requiredReadyTargetSessionGeneration: UInt64?
 
     var isTerminal: Bool {
         if case .terminal = phase { return true }
@@ -167,6 +176,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard processedQueueSequence == nil else {
             throw StateError.invalidTransition
         }
+        if let requiredReadyTargetSessionGeneration {
+            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {
+                throw StateError.freshTargetSessionRequired
+            }
+        }
         guard nextRevision != UInt64.max else {
             throw StateError.transactionRevisionExhausted
         }
@@ -177,6 +191,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             authority: authority,
             revision: nextRevision
         )
+        requiredReadyTargetSessionGeneration = nil
         phase = .drainingReady(transaction)
         nextRevision += 1
         return transaction
@@ -320,6 +335,31 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             origin: .committedReadyInvalidated
         )
         committedReadyTransaction = nil
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
+    /// Abandons an exact Ready admission before any recorder attempt only when the
+    /// admission itself proves the shared one-shot mutation permit was still unused and
+    /// is now permanently consumed. Raw FIFO evidence through the Ready cutoff remains
+    /// historical evidence, but no Ready lifecycle marker is fabricated.
+    @discardableResult
+    mutating func abortUncommittedReady(
+        after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.ReadyRecorderMutationAbandonmentReceipt
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .drainingReady(current) = phase else {
+            throw StateError.invalidTransition
+        }
+        guard current.authority == abandonment.authority,
+              current.queueCutoff == abandonment.queueCutoff,
+              current.revision == abandonment.transactionRevision,
+              current.identity == abandonment.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: current,
+            origin: .uncommittedReadyAbandonedBeforeRecorderMutation
+        )
         phase = .abortQuarantined(receipt)
         return receipt
     }
@@ -484,11 +524,62 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
-    /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
-    /// retirement alone cannot reopen lifecycle admission because retired positions
-    /// still need a separate globally-resolved frontier update. #450 owns that
-    /// producer and its successor integration must make fresh-session reopen consume
-    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
+    /// Reopens a successful terminal Horizon only after the controller has
+    /// installed the exact recorder whose construction earned producer-issued
+    /// fresh-session proof, applied the exact terminal resolution to its global
+    /// resolved frontier, and proved no callback advanced the FIFO tail afterward.
+    ///
+    /// This transition is synchronous on MainActor. It consumes the terminal
+    /// transaction's exact process-local UUID and binds the exact fresh target-session
+    /// generation until the next Ready begins. Receipt possession alone and a
+    /// caller-chosen generation are deliberately insufficient.
+    @MainActor
+    mutating func reopenAfterTerminalFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .terminal(transaction) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.terminalResolution
+        guard resolution.terminalTransactionRevision == transaction.revision,
+              resolution.terminalTransactionIdentity == transaction.identity,
+              resolution.horizonQueueCutoff == transaction.queueCutoff,
+              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
+            throw StateError.staleTransaction
+        }
+        guard resolution.terminalAuthority == transaction.authority else {
+            throw StateError.authorityChanged
+        }
+        guard freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.terminalResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.terminalQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSession.targetSessionGeneration > transaction.authority.targetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    /// Abort quarantine remains irreversible here. Its sibling real-recorder producer
+    /// is separately owned and must converge without weakening terminal authority.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
