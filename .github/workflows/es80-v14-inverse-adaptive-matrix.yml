@@ -1,0 +1,51 @@
+name: ES80 V14 Inverse Adaptive Matrix
+
+on:
+  push:
+    branches:
+      - "qa/es80-v14-inverse-adaptive-matrix/chatgpt56-thinking-go"
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "qa/es80-v14-inverse-adaptive-matrix/chatgpt56-thinking-go"
+
+      - name: Apply guarded inverse adaptive matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_es80_inverse_adaptive_matrix.py
+          git diff --check
+          test ! -e .github/workflows/es80-v14-inverse-adaptive-matrix.yml
+          test ! -e scripts/ci/tmp_es80_inverse_adaptive_matrix.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraUITests/ES80ResearchCaptureUITests.swift").read_text(encoding="utf-8")
+          names = [
+              "testV14SimulatorQACaptureCompleteRemainsActionableAtAccessibilityExtraExtraExtraLarge",
+              "testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible",
+              "testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates",
+              "testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge",
+              "testV14SimulatorQACaptureCompleteLandscapeKeepsShareAndDetailsVisible",
+          ]
+          for name in names:
+              if s.count(name) != 1:
+                  raise SystemExit(f"expected exactly one {name}, got {s.count(name)}")
+          PY
+
+      - name: Commit clean test-only result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Add inverse adaptive screenshot gates"
+          git push origin HEAD:"qa/es80-v14-inverse-adaptive-matrix/chatgpt56-thinking-go"
