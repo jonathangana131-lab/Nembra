@@ -186,6 +186,26 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         }
     }
 
+    /// Producer-issued proof that the exact Horizon admission was deliberately
+    /// abandoned before any recorder mutation attempt. Claiming this receipt consumes
+    /// the same shared one-shot permit as recording, so no copy can later append H.
+    struct HorizonRecorderMutationAbandonmentReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let transactionIdentity: UUID
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
+        }
+    }
+
     enum HorizonRecorderMutationOutcome: Equatable, Sendable {
         case recorded(RecordedHorizonBoundary)
         case rejectedBeforeMutation(HorizonRecorderMutationRejectionReceipt)
@@ -208,6 +228,17 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.transaction == rhs.transaction
                 && lhs.authorityFence === rhs.authorityFence
                 && lhs.mutationPermit === rhs.mutationPermit
+        }
+
+        /// Deliberately abandons this exact admission before any recorder call. The
+        /// shared permit proves no value copy has already attempted H mutation and is
+        /// consumed permanently so later recording/rejection cannot be fabricated.
+        func abandonBeforeRecorderMutation() throws -> HorizonRecorderMutationAbandonmentReceipt {
+            try mutationPermit.claim()
+            return HorizonRecorderMutationAbandonmentReceipt(
+                decision: decision,
+                transaction: transaction
+            )
         }
 
         func recordBoundary(
