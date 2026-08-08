@@ -3,6 +3,8 @@ import Testing
 
 @MainActor
 struct PassiveCoreBluetoothTerminalQueueRetirementTests {
+    private typealias Retirement = PassiveCoreBluetoothTerminalQueueRetirement
+
     private struct Event: Equatable {
         let queueSequence: UInt64
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
@@ -31,10 +33,10 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
             Event(queueSequence: 16, authority: foreignSessionAuthority, label: "foreign")
         ]
 
-        let receipt = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-            from: &events,
-            terminalGate: try terminalGate(horizonQueueCutoff: 12),
-            identity: identity
+        let receipt = try retire(
+            &events,
+            currentTail: 16,
+            gate: try terminalGate(horizonQueueCutoff: 12)
         )
 
         #expect(events.map(\.label) == ["new", "foreign"])
@@ -49,57 +51,7 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
     }
 
     @Test
-    func terminalPrefixStillPendingFailsWithoutMutation() throws {
-        var events = [
-            Event(queueSequence: 12, authority: terminalAuthority, label: "at-h"),
-            Event(queueSequence: 13, authority: terminalAuthority, label: "post-h")
-        ]
-        let before = events
-
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected terminal-prefix retirement to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .terminalPrefixStillPending(queueSequence: 12)
-            )
-        }
-
-        #expect(events == before)
-    }
-
-    @Test
-    func preHorizonTerminalAuthorityFailsWithoutMutation() throws {
-        var events = [
-            Event(queueSequence: 11, authority: terminalAuthority, label: "pre-h"),
-            Event(queueSequence: 13, authority: terminalAuthority, label: "post-h")
-        ]
-        let before = events
-
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected an undrained pre-H event to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .terminalPrefixStillPending(queueSequence: 11)
-            )
-        }
-
-        #expect(events == before)
-    }
-
-    @Test
-    func foreignAuthorityAtOrBeforeHorizonAlsoFailsWithoutMutation() throws {
+    func anyPendingEvidenceAtHorizonFailsWithoutMutation() throws {
         let foreignAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: 5,
             authorityGeneration: 10
@@ -110,131 +62,148 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         ]
         let before = events
 
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected any undrained global FIFO prefix to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .terminalPrefixStillPending(queueSequence: 12)
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 13,
+                gate: try terminalGate(horizonQueueCutoff: 12)
             )
         }
 
+        #expect(error == .terminalPrefixStillPending(queueSequence: 12))
         #expect(events == before)
     }
 
     @Test
-    func nonterminalGateFailsWithoutMutation() throws {
+    func anyPendingEvidenceBeforeHorizonFailsWithoutMutation() throws {
         var events = [
-            Event(queueSequence: 13, authority: terminalAuthority, label: "old")
+            Event(queueSequence: 11, authority: terminalAuthority, label: "pre-h"),
+            Event(queueSequence: 13, authority: terminalAuthority, label: "post-h")
         ]
         let before = events
 
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: PassiveCoreBluetoothObservationBoundaryQueueGate(),
-                identity: identity
-            )
-            Issue.record("Expected nonterminal retirement to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .terminalHorizonRequired
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 13,
+                gate: try terminalGate(horizonQueueCutoff: 12)
             )
         }
 
+        #expect(error == .terminalPrefixStillPending(queueSequence: 11))
         #expect(events == before)
     }
 
     @Test
-    func duplicateSequenceFailsWithoutMutation() throws {
+    func controllerTailCannotRegressBehindTerminalHorizon() throws {
+        var events: [Event] = []
+        let before = events
+
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 11,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+
+        #expect(error == .controllerQueueTailBeforeHorizon(tail: 11, horizon: 12))
+        #expect(events == before)
+    }
+
+    @Test
+    func truncatedPendingQueueCannotMintRetirementReceipt() throws {
         var events = [
-            Event(queueSequence: 14, authority: terminalAuthority, label: "a"),
-            Event(queueSequence: 14, authority: terminalAuthority, label: "b")
+            Event(queueSequence: 13, authority: terminalAuthority, label: "known")
         ]
         let before = events
 
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected duplicate queue chronology to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .nonIncreasingQueueSequence(previous: 14, current: 14)
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 14,
+                gate: try terminalGate(horizonQueueCutoff: 12)
             )
         }
 
+        #expect(
+            error == .pendingQueueTailMismatch(
+                expectedControllerTail: 14,
+                actualPendingTail: 13
+            )
+        )
         #expect(events == before)
     }
 
     @Test
-    func regressingSequenceFailsWithoutMutation() throws {
+    func emptyQueueCannotHideCallbacksAfterHorizon() throws {
+        var events: [Event] = []
+
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 14,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+
+        #expect(
+            error == .pendingQueueTailMismatch(
+                expectedControllerTail: 14,
+                actualPendingTail: nil
+            )
+        )
+        #expect(events.isEmpty)
+    }
+
+    @Test
+    func secondRetirementCannotInferOldGlobalTailFromAlreadyRetiredQueue() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority, label: "old-a"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "old-b")
+        ]
+        let gate = try terminalGate(horizonQueueCutoff: 12)
+
+        let receipt = try retire(&events, currentTail: 14, gate: gate)
+        #expect(events.isEmpty)
+        #expect(receipt.validatedQueueTailSequence == 14)
+
+        let error = captureStateError {
+            _ = try retire(&events, currentTail: 14, gate: gate)
+        }
+        #expect(
+            error == .pendingQueueTailMismatch(
+                expectedControllerTail: 14,
+                actualPendingTail: nil
+            )
+        )
+    }
+
+    @Test
+    func receiptKeepsControllerTailWhenThatTailIsRetired() throws {
         let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: 4,
             authorityGeneration: 10
         )
         var events = [
-            Event(queueSequence: 15, authority: newerAuthority, label: "newer"),
-            Event(queueSequence: 14, authority: terminalAuthority, label: "older-sequence")
+            Event(queueSequence: 13, authority: newerAuthority, label: "retained"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "retired-tail")
         ]
-        let before = events
 
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected regressing queue chronology to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .nonIncreasingQueueSequence(previous: 15, current: 14)
-            )
-        }
-
-        #expect(events == before)
-    }
-
-    @Test
-    func zeroSequenceFailsWithoutMutation() throws {
-        let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
-            targetSessionGeneration: 4,
-            authorityGeneration: 10
+        let receipt = try retire(
+            &events,
+            currentTail: 14,
+            gate: try terminalGate(horizonQueueCutoff: 12)
         )
-        var events = [
-            Event(queueSequence: 0, authority: newerAuthority, label: "invalid")
-        ]
-        let before = events
 
-        do {
-            _ = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-                from: &events,
-                terminalGate: try terminalGate(horizonQueueCutoff: 12),
-                identity: identity
-            )
-            Issue.record("Expected zero queue sequence to fail closed.")
-        } catch {
-            #expect(
-                error as? PassiveCoreBluetoothTerminalQueueRetirement.StateError
-                    == .invalidQueueSequence(0)
-            )
-        }
-
-        #expect(events == before)
+        #expect(events.map(\.label) == ["retained"])
+        #expect(receipt.validatedQueueTailSequence == 14)
+        #expect(receipt.lastRetiredQueueSequence == 14)
+        #expect(receipt.retainedPendingEvidenceCount == 1)
     }
 
     @Test
-    func emptyRetirementStillIssuesReceiptBoundToTerminalTransaction() throws {
+    func newerAuthorityOnlyQueueProducesNoOpReceiptBoundToControllerTail() throws {
         let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: 4,
             authorityGeneration: 10
@@ -243,10 +212,10 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
             Event(queueSequence: 13, authority: newerAuthority, label: "new")
         ]
 
-        let receipt = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-            from: &events,
-            terminalGate: try terminalGate(horizonQueueCutoff: 12),
-            identity: identity
+        let receipt = try retire(
+            &events,
+            currentTail: 13,
+            gate: try terminalGate(horizonQueueCutoff: 12)
         )
 
         #expect(events.map(\.label) == ["new"])
@@ -261,36 +230,13 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
     }
 
     @Test
-    func receiptKeepsValidatedGlobalTailWhenThatTailIsRetired() throws {
-        let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
-            targetSessionGeneration: 4,
-            authorityGeneration: 10
-        )
-        var events = [
-            Event(queueSequence: 13, authority: newerAuthority, label: "retained"),
-            Event(queueSequence: 14, authority: terminalAuthority, label: "retired-tail")
-        ]
-
-        let receipt = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-            from: &events,
-            terminalGate: try terminalGate(horizonQueueCutoff: 12),
-            identity: identity
-        )
-
-        #expect(events.map(\.label) == ["retained"])
-        #expect(receipt.validatedQueueTailSequence == 14)
-        #expect(receipt.lastRetiredQueueSequence == 14)
-        #expect(receipt.retainedPendingEvidenceCount == 1)
-    }
-
-    @Test
-    func emptyPendingQueueStillIssuesReceiptBoundToTerminalTransaction() throws {
+    func emptyQueueAtExactHorizonProducesNoOpReceipt() throws {
         var events: [Event] = []
 
-        let receipt = try PassiveCoreBluetoothTerminalQueueRetirement.retire(
-            from: &events,
-            terminalGate: try terminalGate(horizonQueueCutoff: 12),
-            identity: identity
+        let receipt = try retire(
+            &events,
+            currentTail: 12,
+            gate: try terminalGate(horizonQueueCutoff: 12)
         )
 
         #expect(events.isEmpty)
@@ -302,13 +248,105 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
         #expect(receipt.retainedPendingEvidenceCount == 0)
     }
 
-    private func identity(
-        _ event: Event
-    ) -> PassiveCoreBluetoothTerminalQueueRetirement.PendingEvidenceIdentity {
-        PassiveCoreBluetoothTerminalQueueRetirement.PendingEvidenceIdentity(
+    @Test
+    func nonterminalGateFailsWithoutMutation() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority, label: "old")
+        ]
+        let before = events
+
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 13,
+                gate: PassiveCoreBluetoothObservationBoundaryQueueGate()
+            )
+        }
+
+        #expect(error == .terminalHorizonRequired)
+        #expect(events == before)
+    }
+
+    @Test
+    func malformedQueueChronologyFailsAtomically() throws {
+        var duplicate = [
+            Event(queueSequence: 14, authority: terminalAuthority, label: "a"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "b")
+        ]
+        let duplicateBefore = duplicate
+        let duplicateError = captureStateError {
+            _ = try retire(
+                &duplicate,
+                currentTail: 14,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+        #expect(
+            duplicateError == .nonIncreasingQueueSequence(previous: 14, current: 14)
+        )
+        #expect(duplicate == duplicateBefore)
+
+        var regressing = [
+            Event(queueSequence: 15, authority: terminalAuthority, label: "a"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "b")
+        ]
+        let regressingBefore = regressing
+        let regressingError = captureStateError {
+            _ = try retire(
+                &regressing,
+                currentTail: 14,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+        #expect(
+            regressingError == .nonIncreasingQueueSequence(previous: 15, current: 14)
+        )
+        #expect(regressing == regressingBefore)
+
+        var zero = [
+            Event(queueSequence: 0, authority: terminalAuthority, label: "zero")
+        ]
+        let zeroBefore = zero
+        let zeroError = captureStateError {
+            _ = try retire(
+                &zero,
+                currentTail: 13,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+        #expect(zeroError == .invalidQueueSequence(0))
+        #expect(zero == zeroBefore)
+    }
+
+    private func retire(
+        _ events: inout [Event],
+        currentTail: UInt64,
+        gate: PassiveCoreBluetoothObservationBoundaryQueueGate
+    ) throws -> Retirement.Receipt {
+        try Retirement.retire(
+            from: &events,
+            currentLastEnqueuedEventSequence: currentTail,
+            terminalGate: gate,
+            identity: identity
+        )
+    }
+
+    private func identity(_ event: Event) -> Retirement.PendingEvidenceIdentity {
+        Retirement.PendingEvidenceIdentity(
             queueSequence: event.queueSequence,
             authority: event.authority
         )
+    }
+
+    private func captureStateError(
+        _ operation: () throws -> Void
+    ) -> Retirement.StateError? {
+        do {
+            try operation()
+            return nil
+        } catch {
+            return error as? Retirement.StateError
+        }
     }
 
     private func terminalGate(
