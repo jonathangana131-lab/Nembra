@@ -59,23 +59,14 @@ struct PassiveCoreBluetoothObservationBoundaryDecision: Equatable, Sendable {
     }
 
     /// Records this exact pre-await decision through the recorder's package-owned
-    /// explicit-clock path while revalidating artifact authority at the recorder
-    /// mutation point. A pre-await MainActor check alone is not sufficient because
-    /// authority may advance while the caller is suspended on the actor hop.
-    ///
-    /// The supplied fence must be the same authority source advanced by the live
-    /// controller. If authority has changed before this recorder mutation wins the
-    /// fence, the append fails before durable evidence is changed.
-    func recordBoundary(
-        on recorder: PassiveCoreBluetoothCaptureRecorder,
-        authorityFence: PassiveCoreBluetoothArtifactAuthorityMutationFence
-    ) async throws {
+    /// explicit-clock path. Controller wiring should use this helper rather than
+    /// the recorder's public clock-owning overload, which would resample after the
+    /// asynchronous actor hop and sever the decision-time chronology.
+    func recordBoundary(on recorder: PassiveCoreBluetoothCaptureRecorder) async throws {
         try await recorder.recordObservationBoundary(
             observationBoundaryKind,
             observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
-            observedAtDate: observedAtDate,
-            expectedAuthority: authority,
-            authorityFence: authorityFence
+            observedAtDate: observedAtDate
         )
     }
 

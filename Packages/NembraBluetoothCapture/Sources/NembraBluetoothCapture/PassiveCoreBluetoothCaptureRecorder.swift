@@ -75,32 +75,15 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         observedAtUptimeNanoseconds: UInt64,
         observedAtDate: Date
     ) throws {
-        try appendObservationBoundary(
-            kind,
-            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
-            observedAtDate: observedAtDate
-        )
-    }
-
-    /// Authority-fenced explicit-clock path for lifecycle decisions captured
-    /// before an actor hop. The final authority validation and the durable session
-    /// mutation are one synchronous critical section. If authority changed while
-    /// the caller was suspended awaiting this actor, zero boundary evidence is
-    /// appended for the stale decision.
-    func recordObservationBoundary(
-        _ kind: PassiveBluetoothObservationBoundaryKind,
-        observedAtUptimeNanoseconds: UInt64,
-        observedAtDate: Date,
-        expectedAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
-        authorityFence: PassiveCoreBluetoothArtifactAuthorityMutationFence
-    ) throws {
-        try authorityFence.withValidatedAuthority(expectedAuthority) {
-            try appendObservationBoundary(
-                kind,
+        let recordSequenceWatermark = nextSequenceNumber - 1
+        try session.appendObservationBoundary(
+            PassiveBluetoothObservationBoundary(
+                kind: kind,
+                recordSequenceWatermark: recordSequenceWatermark,
                 observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
                 observedAtDate: observedAtDate
             )
-        }
+        )
     }
 
     public func snapshot() -> PassiveBluetoothCaptureSession {
@@ -111,22 +94,6 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         try PassiveBluetoothCaptureJSON.encode(
             session,
             prettyPrinted: prettyPrinted
-        )
-    }
-
-    private func appendObservationBoundary(
-        _ kind: PassiveBluetoothObservationBoundaryKind,
-        observedAtUptimeNanoseconds: UInt64,
-        observedAtDate: Date
-    ) throws {
-        let recordSequenceWatermark = nextSequenceNumber - 1
-        try session.appendObservationBoundary(
-            PassiveBluetoothObservationBoundary(
-                kind: kind,
-                recordSequenceWatermark: recordSequenceWatermark,
-                observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
-                observedAtDate: observedAtDate
-            )
         )
     }
 }

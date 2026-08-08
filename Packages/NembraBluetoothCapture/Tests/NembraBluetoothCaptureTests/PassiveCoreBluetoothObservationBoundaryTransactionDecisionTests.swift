@@ -4,12 +4,26 @@ import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Passive CoreBluetooth boundary transaction decision")
+@Suite("Passive CoreBluetooth boundary transaction composition")
 struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
-    private let authority = PassiveCoreBluetoothArtifactAuthorityContext(
+    private let authorityA = PassiveCoreBluetoothArtifactAuthorityContext(
         targetSessionGeneration: 7,
         authorityGeneration: 11
     )
+
+    private var authorityB: PassiveCoreBluetoothArtifactAuthorityContext {
+        PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authorityA.targetSessionGeneration,
+            authorityGeneration: authorityA.authorityGeneration + 1
+        )
+    }
+
+    private var nextSessionAuthority: PassiveCoreBluetoothArtifactAuthorityContext {
+        PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authorityA.targetSessionGeneration + 1,
+            authorityGeneration: 1
+        )
+    }
 
     private let es80 = VehicleIdentity(
         manufacturer: "AOVOPRO",
@@ -18,19 +32,25 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
-    private func makeFence() -> PassiveCoreBluetoothArtifactAuthorityMutationFence {
-        PassiveCoreBluetoothArtifactAuthorityMutationFence(initialAuthority: authority)
+    private func makeFence() -> PassiveCoreBluetoothArtifactAuthorityFence {
+        PassiveCoreBluetoothArtifactAuthorityFence(authority: authorityA)
     }
 
-    @Test("captures one pre-await decision and opens the exact matching ready transaction")
+    private func makeRecorder() throws -> PassiveCoreBluetoothCaptureRecorder {
+        try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+    }
+
+    @Test("captures one exact Ready admission before the first actor hop")
     @MainActor
-    func capturesAndBeginsExactReadyTransaction() throws {
+    func capturesExactReadyAdmission() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fence = makeFence()
         let beforeUptime = DispatchTime.now().uptimeNanoseconds
 
-        let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
+        let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
             queueCutoff: 12,
             processedThrough: 9,
             authorityFence: fence,
@@ -40,118 +60,54 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         let afterUptime = DispatchTime.now().uptimeNanoseconds
         let active = try #require(gate.activeTransaction)
 
-        #expect(admission.queueKind == .finiteAcquisitionReady)
         #expect(admission.queueCutoff == 12)
         #expect(admission.processedThrough == 9)
-        #expect(admission.authority == authority)
-        #expect(active.boundaryKind == admission.queueKind)
-        #expect(active.queueCutoff == admission.queueCutoff)
-        #expect(active.authority == admission.authority)
+        #expect(admission.authority == authorityA)
         #expect(admission.observedAtUptimeNanoseconds >= beforeUptime)
         #expect(admission.observedAtUptimeNanoseconds <= afterUptime)
+        #expect(active.boundaryKind == .finiteAcquisitionReady)
+        #expect(active.queueCutoff == admission.queueCutoff)
+        #expect(active.authority == admission.authority)
     }
 
-    @Test("malformed processed frontier fails before mutating the gate")
+    @Test("malformed recorder frontier fails before queue-gate mutation")
     @MainActor
-    func malformedDecisionIsAtomic() {
+    func malformedFrontierIsAtomic() {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let original = gate
 
         do {
-            _ = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-                kind: .finiteAcquisitionReady,
+            _ = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
                 queueCutoff: 4,
                 processedThrough: 5,
                 authorityFence: makeFence(),
                 gate: &gate
             )
-            Issue.record("A decision whose recorder frontier exceeds its queue cutoff must fail closed.")
+            Issue.record("A recorder frontier beyond the queue cutoff must fail closed.")
         } catch let error as PassiveCoreBluetoothObservationBoundaryDecision.StateError {
             #expect(error == .processedFrontierBeyondCutoff)
         } catch {
-            Issue.record("Unexpected boundary-decision error: \(error)")
+            Issue.record("Unexpected admission error: \(error)")
         }
 
         #expect(gate == original)
     }
 
-    @Test("gate transition rejection leaves the prior lifecycle state unchanged")
+    @Test("successful Ready recorder mutation and queue commit mint the Horizon-capable epoch proof")
     @MainActor
-    func rejectedGateTransitionIsAtomic() {
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let original = gate
-
-        do {
-            _ = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-                kind: .observationHorizon,
-                queueCutoff: 0,
-                processedThrough: 0,
-                authorityFence: makeFence(),
-                gate: &gate
-            )
-            Issue.record("Horizon cannot begin before Ready establishes the observation epoch.")
-        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
-            #expect(error == .invalidTransition)
-        } catch {
-            Issue.record("Unexpected queue-gate error: \(error)")
-        }
-
-        #expect(gate == original)
-    }
-
-    @Test("horizon admission retains the exact ready authority and processed frontier")
-    @MainActor
-    func bindsHorizonToReadyEpoch() throws {
+    func recorderProofPrecedesReadyEpoch() async throws {
+        let recorder = try makeRecorder()
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fence = makeFence()
-        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
-            queueCutoff: 4,
-            processedThrough: 4,
-            authorityFence: fence,
-            gate: &gate
-        )
-        try ready.markBoundaryRecorded(
-            on: &gate,
-            lastProcessedQueueSequence: 4
-        )
-
-        let horizon = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .observationHorizon,
-            queueCutoff: 7,
-            processedThrough: 5,
-            authorityFence: fence,
-            gate: &gate
-        )
-
-        let active = try #require(gate.activeTransaction)
-        #expect(horizon.queueKind == .observationHorizon)
-        #expect(horizon.queueCutoff == 7)
-        #expect(horizon.processedThrough == 5)
-        #expect(horizon.authority == ready.authority)
-        #expect(active.authority == ready.authority)
-        #expect(active.queueCutoff == horizon.queueCutoff)
-    }
-
-    @Test("recorder hop preserves exact sealed clocks, authority source, and queue transaction")
-    @MainActor
-    func recordsAndCommitsSameSealedDecision() async throws {
-        let recorder = try PassiveCoreBluetoothCaptureRecorder(
-            vehicleIdentity: es80,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let fence = makeFence()
-        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
             queueCutoff: 0,
             processedThrough: 0,
             authorityFence: fence,
             gate: &gate
         )
 
-        try await ready.recordBoundary(on: recorder)
-        try ready.markBoundaryRecorded(
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        let committedReady = try recordedReady.markBoundaryRecorded(
             on: &gate,
             lastProcessedQueueSequence: 0
         )
@@ -163,129 +119,274 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         #expect(boundary.recordSequenceWatermark == 0)
         #expect(boundary.observedAtUptimeNanoseconds == ready.observedAtUptimeNanoseconds)
         #expect(boundary.observedAtDate == ready.observedAtDate)
+        #expect(recordedReady.observedAtUptimeNanoseconds == ready.observedAtUptimeNanoseconds)
+        #expect(committedReady.observedAtUptimeNanoseconds == ready.observedAtUptimeNanoseconds)
+        #expect(committedReady.observedAtDate == ready.observedAtDate)
+        #expect(committedReady.queueCutoff == ready.queueCutoff)
+        #expect(committedReady.authority == ready.authority)
         #expect(gate.phase == .observing)
     }
 
-    @Test("sealed authority drift rejects mutation and only genuine rejection proof may abandon Ready")
+    @Test("authority transition before Ready recorder delivery produces no epoch proof or durable boundary")
     @MainActor
-    func staleSealedDecisionCannotMutateRecorder() async throws {
-        let recorder = try PassiveCoreBluetoothCaptureRecorder(
-            vehicleIdentity: es80,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
+    func revokedReadyCannotMutateRecorder() async throws {
+        let recorder = try makeRecorder()
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fence = makeFence()
-        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
             queueCutoff: 0,
             processedThrough: 0,
             authorityFence: fence,
             gate: &gate
         )
-        let activeBeforeRejection = try #require(gate.activeTransaction)
-        let replacement = PassiveCoreBluetoothArtifactAuthorityContext(
-            targetSessionGeneration: 7,
-            authorityGeneration: 12
-        )
-        try fence.replace(
-            expectedCurrent: authority,
-            with: replacement
-        )
 
-        let outcome = try await ready.recordBoundaryWithMutationOutcome(on: recorder)
-        let rejection: PassiveCoreBluetoothObservationBoundaryRecorderMutationRejectionReceipt
-        switch outcome {
-        case .recorded:
-            Issue.record("A stale sealed boundary must not append after authority replacement.")
-            return
-        case let .rejectedBeforeMutation(receipt):
-            rejection = receipt
+        try fence.transition(from: authorityA, to: authorityB)
+
+        do {
+            _ = try await ready.recordBoundary(on: recorder)
+            Issue.record("A revoked Ready admission must not produce a RecordedReadyBoundary token.")
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            #expect(
+                error == .authorityChanged(
+                    expected: authorityA,
+                    current: authorityB
+                )
+            )
+        } catch {
+            Issue.record("Unexpected authority-fence error: \(error)")
         }
 
         let session = await recorder.snapshot()
         #expect(session.observationBoundaries.isEmpty)
-        #expect(gate.phase == .drainingReady(activeBeforeRejection))
-        #expect(gate.activeTransaction == activeBeforeRejection)
-        #expect(rejection.authority == authority)
-        #expect(rejection.queueCutoff == ready.queueCutoff)
-
-        let abort = try gate.abortUncommittedReady(after: rejection)
-        #expect(abort.origin == .uncommittedReadyRejectedBeforeRecorderMutation)
-        #expect(gate.phase == .abortQuarantined(abort))
-        #expect(gate.activeTransaction == nil)
+        guard case let .drainingReady(active) = gate.phase else {
+            Issue.record("Rejected stale Ready recorder mutation must leave its exact transaction unresolved.")
+            return
+        }
+        #expect(active.queueCutoff == ready.queueCutoff)
+        #expect(active.authority == ready.authority)
     }
 
-    @Test("terminal helper cannot bless a horizon before its boundary is recorded")
+    @Test("authority transition after Ready append rejects stale queue commit without erasing evidence")
     @MainActor
-    func prematureTerminalFreezeFailsClosed() throws {
+    func revokedRecordedReadyCannotMintEpoch() async throws {
+        let recorder = try makeRecorder()
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fence = makeFence()
-        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
-            queueCutoff: 3,
-            processedThrough: 3,
-            authorityFence: fence,
-            gate: &gate
-        )
-        try ready.markBoundaryRecorded(
-            on: &gate,
-            lastProcessedQueueSequence: 3
-        )
-        let horizon = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .observationHorizon,
-            queueCutoff: 5,
-            processedThrough: 4,
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
             authorityFence: fence,
             gate: &gate
         )
 
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        try fence.transition(from: authorityA, to: authorityB)
+
         do {
-            try horizon.completeHorizonArtifactFreeze(on: &gate)
-            Issue.record("A horizon cannot become terminal before its durable boundary is recorded.")
+            _ = try recordedReady.markBoundaryRecorded(
+                on: &gate,
+                lastProcessedQueueSequence: 0
+            )
+            Issue.record("A revoked recorded Ready must not mint a committed Ready epoch.")
         } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
-            #expect(error == .horizonArtifactNotReady)
+            #expect(error == .authorityChanged)
         } catch {
             Issue.record("Unexpected queue-gate error: \(error)")
         }
 
-        #expect(gate.activeTransaction?.queueCutoff == horizon.queueCutoff)
-        #expect(gate.activeTransaction?.authority == horizon.authority)
+        let session = await recorder.snapshot()
+        #expect(session.observationBoundaries.count == 1)
+        guard case let .drainingReady(active) = gate.phase else {
+            Issue.record("Rejected stale Ready queue commit must keep the original transaction unresolved.")
+            return
+        }
+        #expect(active.authority == authorityA)
     }
 
-    @Test("terminal helper advances only the sealed horizon transaction after exact-prefix commit")
+    @Test("equal-valued second fence cannot substitute for the fence that committed Ready")
     @MainActor
-    func completesExactHorizonTransaction() throws {
+    func horizonCannotSwitchAuthorityStores() async throws {
+        let recorder = try makeRecorder()
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let canonicalFence = makeFence()
+        let equalButDistinctFence = makeFence()
+
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: canonicalFence,
+            gate: &gate
+        )
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        let committedReady = try recordedReady.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 0
+        )
+
+        #expect(equalButDistinctFence.currentAuthority == authorityA)
+        try canonicalFence.transition(from: authorityA, to: authorityB)
+        #expect(equalButDistinctFence.currentAuthority == authorityA)
+
+        do {
+            _ = try committedReady.beginHorizon(
+                queueCutoff: 0,
+                processedThrough: 0,
+                gate: &gate
+            )
+            Issue.record("Horizon must inherit the committed Ready fence identity, not an equal-valued second store.")
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            #expect(
+                error == .authorityChanged(
+                    expected: authorityA,
+                    current: authorityB
+                )
+            )
+        } catch {
+            Issue.record("Unexpected Horizon admission error: \(error)")
+        }
+
+        #expect(gate.phase == .observing)
+    }
+
+    @Test("retired Ready epoch cannot follow the canonical fence into a fresh lifecycle")
+    @MainActor
+    func retiredReadyEpochCannotMintLaterHorizon() async throws {
+        let oldRecorder = try makeRecorder()
+        var oldGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let fence = makeFence()
+
+        let oldReady = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &oldGate
+        )
+        let oldRecordedReady = try await oldReady.recordBoundary(on: oldRecorder)
+        let oldCommittedReady = try oldRecordedReady.markBoundaryRecorded(
+            on: &oldGate,
+            lastProcessedQueueSequence: 0
+        )
+
+        try fence.transition(from: authorityA, to: nextSessionAuthority)
+
+        let freshRecorder = try makeRecorder()
+        var freshGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let freshReady = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &freshGate
+        )
+        let freshRecordedReady = try await freshReady.recordBoundary(on: freshRecorder)
+        let freshCommittedReady = try freshRecordedReady.markBoundaryRecorded(
+            on: &freshGate,
+            lastProcessedQueueSequence: 0
+        )
+
+        #expect(freshCommittedReady.authority == nextSessionAuthority)
+        do {
+            _ = try oldCommittedReady.beginHorizon(
+                queueCutoff: 0,
+                processedThrough: 0,
+                gate: &freshGate
+            )
+            Issue.record("A retired Ready epoch must never inherit a later lifecycle's current authority.")
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            #expect(
+                error == .authorityChanged(
+                    expected: authorityA,
+                    current: nextSessionAuthority
+                )
+            )
+        } catch {
+            Issue.record("Unexpected stale-epoch error: \(error)")
+        }
+        #expect(freshGate.phase == .observing)
+
+        let freshHorizon = try freshCommittedReady.beginHorizon(
+            queueCutoff: 0,
+            processedThrough: 0,
+            gate: &freshGate
+        )
+        #expect(freshHorizon.authority == nextSessionAuthority)
+        #expect(freshGate.activeTransaction?.authority == nextSessionAuthority)
+    }
+
+    @Test("Horizon admission inherits committed Ready authority and processed-prefix constraints")
+    @MainActor
+    func horizonInheritsCommittedReadyEpoch() async throws {
+        let recorder = try makeRecorder()
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let fence = makeFence()
-        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .finiteAcquisitionReady,
-            queueCutoff: 2,
-            processedThrough: 2,
-            authorityFence: fence,
-            gate: &gate
-        )
-        try ready.markBoundaryRecorded(
-            on: &gate,
-            lastProcessedQueueSequence: 2
-        )
-        let horizon = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
-            kind: .observationHorizon,
-            queueCutoff: 6,
-            processedThrough: 4,
-            authorityFence: fence,
-            gate: &gate
-        )
-        try horizon.markBoundaryRecorded(
-            on: &gate,
-            lastProcessedQueueSequence: 6
-        )
-        try horizon.completeHorizonArtifactFreeze(on: &gate)
 
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &gate
+        )
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        let committedReady = try recordedReady.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 0
+        )
+
+        let horizon = try committedReady.beginHorizon(
+            queueCutoff: 7,
+            processedThrough: 5,
+            gate: &gate
+        )
+
+        let active = try #require(gate.activeTransaction)
+        #expect(horizon.queueCutoff == 7)
+        #expect(horizon.processedThrough == 5)
+        #expect(horizon.authority == committedReady.authority)
+        #expect(active.boundaryKind == .observationHorizon)
+        #expect(active.authority == committedReady.authority)
+        #expect(active.queueCutoff == horizon.queueCutoff)
+    }
+
+    @Test("exact quiet Horizon reaches terminal only after recorder proof and queue commit")
+    @MainActor
+    func completesExactQuietHorizonTransaction() async throws {
+        let recorder = try makeRecorder()
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let fence = makeFence()
+
+        let ready = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: 0,
+            processedThrough: 0,
+            authorityFence: fence,
+            gate: &gate
+        )
+        let recordedReady = try await ready.recordBoundary(on: recorder)
+        let committedReady = try recordedReady.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 0
+        )
+
+        let horizon = try committedReady.beginHorizon(
+            queueCutoff: 0,
+            processedThrough: 0,
+            gate: &gate
+        )
+        let recordedHorizon = try await horizon.recordBoundary(on: recorder)
+        let committedHorizon = try recordedHorizon.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: 0
+        )
+        try committedHorizon.completeHorizonArtifactFreeze(on: &gate)
+
+        let session = await recorder.snapshot()
+        #expect(session.observationBoundaries.map(\.kind) == [
+            .finiteAcquisitionReady,
+            .observationHorizon
+        ])
         #expect(gate.isTerminal)
-        #expect(gate.terminalQueueCutoff == 6)
+        #expect(gate.terminalQueueCutoff == 0)
         #expect(gate.shouldDiscardQueuedEvidenceAfterTerminalHorizon(
-            queueSequence: 7,
-            authority: authority
+            queueSequence: 1,
+            authority: authorityA
         ))
     }
 }
