@@ -1,0 +1,867 @@
+name: Temporary ES80 Simulator QA app integration patch
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-simulator-qa-app-current/chatgpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded app integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraApp.swift')
+          shell_path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          ui_path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          fixture_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift')
+          fixture_tests_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneSimulatorQAFixtureTests.swift')
+          field_gate_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift')
+          workflow_path = Path('.github/workflows/_temporary_es80_simulator_qa_app_patch.yml')
+
+          app = app_path.read_text()
+          shell = shell_path.read_text()
+          ui = ui_path.read_text()
+          fixture_before = fixture_path.read_bytes()
+          fixture_tests_before = fixture_tests_path.read_bytes()
+          field_gate_before = field_gate_path.read_bytes()
+
+          def once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              return text.replace(old, new, 1)
+
+          # ----- App launch seam: Debug + Simulator only; the normal research route stays gate-locked. -----
+          app = once(app,
+          '''    private enum LaunchMode: Equatable {
+                  case standard
+                  case es80PassiveCapture
+              }
+          ''',
+          '''    private enum LaunchMode: Equatable {
+                  case standard
+                  case es80PassiveCapture
+          #if DEBUG && targetEnvironment(simulator)
+                  case es80PassiveCaptureSimulatorQA(String)
+          #endif
+              }
+          ''', 'app launch enum')
+
+          app = once(app,
+          '''    init() {
+                  let launchMode = Self.resolveLaunchMode()
+                  self.launchMode = launchMode
+                  _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
+                  _researchCoordinator = State(
+                      initialValue: launchMode == .es80PassiveCapture
+                          ? try? PassiveBluetoothExperimentOneCoordinator()
+                          : nil
+                  )
+              }
+          ''',
+          '''    init() {
+                  let launchMode = Self.resolveLaunchMode()
+                  self.launchMode = launchMode
+                  _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
+
+                  let initialResearchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+                  switch launchMode {
+                  case .standard:
+                      initialResearchCoordinator = nil
+                  case .es80PassiveCapture:
+                      initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+          #if DEBUG && targetEnvironment(simulator)
+                  case .es80PassiveCaptureSimulatorQA:
+                      // This remains the ordinary package coordinator. Its physical gate is still NO-GO;
+                      // the synthetic fixture below is presentation-only and owns no Bluetooth transport.
+                      initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+          #endif
+                  }
+                  _researchCoordinator = State(initialValue: initialResearchCoordinator)
+              }
+          ''', 'app init')
+
+          app = once(app,
+          '''                .preferredColorScheme(.dark)
+              }
+          ''',
+          '''                .preferredColorScheme(.dark)
+
+          #if DEBUG && targetEnvironment(simulator)
+              case let .es80PassiveCaptureSimulatorQA(rawScenario):
+                  let scenario = PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario(rawValue: rawScenario)
+                      ?? .stationaryPreflight
+                  let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)
+
+                  NavigationStack {
+                      if let researchCoordinator {
+                          if scenario == .stationaryPreflight {
+                              ES80ExperimentOneStationaryPreflightView(
+                                  coordinator: researchCoordinator,
+                                  simulatorQAEvidenceLabel: snapshot.evidenceLabel
+                              )
+                          } else {
+                              ES80CaptureShellView(
+                                  coordinator: researchCoordinator,
+                                  simulatorQASnapshot: snapshot,
+                                  onFreshExperimentRequested: {
+                                      try PassiveBluetoothExperimentOneCoordinator()
+                                  }
+                              )
+                          }
+                      } else {
+                          ContentUnavailableView(
+                              "Simulator QA unavailable",
+                              systemImage: "exclamationmark.triangle",
+                              description: Text("The package-owned Capture presentation fixture could not be created.")
+                          )
+                          .navigationTitle("Nembra Capture")
+                          .accessibilityIdentifier("es80.capture.simulator-qa-unavailable")
+                      }
+                  }
+                  .preferredColorScheme(.dark)
+          #endif
+              }
+          ''', 'app QA body case')
+
+          app = once(app,
+          '''    ) -> LaunchMode {
+          #if DEBUG
+                  if arguments.contains("--es80-passive-capture")
+          ''',
+          '''    ) -> LaunchMode {
+          #if DEBUG && targetEnvironment(simulator)
+                  if arguments.contains("--es80-passive-capture-simulator-qa") {
+                      let scenarioPrefix = "--es80-capture-qa-scenario="
+                      let rawScenario = arguments
+                          .first(where: { $0.hasPrefix(scenarioPrefix) })
+                          .map { String($0.dropFirst(scenarioPrefix.count)) }
+                      let scenario = rawScenario
+                          .flatMap(PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.init(rawValue:))
+                          ?? .stationaryPreflight
+                      return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
+                  }
+          #endif
+          #if DEBUG
+                  if arguments.contains("--es80-passive-capture")
+          ''', 'app QA resolver')
+
+          app = once(app,
+          '''    @State private var disconnectedDeclarationAccepted = false
+
+              init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+                  _coordinator = State(initialValue: coordinator)
+              }
+          ''',
+          '''    @State private var disconnectedDeclarationAccepted = false
+              private let simulatorQAEvidenceLabel: String?
+
+              init(
+                  coordinator: PassiveBluetoothExperimentOneCoordinator,
+                  simulatorQAEvidenceLabel: String? = nil
+              ) {
+                  _coordinator = State(initialValue: coordinator)
+                  self.simulatorQAEvidenceLabel = simulatorQAEvidenceLabel
+              }
+          ''', 'preflight QA label storage')
+
+          app = once(app,
+          '''            ScrollView {
+                      VStack(alignment: .leading, spacing: 24) {
+                          VStack(alignment: .leading, spacing: 8) {
+          ''',
+          '''            ScrollView {
+                      VStack(alignment: .leading, spacing: 24) {
+                          if let simulatorQAEvidenceLabel {
+                              Text("\\(simulatorQAEvidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                                  .font(.caption.monospaced().weight(.bold))
+                                  .foregroundStyle(.orange)
+                                  .padding(.horizontal, 12)
+                                  .padding(.vertical, 8)
+                                  .background(.orange.opacity(0.10), in: Capsule())
+                                  .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
+                                  .accessibilityIdentifier("es80.capture.simulator-qa")
+                          }
+
+                          VStack(alignment: .leading, spacing: 8) {
+          ''', 'preflight QA badge')
+
+          # ----- Real Capture shell: snapshot overrides presentation only. -----
+          shell = once(shell,
+          '''    private let onFreshExperimentRequested: () throws -> PassiveBluetoothExperimentOneCoordinator
+
+              init(
+          ''',
+          '''    private let onFreshExperimentRequested: () throws -> PassiveBluetoothExperimentOneCoordinator
+          #if DEBUG && targetEnvironment(simulator)
+              private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+          #endif
+
+              init(
+          ''', 'shell QA storage')
+
+          shell = once(shell,
+          '''    ) {
+                  _coordinator = State(initialValue: coordinator)
+                  self.onFreshExperimentRequested = onFreshExperimentRequested
+              }
+
+              var body: some View {
+          ''',
+          '''    ) {
+                  _coordinator = State(initialValue: coordinator)
+                  self.onFreshExperimentRequested = onFreshExperimentRequested
+          #if DEBUG && targetEnvironment(simulator)
+                  self.simulatorQASnapshot = nil
+          #endif
+              }
+
+          #if DEBUG && targetEnvironment(simulator)
+              init(
+                  coordinator: PassiveBluetoothExperimentOneCoordinator,
+                  simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot,
+                  onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+              ) {
+                  _coordinator = State(initialValue: coordinator)
+                  self.onFreshExperimentRequested = onFreshExperimentRequested
+                  self.simulatorQASnapshot = simulatorQASnapshot
+              }
+          #endif
+
+              var body: some View {
+          ''', 'shell QA initializer')
+
+          shell = once(shell,
+          '''                VStack(alignment: .leading, spacing: 24) {
+                          hero(for: currentPhase)
+                          passiveSafetyPanel
+          ''',
+          '''                VStack(alignment: .leading, spacing: 24) {
+                          hero(for: currentPhase)
+          #if DEBUG && targetEnvironment(simulator)
+                          if let simulatorQASnapshot {
+                              simulatorQABadge(simulatorQASnapshot)
+                          }
+          #endif
+                          passiveSafetyPanel
+          ''', 'shell QA badge body')
+
+          shell = once(shell,
+          '''                synchronizeObservationReadyClock(isReady: status.observationReady)
+          ''',
+          '''                synchronizeObservationReadyClock(isReady: presentationObservationReady(status: status))
+          ''', 'shell onAppear ready')
+
+          shell = once(shell,
+          '''            .onChange(of: status.observationReady) { _, isReady in
+                      synchronizeObservationReadyClock(isReady: isReady)
+                  }
+          ''',
+          '''            .onChange(of: presentationObservationReady(status: status)) { _, isReady in
+                      synchronizeObservationReadyClock(isReady: isReady)
+                  }
+          ''', 'shell onChange ready')
+
+          # Insert badge helper before passive safety panel.
+          shell = once(shell,
+          '''    private var passiveSafetyPanel: some View {
+          ''',
+          '''#if DEBUG && targetEnvironment(simulator)
+              private func simulatorQABadge(
+                  _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+              ) -> some View {
+                  HStack(spacing: 9) {
+                      Image(systemName: "hammer.fill")
+                          .accessibilityHidden(true)
+                      Text("\\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                  }
+                  .font(.caption.monospaced().weight(.bold))
+                  .foregroundStyle(.orange)
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 8)
+                  .background(.orange.opacity(0.10), in: Capsule())
+                  .accessibilityElement(children: .ignore)
+                  .accessibilityLabel(snapshot.accessibilitySummary + " No Bluetooth transport or evidence is created by this presentation fixture.")
+                  .accessibilityIdentifier("es80.capture.simulator-qa")
+              }
+          #endif
+
+              private var passiveSafetyPanel: some View {
+          ''', 'shell QA badge helper')
+
+          # Progress rail consumes presentation helpers, leaving real status semantics unchanged.
+          shell = once(shell,
+          '''        let completed = status.powerCycleProgress?.completedWindowCount
+                      ?? coordinator.powerCycleResult?.windows.count
+                      ?? 0
+                  let current = status.powerCycleProgress?.phase.rawValue
+          ''',
+          '''        let completed = presentationCompletedWindows(status: status)
+                  let current = presentationCurrentWindow(status: status)
+          ''', 'progress counts')
+
+          shell = once(shell,
+          '''                analysisReady: finalShareIntegrityReport != nil
+          ''',
+          '''                analysisReady: presentationAnalysisReady
+          ''', 'progress analysis ready')
+
+          # Ready-state controls and health must reflect the synthetic snapshot, not the locked live coordinator.
+          shell = shell.replace(
+          '''            observationHealthStrip(status: status)
+                  primaryButton(
+                      status.canFinalizeObservationHorizon ? "Seal Capture" : "Observation in progress",
+                      systemImage: status.canFinalizeObservationHorizon ? "checkmark.seal.fill" : "timer",
+                      disabled: !status.canFinalizeObservationHorizon,
+          ''',
+          '''            observationHealthStrip(status: status)
+                  let canFinalize = presentationCanFinalizeObservationHorizon(status: status)
+                  primaryButton(
+                      canFinalize ? "Seal Capture" : "Observation in progress",
+                      systemImage: canFinalize ? "checkmark.seal.fill" : "timer",
+                      disabled: !canFinalize,
+          ''', 1)
+          shell = shell.replace(
+          '''                status.canFinalizeObservationHorizon
+                      ? "Ready"
+          ''',
+          '''                canFinalize
+                      ? "Ready"
+          ''', 1)
+
+          # Complete-state QA controls are visual-only no-ops and can never materialize artifact bytes.
+          old_complete = '''        case .complete:
+                  completionPanel
+                  if let shareURL {
+                      ShareLink(item: shareURL) {
+                          Label("Share Capture", systemImage: "square.and.arrow.up")
+                              .font(.headline)
+                              .frame(maxWidth: .infinity)
+                              .frame(minHeight: 56)
+                              .foregroundStyle(.black)
+                              .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                      }
+                      .buttonStyle(.plain)
+                      .accessibilityIdentifier("es80.capture.share")
+                  } else if coordinator.finalizedArtifact != nil {
+                      primaryButton(
+                          finalShareIntegrityReport == nil ? "Verify final artifact" : "Retry Share file",
+                          systemImage: "arrow.clockwise",
+                          identifier: "es80.capture.prepare-share"
+                      ) {
+                          prepareFinalShareForAnalysisAndSharing()
+                      }
+                  } else {
+                      primaryButton(
+                          "Share unavailable",
+                          systemImage: "exclamationmark.triangle",
+                          disabled: true,
+                          identifier: "es80.capture.share-unavailable"
+                      ) {}
+                  }
+          '''
+          new_complete = '''        case .complete:
+                  completionPanel
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      switch simulatorQASnapshot.artifactState {
+                      case .completeReadyForAnalysis:
+                          primaryButton(
+                              "Share Capture",
+                              systemImage: "square.and.arrow.up",
+                              identifier: "es80.capture.share"
+                          ) {}
+                      case .shareRetry:
+                          primaryButton(
+                              "Retry Share file",
+                              systemImage: "arrow.clockwise",
+                              identifier: "es80.capture.prepare-share"
+                          ) {}
+                      default:
+                          primaryButton(
+                              "Share unavailable",
+                              systemImage: "exclamationmark.triangle",
+                              disabled: true,
+                              identifier: "es80.capture.share-unavailable"
+                          ) {}
+                      }
+                  } else {
+          #endif
+                      if let shareURL {
+                          ShareLink(item: shareURL) {
+                              Label("Share Capture", systemImage: "square.and.arrow.up")
+                                  .font(.headline)
+                                  .frame(maxWidth: .infinity)
+                                  .frame(minHeight: 56)
+                                  .foregroundStyle(.black)
+                                  .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                          }
+                          .buttonStyle(.plain)
+                          .accessibilityIdentifier("es80.capture.share")
+                      } else if coordinator.finalizedArtifact != nil {
+                          primaryButton(
+                              finalShareIntegrityReport == nil ? "Verify final artifact" : "Retry Share file",
+                              systemImage: "arrow.clockwise",
+                              identifier: "es80.capture.prepare-share"
+                          ) {
+                              prepareFinalShareForAnalysisAndSharing()
+                          }
+                      } else {
+                          primaryButton(
+                              "Share unavailable",
+                              systemImage: "exclamationmark.triangle",
+                              disabled: true,
+                              identifier: "es80.capture.share-unavailable"
+                          ) {}
+                      }
+          #if DEBUG && targetEnvironment(simulator)
+                  }
+          #endif
+          '''
+          shell = once(shell, old_complete, new_complete, 'complete QA controls')
+
+          # Observation health becomes presentation-aware.
+          shell = once(shell,
+          '''    private func observationHealthStrip(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> some View {
+                  HStack(spacing: 12) {
+                      healthItem("TARGET", value: status.connection == .connected ? "BOUND" : "WAIT")
+                      Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                      healthItem("FINITE", value: status.observationReady ? "READY" : "WAIT")
+                      Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                      healthItem("HORIZON", value: status.canFinalizeObservationHorizon ? "READY" : "HOLD")
+                  }
+          ''',
+          '''    private func observationHealthStrip(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> some View {
+                  let connection = presentationConnection(status: status)
+                  let observationReady = presentationObservationReady(status: status)
+                  let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
+                  return HStack(spacing: 12) {
+                      healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
+                      Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                      healthItem("FINITE", value: observationReady ? "READY" : "WAIT")
+                      Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                      healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")
+                  }
+          ''', 'health values')
+          shell = once(shell,
+          '''        .accessibilityLabel("Capture health. Target bound. Finite acquisition \\(status.observationReady ? \"ready\" : \"waiting\"). Horizon \\(status.canFinalizeObservationHorizon ? \"ready\" : \"waiting\").")
+          ''',
+          '''        .accessibilityLabel("Capture health. Target \\(connection == .connected ? \"bound\" : \"waiting\"). Finite acquisition \\(observationReady ? \"ready\" : \"waiting\"). Horizon \\(horizonReady ? \"ready\" : \"waiting\").")
+          ''', 'health accessibility')
+
+          # Completion panel: QA may show accepted product visuals, but always states no artifact exists.
+          shell = once(shell,
+          '''    private var completionPanel: some View {
+                  let analysisReady = finalShareIntegrityReport != nil
+          ''',
+          '''    private var completionPanel: some View {
+                  let analysisReady = presentationAnalysisReady
+          ''', 'completion analysis ready')
+          shell = once(shell,
+          '''            if let report = finalShareIntegrityReport {
+          ''',
+          '''#if DEBUG && targetEnvironment(simulator)
+                  if simulatorQASnapshot != nil {
+                      Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                          .font(.subheadline)
+                          .foregroundStyle(.secondary)
+                          .fixedSize(horizontal: false, vertical: true)
+                  } else if let report = finalShareIntegrityReport {
+          #else
+                  if let report = finalShareIntegrityReport {
+          #endif
+          ''', 'completion QA truth copy')
+
+          # Phase mapping: only the package fixture marker can outrank the real field lock, and only in Debug Simulator.
+          shell = once(shell,
+          '''    private func phase(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Phase {
+                  if let localFailureMessage {
+                      return .failed(localFailureMessage)
+                  }
+                  guard status.physicalProcedurePermitted else {
+          ''',
+          '''    private func phase(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Phase {
+                  if let localFailureMessage {
+                      return .failed(localFailureMessage)
+                  }
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorQAPhase(simulatorQASnapshot.scenario)
+                  }
+          #endif
+                  guard status.physicalProcedurePermitted else {
+          ''', 'phase QA override')
+
+          # Presentation helper block before live phase logic.
+          shell = once(shell,
+          '''    private func beginCorrelationWindow() {
+          ''',
+          '''#if DEBUG && targetEnvironment(simulator)
+              private func simulatorQAPhase(
+                  _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+              ) -> Phase {
+                  switch scenario {
+                  case .stationaryPreflight, .firstPoweredOff:
+                      return .correlationReady(.firstPoweredOff)
+                  case .firstPoweredOn:
+                      return .correlationReady(.firstPoweredOn)
+                  case .secondPoweredOff:
+                      return .correlationReady(.secondPoweredOff)
+                  case .secondPoweredOn, .targetConfirmation:
+                      return .correlatedTarget
+                  case .passiveDiscovery:
+                      return .connecting
+                  case .observationReady, .captureInProgress:
+                      return .observing
+                  case .observationHorizonReady:
+                      return .readyToSeal
+                  case .horizonSealed:
+                      return .finalizing
+                  case .captureComplete, .shareRetry:
+                      return .complete
+                  case .foregroundInterrupted:
+                      return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+                  }
+              }
+          #endif
+
+              private var presentationAnalysisReady: Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                          || simulatorQASnapshot.artifactState == .shareRetry
+                  }
+          #endif
+                  return finalShareIntegrityReport != nil
+              }
+
+              private func presentationCompletedWindows(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Int {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      switch simulatorQASnapshot.scenario {
+                      case .stationaryPreflight, .firstPoweredOff: return 0
+                      case .firstPoweredOn: return 1
+                      case .secondPoweredOff: return 2
+                      default: return 4
+                      }
+                  }
+          #endif
+                  return status.powerCycleProgress?.completedWindowCount
+                      ?? coordinator.powerCycleResult?.windows.count
+                      ?? 0
+              }
+
+              private func presentationCurrentWindow(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Int? {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      switch simulatorQASnapshot.scenario {
+                      case .stationaryPreflight, .firstPoweredOff: return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOff.rawValue
+                      case .firstPoweredOn: return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOn.rawValue
+                      case .secondPoweredOff: return PassiveBluetoothPowerCycleObservationPhase.secondPoweredOff.rawValue
+                      default: return nil
+                      }
+                  }
+          #endif
+                  return status.powerCycleProgress?.phase.rawValue
+              }
+
+              private func presentationObservationReady(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorQASnapshot.observationReady }
+          #endif
+                  return status.observationReady
+              }
+
+              private func presentationCanFinalizeObservationHorizon(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorQASnapshot.canFinalizeObservationHorizon }
+          #endif
+                  return status.canFinalizeObservationHorizon
+              }
+
+              private func presentationConnection(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> PassiveBluetoothExperimentOneCoordinator.ConnectionStatus {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorQASnapshot.connection }
+          #endif
+                  return status.connection
+              }
+
+              private func presentationHasPreparedCaptureAdmission(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot { return simulatorQASnapshot.hasPreparedCaptureAdmission }
+          #endif
+                  return status.hasPreparedCaptureAdmission
+              }
+
+              private func presentationArtifactFinalized(
+                  status: PassiveBluetoothExperimentOneCoordinator.Status
+              ) -> Bool {
+          #if DEBUG && targetEnvironment(simulator)
+                  if let simulatorQASnapshot {
+                      return simulatorQASnapshot.artifactState == .sealed
+                          || simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                          || simulatorQASnapshot.artifactState == .shareRetry
+                  }
+          #endif
+                  return status.artifactFinalized
+              }
+
+              private func beginCorrelationWindow() {
+          ''', 'presentation helpers')
+
+          # Progress helpers consume the presentation values.
+          shell = once(shell,
+          '''        if index == 4 {
+                      return status.observationReady ? .white : .white.opacity(0.12)
+                  }
+                  return status.artifactFinalized ? .white : .white.opacity(0.12)
+          ''',
+          '''        if index == 4 {
+                      return presentationObservationReady(status: status) ? .white : .white.opacity(0.12)
+                  }
+                  return presentationArtifactFinalized(status: status) ? .white : .white.opacity(0.12)
+          ''', 'progress fill')
+
+          shell = once(shell,
+          '''        if status.artifactFinalized { return "SEALED" }
+                  if status.canFinalizeObservationHorizon { return "H READY" }
+                  if status.observationReady { return "OBSERVE" }
+                  if status.connection == .connected { return "ACQUIRE" }
+                  if status.connection == .connecting { return "CONNECT" }
+                  if status.hasPreparedCaptureAdmission { return "REACQUIRE" }
+          ''',
+          '''        if presentationArtifactFinalized(status: status) { return "SEALED" }
+                  if presentationCanFinalizeObservationHorizon(status: status) { return "H READY" }
+                  if presentationObservationReady(status: status) { return "OBSERVE" }
+                  if presentationConnection(status: status) == .connected { return "ACQUIRE" }
+                  if presentationConnection(status: status) == .connecting { return "CONNECT" }
+                  if presentationHasPreparedCaptureAdmission(status: status) { return "REACQUIRE" }
+          ''', 'progress stage')
+
+          shell = once(shell,
+          '''        if status.artifactFinalized {
+          ''',
+          '''        if presentationArtifactFinalized(status: status) {
+          ''', 'progress accessibility finalized')
+          shell = once(shell,
+          '''        if status.canFinalizeObservationHorizon {
+          ''',
+          '''        if presentationCanFinalizeObservationHorizon(status: status) {
+          ''', 'progress accessibility horizon')
+          shell = once(shell,
+          '''        if status.observationReady {
+          ''',
+          '''        if presentationObservationReady(status: status) {
+          ''', 'progress accessibility observation')
+
+          shell = once(shell,
+          '''        case .complete: return finalShareIntegrityReport == nil ? "Capture sealed" : "Capture complete"
+          ''',
+          '''        case .complete: return presentationAnalysisReady ? "Capture complete" : "Capture sealed"
+          ''', 'complete status title')
+
+          # ----- UI acceptance: locked regression + synthetic real-shell states. -----
+          test_insert = r'''
+              @MainActor
+              func testV14SimulatorQARendersStationaryPreflightWithoutPromotingFieldGo() {
+                  let app = XCUIApplication()
+                  app.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=stationaryPreflight"
+                  ]
+                  app.launch()
+
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.stationary-preflight"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.buttons["Charger Disconnected"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — SIMULATOR QA — Stationary Preflight"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
+
+              @MainActor
+              func testV14SimulatorQARendersObservationHorizonReadyInRealCaptureShell() {
+                  let app = XCUIApplication()
+                  app.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=observationHorizonReady"
+                  ]
+                  app.launch()
+
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.staticTexts["Capture can be sealed"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.finish"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
+
+              @MainActor
+              func testV14SimulatorQARendersCompleteAndShareRetryStates() {
+                  let complete = XCUIApplication()
+                  complete.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=captureComplete"
+                  ]
+                  complete.launch()
+
+                  XCTAssertTrue(complete.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(complete.staticTexts["CAPTURE COMPLETE"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(complete.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(complete.buttons["Share Capture"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(complete.buttons["View Details"].waitForExistence(timeout: 3))
+
+                  let completeAttachment = XCTAttachment(screenshot: complete.screenshot())
+                  completeAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete"
+                  completeAttachment.lifetime = .keepAlways
+                  add(completeAttachment)
+
+                  complete.terminate()
+
+                  let retry = XCUIApplication()
+                  retry.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=shareRetry"
+                  ]
+                  retry.launch()
+
+                  XCTAssertTrue(retry.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(retry.buttons["Retry Share file"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(retry.buttons["View Details"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(retry.buttons["Vehicle controls"].exists)
+
+                  let retryAttachment = XCTAttachment(screenshot: retry.screenshot())
+                  retryAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Share Retry"
+                  retryAttachment.lifetime = .keepAlways
+                  add(retryAttachment)
+              }
+
+              func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
+                  let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
+                  let shellSource = try captureShellSource()
+                  let fixtureSource = try repositorySource(
+                      at: "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift"
+                  )
+
+                  XCTAssertTrue(appSource.contains("#if DEBUG && targetEnvironment(simulator)"))
+                  XCTAssertTrue(appSource.contains("--es80-passive-capture-simulator-qa"))
+                  XCTAssertTrue(appSource.contains("if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+                  XCTAssertTrue(shellSource.contains("simulatorQASnapshot"))
+                  XCTAssertTrue(shellSource.contains("presentationAnalysisReady"))
+                  XCTAssertTrue(fixtureSource.contains("physicalProcedurePermitted: false"))
+                  XCTAssertTrue(fixtureSource.contains("mayUseBluetoothTransport: false"))
+                  XCTAssertFalse(appSource.contains("permitsPhysicalProcedure = true"))
+                  XCTAssertFalse(shellSource.contains("permitsPhysicalProcedure = true"))
+              }
+
+          '''
+          ui_anchor = '''    func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
+          '''
+          if ui.count(ui_anchor) != 1:
+              raise SystemExit(f'UI insertion anchor count = {ui.count(ui_anchor)}')
+          ui = ui.replace(ui_anchor, test_insert + ui_anchor, 1)
+
+          ui = once(ui,
+          '''    private func captureShellSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let repositoryRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = repositoryRoot
+                      .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+                  return try String(contentsOf: sourceURL, encoding: .utf8)
+              }
+          ''',
+          '''    private func captureShellSource() throws -> String {
+                  try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+              }
+
+              private func repositorySource(at path: String) throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let repositoryRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = repositoryRoot.appendingPathComponent(path)
+                  return try String(contentsOf: sourceURL, encoding: .utf8)
+              }
+          ''', 'UI repository helper')
+
+          app_path.write_text(app)
+          shell_path.write_text(shell)
+          ui_path.write_text(ui)
+          workflow_path.unlink()
+
+          # Immutable truth/dependency guards.
+          if fixture_path.read_bytes() != fixture_before:
+              raise SystemExit('package fixture changed unexpectedly')
+          if fixture_tests_path.read_bytes() != fixture_tests_before:
+              raise SystemExit('package fixture tests changed unexpectedly')
+          if field_gate_path.read_bytes() != field_gate_before:
+              raise SystemExit('physical field gate changed unexpectedly')
+          if 'if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure' not in app:
+              raise SystemExit('production research route lost package field-gate guard')
+          if 'permitsPhysicalProcedure = true' in app or 'permitsPhysicalProcedure = true' in shell:
+              raise SystemExit('app UI illegally creates physical permission')
+          if '#if DEBUG && targetEnvironment(simulator)' not in app:
+              raise SystemExit('Simulator QA route is not compile-bounded')
+          PY
+
+          git diff --check
+          test ! -e .github/workflows/_temporary_es80_simulator_qa_app_patch.yml
+          git diff --exit-code HEAD -- Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneSimulatorQAFixtureTests.swift Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift
+
+      - name: Commit unique app integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraApp.swift \
+                  NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  NembraUITests/ES80ResearchCaptureUITests.swift \
+                  .github/workflows/_temporary_es80_simulator_qa_app_patch.yml
+          git commit -m "[Capture Simulator QA v14] Render real states without physical GO"
+          git push origin HEAD:integration/es80-v14-simulator-qa-app-current/chatgpt56-thinking-go
