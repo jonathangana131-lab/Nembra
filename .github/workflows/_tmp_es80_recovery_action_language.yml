@@ -49,7 +49,18 @@ jobs:
         shell: bash
         run: |
           git diff --check
-          test "$(git diff --numstat -- NembraApp/Features/Research/ES80CaptureShellView.swift | awk '{print $1 ":" $2}')" = "1:1"
+          python3 - <<'PY'
+          import subprocess
+
+          path = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+          diff = subprocess.check_output(["git", "diff", "--unified=0", "--", path], text=True)
+          removed = [line for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
+          added = [line for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")]
+          expected_removed = '-                "Start a fresh Experiment One"'
+          expected_added = '+                "Start a fresh Capture"'
+          if removed != [expected_removed] or added != [expected_added]:
+              raise SystemExit(f"unexpected shell delta: removed={removed!r} added={added!r}")
+          PY
           grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
           ! grep -F 'Start a fresh Experiment One' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
 
