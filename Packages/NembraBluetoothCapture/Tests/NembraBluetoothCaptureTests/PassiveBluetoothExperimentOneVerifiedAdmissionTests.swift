@@ -102,7 +102,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
+        #expect(source.range(of: "UserDefaults") == nil)
         #expect(!source.contains("ProcessInfo"))
     }
 
