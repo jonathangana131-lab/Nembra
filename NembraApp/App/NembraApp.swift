@@ -261,7 +261,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+        "Real scooter capture locked. This exact build is not field-ready yet. Nembra will keep the power-cycle steps hidden until the required software and field-readiness checks are complete."
     }
 
     var body: some View {
@@ -286,13 +286,13 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Field capture locked")
+                            Text("Capture isn't ready yet")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This exact build is not authorized to begin the physical ES80 procedure.")
+                    Text("This build is still being checked before it can guide a real scooter capture.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -305,11 +305,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Physical Experiment One locked")
+                        Text("Real scooter capture stays locked")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
+                        Text("Nembra won't show the power-cycle steps until this exact build has completed its required software and field-readiness checks.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -323,27 +323,20 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("PROCEDURE")
+                        Text("FIELD STATUS")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("NO-GO")
+                        Text("NOT READY")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.orange)
                     }
-
-                    Text(recipeID)
-                        .font(.title3.monospaced().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("es80.capture.recipe-id")
-
-                    Divider().overlay(.white.opacity(0.12))
 
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Single-authority workflow installed")
+                        Text("Capture workflow installed")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -352,15 +345,32 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Field execution unavailable on this build")
+                        Text("This build is not field-ready yet")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
+
+                    DisclosureGroup("Engineering details") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Procedure")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(recipeID)
+                                .font(.subheadline.monospaced().weight(.semibold))
+                                .foregroundStyle(.white)
+                                .accessibilityIdentifier("es80.capture.recipe-id")
+                        }
+                        .padding(.top, 8)
+                    }
+                    .tint(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .accessibilityIdentifier("es80.capture.engineering-details")
                 }
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
+                Text("You don't need to do anything yet. When a field-ready build is authorized, Nembra will unlock the capture steps automatically.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
