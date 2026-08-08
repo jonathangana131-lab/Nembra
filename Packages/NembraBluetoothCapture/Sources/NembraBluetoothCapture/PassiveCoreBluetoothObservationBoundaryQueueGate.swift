@@ -24,7 +24,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case transactionRevisionExhausted
         case staleTransaction
         case authorityChanged
+        case horizonProcessedPrefixRequired
+        case processedPrefixPrecedesReady
         case horizonCutoffPrecedesReady
+        case horizonCutoffPrecedesProcessedPrefix
         case cutoffNotDrained
         case horizonArtifactNotReady
     }
@@ -80,11 +83,18 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// Starts the one legal next boundary transaction for this capture session.
     /// Ready may occur once. Horizon may occur once and only after ready.
     ///
+    /// `processedThrough` is required for a horizon and must be the controller's
+    /// exact recorder-completed queue frontier at the instant the horizon cutoff is
+    /// captured. This keeps a stale horizon cutoff from moving behind evidence that
+    /// the recorder already accepted while ordinary observation draining was open.
+    /// It is software FIFO chronology only, not a BLE/RF timestamp or physical claim.
+    ///
     /// Cross-boundary invariants are validated before allocating a transaction
     /// revision or mutating phase so rejected horizon attempts are fully atomic.
     mutating func begin(
         _ boundaryKind: BoundaryKind,
         through queueCutoff: UInt64,
+        processedThrough processedQueueSequence: UInt64? = nil,
         authority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws -> Transaction {
         switch (phase, boundaryKind) {
@@ -100,6 +110,15 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             }
             guard queueCutoff >= ready.queueCutoff else {
                 throw StateError.horizonCutoffPrecedesReady
+            }
+            guard let processedQueueSequence else {
+                throw StateError.horizonProcessedPrefixRequired
+            }
+            guard processedQueueSequence >= ready.queueCutoff else {
+                throw StateError.processedPrefixPrecedesReady
+            }
+            guard queueCutoff >= processedQueueSequence else {
+                throw StateError.horizonCutoffPrecedesProcessedPrefix
             }
 
         default:
