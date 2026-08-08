@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -22,6 +23,7 @@ spec.loader.exec_module(signed_field_evidence)
 
 HEAD = "1" * 40
 INSTANCE = str(uuid.UUID("12345678-1234-4234-8234-123456789abc"))
+TEAM = "ABCDEFGHIJ"
 
 
 def fake_signing_probe(app_path: Path, bundle_id: str):
@@ -30,7 +32,7 @@ def fake_signing_probe(app_path: Path, bundle_id: str):
     if bundle_id != signed_field_evidence.BUNDLE_ID:
         raise AssertionError("unexpected bundle id")
     return signed_field_evidence.SigningEvidence(
-        team_identifier="ABCDEFGHIJ",
+        team_identifier=TEAM,
         signing_authorities=["Apple Development: Nembra"],
         code_directory_hash="a" * 40,
         provisioning_profile_uuid="12345678-1234-4234-8234-123456789abc",
@@ -60,6 +62,24 @@ def make_ipa(path: Path, *, source_sha: str = HEAD, instance: str = INSTANCE, ex
                 archive.writestr(name, data)
 
 
+def valid_profile_and_entitlements():
+    app_identifier = f"{TEAM}.{signed_field_evidence.BUNDLE_ID}"
+    profile = {
+        "TeamIdentifier": [TEAM],
+        "UUID": INSTANCE,
+        "ExpirationDate": datetime(2099, 1, 1, tzinfo=timezone.utc),
+        "Entitlements": {
+            "application-identifier": app_identifier,
+            "com.apple.developer.team-identifier": TEAM,
+        },
+    }
+    signed_entitlements = {
+        "application-identifier": app_identifier,
+        "com.apple.developer.team-identifier": TEAM,
+    }
+    return profile, signed_entitlements
+
+
 class SignedFieldArtifactEvidenceTests(unittest.TestCase):
     def test_valid_ipa_emits_one_schema_v2_non_authorizing_evidence_format(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -73,7 +93,7 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             self.assertEqual(evidence["authority"], "signed-field-artifact-evidence-not-field-authorization")
             self.assertEqual(evidence["sourceCommitSHA"], HEAD)
             self.assertEqual(evidence["buildInstanceID"], INSTANCE)
-            self.assertEqual(evidence["teamIdentifier"], "ABCDEFGHIJ")
+            self.assertEqual(evidence["teamIdentifier"], TEAM)
             self.assertEqual(evidence["codeDirectoryHash"], "a" * 40)
             self.assertEqual(evidence["provisioningProfileUUID"], INSTANCE)
             self.assertEqual(evidence["provisioningProfileExpirationUTC"], "2030-01-01T00:00:00Z")
@@ -146,6 +166,28 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "exactly one"):
                 signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
 
+    def test_repeated_separator_and_dot_segment_aliases_fail_before_extraction(self):
+        aliases = [
+            "Payload//Nembra.app/Info.plist",
+            "Payload/./Nembra.app/Info.plist",
+        ]
+        for alias in aliases:
+            with self.subTest(alias=alias), tempfile.TemporaryDirectory() as temp:
+                ipa = Path(temp) / "Nembra.ipa"
+                make_ipa(ipa, extra_members=[(alias, b"ambiguous")])
+                with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "unsafe ZIP"):
+                    signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
+    def test_case_fold_archive_destination_collision_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            ipa = Path(temp) / "Nembra.ipa"
+            make_ipa(
+                ipa,
+                extra_members=[("payload/nembra.app/info.plist", b"case collision")],
+            )
+            with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "case-colliding"):
+                signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
     def test_embedded_external_authority_files_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             ipa = Path(temp) / "Nembra.ipa"
@@ -155,6 +197,51 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "must stay outside"):
                 signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
+    def test_profile_and_actual_signed_entitlements_must_match_exact_team_and_bundle(self):
+        profile, signed_entitlements = valid_profile_and_entitlements()
+        profile_uuid, expiration = signed_field_evidence._validate_signing_contract(
+            team_identifier=TEAM,
+            bundle_id=signed_field_evidence.BUNDLE_ID,
+            profile=profile,
+            signed_entitlements=signed_entitlements,
+        )
+        self.assertEqual(profile_uuid, INSTANCE)
+        self.assertTrue(expiration.endswith("Z"))
+
+        mismatches = [
+            (
+                {**signed_entitlements, "application-identifier": f"{TEAM}.example.wrong"},
+                "signed app application-identifier",
+            ),
+            (
+                {**signed_entitlements, "com.apple.developer.team-identifier": "ZZZZZZZZZZ"},
+                "signed app developer-team",
+            ),
+        ]
+        for bad_signed_entitlements, message in mismatches:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(signed_field_evidence.EvidenceError, message):
+                    signed_field_evidence._validate_signing_contract(
+                        team_identifier=TEAM,
+                        bundle_id=signed_field_evidence.BUNDLE_ID,
+                        profile=profile,
+                        signed_entitlements=bad_signed_entitlements,
+                    )
+
+    def test_profile_entitlement_team_must_match_codesign_team(self):
+        profile, signed_entitlements = valid_profile_and_entitlements()
+        profile["Entitlements"] = {
+            **profile["Entitlements"],
+            "com.apple.developer.team-identifier": "ZZZZZZZZZZ",
+        }
+        with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "provisioning profile developer-team"):
+            signed_field_evidence._validate_signing_contract(
+                team_identifier=TEAM,
+                bundle_id=signed_field_evidence.BUNDLE_ID,
+                profile=profile,
+                signed_entitlements=signed_entitlements,
+            )
 
 
 if __name__ == "__main__":
