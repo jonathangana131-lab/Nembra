@@ -22,11 +22,11 @@ public enum ScooterSimulationScenario: String, CaseIterable, Sendable {
     }
 }
 
-public actor SimulatedScooterService: ScooterService {
+public actor SimulatedScooterService: ScooterService, SpeedEvidenceProvider {
     public nonisolated let profile: VehicleProfile
 
-    /// Representative values from the verified three-slot schema. These are
-    /// simulation fixtures, not a claim that a slot corresponds to a ride mode.
+    /// Synthetic QA values that exercise all three limiter slots without
+    /// attributing their ranges or mode relationship to any physical scooter.
     private static let representativeSpeedLimits: [SpeedLimitSlot: Int] = [
         .limit1: 12,
         .limit2: 18,
@@ -189,39 +189,54 @@ public actor SimulatedScooterService: ScooterService {
     private var state: VehicleState
     private var continuations: [UUID: AsyncStream<VehicleState>.Continuation] = [:]
     private var speedTelemetryContinuations: [UUID: AsyncStream<SpeedTelemetrySample>.Continuation] = [:]
+    private var speedEvidenceContinuations: [UUID: AsyncStream<SpeedEvidenceAvailability>.Continuation] = [:]
+    private var speedEvidenceTruth: SpeedEvidenceLiveTruth
+
     /// Tracks the last raw packet-arrival timestamp only to guarantee strict
     /// monotonic ordering if two simulated packets are emitted in the same tick.
     /// Ride `elapsedSeconds` is distance/time evidence and must not be used as a
     /// fake packet-arrival clock.
-    private var lastTelemetryUptimeNanoseconds: UInt64 = 0
+    private var lastTelemetryUptimeNanoseconds: UInt64
     private var commandInFlight = false
-    private var connectionGeneration: UInt64 = 0
+    private var connectionGeneration: UInt64
     private let commandLatencyNanoseconds: UInt64
     private let commandAcknowledgementGate: (@Sendable () async throws -> Void)?
 
     public init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandLatencyNanoseconds: UInt64 = 120_000_000
     ) {
+        let resolvedState = initialState ?? Self.defaultInitialState()
+        let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
+
         self.profile = profile
         self.commandLatencyNanoseconds = commandLatencyNanoseconds
         self.commandAcknowledgementGate = nil
-        self.state = initialState ?? Self.defaultInitialState()
+        self.state = resolvedState
+        self.speedEvidenceTruth = initialEvidence.truth
+        self.connectionGeneration = initialEvidence.connectionGeneration
+        self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
     }
 
     /// Test-only timing injection used to prove command ordering without relying
     /// on scheduler-sensitive wall-clock sleeps. Kept internal so production
     /// callers continue to use the real simulated latency contract above.
     init(
-        profile: VehicleProfile = .maxshotV1SPro,
+        profile: VehicleProfile = .simulatorQA,
         initialState: VehicleState? = nil,
         commandAcknowledgementGate: @escaping @Sendable () async throws -> Void
     ) {
+        let resolvedState = initialState ?? Self.defaultInitialState()
+        let initialEvidence = Self.initialSpeedEvidence(for: resolvedState)
+
         self.profile = profile
         self.commandLatencyNanoseconds = 0
         self.commandAcknowledgementGate = commandAcknowledgementGate
-        self.state = initialState ?? Self.defaultInitialState()
+        self.state = resolvedState
+        self.speedEvidenceTruth = initialEvidence.truth
+        self.connectionGeneration = initialEvidence.connectionGeneration
+        self.lastTelemetryUptimeNanoseconds = initialEvidence.lastTelemetryUptimeNanoseconds
     }
 
     private static func defaultInitialState() -> VehicleState {
@@ -240,6 +255,48 @@ public actor SimulatedScooterService: ScooterService {
             powerWatts: 0,
             currentAmps: 0
         )
+    }
+
+    private static func initialSpeedEvidence(
+        for state: VehicleState
+    ) -> (
+        truth: SpeedEvidenceLiveTruth,
+        connectionGeneration: UInt64,
+        lastTelemetryUptimeNanoseconds: UInt64
+    ) {
+        var truth = SpeedEvidenceLiveTruth()
+        let hasSpeed = state.speedKilometersPerHour.map { $0.isFinite && $0 >= 0 } ?? false
+        let needsSyntheticContinuity = state.connection == .connected || hasSpeed
+        guard needsSyntheticContinuity else {
+            return (truth, 0, 0)
+        }
+
+        let generation = SpeedEvidenceConnectionGeneration(rawValue: 1)
+        guard case .success = truth.beginConnectedGeneration(generation) else {
+            return (truth, 0, 0)
+        }
+
+        var lastUptime: UInt64 = 0
+        if let speed = state.speedKilometersPerHour, speed.isFinite, speed >= 0 {
+            let uptime = DispatchTime.now().uptimeNanoseconds
+            if let token = truth.activeContinuityToken,
+               let sample = try? SpeedTelemetrySample(
+                   source: .simulatorQA,
+                   provenance: .absoluteMeasurement,
+                   metersPerSecond: speed / 3.6,
+                   receivedAtUptimeNanoseconds: uptime,
+                   receivedAtDate: .now
+               ) {
+                _ = truth.accept(sample, attributedTo: token)
+                lastUptime = uptime
+            }
+        }
+
+        if state.connection != .connected {
+            _ = truth.endConnectedGeneration(generation)
+        }
+
+        return (truth, 1, lastUptime)
     }
 
     public func stateUpdates() -> AsyncStream<VehicleState> {
@@ -267,6 +324,23 @@ public actor SimulatedScooterService: ScooterService {
         }
     }
 
+    /// Availability is state, not a raw packet stream. Registration and the
+    /// initial replay occur in this actor turn, so consumers cannot miss a
+    /// demotion in a snapshot -> subscribe gap. Newest-only buffering prevents
+    /// a slow consumer from replaying obsolete `.live` state after a newer
+    /// retained/unavailable transition already exists at the source.
+    public func speedEvidenceUpdates() -> AsyncStream<SpeedEvidenceAvailability> {
+        let id = UUID()
+        let current = speedEvidenceTruth.availability
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            speedEvidenceContinuations[id] = continuation
+            continuation.yield(current)
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeSpeedEvidenceContinuation(id) }
+            }
+        }
+    }
+
     public func snapshot() -> VehicleState { state }
 
     public func connect() async {
@@ -280,15 +354,29 @@ public actor SimulatedScooterService: ScooterService {
         state.connectionIssue = nil
         state.connection = .connecting
         publish()
-        try? await Task.sleep(nanoseconds: 220_000_000)
+        do {
+            try await Task.sleep(nanoseconds: 220_000_000)
+        } catch {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
+        guard !Task.isCancelled else {
+            cancelConnectionAttemptIfCurrent(attemptGeneration)
+            return
+        }
         guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
         state.connection = .connected
         hydrateMissingVehicleDataAfterSuccessfulConnection()
+        beginSpeedEvidenceForConnectedGeneration(attemptGeneration)
+        if let speed = state.speedKilometersPerHour {
+            recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
+        }
         state.lastUpdated = .now
         publish()
     }
 
     public func disconnect() async {
+        demoteSpeedEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = nil
         state.connection = .disconnected
@@ -312,8 +400,9 @@ public actor SimulatedScooterService: ScooterService {
         guard profile.capabilities.supportsLock else { throw ScooterCommandError.unsupportedCapability }
         let generation = try beginCommand()
         defer { finishCommand() }
-        guard (state.speedKilometersPerHour ?? 0) < 0.5 else { throw ScooterCommandError.commandRejected }
+        try ensureQualifiedLiveStoppedSpeed()
         try await acknowledgeLatency(expectedConnectionGeneration: generation)
+        try ensureQualifiedLiveStoppedSpeed()
         state.isLocked = locked
         publish()
     }
@@ -366,9 +455,12 @@ public actor SimulatedScooterService: ScooterService {
 
     public func simulateRide(speedKilometersPerHour: Double, elapsedSeconds: Double) {
         guard state.connection == .connected, state.isLocked != true else { return }
-        guard speedKilometersPerHour.isFinite, elapsedSeconds.isFinite, elapsedSeconds >= 0 else { return }
+        guard speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              elapsedSeconds.isFinite,
+              elapsedSeconds >= 0 else { return }
 
-        let speed = max(0, speedKilometersPerHour)
+        let speed = speedKilometersPerHour
         let distance = speed * elapsedSeconds / 3600
         guard distance.isFinite else { return }
         state.speedKilometersPerHour = speed
@@ -381,36 +473,22 @@ public actor SimulatedScooterService: ScooterService {
             state.batteryPercent = max(0, battery - drain)
         }
 
-        // `receivedAtUptimeNanoseconds` is packet-arrival evidence in the same
-        // monotonic clock domain used by the Dashboard renderer. Do not advance
-        // it by `elapsedSeconds`: a test may simulate ten minutes of ride
-        // distance in one immediate call, but the raw packet still arrived now.
-        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        let sampleUptimeNanoseconds: UInt64
-        if currentUptimeNanoseconds > lastTelemetryUptimeNanoseconds {
-            sampleUptimeNanoseconds = currentUptimeNanoseconds
-        } else if lastTelemetryUptimeNanoseconds < UInt64.max {
-            sampleUptimeNanoseconds = lastTelemetryUptimeNanoseconds + 1
-        } else {
-            sampleUptimeNanoseconds = UInt64.max
-        }
-        lastTelemetryUptimeNanoseconds = sampleUptimeNanoseconds
-
-        if let sample = try? SpeedTelemetrySample(
-            source: .scooterBluetooth,
-            provenance: .absoluteMeasurement,
-            metersPerSecond: speed / 3.6,
-            receivedAtUptimeNanoseconds: sampleUptimeNanoseconds,
-            receivedAtDate: .now
-        ) {
-            publishSpeedTelemetry(sample)
-        }
-
+        recordSyntheticSpeedObservation(speed, publishRawTelemetry: true)
         state.lastUpdated = .now
         publish()
     }
 
+    /// Explicit Simulator-only loss of speed observation continuity. The cached
+    /// `VehicleState` speed remains available as retained presentation data, but
+    /// stopped-only authority is retired until a new synthetic observation.
+    public func simulateSpeedEvidenceGap() {
+        guard let token = speedEvidenceTruth.activeContinuityToken else { return }
+        guard case .success = speedEvidenceTruth.markEvidenceGap(after: token) else { return }
+        publishSpeedEvidenceAvailability()
+    }
+
     public func simulateConnectionIssue(_ issue: VehicleConnectionIssue?) {
+        demoteSpeedEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = issue
         state.connection = .disconnected
@@ -420,6 +498,7 @@ public actor SimulatedScooterService: ScooterService {
     }
 
     public func simulateConnectionDrop() {
+        demoteSpeedEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connection = .reconnecting
         state.lastUpdated = .now
@@ -427,9 +506,11 @@ public actor SimulatedScooterService: ScooterService {
     }
 
     public func simulateReconnected() {
+        demoteSpeedEvidenceForConnectionLoss()
         connectionGeneration &+= 1
         state.connectionIssue = nil
         state.connection = .connected
+        beginSpeedEvidenceForConnectedGeneration(connectionGeneration)
         state.lastUpdated = .now
         publish()
     }
@@ -452,6 +533,14 @@ public actor SimulatedScooterService: ScooterService {
         if state.currentAmps == nil { state.currentAmps = fixture.currentAmps }
     }
 
+    private func cancelConnectionAttemptIfCurrent(_ attemptGeneration: UInt64) {
+        guard connectionGeneration == attemptGeneration, state.connection == .connecting else { return }
+        demoteSpeedEvidenceForConnectionLoss()
+        connectionGeneration &+= 1
+        state.connection = .disconnected
+        publish()
+    }
+
     private func beginCommand() throws -> UInt64 {
         guard !commandInFlight else { throw ScooterCommandError.commandInProgress }
         try ensureConnected()
@@ -467,6 +556,21 @@ public actor SimulatedScooterService: ScooterService {
         guard state.connection == .connected else { throw ScooterCommandError.disconnected }
     }
 
+    private func ensureQualifiedLiveStoppedSpeed() throws {
+        guard profile == .simulatorQA,
+              case let .live(sample) = speedEvidenceTruth.availability,
+              sample.source == .simulatorQA,
+              sample.provenance == .absoluteMeasurement else {
+            throw ScooterCommandError.commandRejected
+        }
+        let speedKilometersPerHour = sample.kilometersPerHour
+        guard speedKilometersPerHour.isFinite,
+              speedKilometersPerHour >= 0,
+              speedKilometersPerHour < 0.5 else {
+            throw ScooterCommandError.commandRejected
+        }
+    }
+
     private func acknowledgeLatency(expectedConnectionGeneration: UInt64) async throws {
         if let commandAcknowledgementGate {
             try await commandAcknowledgementGate()
@@ -478,6 +582,62 @@ public actor SimulatedScooterService: ScooterService {
         }
         try ensureConnected()
         state.lastUpdated = .now
+    }
+
+    private func beginSpeedEvidenceForConnectedGeneration(_ rawGeneration: UInt64) {
+        let generation = SpeedEvidenceConnectionGeneration(rawValue: rawGeneration)
+        _ = speedEvidenceTruth.beginConnectedGeneration(generation)
+        publishSpeedEvidenceAvailability()
+    }
+
+    private func demoteSpeedEvidenceForConnectionLoss() {
+        guard let generation = speedEvidenceTruth.activeConnectionGeneration else { return }
+        _ = speedEvidenceTruth.endConnectedGeneration(generation)
+        publishSpeedEvidenceAvailability()
+    }
+
+    private func recordSyntheticSpeedObservation(
+        _ speedKilometersPerHour: Double,
+        publishRawTelemetry: Bool
+    ) {
+        guard speedKilometersPerHour.isFinite, speedKilometersPerHour >= 0,
+              let token = speedEvidenceTruth.activeContinuityToken,
+              let sample = makeSyntheticSpeedSample(speedKilometersPerHour: speedKilometersPerHour) else {
+            return
+        }
+
+        if case .success = speedEvidenceTruth.accept(sample, attributedTo: token) {
+            publishSpeedEvidenceAvailability()
+        }
+        if publishRawTelemetry {
+            publishSpeedTelemetry(sample)
+        }
+    }
+
+    private func makeSyntheticSpeedSample(
+        speedKilometersPerHour: Double
+    ) -> SpeedTelemetrySample? {
+        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let sampleUptimeNanoseconds: UInt64
+        if currentUptimeNanoseconds > lastTelemetryUptimeNanoseconds {
+            sampleUptimeNanoseconds = currentUptimeNanoseconds
+        } else if lastTelemetryUptimeNanoseconds < UInt64.max {
+            sampleUptimeNanoseconds = lastTelemetryUptimeNanoseconds + 1
+        } else {
+            return nil
+        }
+
+        guard let sample = try? SpeedTelemetrySample(
+            source: .simulatorQA,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: speedKilometersPerHour / 3.6,
+            receivedAtUptimeNanoseconds: sampleUptimeNanoseconds,
+            receivedAtDate: .now
+        ) else {
+            return nil
+        }
+        lastTelemetryUptimeNanoseconds = sampleUptimeNanoseconds
+        return sample
     }
 
     private func publish() {
@@ -493,11 +653,22 @@ public actor SimulatedScooterService: ScooterService {
         }
     }
 
+    private func publishSpeedEvidenceAvailability() {
+        let availability = speedEvidenceTruth.availability
+        for continuation in speedEvidenceContinuations.values {
+            continuation.yield(availability)
+        }
+    }
+
     private func removeContinuation(_ id: UUID) {
         continuations[id] = nil
     }
 
     private func removeSpeedTelemetryContinuation(_ id: UUID) {
         speedTelemetryContinuations[id] = nil
+    }
+
+    private func removeSpeedEvidenceContinuation(_ id: UUID) {
+        speedEvidenceContinuations[id] = nil
     }
 }
