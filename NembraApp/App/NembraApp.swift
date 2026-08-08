@@ -3,6 +3,17 @@ import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
 
+private enum ES80ResearchBuildPreflightState: Equatable {
+    case notApplicable
+    case matched(PassiveBluetoothCaptureRuntimeBuildBinding)
+    case blocked(String)
+
+    var permitsFieldRuntime: Bool {
+        if case .matched = self { return true }
+        return false
+    }
+}
+
 @main
 @MainActor
 struct NembraApp: App {
@@ -12,6 +23,7 @@ struct NembraApp: App {
     }
 
     private let launchMode: LaunchMode
+    private let researchBuildPreflight: ES80ResearchBuildPreflightState
     @State private var runtime: AppRuntime?
     @State private var researchController: ForegroundCoreBluetoothCaptureController?
 
@@ -20,8 +32,14 @@ struct NembraApp: App {
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
 
+        let researchBuildPreflight: ES80ResearchBuildPreflightState = launchMode == .es80PassiveCapture
+            ? Self.resolveES80ResearchBuildPreflight()
+            : .notApplicable
+        self.researchBuildPreflight = researchBuildPreflight
+
         let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
             && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
+            && researchBuildPreflight.permitsFieldRuntime
         _researchController = State(
             initialValue: fieldCaptureAuthorized
                 ? Self.makeES80ResearchController()
@@ -50,7 +68,8 @@ struct NembraApp: App {
 
             case .es80PassiveCapture:
                 NavigationStack {
-                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure,
+                       researchBuildPreflight.permitsFieldRuntime {
                         if let researchController {
                             ES80CaptureShellView(controller: researchController)
                         } else {
@@ -63,7 +82,7 @@ struct NembraApp: App {
                             .accessibilityIdentifier("es80.research-capture-unavailable")
                         }
                     } else {
-                        ES80ExperimentOneFieldNoGoView()
+                        ES80ExperimentOneFieldNoGoView(buildPreflight: researchBuildPreflight)
                     }
                 }
                 .preferredColorScheme(.dark)
@@ -84,6 +103,30 @@ struct NembraApp: App {
         return .standard
     }
 
+    private static func resolveES80ResearchBuildPreflight() -> ES80ResearchBuildPreflightState {
+        do {
+            return .matched(try PassiveBluetoothCaptureBuildPreflight.currentApplication())
+        } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
+            switch error {
+            case .missingBuildIdentifier, .missingSourceCommitSHA:
+                return .blocked("Required field-build metadata is missing from this app. The accepted build pipeline must inject the Nembra build identifier and exact source commit automatically.")
+            default:
+                return .blocked("The running app's build metadata or executable cannot satisfy the trusted V14 field-build preflight.")
+            }
+        } catch let error as PassiveBluetoothCaptureTrustedBuildRecordError {
+            switch error {
+            case .missingTrustedBuildRecord:
+                return .blocked("The trusted V14 field-build record is missing from this app. A field build must carry the acceptance-pipeline record for its exact executable bytes.")
+            default:
+                return .blocked("The bundled trusted field-build record is malformed or outside the accepted V14 recipe/procedure contract.")
+            }
+        } catch is PassiveBluetoothCaptureBuildPreflightError {
+            return .blocked("The running executable does not match the trusted V14 field-build record. Nembra will not create a field capture controller for mismatched bytes or provenance.")
+        } catch {
+            return .blocked("Trusted field-build provenance could not be established for the running app.")
+        }
+    }
+
     private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
         // This is the declared software context required by the ES80 Experiment One authority.
         // It is metadata consistency only and must never be presented as physical authentication.
@@ -95,6 +138,8 @@ struct NembraApp: App {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    let buildPreflight: ES80ResearchBuildPreflightState
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
@@ -160,6 +205,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
 
+                buildPreflightPanel
+
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("PROCEDURE")
@@ -199,7 +246,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag or local preference cannot do it.")
+                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization and matching trusted build provenance; a UI flag, local preference, typed SHA, or matching label cannot do it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -214,5 +261,77 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+    }
+
+    @ViewBuilder
+    private var buildPreflightPanel: some View {
+        switch buildPreflight {
+        case let .matched(binding):
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("BUILD PREFLIGHT")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("MATCHED")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.white)
+                }
+
+                Text(binding.buildIdentifier)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Commit \(String(binding.sourceCommitSHA.prefix(12))) · \(binding.procedureVersion)")
+                    .font(.subheadline.monospaced())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("The running executable digest, build declaration, recipe, and procedure match the trusted acceptance-pipeline record. This is software provenance only; it does not authorize the physical scooter procedure.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("es80.capture.build-preflight")
+
+        case let .blocked(message):
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "shield.slash.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("BUILD PREFLIGHT / BLOCKED")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+
+                    Text("Field build identity not accepted")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("No field capture controller is created while this preflight is blocked.")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(18)
+            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("es80.capture.build-preflight")
+
+        case .notApplicable:
+            EmptyView()
+        }
     }
 }
