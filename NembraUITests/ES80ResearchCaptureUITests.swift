@@ -602,20 +602,17 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                 app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
                 "Scenario \(expectation.scenario) must render the real Capture shell."
             )
+
+            let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+            let requiredState = app.staticTexts[expectation.requiredText]
             XCTAssertTrue(
-                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                qaDisclosure.waitForExistence(timeout: 3),
                 "Scenario \(expectation.scenario) must stay explicitly labeled SIMULATOR / QA."
             )
             XCTAssertTrue(
-                app.staticTexts[expectation.requiredText].waitForExistence(timeout: 3),
+                requiredState.waitForExistence(timeout: 3),
                 "Scenario \(expectation.scenario) did not render its expected rider-facing state."
             )
-            if let identifier = expectation.requiredIdentifier {
-                XCTAssertTrue(
-                    app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
-                    "Scenario \(expectation.scenario) lost its stable state/action identifier \(identifier)."
-                )
-            }
             XCTAssertFalse(
                 app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
                 "Synthetic QA presentation should exercise the real Capture state instead of the field lock surface."
@@ -625,10 +622,58 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                 "Capture QA must never expose the ordinary vehicle-control surface."
             )
 
-            let attachment = XCTAttachment(screenshot: app.screenshot())
-            attachment.name = expectation.screenshotName
-            attachment.lifetime = .keepAlways
-            add(attachment)
+            bringIntoScreenshotViewport(
+                qaDisclosure,
+                in: app,
+                context: "synthetic Simulator QA disclosure for \(expectation.scenario)"
+            )
+            assertVisibleInScreenshotViewport(
+                qaDisclosure,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "synthetic Simulator QA disclosure for \(expectation.scenario)"
+            )
+            let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+            disclosureAttachment.name = expectation.screenshotName + " — Disclosure"
+            disclosureAttachment.lifetime = .keepAlways
+            add(disclosureAttachment)
+
+            bringIntoScreenshotViewport(
+                requiredState,
+                in: app,
+                context: "rider-facing state for \(expectation.scenario)"
+            )
+            assertVisibleInScreenshotViewport(
+                requiredState,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "rider-facing state for \(expectation.scenario)"
+            )
+            let stateAttachment = XCTAttachment(screenshot: app.screenshot())
+            stateAttachment.name = expectation.screenshotName
+            stateAttachment.lifetime = .keepAlways
+            add(stateAttachment)
+
+            if let identifier = expectation.requiredIdentifier {
+                let requiredAction = app.descendants(matching: .any)[identifier]
+                XCTAssertTrue(
+                    requiredAction.waitForExistence(timeout: 3),
+                    "Scenario \(expectation.scenario) lost its stable state/action identifier \(identifier)."
+                )
+                bringIntoScreenshotViewport(
+                    requiredAction,
+                    in: app,
+                    context: "required action for \(expectation.scenario)"
+                )
+                assertVisibleInScreenshotViewport(
+                    requiredAction,
+                    windowFrame: app.windows.firstMatch.frame,
+                    context: "required action for \(expectation.scenario)"
+                )
+                let actionAttachment = XCTAttachment(screenshot: app.screenshot())
+                actionAttachment.name = expectation.screenshotName + " — Action"
+                actionAttachment.lifetime = .keepAlways
+                add(actionAttachment)
+            }
+
             app.terminate()
         }
     }
