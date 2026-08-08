@@ -50,8 +50,8 @@ struct ES80CaptureShareRecoveryLanguageTests {
 
         #expect(shareRecoverySurface.contains("its setup confirmation is missing"))
         #expect(shareRecoverySurface.contains("Start a fresh capture"))
-        #expect(shareRecoverySurface.contains("Nembra could not prepare the Share file"))
         #expect(shareRecoverySurface.contains("Nembra could not verify the Share file for analysis"))
         #expect(shareRecoverySurface.contains("Capture remains sealed"))
+        #expect(shareRecoverySurface.contains("previously verified exact artifact remains the transfer authority"))
     }
 }
