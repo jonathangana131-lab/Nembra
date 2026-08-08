@@ -120,6 +120,24 @@ struct SimulatedSpeedCurrentnessTests {
         #expect((await service.snapshot()).isLocked == true)
     }
 
+    @Test("synthetic stopped evidence cannot authorize physical or deferred profiles")
+    func physicalProfilesCannotBorrowSimulatorStoppedAuthority() async {
+        for profile in [VehicleProfile.aovoproES80, .maxshotV1SPro] {
+            var initial = SimulatedScooterService.state(for: .connectedStopped)
+            initial.isLocked = false
+            let service = SimulatedScooterService(
+                profile: profile,
+                initialState: initial,
+                commandLatencyNanoseconds: 0
+            )
+
+            await #expect(throws: ScooterCommandError.commandRejected) {
+                try await service.setLocked(true)
+            }
+            #expect((await service.snapshot()).isLocked == false)
+        }
+    }
+
     @Test("raw Simulator ride packets use synthetic source identity")
     func rawRideSampleIsNeverBluetoothEvidence() async throws {
         let service = SimulatedScooterService(
