@@ -47,23 +47,10 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
     @Test("ordinary construction stays locked even under a future permissive field gate")
     func futureGateCannotUnlockOrdinaryConstruction() {
         let policy = PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.self
-
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == true)
+        #expect(!policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: false))
+        #expect(!policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: true))
+        #expect(!policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: false))
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: true))
     }
 
     @Test("public coordinator construction never creates the live CoreBluetooth controller")
@@ -72,10 +59,9 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let start = try #require(source.range(of: "    public init() throws {")?.lowerBound)
         let end = try #require(source.range(of: "    package init(controller:", range: start..<source.endIndex)?.lowerBound)
         let initializer = source[start..<end]
-
         #expect(initializer.contains("controller = nil"))
-        #expect(!initializer.contains("ForegroundCoreBluetoothCaptureController("))
-        #expect(!initializer.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+        #expect(initializer.range(of: "ForegroundCoreBluetoothCaptureController(") == nil)
+        #expect(initializer.range(of: "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure") == nil)
         #expect(source.contains("hasCanonicalLiveController: controller != nil"))
         #expect(source.contains("guard physicalProcedurePermittedForThisCoordinator else"))
     }
@@ -87,12 +73,12 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(source.contains("private let run: PassiveBluetoothExperimentOneRun"))
         #expect(source.contains("private let controller: ForegroundCoreBluetoothCaptureController?"))
         #expect(source.contains("private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?"))
-        #expect(!source.contains("public let controller:"))
-        #expect(!source.contains("public var powerCycleObservationSession:"))
-        #expect(!source.contains("public init(controller:"))
-        #expect(!source.contains("public func issueCaptureAdmission"))
-        #expect(!source.contains("public func connectPreparedCapture(\n        timeout:"))
-        #expect(!source.contains("recorder: PassiveCoreBluetoothCaptureRecorder"))
+        #expect(source.range(of: "public let controller:") == nil)
+        #expect(source.range(of: "public var powerCycleObservationSession:") == nil)
+        #expect(source.range(of: "public init(controller:") == nil)
+        #expect(source.range(of: "public func issueCaptureAdmission") == nil)
+        #expect(source.range(of: "public func connectPreparedCapture(\n        timeout:") == nil)
+        #expect(source.range(of: "recorder: PassiveCoreBluetoothCaptureRecorder") == nil)
     }
 
     @Test("admission is issued before a fresh controller scan epoch")
@@ -113,11 +99,14 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture()")?.lowerBound)
         let connection = source[start...]
-        let catalogGuard = try #require(connection.range(of: "controller.discoveredPeripherals.first(where: { $0.id == identifier })"))
+        let exactPresence = try #require(connection.range(of: "controller.hasDiscoveredPeripheral(identifier: identifier)"))
+        let exactLookup = try #require(connection.range(of: "controller.discoveredPeripheral(identifier: identifier)"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
-        #expect(catalogGuard.lowerBound < connect.lowerBound)
+        #expect(exactPresence.lowerBound < exactLookup.lowerBound)
+        #expect(exactLookup.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable"))
+        #expect(connection.range(of: "discoveredPeripherals.first(where:") == nil)
     }
 
     @Test("controller staging failure keeps handoff only while producer proves admission unconsumed")
@@ -125,7 +114,7 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture()")?.lowerBound)
         let connection = source[start...]
-        #expect(!connection.contains("defer {"))
+        #expect(connection.range(of: "defer {") == nil)
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
         let preview = try #require(connection.range(of: "admission.previewForControllerStaging()"))
         let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: preview.lowerBound..<connection.endIndex))
