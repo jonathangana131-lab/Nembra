@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Closed-world declaration emitted outside `Nembra.app` by the accepted build pipeline.
@@ -11,6 +12,9 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
     public static let currentSchemaVersion = 3
     public static let requiredProcedureVersion = "V14"
 
+    /// SHA-256 of the exact external JSON bytes passed to the parser, without re-encoding.
+    /// This is a rendezvous fact for an independently accepted attestation subject, not trust itself.
+    public let exactRecordSHA256: String
     public let schemaVersion: Int
     public let buildIdentifier: String
     public let buildInstanceID: String
@@ -21,6 +25,7 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
     public let procedureVersion: String
 
     fileprivate init(
+        exactRecordSHA256: String,
         schemaVersion: Int,
         buildIdentifier: String,
         buildInstanceID: String,
@@ -30,6 +35,7 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
         experimentRecipeID: PassiveBluetoothExperimentRecipeID,
         procedureVersion: String
     ) {
+        self.exactRecordSHA256 = exactRecordSHA256
         self.schemaVersion = schemaVersion
         self.buildIdentifier = buildIdentifier
         self.buildInstanceID = buildInstanceID
@@ -129,6 +135,7 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
         }
 
         return PassiveBluetoothCaptureExternalBuildRecord(
+            exactRecordSHA256: sha256Hex(data),
             schemaVersion: wire.schemaVersion,
             buildIdentifier: wire.buildIdentifier,
             buildInstanceID: wire.buildInstanceID,
@@ -182,5 +189,11 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
         return value.utf8.allSatisfy { byte in
             (48...57).contains(byte) || (97...102).contains(byte)
         }
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
