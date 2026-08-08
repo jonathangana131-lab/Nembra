@@ -1,0 +1,42 @@
+name: Capture software export explicit setup
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-software-export-explicit-setup/gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-software-export-explicit-setup/gpt56
+      - name: Verify and patch exact export source
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSoftwareExport.swift
+          test "$(git hash-object "$src")" = "37302fd659a6224e97c591fea866bccfbb4e8f3e"
+          python3 -m py_compile scripts/ci/capture_software_export_explicit_setup_patch.py
+          python3 scripts/ci/capture_software_export_explicit_setup_patch.py
+          git diff --check
+          grep -q 'setup: PassiveBluetoothStationaryCaptureSetup' "$src"
+          ! grep -q 'chargerState: .disconnected' "$src"
+          ! grep -q 'stockAppReferenceSetup: .none' "$src"
+          grep -q 'validateClosedWorldShape(data)' "$src"
+      - name: Commit clean product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-software-export-explicit-setup.yml
+          rm scripts/ci/capture_software_export_explicit_setup_patch.py
+          rm -rf scripts/ci/__pycache__
+          git config user.name "nembra-v14-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): require declared setup for software export"
+          git push origin HEAD:fix/es80-v14-software-export-explicit-setup/gpt56
