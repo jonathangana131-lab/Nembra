@@ -24,27 +24,28 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         )
 
         do {
-            _ = try gate.begin(
-                .observationHorizon,
+            _ = try gate.beginObservationHorizon(
                 through: 4,
                 processedThrough: 8,
-                authority: authority
+                authority: authority,
+                establishedByReadyRevision: ready.revision,
+                establishedByReadyIdentity: ready.identity
             )
             Issue.record("A horizon cutoff older than the committed ready cutoff must fail closed. Otherwise callbacks accepted after ready can be withheld and later discarded even though they predate horizon initiation.")
-        } catch {
-            // Any fail-closed state error is acceptable here; this regression owns
-            // the invariant rather than prescribing the production error taxonomy.
+        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+            #expect(error == .horizonCutoffPrecedesReady)
         }
 
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
         #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
 
-        let validHorizon = try gate.begin(
-            .observationHorizon,
+        let validHorizon = try gate.beginObservationHorizon(
             through: 12,
             processedThrough: 8,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         #expect(validHorizon.revision == ready.revision + 1)
         #expect(gate.phase == .drainingHorizon(validHorizon))
@@ -70,27 +71,28 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         )
 
         do {
-            _ = try gate.begin(
-                .observationHorizon,
+            _ = try gate.beginObservationHorizon(
                 through: 9,
                 processedThrough: 8,
-                authority: changedAuthority
+                authority: changedAuthority,
+                establishedByReadyRevision: ready.revision,
+                establishedByReadyIdentity: ready.identity
             )
             Issue.record("The observation horizon must remain bound to the exact artifact authority that committed finite acquisition ready. A new authority cannot inherit the old ready boundary merely because the gate is in observing phase.")
-        } catch {
-            // Any fail-closed state error is acceptable here; this regression owns
-            // the invariant rather than prescribing the production error taxonomy.
+        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+            #expect(error == .authorityChanged)
         }
 
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
         #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
 
-        let validHorizon = try gate.begin(
-            .observationHorizon,
+        let validHorizon = try gate.beginObservationHorizon(
             through: 12,
             processedThrough: 8,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         #expect(validHorizon.revision == ready.revision + 1)
         #expect(gate.phase == .drainingHorizon(validHorizon))
@@ -114,35 +116,37 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         // queue sequence 12. A stale horizon decision at 10 cannot put records 11-12
         // "after" a horizon that is only being opened now.
         do {
-            _ = try gate.begin(
-                .observationHorizon,
+            _ = try gate.beginObservationHorizon(
                 through: 10,
                 processedThrough: 12,
-                authority: authority
+                authority: authority,
+                establishedByReadyRevision: ready.revision,
+                establishedByReadyIdentity: ready.identity
             )
             Issue.record(
                 "A horizon cutoff may not move behind the recorder-completed queue prefix."
             )
-        } catch {
-            // Taxonomy is intentionally not the contract; atomic rejection is.
+        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+            #expect(error == .horizonCutoffPrecedesProcessedPrefix)
         }
 
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
         #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
 
-        let validHorizon = try gate.begin(
-            .observationHorizon,
+        let validHorizon = try gate.beginObservationHorizon(
             through: 12,
             processedThrough: 12,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         #expect(validHorizon.revision == ready.revision + 1)
         #expect(gate.phase == .drainingHorizon(validHorizon))
     }
 
-    @Test("horizon cannot open without the recorder-completed processed frontier")
-    func horizonRequiresProcessedPrefix() throws {
+    @Test("generic horizon entry cannot bypass processed-prefix and Ready-identity authority")
+    func horizonRequiresProducerIdentityEntry() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let ready = try gate.begin(
             .finiteAcquisitionReady,
@@ -162,20 +166,21 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
                 authority: authority
             )
             Issue.record(
-                "A horizon without the controller-owned processed frontier must fail closed."
+                "Generic Horizon entry must not bypass the controller-owned processed frontier or exact Ready identity."
             )
         } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
-            #expect(error == .horizonProcessedPrefixRequired)
+            #expect(error == .invalidTransition)
         }
 
         #expect(gate.phase == .observing)
         #expect(gate.activeTransaction == nil)
 
-        let validHorizon = try gate.begin(
-            .observationHorizon,
+        let validHorizon = try gate.beginObservationHorizon(
             through: 8,
             processedThrough: 8,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         #expect(validHorizon.revision == ready.revision + 1)
     }
