@@ -372,40 +372,50 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
 
 
 def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    retained_dir = output_dir / "build-evidence"
-    retained_dir.mkdir(parents=True, exist_ok=True)
+    output_parent = output_dir.parent
+    output_parent.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists() or output_dir.is_symlink():
+        raise EvidenceError(f"refusing to overwrite existing field evidence directory: {output_dir}")
 
-    retained_ipa = retained_dir / "NembraField.ipa"
-    external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
-    field_build_path = output_dir / "NembraCaptureFieldBuildEvidenceRecord.json"
-    signing_inspection_path = output_dir / "NembraCaptureSignedFieldArtifactInspection.json"
-    targets = (retained_ipa, external_path, field_build_path, signing_inspection_path)
-    existing = [str(path) for path in targets if path.exists()]
-    if existing:
-        raise EvidenceError(f"refusing to overwrite existing field evidence: {existing!r}")
+    staging_dir = Path(
+        tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=output_parent)
+    )
+    published = False
+    try:
+        retained_dir = staging_dir / "build-evidence"
+        retained_dir.mkdir()
 
-    shutil.copy2(ipa_path, retained_ipa)
-    if sha256_file(retained_ipa) != inspection["field_build_record"]["signedInstallableSHA256"]:
-        retained_ipa.unlink(missing_ok=True)
-        raise EvidenceError("retained IPA bytes diverged from inspected input")
+        retained_ipa = retained_dir / "NembraField.ipa"
+        external_path = staging_dir / "NembraCaptureExternalBuildRecord.json"
+        field_build_path = staging_dir / "NembraCaptureFieldBuildEvidenceRecord.json"
+        signing_inspection_path = staging_dir / "NembraCaptureSignedFieldArtifactInspection.json"
 
-    external_path.write_bytes(inspection["external_bytes"])
-    actual_external_sha = sha256_file(external_path)
-    if actual_external_sha != inspection["field_build_record"]["externalBuildRecordSHA256"]:
-        raise EvidenceError("written external build record digest diverged from field-build evidence")
+        shutil.copy2(ipa_path, retained_ipa)
+        if sha256_file(retained_ipa) != inspection["field_build_record"]["signedInstallableSHA256"]:
+            raise EvidenceError("retained IPA bytes diverged from inspected input")
 
-    field_build_path.write_bytes(inspection["field_build_bytes"])
-    actual_field_build_sha = sha256_file(field_build_path)
-    if actual_field_build_sha != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
-        raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+        external_path.write_bytes(inspection["external_bytes"])
+        actual_external_sha = sha256_file(external_path)
+        if actual_external_sha != inspection["field_build_record"]["externalBuildRecordSHA256"]:
+            raise EvidenceError("written external build record digest diverged from field-build evidence")
 
-    signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
+        field_build_path.write_bytes(inspection["field_build_bytes"])
+        actual_field_build_sha = sha256_file(field_build_path)
+        if actual_field_build_sha != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
+            raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+
+        signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
+        staging_dir.replace(output_dir)
+        published = True
+    finally:
+        if not published:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
     return {
-        "retained_ipa": retained_ipa,
-        "external_record": external_path,
-        "field_build_record": field_build_path,
-        "signing_inspection": signing_inspection_path,
+        "retained_ipa": output_dir / "build-evidence" / "NembraField.ipa",
+        "external_record": output_dir / "NembraCaptureExternalBuildRecord.json",
+        "field_build_record": output_dir / "NembraCaptureFieldBuildEvidenceRecord.json",
+        "signing_inspection": output_dir / "NembraCaptureSignedFieldArtifactInspection.json",
     }
 
 
@@ -431,6 +441,57 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-publish-self-test-") as temporary:
+        root = Path(temporary)
+        ipa_path = root / "candidate.ipa"
+        ipa_path.write_bytes(b"exact retained ipa")
+        external_bytes = canonical_json_bytes({"schemaVersion": 3})
+        field_build_record = {
+            "signedInstallableSHA256": sha256_file(ipa_path),
+            "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
+        }
+        field_build_bytes = canonical_json_bytes(field_build_record)
+        signing_inspection = {
+            "fieldBuildEvidenceRecordSHA256": hashlib.sha256(field_build_bytes).hexdigest(),
+        }
+        inspection = {
+            "external_bytes": external_bytes,
+            "field_build_record": field_build_record,
+            "field_build_bytes": field_build_bytes,
+            "signing_inspection": signing_inspection,
+        }
+
+        failed_output = root / "failed-evidence"
+        mismatched = {
+            **inspection,
+            "signing_inspection": {
+                "fieldBuildEvidenceRecordSHA256": "0" * 64,
+            },
+        }
+        try:
+            write_outputs(ipa_path, failed_output, mismatched)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("late evidence digest mismatch must fail publication")
+        assert not failed_output.exists()
+        assert not list(root.glob(".failed-evidence.staging-*"))
+
+        published_output = root / "published-evidence"
+        paths = write_outputs(ipa_path, published_output, inspection)
+        assert paths["retained_ipa"].read_bytes() == ipa_path.read_bytes()
+        assert paths["external_record"].read_bytes() == external_bytes
+        assert paths["field_build_record"].read_bytes() == field_build_bytes
+        assert paths["signing_inspection"].read_bytes() == canonical_json_bytes(signing_inspection)
+        assert not list(root.glob(".published-evidence.staging-*"))
+
+        try:
+            write_outputs(ipa_path, published_output, inspection)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("existing evidence directory must never be overwritten")
 
     duplicate = [zipfile.ZipInfo("Payload/Nembra.app/Nembra"), zipfile.ZipInfo("Payload/Nembra.app/Nembra")]
     try:
