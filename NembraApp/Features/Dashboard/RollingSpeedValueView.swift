@@ -7,15 +7,21 @@ struct RollingSpeedValueView: View {
 
     let value: Double?
 
-    private static let numberModel: RollingNumberModel? = {
+    private static let twoDigitNumberModel: RollingNumberModel? = {
         guard let layout = try? RollingNumberLayout(integerDigits: 2) else { return nil }
         return try? RollingNumberModel(layout: layout)
     }()
 
-    /// The compact non-rolling fallback can faithfully lay out three integer
-    /// digits. This is a presentation capacity, not a physical scooter-speed
-    /// limit; values requiring more space fail closed rather than being clamped.
-    private static let maximumFallbackDisplayInteger = 999.0
+    private static let threeDigitNumberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 3) else { return nil }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    /// Decimal-place IDs are counted from the right so 99 -> 100 preserves the
+    /// existing ones/tens views and inserts only the new hundreds column.
+    private static let twoDigitPlacesFromRight = [1, 0]
+    private static let threeDigitPlacesFromRight = [2, 1, 0]
+    private static let maximumThreeDigitDisplayInteger = 999.0
 
     /// Rendering must not turn malformed speed evidence into a believable
     /// stopped state. Negative and non-finite values remain unavailable, while
@@ -25,47 +31,54 @@ struct RollingSpeedValueView: View {
         return value == 0 ? 0 : value
     }
 
-    /// Keep fallback rounding identical to `RollingNumberModel` so the handoff
-    /// at the two-digit rolling capacity is deterministic. Conversion happens
-    /// only after the rounded value is proven representable, so extreme finite
-    /// `Double` values can never expand into unbounded cockpit text.
-    private var boundedFallbackText: String? {
-        guard let value = validatedRenderValue else { return nil }
+    /// Select presentation capacity using the same integer rounding rule as
+    /// `RollingNumberModel`, then let the model validate and build the snapshot.
+    /// This avoids a thrown two-digit capacity miss on every three-digit frame.
+    private func rollingProjection(
+        for value: Double
+    ) -> (snapshot: RollingNumberSnapshot, placesFromRight: [Int])? {
         let roundedValue = value.rounded(.toNearestOrAwayFromZero)
-        guard roundedValue <= Self.maximumFallbackDisplayInteger else { return nil }
-        return String(Int(roundedValue))
+        guard roundedValue <= Self.maximumThreeDigitDisplayInteger else { return nil }
+
+        let usesThreeDigits = roundedValue >= 100
+        let numberModel = usesThreeDigits
+            ? Self.threeDigitNumberModel
+            : Self.twoDigitNumberModel
+        let placesFromRight = usesThreeDigits
+            ? Self.threeDigitPlacesFromRight
+            : Self.twoDigitPlacesFromRight
+
+        guard let numberModel,
+              let snapshot = try? numberModel.snapshot(for: value) else {
+            return nil
+        }
+
+        return (snapshot, placesFromRight)
     }
 
     var body: some View {
-        if let value = validatedRenderValue {
-            if let numberModel = Self.numberModel,
-               let snapshot = try? numberModel.snapshot(for: value) {
-                HStack(spacing: -5) {
-                    ForEach(snapshot.digits.indices, id: \.self) { index in
-                        let digit = snapshot.digits[index]
-                        Text(String(digit.digit))
-                            .opacity(digit.isVisible ? 1 : 0)
-                            .contentTransition(
-                                reduceMotion ? .identity : .numericText(value: value)
-                            )
-                    }
+        if let value = validatedRenderValue,
+           let projection = rollingProjection(for: value) {
+            HStack(spacing: -5) {
+                ForEach(projection.placesFromRight, id: \.self) { placeFromRight in
+                    let index = projection.snapshot.digits.count - 1 - placeFromRight
+                    let digit = projection.snapshot.digits[index]
+
+                    Text(String(digit.digit))
+                        .opacity(digit.isVisible ? 1 : 0)
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: value)
+                        )
                 }
-                // Interpolation timing lives in SpeedInstrumentModel. This brief
-                // transition only rolls a visible integer when the rendered value
-                // crosses that integer; it is not a second speed-smoothing layer.
-                // Reduce Motion keeps the same display value but removes the roll.
-                .animation(
-                    reduceMotion ? nil : .linear(duration: 0.08),
-                    value: snapshot.scaledValue
-                )
-            } else if let fallbackText = boundedFallbackText {
-                Text(fallbackText)
-                    .contentTransition(
-                        reduceMotion ? .identity : .numericText(value: value)
-                    )
-            } else {
-                Text("—")
             }
+            // Interpolation timing lives in SpeedInstrumentModel. This brief
+            // transition rolls visible integer changes without creating a second
+            // speed-smoothing layer. Decimal-place IDs stay stable at 99 -> 100.
+            // Reduce Motion keeps the same display value but removes the roll.
+            .animation(
+                reduceMotion ? nil : .linear(duration: 0.08),
+                value: projection.snapshot.scaledValue
+            )
         } else {
             Text("—")
         }
