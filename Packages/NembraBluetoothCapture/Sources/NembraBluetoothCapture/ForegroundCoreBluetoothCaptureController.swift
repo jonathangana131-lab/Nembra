@@ -637,12 +637,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
             let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)
             // No actor suspension may occur between the authority-fenced recorder
-            // return and typed queue commit. A callback cannot interleave here on
-            // MainActor and relabel this exact Horizon epoch.
-            let committedHorizon = try recordedHorizon.markBoundaryRecorded(
-                on: &observationBoundaryQueueGate,
-                lastProcessedQueueSequence: lastProcessedEventSequence
-            )
+            // return and typed queue commit. If that exact commit loses lifecycle
+            // authority, #507's producer-issued recorded-H token quarantines the
+            // durable H without fabricating terminal/frozen success.
+            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+            do {
+                committedHorizon = try recordedHorizon.markBoundaryRecorded(
+                    on: &observationBoundaryQueueGate,
+                    lastProcessedQueueSequence: lastProcessedEventSequence
+                )
+            } catch {
+                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                    recordedHorizon
+                )
+                throw error
+            }
 
             let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
             try validateBoundaryAuthority(committedHorizon.authority)
@@ -1445,6 +1454,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             isPoweredOn: central.state == .poweredOn,
             isScanning: scanRequested && central.isScanning
         ) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
 
         let receipt = callbackReceipt()
         let normalizedRSSI = DiscoveredPeripheral.normalizedRSSI(RSSI.intValue)
@@ -1493,12 +1503,11 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         guard targetState.acceptsActiveCallback(from: identifier),
               targetState.selectedTargetIdentifier == identifier else { return }
 
-        connectionTimeoutTask?.cancel()
-        connectionTimeoutTask = nil
-
         if observationBoundaryBlocksArtifactMutation {
             // A connect callback that arrives after H admission belongs to transport
             // cleanup, not a new finite-acquisition epoch inside the sealed artifact.
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
             selectedTargetCancellationPending = true
             _ = targetState.retireActiveAttempt()
             peripheral.delegate = nil
@@ -1509,6 +1518,8 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             return
         }
 
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
         activePeripheral = peripheral
         peripheral.delegate = self
         connectionPhase = .connected(identifier)
@@ -1617,6 +1628,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
         if let error {
             failCapture(error, fallback: "Service discovery failed; capture is incomplete.")
             return
@@ -1662,6 +1674,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     ) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
         if let error {
             failCapture(error, fallback: "Included-service discovery failed; capture is incomplete.")
             return
@@ -1712,6 +1725,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     ) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
         if let error {
             failCapture(error, fallback: "Characteristic discovery failed; capture is incomplete.")
             return
@@ -1768,6 +1782,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     ) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
         if let error {
             failCapture(error, fallback: "Descriptor discovery failed; capture is incomplete.")
             return
@@ -1813,6 +1828,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     ) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
 
         let key: PassiveCoreBluetoothTargetState.AttributeKey
         do {
@@ -1898,6 +1914,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     ) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
+        guard !observationBoundaryBlocksArtifactMutation else { return }
 
         let key: PassiveCoreBluetoothTargetState.AttributeKey
         do {
