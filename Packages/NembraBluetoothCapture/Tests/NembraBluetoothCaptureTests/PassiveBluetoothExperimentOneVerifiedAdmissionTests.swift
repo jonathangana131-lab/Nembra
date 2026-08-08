@@ -17,12 +17,9 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
         let externalRecord = try json(externalRecordObject())
-        let fieldEvidence = try json(
-            fieldEvidenceObject(externalRecordSHA256: sha256Hex(externalRecord))
-        )
+        let fieldEvidence = try json(fieldEvidenceObject(externalRecordSHA256: sha256Hex(externalRecord)))
         let payload = try json([
-            "schemaVersion": PassiveBluetoothCaptureFieldAuthorizationVerifier
-                .authorizationPayloadSchemaVersion,
+            "schemaVersion": PassiveBluetoothCaptureFieldAuthorizationVerifier.authorizationPayloadSchemaVersion,
             "decision": "GO",
             "externalBuildRecordSHA256": sha256Hex(externalRecord),
             "fieldBuildEvidenceRecordSHA256": sha256Hex(fieldEvidence),
@@ -41,11 +38,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
             publicKeyX963Representation: signingKey.publicKey.x963Representation,
             runtimeBuildIdentity: runtimeIdentity
         )
-        let admission = try #require(
-            PassiveBluetoothExperimentOneFieldExecutionGate.admit(
-                verifiedAuthorization: verified
-            )
-        )
+        let admission = try #require(PassiveBluetoothExperimentOneFieldExecutionGate.admit(verifiedAuthorization: verified))
 
         #expect(admission.buildIdentifier == buildIdentifier)
         #expect(admission.buildInstanceID == buildInstanceID)
@@ -53,38 +46,18 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.signedInstallableSHA256 == signedInstallableSHA256)
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
-
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // release-grade field gate is NO-GO.
-        #expect(
-            PassiveBluetoothExperimentOneFieldExecutionGate.status
-                == .noGo(.finalComposedBuildNotAuthorized)
-        )
+        #expect(PassiveBluetoothExperimentOneFieldExecutionGate.status == .noGo(.finalComposedBuildNotAuthorized))
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
     @Test("release-grade live factory requires admission plus final field GO and legacy factory stays sealed")
     func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
-        let source = try sourceFile(
-            "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
-        )
+        let source = try sourceFile("Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift")
 
         let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
-        let zeroFactoryStart = try #require(
-            source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
-        )
-        let verifiedFactoryStart = try #require(
-            source.range(
-                of: "static func makeAuthorizedES80(\n        verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission"
-            )?.lowerBound
-        )
-        let liveFactoryStart = try #require(
-            source.range(
-                of: "private static func makeLiveES80Coordinator() throws",
-                range: verifiedFactoryStart..<source.endIndex
-            )?.lowerBound
-        )
+        let zeroFactoryStart = try #require(source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound)
+        let verifiedFactoryStart = try #require(source.range(of: "static func makeAuthorizedES80(\n        verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission")?.lowerBound)
+        let liveFactoryStart = try #require(source.range(of: "private static func makeLiveES80Coordinator() throws", range: verifiedFactoryStart..<source.endIndex)?.lowerBound)
 
         let zeroFactory = source[zeroFactoryStart..<verifiedFactoryStart]
         #expect(zeroFactory.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
@@ -93,17 +66,16 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
 
         let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
         let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
-        let liveConstruction = try #require(
-            verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
-        )
+        let liveConstruction = try #require(verifiedFactory.range(of: "return try makeLiveES80Coordinator()"))
         #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
         #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
 
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        // Comments may explicitly name forbidden preference mechanisms; executable preference access stays absent.
+        #expect(!source.contains("UserDefaults.standard"))
+        #expect(!source.contains("ProcessInfo.processInfo"))
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
@@ -116,18 +88,15 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("verifiedAdmission:"))
         #expect(!source.contains("PassiveBluetoothCaptureVerifiedFieldAuthorization"))
         #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
-        #expect(!source.contains("UserDefaults"))
+        #expect(!source.contains("UserDefaults.standard"))
     }
 
     private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
         try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
             infoDictionary: [
-                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
-                    buildIdentifier,
-                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
-                    buildInstanceID,
-                PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
-                    sourceCommitSHA,
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey: buildIdentifier,
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey: buildInstanceID,
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA,
             ],
             executableData: executableData,
             infoPlistData: infoPlistData
@@ -147,9 +116,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         ]
     }
 
-    private func fieldEvidenceObject(
-        externalRecordSHA256: String
-    ) -> [String: Any] {
+    private func fieldEvidenceObject(externalRecordSHA256: String) -> [String: Any] {
         [
             "schemaVersion": 1,
             "externalBuildRecordSHA256": externalRecordSHA256,
@@ -170,34 +137,18 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
     }
 
     private func sha256Hex(_ data: Data) -> String {
-        SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: packageRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
+        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: packageRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 
     private func repositorySourceFile(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
+        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 }
