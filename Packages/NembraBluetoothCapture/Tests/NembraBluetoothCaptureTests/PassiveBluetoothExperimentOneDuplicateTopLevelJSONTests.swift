@@ -4,24 +4,26 @@ import Testing
 
 struct PassiveBluetoothExperimentOneDuplicateTopLevelJSONTests {
     @Test
-    func finalShareRejectsDuplicateTopLevelKeyBeforeFoundationDecode() {
-        let data = Data(#"{"schemaVersion":1,"schemaVersion":1}"#.utf8)
+    func finalShareRejectsDuplicateDigestAuthorityBeforeFoundationDecode() {
+        let data = Data(
+            #"{"softwareExportSHA256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","softwareExportSHA256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#.utf8
+        )
 
         #expect(
             throws: PassiveBluetoothExperimentOneFinalShareArtifactError
-                .duplicateWireField("schemaVersion")
+                .duplicateWireField("softwareExportSHA256")
         ) {
             _ = try PassiveBluetoothExperimentOneFinalShareArtifactCodec.decodeAndVerify(data)
         }
     }
 
     @Test
-    func softwareExportRejectsDuplicateTopLevelKeyBeforeFoundationDecode() {
-        let data = Data(#"{"experimentRecipeID":"ES80-FINGERPRINT-v1","experimentRecipeID":"ES80-FINGERPRINT-v1"}"#.utf8)
+    func softwareExportRejectsDuplicateCaptureProvenanceBeforeFoundationDecode() {
+        let data = Data(#"{"captureJSONBase64":"e30=","captureJSONBase64":"W10="}"#.utf8)
 
         #expect(
             throws: PassiveBluetoothExperimentOneSoftwareExportError
-                .duplicateWireField("experimentRecipeID")
+                .duplicateWireField("captureJSONBase64")
         ) {
             _ = try PassiveBluetoothExperimentOneSoftwareExportCodec.decodeAndVerify(data)
         }
