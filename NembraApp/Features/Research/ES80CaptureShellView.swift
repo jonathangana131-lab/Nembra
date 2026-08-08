@@ -69,6 +69,9 @@ struct ES80CaptureShellView: View {
     @State private var showingDetails = false
 
     private let onFreshExperimentRequested: () throws -> PassiveBluetoothExperimentOneCoordinator
+#if DEBUG && targetEnvironment(simulator)
+    private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+#endif
 
     init(
         coordinator: PassiveBluetoothExperimentOneCoordinator,
@@ -76,7 +79,22 @@ struct ES80CaptureShellView: View {
     ) {
         _coordinator = State(initialValue: coordinator)
         self.onFreshExperimentRequested = onFreshExperimentRequested
+#if DEBUG && targetEnvironment(simulator)
+        simulatorQASnapshot = nil
+#endif
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot,
+        onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentRequested = onFreshExperimentRequested
+        self.simulatorQASnapshot = simulatorQASnapshot
+    }
+#endif
 
     var body: some View {
         TimelineView(.periodic(
@@ -90,6 +108,11 @@ struct ES80CaptureShellView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     hero(for: currentPhase)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        simulatorQABadge(simulatorQASnapshot)
+                    }
+#endif
                     passiveSafetyPanel
                     progressRail(status: status)
                     primaryContent(
@@ -112,7 +135,7 @@ struct ES80CaptureShellView: View {
             .onAppear {
                 synchronizeIdleTimer(for: currentPhase)
                 synchronizeObservedScanClock(isScanning: status.powerCycleProgress?.isScanning == true)
-                synchronizeObservationReadyClock(isReady: status.observationReady)
+                synchronizeObservationReadyClock(isReady: presentationObservationReady(status: status))
             }
             .onChange(of: currentPhase) { _, newPhase in
                 synchronizeIdleTimer(for: newPhase)
@@ -120,7 +143,7 @@ struct ES80CaptureShellView: View {
             .onChange(of: status.powerCycleProgress?.isScanning == true) { _, isScanning in
                 synchronizeObservedScanClock(isScanning: isScanning)
             }
-            .onChange(of: status.observationReady) { _, isReady in
+            .onChange(of: presentationObservationReady(status: status)) { _, isReady in
                 synchronizeObservationReadyClock(isReady: isReady)
             }
         }
@@ -186,6 +209,29 @@ struct ES80CaptureShellView: View {
         }
     }
 
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQABadge(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "hammer.fill")
+                .accessibilityHidden(true)
+            Text("\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE")
+        }
+        .font(.caption.monospaced().weight(.bold))
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.orange.opacity(0.10), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            snapshot.accessibilitySummary
+                + " No Bluetooth transport or capture evidence is created by this presentation fixture."
+        )
+        .accessibilityIdentifier("es80.capture.simulator-qa")
+    }
+#endif
+
     private var passiveSafetyPanel: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "shield.lefthalf.filled")
@@ -213,10 +259,8 @@ struct ES80CaptureShellView: View {
     private func progressRail(
         status: PassiveBluetoothExperimentOneCoordinator.Status
     ) -> some View {
-        let completed = status.powerCycleProgress?.completedWindowCount
-            ?? coordinator.powerCycleResult?.windows.count
-            ?? 0
-        let current = status.powerCycleProgress?.phase.rawValue
+        let completed = presentationCompletedWindows(status: status)
+        let current = presentationCurrentWindow(status: status)
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -263,7 +307,7 @@ struct ES80CaptureShellView: View {
             progressAccessibilityLabel(
                 status: status,
                 completedWindows: completed,
-                analysisReady: finalShareIntegrityReport != nil
+                analysisReady: presentationAnalysisReady
             )
         )
         .accessibilityIdentifier("es80.capture.experiment-progress")
@@ -513,17 +557,18 @@ struct ES80CaptureShellView: View {
             )
             .accessibilityHint("Keep Nembra foregrounded and the scooter stationary.")
             observationHealthStrip(status: status)
+            let canFinalize = presentationCanFinalizeObservationHorizon(status: status)
             primaryButton(
-                status.canFinalizeObservationHorizon ? "Seal Capture" : "Observation in progress",
-                systemImage: status.canFinalizeObservationHorizon ? "checkmark.seal.fill" : "timer",
-                disabled: !status.canFinalizeObservationHorizon,
+                canFinalize ? "Seal Capture" : "Observation in progress",
+                systemImage: canFinalize ? "checkmark.seal.fill" : "timer",
+                disabled: !canFinalize,
                 identifier: "es80.capture.finish"
             ) {
                 finalizeCapture()
             }
             .accessibilityLabel("Seal Capture")
             .accessibilityValue(
-                status.canFinalizeObservationHorizon
+                canFinalize
                     ? "Ready"
                     : "Unavailable; waiting for accepted Horizon authority"
             )
@@ -559,33 +604,53 @@ struct ES80CaptureShellView: View {
 
         case .complete:
             completionPanel
-            if let shareURL {
-                ShareLink(item: shareURL) {
-                    Label("Share Capture", systemImage: "square.and.arrow.up")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 56)
-                        .foregroundStyle(.black)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("es80.capture.share")
-            } else if coordinator.finalizedArtifact != nil {
-                primaryButton(
-                    finalShareIntegrityReport == nil ? "Verify final artifact" : "Retry Share file",
-                    systemImage: "arrow.clockwise",
-                    identifier: "es80.capture.prepare-share"
-                ) {
-                    prepareFinalShareForAnalysisAndSharing()
+#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                if simulatorQASnapshot.artifactState == .shareRetry {
+                    primaryButton(
+                        "Retry Share file",
+                        systemImage: "arrow.clockwise",
+                        identifier: "es80.capture.prepare-share"
+                    ) {}
+                } else {
+                    primaryButton(
+                        "Share Capture",
+                        systemImage: "square.and.arrow.up",
+                        identifier: "es80.capture.share"
+                    ) {}
                 }
             } else {
-                primaryButton(
-                    "Share unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    disabled: true,
-                    identifier: "es80.capture.share-unavailable"
-                ) {}
+#endif
+                if let shareURL {
+                    ShareLink(item: shareURL) {
+                        Label("Share Capture", systemImage: "square.and.arrow.up")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 56)
+                            .foregroundStyle(.black)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("es80.capture.share")
+                } else if coordinator.finalizedArtifact != nil {
+                    primaryButton(
+                        finalShareIntegrityReport == nil ? "Verify final artifact" : "Retry Share file",
+                        systemImage: "arrow.clockwise",
+                        identifier: "es80.capture.prepare-share"
+                    ) {
+                        prepareFinalShareForAnalysisAndSharing()
+                    }
+                } else {
+                    primaryButton(
+                        "Share unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        disabled: true,
+                        identifier: "es80.capture.share-unavailable"
+                    ) {}
+                }
+#if DEBUG && targetEnvironment(simulator)
             }
+#endif
             if let sharePreparationWarning {
                 diagnosticBanner(sharePreparationWarning)
             }
@@ -667,21 +732,27 @@ struct ES80CaptureShellView: View {
     private func observationHealthStrip(
         status: PassiveBluetoothExperimentOneCoordinator.Status
     ) -> some View {
-        HStack(spacing: 12) {
-            healthItem("TARGET", value: status.connection == .connected ? "BOUND" : "WAIT")
+        let connection = presentationConnection(status: status)
+        let observationReady = presentationObservationReady(status: status)
+        let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
+
+        return HStack(spacing: 12) {
+            healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
             Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("FINITE", value: status.observationReady ? "READY" : "WAIT")
+            healthItem("FINITE", value: observationReady ? "READY" : "WAIT")
             Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("HORIZON", value: status.canFinalizeObservationHorizon ? "READY" : "HOLD")
+            healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")
         }
         .padding(14)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Capture health. Target bound. Finite acquisition \(status.observationReady ? "ready" : "waiting"). Horizon \(status.canFinalizeObservationHorizon ? "ready" : "waiting").")
+        .accessibilityLabel(
+            "Capture health. Target \(connection == .connected ? "bound" : "waiting"). Finite acquisition \(observationReady ? "ready" : "waiting"). Horizon \(horizonReady ? "ready" : "waiting")."
+        )
     }
 
     private var completionPanel: some View {
-        let analysisReady = finalShareIntegrityReport != nil
+        let analysisReady = presentationAnalysisReady
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
                 ZStack {
@@ -704,7 +775,16 @@ struct ES80CaptureShellView: View {
                 }
             }
 
+#if DEBUG && targetEnvironment(simulator)
+            if simulatorQASnapshot != nil {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let report = finalShareIntegrityReport {
+#else
             if let report = finalShareIntegrityReport {
+#endif
                 Text("The exact \(report.finalShareByteCount.formatted())-byte final Share artifact passed the package-owned outer, SoftwareExport, and immutable Capture integrity checks. No protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -736,29 +816,49 @@ struct ES80CaptureShellView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Experiment One")
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
-                    detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
-                    detailRow("Correlation", value: correlationDetailValue)
-                    detailRow("Cleanup", value: finalizationCleanupDetailValue)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("es80.capture.details.simulator-qa")
+                        detailRow("Scenario", value: simulatorQASnapshot.title)
+                        detailRow("Recipe", value: simulatorQASnapshot.recipeID.rawValue)
+                        detailRow("Physical procedure", value: "Locked")
+                        detailRow("Bluetooth transport", value: "Not used")
+                        detailRow("Capture artifact", value: "Not created")
+                        Text("These details describe presentation QA only. They do not read, summarize, or imply a live coordinator evidence state.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+#endif
+                        detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
+                        detailRow("Correlation", value: correlationDetailValue)
+                        detailRow("Cleanup", value: finalizationCleanupDetailValue)
 
-                    if let report = finalShareIntegrityReport {
-                        detailRow("Analysis readiness", value: "Ready")
-                        detailRow("Procedure", value: report.procedureVersion)
-                        detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
-                        digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
-                        digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
-                        digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
-                        detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
-                        detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
-                        detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
-                        detailRow("Build", value: report.softwareExport.buildIdentifier)
-                        detailRow("Build instance", value: report.buildInstanceID)
-                        detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
-                        digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
-                    } else if let artifact = coordinator.finalizedArtifact {
-                        detailRow("Analysis readiness", value: "Not yet verified")
-                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
-                        detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+                        if let report = finalShareIntegrityReport {
+                            detailRow("Analysis readiness", value: "Ready")
+                            detailRow("Procedure", value: report.procedureVersion)
+                            detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+                            digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+                            digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+                            digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+                            detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+                            detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+                            detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+                            detailRow("Build", value: report.softwareExport.buildIdentifier)
+                            detailRow("Build instance", value: report.buildInstanceID)
+                            detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+                            digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+                        } else if let artifact = coordinator.finalizedArtifact {
+                            detailRow("Analysis readiness", value: "Not yet verified")
+                            detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+                            detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+                        }
+#if DEBUG && targetEnvironment(simulator)
                     }
+#endif
 
                     Divider()
 
@@ -789,6 +889,11 @@ struct ES80CaptureShellView: View {
         if let localFailureMessage {
             return .failed(localFailureMessage)
         }
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQAPhase(simulatorQASnapshot.scenario)
+        }
+#endif
         guard status.physicalProcedurePermitted else {
             return .physicalProcedureLocked
         }
@@ -854,6 +959,132 @@ struct ES80CaptureShellView: View {
             return .correlationStarting(progress.phase)
         }
         return .correlationReady(progress.phase)
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQAPhase(
+        _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+    ) -> Phase {
+        switch scenario {
+        case .stationaryPreflight, .firstPoweredOff:
+            return .correlationReady(.firstPoweredOff)
+        case .firstPoweredOn:
+            return .correlationReady(.firstPoweredOn)
+        case .secondPoweredOff:
+            return .correlationReady(.secondPoweredOff)
+        case .secondPoweredOn, .targetConfirmation:
+            return .correlatedTarget
+        case .passiveDiscovery:
+            return .connecting
+        case .observationReady, .captureInProgress:
+            return .observing
+        case .observationHorizonReady:
+            return .readyToSeal
+        case .horizonSealed:
+            return .finalizing
+        case .captureComplete, .shareRetry:
+            return .complete
+        case .foregroundInterrupted:
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+        }
+    }
+#endif
+
+    private var presentationAnalysisReady: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return finalShareIntegrityReport != nil
+    }
+
+    private func presentationCompletedWindows(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff: return 0
+            case .firstPoweredOn: return 1
+            case .secondPoweredOff: return 2
+            default: return 4
+            }
+        }
+#endif
+        return status.powerCycleProgress?.completedWindowCount
+            ?? coordinator.powerCycleResult?.windows.count
+            ?? 0
+    }
+
+    private func presentationCurrentWindow(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int? {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOff.rawValue
+            case .firstPoweredOn:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOn.rawValue
+            case .secondPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.secondPoweredOff.rawValue
+            default:
+                return nil
+            }
+        }
+#endif
+        return status.powerCycleProgress?.phase.rawValue
+    }
+
+    private func presentationObservationReady(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.observationReady }
+#endif
+        return status.observationReady
+    }
+
+    private func presentationCanFinalizeObservationHorizon(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.canFinalizeObservationHorizon }
+#endif
+        return status.canFinalizeObservationHorizon
+    }
+
+    private func presentationConnection(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> PassiveBluetoothExperimentOneCoordinator.ConnectionStatus {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.connection }
+#endif
+        return status.connection
+    }
+
+    private func presentationHasPreparedCaptureAdmission(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.hasPreparedCaptureAdmission }
+#endif
+        return status.hasPreparedCaptureAdmission
+    }
+
+    private func presentationArtifactFinalized(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .sealed
+                || simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return status.artifactFinalized
     }
 
     private func beginCorrelationWindow() {
@@ -1302,21 +1533,21 @@ struct ES80CaptureShellView: View {
             return .white.opacity(0.12)
         }
         if index == 4 {
-            return status.observationReady ? .white : .white.opacity(0.12)
+            return presentationObservationReady(status: status) ? .white : .white.opacity(0.12)
         }
-        return status.artifactFinalized ? .white : .white.opacity(0.12)
+        return presentationArtifactFinalized(status: status) ? .white : .white.opacity(0.12)
     }
 
     private func progressStage(
         status: PassiveBluetoothExperimentOneCoordinator.Status,
         completedWindows: Int
     ) -> String {
-        if status.artifactFinalized { return "SEALED" }
-        if status.canFinalizeObservationHorizon { return "H READY" }
-        if status.observationReady { return "OBSERVE" }
-        if status.connection == .connected { return "ACQUIRE" }
-        if status.connection == .connecting { return "CONNECT" }
-        if status.hasPreparedCaptureAdmission { return "REACQUIRE" }
+        if presentationArtifactFinalized(status: status) { return "SEALED" }
+        if presentationCanFinalizeObservationHorizon(status: status) { return "H READY" }
+        if presentationObservationReady(status: status) { return "OBSERVE" }
+        if presentationConnection(status: status) == .connected { return "ACQUIRE" }
+        if presentationConnection(status: status) == .connecting { return "CONNECT" }
+        if presentationHasPreparedCaptureAdmission(status: status) { return "REACQUIRE" }
         return "\(min(completedWindows, 4)) / 4"
     }
 
@@ -1325,15 +1556,15 @@ struct ES80CaptureShellView: View {
         completedWindows: Int,
         analysisReady: Bool
     ) -> String {
-        if status.artifactFinalized {
+        if presentationArtifactFinalized(status: status) {
             return analysisReady
                 ? "Experiment One progress, capture sealed and ready for analysis"
                 : "Experiment One progress, capture sealed; final artifact integrity not yet verified"
         }
-        if status.canFinalizeObservationHorizon {
+        if presentationCanFinalizeObservationHorizon(status: status) {
             return "Experiment One progress, observation Horizon ready to seal"
         }
-        if status.observationReady {
+        if presentationObservationReady(status: status) {
             return "Experiment One progress, four correlation windows complete and passive observation ready"
         }
         return "Experiment One progress, \(min(completedWindows, 4)) of 4 correlation windows complete"
@@ -1393,7 +1624,7 @@ struct ES80CaptureShellView: View {
         case .observing: return "Observation running"
         case .readyToSeal: return "Horizon ready"
         case .finalizing: return "Sealing artifact"
-        case .complete: return finalShareIntegrityReport == nil ? "Capture sealed" : "Capture complete"
+        case .complete: return presentationAnalysisReady ? "Capture complete" : "Capture sealed"
         }
     }
 
