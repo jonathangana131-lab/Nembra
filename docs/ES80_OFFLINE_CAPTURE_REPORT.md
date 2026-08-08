@@ -67,12 +67,12 @@ These protections are about preserving research evidence and prior derived artif
 
 ## Exact source-artifact binding
 
-The command hashes the **exact input JSON bytes before analysis** and wraps the framing report with:
+The command reads the source artifact under the configured artifact-byte ceiling, then hashes and decodes the **exact bytes returned by that bounded read**. The report wraps the framing analysis with:
 
 - the input artifact byte count; and
 - a lowercase SHA-256 digest of those exact bytes.
 
-This means a later worker can verify which physical-capture artifact produced a report even when two files decode to the same session content but differ byte-for-byte, for example because one was re-encoded or reformatted.
+The bounded reader does not normalize, re-encode, trim, or otherwise transform accepted input. This means a later worker can verify which physical-capture artifact produced a report even when two files decode to the same session content but differ byte-for-byte, for example because one was re-encoded or reformatted.
 
 The SHA-256 is an artifact-integrity/provenance identifier only. It does **not** authenticate the scooter, prove who recorded the capture, establish chain-of-custody by itself, or verify any ES80 protocol meaning.
 
@@ -82,12 +82,25 @@ The raw capture JSON remains the authority for raw bytes. The report intentional
 
 The command defaults to:
 
+- `--max-artifact-bytes 67108864` (64 MiB source-artifact/decode ingress ceiling)
 - `--max-message-bytes 65536`
 - `--max-fragments 256`
 
-These values are **process/resource ceilings only**. They are not measured ES80 limits, expected packet sizes, protocol claims, or learned device behavior. They can be tightened explicitly for a specific offline run.
+All three values are **offline process/resource ceilings only**. They are not measured ES80 limits, expected packet sizes, protocol claims, learned device behavior, or physical capture maxima. They can be changed explicitly for a specific offline run.
 
-The bounded analyzer still rejects candidates that violate the selected limits. The report preserves that rejection rather than changing offsets, dropping observations, synthesizing timing, or trying alternate bytes until something parses.
+The artifact ceiling is enforced before JSON decode. The file reader consumes bounded chunks and reads at most one byte beyond the configured ceiling to prove that the source is oversized; an oversized source fails closed instead of first materializing the complete file and decoded capture object graph. The artifact-report builder independently validates already-materialized `Data` against the same ceiling before it invokes `PassiveBluetoothCaptureJSON.decode`.
+
+For example, to intentionally analyze a retained artifact under a different operator-tool ceiling:
+
+```sh
+swift run --package-path Packages/NembraBluetoothCapture nembra-es80-capture-report \
+  /path/to/capture.json \
+  --max-artifact-bytes 134217728
+```
+
+Choosing a larger value is a local tooling resource decision. It does not teach Nembra that an ES80 session or protocol object may be that size.
+
+The message/fragment bounds apply later to framing-candidate reassembly. The bounded analyzer still rejects candidates that violate the selected limits. The report preserves that rejection rather than changing offsets, dropping observations, synthesizing timing, or trying alternate bytes until something parses.
 
 ## What the report preserves
 
@@ -153,4 +166,4 @@ It does not verify:
 - battery percentage, voltage, current, watts/power, speed, throttle, regen, distance, or odometer semantics;
 - command authorization or command acknowledgement.
 
-Its purpose is narrower: make the passive physical-capture artifact directly consumable by deterministic Nembra offline tooling while keeping provenance and uncertainty intact.
+Its purpose is narrower: make the passive physical-capture artifact directly consumable by deterministic Nembra offline tooling while keeping provenance, bounded resource behavior, and uncertainty intact.
