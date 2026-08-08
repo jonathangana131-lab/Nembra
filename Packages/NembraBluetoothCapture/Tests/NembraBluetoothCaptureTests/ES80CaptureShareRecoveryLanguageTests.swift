@@ -38,7 +38,8 @@ struct ES80CaptureShareRecoveryLanguageTests {
             "Experiment One",
             "setup provenance",
             "temporary Share file could not be staged",
-            "exact final Share artifact did not earn analysis readiness"
+            "exact final Share artifact did not earn analysis readiness",
+            "Nembra could not prepare the Share file"
         ]
 
         for phrase in implementationPhrasesThatMustStayOutOfShareRecovery {
@@ -50,7 +51,6 @@ struct ES80CaptureShareRecoveryLanguageTests {
 
         #expect(shareRecoverySurface.contains("its setup confirmation is missing"))
         #expect(shareRecoverySurface.contains("Start a fresh capture"))
-        #expect(shareRecoverySurface.contains("Nembra could not prepare the Share file"))
         #expect(shareRecoverySurface.contains("Nembra could not verify the Share file for analysis"))
         #expect(shareRecoverySurface.contains("Capture remains sealed"))
     }
