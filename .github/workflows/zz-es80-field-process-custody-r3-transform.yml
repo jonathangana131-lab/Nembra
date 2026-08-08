@@ -1,0 +1,57 @@
+name: Temporary ES80 field process custody r3
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-field-process-custody-r3-gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply current successor transform
+        run: python3 -B scripts/ci/zz_temp_es80_field_process_custody_r3.py
+
+      - name: Validate composed custody contracts
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -B scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 -B scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 -B scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          python3 -B - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/ci/xcode27_signed_field_candidate.sh").read_text()
+          required = [
+              'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+              'validate_root_custodied_python',
+              'os.pread(descriptor',
+              '--repository-root "$ROOT"',
+              'renamex_np',
+          ]
+          for token in required:
+              if token not in source:
+                  raise SystemExit(f"composed producer contract missing: {token}")
+          workflow = Path(".github/workflows/xcode27-pr-command.yml").read_text()
+          gate = "test_xcode27_signed_field_candidate_process_custody_source.py"
+          if workflow.count(gate) != 4:
+              raise SystemExit(f"process custody compile/run must appear in both exact-head jobs: {workflow.count(gate)}")
+          PY
+          git diff --check
+
+      - name: Publish clean successor checkpoint
+        run: |
+          rm .github/workflows/zz-es80-field-process-custody-r3-transform.yml
+          rm scripts/ci/zz_temp_es80_field_process_custody_r3.py
+          git config user.name "Nembra V14 process custody successor"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(capture): close signed-field process custody"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
