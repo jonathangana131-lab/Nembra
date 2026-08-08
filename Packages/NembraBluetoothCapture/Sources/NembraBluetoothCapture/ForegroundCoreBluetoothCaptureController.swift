@@ -276,6 +276,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     public var hasCompleteTargetEvidence: Bool {
         recorder != nil
             && !captureFailed
+            && foregroundEvidenceIntegrityValid
             && acquisitionLedger.isReady
             && !selectedTargetCancellationPending
     }
@@ -322,6 +323,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var targetState = PassiveCoreBluetoothTargetState()
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
+    /// Foreground-only evidence remains valid only for the current durable target
+    /// recorder/session. Leaving foreground permanently invalidates that session;
+    /// only publication of a genuinely fresh recorder restores this bit.
+    private var foregroundEvidenceIntegrityValid = true
     private var selectedTargetCancellationPending = false
     private var scanRequested = false
 
@@ -503,7 +508,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// interruption before transport teardown. Product shells should use this
     /// instead of presenting foreground integrity loss as an operator cancel.
     public func invalidateActiveCaptureForForegroundLoss() {
+        if recorder != nil {
+            // Persist the loss before any transport teardown. Actor-suspended
+            // finalization must observe this exact session as invalid on resume.
+            foregroundEvidenceIntegrityValid = false
+        }
         cancelActiveConnection(cause: .foregroundIntegrityLoss)
+        if recorder != nil, !captureFailed {
+            failCapture(
+                ControllerError.captureFailed,
+                fallback: "Capture invalidated because foreground evidence integrity was lost."
+            )
+        }
     }
 
     /// Ends transport only after the caller has already frozen its immutable
@@ -537,6 +553,17 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         // state but must not revoke the artifact authority or append interruption
         // evidence to the closing/finalized recorder.
         if observationBoundaryBlocksArtifactMutation {
+            if case .foregroundIntegrityLoss = cause {
+                // Ordinary post-H transport callbacks are outside the accepted
+                // artifact interval, but foreground integrity is a capture-wide
+                // preflight/finalization requirement. Fail the closing session so
+                // suspended actor hops cannot promote evidence after this loss.
+                failCapture(
+                    ControllerError.captureFailed,
+                    fallback: "Capture invalidated because foreground integrity was lost during finalization."
+                )
+                return
+            }
             _ = targetState.retireActiveAttempt()
             peripheral.delegate = nil
             activePeripheral = nil
@@ -700,15 +727,29 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             // durable H without fabricating terminal/frozen success.
             let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
             do {
+                // Foreground loss can arrive while the recorder actor owns H. Recheck
+                // capture health and this durable session's foreground-integrity bit
+                // synchronously before promoting recorded H into queue-committed H.
+                try ensureCaptureHealthy()
+                guard foregroundEvidenceIntegrityValid else {
+                    throw ControllerError.captureFailed
+                }
                 committedHorizon = try recordedHorizon.markBoundaryRecorded(
                     on: &observationBoundaryQueueGate,
                     lastProcessedQueueSequence: lastProcessedEventSequence
                 )
             } catch {
-                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
-                    recordedHorizon
-                )
-                throw error
+                let promotionFailure = error
+                do {
+                    try observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                        recordedHorizon
+                    )
+                } catch {
+                    // Exact quarantine failure is stronger than the triggering
+                    // health/commit error; never suppress a stranded durable H.
+                    throw error
+                }
+                throw promotionFailure
             }
 
             let data: Data
@@ -719,6 +760,13 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 // quarantine the exact producer-issued committed H rather than retry
                 // under a newer authority or fabricate terminal success.
                 data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                // JSON materialization is another actor suspension. A foreground
+                // loss while it is in flight invalidates this session before freeze
+                // and must route through committed-H pre-freeze quarantine below.
+                try ensureCaptureHealthy()
+                guard foregroundEvidenceIntegrityValid else {
+                    throw ControllerError.captureFailed
+                }
                 try validateBoundaryAuthority(committedHorizon.authority)
                 try committedHorizon.completeHorizonArtifactFreeze(
                     on: &observationBoundaryQueueGate
@@ -812,6 +860,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
         hasUsedInitialSessionIdentity = true
+        // Restore foreground evidence validity only at publication of a genuinely
+        // fresh durable recorder/session. Reusing an old selected session never
+        // reaches this path and therefore cannot erase a prior foreground loss.
+        foregroundEvidenceIntegrityValid = true
         recorder = newRecorder
 
         // Preserve at most the selected candidate's latest already-observed
