@@ -363,3 +363,89 @@ capture_state reconnecting dark
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
+
+# Bind every retained visual/test attachment byte to this exact Simulator build without promoting
+# screenshots into physical or protocol authority. The manifest is deliberately external to the app
+# and can be independently re-hashed after the Actions artifact is downloaded for visual review.
+VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"
+python3 - \
+  "$VISUAL_EVIDENCE_MANIFEST" \
+  "$ARTIFACTS_DIR" \
+  "$CAPTURE_BUILD_IDENTIFIER" \
+  "$CAPTURE_BUILD_INSTANCE_ID" \
+  "$CAPTURE_BUILD_COMMIT_SHA" \
+  "$EXTERNAL_BUILD_RECORD_SHA256" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+(
+    manifest_path_text,
+    artifacts_root_text,
+    build_identifier,
+    build_instance_id,
+    source_commit_sha,
+    external_build_record_sha256,
+) = sys.argv[1:]
+
+artifacts_root = Path(artifacts_root_text).resolve()
+manifest_path = Path(manifest_path_text).resolve()
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+entries = []
+for artifact_kind, relative_root in (
+    ("simulatorScreenshot", "screenshots"),
+    ("xctestAttachment", "test-attachments"),
+):
+    root = artifacts_root / relative_root
+    if not root.exists():
+        continue
+    for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+        if path.is_symlink():
+            raise SystemExit(f"visual evidence must not contain symlinks: {path}")
+        relative_path = path.relative_to(artifacts_root).as_posix()
+        entries.append({
+            "artifactKind": artifact_kind,
+            "relativePath": relative_path,
+            "byteCount": path.stat().st_size,
+            "sha256": sha256(path),
+        })
+
+screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
+if not screenshot_entries:
+    raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
+if any(entry["byteCount"] <= 0 for entry in entries):
+    raise SystemExit("visual evidence manifest refuses empty retained evidence files")
+
+manifest = {
+    "schemaVersion": 1,
+    "authority": "simulator-visual-evidence-not-physical-authorization",
+    "buildIdentifier": build_identifier,
+    "buildInstanceID": build_instance_id,
+    "sourceCommitSHA": source_commit_sha,
+    "externalBuildRecordSHA256": external_build_record_sha256,
+    "files": entries,
+}
+manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+with manifest_path.open("xb") as handle:
+    handle.write(manifest_bytes)
+PY
+
+VISUAL_EVIDENCE_MANIFEST_SHA256="$(shasum -a 256 "$VISUAL_EVIDENCE_MANIFEST" | awk '{print $1}')"
+if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
+  exit 22
+fi
+printf '%s\n' \
+  "capture_simulator_visual_evidence_manifest=$VISUAL_EVIDENCE_MANIFEST" \
+  "capture_simulator_visual_evidence_manifest_sha256=$VISUAL_EVIDENCE_MANIFEST_SHA256" \
+  >> "$ARTIFACTS_DIR/environment.txt"
