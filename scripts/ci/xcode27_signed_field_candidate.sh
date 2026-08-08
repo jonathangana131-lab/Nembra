@@ -14,6 +14,7 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
+: "${NEMBRA_FIELD_DEVICE_UDID:?Set NEMBRA_FIELD_DEVICE_UDID to the intended field iPhone UDID.}"
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
@@ -42,9 +43,11 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 6
 fi
 
-# This spelling is owned by the accepted schema-v3/current field-artifact evidence contract.
+# These spellings are package-owned V14 product/procedure identities. The field recipe marker is
+# launch routing only; it cannot grant physical authority, but it is sealed by the signed Info.plist.
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
 BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
   exit 7
@@ -105,6 +108,7 @@ xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
+  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
   archive
 
 xcodebuild \
@@ -136,12 +140,14 @@ fi
 IPA_PATH="${IPA_FILES[0]}"
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
-# snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
-# exact final bytes, retains the IPA, and emits the one package-decodable field-build record plus a
-# separate signing-inspection companion. Neither record grants physical GO.
+# snapshot that produced the archive. It reopens the final IPA, verifies real device signing,
+# provisioning/effective-entitlement/certificate coverage for the intended field iPhone, hashes and
+# retains exact final bytes, and emits evidence only. The intended device UDID is verification-only:
+# the inspector does not persist, print, hash, or name output artifacts with it.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
+  --intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID" \
   --output-dir "$ARTIFACTS_DIR"
 
 EXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
@@ -235,6 +241,7 @@ PY
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
+  echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
   echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
