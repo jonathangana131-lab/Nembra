@@ -83,6 +83,26 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
+    /// Read-only producer-owned staging view. It exposes only the exact target and local
+    /// monotonic handoff boundary needed to decide whether controller staging is ready;
+    /// it exposes no recorder, raw evidence wrapper, or mutation authority. Construction
+    /// remains producer-file private so package consumers cannot forge another target.
+    struct StagingPreview: Equatable, Sendable {
+        let admissionIdentity: UUID
+        let peripheralIdentifier: UUID
+        let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(
+            admissionIdentity: UUID,
+            peripheralIdentifier: UUID,
+            issuedAtUptimeNanoseconds: UInt64
+        ) {
+            self.admissionIdentity = admissionIdentity
+            self.peripheralIdentifier = peripheralIdentifier
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
+        }
+    }
+
     struct Payload {
         let admissionIdentity: UUID
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
@@ -120,6 +140,17 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder,
             issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+    }
+
+    /// Returns immutable staging chronology without burning the one-shot ownership handoff.
+    /// The preview is useful only with this sealed admission; successful `consume()` must
+    /// re-bind the exact preview identity before recorder publication.
+    func stagingPreview() -> StagingPreview {
+        StagingPreview(
+            admissionIdentity: payload.admissionIdentity,
+            peripheralIdentifier: payload.peripheralIdentifier,
+            issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
         )
     }
 
