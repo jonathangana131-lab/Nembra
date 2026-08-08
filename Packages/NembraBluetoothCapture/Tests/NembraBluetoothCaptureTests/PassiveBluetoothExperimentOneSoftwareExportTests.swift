@@ -234,7 +234,8 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
                     commit
             ],
-            executableData: Data("fixture executable".utf8)
+            executableData: Data("fixture executable".utf8),
+            infoPlistData: Data("fixture Info.plist".utf8)
         )
     }
 
