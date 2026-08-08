@@ -1,0 +1,171 @@
+name: Temporary ES80 rider failure-copy transform
+
+on:
+  push:
+    branches:
+      - product/es80-v14-rider-failure-copy-r2/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact transformer parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="c766e094fd9be3cc30cb61e0e5d17d83f7e80da5"
+          WORKFLOW=".github/workflows/tmp-es80-rider-failure-copy-r2-gpt56-thinking.yml"
+          test "$(git rev-list --count HEAD^..HEAD)" = "1"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          mapfile -t changed < <(git diff --name-only HEAD^..HEAD)
+          test "${#changed[@]}" = "1"
+          test "${changed[0]}" = "$WORKFLOW"
+
+      - name: Apply guarded rider-facing failure copy cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+
+          shell = shell_path.read_text(encoding="utf-8")
+          replacements = {
+              'return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")':
+                  'return .failed("Nembra left the foreground after capture began. This run can no longer continue; start a fresh capture.")',
+              'return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")':
+                  'return .failed("The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.")',
+              'return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")':
+                  'return .bluetoothUnavailable("Passive Bluetooth capture is unavailable.")',
+              'return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")':
+                  'return .correlationFailed("The four OFF / ON windows are incomplete or invalid. Start a fresh capture and repeat them in order.")',
+              'return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")':
+                  'return .correlationFailed("The OFF / ON setup is unavailable for this run. Start a fresh capture.")',
+              'return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")':
+                  'return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted capture; it is not physical evidence.")',
+              'localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \\(String(describing: error))"':
+                  'localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."',
+          }
+          for old, new in replacements.items():
+              count = shell.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one shell match for {old!r}; found {count}")
+              shell = shell.replace(old, new, 1)
+          shell_path.write_text(shell, encoding="utf-8")
+
+          tests = test_path.read_text(encoding="utf-8")
+          marker = '''    @Test("engineering truth remains available in Details instead of being deleted")
+'''
+          if tests.count(marker) != 1:
+              raise SystemExit("rider-language test insertion marker drifted")
+          addition = '''    @Test("state-machine and restart failures stay rider-readable")
+    func stateMachineFailureCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let phaseStart = try #require(source.range(of: "    private func phase("))
+        let phaseEnd = try #require(
+            source.range(
+                of: "    private var presentationAnalysisReady: Bool",
+                range: phaseStart.lowerBound..<source.endIndex
+            )
+        )
+        let restartStart = try #require(source.range(of: "    private func restartExperiment()"))
+        let restartEnd = try #require(
+            source.range(
+                of: "    private func handleScenePhaseChange",
+                range: restartStart.lowerBound..<source.endIndex
+            )
+        )
+        let failureSurface = String(source[phaseStart.lowerBound..<phaseEnd.lowerBound])
+            + String(source[restartStart.lowerBound..<restartEnd.lowerBound])
+
+        let implementationPhrasesThatMustStayOutOfStateFailures = [
+            "package-owned",
+            "Experiment One",
+            "CoreBluetooth",
+            "evidence life",
+            "capture authority",
+            "package-issued observation authority",
+            "consumed authority",
+            "coordinator.lastDiagnostic",
+            "String(describing: error)"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfStateFailures {
+            #expect(
+                !failureSurface.contains(phrase),
+                "Primary state/restart failure copy still exposes implementation detail: \\(phrase)"
+            )
+        }
+
+        #expect(failureSurface.contains("Start a fresh capture."))
+        #expect(failureSurface.contains("Passive Bluetooth capture is unavailable."))
+    }
+
+'''
+          tests = tests.replace(marker, addition + marker, 1)
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+
+          git diff --check
+
+      - name: Verify transform scope and source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          shell = Path("NembraApp/Features/Research/ES80CaptureShellView.swift").read_text(encoding="utf-8")
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift").read_text(encoding="utf-8")
+          required_shell = [
+              "This run can no longer continue; start a fresh capture.",
+              "The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.",
+              "Passive Bluetooth capture is unavailable.",
+              "The four OFF / ON windows are incomplete or invalid. Start a fresh capture and repeat them in order.",
+              "The OFF / ON setup is unavailable for this run. Start a fresh capture.",
+              "Nembra could not start a fresh capture. Close and reopen Nembra, then try again.",
+          ]
+          for phrase in required_shell:
+              if shell.count(phrase) != 1:
+                  raise SystemExit(f"required rider failure copy missing or duplicated: {phrase}")
+          forbidden_shell = [
+              "foreground-invalidated evidence life",
+              "coordinator.lastDiagnostic ??",
+              "Nembra could not create a fresh package-owned Experiment One workflow",
+          ]
+          for phrase in forbidden_shell:
+              if phrase in shell:
+                  raise SystemExit(f"stale primary failure seam remains: {phrase}")
+          if tests.count('func stateMachineFailureCopyStaysHumanFirst() throws') != 1:
+              raise SystemExit("state/restart failure source regression missing")
+          PY
+
+      - name: Commit transformed product and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKFLOW=".github/workflows/tmp-es80-rider-failure-copy-r2-gpt56-thinking.yml"
+          rm "$WORKFLOW"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift \
+                  "$WORKFLOW"
+          mapfile -t staged < <(git diff --cached --name-only | sort)
+          expected=(
+            ".github/workflows/tmp-es80-rider-failure-copy-r2-gpt56-thinking.yml"
+            "NembraApp/Features/Research/ES80CaptureShellView.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift"
+          )
+          test "${#staged[@]}" = "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${staged[$i]}" = "${expected[$i]}"; done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Capture: keep failure and restart copy rider-first"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
