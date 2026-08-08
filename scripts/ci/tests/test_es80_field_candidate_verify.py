@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import importlib.util
 import plistlib
-import sys
 import tempfile
 import unittest
+import sys
 import uuid
 import zipfile
 from pathlib import Path
@@ -55,7 +55,9 @@ class FieldCandidateVerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             ipa = Path(temp) / "Nembra.ipa"
             make_ipa(ipa)
-            evidence = field_verify.inspect_candidate(ipa, HEAD, signing_probe=fake_signing_probe)
+            evidence = field_verify.inspect_candidate(
+                ipa, HEAD, signing_probe=fake_signing_probe
+            )
             record = field_verify.build_record(evidence)
             self.assertEqual(record["schemaVersion"], 1)
             self.assertEqual(record["status"], "candidate-only-no-go")
@@ -111,6 +113,27 @@ class FieldCandidateVerifierTests(unittest.TestCase):
                 archive.writestr("Payload/Other.app/Other", b"other")
             with self.assertRaisesRegex(field_verify.VerificationError, "exactly one"):
                 field_verify.inspect_candidate(ipa, HEAD, signing_probe=fake_signing_probe)
+
+
+class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
+    def test_producer_targets_signed_ios_device_and_injects_exact_identity(self):
+        script = (MODULE_PATH.parent / "xcode27_signed_field_candidate.sh").read_text()
+        self.assertIn('generic/platform=iOS', script)
+        self.assertNotIn('CODE_SIGNING_ALLOWED=NO', script)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', script)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', script)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', script)
+
+    def test_producer_must_delegate_final_ipa_to_fail_closed_verifier(self):
+        script = (MODULE_PATH.parent / "xcode27_signed_field_candidate.sh").read_text()
+        self.assertIn('es80_field_candidate_verify.py', script)
+        self.assertIn('candidate-only-no-go', script)
+        self.assertIn('PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN', script)
+
+    def test_producer_contains_no_field_gate_or_runbook_authorization_mutation(self):
+        script = (MODULE_PATH.parent / "xcode27_signed_field_candidate.sh").read_text()
+        self.assertNotIn('PassiveBluetoothExperimentOneFieldExecutionGate', script)
+        self.assertNotIn('ES80_PHYSICAL_CAPTURE_RUNBOOK.md', script)
 
 
 if __name__ == "__main__":
