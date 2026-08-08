@@ -9,9 +9,10 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     private let sourceCommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
     private let executableData = Data("exact signed executable bytes".utf8)
     private let infoPlistData = Data("exact signed Info.plist bytes".utf8)
+    private let signedInstallableSHA256 = String(repeating: "c", count: 64)
 
     @Test
-    func validSignedGoBindsExactRecordToCurrentRuntimeIdentity() throws {
+    func validSignedGoBindsExactIPARecordExternalRecordAndCurrentRuntime() throws {
         let fixture = try makeFixture()
         let authorization = try verify(fixture, runtimeIdentity: fixture.runtimeIdentity)
 
@@ -23,6 +24,19 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         #expect(authorization.externalBuildRecord.infoPlistSHA256 == sha256Hex(infoPlistData))
         #expect(authorization.externalBuildRecord.experimentRecipeID == .es80FingerprintV1)
         #expect(authorization.externalBuildRecord.procedureVersion == "V14")
+        #expect(
+            authorization.fieldBuildEvidenceRecord.exactEvidenceRecordSHA256
+                == sha256Hex(fixture.fieldEvidence)
+        )
+        #expect(
+            authorization.fieldBuildEvidenceRecord.externalBuildRecordSHA256
+                == sha256Hex(fixture.record)
+        )
+        #expect(
+            authorization.fieldBuildEvidenceRecord.signedInstallableSHA256
+                == signedInstallableSHA256
+        )
+        #expect(authorization.fieldBuildEvidenceRecord.signedInstallableKind == "ipa")
         #expect(authorization.authorizationPayloadSHA256 == sha256Hex(fixture.payload))
     }
 
@@ -47,6 +61,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         let alternateRecord = try json(alternate)
         let rebound = try makeEnvelope(
             record: alternateRecord,
+            fieldEvidence: fixture.fieldEvidence,
             payload: fixture.payload,
             signingKey: fixture.privateKey
         )
@@ -61,7 +76,57 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     }
 
     @Test
-    func acceptedRecordForDifferentRuntimeExecutableFailsClosed() throws {
+    func signedPayloadCannotBeReboundToDifferentFieldEvidenceBytes() throws {
+        let fixture = try makeFixture()
+        var alternate = try jsonObject(fixture.fieldEvidence)
+        alternate["signedInstallableSHA256"] = String(repeating: "d", count: 64)
+        let alternateFieldEvidence = try json(alternate)
+        let rebound = try makeEnvelope(
+            record: fixture.record,
+            fieldEvidence: alternateFieldEvidence,
+            payload: fixture.payload,
+            signingKey: fixture.privateKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .fieldBuildEvidenceRecordDigestMismatch
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                rebound,
+                publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                runtimeBuildIdentity: fixture.runtimeIdentity
+            )
+        }
+    }
+
+    @Test
+    func evenValidSignatureCannotBindFieldEvidenceToDifferentBuildTuple() throws {
+        let signingKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try json(baseRecordObject())
+        var fieldObject = fieldEvidenceObject(externalRecordSHA256: sha256Hex(record))
+        fieldObject["executableSHA256"] = String(repeating: "d", count: 64)
+        let fieldEvidence = try json(fieldObject)
+        let payload = try makePayload(record: record, fieldEvidence: fieldEvidence)
+        let envelope = try makeEnvelope(
+            record: record,
+            fieldEvidence: fieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
+
+        #expect(throws: PassiveBluetoothCaptureFieldAuthorizationError.fieldBuildEvidenceMismatch) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                envelope,
+                publicKeyX963Representation: signingKey.publicKey.x963Representation,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        }
+    }
+
+    @Test
+    func acceptedEvidenceForDifferentRuntimeExecutableFailsClosed() throws {
         let fixture = try makeFixture()
         let differentRuntime = try makeRuntimeIdentity(
             executableData: Data("different installed executable".utf8)
@@ -72,7 +137,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     }
 
     @Test
-    func acceptedRecordForDifferentRuntimeInfoPlistFailsClosed() throws {
+    func acceptedEvidenceForDifferentRuntimeInfoPlistFailsClosed() throws {
         let fixture = try makeFixture()
         let differentRuntime = try makeRuntimeIdentity(
             infoPlistData: Data("different Info.plist".utf8)
@@ -104,6 +169,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         let payloadWithUnknownField = try json(payloadObject)
         let envelopeWithUnknownPayloadField = try makeEnvelope(
             record: fixture.record,
+            fieldEvidence: fixture.fieldEvidence,
             payload: payloadWithUnknownField,
             signingKey: fixture.privateKey
         )
@@ -125,12 +191,21 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
         let record = try json(baseRecordObject())
+        let fieldEvidence = try json(
+            fieldEvidenceObject(externalRecordSHA256: sha256Hex(record))
+        )
         let payload = try json([
             "schemaVersion": 1,
             "decision": "NO_GO",
             "externalBuildRecordSHA256": sha256Hex(record),
+            "fieldBuildEvidenceRecordSHA256": sha256Hex(fieldEvidence),
         ])
-        let envelope = try makeEnvelope(record: record, payload: payload, signingKey: signingKey)
+        let envelope = try makeEnvelope(
+            record: record,
+            fieldEvidence: fieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
 
         #expect(throws: PassiveBluetoothCaptureFieldAuthorizationError.unsupportedDecision("NO_GO")) {
             _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
@@ -146,10 +221,41 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
         let malformedRecord = Data("{}".utf8)
-        let payload = try makePayload(record: malformedRecord)
-        let envelope = try makeEnvelope(record: malformedRecord, payload: payload, signingKey: signingKey)
+        let fieldEvidence = try json(
+            fieldEvidenceObject(externalRecordSHA256: sha256Hex(malformedRecord))
+        )
+        let payload = try makePayload(record: malformedRecord, fieldEvidence: fieldEvidence)
+        let envelope = try makeEnvelope(
+            record: malformedRecord,
+            fieldEvidence: fieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
 
         #expect(throws: PassiveBluetoothCaptureFieldAuthorizationError.invalidExternalBuildRecord) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                envelope,
+                publicKeyX963Representation: signingKey.publicKey.x963Representation,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        }
+    }
+
+    @Test
+    func signedMalformedFieldEvidenceCannotMintAuthority() throws {
+        let signingKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try json(baseRecordObject())
+        let malformedFieldEvidence = Data("{}".utf8)
+        let payload = try makePayload(record: record, fieldEvidence: malformedFieldEvidence)
+        let envelope = try makeEnvelope(
+            record: record,
+            fieldEvidence: malformedFieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
+
+        #expect(throws: PassiveBluetoothCaptureFieldAuthorizationError.invalidFieldBuildEvidenceRecord) {
             _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
                 envelope,
                 publicKeyX963Representation: signingKey.publicKey.x963Representation,
@@ -174,6 +280,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         let privateKey: P256.Signing.PrivateKey
         let runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
         let record: Data
+        let fieldEvidence: Data
         let payload: Data
         let envelope: Data
     }
@@ -183,12 +290,21 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     ) throws -> Fixture {
         let runtimeIdentity = try makeRuntimeIdentity()
         let record = try json(baseRecordObject())
-        let payload = try makePayload(record: record)
-        let envelope = try makeEnvelope(record: record, payload: payload, signingKey: signingKey)
+        let fieldEvidence = try json(
+            fieldEvidenceObject(externalRecordSHA256: sha256Hex(record))
+        )
+        let payload = try makePayload(record: record, fieldEvidence: fieldEvidence)
+        let envelope = try makeEnvelope(
+            record: record,
+            fieldEvidence: fieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
         return Fixture(
             privateKey: signingKey,
             runtimeIdentity: runtimeIdentity,
             record: record,
+            fieldEvidence: fieldEvidence,
             payload: payload,
             envelope: envelope
         )
@@ -236,16 +352,39 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         ]
     }
 
-    private func makePayload(record: Data) throws -> Data {
+    private func fieldEvidenceObject(
+        externalRecordSHA256: String
+    ) -> [String: Any] {
+        [
+            "schemaVersion": 1,
+            "externalBuildRecordSHA256": externalRecordSHA256,
+            "signedInstallableSHA256": signedInstallableSHA256,
+            "signedInstallableKind": "ipa",
+            "buildIdentifier": buildIdentifier,
+            "buildInstanceID": buildInstanceID,
+            "sourceCommitSHA": sourceCommitSHA,
+            "executableSHA256": sha256Hex(executableData),
+            "infoPlistSHA256": sha256Hex(infoPlistData),
+            "experimentRecipeID": "ES80-FINGERPRINT-v1",
+            "procedureVersion": "V14",
+        ]
+    }
+
+    private func makePayload(
+        record: Data,
+        fieldEvidence: Data
+    ) throws -> Data {
         try json([
             "schemaVersion": 1,
             "decision": "GO",
             "externalBuildRecordSHA256": sha256Hex(record),
+            "fieldBuildEvidenceRecordSHA256": sha256Hex(fieldEvidence),
         ])
     }
 
     private func makeEnvelope(
         record: Data,
+        fieldEvidence: Data,
         payload: Data,
         signingKey: P256.Signing.PrivateKey
     ) throws -> Data {
@@ -253,6 +392,7 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
         return try json([
             "schemaVersion": 1,
             "externalBuildRecordBase64": record.base64EncodedString(),
+            "fieldBuildEvidenceRecordBase64": fieldEvidence.base64EncodedString(),
             "authorizationPayloadBase64": payload.base64EncodedString(),
             "signatureDERBase64": signature.derRepresentation.base64EncodedString(),
         ])
