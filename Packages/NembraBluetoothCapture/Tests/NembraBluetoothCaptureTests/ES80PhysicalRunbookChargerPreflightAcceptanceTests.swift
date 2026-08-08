@@ -5,16 +5,16 @@ import Testing
 struct ES80PhysicalRunbookChargerPreflightAcceptanceTests {
     @Test("field runbook mirrors the app's per-run disconnected-charger declaration")
     func runbookPinsChargerDeclarationWithoutPromotingItToMeasuredTruth() throws {
-        let app = try repositoryFile("NembraApp/App/NembraApp.swift")
+        let shell = try repositoryFile("NembraApp/Features/Research/ES80CaptureShellView.swift")
         let runbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
 
-        // The real product already makes this a fresh-run operator declaration: connected is
-        // explicitly blocked, Disconnected is required for ES80-FINGERPRINT-v1, and the UI states
-        // that Nembra cannot sense the charger directly. The field procedure must not be weaker.
-        #expect(app.contains("Required for ES80-FINGERPRINT-v1"))
-        #expect(app.contains("Unplug charger to continue"))
-        #expect(app.contains("Nembra cannot sense the charger directly"))
-        #expect(app.contains("selectedChargerState = nil"))
+        // The real product makes disconnected charger state a fresh-run operator declaration and
+        // explicitly says Nembra cannot independently verify that condition. The field procedure
+        // must not be weaker or silently promote the declaration to measured truth.
+        #expect(shell.contains("Before OFF 1, unplug the scooter charger"))
+        #expect(shell.contains("chargerState: .disconnected"))
+        #expect(shell.contains("Nembra cannot independently verify that the condition stayed true for the whole Capture."))
+        #expect(shell.contains("declaredStationarySetup = nil"))
 
         let preflight = try section(
             in: runbook,
