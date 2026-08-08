@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Produce fail-closed evidence for an already-built signed Nembra field IPA.
 
-This tool never authorizes physical Experiment One. It measures and preserves an exact
+This tool never authorizes physical Experiment One. It measures and preserves one exact
 installable artifact, verifies its iPhone code signature and embedded Nembra build declarations,
-and emits external evidence that a separate trusted acceptance step may attest/review.
+and emits:
+1. the canonical package-consumable signed-field build-evidence record; and
+2. separate non-authorizing signing/platform inspection metadata.
+
+The final evidence directory is published only after the complete staged set re-verifies.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import warnings
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -27,8 +32,29 @@ RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
-FIELD_EVIDENCE_SCHEMA_VERSION = 1
-AUTHORITY_LABEL = "signed-field-artifact-evidence-not-field-authorization"
+FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 1
+SIGNED_INSTALLABLE_KIND = "ipa"
+SIGNING_INSPECTION_SCHEMA_VERSION = 1
+SIGNING_INSPECTION_AUTHORITY = "signed-field-artifact-inspection-not-field-authorization"
+
+EXTERNAL_RECORD_FILENAME = "NembraCaptureExternalBuildRecord.json"
+FIELD_BUILD_EVIDENCE_FILENAME = "NembraCaptureFieldBuildEvidenceRecord.json"
+SIGNING_INSPECTION_FILENAME = "NembraCaptureSignedFieldArtifactInspection.json"
+RETAINED_IPA_RELATIVE_PATH = Path("build-evidence") / "NembraField.ipa"
+
+FIELD_BUILD_EVIDENCE_FIELDS = {
+    "schemaVersion",
+    "externalBuildRecordSHA256",
+    "signedInstallableSHA256",
+    "signedInstallableKind",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -39,6 +65,10 @@ UUID_RE = re.compile(
 
 class EvidenceError(RuntimeError):
     pass
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
@@ -97,9 +127,23 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
+    seen_members: set[str] = set()
+    seen_casefolded_members: set[str] = set()
+    destination_root = destination.resolve()
+
     with archive:
         for info in archive.infolist():
-            member = _safe_member_path(info.filename.rstrip("/"))
+            normalized_name = info.filename.rstrip("/")
+            member = _safe_member_path(normalized_name)
+            canonical_name = member.as_posix()
+            folded_name = canonical_name.casefold()
+            if canonical_name in seen_members or folded_name in seen_casefolded_members:
+                raise EvidenceError(
+                    f"IPA contains duplicate or case-colliding ZIP member path: {info.filename!r}"
+                )
+            seen_members.add(canonical_name)
+            seen_casefolded_members.add(folded_name)
+
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
                 raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
@@ -110,7 +154,7 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
 
             target = destination.joinpath(*parts)
             resolved_parent = target.parent.resolve()
-            if destination.resolve() not in (resolved_parent, *resolved_parent.parents):
+            if destination_root not in (resolved_parent, *resolved_parent.parents):
                 raise EvidenceError(f"IPA member escapes extraction root: {info.filename}")
 
             if info.is_dir():
@@ -207,7 +251,10 @@ def run_codesign(app_path: Path) -> tuple[str, list[str]]:
     if not team_identifier or team_identifier.lower() in {"not set", "none", "-"}:
         raise EvidenceError("field IPA does not carry a concrete signing TeamIdentifier")
 
-    authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
+    authorities = [
+        match.group(1).strip()
+        for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)
+    ]
     if not authorities:
         raise EvidenceError("codesign metadata does not contain a signing authority chain")
     return team_identifier, authorities
@@ -216,8 +263,11 @@ def run_codesign(app_path: Path) -> tuple[str, list[str]]:
 def reject_embedded_external_authority(app_path: Path) -> None:
     forbidden = {
         "NembraCaptureTrustedBuildRecord.json",
-        "NembraCaptureExternalBuildRecord.json",
+        EXTERNAL_RECORD_FILENAME,
+        FIELD_BUILD_EVIDENCE_FILENAME,
+        SIGNING_INSPECTION_FILENAME,
         "NembraCaptureSignedFieldArtifactEvidence.json",
+        "NembraCaptureFieldBuildCandidateRecord.json",
     }
     hits = sorted(path.name for path in app_path.rglob("*") if path.is_file() and path.name in forbidden)
     if hits:
@@ -225,6 +275,54 @@ def reject_embedded_external_authority(app_path: Path) -> None:
             "final executable-digest/field-acceptance evidence must stay outside the signed app bundle; "
             f"found {hits!r}"
         )
+
+
+def make_external_build_record(
+    *,
+    build_identifier: str,
+    build_instance_id: str,
+    source_sha: str,
+    executable_sha: str,
+    info_plist_sha: str,
+) -> dict[str, object]:
+    return {
+        "schemaVersion": EXTERNAL_RECORD_SCHEMA_VERSION,
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_sha,
+        "executableSHA256": executable_sha,
+        "infoPlistSHA256": info_plist_sha,
+        "experimentRecipeID": RECIPE_ID,
+        "procedureVersion": PROCEDURE_VERSION,
+    }
+
+
+def make_field_build_evidence_record(
+    *,
+    external_record_bytes: bytes,
+    signed_installable_sha: str,
+    build_identifier: str,
+    build_instance_id: str,
+    source_sha: str,
+    executable_sha: str,
+    info_plist_sha: str,
+) -> dict[str, object]:
+    record = {
+        "schemaVersion": FIELD_BUILD_EVIDENCE_SCHEMA_VERSION,
+        "externalBuildRecordSHA256": sha256_bytes(external_record_bytes),
+        "signedInstallableSHA256": signed_installable_sha,
+        "signedInstallableKind": SIGNED_INSTALLABLE_KIND,
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_sha,
+        "executableSHA256": executable_sha,
+        "infoPlistSHA256": info_plist_sha,
+        "experimentRecipeID": RECIPE_ID,
+        "procedureVersion": PROCEDURE_VERSION,
+    }
+    if set(record) != FIELD_BUILD_EVIDENCE_FIELDS:
+        raise EvidenceError("internal field-build evidence schema drifted from the package contract")
+    return record
 
 
 def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
@@ -255,7 +353,8 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         expected_identifier = expected_build_identifier(source_sha)
         if build_identifier != expected_identifier:
             raise EvidenceError(
-                f"embedded build identifier does not match accepted source: {build_identifier!r} != {expected_identifier!r}"
+                f"embedded build identifier does not match accepted source: "
+                f"{build_identifier!r} != {expected_identifier!r}"
             )
 
         build_instance_id = canonical_uuid(plist_string(info, "NembraCaptureBuildInstanceID"))
@@ -278,21 +377,33 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
             raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
 
-    external_record = {
-        "schemaVersion": EXTERNAL_RECORD_SCHEMA_VERSION,
-        "buildIdentifier": build_identifier,
-        "buildInstanceID": build_instance_id,
-        "sourceCommitSHA": source_sha,
-        "executableSHA256": executable_sha,
-        "infoPlistSHA256": info_plist_sha,
-        "experimentRecipeID": RECIPE_ID,
-        "procedureVersion": PROCEDURE_VERSION,
-    }
+    external_record = make_external_build_record(
+        build_identifier=build_identifier,
+        build_instance_id=build_instance_id,
+        source_sha=source_sha,
+        executable_sha=executable_sha,
+        info_plist_sha=info_plist_sha,
+    )
     external_bytes = canonical_json_bytes(external_record)
 
-    field_evidence = {
-        "schemaVersion": FIELD_EVIDENCE_SCHEMA_VERSION,
-        "authority": AUTHORITY_LABEL,
+    field_build_record = make_field_build_evidence_record(
+        external_record_bytes=external_bytes,
+        signed_installable_sha=ipa_sha,
+        build_identifier=build_identifier,
+        build_instance_id=build_instance_id,
+        source_sha=source_sha,
+        executable_sha=executable_sha,
+        info_plist_sha=info_plist_sha,
+    )
+    field_build_bytes = canonical_json_bytes(field_build_record)
+
+    signing_inspection = {
+        "schemaVersion": SIGNING_INSPECTION_SCHEMA_VERSION,
+        "authority": SIGNING_INSPECTION_AUTHORITY,
+        "fieldBuildEvidenceRecordSHA256": sha256_bytes(field_build_bytes),
+        "externalBuildRecordSHA256": sha256_bytes(external_bytes),
+        "signedInstallableSHA256": ipa_sha,
+        "ipaByteCount": ipa_size,
         "buildIdentifier": build_identifier,
         "buildInstanceID": build_instance_id,
         "sourceCommitSHA": source_sha,
@@ -301,74 +412,219 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "supportedPlatforms": supported_platforms,
         "teamIdentifier": team_identifier,
         "signingAuthorities": signing_authorities,
-        "ipaSHA256": ipa_sha,
-        "ipaByteCount": ipa_size,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
-        "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
         "experimentRecipeID": RECIPE_ID,
         "procedureVersion": PROCEDURE_VERSION,
     }
+
     return {
         "external_record": external_record,
         "external_bytes": external_bytes,
-        "field_evidence": field_evidence,
+        "field_build_record": field_build_record,
+        "field_build_bytes": field_build_bytes,
+        "signing_inspection": signing_inspection,
     }
+
+
+def _validate_staged_inputs(ipa_path: Path, inspection: dict) -> None:
+    field_record = inspection.get("field_build_record")
+    external_bytes = inspection.get("external_bytes")
+    field_bytes = inspection.get("field_build_bytes")
+    signing_inspection = inspection.get("signing_inspection")
+
+    if not isinstance(field_record, dict) or set(field_record) != FIELD_BUILD_EVIDENCE_FIELDS:
+        raise EvidenceError("field-build evidence record does not match the canonical package schema")
+    if not isinstance(external_bytes, bytes) or not isinstance(field_bytes, bytes):
+        raise EvidenceError("evidence bytes are missing")
+    if field_bytes != canonical_json_bytes(field_record):
+        raise EvidenceError("field-build evidence bytes are not canonical for the declared record")
+    if sha256_file(ipa_path) != field_record["signedInstallableSHA256"]:
+        raise EvidenceError("input IPA digest diverged after inspection")
+    if sha256_bytes(external_bytes) != field_record["externalBuildRecordSHA256"]:
+        raise EvidenceError("external build record digest diverged from field-build evidence")
+    if not isinstance(signing_inspection, dict):
+        raise EvidenceError("signing inspection metadata is missing")
+    if signing_inspection.get("fieldBuildEvidenceRecordSHA256") != sha256_bytes(field_bytes):
+        raise EvidenceError("signing inspection is not bound to the exact field-build evidence bytes")
+    if signing_inspection.get("externalBuildRecordSHA256") != sha256_bytes(external_bytes):
+        raise EvidenceError("signing inspection is not bound to the exact external build record bytes")
+    if signing_inspection.get("signedInstallableSHA256") != field_record["signedInstallableSHA256"]:
+        raise EvidenceError("signing inspection is not bound to the exact signed installable")
 
 
 def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    retained_dir = output_dir / "build-evidence"
-    retained_dir.mkdir(parents=True, exist_ok=True)
+    """Failure-atomically publish one complete evidence directory.
 
-    retained_ipa = retained_dir / "NembraField.ipa"
-    external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
-    field_path = output_dir / "NembraCaptureSignedFieldArtifactEvidence.json"
-    targets = (retained_ipa, external_path, field_path)
-    existing = [str(path) for path in targets if path.exists()]
-    if existing:
-        raise EvidenceError(f"refusing to overwrite existing field evidence: {existing!r}")
+    All bytes are written and re-verified in a hidden sibling staging directory on the same
+    filesystem. The final output path does not appear until the complete set passes every check.
+    A crash before the final rename may leave only a hidden staging directory, which never becomes
+    the requested evidence directory and therefore does not block a clean rerun.
+    """
 
-    shutil.copy2(ipa_path, retained_ipa)
-    if sha256_file(retained_ipa) != inspection["field_evidence"]["ipaSHA256"]:
-        retained_ipa.unlink(missing_ok=True)
-        raise EvidenceError("retained IPA bytes diverged from inspected input")
+    ipa_path = ipa_path.resolve()
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        raise EvidenceError(f"refusing to overwrite existing field evidence directory: {output_dir}")
 
-    external_path.write_bytes(inspection["external_bytes"])
-    actual_external_sha = sha256_file(external_path)
-    if actual_external_sha != inspection["field_evidence"]["externalBuildRecordSHA256"]:
-        raise EvidenceError("written external build record digest diverged from field evidence")
+    _validate_staged_inputs(ipa_path, inspection)
 
-    field_path.write_bytes(canonical_json_bytes(inspection["field_evidence"]))
+    parent = output_dir.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=str(parent))
+    )
+
+    try:
+        retained_ipa = staging / RETAINED_IPA_RELATIVE_PATH
+        retained_ipa.parent.mkdir(parents=True, exist_ok=True)
+        external_path = staging / EXTERNAL_RECORD_FILENAME
+        field_path = staging / FIELD_BUILD_EVIDENCE_FILENAME
+        inspection_path = staging / SIGNING_INSPECTION_FILENAME
+
+        shutil.copy2(ipa_path, retained_ipa)
+        external_path.write_bytes(inspection["external_bytes"])
+        field_path.write_bytes(inspection["field_build_bytes"])
+        inspection_bytes = canonical_json_bytes(inspection["signing_inspection"])
+        inspection_path.write_bytes(inspection_bytes)
+
+        field_record = inspection["field_build_record"]
+        if sha256_file(retained_ipa) != field_record["signedInstallableSHA256"]:
+            raise EvidenceError("retained IPA bytes diverged from inspected input")
+        if sha256_file(external_path) != field_record["externalBuildRecordSHA256"]:
+            raise EvidenceError("written external build record digest diverged from field-build evidence")
+        if sha256_file(field_path) != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
+            raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+        if sha256_file(inspection_path) != sha256_bytes(inspection_bytes):
+            raise EvidenceError("written signing inspection bytes failed exact re-verification")
+
+        if output_dir.exists():
+            raise EvidenceError(f"field evidence directory appeared during staging: {output_dir}")
+        staging.rename(output_dir)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+
     return {
-        "retained_ipa": retained_ipa,
-        "external_record": external_path,
-        "field_evidence": field_path,
+        "retained_ipa": output_dir / RETAINED_IPA_RELATIVE_PATH,
+        "external_record": output_dir / EXTERNAL_RECORD_FILENAME,
+        "field_build_evidence": output_dir / FIELD_BUILD_EVIDENCE_FILENAME,
+        "signing_inspection": output_dir / SIGNING_INSPECTION_FILENAME,
     }
+
+
+def _expect_evidence_error(operation, expected_fragment: str) -> None:
+    try:
+        operation()
+    except EvidenceError as error:
+        if expected_fragment not in str(error):
+            raise AssertionError(
+                f"expected EvidenceError containing {expected_fragment!r}; got {error!r}"
+            ) from error
+    else:
+        raise AssertionError(f"expected EvidenceError containing {expected_fragment!r}")
 
 
 def self_test() -> None:
     sha = "a" * 40
+    build_identifier = expected_build_identifier(sha)
+    build_instance_id = "12345678-1234-4abc-8def-1234567890ab"
+    executable_sha = "b" * 64
+    info_plist_sha = "c" * 64
+    ipa_bytes = b"nembra-signed-field-ipa-self-test"
+    ipa_sha = sha256_bytes(ipa_bytes)
+
     assert canonical_sha40(sha) == sha
-    assert expected_build_identifier(sha) == "Capture Build V14-aaaaaaaaaaaa"
-    good_uuid = "12345678-1234-4abc-8def-1234567890ab"
-    assert canonical_uuid(good_uuid) == good_uuid
-    assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
-    assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
+    assert build_identifier == "Capture Build V14-aaaaaaaaaaaa"
+    assert canonical_uuid(build_instance_id) == build_instance_id
+    assert valid_build_identifier(build_identifier)
+    assert not valid_build_identifier(f" {build_identifier}")
     assert not valid_build_identifier("Capture\nBuild")
-    try:
-        canonical_sha40("A" * 40)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("uppercase SHA must fail canonicalization")
+    _expect_evidence_error(lambda: canonical_sha40("A" * 40), "canonical lowercase")
+
     for bad in ("../Payload/Nembra.app", "/Payload/Nembra.app", "Payload/../Nembra.app"):
-        try:
-            _safe_member_path(bad)
-        except EvidenceError:
-            pass
-        else:
-            raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
+        _expect_evidence_error(lambda bad=bad: _safe_member_path(bad), "unsafe ZIP member")
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-evidence-self-test-") as temporary:
+        root = Path(temporary)
+
+        duplicate_ipa = root / "duplicate.ipa"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(duplicate_ipa, "w") as archive:
+                archive.writestr("Payload/Nembra.app/Info.plist", b"first")
+                archive.writestr("Payload/Nembra.app/Info.plist", b"second")
+        _expect_evidence_error(
+            lambda: extract_ipa_safely(duplicate_ipa, root / "duplicate-extract"),
+            "duplicate or case-colliding",
+        )
+
+        external_record = make_external_build_record(
+            build_identifier=build_identifier,
+            build_instance_id=build_instance_id,
+            source_sha=sha,
+            executable_sha=executable_sha,
+            info_plist_sha=info_plist_sha,
+        )
+        external_bytes = canonical_json_bytes(external_record)
+        field_record = make_field_build_evidence_record(
+            external_record_bytes=external_bytes,
+            signed_installable_sha=ipa_sha,
+            build_identifier=build_identifier,
+            build_instance_id=build_instance_id,
+            source_sha=sha,
+            executable_sha=executable_sha,
+            info_plist_sha=info_plist_sha,
+        )
+        assert set(field_record) == FIELD_BUILD_EVIDENCE_FIELDS
+        assert "authority" not in field_record
+        assert "accepted" not in field_record
+        assert "physicalGO" not in field_record
+        assert field_record["signedInstallableKind"] == "ipa"
+
+        field_bytes = canonical_json_bytes(field_record)
+        inspection_record = {
+            "schemaVersion": SIGNING_INSPECTION_SCHEMA_VERSION,
+            "authority": SIGNING_INSPECTION_AUTHORITY,
+            "fieldBuildEvidenceRecordSHA256": sha256_bytes(field_bytes),
+            "externalBuildRecordSHA256": sha256_bytes(external_bytes),
+            "signedInstallableSHA256": ipa_sha,
+        }
+        inspection = {
+            "external_record": external_record,
+            "external_bytes": external_bytes,
+            "field_build_record": field_record,
+            "field_build_bytes": field_bytes,
+            "signing_inspection": inspection_record,
+        }
+
+        fake_ipa = root / "candidate.ipa"
+        fake_ipa.write_bytes(ipa_bytes)
+
+        bad_inspection = dict(inspection)
+        bad_signing = dict(inspection_record)
+        bad_signing["fieldBuildEvidenceRecordSHA256"] = "d" * 64
+        bad_inspection["signing_inspection"] = bad_signing
+        failed_output = root / "failed-final"
+        _expect_evidence_error(
+            lambda: write_outputs(fake_ipa, failed_output, bad_inspection),
+            "not bound to the exact field-build evidence bytes",
+        )
+        assert not failed_output.exists(), "failed publication must not expose a final evidence directory"
+
+        final_output = root / "complete-final"
+        paths = write_outputs(fake_ipa, final_output, inspection)
+        assert final_output.is_dir()
+        assert all(path.is_file() for path in paths.values())
+        assert sha256_file(paths["retained_ipa"]) == ipa_sha
+        assert sha256_file(paths["external_record"]) == field_record["externalBuildRecordSHA256"]
+        assert sha256_file(paths["field_build_evidence"]) == sha256_bytes(field_bytes)
+
+        _expect_evidence_error(
+            lambda: write_outputs(fake_ipa, final_output, inspection),
+            "refusing to overwrite existing field evidence directory",
+        )
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -406,11 +662,12 @@ def main(argv: list[str]) -> int:
     paths = write_outputs(args.ipa.resolve(), args.output_dir.resolve(), inspection)
     summary = {
         "status": "EVIDENCE_ONLY_NOT_FIELD_AUTHORIZATION",
-        "sourceCommitSHA": inspection["field_evidence"]["sourceCommitSHA"],
-        "buildInstanceID": inspection["field_evidence"]["buildInstanceID"],
-        "ipaSHA256": inspection["field_evidence"]["ipaSHA256"],
+        "sourceCommitSHA": inspection["field_build_record"]["sourceCommitSHA"],
+        "buildInstanceID": inspection["field_build_record"]["buildInstanceID"],
+        "signedInstallableSHA256": inspection["field_build_record"]["signedInstallableSHA256"],
         "externalBuildRecord": str(paths["external_record"]),
-        "signedFieldArtifactEvidence": str(paths["field_evidence"]),
+        "fieldBuildEvidenceRecord": str(paths["field_build_evidence"]),
+        "signingInspection": str(paths["signing_inspection"]),
         "retainedIPA": str(paths["retained_ipa"]),
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
