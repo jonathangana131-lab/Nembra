@@ -1,0 +1,122 @@
+import Foundation
+import NembraCore
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Experiment One software Share-envelope integrity")
+struct PassiveBluetoothExperimentOneSoftwareExportIntegrityTests {
+    private let scooter = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    private let sessionID = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+
+    @Test("exact shared envelope earns deterministic readability facts")
+    func exactSharedEnvelopeEarnsReport() throws {
+        let export = try PassiveBluetoothExperimentOneSoftwareExportCodec.make(
+            captureJSON: makeCaptureJSON(),
+            powerCycleResult: makePowerCycleResult(),
+            runtimeBuildIdentity: makeBuildIdentity(),
+            setup: .init(
+                chargerState: .disconnected,
+                executionContext: .foregroundUnlockedScreenOn,
+                stockAppReferenceSetup: .none
+            )
+        )
+        let exactBytes = try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(export)
+
+        let report = try PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(exactBytes)
+
+        #expect(report.envelopeByteCount == exactBytes.count)
+        #expect(report.envelopeSHA256 == PassiveBluetoothFinalizedArtifactIntegrity.sha256Hex(of: exactBytes))
+        #expect(report.capture.captureSessionID == sessionID)
+        #expect(report.capture.byteCount == export.captureJSON.count)
+        #expect(report.experimentRecipeID == .es80FingerprintV1)
+        #expect(report.buildInstanceID == export.build.buildInstanceID)
+    }
+
+    @Test("malformed outer bytes never earn analysis readiness")
+    func malformedOuterBytesFailClosed() {
+        #expect(throws: (any Error).self) {
+            _ = try PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(
+                Data("{not-an-export".utf8)
+            )
+        }
+    }
+
+    private func makeBuildIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
+        try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
+            infoDictionary: [
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
+                    "Capture Build V14-F1",
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
+                    "12345678-90ab-cdef-1234-567890abcdef",
+                PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
+                    "0123456789abcdef0123456789abcdef01234567",
+            ],
+            executableData: Data("fixture executable".utf8)
+        )
+    }
+
+    private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
+        var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        _ = try ledger.completeWindow(
+            phase: .firstPoweredOff,
+            startedAtUptimeNanoseconds: 10,
+            endedAtUptimeNanoseconds: 11,
+            candidates: []
+        )
+        _ = try ledger.completeWindow(
+            phase: .firstPoweredOn,
+            startedAtUptimeNanoseconds: 20,
+            endedAtUptimeNanoseconds: 21,
+            candidates: [.init(id: scooter, isConnectable: true)]
+        )
+        _ = try ledger.completeWindow(
+            phase: .secondPoweredOff,
+            startedAtUptimeNanoseconds: 30,
+            endedAtUptimeNanoseconds: 31,
+            candidates: []
+        )
+        return try #require(ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 40,
+            endedAtUptimeNanoseconds: 41,
+            candidates: [.init(id: scooter, isConnectable: true)]
+        ))
+    }
+
+    private func makeCaptureJSON() throws -> Data {
+        let startedAt = Date(timeIntervalSince1970: 1_750_000_000)
+        var session = try PassiveBluetoothCaptureSession(
+            id: sessionID,
+            vehicleIdentity: VehicleIdentity(
+                manufacturer: "AOVOPRO",
+                model: "ES80",
+                displayName: "AOVOPRO ES80",
+                protocolFamily: "unverified-tuya"
+            ),
+            startedAt: startedAt
+        )
+        try session.append(
+            .service(try PassiveBluetoothServiceObservation(
+                peripheralIdentifier: scooter.uuidString,
+                serviceUUID: "FFE0",
+                isPrimary: true
+            )),
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: startedAt
+        )
+        try session.append(
+            .value(try PassiveBluetoothValueObservation(
+                peripheralIdentifier: scooter.uuidString,
+                serviceUUID: "FFE0",
+                characteristicUUID: "FFE1",
+                origin: .subscriptionUpdate,
+                payload: Data([0x01, 0x02])
+            )),
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: startedAt.addingTimeInterval(1)
+        )
+        return try PassiveBluetoothCaptureJSON.encode(session)
+    }
+}
