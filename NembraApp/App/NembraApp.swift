@@ -1,6 +1,5 @@
 import Foundation
 import NembraBluetoothCapture
-import NembraCore
 import SwiftUI
 
 @main
@@ -13,7 +12,7 @@ struct NembraApp: App {
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
-    @State private var researchController: ForegroundCoreBluetoothCaptureController?
+    @State private var researchSession: PassiveBluetoothExperimentOneControllerSession?
 
     init() {
         let launchMode = Self.resolveLaunchMode()
@@ -22,9 +21,9 @@ struct NembraApp: App {
 
         let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
             && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
-        _researchController = State(
+        _researchSession = State(
             initialValue: fieldCaptureAuthorized
-                ? Self.makeES80ResearchController()
+                ? try? PassiveBluetoothExperimentOneControllerSession()
                 : nil
         )
     }
@@ -51,13 +50,13 @@ struct NembraApp: App {
             case .es80PassiveCapture:
                 NavigationStack {
                     if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let researchController {
-                            ES80CaptureShellView(controller: researchController)
+                        if let researchSession {
+                            ES80CaptureShellView(session: researchSession)
                         } else {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The passive Bluetooth research controller could not be created.")
+                                description: Text("The package-owned Experiment One session could not be created.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -82,14 +81,6 @@ struct NembraApp: App {
         }
 #endif
         return .standard
-    }
-
-    private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
-        // This is the declared software context required by the ES80 Experiment One authority.
-        // It is metadata consistency only and must never be presented as physical authentication.
-        try? ForegroundCoreBluetoothCaptureController(
-            vehicleIdentity: VehicleProfile.aovoproES80.identity
-        )
     }
 }
 
