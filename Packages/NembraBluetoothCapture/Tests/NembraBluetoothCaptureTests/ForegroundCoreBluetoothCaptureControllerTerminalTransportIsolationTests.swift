@@ -50,7 +50,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalTransportIsolationTests {
         let callback = try Self.section(
             in: source,
             from: "    public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {",
-            to: "}\n"
+            to: "\n    }\n}"
         )
 
         // The callback must branch on the sealed terminal lifecycle before either
