@@ -139,6 +139,28 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
+    func declaredStockAppReferenceRequiresAtLeastOneImmutableMarker() throws {
+        let captureJSON = try makeCapture()
+
+        #expect(
+            throws: PassiveBluetoothStationaryCaptureManifestError
+                .stockAppReferenceDeclaredWithoutMarkers
+        ) {
+            _ = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
+                captureJSON: captureJSON,
+                preparedAt: preparedAt,
+                nembraBuildCommitSHA: commit,
+                selectedPeripheralIdentifier: target,
+                setup: .init(
+                    chargerState: .disconnected,
+                    executionContext: .foregroundUnlockedScreenOn,
+                    stockAppReferenceSetup: .sameDeviceBeforeCapture
+                )
+            )
+        }
+    }
+
+    @Test
     func importedDerivedSummaryTamperingIsRejectedEvenWhenDigestAndSessionStayUnchanged() throws {
         let captureJSON = try makeCapture()
         let manifest = try makeManifest(captureJSON: captureJSON)
