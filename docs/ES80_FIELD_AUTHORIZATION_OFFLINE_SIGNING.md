@@ -9,7 +9,7 @@ Nembra's package verifier can now cryptographically bind a software field author
 
 `PassiveBluetoothCaptureFieldAuthorizationVerifier` uses authorization envelope schema **2** and authorization payload schema **2**. The payload decision vocabulary contains the literal string `GO`, but a signed envelope is **not physical Experiment One GO** by itself.
 
-`scripts/ci/es80_field_authorization_envelope.py` creates that envelope on an offline/release-authority machine without placing the private key in the repository or app.
+`scripts/ci/es80_field_authorization_envelope.py` creates that envelope on an offline/release-authority machine without placing the production private key in the repository or app.
 
 ## Critical trust boundary
 
@@ -25,6 +25,8 @@ It must never be:
 - selected by an app preference, Info.plist key, imported unsigned JSON, or UI control.
 
 The signer therefore refuses a private-key path that resolves inside the Nembra repository. It also refuses to publish the signed authorization envelope inside the repository, reducing the chance that a build-specific signed `GO` payload is accidentally committed.
+
+The production PEM must be one bounded regular non-symlink file outside the repository with no group/other permission bits. The signer requires a platform that can enforce `O_NOFOLLOW`, opens the source key exactly once, and keeps that descriptor open while OpenSSL canonicalizes the exact opened inode through inherited `/dev/fd/<fd>` into an operation-local `0600` snapshot inside a private `0700` temporary directory. The source path is not reopened after snapshot admission. Source device/inode/mode/size/mtime/ctime are checked across snapshot creation, and all later public-key derivation, signing, and self-verification use only the operation-local snapshot. Python never reads the private-key bytes.
 
 The signer does **not** generate the production private key. Key creation, custody, backup, rotation, operator access, and independent approval belong to the external release-authority process.
 
@@ -63,7 +65,7 @@ The base64 fields preserve the exact signed subject/payload bytes. The package v
 
 ## Offline invocation
 
-Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository.
+Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Store the production PEM with mode `0600` or an equivalently owner-only mode; any group/other permission bit is rejected.
 
 ```sh
 python3 scripts/ci/es80_field_authorization_envelope.py \
@@ -77,10 +79,14 @@ The tool:
 
 - requires OpenSSL;
 - requires a P-256 / `prime256v1` private key;
-- never reads the private-key bytes into Python;
-- derives only the public uncompressed X9.63 point for review/pinning output;
-- signs with OpenSSL ECDSA/SHA-256;
-- immediately verifies its own signature using the derived public key;
+- requires the source PEM to remain one bounded owner-only regular non-symlink file outside the repository;
+- requires `O_NOFOLLOW` and inherited `/dev/fd` support for the authority-key snapshot boundary;
+- never reads private-key bytes into Python;
+- opens the external key once and has OpenSSL canonicalize that exact descriptor into one private operation-local snapshot;
+- verifies source file identity across snapshot creation and never reopens the external source path for signing;
+- derives only the snapshot's public uncompressed X9.63 point for review/pinning output;
+- signs with OpenSSL ECDSA/SHA-256 using only the snapshot;
+- immediately verifies its own signature using a public key derived from the same snapshot;
 - publishes the envelope with no-replace file creation;
 - refuses input evidence files that are symlinks or change while being read;
 - refuses repository-contained private-key or envelope-output paths.
@@ -103,7 +109,7 @@ Do **not** auto-edit or auto-pin the key from this script. The production trust 
 python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 ```
 
-The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, and verifies repository-contained authority paths fail closed. The temporary key is destroyed with its temporary directory.
+The self-test generates **ephemeral temporary** P-256 fixture keys outside the repository, forces the accepted key to owner-only permissions, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, verifies repository-contained authority paths fail closed, rejects a deliberately group/world-readable private key, and proves that an operation-local snapshot made from key A retains key A's public identity after the external source pathname is replaced with unrelated key B. Temporary keys and snapshots are destroyed with their temporary directories.
 
 Self-test success is development evidence only. It does not create or accept a production authority.
 
