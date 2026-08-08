@@ -19,221 +19,35 @@ jobs:
 
       - name: Add positive Simulator visual acceptance states
         shell: bash
+        env:
+          TESTS_B64: CiAgICBATWFpbkFjdG9yCiAgICBmdW5jIHRlc3RWMTRTaW11bGF0b3JRQUNhcHR1cmVDb21wbGV0ZUFjY2Vzc2liaWxpdHlYWFhMS2VlcHNUcnV0aEFuZEFjdGlvbnNMZWdpYmxlKCkgewogICAgICAgIGxldCBhcHAgPSBYQ1VJQXBwbGljYXRpb24oKQogICAgICAgIGFwcC5sYXVuY2hBcmd1bWVudHMgPSBbCiAgICAgICAgICAgICItLWVzODAtcGFzc2l2ZS1jYXB0dXJlLXNpbXVsYXRvci1xYSIsCiAgICAgICAgICAgICItLWVzODAtY2FwdHVyZS1xYS1zY2VuYXJpbz1jYXB0dXJlQ29tcGxldGUiLAogICAgICAgICAgICAiLVVJUHJlZmVycmVkQ29udGVudFNpemVDYXRlZ29yeU5hbWUiLAogICAgICAgICAgICAiVUlDVENvbnRlbnRTaXplQ2F0ZWdvcnlBY2Nlc3NpYmlsaXR5RXh0cmFFeHRyYUV4dHJhTGFyZ2UiCiAgICAgICAgXQogICAgICAgIGFwcC5sYXVuY2goKQoKICAgICAgICBsZXQgc2ltdWxhdG9yRGlzY2xvc3VyZSA9IGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5zaW11bGF0b3ItcWEiXQogICAgICAgIGxldCBwcmltYXJ5U3RhdHVzID0gYXBwLnN0YXRpY1RleHRzWyJDQVBUVVJFIENPTVBMRVRFIl0KICAgICAgICBsZXQgYW5hbHlzaXNTdGF0dXMgPSBhcHAuc3RhdGljVGV4dHNbIlJlYWR5IGZvciBhbmFseXNpcyJdCiAgICAgICAgbGV0IHNoYXJlID0gYXBwLmJ1dHRvbnNbIlNoYXJlIENhcHR1cmUiXQogICAgICAgIGxldCBkZXRhaWxzID0gYXBwLmJ1dHRvbnNbIlZpZXcgRGV0YWlscyJdCgogICAgICAgIFhDVEFzc2VydFRydWUoc2ltdWxhdG9yRGlzY2xvc3VyZS53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDUpKQogICAgICAgIFhDVEFzc2VydFRydWUocHJpbWFyeVN0YXR1cy53YWl0Rm9yRXhpc3RlbmNlKHRpbWVvdXQ6IDMpKQogICAgICAgIFhDVEFzc2VydFRydWUoYW5hbHlzaXNTdGF0dXMud2FpdEZvckV4aXN0ZW5jZSh0aW1lb3V0OiAzKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKHNoYXJlLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShkZXRhaWxzLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0RmFsc2UoYXBwLmRlc2NlbmRhbnRzKG1hdGNoaW5nOiAuYW55KVsiZXM4MC5jYXB0dXJlLmZpZWxkLW5vLWdvIl0uZXhpc3RzKQogICAgICAgIFhDVEFzc2VydEZhbHNlKGFwcC5idXR0b25zWyJWZWhpY2xlIGNvbnRyb2xzIl0uZXhpc3RzKQoKICAgICAgICBsZXQgd2luZG93RnJhbWUgPSBhcHAud2luZG93cy5maXJzdE1hdGNoLmZyYW1lCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBzaW11bGF0b3JEaXNjbG9zdXJlLAogICAgICAgICAgICB3aW5kb3dGcmFtZTogd2luZG93RnJhbWUsCiAgICAgICAgICAgIGNvbnRleHQ6ICJTaW11bGF0b3IgUUEgZGlzY2xvc3VyZSBhdCBwb3NpdGl2ZSBBY2Nlc3NpYmlsaXR5IFhYWEwiCiAgICAgICAgKQogICAgICAgIGFzc2VydFZpc2libGVJblNjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgcHJpbWFyeVN0YXR1cywKICAgICAgICAgICAgd2luZG93RnJhbWU6IHdpbmRvd0ZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAiQ2FwdHVyZSBDb21wbGV0ZSBzdGF0dXMgYXQgQWNjZXNzaWJpbGl0eSBYWFhMIgogICAgICAgICkKCiAgICAgICAgbGV0IHRvcEF0dGFjaG1lbnQgPSBYQ1RBdHRhY2htZW50KHNjcmVlbnNob3Q6IGFwcC5zY3JlZW5zaG90KCkpCiAgICAgICAgdG9wQXR0YWNobWVudC5uYW1lID0gIk5lbWJyYSBDYXB0dXJlIFYxNCDigJQgU0lNVUxBVE9SIFFBIOKAlCBDYXB0dXJlIENvbXBsZXRlIOKAlCBBY2Nlc3NpYmlsaXR5IFhYWEwg4oCUIFN0YXR1cyIKICAgICAgICB0b3BBdHRhY2htZW50LmxpZmV0aW1lID0gLmtlZXBBbHdheXMKICAgICAgICBhZGQodG9wQXR0YWNobWVudCkKCiAgICAgICAgYnJpbmdJbnRvU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBzaGFyZSwKICAgICAgICAgICAgaW46IGFwcCwKICAgICAgICAgICAgY29udGV4dDogIlNoYXJlIENhcHR1cmUgYWN0aW9uIGF0IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgbGV0IGFjdGlvbldpbmRvd0ZyYW1lID0gYXBwLndpbmRvd3MuZmlyc3RNYXRjaC5mcmFtZQogICAgICAgIGFzc2VydFZpc2libGVJblNjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgc2hhcmUsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiBhY3Rpb25XaW5kb3dGcmFtZSwKICAgICAgICAgICAgY29udGV4dDogIlNoYXJlIENhcHR1cmUgYWN0aW9uIGF0IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCiAgICAgICAgYXNzZXJ0VmlzaWJsZUluU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgICAgICBkZXRhaWxzLAogICAgICAgICAgICB3aW5kb3dGcmFtZTogYWN0aW9uV2luZG93RnJhbWUsCiAgICAgICAgICAgIGNvbnRleHQ6ICJWaWV3IERldGFpbHMgYWN0aW9uIGF0IEFjY2Vzc2liaWxpdHkgWFhYTCIKICAgICAgICApCgogICAgICAgIGxldCBhY3Rpb25zQXR0YWNobWVudCA9IFhDVEF0dGFjaG1lbnQoc2NyZWVuc2hvdDogYXBwLnNjcmVlbnNob3QoKSkKICAgICAgICBhY3Rpb25zQXR0YWNobWVudC5uYW1lID0gIk5lbWJyYSBDYXB0dXJlIFYxNCDigJQgU0lNVUxBVE9SIFFBIOKAlCBDYXB0dXJlIENvbXBsZXRlIOKAlCBBY2Nlc3NpYmlsaXR5IFhYWEwg4oCUIEFjdGlvbnMiCiAgICAgICAgYWN0aW9uc0F0dGFjaG1lbnQubGlmZXRpbWUgPSAua2VlcEFsd2F5cwogICAgICAgIGFkZChhY3Rpb25zQXR0YWNobWVudCkKICAgIH0KCiAgICBATWFpbkFjdG9yCiAgICBmdW5jIHRlc3RWMTRTaW11bGF0b3JRQUhvcml6b25SZWFkeUxhbmRzY2FwZUtlZXBzVHJ1dGhBbmRTZWFsQWN0aW9uTGVnaWJsZSgpIHsKICAgICAgICBYQ1VJRGV2aWNlLnNoYXJlZC5vcmllbnRhdGlvbiA9IC5wb3J0cmFpdAogICAgICAgIGRlZmVyIHsgWENVSURldmljZS5zaGFyZWQub3JpZW50YXRpb24gPSAucG9ydHJhaXQgfQoKICAgICAgICBsZXQgYXBwID0gWENVSUFwcGxpY2F0aW9uKCkKICAgICAgICBhcHAubGF1bmNoQXJndW1lbnRzID0gWwogICAgICAgICAgICAiLS1lczgwLXBhc3NpdmUtY2FwdHVyZS1zaW11bGF0b3ItcWEiLAogICAgICAgICAgICAiLS1lczgwLWNhcHR1cmUtcWEtc2NlbmFyaW89b2JzZXJ2YXRpb25Ib3Jpem9uUmVhZHkiCiAgICAgICAgXQogICAgICAgIGFwcC5sYXVuY2goKQoKICAgICAgICBYQ1RBc3NlcnRUcnVlKGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS1zaGVsbCJdLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogNSkpCiAgICAgICAgWENVSURldmljZS5zaGFyZWQub3JpZW50YXRpb24gPSAubGFuZHNjYXBlTGVmdAoKICAgICAgICBsZXQgc2ltdWxhdG9yRGlzY2xvc3VyZSA9IGFwcC5kZXNjZW5kYW50cyhtYXRjaGluZzogLmFueSlbImVzODAuY2FwdHVyZS5zaW11bGF0b3ItcWEiXQogICAgICAgIGxldCBwcmltYXJ5U3RhdHVzID0gYXBwLnN0YXRpY1RleHRzWyJDYXB0dXJlIGNhbiBiZSBzZWFsZWQiXQogICAgICAgIGxldCBmaW5pc2ggPSBhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUuZmluaXNoIl0KCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaW11bGF0b3JEaXNjbG9zdXJlLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShwcmltYXJ5U3RhdHVzLndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMykpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShmaW5pc2gud2FpdEZvckV4aXN0ZW5jZSh0aW1lb3V0OiAzKSkKICAgICAgICBYQ1RBc3NlcnRGYWxzZShhcHAuZGVzY2VuZGFudHMobWF0Y2hpbmc6IC5hbnkpWyJlczgwLmNhcHR1cmUuZmllbGQtbm8tZ28iXS5leGlzdHMpCiAgICAgICAgWENUQXNzZXJ0RmFsc2UoYXBwLmJ1dHRvbnNbIlZlaGljbGUgY29udHJvbHMiXS5leGlzdHMpCgogICAgICAgIGxldCB3aW5kb3dGcmFtZSA9IGFwcC53aW5kb3dzLmZpcnN0TWF0Y2guZnJhbWUKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHNpbXVsYXRvckRpc2Nsb3N1cmUsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiB3aW5kb3dGcmFtZSwKICAgICAgICAgICAgY29udGV4dDogIlNpbXVsYXRvciBRQSBkaXNjbG9zdXJlIGluIHBvc2l0aXZlIGxhbmRzY2FwZSBzdGF0ZSIKICAgICAgICApCgogICAgICAgIGxldCB0b3BBdHRhY2htZW50ID0gWENUQXR0YWNobWVudChzY3JlZW5zaG90OiBhcHAuc2NyZWVuc2hvdCgpKQogICAgICAgIHRvcEF0dGFjaG1lbnQubmFtZSA9ICJOZW1icmEgQ2FwdHVyZSBWMTQg4oCUIFNJTVVMQVRPUiBRQSDigJQgSG9yaXpvbiBSZWFkeSDigJQgTGFuZHNjYXBlIOKAlCBTdGF0dXMiCiAgICAgICAgdG9wQXR0YWNobWVudC5saWZldGltZSA9IC5rZWVwQWx3YXlzCiAgICAgICAgYWRkKHRvcEF0dGFjaG1lbnQpCgogICAgICAgIGJyaW5nSW50b1NjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgZmluaXNoLAogICAgICAgICAgICBpbjogYXBwLAogICAgICAgICAgICBjb250ZXh0OiAiU2VhbCBDYXB0dXJlIGFjdGlvbiBpbiBwb3NpdGl2ZSBsYW5kc2NhcGUgc3RhdGUiCiAgICAgICAgKQogICAgICAgIGxldCBhY3Rpb25XaW5kb3dGcmFtZSA9IGFwcC53aW5kb3dzLmZpcnN0TWF0Y2guZnJhbWUKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIHByaW1hcnlTdGF0dXMsCiAgICAgICAgICAgIHdpbmRvd0ZyYW1lOiBhY3Rpb25XaW5kb3dGcmFtZSwKICAgICAgICAgICAgY29udGV4dDogIkNhcHR1cmUgY2FuIGJlIHNlYWxlZCBzdGF0dXMgaW4gbGFuZHNjYXBlIgogICAgICAgICkKICAgICAgICBhc3NlcnRWaXNpYmxlSW5TY3JlZW5zaG90Vmlld3BvcnQoCiAgICAgICAgICAgIGZpbmlzaCwKICAgICAgICAgICAgd2luZG93RnJhbWU6IGFjdGlvbldpbmRvd0ZyYW1lLAogICAgICAgICAgICBjb250ZXh0OiAiU2VhbCBDYXB0dXJlIGFjdGlvbiBpbiBsYW5kc2NhcGUiCiAgICAgICAgKQoKICAgICAgICBsZXQgYWN0aW9uQXR0YWNobWVudCA9IFhDVEF0dGFjaG1lbnQoc2NyZWVuc2hvdDogYXBwLnNjcmVlbnNob3QoKSkKICAgICAgICBhY3Rpb25BdHRhY2htZW50Lm5hbWUgPSAiTmVtYnJhIENhcHR1cmUgVjE0IOKAlCBTSU1VTEFUT1IgUUEg4oCUIEhvcml6b24gUmVhZHkg4oCUIExhbmRzY2FwZSDigJQgU2VhbCIKICAgICAgICBhY3Rpb25BdHRhY2htZW50LmxpZmV0aW1lID0gLmtlZXBBbHdheXMKICAgICAgICBhZGQoYWN0aW9uQXR0YWNobWVudCkKICAgIH0K
+          HELPER_B64: CiAgICBATWFpbkFjdG9yCiAgICBwcml2YXRlIGZ1bmMgYnJpbmdJbnRvU2NyZWVuc2hvdFZpZXdwb3J0KAogICAgICAgIF8gZWxlbWVudDogWENVSUVsZW1lbnQsCiAgICAgICAgaW4gYXBwOiBYQ1VJQXBwbGljYXRpb24sCiAgICAgICAgY29udGV4dDogU3RyaW5nLAogICAgICAgIG1heFN3aXBlczogSW50ID0gNiwKICAgICAgICBmaWxlOiBTdGF0aWNTdHJpbmcgPSAjZmlsZVBhdGgsCiAgICAgICAgbGluZTogVUludCA9ICNsaW5lCiAgICApIHsKICAgICAgICBYQ1RBc3NlcnRUcnVlKAogICAgICAgICAgICBlbGVtZW50LndhaXRGb3JFeGlzdGVuY2UodGltZW91dDogMyksCiAgICAgICAgICAgICJSZXF1aXJlZCBcKGNvbnRleHQpIG11c3QgZXhpc3QgYmVmb3JlIHZpZXdwb3J0IG5hdmlnYXRpb24uIiwKICAgICAgICAgICAgZmlsZTogZmlsZSwKICAgICAgICAgICAgbGluZTogbGluZQogICAgICAgICkKCiAgICAgICAgdmFyIHJlbWFpbmluZyA9IG1heFN3aXBlcwogICAgICAgIHdoaWxlIHJlbWFpbmluZyA+IDAgewogICAgICAgICAgICBsZXQgd2luZG93RnJhbWUgPSBhcHAud2luZG93cy5maXJzdE1hdGNoLmZyYW1lCiAgICAgICAgICAgIGxldCBmcmFtZSA9IGVsZW1lbnQuZnJhbWUKICAgICAgICAgICAgaWYgZnJhbWUud2lkdGggPiAwLAogICAgICAgICAgICAgICBmcmFtZS5oZWlnaHQgPiAwLAogICAgICAgICAgICAgICBmcmFtZS5taW5YID49IHdpbmRvd0ZyYW1lLm1pblggLSAxLAogICAgICAgICAgICAgICBmcmFtZS5tYXhYIDw9IHdpbmRvd0ZyYW1lLm1heFggKyAxLAogICAgICAgICAgICAgICBmcmFtZS5taW5ZID49IHdpbmRvd0ZyYW1lLm1pblkgLSAxLAogICAgICAgICAgICAgICBmcmFtZS5tYXhZIDw9IHdpbmRvd0ZyYW1lLm1heFkgKyAxIHsKICAgICAgICAgICAgICAgIHJldHVybgogICAgICAgICAgICB9CiAgICAgICAgICAgIGFwcC5zd2lwZVVwKCkKICAgICAgICAgICAgcmVtYWluaW5nIC09IDEKICAgICAgICB9CgogICAgICAgIGFzc2VydFZpc2libGVJblNjcmVlbnNob3RWaWV3cG9ydCgKICAgICAgICAgICAgZWxlbWVudCwKICAgICAgICAgICAgd2luZG93RnJhbWU6IGFwcC53aW5kb3dzLmZpcnN0TWF0Y2guZnJhbWUsCiAgICAgICAgICAgIGNvbnRleHQ6IGNvbnRleHQsCiAgICAgICAgICAgIGZpbGU6IGZpbGUsCiAgICAgICAgICAgIGxpbmU6IGxpbmUKICAgICAgICApCiAgICB9Cg==
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
           path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
           text = path.read_text(encoding="utf-8")
           marker = "\n    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {\n"
-          if marker not in text:
+          helper_marker = "\n    private func assertVisibleInScreenshotViewport(\n"
+          if marker not in text or helper_marker not in text:
               raise SystemExit("UI-test insertion marker not found")
           if "testV14SimulatorQACaptureCompleteAccessibilityXXXLKeepsTruthAndActionsLegible" in text:
-              raise SystemExit("positive Accessibility XXXL test already present")
-
-          tests = r'''
-
-    @MainActor
-    func testV14SimulatorQACaptureCompleteAccessibilityXXXLKeepsTruthAndActionsLegible() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--es80-passive-capture-simulator-qa",
-            "--es80-capture-qa-scenario=captureComplete",
-            "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
-        ]
-        app.launch()
-
-        let simulatorDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
-        let primaryStatus = app.staticTexts["CAPTURE COMPLETE"]
-        let analysisStatus = app.staticTexts["Ready for analysis"]
-        let share = app.buttons["Share Capture"]
-        let details = app.buttons["View Details"]
-
-        XCTAssertTrue(simulatorDisclosure.waitForExistence(timeout: 5))
-        XCTAssertTrue(primaryStatus.waitForExistence(timeout: 3))
-        XCTAssertTrue(analysisStatus.waitForExistence(timeout: 3))
-        XCTAssertTrue(share.waitForExistence(timeout: 3))
-        XCTAssertTrue(details.waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-
-        let windowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            simulatorDisclosure,
-            windowFrame: windowFrame,
-            context: "Simulator QA disclosure at positive Accessibility XXXL"
-        )
-        assertVisibleInScreenshotViewport(
-            primaryStatus,
-            windowFrame: windowFrame,
-            context: "Capture Complete status at Accessibility XXXL"
-        )
-
-        let topAttachment = XCTAttachment(screenshot: app.screenshot())
-        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
-        topAttachment.lifetime = .keepAlways
-        add(topAttachment)
-
-        bringIntoScreenshotViewport(
-            share,
-            in: app,
-            context: "Share Capture action at Accessibility XXXL"
-        )
-        let actionWindowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            share,
-            windowFrame: actionWindowFrame,
-            context: "Share Capture action at Accessibility XXXL"
-        )
-        assertVisibleInScreenshotViewport(
-            details,
-            windowFrame: actionWindowFrame,
-            context: "View Details action at Accessibility XXXL"
-        )
-
-        let actionsAttachment = XCTAttachment(screenshot: app.screenshot())
-        actionsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Actions"
-        actionsAttachment.lifetime = .keepAlways
-        add(actionsAttachment)
-    }
-
-    @MainActor
-    func testV14SimulatorQAHorizonReadyLandscapeKeepsTruthAndSealActionLegible() {
-        XCUIDevice.shared.orientation = .portrait
-        defer { XCUIDevice.shared.orientation = .portrait }
-
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--es80-passive-capture-simulator-qa",
-            "--es80-capture-qa-scenario=observationHorizonReady"
-        ]
-        app.launch()
-
-        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
-        XCUIDevice.shared.orientation = .landscapeLeft
-
-        let simulatorDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
-        let primaryStatus = app.staticTexts["Capture can be sealed"]
-        let finish = app.descendants(matching: .any)["es80.capture.finish"]
-
-        XCTAssertTrue(simulatorDisclosure.waitForExistence(timeout: 3))
-        XCTAssertTrue(primaryStatus.waitForExistence(timeout: 3))
-        XCTAssertTrue(finish.waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
-
-        let windowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            simulatorDisclosure,
-            windowFrame: windowFrame,
-            context: "Simulator QA disclosure in positive landscape state"
-        )
-
-        let topAttachment = XCTAttachment(screenshot: app.screenshot())
-        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
-        topAttachment.lifetime = .keepAlways
-        add(topAttachment)
-
-        bringIntoScreenshotViewport(
-            finish,
-            in: app,
-            context: "Seal Capture action in positive landscape state"
-        )
-        let actionWindowFrame = app.windows.firstMatch.frame
-        assertVisibleInScreenshotViewport(
-            primaryStatus,
-            windowFrame: actionWindowFrame,
-            context: "Capture can be sealed status in landscape"
-        )
-        assertVisibleInScreenshotViewport(
-            finish,
-            windowFrame: actionWindowFrame,
-            context: "Seal Capture action in landscape"
-        )
-
-        let actionAttachment = XCTAttachment(screenshot: app.screenshot())
-        actionAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Seal"
-        actionAttachment.lifetime = .keepAlways
-        add(actionAttachment)
-    }
-'''
+              raise SystemExit("positive visual QA already present")
+          tests = base64.b64decode(os.environ["TESTS_B64"]).decode("utf-8")
+          helper = base64.b64decode(os.environ["HELPER_B64"]).decode("utf-8")
           text = text.replace(marker, tests + marker, 1)
-
-          helper_marker = "\n    private func assertVisibleInScreenshotViewport(\n"
-          if helper_marker not in text:
-              raise SystemExit("viewport helper insertion marker not found")
-          helper = r'''
-
-    @MainActor
-    private func bringIntoScreenshotViewport(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        context: String,
-        maxSwipes: Int = 6,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertTrue(
-            element.waitForExistence(timeout: 3),
-            "Required \(context) must exist before viewport navigation.",
-            file: file,
-            line: line
-        )
-
-        var remaining = maxSwipes
-        while remaining > 0 {
-            let windowFrame = app.windows.firstMatch.frame
-            let frame = element.frame
-            if frame.width > 0,
-               frame.height > 0,
-               frame.minX >= windowFrame.minX - 1,
-               frame.maxX <= windowFrame.maxX + 1,
-               frame.minY >= windowFrame.minY - 1,
-               frame.maxY <= windowFrame.maxY + 1 {
-                return
-            }
-            app.swipeUp()
-            remaining -= 1
-        }
-
-        assertVisibleInScreenshotViewport(
-            element,
-            windowFrame: app.windows.firstMatch.frame,
-            context: context,
-            file: file,
-            line: line
-        )
-    }
-'''
           text = text.replace(helper_marker, helper + helper_marker, 1)
           path.write_text(text, encoding="utf-8")
           PY
-
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path("NembraUITests/ES80ResearchCaptureUITests.swift").read_text(encoding="utf-8")
-          required = [
-              "testV14SimulatorQACaptureCompleteAccessibilityXXXLKeepsTruthAndActionsLegible",
-              "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
-              "testV14SimulatorQAHorizonReadyLandscapeKeepsTruthAndSealActionLegible",
-              "XCUIDevice.shared.orientation = .landscapeLeft",
-              "es80.capture.simulator-qa",
-              "es80.capture.finish",
-              "Share Capture",
-              "View Details",
-              "bringIntoScreenshotViewport",
-              "assertVisibleInScreenshotViewport",
-          ]
-          missing = [item for item in required if item not in text]
-          if missing:
-              raise SystemExit(f"positive visual QA contract missing: {missing}")
-          if "physicalProcedurePermitted: false" in text or "mayUseBluetoothTransport: true" in text:
-              raise SystemExit("UI test must not manufacture physical or transport authority")
-          PY
+          grep -q 'testV14SimulatorQACaptureCompleteAccessibilityXXXLKeepsTruthAndActionsLegible' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'testV14SimulatorQAHorizonReadyLandscapeKeepsTruthAndSealActionLegible' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'XCUIDevice.shared.orientation = .landscapeLeft' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'bringIntoScreenshotViewport' NembraUITests/ES80ResearchCaptureUITests.swift
           git diff --check
-
           rm .github/workflows/tmp-es80-positive-a11y-landscape-transform.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
