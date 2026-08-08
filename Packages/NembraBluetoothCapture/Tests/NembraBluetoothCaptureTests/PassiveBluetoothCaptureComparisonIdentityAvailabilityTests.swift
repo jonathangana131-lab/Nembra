@@ -213,6 +213,49 @@ struct PassiveBluetoothCaptureComparisonIdentityAvailabilityTests {
         #expect(stream.rawDifferenceScore == 1)
     }
 
+    @Test("GATT canonicalization never normalizes opaque peripheral identifiers")
+    func preservesOpaquePeripheralIdentity() throws {
+        var baseline = try makeSession()
+        try appendValue(
+            peripheral: "Selected-Target",
+            service: " a201 ",
+            characteristic: "2b10",
+            payload: [0xAA],
+            sequence: 1,
+            to: &baseline
+        )
+
+        var comparison = try makeSession()
+        try appendValue(
+            peripheral: "selected-target",
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0xAA],
+            sequence: 1,
+            to: &comparison
+        )
+
+        let report = PassiveBluetoothCaptureComparison.compare(
+            baseline: baseline,
+            comparison: comparison
+        )
+
+        #expect(report.baselinePeripheralIdentifier == "Selected-Target")
+        #expect(report.comparisonPeripheralIdentifier == "selected-target")
+        #expect(report.peripheralRelationship == .differentObservedIdentifiers)
+        #expect(report.differenceAvailability == .identityAmbiguous)
+        #expect(report.streamComparisons.count == 2)
+        #expect(Set(report.streamComparisons.map(\.key.peripheralIdentifier)) == Set([
+            "Selected-Target",
+            "selected-target"
+        ]))
+        #expect(report.streamComparisons.allSatisfy {
+            $0.key.serviceUUID == "A201" &&
+            $0.key.characteristicUUID == "2B10" &&
+            $0.rawDifferenceScore == nil
+        })
+    }
+
     private func makeSession() throws -> PassiveBluetoothCaptureSession {
         try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
     }
