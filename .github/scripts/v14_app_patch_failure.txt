@@ -1,0 +1,18 @@
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:86: SyntaxWarning: invalid escape sequence '\.'
+  """    let controller: ForegroundCoreBluetoothCaptureController
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:91: SyntaxWarning: invalid escape sequence '\.'
+  """    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:169: SyntaxWarning: invalid escape sequence '\('
+  """    private func prepareCorrelationSessionIfNeeded() {
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:187: SyntaxWarning: invalid escape sequence '\('
+  """    private func restartCorrelation() {
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:211: SyntaxWarning: invalid escape sequence '\('
+  """    private func restartCorrelation() {
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:238: SyntaxWarning: invalid escape sequence '\('
+  """    private func confirmCorrelatedTarget(_ identifier: UUID) {
+/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:256: SyntaxWarning: invalid escape sequence '\('
+  """    private func confirmCorrelatedTarget(_ identifier: UUID) {
+  File "/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py", line 334
+    "checkmark.circle.fill"""",
+                             ^
+SyntaxError: unterminated string literal (detected at line 334)
