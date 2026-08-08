@@ -1,0 +1,66 @@
+name: ES80 pre-H Xcode 27 test repair exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/es80-preh-xcode27-test-fix-v2/ci/chat-g5v6-1
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-qa:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 30
+      - name: Verify exact product parent and workflow-only mirror
+        env:
+          EXPECTED_PRODUCT_SHA: 60b9aefb1afd1282a07962a1fa32a0b385824f76
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-preh-xcode27-test-fix-v2-chat-g5v6-1.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$EXPECTED_WORKFLOW_PATH"
+      - name: Verify current #455 child delta is one test file
+        env:
+          BASE_SHA: b49c2bf19ee749395b86058e0b8b7693178f4f6f
+          PRODUCT_SHA: 60b9aefb1afd1282a07962a1fa32a0b385824f76
+          EXPECTED_PATH: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothPreHObservationRecoveryTests.swift
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only "$BASE_SHA" "$PRODUCT_SHA")" = "$EXPECTED_PATH"
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            exit 1
+          fi
+      - name: Reject mutating reset calls embedded in Testing expectations
+        run: |
+          set -euo pipefail
+          ! git grep -n -E '#expect\([^\n]*resetForNewCaptureSession\(' -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests
+      - name: Reject stale raw-retirement reopen contracts
+        run: |
+          set -euo pipefail
+          ! git grep -n -E 'completeAbortedObservationRecovery|freshTargetSessionRequired' -- \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests
+      - name: Run NembraCore tests
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+      - name: Run full capture package tests
+        run: swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
