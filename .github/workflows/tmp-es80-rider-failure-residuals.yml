@@ -1,0 +1,182 @@
+name: Temporary ES80 rider-failure residual transform
+
+on:
+  push:
+    branches:
+      - agent/es80-v14-rider-failure-residuals-64760
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Close residual rider-facing failure vocabulary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = shell_path.read_text(encoding="utf-8")
+          replacements = {
+              'return .failed("Nembra left the active foreground after Experiment One began. This capture cannot resume safely; start a fresh Experiment One.")': 'return .failed("Nembra left the foreground after capture began. This capture cannot safely continue; start a fresh capture.")',
+              'return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")': 'return .failed(coordinator.lastDiagnostic ?? "The read-only connection ended before observation could be sealed. Start a fresh capture.")',
+              'return .correlationFailed("This Experiment One run has no active progress and no final result. Start a fresh run.")': 'return .correlationFailed("This capture has no active OFF / ON progress. Start a fresh capture.")',
+              'return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")': 'return .correlationFailed("The OFF / ON sequence was interrupted. Start a fresh capture.")',
+              'return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")': 'return .failed("Simulator QA interruption fixture. This synthetic Capture was interrupted in the foreground; it is not physical evidence.")',
+              'localFailureMessage = "Nembra could not create a fresh Experiment One run: \\(String(describing: error))"': 'localFailureMessage = "Nembra could not start a fresh capture. Close Capture and try again."',
+              'sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."': 'sharePreparationWarning = "Capture is sealed, but the stationary setup for this run is missing. Start a fresh capture before sharing."',
+              'sharePreparationWarning = "Capture remains sealed and ready for analysis, but the temporary Share file could not be staged: \\(experimentErrorMessage(error))"': 'sharePreparationWarning = "Capture remains sealed and ready for analysis, but the Share file could not be prepared: \\(experimentErrorMessage(error))"',
+              'sharePreparationWarning = "Capture remains sealed, but the exact final Share artifact did not earn analysis readiness: \\(experimentErrorMessage(error))"': 'sharePreparationWarning = "Capture remains sealed, but its final integrity check did not pass, so it is not ready for analysis: \\(experimentErrorMessage(error))"',
+              'return "The correlated target is already prepared. Continue the current rediscovery."': 'return "The scooter signal is already confirmed. Continue looking for it."',
+              'return "No confirmed correlated target is ready for this step."': 'return "Confirm one scooter signal before continuing."',
+              'return "All four OFF / ON windows must complete before target confirmation."': 'return "Complete all four OFF / ON checks before confirming the scooter signal."',
+              'return "The four-window evidence or ordering is invalid."': 'return "The OFF / ON sequence is no longer valid. Start again from OFF 1."',
+              'return "The four-window series did not produce exactly one repeatable target."': 'return "The OFF / ON checks did not isolate one scooter signal. Start a fresh capture."',
+              'return "The exact correlated target has not reappeared in the fresh scan yet. Keep scanning and retry."': 'return "The matched scooter signal has not reappeared yet. Keep the scooter ON and keep scanning."',
+              'return "The exact correlated target is visible but Bluetooth reports it as non-connectable."': 'return "The matched scooter signal is visible, but Bluetooth cannot connect to it right now."',
+              'return "Passive discovery and the minimum observation period are not complete yet."': 'return "Read-only discovery and the required observation time are not complete yet."',
+              'return "This build has an invalid observation-window duration. Capture cannot continue."': 'return "This build has an invalid timing requirement for the OFF / ON checks. Capture cannot continue."',
+              'return "All four correlation windows are already sealed."': 'return "All four OFF / ON checks are already complete."',
+              'return "This OFF / ON series has an evidence gap. Start a fresh capture."': 'return "The OFF / ON sequence was interrupted. Start a fresh capture."',
+              'return "The current correlation window is already active."': 'return "This OFF / ON step is already running."',
+              'return "No correlation window is currently active."': 'return "No OFF / ON step is currently running."',
+              'return "Bluetooth became unavailable during this observation window."': 'return "Bluetooth became unavailable during this step. Start a fresh capture."',
+              'return "Scanning was requested, but the observation window has not opened yet."': 'return "Bluetooth scanning is starting. This step has not begun yet."',
+              'return "Bluetooth did not become ready in time for this observation window."': 'return "Bluetooth did not become ready in time. Start this step again."',
+              'return "This window\'s Bluetooth scan became inactive."': 'return "Bluetooth scanning stopped during this step. Start a fresh capture."',
+              'return "The observation window has not reached the required minimum yet."': 'return "Keep this step running until the required time is complete."',
+              'return "Nembra could not establish a valid observation window."': 'return "Nembra could not establish reliable timing for this step. Start a fresh capture."',
+              'return "This OFF / ON sequence cannot continue. Start a fresh capture."': 'return "This OFF / ON sequence is already complete."',
+              'return "Bluetooth is resetting. Keep Nembra open until the radio becomes ready."': 'return "Bluetooth is resetting. Keep Nembra open until Bluetooth becomes ready."',
+              'return "This device does not expose the Bluetooth capability required for passive capture."': 'return "This device cannot provide the Bluetooth access required for Capture."',
+              'return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting correlation."': 'return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting OFF 1."',
+          }
+
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one exact incumbent rider string {old!r}, found {count}")
+              source = source.replace(old, new)
+
+          shell_path.write_text(source, encoding="utf-8")
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRenderedFailureLanguageAcceptanceTests.swift")
+          if test_path.exists():
+              raise SystemExit("rendered-failure rider-language contract already exists")
+          test_path.write_text('''import Foundation
+import Testing
+
+@Suite("ES80 Capture rendered failure-language acceptance")
+struct ES80CaptureRenderedFailureLanguageAcceptanceTests {
+    private static func shellSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        return try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("Features")
+                .appendingPathComponent("Research")
+                .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    @Test("rendered recovery and failure helpers stay human-first across the full shell")
+    func renderedFailuresStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let forbidden = [
+            "replaying consumed authority",
+            "foreground-invalidated evidence life",
+            "String(describing: error)",
+            "correlated target",
+            "current rediscovery",
+            "four-window evidence",
+            "non-connectable",
+            "minimum observation period",
+            "observation-window duration",
+            "correlation window",
+            "evidence gap",
+            "radio becomes ready",
+            "required for passive capture",
+            "starting correlation",
+            "operator setup declaration",
+            "inventing setup provenance",
+            "temporary Share file could not be staged",
+            "exact final Share artifact did not earn analysis readiness"
+        ]
+
+        for phrase in forbidden {
+            #expect(
+                !source.localizedCaseInsensitiveContains(phrase),
+                "Rendered Capture failure path still exposes implementation vocabulary: \\(phrase)"
+            )
+        }
+
+        #expect(source.contains("Start again from OFF 1."))
+        #expect(source.contains("Start a fresh capture."))
+        #expect(source.contains("Keep the scooter ON and keep scanning."))
+        #expect(source.contains("required observation time"))
+        #expect(source.contains("before starting OFF 1"))
+        #expect(source.contains("Share file could not be prepared"))
+        #expect(source.contains("final integrity check did not pass"))
+    }
+
+    @Test("copy cleanup keeps truth, lifecycle, and physical gates intact")
+    func truthGuardsRemain() throws {
+        let source = try Self.shellSource()
+        #expect(source.contains("guard status.physicalProcedurePermitted else"))
+        #expect(source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
+        #expect(source.contains("coordinator.invalidateForForegroundLoss()"))
+        #expect(source.contains("coordinator.abandonExperiment()"))
+        #expect(source.contains("finalShareIntegrityReport != nil"))
+        #expect(source.contains("declaredStationarySetup = nil"))
+    }
+}
+''', encoding="utf-8")
+
+          source = shell_path.read_text(encoding="utf-8")
+          forbidden_runtime = [
+              "replaying consumed authority",
+              "foreground-invalidated evidence life",
+              "String(describing: error)",
+              "non-connectable",
+              "observation-window duration",
+              "correlation window",
+              "evidence gap",
+              "radio becomes ready",
+              "starting correlation",
+              "inventing setup provenance",
+          ]
+          leaked = [phrase for phrase in forbidden_runtime if phrase.lower() in source.lower()]
+          if leaked:
+              raise SystemExit(f"residual implementation failure vocabulary remains: {leaked!r}")
+          for guard in (
+              "guard status.physicalProcedurePermitted else",
+              "PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)",
+              "coordinator.invalidateForForegroundLoss()",
+              "coordinator.abandonExperiment()",
+          ):
+              if guard not in source:
+                  raise SystemExit(f"Capture truth/lifecycle guard disappeared: {guard}")
+          PY
+          git diff --check
+          git status --short
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRenderedFailureLanguageAcceptanceTests.swift
+          git rm .github/workflows/tmp-es80-rider-failure-residuals.yml
+          git commit -m "Capture: finish rider-first failure guidance"
+          git push origin HEAD:agent/es80-v14-rider-failure-residuals-64760
