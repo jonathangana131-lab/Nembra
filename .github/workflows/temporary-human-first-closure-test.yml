@@ -1,0 +1,32 @@
+name: Temporary Capture human-first closure focused test
+
+on:
+  push:
+    branches:
+      - agent/capture-human-first-closure-v14
+
+permissions:
+  contents: write
+
+jobs:
+  focused-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-human-first-closure-v14
+          fetch-depth: 0
+
+      - name: Run human-first primary-copy closure tests
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter ES80CapturePrimaryCopyClosureTests
+
+      - name: Remove temporary workflow after green focused test
+        if: success()
+        run: |
+          git config user.name "nembra-v14-human-first-closure"
+          git config user.email "noreply@github.com"
+          git rm .github/workflows/temporary-human-first-closure-test.yml
+          git diff --cached --check
+          git commit -m "ci: remove temporary human-first focused test"
+          git push origin HEAD:agent/capture-human-first-closure-v14
