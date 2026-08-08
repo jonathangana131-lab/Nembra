@@ -9,19 +9,26 @@ DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE"
 
 CAPTURE_BUILD_COMMIT_SHA="$(git rev-parse --verify HEAD^{commit})"
 if [[ ! "$CAPTURE_BUILD_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Capture build identity requires an exact 40-hex Git commit; got: $CAPTURE_BUILD_COMMIT_SHA" >&2
   exit 8
 fi
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-  echo "Capture build identity refuses a checkout with tracked-file modifications." >&2
-  git status --short --untracked-files=no >&2
+WORKTREE_STATUS="$(git status --porcelain --untracked-files=all)"
+if [[ -n "$WORKTREE_STATUS" ]]; then
+  echo "Capture build identity refuses a checkout with tracked or non-ignored untracked changes." >&2
+  git status --short --untracked-files=all >&2
   exit 9
 fi
+
+# Only create runner-owned output after the exact checkout has been proven pristine.
+# This keeps generated artifacts out of the trust decision instead of suppressing all
+# untracked files, any of which could otherwise be a build input discovered by Xcode,
+# SwiftPM, a folder reference, script phase, or configuration include.
+mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
+rm -rf "$RESULT_BUNDLE"
+
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_RECIPE_IDENTIFIER="ES80-FINGERPRINT-v1"
 CAPTURE_PROCEDURE_VERSION="V14"
