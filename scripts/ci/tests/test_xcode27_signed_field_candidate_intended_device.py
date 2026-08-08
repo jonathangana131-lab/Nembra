@@ -40,8 +40,8 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
             source,
         )
         self.assertEqual(source.count('--repository-root "$ROOT"'), 2)
-        self.assertIn('require_external_private_input(path, repository_root)', runner)
-        self.assertIn('os.path.commonpath([path_text, repository_text]) == repository_text', runner)
+        self.assertIn('_open_private_identifier_without_symlink_components(path, repository_root)', runner)
+        self.assertIn('(next_metadata.st_dev, next_metadata.st_ino) == repository_identity', runner)
         self.assertIn('failed private content/mode validation', source)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
@@ -59,11 +59,16 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertEqual(executable_lines[1], "unset NEMBRA_INTENDED_FIELD_DEVICE_UDID")
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID=', source)
 
-        # The verification value is read only inside the runner after a no-follow descriptor open.
-        # It must never become an OS-visible child-process argument or environment value.
+        # The verification value is read only after each caller path component is opened without
+        # following symlinks. The accepted file must remain external, singly linked, and private.
         self.assertIn('os.O_NOFOLLOW', runner)
+        self.assertIn('os.O_DIRECTORY', runner)
+        self.assertIn('os.open not in os.supports_dir_fd', runner)
+        self.assertIn('dir_fd=parent_descriptor', runner)
         self.assertIn('os.fstat(descriptor)', runner)
         self.assertIn('metadata.st_uid != os.geteuid()', runner)
+        self.assertIn('metadata.st_nlink != 1', runner)
+        self.assertIn('value in os.fspath(path)', runner)
         self.assertIn('_stable_file_identity(final_metadata)', runner)
         self.assertIn('_stable_file_identity(metadata)', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
@@ -83,7 +88,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         runner = load_private_runner()
 
         with tempfile.TemporaryDirectory(prefix="nembra-private-owner-test-") as temporary:
-            private_file = Path(temporary) / "device-id"
+            private_file = Path(temporary).resolve(strict=True) / "device-id"
             private_file.write_text("00008101-001234567890001E", encoding="utf-8")
             private_file.chmod(0o600)
             owner = os.stat(private_file).st_uid
@@ -114,7 +119,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         runner = load_private_runner()
         with self.assertRaisesRegex(
             runner.PrivateInputError,
-            "path must be absolute",
+            "canonical absolute path",
         ):
             runner.read_private_identifier(Path("device-id"), REPOSITORY_ROOT)
 
@@ -123,17 +128,20 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         real_fstat = os.fstat
 
         with tempfile.TemporaryDirectory(prefix="nembra-private-input-test-") as temporary:
-            private_file = Path(temporary) / "device-id"
+            private_file = Path(temporary).resolve(strict=True) / "device-id"
             private_file.write_text("00008101-001234567890001E", encoding="utf-8")
             private_file.chmod(0o600)
 
-            call_count = 0
+            private_inode = os.stat(private_file).st_ino
+            private_fstat_count = 0
 
             def fstat_with_changed_metadata(descriptor):
-                nonlocal call_count
-                call_count += 1
+                nonlocal private_fstat_count
                 metadata = real_fstat(descriptor)
-                if call_count != 2:
+                if metadata.st_ino != private_inode:
+                    return metadata
+                private_fstat_count += 1
+                if private_fstat_count != 2:
                     return metadata
                 return SimpleNamespace(
                     st_dev=metadata.st_dev,
@@ -141,6 +149,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
                     st_mode=metadata.st_mode,
                     st_uid=metadata.st_uid,
                     st_gid=metadata.st_gid,
+                    st_nlink=metadata.st_nlink,
                     st_size=metadata.st_size,
                     st_mtime_ns=metadata.st_mtime_ns + 1,
                     st_ctime_ns=metadata.st_ctime_ns,
@@ -153,7 +162,46 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
                 ):
                     runner.read_private_identifier(private_file, REPOSITORY_ROOT)
 
-            self.assertEqual(call_count, 2)
+            self.assertEqual(private_fstat_count, 2)
+
+    def test_symlinked_ancestor_directory_fails_closed(self) -> None:
+        runner = load_private_runner()
+        expected = "00008101-001234567890001E"
+        with tempfile.TemporaryDirectory(prefix="nembra-private-ancestor-test-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            real_parent = root / "real-parent"
+            real_parent.mkdir()
+            private_file = real_parent / "device-id"
+            private_file.write_text(expected, encoding="utf-8")
+            private_file.chmod(0o600)
+            symlink_parent = root / "symlink-parent"
+            symlink_parent.symlink_to(real_parent, target_is_directory=True)
+            with self.assertRaisesRegex(runner.PrivateInputError, "unsafe directory component"):
+                runner.read_private_identifier(symlink_parent / "device-id", REPOSITORY_ROOT)
+
+    def test_multiply_linked_private_input_fails_closed(self) -> None:
+        runner = load_private_runner()
+        expected = "00008101-001234567890001E"
+        with tempfile.TemporaryDirectory(prefix="nembra-private-hardlink-test-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            private_file = root / "device-id"
+            private_file.write_text(expected, encoding="utf-8")
+            private_file.chmod(0o600)
+            alias = root / "device-id-alias"
+            os.link(private_file, alias)
+            with self.assertRaisesRegex(runner.PrivateInputError, "exactly one hard link"):
+                runner.read_private_identifier(private_file, REPOSITORY_ROOT)
+
+    def test_visible_private_path_cannot_contain_raw_identifier(self) -> None:
+        runner = load_private_runner()
+        expected = "00008101-001234567890001E"
+        with tempfile.TemporaryDirectory(prefix="nembra-private-path-test-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            private_file = root / expected
+            private_file.write_text(expected, encoding="utf-8")
+            private_file.chmod(0o600)
+            with self.assertRaisesRegex(runner.PrivateInputError, "path must not contain the raw identifier"):
+                runner.read_private_identifier(private_file, REPOSITORY_ROOT)
 
 
 if __name__ == "__main__":
