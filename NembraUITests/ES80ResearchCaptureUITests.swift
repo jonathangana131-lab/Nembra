@@ -94,6 +94,80 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
+    func testV14NoGoRemainsLegibleAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
+        let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
+        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+
+        XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
+        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
+        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(lockedState.isHittable || lockedState.frame.height > 0)
+        XCTAssertTrue(physicalBoundary.frame.height > 0)
+        XCTAssertTrue(recipe.frame.height > 0)
+
+        let windowFrame = app.windows.firstMatch.frame
+        for element in [lockedState, physicalBoundary, recipe] {
+            XCTAssertGreaterThanOrEqual(
+                element.frame.minX,
+                windowFrame.minX - 1,
+                "Required NO-GO content must not clip off the leading edge at accessibility sizes."
+            )
+            XCTAssertLessThanOrEqual(
+                element.frame.maxX,
+                windowFrame.maxX + 1,
+                "Required NO-GO content must not clip off the trailing edge at accessibility sizes."
+            )
+        }
+
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — NO-GO — Accessibility XXXL"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testV14NoGoLandscapeKeepsAuthorityAndProcedureVisible() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["--es80-passive-capture"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 5)
+        )
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
+        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
+        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(physicalBoundary.frame.height, 0)
+        XCTAssertGreaterThan(recipe.frame.height, 0)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — NO-GO — Landscape"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
         let source = try captureShellSource()
 
