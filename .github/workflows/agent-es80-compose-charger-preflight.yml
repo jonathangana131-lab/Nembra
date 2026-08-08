@@ -17,6 +17,7 @@ jobs:
           ref: capture-v14-recovery-failure-atomicity
           fetch-depth: 0
 
+      # Product commits are path-disjoint from the package-only recovery/authority spine.
       - name: Cherry-pick reviewed charger preflight commits only
         shell: bash
         run: |
