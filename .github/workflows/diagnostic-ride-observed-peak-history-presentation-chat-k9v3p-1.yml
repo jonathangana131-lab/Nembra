@@ -1,0 +1,88 @@
+name: Ride observed-peak history presentation diagnostic
+
+on:
+  push:
+    branches:
+      - cell/ride-observed-peak-history-presentation/diagnostic/chat-k9v3p-1
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 9711f37445d319f68b124f7296b17a4834e261ac
+          EXPECTED_WORKFLOW_PATH: .github/workflows/diagnostic-ride-observed-peak-history-presentation-chat-k9v3p-1.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Build NembraCore with warnings as errors
+        id: build
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          swift build --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Clean evidence qualifies
+        id: clean
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter qualifiedObservedMaximum
+
+      - name: Accepted zero remains unqualified not missing
+        id: zero
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter acceptedZeroIsUnqualifiedNotMissing
+
+      - name: Telemetry quality failure remains unqualified
+        id: quality
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter telemetryQualityFailureIsUnqualified
+
+      - name: Selected-source interruption remains unqualified
+        id: interrupted
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter interruptedObservationIsUnqualified
+
+      - name: Foreign-source evidence diagnostic
+        id: foreign
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter foreignSourceTrafficIsUnqualified
+
+      - name: Missing peak stays unavailable
+        id: missing
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter missingPeakIsUnavailable
+
+      - name: GPS accuracy provenance qualifies
+        id: gps
+        continue-on-error: true
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors --filter qualifiedGPSAccuracy
+
+      - name: Diagnostic result - never acceptance
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          CLEAN: ${{ steps.clean.outcome }}
+          ZERO: ${{ steps.zero.outcome }}
+          QUALITY: ${{ steps.quality.outcome }}
+          INTERRUPTED: ${{ steps.interrupted.outcome }}
+          FOREIGN: ${{ steps.foreign.outcome }}
+          MISSING: ${{ steps.missing.outcome }}
+          GPS: ${{ steps.gps.outcome }}
+        run: |
+          printf 'build=%s clean=%s zero=%s quality=%s interrupted=%s foreign=%s missing=%s gps=%s\n' \
+            "$BUILD" "$CLEAN" "$ZERO" "$QUALITY" "$INTERRUPTED" "$FOREIGN" "$MISSING" "$GPS"
+          echo 'This workflow is diagnostic-only and intentionally cannot be acceptance evidence.'
+          exit 1
