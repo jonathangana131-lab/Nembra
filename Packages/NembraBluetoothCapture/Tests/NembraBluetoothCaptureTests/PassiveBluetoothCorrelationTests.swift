@@ -179,8 +179,8 @@ struct PassiveBluetoothCorrelationTests {
         #expect(window.candidates.map(\.characteristicUUID) == ["A-VALUE"])
     }
 
-    @Test("explicit target correlation ignores unrelated peripheral disconnect boundaries")
-    func unrelatedDisconnectDoesNotSplitExplicitTarget() throws {
+    @Test("explicit target correlation treats unrelated disconnect as a capture-wide boundary")
+    func unrelatedDisconnectSplitsExplicitTarget() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
         try appendValue(
             to: &session,
@@ -219,7 +219,7 @@ struct PassiveBluetoothCorrelationTests {
             lookaheadNanoseconds: 500_000_000
         )?.first)
 
-        #expect(Set(window.candidates.map(\.characteristicUUID)) == ["A-BEFORE", "A-AFTER"])
+        #expect(window.candidates.map(\.characteristicUUID) == ["A-AFTER"])
     }
 
     @Test("explicit target disconnect remains a hard correlation boundary")
