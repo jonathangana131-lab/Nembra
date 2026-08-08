@@ -18,6 +18,8 @@ jobs:
         with:
           ref: product/es80-v14-rider-language-fallbacks-gpt56
           fetch-depth: 0
+      - name: Repair temporary transform harness
+        run: python3 scripts/ci/es80_rider_language_fallbacks_harness_repair.py
       - name: Apply reviewed product copy transform
         run: python3 scripts/ci/es80_rider_language_fallbacks_gpt56_transform.py
       - name: Validate generated source
@@ -33,6 +35,7 @@ jobs:
         run: |
           rm .github/workflows/es80-rider-language-fallbacks-gpt56-transform.yml
           rm scripts/ci/es80_rider_language_fallbacks_gpt56_transform.py
+          rm scripts/ci/es80_rider_language_fallbacks_harness_repair.py
           git config user.name "nembra-gpt56-worker"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add NembraApp/App/NembraApp.swift \
@@ -40,6 +43,7 @@ jobs:
                   Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift \
                   Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureStationaryPreflightRiderLanguageAcceptanceTests.swift \
                   .github/workflows/es80-rider-language-fallbacks-gpt56-transform.yml \
-                  scripts/ci/es80_rider_language_fallbacks_gpt56_transform.py
+                  scripts/ci/es80_rider_language_fallbacks_gpt56_transform.py \
+                  scripts/ci/es80_rider_language_fallbacks_harness_repair.py
           git commit -m "[Capture product v14] Finish human-first field language"
           git push origin "HEAD:${TARGET_BRANCH}"
