@@ -31,6 +31,7 @@ ENVELOPE_SCHEMA_VERSION = 2
 AUTHORIZATION_PAYLOAD_SCHEMA_VERSION = 2
 DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
+MAX_PRIVATE_KEY_BYTES = 64 * 1024
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -117,28 +118,6 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
-def require_private_key(path: Path) -> Path:
-    requested = path.expanduser().absolute()
-    if requested.is_symlink():
-        raise AuthorizationEnvelopeError(
-            "P-256 private key must be one regular non-symlink file outside the repository"
-        )
-    resolved = require_external_path(requested, "P-256 private key")
-    try:
-        key_stat = resolved.stat()
-    except OSError as exc:
-        raise AuthorizationEnvelopeError("cannot stat P-256 private key") from exc
-    if not stat.S_ISREG(key_stat.st_mode):
-        raise AuthorizationEnvelopeError(
-            "P-256 private key must be one regular non-symlink file outside the repository"
-        )
-    if key_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise AuthorizationEnvelopeError(
-            "P-256 private key permissions must deny all group/other access (for example chmod 600)"
-        )
-    return resolved
-
-
 def require_openssl() -> str:
     executable = shutil.which("openssl")
     if executable is None:
@@ -151,12 +130,14 @@ def run_openssl(
     arguments: list[str],
     *,
     capture_stdout: bool = False,
+    pass_fds: tuple[int, ...] = (),
 ) -> bytes:
     try:
         completed = subprocess.run(
             [openssl, *arguments],
             check=False,
             stdout=subprocess.PIPE if capture_stdout else None,
+            pass_fds=pass_fds,
         )
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
@@ -165,6 +146,81 @@ def run_openssl(
             f"OpenSSL command failed with status {completed.returncode}"
         )
     return completed.stdout or b""
+
+
+def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) -> Path:
+    """Create one immutable-for-this-operation private key snapshot from one no-follow descriptor.
+
+    The source key path is never reopened after this function begins. OpenSSL reads the exact opened
+    inode through `/dev/fd`, canonicalizes it once into a private temporary snapshot, and all later
+    public-key derivation/signing/verification uses only that snapshot.
+    """
+    resolved = require_external_path(private_key_path, "P-256 private key")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise AuthorizationEnvelopeError("platform cannot enforce no-follow authority-key input")
+
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(resolved, flags)
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("cannot open P-256 private key") from exc
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must be one regular non-symlink file outside the repository"
+            )
+        if before.st_size <= 0 or before.st_size > MAX_PRIVATE_KEY_BYTES:
+            raise AuthorizationEnvelopeError(
+                f"P-256 private key size must be 1..{MAX_PRIVATE_KEY_BYTES} bytes"
+            )
+        if before.st_mode & 0o077:
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must not be accessible by group or other users"
+            )
+
+        fd_path = Path("/dev/fd") / str(descriptor)
+        if not fd_path.exists():
+            raise AuthorizationEnvelopeError("platform does not expose inherited private-key file descriptors")
+
+        snapshot_path = directory / "authorization-private-key.pem"
+        snapshot_path.touch(mode=0o600, exist_ok=False)
+        snapshot_path.chmod(0o600)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        run_openssl(
+            openssl,
+            ["pkey", "-in", str(fd_path), "-out", str(snapshot_path)],
+            pass_fds=(descriptor,),
+        )
+        after = os.fstat(descriptor)
+
+        stable_source = (
+            before.st_dev,
+            before.st_ino,
+            before.st_mode,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) == (
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if not stable_source:
+            raise AuthorizationEnvelopeError("P-256 private key changed while the signing snapshot was created")
+
+        snapshot_stat = snapshot_path.stat()
+        if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size <= 0:
+            raise AuthorizationEnvelopeError("OpenSSL did not produce one private signing-key snapshot")
+        if snapshot_stat.st_mode & 0o077:
+            raise AuthorizationEnvelopeError("private signing-key snapshot permissions are not private")
+        return snapshot_path
+    finally:
+        os.close(descriptor)
 
 
 def public_key_x963_from_private_key(openssl: str, private_key: Path) -> bytes:
@@ -189,12 +245,15 @@ def public_key_x963_from_private_key(openssl: str, private_key: Path) -> bytes:
 
 def sign_payload(
     openssl: str,
-    private_key: Path,
+    private_key_source: Path,
     payload: bytes,
 ) -> tuple[bytes, bytes]:
-    x963 = public_key_x963_from_private_key(openssl, private_key)
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-sign-") as temporary:
         directory = Path(temporary)
+        directory.chmod(0o700)
+        private_key = snapshot_private_key(openssl, private_key_source, directory)
+        x963 = public_key_x963_from_private_key(openssl, private_key)
+
         payload_path = directory / "authorization-payload.json"
         signature_path = directory / "authorization-signature.der"
         public_key_path = directory / "authorization-public-key.pem"
@@ -291,7 +350,7 @@ def create_envelope(
 ) -> dict[str, str]:
     external_record = read_exact_subject(external_record_path, "external build record")
     field_evidence = read_exact_subject(field_evidence_path, "field-build evidence record")
-    private_key = require_private_key(private_key_path)
+    private_key = require_external_path(private_key_path, "P-256 private key")
     output = require_external_path(output_path, "signed authorization envelope output")
     if output == private_key:
         raise AuthorizationEnvelopeError("authorization output cannot replace the private key")
@@ -327,6 +386,7 @@ def self_test() -> None:
             openssl,
             ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(private_key)],
         )
+        private_key.chmod(0o600)
         external_bytes = b'{"schemaVersion":3,"fixture":"opaque-external-subject"}\n'
         evidence_bytes = b'{"schemaVersion":1,"fixture":"opaque-field-evidence-subject"}\n'
         external_record.write_bytes(external_bytes)
@@ -386,14 +446,43 @@ def self_test() -> None:
         else:
             raise AssertionError("existing authorization envelope was overwritten")
 
-        private_key.chmod(0o644)
+        permissive_key = directory / "permissive-private-key.pem"
+        run_openssl(
+            openssl,
+            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(permissive_key)],
+        )
+        permissive_key.chmod(0o644)
         try:
-            require_private_key(private_key)
+            create_envelope(
+                external_record,
+                field_evidence,
+                permissive_key,
+                directory / "permissive-key-envelope.json",
+            )
         except AuthorizationEnvelopeError as error:
-            if "permissions must deny all group/other access" not in str(error):
+            if "group or other" not in str(error):
                 raise
         else:
-            raise AssertionError("group/world-readable authorization private key was accepted")
+            raise AssertionError("group/other-readable authority private key was accepted")
+
+        # Prove signer identity is detached from later source-path replacement: snapshot key A once,
+        # replace the source path with key B, and require the snapshot's public point to stay key A.
+        snapshot_directory = directory / "snapshot-test"
+        snapshot_directory.mkdir(mode=0o700)
+        snapshot = snapshot_private_key(openssl, private_key, snapshot_directory)
+        snapshot_x963 = public_key_x963_from_private_key(openssl, snapshot)
+        replacement_key = directory / "replacement-private-key.pem"
+        run_openssl(
+            openssl,
+            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(replacement_key)],
+        )
+        replacement_key.chmod(0o600)
+        replacement_x963 = public_key_x963_from_private_key(openssl, replacement_key)
+        if replacement_x963 == snapshot_x963:
+            raise AssertionError("replacement fixture unexpectedly reused the original P-256 key")
+        os.replace(replacement_key, private_key)
+        if public_key_x963_from_private_key(openssl, snapshot) != snapshot_x963:
+            raise AssertionError("private signing snapshot changed after source-path replacement")
 
     repository_private_key = REPOSITORY_ROOT / "never-create-this-private-key.pem"
     try:
