@@ -99,4 +99,48 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         #expect(validHorizon.revision == ready.revision + 1)
         #expect(gate.phase == .drainingHorizon(validHorizon))
     }
+
+    @Test("new capture reset clears the previous ready anchor but preserves revision chronology")
+    func newCaptureResetClearsReadyAnchorWithoutReusingRevision() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let oldReady = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 8,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            oldReady,
+            lastProcessedQueueSequence: 8,
+            currentAuthority: authority
+        )
+
+        gate.resetForNewCaptureSession()
+
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authority.targetSessionGeneration + 1,
+            authorityGeneration: authority.authorityGeneration + 1
+        )
+        let freshReady = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 2,
+            authority: freshAuthority
+        )
+        #expect(freshReady.revision == oldReady.revision + 1)
+
+        try gate.markBoundaryRecorded(
+            freshReady,
+            lastProcessedQueueSequence: 2,
+            currentAuthority: freshAuthority
+        )
+
+        let freshHorizon = try gate.begin(
+            .observationHorizon,
+            through: 3,
+            authority: freshAuthority
+        )
+        #expect(freshHorizon.queueCutoff == 3)
+        #expect(freshHorizon.authority == freshAuthority)
+        #expect(freshHorizon.revision == freshReady.revision + 1)
+        #expect(gate.phase == .drainingHorizon(freshHorizon))
+    }
 }
