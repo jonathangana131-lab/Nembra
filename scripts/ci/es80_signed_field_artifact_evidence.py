@@ -355,6 +355,16 @@ def plist_string(info: dict, key: str) -> str:
     return value
 
 
+def verified_field_recipe(info: dict) -> str:
+    value = info.get("NembraCaptureFieldRecipe")
+    if not isinstance(value, str) or value != RECIPE_ID:
+        raise EvidenceError(
+            "signed app Info.plist NembraCaptureFieldRecipe does not match the accepted field recipe: "
+            f"{value!r} != {RECIPE_ID!r}"
+        )
+    return value
+
+
 def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     platform = info.get("DTPlatformName")
     supported = info.get("CFBundleSupportedPlatforms")
@@ -731,6 +741,8 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
                 f"embedded source commit does not match accepted source: {embedded_source_sha} != {source_sha}"
             )
 
+        field_recipe = verified_field_recipe(info)
+
         executable_name = plist_string(info, "CFBundleExecutable")
         if "/" in executable_name or executable_name in {".", ".."}:
             raise EvidenceError("CFBundleExecutable is not a safe bundle-local filename")
@@ -768,7 +780,7 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         "sourceCommitSHA": source_sha,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
-        "experimentRecipeID": RECIPE_ID,
+        "experimentRecipeID": field_recipe,
         "procedureVersion": PROCEDURE_VERSION,
     }
     external_bytes = canonical_json_bytes(external_record)
@@ -787,7 +799,7 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         "sourceCommitSHA": source_sha,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
-        "experimentRecipeID": RECIPE_ID,
+        "experimentRecipeID": field_recipe,
         "procedureVersion": PROCEDURE_VERSION,
     }
     field_build_bytes = canonical_json_bytes(field_build_record)
@@ -815,7 +827,7 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         "provisioningApplicationIdentifier": provisioning_application_identifier,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
-        "experimentRecipeID": RECIPE_ID,
+        "experimentRecipeID": field_recipe,
         "procedureVersion": PROCEDURE_VERSION,
     }
     return {
@@ -884,6 +896,22 @@ def self_test() -> None:
     assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier("Capture\nBuild")
+
+    assert verified_field_recipe({"NembraCaptureFieldRecipe": RECIPE_ID}) == RECIPE_ID
+    invalid_field_recipes = (
+        {},
+        {"NembraCaptureFieldRecipe": "ES80-FINGERPRINT-v2"},
+        {"NembraCaptureFieldRecipe": 7},
+        {"NembraCaptureFieldRecipe": f" {RECIPE_ID}"},
+        {"NembraCaptureFieldRecipe": f"{RECIPE_ID} "},
+    )
+    for malformed in invalid_field_recipes:
+        try:
+            verified_field_recipe(malformed)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("unverified signed field-launch recipe was accepted")
 
     with tempfile.TemporaryDirectory(prefix="nembra-field-subject-stability-self-test-") as temporary:
         subject = Path(temporary) / "subject.ipa"
