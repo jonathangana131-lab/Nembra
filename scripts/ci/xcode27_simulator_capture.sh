@@ -424,6 +424,7 @@ def stable_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int,
         info.st_mode,
         info.st_uid,
         info.st_gid,
+        info.st_nlink,
         info.st_size,
         info.st_mtime_ns,
         info.st_ctime_ns,
@@ -463,6 +464,10 @@ def collect_directory(
     artifact_kind: str,
     entries: list[dict[str, object]],
 ) -> None:
+    directory_before = os.fstat(directory_fd)
+    if not stat.S_ISDIR(directory_before.st_mode):
+        raise SystemExit(f"visual-evidence ancestry is not a directory: {'/'.join(relative_parts)}")
+
     for name in sorted(os.listdir(directory_fd)):
         if name in {".", ".."} or "/" in name or "\x00" in name:
             raise SystemExit(f"invalid retained visual evidence path component: {name!r}")
@@ -494,6 +499,10 @@ def collect_directory(
             "sha256": digest,
         })
 
+    directory_after = os.fstat(directory_fd)
+    if stable_identity(directory_before) != stable_identity(directory_after):
+        raise SystemExit(f"visual-evidence directory changed during enumeration: {'/'.join(relative_parts)}")
+
 
 try:
     artifacts_fd = os.open(artifacts_root, DIRECTORY_FLAGS)
@@ -501,6 +510,10 @@ except OSError as exc:
     raise SystemExit("could not open Simulator artifact root with no-follow directory custody") from exc
 
 try:
+    root_before = os.fstat(artifacts_fd)
+    if not stat.S_ISDIR(root_before.st_mode):
+        raise SystemExit("Simulator artifact root is not one directory")
+
     entries: list[dict[str, object]] = []
     for artifact_kind, relative_root in (
         ("simulatorScreenshot", "screenshots"),
@@ -516,6 +529,10 @@ try:
             collect_directory(root_fd, (relative_root,), artifact_kind, entries)
         finally:
             os.close(root_fd)
+
+    root_after = os.fstat(artifacts_fd)
+    if stable_identity(root_before) != stable_identity(root_after):
+        raise SystemExit("Simulator artifact root changed during visual-evidence enumeration")
 
     entries.sort(key=lambda entry: (str(entry["artifactKind"]), str(entry["relativePath"])))
     screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
@@ -543,7 +560,11 @@ try:
             handle.flush()
             os.fsync(handle.fileno())
         manifest_after = os.fstat(manifest_fd)
-        if not stat.S_ISREG(manifest_after.st_mode) or manifest_after.st_size != len(manifest_bytes):
+        if (
+            not stat.S_ISREG(manifest_after.st_mode)
+            or manifest_after.st_size != len(manifest_bytes)
+            or manifest_after.st_nlink != 1
+        ):
             raise SystemExit("published Simulator visual evidence manifest identity is invalid")
     finally:
         os.close(manifest_fd)
