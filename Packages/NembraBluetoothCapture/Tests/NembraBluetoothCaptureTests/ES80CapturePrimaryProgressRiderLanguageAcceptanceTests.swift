@@ -78,6 +78,38 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         #expect(primary.contains("healthItem(\"SEAL\""))
     }
 
+
+    @Test("remaining field, ready, completion, and error copy avoids research jargon")
+    func remainingRiderCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let primary = try Self.slice(
+            source,
+            from: "private func hero(for phase: Phase)",
+            to: "private var captureDetailsSheet"
+        )
+
+        for leak in [
+            "OFF / ON windows, connection, capture, and sealing",
+            "bounded observation window",
+            "target matching and passive capture",
+            "Begin passive observation",
+            "Verify final artifact",
+            "Field procedure locked"
+        ] {
+            #expect(!primary.contains(leak), "Primary Capture copy still exposes research vocabulary: \(leak)")
+        }
+
+        #expect(primary.contains("OFF / ON checks, connection, capture, and sealing"))
+        #expect(primary.contains("then begin this Bluetooth check."))
+        #expect(primary.contains("signal matching and read-only capture"))
+        #expect(primary.contains("Begin read-only observation"))
+        #expect(primary.contains("Verify Capture file"))
+        #expect(primary.contains("Capture locked"))
+
+        #expect(!source.contains("This OFF / ON series has an evidence gap."))
+        #expect(source.contains("These OFF / ON checks were interrupted. Start a fresh capture."))
+    }
+
     @Test("progress, hero, and status language stays rider-first")
     func progressAndStatusStayHumanFirst() throws {
         let source = try Self.shellSource()

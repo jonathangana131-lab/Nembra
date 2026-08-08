@@ -265,7 +265,7 @@ struct ES80CaptureShellView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Nembra keeps target matching and passive capture in one continuous run. It never sends scooter commands and never chooses a target from its name, signal strength, or service hints.")
+                Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -379,7 +379,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "CAPTURE LOCKED",
                 title: "This build is not ready for a field capture",
-                message: "Field capture is locked for this build. OFF / ON windows, connection, capture, and sealing stay unavailable until this exact build is authorized.",
+                message: "Field capture is locked for this build. OFF / ON checks, connection, capture, and sealing stay unavailable until this exact build is authorized.",
                 symbol: "lock.shield.fill"
             )
 
@@ -562,7 +562,7 @@ struct ES80CaptureShellView: View {
                 symbol: "checkmark.circle"
             )
             primaryButton(
-                "Begin passive observation",
+                "Begin read-only observation",
                 systemImage: "wave.3.right",
                 identifier: "es80.capture.connect-prepared-target"
             ) {
@@ -689,7 +689,7 @@ struct ES80CaptureShellView: View {
                     .accessibilityIdentifier("es80.capture.share")
                 } else if coordinator.finalizedArtifact != nil {
                     primaryButton(
-                        finalShareIntegrityReport == nil ? "Verify final artifact" : "Retry Share file",
+                        finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
                         systemImage: "arrow.clockwise",
                         identifier: "es80.capture.prepare-share"
                     ) {
@@ -745,8 +745,8 @@ struct ES80CaptureShellView: View {
                 .foregroundStyle(.white)
 
             Text(window.operatorExpectedPowerOn
-                 ? "Set the scooter to ON, keep the stock app closed, then begin this bounded observation window."
-                 : "Set the scooter fully OFF, keep the stock app closed, then begin this bounded observation window.")
+                 ? "Set the scooter to ON, keep the stock app closed, then begin this Bluetooth check."
+                 : "Set the scooter fully OFF, keep the stock app closed, then begin this Bluetooth check.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1410,7 +1410,7 @@ struct ES80CaptureShellView: View {
             case .seriesComplete:
                 return "All four OFF / ON checks are already complete."
             case .seriesInvalidated:
-                return "This OFF / ON series has an evidence gap. Start a fresh capture."
+                return "These OFF / ON checks were interrupted. Start a fresh capture."
             case .windowAlreadyActive:
                 return "This OFF / ON check is already running."
             case .windowNotActive:
@@ -1675,7 +1675,7 @@ struct ES80CaptureShellView: View {
 
     private func statusTitle(for phase: Phase) -> String {
         switch phase {
-        case .physicalProcedureLocked: return "Field procedure locked"
+        case .physicalProcedureLocked: return "Capture locked"
         case .bluetoothUnavailable: return "Preflight required"
         case let .correlationReady(window): return "Ready for \(phaseShortName(window))"
         case let .correlationStarting(window): return "Starting \(phaseShortName(window))"
