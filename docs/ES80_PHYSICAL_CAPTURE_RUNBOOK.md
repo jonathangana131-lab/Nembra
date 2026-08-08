@@ -88,6 +88,7 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
+- an explicit fresh-run operator declaration that charger state is **Disconnected** for `ES80-FINGERPRINT-v1`; this is declared setup provenance, not a measured or sensed charger state, and `Connected` or undeclared state blocks `READY`;
 - any required stock-app/reference-marker setup;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
@@ -254,6 +255,7 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - runtime build identity no longer matches the package-owned accepted field-build authority;
 - the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
 - the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
+- the operator-declared charger setup is no longer true; stop the current experiment, keep or return the charger to **Disconnected**, and restart with a fresh declaration rather than continuing the same evidence life;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
