@@ -17,11 +17,12 @@ struct PassiveBluetoothExperimentOneControllerSessionTests {
     @Test @MainActor
     func connectFailsClosedBeforeRunOwnedAdmissionIsPrepared() throws {
         let session = try PassiveBluetoothExperimentOneControllerSession()
+        let controller = try ForegroundCoreBluetoothCaptureController(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
 
-        // The controller is intentionally not constructed here. This test pins the
-        // package-owned precondition structurally: connection cannot be attempted
-        // without first issuing the same run's hidden admission and opening its
-        // post-admission rediscovery epoch.
-        #expect(session.powerCycleObservationSession.result == nil)
+        #expect(throws: PassiveBluetoothExperimentOneControllerSession.SessionError.captureRediscoveryNotPrepared) {
+            try session.connectReacquiredTarget(using: controller)
+        }
     }
 }
