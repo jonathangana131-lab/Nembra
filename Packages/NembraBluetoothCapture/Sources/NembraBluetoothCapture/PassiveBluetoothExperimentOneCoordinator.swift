@@ -113,10 +113,18 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
         } catch {
-            // Retryability is the exact one-shot state, not the availability of a
-            // descriptive preview helper. Preserve this run only when the controller
-            // failed before admission consumption; otherwise clear fail-closed.
-            if admission.isConsumed {
+            // The narrowed staging preview is itself the producer-owned one-shot state:
+            // it remains readable only before any alias consumes the handoff. Preserve
+            // the completed OFF/ON correlation life for recoverable pre-consumption
+            // rediscovery failures; clear fail-closed after irreversible consumption.
+            do {
+                _ = try admission.previewForControllerStaging()
+            } catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            } catch {
+                // Any future staging-state failure is not proven retryable. Fail closed
+                // rather than retaining an admission whose producer authority is unclear.
                 pendingCaptureAdmission = nil
                 preparedCorrelatedTargetIdentifier = nil
             }
