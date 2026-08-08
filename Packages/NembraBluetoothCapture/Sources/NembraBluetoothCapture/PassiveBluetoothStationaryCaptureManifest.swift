@@ -104,7 +104,9 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
         public let targetGATTRecordCount: Int
         public let targetValueRecordCount: Int
         public let stockAppMarkerCount: Int
-        /// Generic interruption markers plus selected-target disconnects.
+        /// Every structured disconnect plus every generic interruption marker.
+        /// A connection-only record never establishes target identity, but the core
+        /// capture domain still treats any captured disconnect as a byte-continuity break.
         public let continuityBreakCount: Int
 
         fileprivate init(
@@ -281,14 +283,11 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             case .stockAppState:
                 stockAppMarkerCount += 1
             case let .connection(observation):
-                // Connection-only callbacks do not establish target attribution.
-                // Nearby/non-target connection noise must not invalidate an otherwise
-                // clean selected-target GATT artifact. Only a canonical identifier
-                // equal to the selected target can contribute a continuity break.
-                if let peripheral = UUID(uuidString: observation.peripheralIdentifier
-                    .trimmingCharacters(in: .whitespacesAndNewlines))?.uuidString,
-                   peripheral == selectedPeripheral,
-                   observation.state == .disconnected {
+                // Connection-only callbacks never establish target attribution.
+                // Continuity semantics are stronger: NembraCore defines every
+                // captured disconnect as a byte-continuity break regardless of
+                // whether this sidecar can attribute that record to the selected UUID.
+                if observation.state == .disconnected {
                     continuityBreakCount += 1
                 }
             case .interruption:
