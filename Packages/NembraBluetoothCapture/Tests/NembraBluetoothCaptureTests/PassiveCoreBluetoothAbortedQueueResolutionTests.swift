@@ -20,7 +20,7 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
     @Test("complete abandoned-session suffix advances resolved frontier without recorder claim")
     @MainActor
     func exactRetirementResolvesThroughQueueTail() throws {
-        var gate = try quarantinedCommittedReadyGate(readyCutoff: 4)
+        let gate = try quarantinedCommittedReadyGate(readyCutoff: 4)
         var pending = [
             pendingEvent(sequence: 5, authorityGeneration: 12),
             pendingEvent(sequence: 6, authorityGeneration: 13),
