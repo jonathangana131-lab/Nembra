@@ -21,7 +21,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -32,6 +31,7 @@ AUTHORIZATION_PAYLOAD_SCHEMA_VERSION = 2
 DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
+DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -118,11 +118,63 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
-def require_openssl() -> str:
-    executable = shutil.which("openssl")
-    if executable is None:
-        raise AuthorizationEnvelopeError("OpenSSL is required for offline P-256 signing")
-    return executable
+def _path_identity(path: Path) -> tuple[int, int, int, int, int, int, int]:
+    metadata = path.stat()
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        stat.S_IMODE(metadata.st_mode),
+        metadata.st_uid,
+    )
+
+
+def _require_nonwritable_custody_path(path: Path) -> None:
+    """Reject an executable whose canonical path can be replaced by group/other writers."""
+    current = path
+    while True:
+        try:
+            metadata = current.stat()
+        except OSError as exc:
+            raise AuthorizationEnvelopeError(
+                f"cannot stat OpenSSL custody path component: {current}"
+            ) from exc
+        if stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must not be group/world-writable: {current}"
+            )
+        if current.parent == current:
+            break
+        current = current.parent
+
+
+def require_openssl(path: Path) -> str:
+    """Resolve one explicit release-authority OpenSSL executable and fail closed on weak custody."""
+    requested = path.expanduser().absolute()
+    try:
+        resolved = requested.resolve(strict=True)
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("explicit OpenSSL executable does not exist") from exc
+    if path_is_within(resolved, REPOSITORY_ROOT):
+        raise AuthorizationEnvelopeError("OpenSSL executable must not be repository-controlled")
+    try:
+        metadata = resolved.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("cannot stat explicit OpenSSL executable") from exc
+    if not stat.S_ISREG(metadata.st_mode):
+        raise AuthorizationEnvelopeError("explicit OpenSSL executable must be one regular file")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise AuthorizationEnvelopeError("OpenSSL executable must not be group/world-writable")
+    if not os.access(resolved, os.X_OK):
+        raise AuthorizationEnvelopeError("explicit OpenSSL path is not executable")
+    if hasattr(os, "geteuid") and metadata.st_uid not in (0, os.geteuid()):
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root or the release-authority user"
+        )
+    _require_nonwritable_custody_path(resolved.parent)
+    return str(resolved)
 
 
 def run_openssl(
@@ -132,6 +184,8 @@ def run_openssl(
     capture_stdout: bool = False,
     pass_fds: tuple[int, ...] = (),
 ) -> bytes:
+    executable = Path(openssl)
+    before = _path_identity(executable)
     try:
         completed = subprocess.run(
             [openssl, *arguments],
@@ -141,6 +195,12 @@ def run_openssl(
         )
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
+    try:
+        after = _path_identity(executable)
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("OpenSSL executable disappeared during invocation") from exc
+    if before != after:
+        raise AuthorizationEnvelopeError("OpenSSL executable changed during invocation")
     if completed.returncode != 0:
         raise AuthorizationEnvelopeError(
             f"OpenSSL command failed with status {completed.returncode}"
@@ -175,14 +235,20 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError(
                 f"P-256 private key size must be 1..{MAX_PRIVATE_KEY_BYTES} bytes"
             )
-        if before.st_mode & 0o077:
+        if stat.S_IMODE(before.st_mode) & 0o077:
             raise AuthorizationEnvelopeError(
                 "P-256 private key must not be accessible by group or other users"
+            )
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must be owned by the release-authority user"
             )
 
         fd_path = Path("/dev/fd") / str(descriptor)
         if not fd_path.exists():
-            raise AuthorizationEnvelopeError("platform does not expose inherited private-key file descriptors")
+            raise AuthorizationEnvelopeError(
+                "platform does not expose inherited private-key file descriptors"
+            )
 
         snapshot_path = directory / "authorization-private-key.pem"
         snapshot_path.touch(mode=0o600, exist_ok=False)
@@ -199,6 +265,7 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             before.st_dev,
             before.st_ino,
             before.st_mode,
+            before.st_uid,
             before.st_size,
             before.st_mtime_ns,
             before.st_ctime_ns,
@@ -206,18 +273,29 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             after.st_dev,
             after.st_ino,
             after.st_mode,
+            after.st_uid,
             after.st_size,
             after.st_mtime_ns,
             after.st_ctime_ns,
         )
         if not stable_source:
-            raise AuthorizationEnvelopeError("P-256 private key changed while the signing snapshot was created")
+            raise AuthorizationEnvelopeError(
+                "P-256 private key changed while the signing snapshot was created"
+            )
 
         snapshot_stat = snapshot_path.stat()
         if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size <= 0:
-            raise AuthorizationEnvelopeError("OpenSSL did not produce one private signing-key snapshot")
-        if snapshot_stat.st_mode & 0o077:
-            raise AuthorizationEnvelopeError("private signing-key snapshot permissions are not private")
+            raise AuthorizationEnvelopeError(
+                "OpenSSL did not produce one private signing-key snapshot"
+            )
+        if stat.S_IMODE(snapshot_stat.st_mode) & 0o077:
+            raise AuthorizationEnvelopeError(
+                "private signing-key snapshot permissions are not private"
+            )
+        if hasattr(os, "geteuid") and snapshot_stat.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError(
+                "private signing-key snapshot is not owned by the release-authority user"
+            )
         return snapshot_path
     finally:
         os.close(descriptor)
@@ -239,7 +317,9 @@ def public_key_x963_from_private_key(openssl: str, private_key: Path) -> bytes:
             "authorization public key is not one uncompressed P-256 X9.63 point"
         )
     if len(spki) != len(P256_SPKI_PREFIX) + P256_X963_LENGTH:
-        raise AuthorizationEnvelopeError("authorization public-key encoding is not canonical P-256")
+        raise AuthorizationEnvelopeError(
+            "authorization public-key encoding is not canonical P-256"
+        )
     return x963
 
 
@@ -277,7 +357,9 @@ def sign_payload(
         )
         signature = signature_path.read_bytes()
         if not signature:
-            raise AuthorizationEnvelopeError("OpenSSL produced an empty authorization signature")
+            raise AuthorizationEnvelopeError(
+                "OpenSSL produced an empty authorization signature"
+            )
         run_openssl(
             openssl,
             [
@@ -291,7 +373,9 @@ def sign_payload(
             ],
         )
         if payload_path.read_bytes() != payload:
-            raise AuthorizationEnvelopeError("authorization payload bytes changed during signing")
+            raise AuthorizationEnvelopeError(
+                "authorization payload bytes changed during signing"
+            )
     return signature, x963
 
 
@@ -336,9 +420,13 @@ def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:
             f"refusing to overwrite existing signed authorization envelope: {resolved}"
         ) from exc
     except OSError as exc:
-        raise AuthorizationEnvelopeError("could not publish signed authorization envelope") from exc
+        raise AuthorizationEnvelopeError(
+            "could not publish signed authorization envelope"
+        ) from exc
     if resolved.read_bytes() != envelope:
-        raise AuthorizationEnvelopeError("published authorization envelope bytes diverged")
+        raise AuthorizationEnvelopeError(
+            "published authorization envelope bytes diverged"
+        )
     return resolved
 
 
@@ -347,18 +435,27 @@ def create_envelope(
     field_evidence_path: Path,
     private_key_path: Path,
     output_path: Path,
+    openssl_path: Path,
 ) -> dict[str, str]:
     external_record = read_exact_subject(external_record_path, "external build record")
-    field_evidence = read_exact_subject(field_evidence_path, "field-build evidence record")
+    field_evidence = read_exact_subject(
+        field_evidence_path, "field-build evidence record"
+    )
     private_key = require_external_path(private_key_path, "P-256 private key")
-    output = require_external_path(output_path, "signed authorization envelope output")
+    output = require_external_path(
+        output_path, "signed authorization envelope output"
+    )
     if output == private_key:
-        raise AuthorizationEnvelopeError("authorization output cannot replace the private key")
+        raise AuthorizationEnvelopeError(
+            "authorization output cannot replace the private key"
+        )
 
     payload = build_payload(external_record, field_evidence)
-    openssl = require_openssl()
+    openssl = require_openssl(openssl_path)
     signature, public_key_x963 = sign_payload(openssl, private_key, payload)
-    envelope = build_envelope(external_record, field_evidence, payload, signature)
+    envelope = build_envelope(
+        external_record, field_evidence, payload, signature
+    )
     published = write_envelope_no_replace(output, envelope)
 
     return {
@@ -373,8 +470,8 @@ def create_envelope(
     }
 
 
-def self_test() -> None:
-    openssl = require_openssl()
+def self_test(openssl_path: Path) -> None:
+    openssl = require_openssl(openssl_path)
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-self-test-") as temporary:
         directory = Path(temporary)
         private_key = directory / "candidate-authority-private-key.pem"
@@ -384,7 +481,15 @@ def self_test() -> None:
 
         run_openssl(
             openssl,
-            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(private_key)],
+            [
+                "ecparam",
+                "-name",
+                "prime256v1",
+                "-genkey",
+                "-noout",
+                "-out",
+                str(private_key),
+            ],
         )
         private_key.chmod(0o600)
         external_bytes = b'{"schemaVersion":3,"fixture":"opaque-external-subject"}\n'
@@ -397,6 +502,7 @@ def self_test() -> None:
             field_evidence,
             private_key,
             envelope_path,
+            Path(openssl),
         )
         envelope = json.loads(envelope_path.read_bytes())
         if set(envelope) != {
@@ -409,12 +515,20 @@ def self_test() -> None:
             raise AssertionError("generated envelope key set drifted")
         if envelope["schemaVersion"] != ENVELOPE_SCHEMA_VERSION:
             raise AssertionError("generated envelope schema drifted")
-        if base64.b64decode(envelope["externalBuildRecordBase64"], validate=True) != external_bytes:
-            raise AssertionError("external build record exact bytes were not preserved")
-        if base64.b64decode(envelope["fieldBuildEvidenceRecordBase64"], validate=True) != evidence_bytes:
+        if base64.b64decode(
+            envelope["externalBuildRecordBase64"], validate=True
+        ) != external_bytes:
+            raise AssertionError(
+                "external build record exact bytes were not preserved"
+            )
+        if base64.b64decode(
+            envelope["fieldBuildEvidenceRecordBase64"], validate=True
+        ) != evidence_bytes:
             raise AssertionError("field evidence exact bytes were not preserved")
 
-        payload = base64.b64decode(envelope["authorizationPayloadBase64"], validate=True)
+        payload = base64.b64decode(
+            envelope["authorizationPayloadBase64"], validate=True
+        )
         payload_object = json.loads(payload)
         expected_payload = {
             "schemaVersion": AUTHORIZATION_PAYLOAD_SCHEMA_VERSION,
@@ -423,15 +537,29 @@ def self_test() -> None:
             "fieldBuildEvidenceRecordSHA256": sha256_hex(evidence_bytes),
         }
         if payload_object != expected_payload:
-            raise AssertionError("authorization payload drifted from exact subject digests")
+            raise AssertionError(
+                "authorization payload drifted from exact subject digests"
+            )
         if sha256_hex(payload) != result["authorizationPayloadSHA256"]:
-            raise AssertionError("reported authorization payload digest is wrong")
+            raise AssertionError(
+                "reported authorization payload digest is wrong"
+            )
 
-        signature = base64.b64decode(envelope["signatureDERBase64"], validate=True)
+        signature = base64.b64decode(
+            envelope["signatureDERBase64"], validate=True
+        )
         if not signature or signature[0] != 0x30:
-            raise AssertionError("signature is not a non-empty DER ECDSA sequence")
-        if len(base64.b64decode(result["authorityPublicKeyX963Base64"], validate=True)) != 65:
-            raise AssertionError("reported P-256 X9.63 public key length is wrong")
+            raise AssertionError(
+                "signature is not a non-empty DER ECDSA sequence"
+            )
+        if len(
+            base64.b64decode(
+                result["authorityPublicKeyX963Base64"], validate=True
+            )
+        ) != 65:
+            raise AssertionError(
+                "reported P-256 X9.63 public key length is wrong"
+            )
 
         try:
             create_envelope(
@@ -439,17 +567,28 @@ def self_test() -> None:
                 field_evidence,
                 private_key,
                 envelope_path,
+                Path(openssl),
             )
         except AuthorizationEnvelopeError as error:
             if "refusing to overwrite" not in str(error):
                 raise
         else:
-            raise AssertionError("existing authorization envelope was overwritten")
+            raise AssertionError(
+                "existing authorization envelope was overwritten"
+            )
 
         permissive_key = directory / "permissive-private-key.pem"
         run_openssl(
             openssl,
-            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(permissive_key)],
+            [
+                "ecparam",
+                "-name",
+                "prime256v1",
+                "-genkey",
+                "-noout",
+                "-out",
+                str(permissive_key),
+            ],
         )
         permissive_key.chmod(0o644)
         try:
@@ -458,15 +597,16 @@ def self_test() -> None:
                 field_evidence,
                 permissive_key,
                 directory / "permissive-key-envelope.json",
+                Path(openssl),
             )
         except AuthorizationEnvelopeError as error:
             if "group or other" not in str(error):
                 raise
         else:
-            raise AssertionError("group/other-readable authority private key was accepted")
+            raise AssertionError(
+                "group/other-readable authority private key was accepted"
+            )
 
-        # Prove signer identity is detached from later source-path replacement: snapshot key A once,
-        # replace the source path with key B, and require the snapshot's public point to stay key A.
         snapshot_directory = directory / "snapshot-test"
         snapshot_directory.mkdir(mode=0o700)
         snapshot = snapshot_private_key(openssl, private_key, snapshot_directory)
@@ -474,15 +614,29 @@ def self_test() -> None:
         replacement_key = directory / "replacement-private-key.pem"
         run_openssl(
             openssl,
-            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(replacement_key)],
+            [
+                "ecparam",
+                "-name",
+                "prime256v1",
+                "-genkey",
+                "-noout",
+                "-out",
+                str(replacement_key),
+            ],
         )
         replacement_key.chmod(0o600)
-        replacement_x963 = public_key_x963_from_private_key(openssl, replacement_key)
+        replacement_x963 = public_key_x963_from_private_key(
+            openssl, replacement_key
+        )
         if replacement_x963 == snapshot_x963:
-            raise AssertionError("replacement fixture unexpectedly reused the original P-256 key")
+            raise AssertionError(
+                "replacement fixture unexpectedly reused the original P-256 key"
+            )
         os.replace(replacement_key, private_key)
         if public_key_x963_from_private_key(openssl, snapshot) != snapshot_x963:
-            raise AssertionError("private signing snapshot changed after source-path replacement")
+            raise AssertionError(
+                "private signing snapshot changed after source-path replacement"
+            )
 
     repository_private_key = REPOSITORY_ROOT / "never-create-this-private-key.pem"
     try:
@@ -490,15 +644,23 @@ def self_test() -> None:
     except AuthorizationEnvelopeError:
         pass
     else:
-        raise AssertionError("repository-contained private-key path was accepted")
+        raise AssertionError(
+            "repository-contained private-key path was accepted"
+        )
 
-    repository_envelope = REPOSITORY_ROOT / "never-create-this-authorization-envelope.json"
+    repository_envelope = (
+        REPOSITORY_ROOT / "never-create-this-authorization-envelope.json"
+    )
     try:
-        require_external_path(repository_envelope, "signed authorization envelope output")
+        require_external_path(
+            repository_envelope, "signed authorization envelope output"
+        )
     except AuthorizationEnvelopeError:
         pass
     else:
-        raise AssertionError("repository-contained authorization output path was accepted")
+        raise AssertionError(
+            "repository-contained authorization output path was accepted"
+        )
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -507,6 +669,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field-evidence", type=Path)
     parser.add_argument("--private-key-pem", type=Path)
     parser.add_argument("--output-envelope", type=Path)
+    parser.add_argument(
+        "--openssl",
+        type=Path,
+        default=Path(os.environ["NEMBRA_OPENSSL"])
+        if os.environ.get("NEMBRA_OPENSSL")
+        else None,
+        help="Explicit release-authority OpenSSL executable; may also be supplied by NEMBRA_OPENSSL.",
+    )
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
@@ -514,7 +684,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     arguments = parse_args(argv)
     if arguments.self_test:
-        self_test()
+        self_test(arguments.openssl or DEFAULT_SELF_TEST_OPENSSL)
         print("field authorization envelope self-test: PASS")
         return 0
 
@@ -525,6 +695,7 @@ def main(argv: list[str]) -> int:
             ("--field-evidence", arguments.field_evidence),
             ("--private-key-pem", arguments.private_key_pem),
             ("--output-envelope", arguments.output_envelope),
+            ("--openssl or NEMBRA_OPENSSL", arguments.openssl),
         )
         if value is None
     ]
@@ -538,6 +709,7 @@ def main(argv: list[str]) -> int:
         arguments.field_evidence,
         arguments.private_key_pem,
         arguments.output_envelope,
+        arguments.openssl,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
