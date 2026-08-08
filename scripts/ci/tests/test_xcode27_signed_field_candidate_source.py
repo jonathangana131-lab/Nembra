@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
+PRIVATE_RUNNER = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_private_runner.py"
 
 
 class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def setUp(self):
         self.source = SCRIPT.read_text()
+        self.runner_source = PRIVATE_RUNNER.read_text()
 
     def test_targets_real_ios_and_injects_exact_build_rendezvous_and_launch_recipe(self):
         self.assertIn('generic/platform=iOS', self.source)
@@ -23,17 +27,35 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('raw_info_plist', self.source)
         self.assertIn('field.get("infoPlistSHA256")', self.source)
 
-    def test_forwards_intended_device_only_to_current_canonical_inspector(self):
-        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
-        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertIn('is not a valid bounded verification input', self.source)
+    def test_forwards_intended_device_through_private_path_only_runner(self):
+        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', self.source)
+        self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
+        self.assertIn('--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', self.source)
+        self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', self.source)
+        self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', self.source)
         self.assertNotIn('intended_device_udid=', self.source)
         self.assertNotIn('field_device_udid=', self.source)
-        self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertNotIn('${NEMBRA_INTENDED_FIELD_DEVICE_UDID}', self.source)
+
+        self.assertIn('os.O_NOFOLLOW', self.runner_source)
+        self.assertIn('os.fstat(descriptor)', self.runner_source)
+        self.assertIn('metadata.st_mode & 0o077', self.runner_source)
+        self.assertIn('inspector.main(inspector_arguments)', self.runner_source)
+        self.assertNotIn('subprocess', self.runner_source)
+        self.assertNotIn('os.environ', self.runner_source)
+
+        completed = subprocess.run(
+            [sys.executable, str(PRIVATE_RUNNER), '--self-test'],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn('private signed-field inspector runner self-test: PASS', completed.stdout)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
-        self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
+        self.assertIn('es80_signed_field_artifact_evidence.py', self.runner_source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
         self.assertIn('--output-dir "$INSPECTION_DIR"', self.source)
