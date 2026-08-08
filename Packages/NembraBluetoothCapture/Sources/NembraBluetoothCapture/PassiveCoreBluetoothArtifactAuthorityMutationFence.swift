@@ -33,8 +33,10 @@ final class PassiveCoreBluetoothArtifactAuthorityMutationFence: @unchecked Senda
     }
 
     /// Replaces authority only if the caller still owns the exact authority it
-    /// intends to retire. This prevents a stale lifecycle path from rolling a
-    /// newer authority backward or overwriting a later generation.
+    /// intends to retire. Live controller authority changes belong to MainActor;
+    /// the lock exists so recorder-actor mutation can linearize against that
+    /// synchronous replacement, not to create a second authority owner.
+    @MainActor
     func replace(
         expectedCurrent: PassiveCoreBluetoothArtifactAuthorityContext,
         with replacement: PassiveCoreBluetoothArtifactAuthorityContext
