@@ -188,6 +188,28 @@ def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
     finally:
         os.close(descriptor)
 
+
+def verify_exact_ipa_subject_unchanged(
+    ipa_path: Path,
+    *,
+    expected_identity: tuple[int, int, int, int, int, int],
+    expected_sha256: str,
+) -> None:
+    try:
+        current_stat = ipa_path.lstat()
+        current_sha256 = sha256_file(ipa_path)
+    except OSError as exc:
+        raise EvidenceError("exact IPA inspection subject became unreadable during inspection") from exc
+    if (
+        not stat.S_ISREG(current_stat.st_mode)
+        or _stable_file_identity(current_stat) != expected_identity
+        or current_sha256 != expected_sha256
+    ):
+        raise EvidenceError(
+            "exact IPA inspection subject changed during signing/provisioning inspection"
+        )
+
+
 def canonical_sha40(value: str) -> str:
     if not SHA40_RE.fullmatch(value):
         raise EvidenceError("expected source SHA must be one canonical lowercase 40-hex Git commit")
@@ -668,11 +690,16 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udi
 
 def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:
     source_sha = canonical_sha40(expected_source_sha)
-    if not ipa_path.is_file():
-        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
+    try:
+        ipa_stat_before = ipa_path.lstat()
+    except OSError as exc:
+        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}") from exc
+    if not stat.S_ISREG(ipa_stat_before.st_mode):
+        raise EvidenceError("exact IPA inspection subject must remain one regular file")
+    ipa_identity_before = _stable_file_identity(ipa_stat_before)
 
     ipa_sha = sha256_file(ipa_path)
-    ipa_size = ipa_path.stat().st_size
+    ipa_size = ipa_stat_before.st_size
     if not SHA256_RE.fullmatch(ipa_sha):
         raise EvidenceError("could not derive canonical IPA SHA-256")
 
@@ -727,6 +754,12 @@ def _inspect_snapshotted_ipa(ipa_path: Path, expected_source_sha: str, *, intend
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
             raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
+
+    verify_exact_ipa_subject_unchanged(
+        ipa_path,
+        expected_identity=ipa_identity_before,
+        expected_sha256=ipa_sha,
+    )
 
     external_record = {
         "schemaVersion": EXTERNAL_RECORD_SCHEMA_VERSION,
@@ -851,6 +884,28 @@ def self_test() -> None:
     assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier("Capture\nBuild")
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-subject-stability-self-test-") as temporary:
+        subject = Path(temporary) / "subject.ipa"
+        original_bytes = b"exact subject bytes"
+        subject.write_bytes(original_bytes)
+        subject.chmod(0o400)
+        subject_identity = _stable_file_identity(subject.lstat())
+        subject_sha = sha256_file(subject)
+        subject.chmod(0o600)
+        subject.write_bytes(b"mutated subject bytes")
+        subject.write_bytes(original_bytes)
+        subject.chmod(0o400)
+        try:
+            verify_exact_ipa_subject_unchanged(
+                subject,
+                expected_identity=subject_identity,
+                expected_sha256=subject_sha,
+            )
+        except EvidenceError as error:
+            assert "changed during signing/provisioning inspection" in str(error)
+        else:
+            raise AssertionError("mutate-and-restore exact IPA snapshot escaped stability detection")
     try:
         canonical_sha40("A" * 40)
     except EvidenceError:
