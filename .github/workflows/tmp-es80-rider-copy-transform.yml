@@ -24,6 +24,14 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+          test_source = test_path.read_text(encoding="utf-8")
+          old_boundary = 'let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))'
+          new_boundary = 'let beginning = try #require(source.range(of: "private func hero(for phase: Phase)"))'
+          if test_source.count(old_boundary) != 1:
+              raise SystemExit("expected-red rider-language test boundary changed unexpectedly")
+          test_path.write_text(test_source.replace(old_boundary, new_boundary), encoding="utf-8")
+
           path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
           source = path.read_text(encoding="utf-8")
           replacements = {
@@ -73,7 +81,7 @@ jobs:
 
           path.write_text(source, encoding="utf-8")
 
-          beginning = source.index("private var passiveSafetyPanel")
+          beginning = source.index("private func hero(for phase: Phase)")
           details = source.index("private var captureDetailsSheet", beginning)
           rider = source[beginning:details]
           forbidden = [
@@ -102,8 +110,10 @@ jobs:
           for required in ("PASSIVE / READ ONLY", "Scooter OFF", "Scooter ON", "Share Capture", "View Details"):
               if required not in rider:
                   raise SystemExit(f"required rider copy disappeared: {required}")
-          if "Truth boundary" not in source[details:] or "CoreBluetooth" not in source[details:]:
-              raise SystemExit("engineering truth must remain available in Capture Details")
+          details_source = source[details:]
+          for required in ("Truth boundary", "CoreBluetooth", "Software Export SHA-256", "Runtime executable SHA-256", "does not authenticate the physical ES80"):
+              if required not in details_source:
+                  raise SystemExit(f"required engineering truth disappeared from Details: {required}")
           PY
           git diff --check
           git status --short
