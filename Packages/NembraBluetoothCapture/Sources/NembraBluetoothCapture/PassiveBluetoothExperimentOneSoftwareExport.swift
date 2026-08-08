@@ -70,6 +70,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case manifestBuildMismatch
     case manifestTargetMismatch
     case malformedWireData
+    case duplicateWireField(String)
     case unexpectedWireField(String)
 }
 
@@ -394,6 +395,9 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicate = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.duplicateWireField(duplicate)
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PassiveBluetoothExperimentOneSoftwareExportError.malformedWireData
         }
