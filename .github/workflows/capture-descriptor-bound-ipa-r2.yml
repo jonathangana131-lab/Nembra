@@ -1,4 +1,4 @@
-name: Capture descriptor-bound IPA r2
+name: Capture descriptor-bound IPA r2 diagnostic
 
 on:
   push:
@@ -9,34 +9,38 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fix/es80-v14-descriptor-bound-ipa-r2/gpt56-thinking-go
           fetch-depth: 0
-      - name: Apply and validate
+      - name: Record exact validation result
         shell: bash
         run: |
-          set -euo pipefail
-          python3 .github/nembra_tmp/descriptor_bound_ipa_r2_patch.py
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
-          test "$(stat -c '%a' scripts/ci/es80_signed_field_artifact_evidence.py)" = "755"
-          test "$(stat -c '%a' scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py)" = "755"
-          git diff --check
-      - name: Commit and remove staging
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm .github/nembra_tmp/descriptor_bound_ipa_r2_patch.py
-          rmdir .github/nembra_tmp 2>/dev/null || true
+          set -uo pipefail
+          LOG=.github/nembra_tmp/descriptor_bound_ipa_r2_failure.log
+          : > "$LOG"
+          status=0
+          run() {
+            printf '\n===== %s =====\n' "$*" >> "$LOG"
+            "$@" >> "$LOG" 2>&1 || status=$?
+            printf 'exit=%s\n' "$status" >> "$LOG"
+            if [[ "$status" -ne 0 ]]; then return 1; fi
+          }
+          run python3 .github/nembra_tmp/descriptor_bound_ipa_r2_patch.py || true
+          if [[ "$status" -eq 0 ]]; then run python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py || true; fi
+          if [[ "$status" -eq 0 ]]; then run python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test || true; fi
+          if [[ "$status" -eq 0 ]]; then run python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py || true; fi
+          if [[ "$status" -eq 0 ]]; then run bash -c 'test "$(stat -c "%a" scripts/ci/es80_signed_field_artifact_evidence.py)" = "755"' || true; fi
+          if [[ "$status" -eq 0 ]]; then run bash -c 'test "$(stat -c "%a" scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py)" = "755"' || true; fi
+          if [[ "$status" -eq 0 ]]; then run git diff --check || true; fi
+          printf '\nFINAL_STATUS=%s\n' "$status" >> "$LOG"
+          git checkout -- scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
           rm .github/workflows/capture-descriptor-bound-ipa-r2.yml
           git config user.name "nembra-v14-transform"
           git config user.email "actions@users.noreply.github.com"
-          git add scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py .github/nembra_tmp/descriptor_bound_ipa_r2_patch.py .github/workflows/capture-descriptor-bound-ipa-r2.yml
-          git diff --cached --check
-          git commit -m "[Capture provenance v14] Bind IPA extraction to one descriptor"
+          git add "$LOG" .github/workflows/capture-descriptor-bound-ipa-r2.yml
+          git commit -m "chore(capture): retain descriptor-bound IPA diagnostic"
           git push origin HEAD:fix/es80-v14-descriptor-bound-ipa-r2/gpt56-thinking-go
