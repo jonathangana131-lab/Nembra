@@ -179,6 +179,102 @@ struct PassiveCoreBluetoothRecordedHorizonRecoveryTests {
         #expect(gateB.activeTransaction?.identity == b.recorded.transactionIdentity)
     }
 
+    @Test("committed Horizon can quarantine after pre-freeze authority loss without inventing terminal success")
+    @MainActor
+    func committedHorizonPreFreezeFailureQuarantinesIncompleteArtifact() async throws {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let fixture = try await readyAndHorizon(gate: &gate, fence: fence, recorder: recorder)
+        let committed = try fixture.recorded.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: fixture.recorded.queueCutoff
+        )
+        let active = try #require(gate.activeTransaction)
+
+        #expect(active.identity == committed.transactionIdentity)
+        #expect(active.revision == committed.transactionRevision)
+        #expect(gate.phase == .horizonBoundaryRecorded(active))
+        #expect((await recorder.snapshot()).observationBoundaries.count == 2)
+
+        let replacement = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: authority.targetSessionGeneration,
+            authorityGeneration: authority.authorityGeneration + 1
+        )
+        try fence.transition(from: authority, to: replacement)
+
+        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.authorityChanged) {
+            try committed.completeHorizonArtifactFreeze(on: &gate)
+        }
+        #expect(gate.phase == .horizonBoundaryRecorded(active))
+        #expect(!gate.isTerminal)
+
+        let abort = try gate.abortCommittedHorizonBeforeArtifactFreeze(committed)
+        #expect(abort.origin == .committedHorizonInvalidatedBeforeArtifactFreeze)
+        #expect(abort.abandonedReadyQueueCutoff == fixture.epoch.queueCutoff)
+        #expect(abort.abandonedEvidenceQueueCutoff == committed.queueCutoff)
+        #expect(abort.abandonedHorizonQueueCutoff == committed.queueCutoff)
+        #expect(abort.abandonedHorizonTransactionRevision == committed.transactionRevision)
+        #expect(abort.abandonedHorizonTransactionIdentity == committed.transactionIdentity)
+        #expect(abort.abandonedUnrecordedHorizonQueueCutoff == nil)
+        #expect(gate.phase == .abortQuarantined(abort))
+        #expect(!gate.isTerminal)
+
+        var pending = [PendingEvent(queueSequence: 5, authority: replacement)]
+        let retirement = try PassiveCoreBluetoothAbortedObservationQueueRetirement.retire(
+            from: &pending,
+            currentLastEnqueuedEventSequence: 5,
+            currentSettledQueueSequence: 4,
+            drainIsIdle: true,
+            abortedGate: gate,
+            identity: { .init(queueSequence: $0.queueSequence, authority: $0.authority) }
+        )
+        #expect(pending.isEmpty)
+        #expect(retirement.abortReceipt == abort)
+        #expect(retirement.validatedSettledQueueSequence == 4)
+    }
+
+    @Test("equal-scalar foreign committed Horizon cannot quarantine another pre-freeze gate")
+    @MainActor
+    func foreignCommittedHorizonFailsExactIdentity() async throws {
+        let recorderA = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let recorderB = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fenceA = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        let fenceB = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        var gateA = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        var gateB = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let a = try await readyAndHorizon(gate: &gateA, fence: fenceA, recorder: recorderA)
+        let b = try await readyAndHorizon(gate: &gateB, fence: fenceB, recorder: recorderB)
+        let committedA = try a.recorded.markBoundaryRecorded(
+            on: &gateA,
+            lastProcessedQueueSequence: a.recorded.queueCutoff
+        )
+        let committedB = try b.recorded.markBoundaryRecorded(
+            on: &gateB,
+            lastProcessedQueueSequence: b.recorded.queueCutoff
+        )
+
+        #expect(committedA.authority == committedB.authority)
+        #expect(committedA.queueCutoff == committedB.queueCutoff)
+        #expect(committedA.transactionRevision == committedB.transactionRevision)
+        #expect(committedA.transactionIdentity != committedB.transactionIdentity)
+
+        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.staleTransaction) {
+            _ = try gateB.abortCommittedHorizonBeforeArtifactFreeze(committedA)
+        }
+        #expect(gateB.activeTransaction?.identity == committedB.transactionIdentity)
+        #expect(!gateB.isAbortQuarantined)
+    }
+
     @Test("unchanged authority still commits Horizon and reaches terminal only after explicit freeze")
     @MainActor
     func normalHorizonCommitAndFreezeRemainsAvailable() async throws {
