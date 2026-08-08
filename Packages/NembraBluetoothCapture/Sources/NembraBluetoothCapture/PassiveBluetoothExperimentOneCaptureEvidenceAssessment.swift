@@ -64,7 +64,7 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
     public let capturedPeripheralIdentifier: UUID?
 
     public var isCaptureEvidenceCoherent: Bool {
-        if case .coherentCaptureEvidence = status { return true }
+        if case .coherentCaptureEvidence(_) = status { return true }
         return false
     }
 
@@ -108,7 +108,8 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
 
         let replayedCorrelation = replayedCorrelationIfConsistent(with: powerCycleResult)
         let correlatedIdentifier: UUID?
-        if case let .singleRepeatableCandidate(identifier) = replayedCorrelation?.disposition {
+        if let replayedCorrelation,
+           case let .singleRepeatableCandidate(identifier) = replayedCorrelation.disposition {
             correlatedIdentifier = identifier
         } else {
             correlatedIdentifier = nil
@@ -127,7 +128,7 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
         } else if replayedCorrelation == nil || replayedCorrelation != powerCycleResult.correlation {
             status = .powerCycleEvidenceInconsistent
         } else if let replayedCorrelation,
-                  case .singleRepeatableCandidate = replayedCorrelation.disposition {
+                  case .singleRepeatableCandidate(_) = replayedCorrelation.disposition {
             if captureIdentifiers.count != 1 {
                 status = .captureTargetUnresolved
             } else if capturedIdentifier == nil {
