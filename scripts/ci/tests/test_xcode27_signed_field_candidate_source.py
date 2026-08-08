@@ -45,11 +45,36 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_keeps_generated_evidence_out_of_source_identity(self):
-        self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
+    def test_uses_unique_non_destructive_evidence_directory(self):
+        self.assertIn(
+            '$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID',
+            self.source,
+        )
+        self.assertIn('"$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT"', self.source)
+        self.assertIn('if [[ -e "$ARTIFACTS_DIR" ]]', self.source)
+        self.assertIn('refusing to mix or overwrite field-production evidence', self.source)
         self.assertIn('git check-ignore -q', self.source)
         self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
-        self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
+
+    def test_snapshots_and_binds_exact_export_options_used(self):
+        self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
+        self.assertIn('cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('-exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('options.get("teamID")', self.source)
+        self.assertIn('Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM', self.source)
+        self.assertIn('EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('POST_EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('Retained ExportOptions.plist changed during archive/export', self.source)
+        self.assertIn('export_options_file=ExportOptions.plist', self.source)
+        self.assertIn('export_options_sha256=$EXPORT_OPTIONS_SHA256', self.source)
+
+    def test_retains_archive_and_export_logs(self):
+        self.assertIn('logs/xcodebuild-archive.log', self.source)
+        self.assertIn('logs/xcodebuild-export.log', self.source)
+        self.assertIn('ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('archive_log=logs/xcodebuild-archive.log', self.source)
+        self.assertIn('export_log=logs/xcodebuild-export.log', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)

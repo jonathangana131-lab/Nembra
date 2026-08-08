@@ -54,9 +54,21 @@ WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BU
 SOURCE_ROOT="$WORK_ROOT/source"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
 if [[ "$ARTIFACTS_DIR" != /* ]]; then
   ARTIFACTS_DIR="$ROOT/$ARTIFACTS_DIR"
+fi
+
+# Field-production evidence is immutable output. Never allow a root/repository target and never mix
+# a new candidate into an existing directory, even if the canonical verifier's own target files are
+# absent. This also avoids a caller typo turning a production run into broad filesystem writes.
+if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
+  echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
+  exit 8
+fi
+if [[ -e "$ARTIFACTS_DIR" ]]; then
+  echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
+  exit 9
 fi
 
 # Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a
@@ -65,8 +77,43 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
-    exit 8
+    exit 10
   fi
+fi
+
+mkdir -p "$ARTIFACTS_DIR/logs"
+EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
+cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
+/usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
+
+# Export policy is an external release input, not source truth. Snapshot exactly the bytes that
+# xcodebuild will consume, reject a conflicting teamID when present, and retain/hash that snapshot
+# beside the signed artifact so independent acceptance can review the actual export policy used.
+EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+import hashlib
+import plistlib
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+expected_team = sys.argv[2]
+with path.open("rb") as handle:
+    raw = handle.read()
+options = plistlib.loads(raw)
+if not isinstance(options, dict):
+    raise SystemExit("Export options plist root must be a dictionary")
+team = options.get("teamID")
+if team is not None and team != expected_team:
+    raise SystemExit("Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM")
+method = options.get("method")
+if method is not None and (not isinstance(method, str) or not method.strip()):
+    raise SystemExit("Export options method, when present, must be a non-empty string")
+print(hashlib.sha256(raw).hexdigest())
+PY
+)"
+if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive one canonical SHA-256 for retained ExportOptions.plist." >&2
+  exit 11
 fi
 
 rm -rf "$WORK_ROOT"
@@ -85,7 +132,7 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 9
+  exit 12
 fi
 mkdir -p "$EXPORT_DIR"
 
@@ -94,6 +141,8 @@ if [[ "${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}" == "1" ]]; then
   PROVISIONING_ARGS+=("-allowProvisioningUpdates")
 fi
 
+set +e
+set -o pipefail
 xcodebuild \
   -project Nembra.xcodeproj \
   -scheme Nembra \
@@ -105,14 +154,42 @@ xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
-  archive
+  archive \
+  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-archive.log"
+ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")
+set -e
+if [[ "${ARCHIVE_PIPESTATUS[0]}" -ne 0 || "${ARCHIVE_PIPESTATUS[1]}" -ne 0 ]]; then
+  echo "Signed field-candidate archive/log capture failed: xcodebuild=${ARCHIVE_PIPESTATUS[0]} tee=${ARCHIVE_PIPESTATUS[1]}." >&2
+  exit 13
+fi
 
+set +e
+set -o pipefail
 xcodebuild \
   -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
-  "${PROVISIONING_ARGS[@]}"
+  -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
+  "${PROVISIONING_ARGS[@]}" \
+  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-export.log"
+EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")
+set -e
+if [[ "${EXPORT_PIPESTATUS[0]}" -ne 0 || "${EXPORT_PIPESTATUS[1]}" -ne 0 ]]; then
+  echo "Signed field-candidate export/log capture failed: xcodebuild=${EXPORT_PIPESTATUS[0]} tee=${EXPORT_PIPESTATUS[1]}." >&2
+  exit 14
+fi
+
+POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
+  echo "Retained ExportOptions.plist changed during archive/export; refusing candidate evidence." >&2
+  exit 15
+fi
 
 # The detached worktree itself must still be clean after archive/export. Xcode products live under
 # WORK_ROOT outside SOURCE_ROOT, so a visible source delta means the exact-commit build boundary was
@@ -122,7 +199,7 @@ POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 10
+  exit 16
 fi
 
 shopt -s nullglob
@@ -131,7 +208,7 @@ shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 11
+  exit 17
 fi
 IPA_PATH="${IPA_FILES[0]}"
 
@@ -235,6 +312,10 @@ PY
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
+  echo "export_options_file=ExportOptions.plist"
+  echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
+  echo "archive_log=logs/xcodebuild-archive.log"
+  echo "export_log=logs/xcodebuild-export.log"
   echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
@@ -243,5 +324,6 @@ PY
 } > "$ARTIFACTS_DIR/field-candidate-environment.txt"
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
+echo "Exact ExportOptions.plist and archive/export logs were retained with the candidate."
 echo "Independent acceptance has NOT occurred."
 echo "PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN."
