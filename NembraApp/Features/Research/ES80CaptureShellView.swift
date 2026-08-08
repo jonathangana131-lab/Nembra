@@ -10,7 +10,7 @@ import UIKit
 /// One package-owned coordinator now carries the complete software provenance life from
 /// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
 /// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
-/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
+/// finalized evidence. SwiftUI never constructs a second correlation producer, never selects an
 /// authoritative UUID, and never receives the sealed admission or mutable recorder.
 ///
 /// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
@@ -34,6 +34,7 @@ struct ES80CaptureShellView: View {
         case observing
         case readyToSeal
         case finalizing
+        case sealedExportUnavailable(String)
         case complete
         case failed(String)
     }
@@ -51,7 +52,9 @@ struct ES80CaptureShellView: View {
     @State private var finalizationInFlight = false
     @State private var diagnosticMessage: String?
     @State private var localFailureMessage: String?
+    @State private var exportFailureMessage: String?
     @State private var shareURL: URL?
+    @State private var softwareExportByteCount: Int?
     @State private var showingDetails = false
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
@@ -469,7 +472,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "SEALING",
                 title: "Freezing immutable evidence",
-                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.",
+                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable capture. Do not leave the app while this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -477,11 +480,33 @@ struct ES80CaptureShellView: View {
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+        case let .sealedExportUnavailable(message):
+            statePanel(
+                eyebrow: "CAPTURE SEALED",
+                title: "Evidence package needs attention",
+                message: message,
+                symbol: "doc.badge.gearshape"
+            )
+            primaryButton(
+                "Retry evidence package",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.retry-export"
+            ) {
+                prepareFinalizedEvidencePackageForShare()
+            }
+            secondaryButton(
+                "View sealed details",
+                systemImage: "doc.text.magnifyingglass",
+                identifier: "es80.capture.view-details"
+            ) {
+                showingDetails = true
+            }
+
         case .complete:
             completionPanel
             if let shareURL {
                 ShareLink(item: shareURL) {
-                    Label("Share Capture", systemImage: "square.and.arrow.up")
+                    Label("Share Evidence Package", systemImage: "square.and.arrow.up")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 56)
@@ -612,8 +637,9 @@ struct ES80CaptureShellView: View {
                 }
             }
 
-            if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable JSON bytes are sealed from this Experiment One authority. Correlation evidence is retained with the same package-owned result; no protocol field meaning is claimed yet.")
+            if let artifact = coordinator.finalizedArtifact,
+               let softwareExportByteCount {
+                Text("\(softwareExportByteCount.formatted()) evidence-package bytes bind \(artifact.captureJSON.count.formatted()) immutable capture bytes, the exact four-window correlation authority, ES80-FINGERPRINT-v1, manifest binding, and this running build's provenance. No protocol field meaning or physical GO is claimed by the package itself.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -637,12 +663,15 @@ struct ES80CaptureShellView: View {
                         detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
                         detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
                     }
+                    if let softwareExportByteCount {
+                        detailRow("Evidence package bytes", value: softwareExportByteCount.formatted())
+                    }
 
                     Divider()
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This export is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics. Export creation does not authorize a physical procedure.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -677,7 +706,13 @@ struct ES80CaptureShellView: View {
             return .finalizing
         }
         if status.artifactFinalized || coordinator.finalizedArtifact != nil {
-            return .complete
+            if let exportFailureMessage {
+                return .sealedExportUnavailable(exportFailureMessage)
+            }
+            if shareURL != nil, softwareExportByteCount != nil {
+                return .complete
+            }
+            return .sealedExportUnavailable("The immutable Horizon exists, but the shareable evidence package has not been materialized yet. Retry package creation; do not rerun the Bluetooth experiment just for an export failure.")
         }
 
         switch status.connection {
@@ -784,13 +819,14 @@ struct ES80CaptureShellView: View {
     private func finalizeCapture() {
         guard !finalizationInFlight else { return }
         diagnosticMessage = nil
+        exportFailureMessage = nil
         finalizationInFlight = true
 
         Task {
             do {
-                let artifact = try await coordinator.finalizeObservationHorizon()
-                shareURL = try persistShareArtifact(artifact.captureJSON)
+                _ = try await coordinator.finalizeObservationHorizon()
                 finalizationInFlight = false
+                prepareFinalizedEvidencePackageForShare()
             } catch {
                 finalizationInFlight = false
                 localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
@@ -798,13 +834,30 @@ struct ES80CaptureShellView: View {
         }
     }
 
+    private func prepareFinalizedEvidencePackageForShare() {
+        diagnosticMessage = nil
+        exportFailureMessage = nil
+        do {
+            let softwareExport = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication()
+            let newShareURL = try persistShareArtifact(softwareExport)
+            softwareExportByteCount = softwareExport.count
+            shareURL = newShareURL
+        } catch {
+            shareURL = nil
+            softwareExportByteCount = nil
+            exportFailureMessage = "The immutable capture is preserved, but Nembra could not create its self-verifying evidence package from the sealed run and current build: \(experimentErrorMessage(error))"
+        }
+    }
+
     private func restartExperiment() {
         coordinator.abandonExperiment()
         diagnosticMessage = nil
         localFailureMessage = nil
+        exportFailureMessage = nil
         captureConnectionAttempted = false
         finalizationInFlight = false
         shareURL = nil
+        softwareExportByteCount = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
@@ -883,7 +936,7 @@ struct ES80CaptureShellView: View {
 
     private func persistShareArtifact(_ data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-Capture-\(UUID().uuidString).json")
+            .appendingPathComponent("Nembra-ES80-Experiment-One-Evidence-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
     }
@@ -944,6 +997,32 @@ struct ES80CaptureShellView: View {
                 return "The producer could not establish a monotonic observation window."
             case .windowSequenceExhausted:
                 return "The local observation-window sequence was exhausted."
+            }
+        }
+
+        if let error = error as? PassiveBluetoothExperimentOneSoftwareExportError {
+            switch error {
+            case .artifactNotFinalized:
+                return "The immutable Horizon is not available for export yet."
+            case .correlationIncomplete:
+                return "The sealed run does not contain a complete four-window correlation."
+            case .correlationEvidenceInvalid:
+                return "The sealed correlation authority could not be replay-verified."
+            case .correlationNotUnique:
+                return "The sealed correlation does not resolve to one unique target."
+            case .correlationWindowCount,
+                 .correlationWindowPhaseMismatch,
+                 .correlationWindowSequenceMismatch,
+                 .correlationCandidateCountMismatch:
+                return "The sealed correlation window structure does not match its package-issued evidence."
+            case .unsupportedSchemaVersion,
+                 .unsupportedRecipe,
+                 .manifestRecipeMismatch,
+                 .manifestBuildMismatch,
+                 .manifestTargetMismatch,
+                 .malformedWireData,
+                 .unexpectedWireField:
+                return "Evidence-package verification rejected mismatched or malformed provenance."
             }
         }
 
@@ -1123,7 +1202,7 @@ struct ES80CaptureShellView: View {
         completedWindows: Int
     ) -> String {
         if status.artifactFinalized {
-            return "Experiment One progress, capture sealed and ready for analysis"
+            return "Experiment One progress, capture sealed and ready for evidence-package export"
         }
         if status.canFinalizeObservationHorizon {
             return "Experiment One progress, observation Horizon ready to seal"
@@ -1155,7 +1234,7 @@ struct ES80CaptureShellView: View {
 
     private func heroTitle(for phase: Phase) -> String {
         switch phase {
-        case .complete: return "Evidence, sealed."
+        case .complete, .sealedExportUnavailable: return "Evidence, sealed."
         case .readyToSeal, .observing: return "Hold the evidence line."
         case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."
         default: return "Find the real scooter signal."
@@ -1180,7 +1259,8 @@ struct ES80CaptureShellView: View {
         case .observing: return "Observation running"
         case .readyToSeal: return "Horizon ready"
         case .finalizing: return "Sealing artifact"
-        case .complete: return "Capture complete"
+        case .sealedExportUnavailable: return "Capture sealed, package unavailable"
+        case .complete: return "Evidence package ready"
         }
     }
 
@@ -1188,7 +1268,8 @@ struct ES80CaptureShellView: View {
         switch phase {
         case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
             return "checkmark.circle.fill"
-        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+        case .physicalProcedureLocked, .correlationFailed, .failed, .sealedExportUnavailable,
+             .noRepeatableTarget, .ambiguousTargets:
             return "exclamationmark.circle.fill"
         case .bluetoothUnavailable:
             return "antenna.radiowaves.left.and.right.slash"
@@ -1201,7 +1282,8 @@ struct ES80CaptureShellView: View {
         switch phase {
         case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
             return .green
-        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+        case .physicalProcedureLocked, .correlationFailed, .failed, .sealedExportUnavailable,
+             .noRepeatableTarget, .ambiguousTargets:
             return .orange
         default:
             return .secondary
