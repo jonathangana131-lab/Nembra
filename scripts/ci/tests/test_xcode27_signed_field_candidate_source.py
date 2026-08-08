@@ -14,9 +14,11 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('-exportArchive', self.source)
         self.assertNotIn('CODE_SIGNING_ALLOWED=NO', self.source)
         self.assertIn('Capture Build V14-${SOURCE_SHA:0:12}', self.source)
+        self.assertIn('FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
@@ -30,6 +32,10 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('fieldBuildEvidenceRecordSHA256', self.source)
         self.assertIn('externalBuildRecordSHA256', self.source)
         self.assertIn('signedInstallableSHA256', self.source)
+        self.assertIn('fieldLaunchRecipeID', self.source)
+        self.assertIn('provisioningTeamIdentifier', self.source)
+        self.assertIn('provisionedDeviceCount', self.source)
+        self.assertIn('embeddedMobileProvisionSHA256', self.source)
         self.assertNotIn('NembraCaptureSignedFieldArtifactEvidence.json', self.source)
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
