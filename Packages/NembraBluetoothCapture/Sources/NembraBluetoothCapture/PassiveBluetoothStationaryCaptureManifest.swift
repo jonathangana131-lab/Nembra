@@ -252,6 +252,10 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         }
 
         for record in session.records {
+            if record.event.breaksByteContinuity {
+                continuityBreakCount += 1
+            }
+
             switch record.event {
             case let .service(observation):
                 let peripheral = try canonicalCaptured(observation.peripheralIdentifier)
@@ -282,16 +286,11 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
                 }
             case .stockAppState:
                 stockAppMarkerCount += 1
-            case let .connection(observation):
-                // Connection-only callbacks never establish target attribution.
-                // Continuity semantics are stronger: NembraCore defines every
-                // captured disconnect as a byte-continuity break regardless of
-                // whether this sidecar can attribute that record to the selected UUID.
-                if observation.state == .disconnected {
-                    continuityBreakCount += 1
-                }
-            case .interruption:
-                continuityBreakCount += 1
+            case .connection, .interruption:
+                // These records do not establish selected-target GATT attribution.
+                // Continuity is counted above through NembraCore's authoritative
+                // `breaksByteContinuity` classification instead of duplicating it here.
+                continue
             case .advertisement:
                 // Broad-scan candidates intentionally cannot satisfy target attribution.
                 continue

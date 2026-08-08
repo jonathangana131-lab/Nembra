@@ -127,6 +127,14 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
+    func genericInterruptionUsesCoreContinuityClassification() throws {
+        let captureJSON = try makeCapture(includeInterruption: true)
+        let manifest = try makeManifest(captureJSON: captureJSON)
+
+        #expect(manifest.evidenceSummary.continuityBreakCount == 1)
+    }
+
+    @Test
     func stockAppMarkersRequireADeclaredReferenceSetup() throws {
         let captureJSON = try makeCapture(includeStockAppMarker: true)
 
@@ -233,7 +241,8 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         additionalGATTPeripheral: String? = nil,
         unrelatedConnectionPeripheral: String? = nil,
         includeStockAppMarker: Bool = false,
-        includeDisconnect: Bool = false
+        includeDisconnect: Bool = false,
+        includeInterruption: Bool = false
     ) throws -> Data {
         let selected = targetPeripheral ?? target
         var session = try PassiveBluetoothCaptureSession(
@@ -300,6 +309,12 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
             try append(.connection(try PassiveBluetoothConnectionObservation(
                 peripheralIdentifier: selected,
                 state: .disconnected
+            )))
+        }
+
+        if includeInterruption {
+            try append(.interruption(try PassiveBluetoothCaptureInterruption(
+                reason: "foreground evidence integrity lost"
             )))
         }
 

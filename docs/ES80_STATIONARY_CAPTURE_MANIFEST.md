@@ -2,7 +2,7 @@
 
 Status: **dependent software slice; physical AOVOPRO ES80 capture still not performed/verified by this lane**.
 
-Dependency: the current passive-capture runtime recovery/integration lineage that supplies `NembraBluetoothCapture` and versioned `PassiveBluetoothCaptureJSON`. That parent lineage is still source-truth blocked and must be repaired/reconciled before experiment one runs.
+Dependency: the corrected current passive-capture runtime lineage that supplies `NembraBluetoothCapture` and versioned `PassiveBluetoothCaptureJSON`. This recovery is re-anchored onto that runtime; experiment one still remains blocked on the active target-correlation, observation-horizon, product-shell, and mechanical provenance-consumer integration gates.
 
 ## Product gap
 
@@ -103,6 +103,8 @@ The builder fails closed when:
 Connection-only records remain deliberately weaker for **identity**. A connection/disconnection callback never establishes the selected target, and an unrelated or legacy/non-UUID connection-only record does not invalidate an otherwise clean selected-target GATT artifact merely by existing.
 
 Continuity semantics are stricter than identity semantics. `NembraCore` defines every structured `.disconnected` capture event as `breaksByteContinuity == true`, independent of whether this sidecar can attribute that record to the selected UUID. The sidecar therefore preserves **every captured disconnect** in `continuityBreakCount` rather than under-reporting a known gap. This can conservatively retain an unattributed break; it can never turn a disconnect into evidence of target identity.
+
+Implementation consumes `PassiveBluetoothCaptureEvent.breaksByteContinuity` directly for every record rather than re-listing the current continuity-breaking cases inside the manifest. The sidecar therefore follows the core capture domain if that vocabulary evolves, while target-attribution handling remains separately fail-closed.
 
 This keeps a broad-scan candidate, connection-only neighbor, or mixed-target GATT artifact from silently becoming “the ES80,” while also preventing identity uncertainty from erasing continuity evidence.
 
