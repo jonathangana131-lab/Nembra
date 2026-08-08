@@ -369,14 +369,14 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         let schemaVersion: Int
     }
 
-    private struct SourceArtifactWire: Codable {
+    fileprivate struct SourceArtifactWire: Codable {
         let sha256: String
         let byteCount: Int
         let captureSessionID: UUID
         let selectedPeripheralIdentifier: String
     }
 
-    private struct EvidenceSummaryWire: Codable {
+    fileprivate struct EvidenceSummaryWire: Codable {
         let targetGATTRecordCount: Int
         let targetValueRecordCount: Int
         let stockAppMarkerCount: Int
