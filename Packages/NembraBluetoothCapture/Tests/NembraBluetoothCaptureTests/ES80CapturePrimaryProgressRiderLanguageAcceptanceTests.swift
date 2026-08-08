@@ -116,7 +116,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
         let progress = try Self.slice(
             source,
             from: "private func progressStage(",
-            to: "private func progressAccessibilityLabel("
+            to: "private func phaseShortName("
         )
         let hero = try Self.slice(
             source,
@@ -131,7 +131,7 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
 
         #expect(!progress.contains("Experiment One progress"))
         #expect(!progress.contains("REACQUIRE"))
-        #expect(progress.contains("Capture progress") == false)
+        #expect(progress.contains("Capture progress"))
         #expect(progress.contains("SEAL READY"))
         #expect(progress.contains("MATCH"))
 
