@@ -19,26 +19,46 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The explicit research launch must open the dedicated Nembra Capture surface."
         )
         XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 3),
+            "The dedicated package-owned Capture shell must be the active product surface."
+        )
+        XCTAssertTrue(
             app.staticTexts["NEMBRA CAPTURE"].waitForExistence(timeout: 3),
             "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
-            app.staticTexts["Field capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned NO-GO must be the primary product state."
+            app.staticTexts["Field procedure locked"].waitForExistence(timeout: 3),
+            "The current package-owned NO-GO must be the primary status."
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
-            "The dedicated package-gated NO-GO surface must be active."
+            app.staticTexts["FIELD AUTHORITY"].waitForExistence(timeout: 3),
+            "The lock must be explained as field authority rather than a generic Bluetooth failure."
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3),
-            "The physical NO-GO boundary must be exposed as one stable accessibility element."
+            app.staticTexts["This build is not authorized"].waitForExistence(timeout: 3),
+            "The product must state plainly that this build cannot run the physical procedure."
         )
         XCTAssertTrue(
-            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
-            "The installed versioned procedure must be identified without becoming executable."
+            app.staticTexts["PASSIVE / READ ONLY"].waitForExistence(timeout: 3),
+            "The passive-only safety boundary must remain visible."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.single-authority"].waitForExistence(timeout: 3),
+            "The one-authority evidence explanation must remain in the locked shell."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.experiment-progress"].waitForExistence(timeout: 3),
+            "The Experiment One progress instrument must render without creating an executable action."
         )
 
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.lock-setup"].exists,
+            "The setup declaration belongs to the physical Experiment One path and must remain unreachable while the package field gate is NO-GO."
+        )
+        XCTAssertFalse(
+            app.buttons["Lock setup for Experiment One"].exists,
+            "A NO-GO build must not allow the operator to advance into physical setup declaration."
+        )
         XCTAssertFalse(
             app.buttons["Begin OFF 1 window"].exists,
             "A NO-GO build must not expose the first physical OFF/ON action."
@@ -46,6 +66,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             app.descendants(matching: .any)["es80.capture.begin-window"].exists,
             "No hidden or differently-labeled correlation-window action may bypass the package gate."
+        )
+        XCTAssertFalse(
+            app.buttons["Confirm correlated target"].exists,
+            "Target confirmation must not become reachable before field authorization."
+        )
+        XCTAssertFalse(
+            app.buttons["Begin passive observation"].exists,
+            "Connection and passive observation must remain unreachable while field authority is locked."
         )
         XCTAssertFalse(
             app.buttons["Scan for scooter"].exists,
@@ -62,6 +90,30 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             app.buttons["Finish Capture"].exists,
             "Finish cannot exist before field authorization and accepted Horizon/seal authority."
+        )
+        XCTAssertFalse(
+            app.buttons["Seal Capture"].exists,
+            "The immutable Horizon action must remain unreachable while the package field gate is locked."
+        )
+        XCTAssertFalse(
+            app.buttons["Share Capture"].exists,
+            "Final software export must not surface as a share action before a legitimate Experiment One artifact has been sealed."
+        )
+        XCTAssertFalse(
+            app.buttons["Prepare Share Capture"].exists,
+            "Export preparation belongs only to a legitimate sealed-artifact completion state."
+        )
+        XCTAssertFalse(
+            app.buttons["Prepare share file"].exists,
+            "Temporary Share-file retry must not become a NO-GO bypass."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.prepare-export"].exists,
+            "The sealed-artifact export retry path must remain unreachable before field authorization."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.prepare-share-file"].exists,
+            "The file-staging retry path must remain unreachable before field authorization."
         )
         XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
