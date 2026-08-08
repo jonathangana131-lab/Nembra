@@ -653,9 +653,29 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
-            await flushPendingEvents(through: horizonAdmission.queueCutoff)
-            try ensureCaptureHealthy()
-            try validateBoundaryAuthority(horizonAdmission.authority)
+            // H allocation has already moved the queue gate into its exact draining
+            // transaction. If FIFO drain, foreground health, or authority validation
+            // fails before the first recorder attempt, consume the producer-owned
+            // unused-admission permit and quarantine that exact zero-mutation H.
+            // This is distinct from mutation-point authority rejection below.
+            do {
+                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try ensureCaptureHealthy()
+                try validateBoundaryAuthority(horizonAdmission.authority)
+            } catch {
+                let preAttemptFailure = error
+                do {
+                    let abandonment = try horizonAdmission.abandonBeforeRecorderAttempt()
+                    try observationBoundaryQueueGate.abortHorizonBeforeRecorderAttempt(
+                        after: abandonment
+                    )
+                } catch {
+                    // Failure to prove/quarantine the exact unused H is stronger than
+                    // the triggering health/authority error. Keep capture fail-closed.
+                    throw error
+                }
+                throw preAttemptFailure
+            }
 
             let horizonMutationOutcome = try await horizonAdmission
                 .recordBoundaryWithMutationOutcome(on: recorder)
