@@ -184,6 +184,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case attemptGenerationExhausted
         case targetSessionChanged
         case artifactReadAlreadyActive
+        case artifactNotFinalized
         case captureIncomplete
         case captureFailed
     }
@@ -273,6 +274,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
     private var artifactAuthorityGeneration: UInt64 = 0
+    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?
     private var targetState = PassiveCoreBluetoothTargetState()
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
@@ -440,7 +442,15 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// Ends transport only after the caller has already frozen its immutable
     /// artifact. This intentionally adds no new interruption to that finalized
     /// evidence timeline.
-    public func teardownActiveConnectionAfterFinalization() {
+    public func teardownActiveConnectionAfterFinalization() throws {
+        guard activePeripheral != nil else { return }
+        guard let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority.matches(
+                targetSessionGeneration: targetSessionGeneration,
+                authorityGeneration: artifactAuthorityGeneration
+              ) else {
+            throw ControllerError.artifactNotFinalized
+        }
         cancelActiveConnection(cause: .finalizedArtifactTeardown)
     }
 
@@ -497,6 +507,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         try validate(context)
         let snapshot = await context.recorder.snapshot()
         try validate(context)
+        lastFinalizedArtifactAuthority = context.authority
         return snapshot
     }
 
@@ -509,6 +520,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         try validate(context)
         let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)
         try validate(context)
+        lastFinalizedArtifactAuthority = context.authority
         return data
     }
 
@@ -602,6 +614,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             failCapture(AcquisitionError.artifactAuthorityGenerationExhausted)
             return false
         }
+        lastFinalizedArtifactAuthority = nil
         artifactAuthorityGeneration += 1
         return true
     }
