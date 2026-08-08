@@ -320,6 +320,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
     )
     private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?
+    /// Exact successful-terminal FIFO resolution retained across artifact return and
+    /// finalized transport teardown. It is consumed only after the real same-target
+    /// terminal callback quarantine clears and a real fresh recorder is installed.
+    private var pendingTerminalQueueResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt?
     private var targetState = PassiveCoreBluetoothTargetState()
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
@@ -521,7 +525,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// artifact. This intentionally adds no new interruption to that finalized
     /// evidence timeline.
     public func teardownActiveConnectionAfterFinalization() throws {
-        guard activePeripheral != nil else { return }
         guard observationBoundaryQueueGate.isTerminal else {
             throw ControllerError.artifactNotFinalized
         }
@@ -532,7 +535,15 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               ) else {
             throw ControllerError.artifactNotFinalized
         }
-        cancelActiveConnection(cause: .finalizedArtifactTeardown)
+
+        // Keep the gate terminal while the finalized transport is retired. When an
+        // attempt exists, targetState retains same-UUID callback quarantine until the
+        // actual CoreBluetooth terminal callback arrives. A no-transport terminal
+        // session may complete the handoff synchronously after this explicit teardown.
+        if activePeripheral != nil {
+            cancelActiveConnection(cause: .finalizedArtifactTeardown)
+        }
+        try completeTerminalFreshTargetSessionIfEligible()
     }
 
     private func cancelActiveConnection(cause: PassiveCoreBluetoothCancellationCause) {
@@ -760,7 +771,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             // if H itself never finalized.
             lastFinalizedArtifactAuthority = committedHorizon.authority
             do {
-                _ = try resolveQueuedEvidenceAfterTerminalHorizon()
+                let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()
+                pendingTerminalQueueResolution = terminalResolution
             } catch {
                 // Post-H queue cleanup is lifecycle authority, not artifact content.
                 // Preserve the already-sealed data for export while failing the live
@@ -776,6 +788,61 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             failCapture(error)
             throw error
         }
+    }
+
+    /// Consumes one successful terminal epoch into one genuinely fresh durable
+    /// recorder/session only after finalized transport quarantine has cleared. This
+    /// helper is synchronous on MainActor: no callback or actor hop can interleave
+    /// recorder publication, authority transition, applied-frontier validation, and
+    /// the exact terminal gate reopen.
+    private func completeTerminalFreshTargetSessionIfEligible() throws {
+        guard observationBoundaryQueueGate.isTerminal,
+              let terminalResolution = pendingTerminalQueueResolution,
+              let identifier = targetState.selectedTargetIdentifier,
+              activePeripheral == nil else { return }
+        guard !isSelectedTargetAwaitingTerminalCallback else { return }
+
+        let previousAuthority = currentArtifactAuthorityContext()
+        guard previousAuthority == terminalResolution.terminalAuthority else {
+            throw ControllerError.targetSessionChanged
+        }
+
+        let freshTargetSession = try PassiveCoreBluetoothTerminalFreshTargetSession.create(
+            after: terminalResolution,
+            vehicleIdentity: vehicleIdentity,
+            startedAt: Date()
+        )
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: freshTargetSession.receipt.targetSessionGeneration,
+            authorityGeneration: 1
+        )
+
+        // Publish a real fresh recorder + full authority pair before consuming the
+        // gate. If any later gate invariant fails, callers fail the controller closed;
+        // there is no rollback that could resurrect the sealed terminal recorder.
+        try artifactAuthorityFence.transition(
+            from: previousAuthority,
+            to: freshAuthority
+        )
+        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        recorder = freshTargetSession.recorder
+        targetState.selectTarget(identifier)
+        acquisitionLedger.beginTargetSession()
+        gattIdentityRegistry.reset()
+        selectedTargetCancellationPending = false
+        foregroundEvidenceIntegrityValid = true
+        hasUsedInitialSessionIdentity = true
+        committedReadyEpoch = nil
+        lastFinalizedArtifactAuthority = nil
+
+        try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
+            freshTargetSession.receipt,
+            installedRecorder: freshTargetSession.recorder,
+            currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+            currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+        )
+        pendingTerminalQueueResolution = nil
     }
 
     private func beginTargetSessionIfNeeded(for identifier: UUID) throws {
@@ -988,10 +1055,32 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
             observationBoundaryTask = Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
-                    try self.ensureCaptureHealthy()
+                    // Ready has already allocated exact `.drainingReady`. If FIFO
+                    // drain/health/foreground/authority fails before the first recorder
+                    // call, consume the same one-shot permit as recording and quarantine
+                    // this exact zero-mutation Ready rather than stranding the gate.
+                    do {
+                        await self.flushPendingEvents(through: admission.queueCutoff)
+                        try self.requireForegroundEvidenceIntegrity()
+                        try self.ensureCaptureHealthy()
+                        try self.validateBoundaryAuthority(admission.authority)
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderMutation()
+                            try self.observationBoundaryQueueGate.abortUncommittedReady(
+                                after: abandonment
+                            )
+                        } catch {
+                            // Exact quarantine failure is stronger than the triggering
+                            // pre-attempt error and must never be suppressed.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):
@@ -1521,6 +1610,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             if case .active = disposition {
                 clearActiveConnectionState(for: identifier)
+            }
+            if observationBoundaryQueueGate.isTerminal,
+               targetState.selectedTargetIdentifier == identifier {
+                do {
+                    try completeTerminalFreshTargetSessionIfEligible()
+                } catch {
+                    failCapture(error)
+                }
             }
             return
         }
