@@ -1,0 +1,122 @@
+name: Construct ES80 inspector launch-recipe proof r3
+
+on:
+  push:
+    branches:
+      - agent/es80-v14-inspector-launch-recipe-proof-r3
+
+permissions:
+  contents: write
+
+jobs:
+  construct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind evidence recipe to signed Info.plist marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = path.read_text(encoding="utf-8")
+
+          if "def verified_field_recipe(info: dict) -> str:" in text:
+              raise SystemExit("field-recipe verifier already exists; refusing replay")
+
+          helper_anchor = "\n\ndef verify_device_platform(info: dict) -> tuple[str, list[str]]:\n"
+          helper = (
+              "\n\ndef verified_field_recipe(info: dict) -> str:\n"
+              "    value = info.get(\"NembraCaptureFieldRecipe\")\n"
+              "    if not isinstance(value, str) or value != RECIPE_ID:\n"
+              "        raise EvidenceError(\n"
+              "            \"signed app Info.plist NembraCaptureFieldRecipe does not match the accepted field recipe: \"\n"
+              "            f\"{value!r} != {RECIPE_ID!r}\"\n"
+              "        )\n"
+              "    return value\n"
+          )
+          if text.count(helper_anchor) != 1:
+              raise SystemExit(f"expected one verify_device_platform anchor, found {text.count(helper_anchor)}")
+          text = text.replace(helper_anchor, helper + helper_anchor, 1)
+
+          inspect_start = text.index("def _inspect_snapshotted_ipa(")
+          inspect_end = text.index("\ndef write_outputs(", inspect_start)
+          inspect = text[inspect_start:inspect_end]
+
+          executable_anchor = '        executable_name = plist_string(info, "CFBundleExecutable")\n'
+          if inspect.count(executable_anchor) != 1:
+              raise SystemExit(f"expected one executable anchor, found {inspect.count(executable_anchor)}")
+          inspect = inspect.replace(
+              executable_anchor,
+              '        field_recipe = verified_field_recipe(info)\n\n' + executable_anchor,
+              1,
+          )
+
+          old_recipe_record = '"experimentRecipeID": RECIPE_ID,'
+          new_recipe_record = '"experimentRecipeID": field_recipe,'
+          if inspect.count(old_recipe_record) != 3:
+              raise SystemExit(
+                  f"expected exactly three production recipe assertions, found {inspect.count(old_recipe_record)}"
+              )
+          inspect = inspect.replace(old_recipe_record, new_recipe_record)
+          if inspect.count(old_recipe_record) != 0 or inspect.count(new_recipe_record) != 3:
+              raise SystemExit("production recipe binding did not close exactly three evidence fields")
+          text = text[:inspect_start] + inspect + text[inspect_end:]
+
+          self_test_anchor = '    assert not valid_build_identifier("Capture\\nBuild")\n'
+          self_test_block = (
+              "\n"
+              "    assert verified_field_recipe({\"NembraCaptureFieldRecipe\": RECIPE_ID}) == RECIPE_ID\n"
+              "    invalid_field_recipes = (\n"
+              "        {},\n"
+              "        {\"NembraCaptureFieldRecipe\": \"ES80-FINGERPRINT-v2\"},\n"
+              "        {\"NembraCaptureFieldRecipe\": 7},\n"
+              "        {\"NembraCaptureFieldRecipe\": f\" {RECIPE_ID}\"},\n"
+              "        {\"NembraCaptureFieldRecipe\": f\"{RECIPE_ID} \"},\n"
+              "    )\n"
+              "    for malformed in invalid_field_recipes:\n"
+              "        try:\n"
+              "            verified_field_recipe(malformed)\n"
+              "        except EvidenceError:\n"
+              "            pass\n"
+              "        else:\n"
+              "            raise AssertionError(\"unverified signed field-launch recipe was accepted\")\n"
+          )
+          if text.count(self_test_anchor) != 1:
+              raise SystemExit(f"expected one self-test anchor, found {text.count(self_test_anchor)}")
+          text = text.replace(self_test_anchor, self_test_anchor + self_test_block, 1)
+
+          if text.count("def verified_field_recipe(info: dict) -> str:") != 1:
+              raise SystemExit("field-recipe verifier must exist exactly once")
+          if text.count("field_recipe = verified_field_recipe(info)") != 1:
+              raise SystemExit("signed Info.plist recipe must be verified exactly once in inspection")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Run portable inspector contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          git diff --check
+
+      - name: Commit source-only construction result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git rm .github/workflows/es80-inspector-recipe-proof-construction-r3.yml
+          git add scripts/ci/es80_signed_field_artifact_evidence.py
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): prove signed field launch recipe'
+          git push origin HEAD:agent/es80-v14-inspector-launch-recipe-proof-r3
