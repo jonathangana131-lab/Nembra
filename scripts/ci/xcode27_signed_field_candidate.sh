@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Scrub the superseded raw-value environment seam before this script launches any child process.
+# Current field production accepts only a path to private verification input.
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
@@ -22,6 +26,13 @@ if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
 fi
 if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* || ! -f "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" || -L "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" ]]; then
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one absolute regular non-symlink private verification file." >&2
+  exit 4
+fi
+if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
+  --validate-private-input \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
+then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed strict private verification-input validation." >&2
   exit 4
 fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
