@@ -1,0 +1,74 @@
+name: ES80 V14 Terminal Retirement + Resolution Exact Product QA
+
+on:
+  push:
+    branches:
+      - parallel/validate-es80-terminal-retirement-resolution-current/gpt56-go2
+
+permissions:
+  contents: read
+
+jobs:
+  validate-exact-product:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable product
+        uses: actions/checkout@v6
+        with:
+          ref: 349f1e8ca48e5e5181ad92cfee62ab159b3d1d5c
+          fetch-depth: 0
+
+      - name: Verify exact head and dependency-relative scope
+        run: |
+          product='349f1e8ca48e5e5181ad92cfee62ab159b3d1d5c'
+          base='7aa5d57d77a38b4c1f6ad3f2260ca86f165c431e'
+          test "$(git rev-parse HEAD)" = "$product"
+          git merge-base --is-ancestor "$base" "$product"
+          test "$(git diff --name-only "$base" "$product" | wc -l | tr -d ' ')" = '3'
+          git diff --name-only "$base" "$product" | grep -Fxq 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothTerminalQueueRetirement.swift'
+          git diff --name-only "$base" "$product" | grep -Fxq 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothTerminalQueueResolution.swift'
+          git diff --name-only "$base" "$product" | grep -Fxq 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalQueueCurrentCompositionTests.swift'
+
+      - name: Verify reviewed source blobs are preserved exactly
+        run: |
+          product='349f1e8ca48e5e5181ad92cfee62ab159b3d1d5c'
+          retirement='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothTerminalQueueRetirement.swift'
+          resolution='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothTerminalQueueResolution.swift'
+          test "$(git rev-parse "$product:$retirement")" = '997af4a2026055c6fb9c45e45ca3d2673cf5cf42'
+          test "$(git rev-parse "$product:$resolution")" = '6be9d02106edb57c816a9f613fb4e94fce9df277'
+
+      - name: Reject application characteristic writes
+        run: |
+          if grep -R -n -E 'writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive Capture package must not add application characteristic writes.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraCore with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Build NembraBluetoothCapture for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Verify current compatibility suite uses sealed Horizon path
+        run: |
+          test_file='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalQueueCurrentCompositionTests.swift'
+          grep -Fq 'PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(' "$test_file"
+          grep -Fq 'committedReady.beginHorizon(' "$test_file"
+          grep -Fq 'committedHorizon.completeHorizonArtifactFreeze(on: &gate)' "$test_file"
+          if grep -Fq 'gate.begin(.observationHorizon' "$test_file"; then
+            echo 'Compatibility suite regressed to obsolete generic Horizon admission.' >&2
+            exit 1
+          fi
