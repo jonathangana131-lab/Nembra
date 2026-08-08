@@ -99,6 +99,7 @@ PY
 )"
 ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
 FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"
+FINAL_STAGING_OWNED=0
 
 # Candidate output is immutable and failure-atomic. The public destination does not exist until the
 # final exclusive rename after archive, export, inspector verification, and complete staging.
@@ -157,7 +158,7 @@ cleanup() {
   cd "$ROOT" >/dev/null 2>&1 || true
   git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
   rm -rf "$WORK_ROOT"
-  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
+  if [[ "${FINAL_STAGING_OWNED:-0}" == "1" && -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
     rm -rf "$FINAL_STAGING_DIR"
   fi
 }
@@ -403,6 +404,7 @@ PY
 # Assemble the complete candidate on the destination filesystem while the public final path remains
 # absent. This preserves the current inspection/ layout without exposing partial evidence on failure.
 mkdir "$FINAL_STAGING_DIR"
+FINAL_STAGING_OWNED=1
 cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"
 mkdir "$FINAL_STAGING_DIR/logs"
 cp -p "$LOG_DIR/xcodebuild-archive.log" "$FINAL_STAGING_DIR/logs/xcodebuild-archive.log"
@@ -479,6 +481,7 @@ PY
 
 # Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.
 FINAL_STAGING_DIR=""
+FINAL_STAGING_OWNED=0
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
 echo "Exact ExportOptions.plist, archive/export logs, and failure-atomic signed evidence were retained."
