@@ -23,7 +23,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
     }
 
     private static func riderSurface(in source: String) throws -> Substring {
-        let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))
+        let beginning = try #require(source.range(of: "private func hero(for phase: Phase)"))
         let details = try #require(
             source.range(
                 of: "private var captureDetailsSheet",
@@ -71,6 +71,42 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("Scooter ON"))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
+    }
+
+
+    @Test("rendered helper and fallback copy stays rider-first outside the main source block")
+    func renderedHelpersStayHumanFirst() throws {
+        let source = try Self.shellSource()
+
+        let implementationLeaks = [
+            "healthItem(\"FINITE\"",
+            "healthItem(\"HORIZON\"",
+            "eyebrow: \"HORIZON READY\"",
+            "eyebrow: \"PASSIVE ACQUISITION\"",
+            "The package producer, not this timer",
+            "selectable full Bluetooth identifier",
+            "package-owned CoreBluetooth controller is unavailable",
+            "package-issued observation authority",
+            "fresh post-admission scan",
+            "accepted Ready epoch",
+            "authoritative receipt window",
+            "producer's monotonic receipt window",
+            "CoreBluetooth never confirmed scan readiness",
+            "case .acquiring: return \"Finite acquisition\"",
+            "case .readyToSeal: return \"Horizon ready\"",
+            "Experiment One progress"
+        ]
+
+        for leak in implementationLeaks {
+            #expect(!source.contains(leak), "Rendered rider copy still exposes implementation language: \(leak)")
+        }
+
+        #expect(source.contains("Text(\"CAPTURE PROGRESS\")"))
+        #expect(source.contains("healthItem(\"DISCOVERY\""))
+        #expect(source.contains("healthItem(\"SEAL\""))
+        #expect(source.contains("eyebrow: \"READY TO SEAL\""))
+        #expect(source.contains("case .acquiring: return \"Read-only discovery\""))
+        #expect(source.contains("case .readyToSeal: return \"Ready to seal\""))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
