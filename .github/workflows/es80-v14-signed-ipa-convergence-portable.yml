@@ -1,0 +1,56 @@
+name: ES80 V14 Signed IPA Convergence Portable QA
+
+on:
+  push:
+    branches:
+      - 'qa/es80-v14-signed-ipa-convergence-portable/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compile canonical evidence producer
+        run: python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+
+      - name: Run combined portable self-test
+        run: python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+
+      - name: Pin combined truth boundaries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('scripts/ci/es80_signed_field_artifact_evidence.py').read_text(encoding='utf-8')
+          required = [
+              'SIGNING_INSPECTION_SCHEMA_VERSION = 2',
+              'unicodedata.normalize("NFC", part).casefold()',
+              'codesign,\n            "--verify",\n            "--deep",\n            "--strict",\n            "--all-architectures"',
+              'security, "cms", "-D", "-i", str(profile_path)',
+              'application-identifier',
+              'renameat2',
+              'RENAME_NOREPLACE',
+              'renamex_np',
+              'RENAME_EXCL',
+              'field_build_record = {',
+              '"signedInstallableKind": SIGNED_INSTALLABLE_KIND',
+              '"physicalGO" not in fixture_field',
+              '"authorized" not in fixture_field',
+          ]
+          missing = [needle for needle in required if needle not in source]
+          if missing:
+              raise SystemExit(f'missing combined signed-IPA contract elements: {missing}')
+
+          forbidden = [
+              'FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 2',
+              'INSPECTION_AUTHORITY_LABEL = "field-authorized"',
+              'PHYSICAL_GO = True',
+          ]
+          present = [needle for needle in forbidden if needle in source]
+          if present:
+              raise SystemExit(f'forbidden authority/schema drift found: {present}')
+          PY
