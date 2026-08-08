@@ -17,7 +17,7 @@ jobs:
         with:
           ref: fix/es80-v14-offline-report-descriptor-admission/gpt56-go
           fetch-depth: 0
-      - name: Focused package test with durable failure tail
+      - name: Focused package test with annotated failure tail
         shell: bash
         run: |
           set +e
@@ -25,12 +25,12 @@ jobs:
           status=$?
           set -e
           if [[ "$status" -ne 0 ]]; then
-            tail -n 220 /tmp/nembra-focused.log > .tmp_es80_offline_descriptor_failure.log
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .tmp_es80_offline_descriptor_failure.log
-            git commit -m "Temporary offline descriptor failure diagnostic"
-            git push origin HEAD:fix/es80-v14-offline-report-descriptor-admission/gpt56-go
+            python3 - <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/nembra-focused.log').read_text(encoding='utf-8', errors='replace').splitlines()[-120:]
+          message = '\n'.join(text).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Focused NembraBluetoothCapture test failed::{message}')
+          PY
             exit "$status"
           fi
       - name: Full package tests
@@ -43,8 +43,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/_tmp_es80_offline_descriptor_admission.yml
-          if [[ -f .tmp_es80_offline_descriptor_failure.log ]]; then
-            git rm .tmp_es80_offline_descriptor_failure.log
-          fi
           git commit -m "Remove temporary offline descriptor QA"
           git push origin HEAD:fix/es80-v14-offline-report-descriptor-admission/gpt56-go
