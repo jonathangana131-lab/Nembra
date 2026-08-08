@@ -48,7 +48,6 @@ struct ES80CaptureShellView: View {
         let byteCount: Int
         let recordCount: Int
         let valueRecordCount: Int
-        let continuityBreakCount: Int
         let sha256: String
     }
 
@@ -630,7 +629,6 @@ struct ES80CaptureShellView: View {
                 metric("Artifact bytes", value: summary.byteCount.formatted())
                 metric("Recorded events", value: summary.recordCount.formatted())
                 metric("Raw value records", value: summary.valueRecordCount.formatted())
-                metric("Continuity breaks", value: summary.continuityBreakCount.formatted())
                 metric("SHA-256", value: String(summary.sha256.prefix(16)) + "…")
             case let .unavailable(sha256, reason):
                 metric("Artifact bytes", value: artifact.data.count.formatted())
@@ -803,9 +801,9 @@ struct ES80CaptureShellView: View {
         }
 
         if session.hasTargetSession {
-            let identifier = correlatedTargetIdentifier
-                ?? selectedConnectionIdentifier
-                ?? UUID()
+            guard let identifier = correlatedTargetIdentifier ?? selectedConnectionIdentifier else {
+                return .failed("The package-owned target session has no correlated identifier available to the product surface. Nembra will not fabricate one or continue this evidence life.")
+            }
 
             switch session.connectionPhase {
             case let .connecting(connectedIdentifier):
@@ -1015,15 +1013,11 @@ struct ES80CaptureShellView: View {
                 let valueCount = capture.records.reduce(into: 0) { count, record in
                     if case .value = record.event { count += 1 }
                 }
-                let continuityBreakCount = capture.records.reduce(into: 0) { count, record in
-                    if record.event.breaksByteContinuity { count += 1 }
-                }
                 let summary = ArtifactSummary(
                     sessionID: capture.id,
                     byteCount: data.count,
                     recordCount: capture.records.count,
                     valueRecordCount: valueCount,
-                    continuityBreakCount: continuityBreakCount,
                     sha256: digest
                 )
                 return FinalizedCaptureArtifact(
