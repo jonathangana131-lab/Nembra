@@ -9,6 +9,7 @@ the definitive V14 runbook GO record.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import plistlib
@@ -38,6 +39,7 @@ COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+DEVICE_UDID_RE = re.compile(r"^[A-Za-z0-9-]{8,128}$")
 
 
 class VerificationError(RuntimeError):
@@ -119,11 +121,21 @@ def safe_archive_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     members = archive.infolist()
     if not members:
         raise VerificationError("field artifact archive is empty")
+
+    exact_names: set[str] = set()
+    folded_names: set[str] = set()
     for member in members:
         name = member.filename
         path = PurePosixPath(name)
         if path.is_absolute() or ".." in path.parts:
             raise VerificationError(f"unsafe path in field artifact archive: {name}")
+        if name in exact_names:
+            raise VerificationError(f"duplicate path in field artifact archive: {name}")
+        exact_names.add(name)
+        folded = name.casefold()
+        if folded in folded_names:
+            raise VerificationError(f"case-colliding path in field artifact archive: {name}")
+        folded_names.add(folded)
     return members
 
 
@@ -150,8 +162,8 @@ def extract_archive(ipa_path: Path, destination: Path) -> Path:
             members = safe_archive_members(archive)
             app_root = discover_single_app_root(members)
             archive.extractall(destination)
-    except zipfile.BadZipFile as error:
-        raise VerificationError("field artifact is not a valid IPA/ZIP archive") from error
+    except (RuntimeError, zipfile.BadZipFile) as error:
+        raise VerificationError("field artifact is not a readable IPA/ZIP archive") from error
     return destination / app_root
 
 
@@ -297,11 +309,103 @@ def verify_code_signature(app_path: Path) -> dict[str, str]:
     return metadata
 
 
+def verify_provisioning_profile(
+    *,
+    app_path: Path,
+    expected_device_udid: str,
+    code_signature: dict[str, str],
+) -> dict[str, Any]:
+    if DEVICE_UDID_RE.fullmatch(expected_device_udid) is None:
+        raise VerificationError("--expected-device-udid is malformed")
+
+    security = shutil.which("security")
+    if not security:
+        raise VerificationError("security is unavailable; provisioning verification requires macOS/Xcode")
+
+    profile_path = app_path / "embedded.mobileprovision"
+    decode = subprocess.run(
+        [security, "cms", "-D", "-i", str(profile_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if decode.returncode != 0:
+        detail = decode.stderr.decode("utf-8", errors="replace").strip()
+        raise VerificationError(f"embedded provisioning profile cannot be decoded: {detail}")
+    try:
+        profile = plistlib.loads(decode.stdout)
+    except Exception as error:
+        raise VerificationError("decoded embedded provisioning profile is not a valid plist") from error
+    if not isinstance(profile, dict):
+        raise VerificationError("decoded embedded provisioning profile root must be a dictionary")
+
+    platform = profile.get("Platform")
+    if not isinstance(platform, list) or "iOS" not in platform:
+        raise VerificationError("embedded provisioning profile is not an iOS profile")
+
+    team_identifier = code_signature.get("teamIdentifier")
+    profile_teams = profile.get("TeamIdentifier")
+    if (
+        not team_identifier
+        or not isinstance(profile_teams, list)
+        or team_identifier not in profile_teams
+    ):
+        raise VerificationError("code-sign TeamIdentifier does not match the provisioning profile")
+
+    entitlements = profile.get("Entitlements")
+    if not isinstance(entitlements, dict):
+        raise VerificationError("embedded provisioning profile has no entitlement dictionary")
+    entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+    if entitlement_team != team_identifier:
+        raise VerificationError("provisioning entitlement team does not match the code signature")
+
+    prefixes = profile.get("ApplicationIdentifierPrefix")
+    app_identifier = entitlements.get("application-identifier")
+    if not isinstance(prefixes, list) or not prefixes or not isinstance(app_identifier, str):
+        raise VerificationError("provisioning profile has no canonical application identifier")
+    expected_app_identifiers = {
+        f"{prefix}.{EXPECTED_BUNDLE_ID}" for prefix in prefixes if isinstance(prefix, str) and prefix
+    }
+    wildcard_identifiers = {
+        f"{prefix}.*" for prefix in prefixes if isinstance(prefix, str) and prefix
+    }
+    if app_identifier not in expected_app_identifiers | wildcard_identifiers:
+        raise VerificationError("provisioning profile does not authorize Nembra's bundle identifier")
+
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise VerificationError("provisioning profile has no valid ExpirationDate")
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    else:
+        expiration = expiration.astimezone(timezone.utc)
+    if expiration <= datetime.now(timezone.utc):
+        raise VerificationError("embedded provisioning profile is expired")
+
+    provisioned_devices = profile.get("ProvisionedDevices")
+    provisions_all_devices = profile.get("ProvisionsAllDevices") is True
+    device_match = (
+        isinstance(provisioned_devices, list) and expected_device_udid in provisioned_devices
+    )
+    if not device_match and not provisions_all_devices:
+        raise VerificationError(
+            "embedded provisioning profile does not authorize the explicitly expected field device"
+        )
+
+    return {
+        "teamIdentifier": team_identifier,
+        "profileExpirationUTC": expiration.isoformat().replace("+00:00", "Z"),
+        "targetDeviceProvisioningMatched": True,
+        "provisionsAllDevices": provisions_all_devices,
+    }
+
+
 def verify_field_artifact(
     *,
     ipa_path: Path,
     external_record_path: Path,
     expected_source_commit: str,
+    expected_device_udid: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     with tempfile.TemporaryDirectory(prefix="nembra-field-artifact-") as temp_dir:
         evidence, app_path = verify_static_artifact(
@@ -311,6 +415,11 @@ def verify_field_artifact(
             extraction_root=Path(temp_dir),
         )
         code_signature = verify_code_signature(app_path)
+        provisioning = verify_provisioning_profile(
+            app_path=app_path,
+            expected_device_udid=expected_device_udid,
+            code_signature=code_signature,
+        )
         metadata = {
             "schemaVersion": 1,
             "authority": "verification-only-not-field-authorization",
@@ -318,6 +427,7 @@ def verify_field_artifact(
             "bundleIdentifier": EXPECTED_BUNDLE_ID,
             "platform": "iPhoneOS",
             "codeSignature": code_signature,
+            "provisioning": provisioning,
         }
         return evidence, metadata
 
@@ -337,6 +447,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--expected-source-commit",
         required=True,
         help="exact accepted 40-hex source commit expected for this candidate field build",
+    )
+    parser.add_argument(
+        "--expected-device-udid",
+        required=True,
+        help="exact intended physical iPhone UDID; checked locally against embedded provisioning",
     )
     parser.add_argument(
         "--output",
@@ -359,6 +474,7 @@ def main(argv: list[str]) -> int:
             ipa_path=args.ipa,
             external_record_path=args.external_build_record,
             expected_source_commit=args.expected_source_commit,
+            expected_device_udid=args.expected_device_udid,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         evidence_bytes = (json.dumps(evidence, indent=2, sort_keys=True) + "\n").encode("utf-8")
