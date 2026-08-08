@@ -13,7 +13,16 @@
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
     public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
-    public static let permitsPhysicalProcedure = false
+
+    /// Derived from the sealed status so authorization cannot drift from the blocker vocabulary.
+    /// Adding any future GO status must intentionally update this exhaustive switch in the same
+    /// accepted product change.
+    public static var permitsPhysicalProcedure: Bool {
+        switch status {
+        case .noGo:
+            return false
+        }
+    }
 
     public enum Status: Equatable, Sendable {
         case noGo(NoGoBlocker)
