@@ -119,7 +119,19 @@ def read_exact_subject(path: Path, label: str) -> bytes:
 
 
 def require_openssl() -> str:
-    """Resolve one explicitly controlled OpenSSL executable without consulting ambient PATH."""
+    """Resolve one explicitly controlled OpenSSL executable under trusted path custody.
+
+    The executable itself and every directory in its canonical path must be owned by root or the
+    signing user and must not be writable by group/other. This prevents an unrelated owner of a
+    mode-0755 parent directory from replacing the reviewed executable between validation and exec.
+    """
+    if not hasattr(os, "geteuid"):
+        raise AuthorizationEnvelopeError(
+            "this platform cannot verify OpenSSL executable custody ownership"
+        )
+
+    signing_uid = os.geteuid()
+    trusted_owner_uids = {0, signing_uid}
     configured = os.environ.get("NEMBRA_OPENSSL", DEFAULT_OPENSSL_PATH)
     requested = Path(configured).expanduser()
     if not requested.is_absolute():
@@ -150,13 +162,10 @@ def require_openssl() -> str:
         )
     if executable_stat.st_mode & 0o111 == 0:
         raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
-
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+    if executable_stat.st_uid not in trusted_owner_uids:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root or the signing user"
+        )
 
     directory = resolved.parent
     while True:
@@ -166,6 +175,14 @@ def require_openssl() -> str:
             raise AuthorizationEnvelopeError(
                 "could not inspect OpenSSL executable custody path"
             ) from exc
+        if not stat.S_ISDIR(directory_stat.st_mode):
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path contains a non-directory node: {directory}"
+            )
+        if directory_stat.st_uid not in trusted_owner_uids:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path has an untrusted owner: {directory}"
+            )
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
