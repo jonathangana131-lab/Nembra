@@ -482,14 +482,22 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     /// Adds a human-observed stock-app value to the selected target's monotonic
-    /// evidence timeline. No marker can exist before explicit target selection.
+    /// evidence timeline. No marker can exist before explicit target selection,
+    /// and no new marker may enter while that target is quarantined awaiting the
+    /// terminal callback for a cancellation/teardown request.
     public func recordStockAppObservation(
         field: String,
         displayedValue: String,
         note: String? = nil
     ) throws {
         try ensureCaptureHealthy()
-        guard recorder != nil else { throw ControllerError.targetNotSelected }
+        guard recorder != nil,
+              let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+            throw ControllerError.targetNotSelected
+        }
+        guard !selectedTargetCancellationPending else {
+            throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+        }
         let observation = try PassiveBluetoothStockAppObservation(
             field: field,
             displayedValue: displayedValue,
@@ -1097,7 +1105,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         guard PassiveCoreBluetoothDiscoveryAdmissionPolicy.accepts(
             callbackIsFromActiveManager: central === centralManager,
             isPoweredOn: central.state == .poweredOn,
-            isScanning: isScanning
+            isScanning: isScanning && central.isScanning
         ) else { return }
 
         let receipt = callbackReceipt()
