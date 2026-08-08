@@ -55,7 +55,7 @@ struct NembraApp: App {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The package-owned Experiment One workflow could not be created.")
+                                description: Text("The Experiment One capture workflow could not be created.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -123,7 +123,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                             .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                             .foregroundStyle(.white)
 
-                        Text("Declare the scooter charger state before Experiment One can expose OFF 1.")
+                        Text("Confirm the charger state before OFF 1 becomes available.")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -143,7 +143,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
                         chargerStateButton(
                             title: "Connected",
-                            detail: "Experiment One remains blocked",
+                            detail: "Unplug charger to continue",
                             systemImage: "bolt.fill",
                             state: .connected
                         )
@@ -161,7 +161,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                                     .font(.headline)
                                     .foregroundStyle(.white)
 
-                                Text("The accepted stationary fingerprint recipe requires the scooter charger disconnected. Nembra will not convert a connected declaration into disconnected provenance. Unplug the charger, then select Disconnected.")
+                                Text("This capture requires the scooter to be unplugged. Unplug the charger, then select Disconnected.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -195,7 +195,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                     .accessibilityHint("Available only after declaring that the charger is disconnected.")
                     .accessibilityIdentifier("es80.capture.preflight.continue")
 
-                    Text("This is an operator declaration, not charger sensing or proof that the condition remains unchanged. Keep the charger disconnected, Nembra foregrounded with the screen unlocked, and the stock scooter app closed through the run.")
+                    Text("Nembra cannot sense the charger directly. Keep it disconnected, keep Nembra open with the screen unlocked, and keep the stock scooter app closed for the whole capture.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
