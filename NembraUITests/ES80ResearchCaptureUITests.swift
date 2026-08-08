@@ -27,13 +27,42 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The current package-owned NO-GO must be the primary product state."
         )
         XCTAssertTrue(
+            app.staticTexts["This build is still finishing its final checks before it can collect real ES80 data."].waitForExistence(timeout: 3),
+            "The primary lock reason must remain rider-readable without exposing internal acceptance machinery."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Not ready for scooter capture yet"].waitForExistence(timeout: 3),
+            "The visible blocker must remain expressed in rider-facing product language."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Capture workflow installed"].waitForExistence(timeout: 3),
+            "The installed software state must remain visible without internal authority terminology."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Scooter capture unavailable on this build"].waitForExistence(timeout: 3),
+            "The build lock must remain explicit without implying physical approval."
+        )
+        XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
             "The dedicated package-gated NO-GO surface must be active."
         )
+
+        let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3),
+            physicalBoundary.waitForExistence(timeout: 3),
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
+        for forbiddenJargon in ["lifecycle authority", "provenance", "runbook gates", "GO authorization"] {
+            XCTAssertFalse(
+                physicalBoundary.label.localizedCaseInsensitiveContains(forbiddenJargon),
+                "The rider-facing accessible lock explanation must not expose internal engineering terminology: \(forbiddenJargon)."
+            )
+        }
+        XCTAssertFalse(app.staticTexts["Physical Experiment One locked"].exists)
+        XCTAssertFalse(app.staticTexts["Single-authority workflow installed"].exists)
+        XCTAssertFalse(app.staticTexts["Field execution unavailable on this build"].exists)
+        XCTAssertFalse(app.staticTexts["NO-GO"].exists)
+
         XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
