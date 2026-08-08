@@ -62,39 +62,43 @@ jobs:
                   raise SystemExit(f"producer transform anchor count drifted: {old!r} -> {script.count(old)}")
               script = script.replace(old, new, 1)
 
-          test_anchor = '''        self.assertLess(
-            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
-            self.source.index('rename_exclusive(source, destination'),
-        )
-
-    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
-'''
-          test_replacement = '''        self.assertLess(
-            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
-            self.source.index('rename_exclusive(source, destination'),
-        )
-
-    def test_cleanup_only_removes_staging_directory_owned_by_this_process(self):
-        self.assertIn('FINAL_STAGING_OWNED=0', self.source)
-        cleanup_guard = (
-            'if [[ "${FINAL_STAGING_OWNED:-0}" == "1" '
-            '&& -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then'
-        )
-        self.assertIn(cleanup_guard, self.source)
-        self.assertNotIn(
-            'if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then',
-            self.source,
-        )
-        mkdir_index = self.source.index('mkdir "$FINAL_STAGING_DIR"')
-        owned_index = self.source.index('FINAL_STAGING_OWNED=1')
-        rename_index = self.source.index('rename_exclusive(source, destination')
-        released_index = self.source.rindex('FINAL_STAGING_OWNED=0')
-        self.assertLess(mkdir_index, owned_index)
-        self.assertLess(owned_index, rename_index)
-        self.assertLess(rename_index, released_index)
-
-    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
-'''
+          test_anchor = "\n".join([
+              "        self.assertLess(",
+              "            self.source.index('mkdir \"$FINAL_STAGING_DIR\"'),",
+              "            self.source.index('rename_exclusive(source, destination'),",
+              "        )",
+              "",
+              "    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):",
+              "",
+          ])
+          test_replacement = "\n".join([
+              "        self.assertLess(",
+              "            self.source.index('mkdir \"$FINAL_STAGING_DIR\"'),",
+              "            self.source.index('rename_exclusive(source, destination'),",
+              "        )",
+              "",
+              "    def test_cleanup_only_removes_staging_directory_owned_by_this_process(self):",
+              "        self.assertIn('FINAL_STAGING_OWNED=0', self.source)",
+              "        cleanup_guard = (",
+              "            'if [[ \"${FINAL_STAGING_OWNED:-0}\" == \"1\" '",
+              "            '&& -n \"${FINAL_STAGING_DIR:-}\" && -e \"$FINAL_STAGING_DIR\" ]]; then'",
+              "        )",
+              "        self.assertIn(cleanup_guard, self.source)",
+              "        self.assertNotIn(",
+              "            'if [[ -n \"${FINAL_STAGING_DIR:-}\" && -e \"$FINAL_STAGING_DIR\" ]]; then',",
+              "            self.source,",
+              "        )",
+              "        mkdir_index = self.source.index('mkdir \"$FINAL_STAGING_DIR\"')",
+              "        owned_index = self.source.index('FINAL_STAGING_OWNED=1')",
+              "        rename_index = self.source.index('rename_exclusive(source, destination')",
+              "        released_index = self.source.rindex('FINAL_STAGING_OWNED=0')",
+              "        self.assertLess(mkdir_index, owned_index)",
+              "        self.assertLess(owned_index, rename_index)",
+              "        self.assertLess(rename_index, released_index)",
+              "",
+              "    def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):",
+              "",
+          ])
           if tests.count(test_anchor) != 1:
               raise SystemExit(f"test transform anchor count drifted: {tests.count(test_anchor)}")
           tests = tests.replace(test_anchor, test_replacement, 1)
