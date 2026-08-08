@@ -78,6 +78,9 @@ WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BU
 SOURCE_ROOT="$WORK_ROOT/source"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
+LOG_DIR="$WORK_ROOT/logs"
+INSPECTION_DIR="$WORK_ROOT/inspection"
+EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"
 RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"
 if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
   RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
@@ -88,10 +91,11 @@ from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
 PY
 )"
-INSPECTION_DIR="$ARTIFACTS_DIR/inspection"
+ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
+FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"
 
-# Candidate output is immutable. Resolve lexical traversal/symlink ancestors before safety checks;
-# never mix a new field candidate into an old or repository-root evidence directory.
+# Candidate output is immutable and failure-atomic. The public destination does not exist until the
+# final exclusive rename after archive, export, inspector verification, and complete staging.
 if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
   exit 10
@@ -100,27 +104,20 @@ if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
   echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
   exit 11
 fi
+if [[ -e "$FINAL_STAGING_DIR" || -L "$FINAL_STAGING_DIR" ]]; then
+  echo "Final field-candidate staging directory already exists; refusing reuse: $FINAL_STAGING_DIR" >&2
+  exit 12
+fi
 if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
-    exit 12
+    exit 13
   fi
 fi
 
-# Claim the final candidate root atomically after the policy checks. The earlier absence check is
-# advisory; this non--p mkdir is the mechanical no-mix boundary if another producer races us.
-ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
-mkdir -p "$ARTIFACTS_PARENT"
-if ! mkdir "$ARTIFACTS_DIR"; then
-  echo "ARTIFACTS_DIR appeared before atomic claim; refusing to mix field-production evidence: $ARTIFACTS_DIR" >&2
-  exit 13
-fi
-
-# Producer-owned provenance is a sibling of the inspector-owned evidence directory. The inspector's
-# failure-atomic/no-replace contract requires INSPECTION_DIR not to exist before invocation.
-mkdir "$ARTIFACTS_DIR/logs"
-EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
+rm -rf "$WORK_ROOT"
+mkdir -p "$WORK_ROOT" "$LOG_DIR" "$ARTIFACTS_PARENT"
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
 EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
@@ -148,14 +145,15 @@ if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   exit 14
 fi
 
-rm -rf "$WORK_ROOT"
-mkdir -p "$WORK_ROOT"
 git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
 
 cleanup() {
   cd "$ROOT" >/dev/null 2>&1 || true
   git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
   rm -rf "$WORK_ROOT"
+  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
+    rm -rf "$FINAL_STAGING_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -181,7 +179,7 @@ if ! run_xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
   "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
   archive \
-  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-archive.log"
+  2>&1 | tee "$LOG_DIR/xcodebuild-archive.log"
 then
   echo "Signed field-candidate archive or archive-log capture failed." >&2
   exit 16
@@ -192,7 +190,7 @@ if ! run_xcodebuild \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
-  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-export.log"
+  2>&1 | tee "$LOG_DIR/xcodebuild-export.log"
 then
   echo "Signed field-candidate export or export-log capture failed." >&2
   exit 17
@@ -234,9 +232,9 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID is verification-only input. The producer passes only an absolute private
-# file path to the runner; the runner opens it once with O_NOFOLLOW and hands the value to the
-# canonical inspector only in process memory. INSPECTION_DIR remains absent until atomic publication.
+# The intended-device UDID remains behind the private mode-0600 file boundary. The producer passes
+# only the file path; the private runner opens it once with O_NOFOLLOW and hands the value to the
+# canonical inspector only in process memory. The inspector publishes under temporary WORK_ROOT.
 python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
@@ -396,8 +394,15 @@ if hashlib.sha256(raw_info_plist).hexdigest() != field.get("infoPlistSHA256"):
     raise SystemExit("Signed field-launch recipe was not verified on the exact Info.plist evidence bytes")
 PY
 
-# Never persist the intended-device UDID. Candidate provenance records only non-sensitive build and
-# export-policy facts plus paths to the failure-atomic inspector evidence directory.
+# Assemble the complete candidate on the destination filesystem while the public final path remains
+# absent. This preserves the current inspection/ layout without exposing partial evidence on failure.
+mkdir "$FINAL_STAGING_DIR"
+cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"
+mkdir "$FINAL_STAGING_DIR/logs"
+cp -p "$LOG_DIR/xcodebuild-archive.log" "$FINAL_STAGING_DIR/logs/xcodebuild-archive.log"
+cp -p "$LOG_DIR/xcodebuild-export.log" "$FINAL_STAGING_DIR/logs/xcodebuild-export.log"
+cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
+
 {
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
@@ -415,7 +420,59 @@ PY
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
   xcodebuild -version
-} > "$ARTIFACTS_DIR/field-candidate-environment.txt"
+} > "$FINAL_STAGING_DIR/field-candidate-environment.txt"
+
+# Re-prove that final staging preserved exact inspector evidence bytes and exact export policy bytes.
+python3 - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+def manifest(root):
+    result = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise SystemExit(f"Unexpected symlink in candidate evidence: {path}")
+        if path.is_file():
+            result[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+if manifest(source) != manifest(destination):
+    raise SystemExit("Final candidate staging did not preserve exact canonical inspector bytes")
+PY
+
+FINAL_EXPORT_OPTIONS_SHA256="$(python3 - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+if [[ "$FINAL_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
+  echo "Final retained ExportOptions.plist does not match exact policy consumed by xcodebuild." >&2
+  exit 20
+fi
+
+# macOS renamex_np(RENAME_EXCL) publishes the complete directory atomically without replacement.
+python3 - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
+import ctypes
+import errno
+import os
+import sys
+source, destination = map(os.fsencode, sys.argv[1:3])
+libc = ctypes.CDLL(None, use_errno=True)
+rename_exclusive = libc.renamex_np
+rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+rename_exclusive.restype = ctypes.c_int
+if rename_exclusive(source, destination, 0x00000004) != 0:  # RENAME_EXCL
+    number = ctypes.get_errno()
+    if number in (errno.EEXIST, errno.ENOTEMPTY):
+        raise SystemExit("refusing to overwrite concurrently published field-candidate evidence")
+    raise OSError(number, os.strerror(number), os.fsdecode(destination))
+PY
+
+# Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.
+FINAL_STAGING_DIR=""
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
 echo "Exact ExportOptions.plist, archive/export logs, and failure-atomic signed evidence were retained."
