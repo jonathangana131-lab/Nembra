@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -88,17 +89,20 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
+        let issuedAtUptimeNanoseconds: UInt64
 
         fileprivate init(
             admissionIdentity: UUID,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
-            recorder: PassiveCoreBluetoothCaptureRecorder
+            recorder: PassiveCoreBluetoothCaptureRecorder,
+            issuedAtUptimeNanoseconds: UInt64
         ) {
             self.admissionIdentity = admissionIdentity
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
         }
     }
 
@@ -108,13 +112,15 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
-        recorder: PassiveCoreBluetoothCaptureRecorder
+        recorder: PassiveCoreBluetoothCaptureRecorder,
+        issuedAtUptimeNanoseconds: UInt64
     ) {
         payload = Payload(
             admissionIdentity: UUID(),
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
-            recorder: recorder
+            recorder: recorder,
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds
         )
     }
 
@@ -203,10 +209,12 @@ final class PassiveBluetoothExperimentOneRun {
         }
 
         let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         return PassiveBluetoothExperimentOneCaptureAdmission(
             powerCycleEvidence: evidence,
             peripheralIdentifier: peripheralIdentifier,
-            recorder: recorder
+            recorder: recorder,
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds
         )
     }
 

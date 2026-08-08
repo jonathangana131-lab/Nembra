@@ -180,6 +180,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case invalidConnectionTimeout
         case invalidAcquisitionProgressTimeout
         case experimentOneVehicleContextMismatch
+        case experimentOnePostAdmissionRediscoveryRequired(UUID)
         case targetNotSelected
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
@@ -546,6 +547,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
             throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
         }
+        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            throw ControllerError.experimentOnePostAdmissionRediscoveryRequired(payload.peripheralIdentifier)
+        }
         if discovery.isConnectable == false {
             throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
         }
@@ -560,7 +565,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
@@ -591,13 +595,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         hasUsedInitialSessionIdentity = true
         recorder = payload.recorder
 
-        if let latestAdvertisement {
-            enqueue(
-                .advertisement(latestAdvertisement.observation),
-                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
-                receivedAtDate: latestAdvertisement.receivedAtDate
-            )
-        }
+        enqueue(
+            .advertisement(latestAdvertisement.observation),
+            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+            receivedAtDate: latestAdvertisement.receivedAtDate
+        )
 
         do {
             _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
