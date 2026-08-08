@@ -1,0 +1,26 @@
+name: chat-g5t8m restack recorded Horizon v3
+on:
+  push:
+    branches: ['parallel/es80-recorded-horizon-recovery-v3/chat-g5t8m']
+    paths: ['.github/workflows/chat-g5t8m-restack-recorded-horizon-v3.yml']
+permissions:
+  contents: write
+jobs:
+  restack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-recorded-horizon-recovery-v3/chat-g5t8m
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          git fetch origin parallel/es80-recorded-horizon-recovery-v2/chat-g5t8m
+          git diff b49c2bf19ee749395b86058e0b8b7693178f4f6f a77e8e6bb2560270d994f9313224f0301ed679a6 -- Packages/NembraBluetoothCapture/Sources | git apply --index
+          git show 57af97bc0e2e90e097759c241ae6778cb2fb77e5:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothRecordedHorizonRecoveryTests.swift > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothRecordedHorizonRecoveryTests.swift
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothRecordedHorizonRecoveryTests.swift
+          git rm .github/workflows/chat-g5t8m-restack-recorded-horizon-v3.yml
+          git config user.name 'nembra-chat-g5t8m'
+          git config user.email 'nembra-chat-g5t8m@users.noreply.github.com'
+          git commit -m 'fix: quarantine recorded Horizon commit failures'
+          git push origin HEAD:parallel/es80-recorded-horizon-recovery-v3/chat-g5t8m
