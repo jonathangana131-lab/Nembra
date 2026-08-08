@@ -683,12 +683,23 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 throw error
             }
 
-            let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
-            try validateBoundaryAuthority(committedHorizon.authority)
-            try committedHorizon.completeHorizonArtifactFreeze(on: &observationBoundaryQueueGate)
-            retireQueuedEvidenceAfterTerminalHorizon()
-            lastFinalizedArtifactAuthority = committedHorizon.authority
-            return data
+            do {
+                let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                try validateBoundaryAuthority(committedHorizon.authority)
+                try committedHorizon.completeHorizonArtifactFreeze(on: &observationBoundaryQueueGate)
+                retireQueuedEvidenceAfterTerminalHorizon()
+                lastFinalizedArtifactAuthority = committedHorizon.authority
+                return data
+            } catch {
+                // H is already durable and queue-committed here, but the immutable
+                // terminal artifact did not complete. Quarantine this exact H epoch
+                // instead of leaving `.horizonBoundaryRecorded` stranded or retrying
+                // under a newer authority and laundering incomplete evidence.
+                _ = try? observationBoundaryQueueGate.abortCommittedHorizonBeforeArtifactFreeze(
+                    committedHorizon
+                )
+                throw error
+            }
         } catch {
             failCapture(error)
             throw error
