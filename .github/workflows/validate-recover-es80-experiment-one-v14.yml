@@ -1,0 +1,113 @@
+name: ES80 V14 Recovered Experiment One Exact Product QA
+
+on:
+  push:
+    branches:
+      - parallel/validate-recover-es80-experiment-one-v14/gpt56-go2
+
+permissions:
+  contents: read
+
+jobs:
+  validate-exact-product:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable recovered product
+        uses: actions/checkout@v6
+        with:
+          ref: ea0961e35874d0da5fb2cdeb5b811b445b6bb137
+          fetch-depth: 0
+
+      - name: Verify exact product and composed ancestries
+        run: |
+          product='ea0961e35874d0da5fb2cdeb5b811b445b6bb137'
+          test "$(git rev-parse HEAD)" = "$product"
+          git merge-base --is-ancestor 2c5c2856bd8a8645170b2cc59371b83f7b50e6da "$product"
+          git merge-base --is-ancestor 83cf7256be50a74ee56ac14cb0990586fde995f8 "$product"
+          git merge-base --is-ancestor eef169004316b3dd4d48effe6a067735efe73a79 "$product"
+
+      - name: Verify corrected capture-wide fingerprint regression and V14 runbook blobs
+        run: |
+          product='ea0961e35874d0da5fb2cdeb5b811b445b6bb137'
+          continuity='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothTransportFingerprintPeripheralContinuityTests.swift'
+          runbook='docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md'
+          test "$(git rev-parse "$product:$continuity")" = '0940496dcea95fe255acca017adb2451adce2b26'
+          test "$(git rev-parse "$product:$runbook")" = '9f42fe24d07ee2891bc68f77acb3ad460b21c2d3'
+
+      - name: Test NembraCore with warnings as errors
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator with warnings as errors
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Guard passive Capture against application characteristic writes
+        run: |
+          if grep -R -n -E 'writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive Capture package must not add application characteristic writes.' >&2
+            exit 1
+          fi
+
+      - name: Verify accepted four-window rediscovery behavior
+        run: |
+          producer='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothPowerCycleObservationSession.swift'
+          grep -Fq 'static let allowsDuplicateDiscoveryCallbacks = true' "$producer"
+          grep -Fq 'CBCentralManagerScanOptionAllowDuplicatesKey:' "$producer"
+          grep -Fq 'PassiveBluetoothPowerCycleScanDeliveryPolicy.allowsDuplicateDiscoveryCallbacks' "$producer"
+          if grep -Fq 'CBCentralManagerScanOptionAllowDuplicatesKey: false' "$producer"; then
+            echo 'Four-window rediscovery behavior regressed to duplicate filtering.' >&2
+            exit 1
+          fi
+
+      - name: Verify Experiment One authority remains sealed and non-public
+        run: |
+          run_file='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift'
+          assessment='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift'
+          compact_run="$(tr -d '[:space:]' < "$run_file")"
+          compact_assessment="$(tr -d '[:space:]' < "$assessment")"
+          required=(
+            'fileprivateinit?(result:PassiveBluetoothPowerCycleObservationResult)'
+            'fileprivateinit(observationSeriesIdentity:PassiveBluetoothCandidateObservationSeriesIdentity,session:PassiveBluetoothCaptureSession)'
+            'fileprivatefuncbeginCaptureRecorder('
+            'fileprivatefunccaptureEvidenceSnapshot()'
+            'fileprivatefunccaptureEvidenceAssessment()'
+          )
+          for token in "${required[@]}"; do
+            printf '%s' "$compact_run" | grep -Fq "$token"
+          done
+          forbidden=(
+            'publicfinalclassPassiveBluetoothExperimentOneRun'
+            'publicstructPassiveBluetoothExperimentOnePowerCycleEvidence'
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidence'
+            'publicfuncbeginCaptureRecorder('
+            'publicfunccaptureEvidenceSnapshot('
+            'publicfunccaptureEvidenceAssessment('
+            'publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment'
+            'publicenumPassiveBluetoothExperimentOneStatusPromotionPolicy'
+          )
+          for token in "${forbidden[@]}"; do
+            if printf '%s%s' "$compact_run" "$compact_assessment" | grep -Fq "$token"; then
+              echo "Unfinished Experiment One authority became public: $token" >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify physical runbook remains explicit V14 NO-GO
+        run: |
+          runbook='docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md'
+          grep -Fq '# AOVOPRO ES80 Passive Physical Capture Runbook — V14' "$runbook"
+          grep -Fq 'NO-GO — PHYSICAL EXPERIMENT ONE MUST NOT RUN FROM THE CURRENT SOFTWARE LINEAGE' "$runbook"
+          grep -Fq 'at least 60 seconds after accepted Ready' "$runbook"
+          grep -Fq 'Accepted exact build/commit: **NOT YET AUTHORIZED**' "$runbook"
+          grep -Fq '**NO-GO.**' "$runbook"
