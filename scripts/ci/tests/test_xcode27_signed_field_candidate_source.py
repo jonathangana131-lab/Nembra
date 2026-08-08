@@ -18,11 +18,19 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)
 
-    def test_reuses_canonical_signed_field_artifact_evidence_owner(self):
+    def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
-        self.assertIn('signed-field-artifact-evidence-not-field-authorization', self.source)
+        self.assertIn('NembraCaptureExternalBuildRecord.json', self.source)
+        self.assertIn('NembraCaptureFieldBuildEvidenceRecord.json', self.source)
+        self.assertIn('NembraCaptureSignedFieldArtifactInspection.json', self.source)
+        self.assertIn('build-evidence/NembraField.ipa', self.source)
+        self.assertIn('signed-field-artifact-inspection-not-field-authorization', self.source)
+        self.assertIn('fieldBuildEvidenceRecordSHA256', self.source)
+        self.assertIn('externalBuildRecordSHA256', self.source)
+        self.assertIn('signedInstallableSHA256', self.source)
+        self.assertNotIn('NembraCaptureSignedFieldArtifactEvidence.json', self.source)
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
 
@@ -46,6 +54,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
         self.assertIn('PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN.', self.source)
+        self.assertIn('physical_authorization=not-granted', self.source)
         self.assertNotIn('PassiveBluetoothExperimentOneFieldExecutionGate', self.source)
         self.assertNotIn('ES80_PHYSICAL_CAPTURE_RUNBOOK.md', self.source)
 
