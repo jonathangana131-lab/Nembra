@@ -22,6 +22,16 @@ jobs:
         run: |
           python3 -m py_compile .github/scripts/agent_auth_envelope_atomic_current.py
           python3 .github/scripts/agent_auth_envelope_atomic_current.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/es80_field_authorization_envelope.py')
+          text = path.read_text(encoding='utf-8')
+          old = '                staging_path.unlink()\n'
+          new = '                os.unlink(staging_path)\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one staging cleanup call, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
           python3 scripts/ci/es80_field_authorization_envelope.py --self-test
           python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
