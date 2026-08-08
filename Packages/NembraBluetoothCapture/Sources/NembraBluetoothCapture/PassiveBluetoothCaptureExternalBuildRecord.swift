@@ -98,6 +98,7 @@ public enum PassiveBluetoothCaptureExternalBuildRuntimeBindingError: Error, Equa
 public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, Sendable {
     case malformedJSON
     case unexpectedField(String)
+    case duplicateField(String)
     case unsupportedSchemaVersion(Int)
     case invalidBuildIdentifier
     case buildIdentifierSourceMismatch
@@ -185,6 +186,9 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(duplicateKey)
+        }
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
