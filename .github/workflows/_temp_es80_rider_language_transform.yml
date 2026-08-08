@@ -57,6 +57,12 @@ jobs:
                   raise SystemExit(f"expected exactly one rider-copy match, got {count}: {old}")
               surface = surface.replace(old, new)
 
+          horizon_phrase = "accepted Horizon authority"
+          horizon_count = surface.count(horizon_phrase)
+          if horizon_count != 1:
+              raise SystemExit(f"expected one remaining Horizon phrase after structured replacements, got {horizon_count}")
+          surface = surface.replace(horizon_phrase, "capture readiness")
+
           banned = [
               "One sealed evidence life",
               "package-owned Experiment One authority",
