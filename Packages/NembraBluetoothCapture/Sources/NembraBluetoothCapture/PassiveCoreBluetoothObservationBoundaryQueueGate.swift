@@ -35,6 +35,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case abortQueueRetirementRequired
         case abortRetirementReceiptMismatch
         case abortQueueTailChanged
+        case terminalQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)
+        case retainedEvidenceRoutingRequired(retainedCount: Int)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -393,15 +395,68 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         phase = .awaitingReady
     }
 
+    /// Reopens boundary admission after a completed terminal Horizon only when
+    /// producer-issued post-H retirement proof still matches the exact terminal
+    /// transaction and the controller has already created a strictly newer durable
+    /// target session/recorder generation.
+    ///
+    /// The call is synchronous and MainActor-isolated. The controller must retire
+    /// the terminal queue and consume this receipt without an intervening `await`;
+    /// any callback that advances the global queue tail invalidates the receipt. A
+    /// receipt that preserves pending evidence is not standalone reopen authority:
+    /// retained recorder destinations require a separately accepted routing/adoption
+    /// contract and this overload deliberately cannot bypass that requirement.
+    ///
+    /// On success the exact fresh target-session generation is bound until its first
+    /// Ready begins, matching the stronger pre-H recovery grammar above. This means
+    /// neither the sealed terminal session nor an unrelated newer session may consume
+    /// the reopened lifecycle. Transaction revision remains monotonic because this
+    /// gate instance is preserved.
+    @MainActor
+    mutating func reopenAfterTerminalQueueRetirement(
+        _ receipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt,
+        currentLastEnqueuedEventSequence: UInt64,
+        freshTargetSessionGeneration: UInt64
+    ) throws {
+        guard case let .terminal(transaction) = phase else {
+            throw StateError.invalidTransition
+        }
+        guard receipt.terminalTransactionRevision == transaction.revision,
+              receipt.horizonQueueCutoff == transaction.queueCutoff else {
+            throw StateError.staleTransaction
+        }
+        guard receipt.terminalAuthority == transaction.authority else {
+            throw StateError.authorityChanged
+        }
+        guard receipt.validatedQueueTailSequence == currentLastEnqueuedEventSequence else {
+            throw StateError.terminalQueueChangedAfterRetirement(
+                expected: receipt.validatedQueueTailSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard !receipt.requiresRetainedEvidenceRoutingBeforeReopen else {
+            throw StateError.retainedEvidenceRoutingRequired(
+                retainedCount: receipt.retainedPendingEvidenceCount
+            )
+        }
+        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
+        phase = .awaitingReady
+    }
+
     /// Requests a fresh lifecycle grammar only when no observation transaction has
     /// begun yet. Once Ready starts, this gate remains closed through terminal freeze
     /// unless the explicit pre-H abort -> queue-retirement -> fresh-session recovery
     /// transaction completes.
     ///
     /// `resetForNewCaptureSession()` never escapes abort quarantine and never clears
-    /// the exact fresh-session generation retained after a completed abort recovery.
-    /// Terminal artifact freeze likewise stays closed until its separate post-H
-    /// retirement/reopen authority is accepted and integrated.
+    /// the exact fresh-session generation retained after either completed pre-H abort
+    /// recovery or post-H terminal retirement recovery. Terminal artifact freeze alone
+    /// likewise stays closed until the receipt-gated transition above succeeds.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else {
