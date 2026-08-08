@@ -202,7 +202,12 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
 
         let session = await recorder.snapshot()
         #expect(session.observationBoundaries.isEmpty)
-        #expect(gate.phase == .awaitingReady)
+        guard case let .drainingReady(active) = gate.phase else {
+            Issue.record("Rejected stale recorder mutation must leave the admitted Ready transaction unresolved.")
+            return
+        }
+        #expect(active.queueCutoff == ready.queueCutoff)
+        #expect(active.authority == ready.authority)
         #expect(gate.activeTransaction?.authority == authority)
     }
 
