@@ -24,6 +24,12 @@ if [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" != /* || ! -f "$NEMBRA_INTENDED_
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one absolute regular non-symlink private verification file." >&2
   exit 4
 fi
+if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
+  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
+then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
+  exit 4
+fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
   echo "NEMBRA_EXPORT_OPTIONS_PLIST does not name an existing file." >&2
   exit 5
