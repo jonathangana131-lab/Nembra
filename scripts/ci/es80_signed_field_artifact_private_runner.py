@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Invoke the canonical signed-field inspector without exposing the intended device ID in OS argv.
 
-The intended-device identifier is verification-only input. This wrapper accepts only a path to a
-private one-value file, reads the identifier inside this Python process, and calls the incumbent
-`es80_signed_field_artifact_evidence.py` module directly with an in-memory argument list. The raw
-identifier is never placed in this process's command line, environment, artifact names, or output.
+The intended-device identifier is verification-only input. This wrapper accepts only an absolute
+path to a private one-value file, reads the identifier inside this Python process, and calls the
+incumbent `es80_signed_field_artifact_evidence.py` module directly with an in-memory argument list.
+The raw identifier is never placed in this process's command line, environment, artifact names, or
+output.
 
 This is still evidence production only. It cannot authorize physical Experiment One.
 """
@@ -28,32 +29,87 @@ class PrivateInputError(RuntimeError):
     pass
 
 
-def read_private_identifier(path: Path) -> str:
-    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise PrivateInputError("this platform cannot enforce no-follow private verification input")
+def _open_private_file_without_symlinks(path: Path) -> int:
+    """Open an absolute file path while refusing symlinks in every path component."""
+    required_flags = ("O_NOFOLLOW", "O_DIRECTORY")
+    if any(not hasattr(os, name) for name in required_flags) or os.open not in os.supports_dir_fd:
+        raise PrivateInputError("this platform cannot enforce component-wise no-follow private input")
+    if not path.is_absolute() or path.anchor != os.sep:
+        raise PrivateInputError("intended-device verification file path must be one canonical absolute path")
 
-    flags = os.O_RDONLY | os.O_NOFOLLOW
-    if hasattr(os, "O_CLOEXEC"):
-        flags |= os.O_CLOEXEC
+    components = path.parts[1:]
+    if not components or any(component in ("", ".", "..") for component in components):
+        raise PrivateInputError("intended-device verification file path is not canonical")
+
+    close_on_exec = os.O_CLOEXEC if hasattr(os, "O_CLOEXEC") else 0
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
 
     try:
-        descriptor = os.open(path, flags)
+        parent_descriptor = os.open(os.sep, directory_flags)
     except OSError as exc:
-        raise PrivateInputError("intended-device verification file is not a readable regular file") from exc
+        raise PrivateInputError("private verification path root could not be opened safely") from exc
 
     try:
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode):
-            raise PrivateInputError("intended-device verification input must be one regular non-symlink file")
-        if metadata.st_size < 1 or metadata.st_size > MAX_IDENTIFIER_BYTES:
+        for component in components[:-1]:
+            try:
+                next_descriptor = os.open(
+                    component,
+                    directory_flags,
+                    dir_fd=parent_descriptor,
+                )
+            except OSError as exc:
+                raise PrivateInputError(
+                    "intended-device verification path contains an unsafe directory component"
+                ) from exc
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            return os.open(components[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError as exc:
+            raise PrivateInputError(
+                "intended-device verification file is not a readable regular non-symlink file"
+            ) from exc
+    finally:
+        os.close(parent_descriptor)
+
+
+def read_private_identifier(path: Path) -> str:
+    """Read one opaque identifier through a stable no-follow descriptor without repairing bytes."""
+    descriptor = _open_private_file_without_symlinks(path)
+
+    try:
+        metadata_before = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata_before.st_mode):
+            raise PrivateInputError("intended-device verification input must be one regular file")
+        if metadata_before.st_uid != os.geteuid():
+            raise PrivateInputError("intended-device verification file must be owned by the current user")
+        if metadata_before.st_nlink != 1:
+            raise PrivateInputError("intended-device verification file must have exactly one hard link")
+        if metadata_before.st_size < 1 or metadata_before.st_size > MAX_IDENTIFIER_BYTES:
             raise PrivateInputError("intended-device verification input has an invalid bounded size")
-        if metadata.st_mode & 0o077:
+        if metadata_before.st_mode & 0o077:
             raise PrivateInputError("intended-device verification file must not be accessible by group/other")
 
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
-        if len(raw) != metadata.st_size:
+        metadata_after = os.fstat(descriptor)
+        stability_before = (
+            metadata_before.st_dev,
+            metadata_before.st_ino,
+            metadata_before.st_size,
+            metadata_before.st_mtime_ns,
+            metadata_before.st_ctime_ns,
+        )
+        stability_after = (
+            metadata_after.st_dev,
+            metadata_after.st_ino,
+            metadata_after.st_size,
+            metadata_after.st_mtime_ns,
+            metadata_after.st_ctime_ns,
+        )
+        if len(raw) != metadata_before.st_size or stability_after != stability_before:
             raise PrivateInputError("intended-device verification file changed while being read")
     finally:
         os.close(descriptor)
@@ -126,6 +182,13 @@ def self_test() -> None:
         private_file.chmod(0o600)
         assert read_private_identifier(private_file) == expected
 
+        try:
+            read_private_identifier(Path("relative-device-id"))
+        except PrivateInputError:
+            pass
+        else:
+            raise AssertionError("relative verification input path must fail closed")
+
         newline_file = root / "newline"
         newline_file.write_text(expected + "\n", encoding="utf-8")
         newline_file.chmod(0o600)
@@ -159,6 +222,40 @@ def self_test() -> None:
             else:
                 raise AssertionError("symlink verification input must fail closed")
 
+        real_parent = root / "real-parent"
+        real_parent.mkdir()
+        ancestor_file = real_parent / "device-id"
+        ancestor_file.write_text(expected, encoding="utf-8")
+        ancestor_file.chmod(0o600)
+        symlink_parent = root / "symlink-parent"
+        try:
+            symlink_parent.symlink_to(real_parent, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            symlink_parent = None
+        if symlink_parent is not None:
+            try:
+                read_private_identifier(symlink_parent / "device-id")
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("symlinked verification-input ancestor must fail closed")
+
+        hardlink_file = root / "hardlink-source"
+        hardlink_file.write_text(expected, encoding="utf-8")
+        hardlink_file.chmod(0o600)
+        hardlink_alias = root / "hardlink-alias"
+        try:
+            os.link(hardlink_file, hardlink_alias)
+        except OSError:
+            hardlink_alias = None
+        if hardlink_alias is not None:
+            try:
+                read_private_identifier(hardlink_file)
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("multiply-linked verification input must fail closed")
+
         oversized = root / "oversized"
         oversized.write_bytes(b"x" * (MAX_IDENTIFIER_BYTES + 1))
         oversized.chmod(0o600)
@@ -178,9 +275,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--intended-device-udid-file",
         type=Path,
-        help="private mode-0600 file containing the verification-only intended field-device identifier",
+        help="absolute path to a private mode-0600 verification-only intended field-device identifier",
     )
-    parser.add_argument("--self-test", action="store_true", help="run platform-independent private-input checks")
+    parser.add_argument("--self-test", action="store_true", help="run private-input boundary checks")
     return parser.parse_args(argv)
 
 
