@@ -10,18 +10,29 @@ permissions:
 
 jobs:
   compose:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: feature/es80-v14-app-single-authority-current/gpt56-thinking
-      - name: Apply exact app authority patch
-        run: python3 .github/scripts/v14_app_single_authority.py
-      - name: Verify and publish product-only head
+      - name: Apply, verify, and publish
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          python3 .github/scripts/v14_app_single_authority.py > /tmp/app-patch.log 2>&1
+          code=$?
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ "$code" -ne 0 ]; then
+            cp /tmp/app-patch.log .github/scripts/v14_app_patch_failure.txt
+            git add .github/scripts/v14_app_patch_failure.txt
+            git commit -m '[Capture v14] Record app authority patch mismatch'
+            git push origin HEAD:feature/es80-v14-app-single-authority-current/gpt56-thinking
+            exit 0
+          fi
+          set -e
           ! grep -n 'PassiveBluetoothPowerCycleObservationSession(' NembraApp/Features/Research/ES80CaptureShellView.swift
           ! grep -n 'try? ForegroundCoreBluetoothCaptureController(' NembraApp/App/NembraApp.swift
           ! grep -n 'Passive capture binding not available in this build' NembraApp/Features/Research/ES80CaptureShellView.swift
@@ -29,8 +40,6 @@ jobs:
           grep -q 'coordinator.prepareCaptureRediscovery()' NembraApp/Features/Research/ES80CaptureShellView.swift
           grep -q 'coordinator.connectPreparedCapture()' NembraApp/Features/Research/ES80CaptureShellView.swift
           git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           rm .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
           git add NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift .github/scripts/v14_app_single_authority.py .github/workflows/v14-app-single-authority-current.yml
           git diff --cached --check
