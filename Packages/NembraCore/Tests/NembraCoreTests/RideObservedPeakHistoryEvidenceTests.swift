@@ -312,7 +312,7 @@ struct RideObservedPeakHistoryEvidenceTests {
         #expect(decoded.knownSelectedSourceInterruptionCount == 1)
     }
 
-    @Test("foreign-source provenance remains disqualifying and preserves all peak rejections")
+    @Test("foreign-source provenance remains disqualifying without becoming selected-source quality loss")
     func foreignSourceSurvivesRoundTrip() throws {
         let fixture = try foreignSourceFixture()
         let decoded = try JSONDecoder().decode(
@@ -323,7 +323,11 @@ struct RideObservedPeakHistoryEvidenceTests {
 
         #expect(decoded.foreignSourceCallbackCount == 1)
         #expect(decoded.peakRejections.nonAuthoritativeSampleCount == 1)
-        #expect(decoded.completedPeak?.qualityRejectedSampleCount == decoded.peakRejections.totalRejectedSampleCount)
+        #expect(decoded.peakRejections.totalRejectedSampleCount == 1)
+        #expect(decoded.peakRejections.foreignRejectedSampleCount == 1)
+        #expect(decoded.peakRejections.selectedSourceQualityRejectedSampleCount == 0)
+        #expect(decoded.telemetryBenchmark.rejectedSampleCount == 1)
+        #expect(decoded.completedPeak?.qualityRejectedSampleCount == 0)
         #expect(!assessment.isObservedMaximumEligible)
         #expect(assessment.failures.contains(.foreignSourceTraffic(callbackCount: 1)))
     }
@@ -360,6 +364,79 @@ struct RideObservedPeakHistoryEvidenceTests {
             var benchmark = root["telemetryBenchmark"] as! [String: Any]
             benchmark["intervalCount"] = 99
             root["telemetryBenchmark"] = benchmark
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("benchmark segments require matching recorded interruption topology")
+    func impossibleBenchmarkSegmentsRejected() throws {
+        let data = try mutatedJSON(try interruptedFixture().evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+            benchmark["knownObservationInterruptionCount"] = 0
+            root["telemetryBenchmark"] = benchmark
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("benchmark duration mean and rate must describe the same interval set")
+    func corruptBenchmarkTimingAlgebraRejected() throws {
+        let data = try mutatedJSON(try cleanFixture().evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+            benchmark["observedDurationSeconds"] = 30.0
+            root["telemetryBenchmark"] = benchmark
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("all duplicate intervals cannot acquire fabricated speed-resolution evidence")
+    func corruptInjectedSpeedStepRejected() throws {
+        let fixture = try cleanFixture(speeds: [4, 4, 4])
+        #expect(fixture.evidence.telemetryBenchmark.empiricalMinimumNonzeroSpeedStepKilometersPerHour == nil)
+
+        let data = try mutatedJSON(fixture.evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+            benchmark["empiricalMinimumNonzeroSpeedStepKilometersPerHour"] = 0.01
+            root["telemetryBenchmark"] = benchmark
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("foreign callback count cannot disagree with peak rejection provenance")
+    func corruptForeignCallbackCountRejected() throws {
+        let data = try mutatedJSON(try foreignSourceFixture().evidence) { root in
+            root["foreignSourceCallbackCount"] = 0
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("benchmark rejection count cannot disagree with callback rejection provenance")
+    func corruptBenchmarkRejectionCountRejected() throws {
+        let data = try mutatedJSON(try cleanFixture().evidence) { root in
+            var benchmark = root["telemetryBenchmark"] as! [String: Any]
+            benchmark["rejectedSampleCount"] = 1
+            root["telemetryBenchmark"] = benchmark
+        }
+        #expect(throws: (any Error).self) {
+            _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
+        }
+    }
+
+    @Test("no-peak benchmark acceptances must be explained by peak accuracy rejection")
+    func corruptNoPeakAcceptedAccountingRejected() throws {
+        let data = try mutatedJSON(try noPeakFixture().evidence) { root in
+            var rejections = root["peakRejections"] as! [String: Any]
+            rejections["speedAccuracyExceededCount"] = 2
+            root["peakRejections"] = rejections
         }
         #expect(throws: (any Error).self) {
             _ = try JSONDecoder().decode(RideObservedPeakHistoryEvidence.self, from: data)
