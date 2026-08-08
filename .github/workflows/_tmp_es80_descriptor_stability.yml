@@ -148,8 +148,8 @@ jobs:
       - name: Producer source contract
         run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
 
-      - name: Intended-device source contract
-        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device_source.py
+      - name: Intended-device regression
+        run: python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
 
       - name: Diff hygiene
         run: git diff --check
