@@ -46,17 +46,17 @@ jobs:
       - name: Resolve Capture executable digest
         id: capture-provenance
         run: |
-          digest="$(python3 -c 'import json; print(json.load(open("Artifacts/Xcode27Simulator/capture-build-record.json", encoding="utf-8"))["executableSHA256"])')"
+          digest="$(python3 -c 'import json; print(json.load(open("Artifacts/Xcode27Simulator/NembraCaptureTrustedBuildRecord.json", encoding="utf-8"))["executableSHA256"])')"
           if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Capture build record did not contain a valid executable SHA-256." >&2
+            echo "Capture trusted build record did not contain a valid executable SHA-256." >&2
             exit 1
           fi
           echo "executable_sha256=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Attest Capture build record
+      - name: Attest Capture trusted build record
         uses: actions/attest@v4
         with:
-          subject-path: Artifacts/Xcode27Simulator/capture-build-record.json
+          subject-path: Artifacts/Xcode27Simulator/NembraCaptureTrustedBuildRecord.json
 
       - name: Attest exact Capture executable digest
         uses: actions/attest@v4
