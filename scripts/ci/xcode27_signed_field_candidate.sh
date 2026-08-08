@@ -1,16 +1,54 @@
 #!/bin/bash
 set -euo pipefail
 
+# Release-candidate production must not inherit executable selection from the caller.
+# Establish one closed system PATH before dirname, uname, Git, Xcode, or any other child runs.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+
 # Retire the legacy raw-value environment seam before any child process starts. The producer accepts
 # only the private-file path below; a stale caller export must not propagate the raw device identifier.
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
 
 # Python participates directly in private-input validation and signed-field evidence admission.
-# Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
-# import state cannot execute before the exact descriptor-bound Nembra source.
+# Pin the macOS system interpreter independently of PATH, prove the executable and every canonical
+# custody component through / are root-owned and non-group/world-writable before first use, and
+# always launch Python with -I so caller PYTHON* startup/import authority is ignored.
 PYTHON3="/usr/bin/python3"
-if [[ ! -x "$PYTHON3" || -L "$PYTHON3" ]]; then
-  echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
+validate_root_custodied_path() {
+  local candidate="$1"
+  local kind="$2"
+  local cursor="$candidate"
+  local owner_uid mode_value
+
+  if [[ "$kind" == "file" ]]; then
+    if [[ ! -f "$cursor" || ! -x "$cursor" || -L "$cursor" ]]; then
+      echo "Root-custodied executable must be one regular executable non-symlink: $cursor" >&2
+      return 1
+    fi
+  fi
+
+  while :; do
+    if [[ -L "$cursor" ]]; then
+      echo "Root-custodied path contains a symlink: $cursor" >&2
+      return 1
+    fi
+    owner_uid="$(/usr/bin/stat -f '%u' "$cursor")" || return 1
+    mode_value="0$(/usr/bin/stat -f '%Lp' "$cursor")" || return 1
+    if (( owner_uid != 0 )); then
+      echo "Root-custodied path is not root-owned: $cursor" >&2
+      return 1
+    fi
+    if (( mode_value & 0022 )); then
+      echo "Root-custodied path is group/world writable: $cursor" >&2
+      return 1
+    fi
+    [[ "$cursor" == "/" ]] && break
+    cursor="$(/usr/bin/dirname "$cursor")"
+  done
+}
+if ! validate_root_custodied_path "$PYTHON3" file; then
+  echo "Signed field-candidate production requires a root-custodied system Python 3." >&2
   exit 2
 fi
 
