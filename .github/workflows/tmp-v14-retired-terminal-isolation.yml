@@ -1,0 +1,96 @@
+name: TEMP V14 retired terminal callback isolation
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-controller-resolution/chatgpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/es80-v14-terminal-controller-resolution/chatgpt56-go
+          fetch-depth: 0
+
+      - name: Patch controller transport-only retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '    private var selectedTargetCancellationPending = false\n    private var scanRequested = false\n',
+              '    private var selectedTargetCancellationPending = false\n    /// Peripheral identifiers whose currently retired CoreBluetooth attempt crossed\n    /// the admitted Horizon. Their eventual terminal callback is transport cleanup\n    /// only and must never be promoted into evidence for a later fresh recorder.\n    private var transportOnlyTerminalCallbackIdentifiers: Set<UUID> = []\n    private var scanRequested = false\n',
+              'transport-only state',
+          )
+
+          replace_once(
+              '        if observationBoundaryBlocksArtifactMutation {\n            _ = targetState.retireActiveAttempt()\n            peripheral.delegate = nil\n',
+              '        if observationBoundaryBlocksArtifactMutation {\n            transportOnlyTerminalCallbackIdentifiers.insert(peripheral.identifier)\n            _ = targetState.retireActiveAttempt()\n            peripheral.delegate = nil\n',
+              'finalized cancellation retirement',
+          )
+
+          replace_once(
+              '            if self.observationBoundaryBlocksArtifactMutation {\n                // The timeout happened outside the admitted artifact horizon. Retire\n                // transport state only; do not append interruption evidence or revoke\n                // the authority currently sealing H.\n                self.connectionTimeoutTask = nil\n                self.selectedTargetCancellationPending = true\n                _ = self.targetState.retireActiveAttempt()\n',
+              '            if self.observationBoundaryBlocksArtifactMutation {\n                // The timeout happened outside the admitted artifact horizon. Retire\n                // transport state only; do not append interruption evidence or revoke\n                // the authority currently sealing H.\n                self.connectionTimeoutTask = nil\n                self.selectedTargetCancellationPending = true\n                self.transportOnlyTerminalCallbackIdentifiers.insert(identifier)\n                _ = self.targetState.retireActiveAttempt()\n',
+              'timeout retirement',
+          )
+
+          replace_once(
+              '        if observationBoundaryBlocksArtifactMutation {\n            // A connect callback that arrives after H admission belongs to transport\n            // cleanup, not a new finite-acquisition epoch inside the sealed artifact.\n            connectionTimeoutTask?.cancel()\n            connectionTimeoutTask = nil\n            selectedTargetCancellationPending = true\n            _ = targetState.retireActiveAttempt()\n',
+              '        if observationBoundaryBlocksArtifactMutation {\n            // A connect callback that arrives after H admission belongs to transport\n            // cleanup, not a new finite-acquisition epoch inside the sealed artifact.\n            connectionTimeoutTask?.cancel()\n            connectionTimeoutTask = nil\n            selectedTargetCancellationPending = true\n            transportOnlyTerminalCallbackIdentifiers.insert(identifier)\n            _ = targetState.retireActiveAttempt()\n',
+              'late connect retirement',
+          )
+
+          replace_once(
+              '            if activePeripheral != nil {\n                activePeripheral?.delegate = nil\n',
+              '            if observationBoundaryBlocksArtifactMutation,\n               let identifier = activePeripheral?.identifier {\n                transportOnlyTerminalCallbackIdentifiers.insert(identifier)\n            }\n            if activePeripheral != nil {\n                activePeripheral?.delegate = nil\n',
+              'central invalidation retirement mark',
+          )
+
+          replace_once(
+              '        let disposition = targetState.completeFailedConnection(from: identifier)\n        guard disposition != .ignored else { return }\n\n        if observationBoundaryBlocksArtifactMutation {\n',
+              '        let disposition = targetState.completeFailedConnection(from: identifier)\n        guard disposition != .ignored else { return }\n\n        if transportOnlyTerminalCallbackIdentifiers.remove(identifier) != nil {\n            selectedTargetCancellationPending = false\n            if case .active = disposition {\n                clearActiveConnectionState(for: identifier)\n            }\n            return\n        }\n\n        if observationBoundaryBlocksArtifactMutation {\n',
+              'failed-connect suppression',
+          )
+
+          replace_once(
+              '        let disposition = targetState.completeDisconnect(from: identifier)\n        guard disposition != .ignored else { return }\n\n        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup\n',
+              '        let disposition = targetState.completeDisconnect(from: identifier)\n        guard disposition != .ignored else { return }\n\n        if transportOnlyTerminalCallbackIdentifiers.remove(identifier) != nil {\n            selectedTargetCancellationPending = false\n            if case .active = disposition {\n                clearActiveConnectionState(for: identifier)\n            }\n            return\n        }\n\n        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup\n',
+              'disconnect suppression',
+          )
+
+          path.write_text(source)
+          PY
+
+          git diff --check
+          test "$(grep -c 'transportOnlyTerminalCallbackIdentifiers.insert' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" -eq 4
+          test "$(grep -c 'transportOnlyTerminalCallbackIdentifiers.remove(identifier)' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" -eq 2
+
+      - name: Commit product patch and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-retired-terminal-isolation.yml
+          git config user.name 'nembra-v14-patch-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m '[Capture lifecycle] isolate retired post-H terminal callbacks'
+          git push origin HEAD:integration/es80-v14-terminal-controller-resolution/chatgpt56-go
