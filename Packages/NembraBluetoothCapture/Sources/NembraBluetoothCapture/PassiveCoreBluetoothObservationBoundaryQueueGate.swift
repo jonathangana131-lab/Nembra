@@ -27,6 +27,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case freshRecorderIdentityMismatch
         case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
+        case abortedResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case abortedQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -571,6 +573,54 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             )
         }
         guard freshTargetSession.targetSessionGeneration > transaction.authority.targetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    /// Reopens an aborted Ready/Horizon epoch only after the controller has resolved
+    /// the exact abandoned FIFO, installed the exact recorder whose construction earned
+    /// producer-issued fresh-session proof, applied that resolved frontier globally, and
+    /// proved no callback advanced the enqueue tail afterward.
+    ///
+    /// Receipt possession or a caller-selected generation is insufficient. The exact
+    /// fresh recorder identity and exact producer-issued generation are bound atomically
+    /// before the gate returns to Ready admission. Retired queue positions remain resolved
+    /// by retirement; this transition never relabels them as recorder-written evidence.
+    @MainActor
+    mutating func reopenAfterAbortedFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.abortedResolution
+        guard resolution.abortReceipt == currentAbort else {
+            throw StateError.staleTransaction
+        }
+        guard freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortedResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortedQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSession.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
             throw StateError.freshTargetSessionRequired
         }
 
