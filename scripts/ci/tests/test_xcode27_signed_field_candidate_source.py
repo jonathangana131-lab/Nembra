@@ -102,6 +102,24 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             self.source.index('rename_exclusive(source, destination'),
         )
 
+    def test_final_staging_cleanup_requires_producer_owned_claim(self):
+        self.assertIn('FINAL_STAGING_OWNED=0', self.source)
+        self.assertIn('FINAL_STAGING_OWNED=1', self.source)
+        self.assertIn('"${FINAL_STAGING_OWNED:-0}" == "1"', self.source)
+        self.assertIn('Final field-candidate staging directory appeared before atomic claim', self.source)
+        self.assertLess(
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+            self.source.index('FINAL_STAGING_OWNED=1'),
+        )
+        cleanup_start = self.source.index('cleanup() {')
+        cleanup_end = self.source.index('\n}\ntrap cleanup EXIT', cleanup_start)
+        cleanup_source = self.source[cleanup_start:cleanup_end]
+        self.assertIn('FINAL_STAGING_OWNED', cleanup_source)
+        self.assertNotIn('if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]', cleanup_source)
+        rename_index = self.source.index('rename_exclusive(source, destination')
+        clear_index = self.source.index('FINAL_STAGING_OWNED=0', rename_index)
+        self.assertLess(rename_index, clear_index)
+
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
         self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
