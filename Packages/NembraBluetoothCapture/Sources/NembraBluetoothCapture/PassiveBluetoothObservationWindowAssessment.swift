@@ -1,3 +1,4 @@
+import Foundation
 import NembraCore
 
 /// Validation errors for caller-owned observation-window policy.
@@ -14,26 +15,30 @@ public enum PassiveBluetoothObservationWindowAssessmentError: Error, Equatable, 
 /// interval.
 ///
 /// A successful disposition means only that Nembra retained exactly one finite
-/// acquisition-ready boundary followed by a terminal observation-horizon
-/// boundary with enough monotonic Nembra-observed time between them. It does not
-/// prove continuous BLE traffic, RF activity, scooter uptime, target liveness,
-/// protocol semantics, telemetry freshness, or physical hardware identity.
+/// acquisition-ready boundary followed by exactly one terminal observation-
+/// horizon boundary with enough monotonic Nembra-observed time between them. It
+/// does not prove continuous BLE traffic, RF activity, scooter uptime, target
+/// liveness, protocol semantics, telemetry freshness, or physical hardware
+/// identity.
 public enum PassiveBluetoothObservationWindowDisposition: String, Equatable, Sendable {
     case meetsMinimumObservedDuration
     case missingFiniteAcquisitionReadyBoundary
     case ambiguousFiniteAcquisitionReadyBoundary
     case missingObservationHorizonBoundary
+    case ambiguousObservationHorizonBoundary
     case invalidBoundaryChronology
     case observedDurationTooShort
 }
 
-/// Auditable summary of the exact immutable boundaries used to assess one
-/// observation window.
+/// Auditable summary of the exact immutable capture identity and boundaries used
+/// to assess one observation window.
 ///
 /// Boundary watermarks are preserved as evidence-prefix identities. They are not
 /// interpreted as callback counts because capture sequence numbers need only be
 /// strictly increasing; they are not required to be contiguous.
 public struct PassiveBluetoothObservationWindowReport: Equatable, Sendable {
+    public let captureSessionID: UUID
+    public let vehicleIdentity: VehicleIdentity
     public let disposition: PassiveBluetoothObservationWindowDisposition
     public let minimumObservedDurationNanoseconds: UInt64
     public let observedDurationNanoseconds: UInt64?
@@ -62,6 +67,8 @@ public struct PassiveBluetoothObservationWindowReport: Equatable, Sendable {
     /// Construction stays inside this source file so callers cannot mint an
     /// evidence-derived success disposition independently of the session.
     fileprivate init(
+        captureSessionID: UUID,
+        vehicleIdentity: VehicleIdentity,
         disposition: PassiveBluetoothObservationWindowDisposition,
         minimumObservedDurationNanoseconds: UInt64,
         observedDurationNanoseconds: UInt64?,
@@ -70,6 +77,8 @@ public struct PassiveBluetoothObservationWindowReport: Equatable, Sendable {
         finiteAcquisitionReadyBoundary: PassiveBluetoothObservationBoundary?,
         observationHorizonBoundary: PassiveBluetoothObservationBoundary?
     ) {
+        self.captureSessionID = captureSessionID
+        self.vehicleIdentity = vehicleIdentity
         self.disposition = disposition
         self.minimumObservedDurationNanoseconds = minimumObservedDurationNanoseconds
         self.observedDurationNanoseconds = observedDurationNanoseconds
@@ -106,6 +115,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
 
         guard !readyBoundaries.isEmpty else {
             return makeReport(
+                session: session,
                 disposition: .missingFiniteAcquisitionReadyBoundary,
                 minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -119,6 +129,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
         // invent which interval the operator intended to qualify.
         guard readyBoundaries.count == 1 else {
             return makeReport(
+                session: session,
                 disposition: .ambiguousFiniteAcquisitionReadyBoundary,
                 minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -127,8 +138,9 @@ public enum PassiveBluetoothObservationWindowAssessment {
             )
         }
 
-        guard let horizonBoundary = horizonBoundaries.first else {
+        guard !horizonBoundaries.isEmpty else {
             return makeReport(
+                session: session,
                 disposition: .missingObservationHorizonBoundary,
                 minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -137,7 +149,23 @@ public enum PassiveBluetoothObservationWindowAssessment {
             )
         }
 
+        // The current parent model makes the observation horizon terminal, so a
+        // validated session can contain at most one. Preserve that assumption as
+        // an explicit fail-closed contract instead of silently choosing a horizon
+        // if the parent model ever evolves.
+        guard horizonBoundaries.count == 1 else {
+            return makeReport(
+                session: session,
+                disposition: .ambiguousObservationHorizonBoundary,
+                minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
+                observedDurationNanoseconds: nil,
+                readyBoundaries: readyBoundaries,
+                horizonBoundaries: horizonBoundaries
+            )
+        }
+
         let readyBoundary = readyBoundaries[0]
+        let horizonBoundary = horizonBoundaries[0]
         // PassiveBluetoothCaptureSession validates nondecreasing boundary uptime
         // and a terminal horizon before exposing this value. Keep subtraction
         // checked anyway so this layer stays fail-closed if that contract ever
@@ -148,6 +176,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
             )
         guard !underflow else {
             return makeReport(
+                session: session,
                 disposition: .invalidBoundaryChronology,
                 minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
                 observedDurationNanoseconds: nil,
@@ -162,6 +191,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
                 : .observedDurationTooShort
 
         return makeReport(
+            session: session,
             disposition: disposition,
             minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
             observedDurationNanoseconds: observedDurationNanoseconds,
@@ -171,6 +201,7 @@ public enum PassiveBluetoothObservationWindowAssessment {
     }
 
     private static func makeReport(
+        session: PassiveBluetoothCaptureSession,
         disposition: PassiveBluetoothObservationWindowDisposition,
         minimumObservedDurationNanoseconds: UInt64,
         observedDurationNanoseconds: UInt64?,
@@ -178,13 +209,15 @@ public enum PassiveBluetoothObservationWindowAssessment {
         horizonBoundaries: [PassiveBluetoothObservationBoundary]
     ) -> PassiveBluetoothObservationWindowReport {
         PassiveBluetoothObservationWindowReport(
+            captureSessionID: session.id,
+            vehicleIdentity: session.vehicleIdentity,
             disposition: disposition,
             minimumObservedDurationNanoseconds: minimumObservedDurationNanoseconds,
             observedDurationNanoseconds: observedDurationNanoseconds,
             finiteAcquisitionReadyBoundaryCount: readyBoundaries.count,
             observationHorizonBoundaryCount: horizonBoundaries.count,
             finiteAcquisitionReadyBoundary: readyBoundaries.count == 1 ? readyBoundaries[0] : nil,
-            observationHorizonBoundary: horizonBoundaries.first
+            observationHorizonBoundary: horizonBoundaries.count == 1 ? horizonBoundaries[0] : nil
         )
     }
 }
