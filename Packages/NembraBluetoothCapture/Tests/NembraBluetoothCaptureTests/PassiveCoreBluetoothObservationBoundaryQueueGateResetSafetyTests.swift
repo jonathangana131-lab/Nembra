@@ -19,7 +19,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         )
 
         #expect(gate.permittedDrainUpperBound(firstPending: 1, pendingTail: 6) == 4)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAccepted = gate.resetForNewCaptureSession()
+        #expect(!resetAccepted)
         #expect(gate.phase == .drainingReady(ready))
         #expect(gate.activeTransaction == ready)
         #expect(gate.permittedDrainUpperBound(firstPending: 1, pendingTail: 6) == 4)
@@ -44,7 +45,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
             currentAuthority: authority
         )
 
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAccepted = gate.resetForNewCaptureSession()
+        #expect(!resetAccepted)
         #expect(gate.phase == .observing)
 
         do {
@@ -89,7 +91,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         )
 
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAccepted = gate.resetForNewCaptureSession()
+        #expect(!resetAccepted)
         #expect(gate.phase == .drainingHorizon(horizon))
         #expect(gate.activeTransaction == horizon)
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
@@ -121,7 +124,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         )
 
         #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let preFreezeResetAccepted = gate.resetForNewCaptureSession()
+        #expect(!preFreezeResetAccepted)
         #expect(gate.phase == .horizonBoundaryRecorded(horizon))
 
         try gate.completeHorizonArtifactFreeze(
@@ -144,7 +148,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
             )
         )
 
-        #expect(!gate.resetForNewCaptureSession())
+        let terminalResetAccepted = gate.resetForNewCaptureSession()
+        #expect(!terminalResetAccepted)
         #expect(gate.phase == .terminal(horizon))
         #expect(gate.permittedDrainUpperBound(firstPending: 7, pendingTail: 8) == nil)
         #expect(
