@@ -27,8 +27,10 @@ The current passive-foundation recovery does not by itself close the full V14 Ca
 - a final **signed physical-device/installable artifact** produced from that exact accepted composition, with the exact bytes/identity needed for independent acceptance retained rather than substituting Simulator build evidence;
 - independent external acceptance/attestation of that exact signed-device field artifact, correlated to its exact build-instance/build tuple and retained artifact evidence without treating arbitrary parsed JSON, a caller-supplied digest, a skipped/queued workflow, or the artifact's own self-description as authority;
 - an exact externally signed schema-v2 field-authorization envelope accepted as immutable bytes, with independently recomputed `envelopeSHA256`, `authorizationPayloadSHA256`, `externalBuildRecordSHA256`, and `fieldBuildEvidenceRecordSHA256`, plus the reviewed authority `authorityPublicKeyX963SHA256`; the package-pinned trust anchor on the final build must be that exact reviewed public key;
-- a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state that is mechanically tied to the independently accepted exact field-build authority and cannot be unlocked by a UI Boolean, launch argument, local preference, or caller-constructible token;
-- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, exact field-authorization envelope/trust-root bundle, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
+- a package-minted non-forgeable `PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission` derived from that independently verified exact field authorization; possession of signed bytes, parsed JSON, matching digests, or a caller-selected token is not an admission;
+- a separately deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO policy state; verified admission alone is insufficient while policy remains NO-GO, and policy GO alone is insufficient without verified admission;
+- live app construction wired only through `PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80(verifiedAdmission:)`; the zero-argument `makeAuthorizedES80()` seam must remain permanently fail-closed and must never become physical authority merely because policy later flips;
+- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, exact field-authorization envelope/trust-root bundle, verified-admission result, live construction seam, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
 
 Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform them.
 
@@ -51,6 +53,8 @@ Until those conditions are closed, all procedures below are **supporting experim
 15. Never promote Simulator, public research, display interpolation, or derived UI motion into physical telemetry evidence.
 16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
 17. Never treat “signature valid” or a signer-generated summary alone as the final field handoff. Final GO must bind the exact retained authorization-envelope bytes and the exact reviewed package trust root by independently recomputed digests, and those identities must agree with the exact subjects accepted for the signed device build.
+18. For `ES80-FINGERPRINT-v1`, charger state is an explicit fresh-run **operator declaration**, not measured or sensed vehicle truth. The accepted recipe requires the charger to be **Disconnected** for the entire capture; Nembra must never infer that condition from a generic confirmation tap or carry it across a fresh experiment.
+19. Treat verified signed-field admission and final field-policy GO as independent keys. Neither may silently manufacture the other, and no launch route, UI state, preference, Info.plist marker, install success, or Simulator state may substitute for either key.
 
 ## Final GO record — intentionally blank while NO-GO
 
@@ -64,6 +68,8 @@ When the software is actually ready, replace this section in the same acceptance
 - Accepted external build record SHA-256 (`externalBuildRecordSHA256`): **NOT YET AUTHORIZED**
 - Accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`): **NOT YET AUTHORIZED**
 - Accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`): **NOT YET AUTHORIZED**
+- Package verified-admission result / exact subject: **NOT YET AUTHORIZED**
+- Live coordinator construction seam: **NOT YET AUTHORIZED**
 - Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**
 - Procedure version: **V14 / NOT YET AUTHORIZED**
 - Baseline device: iPhone 12 / iOS 27
@@ -72,6 +78,8 @@ When the software is actually ready, replace this section in the same acceptance
 - Physical result collected: **NO**
 
 The five authorization-bundle digests above are identities for exact retained bytes, not values to trust merely because the signer printed them. Final acceptance must independently recompute them and confirm that the authority public-key digest matches the exact X9.63 key pinned in `PassiveBluetoothCaptureFieldAuthorizationTrustAnchor` on the accepted final build.
+
+The verified-admission line must identify the package-minted result derived from that exact accepted authorization, and the live-construction line must prove the accepted app uses `makeAuthorizedES80(verifiedAdmission:)`. The zero-argument construction seam is not eligible to appear as an accepted physical path.
 
 No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, signer stdout by itself, or stale acceptance may be filled into this section as the final physical build authority.
 
@@ -82,13 +90,16 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - Bluetooth permission and powered-on state;
 - foreground evidence integrity;
 - exact runtime build identity and capture schema compatibility;
-- package-owned physical field-execution authority is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
+- package-owned physical field-execution policy is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
 - the independently accepted signed-device/installable build authority matches the exact runtime/build-instance rendezvous required by the final accepted contract;
 - the field-authorization envelope being consumed is the exact accepted envelope bound by the final GO record, and its signed subject digests resolve to the exact accepted external-build and field-evidence bytes;
 - the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
+- package verification of that exact envelope produces the non-forgeable `VerifiedAdmission` recorded by the final GO record for the same accepted build/recipe/procedure subjects;
+- final package policy is independently GO **and** the real app creates the live coordinator only through `makeAuthorizedES80(verifiedAdmission:)`; zero-argument `makeAuthorizedES80()` remains fail-closed;
 - storage/export readiness;
 - the exact versioned experiment recipe;
-- an explicit fresh-run operator declaration that charger state is **Disconnected** for `ES80-FINGERPRINT-v1`; this is declared setup provenance, not a measured or sensed charger state, and `Connected` or undeclared state blocks `READY`;
+- an explicit fresh-run operator declaration of charger state; `ES80-FINGERPRINT-v1` requires **Disconnected**, and a Connected declaration must block continuation;
+- the app must state that charger state is **not measured or sensed by Nembra** and must not promote the operator declaration into telemetry, attestation, or continuous-condition proof;
 - any required stock-app/reference-marker setup;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
@@ -246,6 +257,8 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 
 - Bluetooth becomes unavailable or the accepted target cannot be correlated unambiguously;
 - the selected target/session changes unexpectedly;
+- the `ES80-FINGERPRINT-v1` charger declaration is not **Disconnected**, the charger becomes connected, or the operator can no longer truthfully maintain the declared disconnected setup; stop the current experiment, restore the required setup, and restart from a fresh preflight rather than carrying the old declaration forward;
+- package verification no longer yields the exact accepted `VerifiedAdmission`, final field policy is not GO, or live construction is not using the admission-bearing `makeAuthorizedES80(verifiedAdmission:)` seam;
 - acquisition never earns accepted Ready;
 - foreground integrity required by the recipe is lost;
 - a discontinuity/authority transition invalidates the current recipe stage;
@@ -255,11 +268,10 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - runtime build identity no longer matches the package-owned accepted field-build authority;
 - the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
 - the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
-- the operator-declared charger setup is no longer true; stop the current experiment, keep or return the charger to **Disconnected**, and restart with a fresh declaration rather than continuing the same evidence life;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
 
 ## Current physical conclusion
 
-**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, exact authorization-envelope/trust-root identities, and procedure.
+**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package verified admission plus separate field-GO policy, admission-bearing live construction, exact authorization-envelope/trust-root identities, and procedure.
