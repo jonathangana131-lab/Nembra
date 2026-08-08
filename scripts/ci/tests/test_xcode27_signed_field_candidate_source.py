@@ -58,7 +58,12 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
 
     def test_keeps_producer_provenance_outside_failure_atomic_inspector_directory(self):
         self.assertIn('INSPECTION_DIR="$ARTIFACTS_DIR/inspection"', self.source)
-        self.assertIn('mkdir -p "$ARTIFACTS_DIR/logs"', self.source)
+        self.assertIn('ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"', self.source)
+        self.assertIn('mkdir -p "$ARTIFACTS_PARENT"', self.source)
+        self.assertIn('if ! mkdir "$ARTIFACTS_DIR"; then', self.source)
+        self.assertIn('ARTIFACTS_DIR appeared before atomic claim', self.source)
+        self.assertIn('mkdir "$ARTIFACTS_DIR/logs"', self.source)
+        self.assertNotIn('mkdir -p "$ARTIFACTS_DIR/logs"', self.source)
         self.assertNotIn('mkdir -p "$INSPECTION_DIR"', self.source)
         self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"', self.source)
         self.assertIn('logs/xcodebuild-archive.log', self.source)

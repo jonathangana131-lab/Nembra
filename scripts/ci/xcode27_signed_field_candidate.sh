@@ -116,9 +116,18 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   fi
 fi
 
+# Claim the final candidate root atomically after the policy checks. The earlier absence check is
+# advisory; this non--p mkdir is the mechanical no-mix boundary if another producer races us.
+ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
+mkdir -p "$ARTIFACTS_PARENT"
+if ! mkdir "$ARTIFACTS_DIR"; then
+  echo "ARTIFACTS_DIR appeared before atomic claim; refusing to mix field-production evidence: $ARTIFACTS_DIR" >&2
+  exit 13
+fi
+
 # Producer-owned provenance is a sibling of the inspector-owned evidence directory. The inspector's
 # failure-atomic/no-replace contract requires INSPECTION_DIR not to exist before invocation.
-mkdir -p "$ARTIFACTS_DIR/logs"
+mkdir "$ARTIFACTS_DIR/logs"
 EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
@@ -144,7 +153,7 @@ PY
 )"
 if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive one canonical SHA-256 for retained ExportOptions.plist." >&2
-  exit 13
+  exit 14
 fi
 
 rm -rf "$WORK_ROOT"
@@ -163,7 +172,7 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 14
+  exit 15
 fi
 mkdir -p "$EXPORT_DIR"
 
@@ -183,7 +192,7 @@ if ! run_xcodebuild \
   2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-archive.log"
 then
   echo "Signed field-candidate archive or archive-log capture failed." >&2
-  exit 15
+  exit 16
 fi
 
 if ! run_xcodebuild \
@@ -194,7 +203,7 @@ if ! run_xcodebuild \
   2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-export.log"
 then
   echo "Signed field-candidate export or export-log capture failed." >&2
-  exit 16
+  exit 17
 fi
 
 POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
@@ -206,7 +215,7 @@ PY
 )"
 if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
   echo "Retained ExportOptions.plist changed during archive/export; refusing candidate evidence." >&2
-  exit 17
+  exit 18
 fi
 
 POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
@@ -214,7 +223,7 @@ POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 18
+  exit 19
 fi
 
 # Closed-world top-level IPA selection without nullglob/empty arrays under Bash 3.2 + nounset.
