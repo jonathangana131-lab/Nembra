@@ -8,6 +8,9 @@ struct NembraApp: App {
     enum LaunchMode: Equatable {
         case standard
         case es80PassiveCapture
+#if DEBUG && targetEnvironment(simulator)
+        case es80PassiveCaptureSimulatorQA(String)
+#endif
     }
 
     static let captureFieldRecipeInfoPlistKey = "NembraCaptureFieldRecipe"
@@ -20,11 +23,19 @@ struct NembraApp: App {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-        _researchCoordinator = State(
-            initialValue: launchMode == .es80PassiveCapture
-                ? try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
-                : nil
-        )
+        let initialResearchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+        switch launchMode {
+        case .standard:
+            initialResearchCoordinator = nil
+        case .es80PassiveCapture:
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+#if DEBUG && targetEnvironment(simulator)
+        case .es80PassiveCaptureSimulatorQA:
+            // Synthetic QA uses the inert status-only coordinator: no live CoreBluetooth controller.
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+#endif
+        }
+        _researchCoordinator = State(initialValue: initialResearchCoordinator)
     }
 
     var body: some Scene {
@@ -67,15 +78,45 @@ struct NembraApp: App {
                     }
                 }
                 .preferredColorScheme(.dark)
+
+#if DEBUG && targetEnvironment(simulator)
+            case let .es80PassiveCaptureSimulatorQA(rawScenario):
+                let scenario = PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario(rawValue: rawScenario)
+                    ?? .stationaryPreflight
+                let snapshot = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(for: scenario)
+                NavigationStack {
+                    if let researchCoordinator {
+                        if scenario == .stationaryPreflight {
+                            ES80ExperimentOneStationaryPreflightView(
+                                coordinator: researchCoordinator,
+                                simulatorQAEvidenceLabel: snapshot.evidenceLabel,
+                                freshExperimentCoordinatorFactory: { try PassiveBluetoothExperimentOneCoordinator() }
+                            )
+                        } else {
+                            ES80CaptureShellView(
+                                coordinator: researchCoordinator,
+                                simulatorQASnapshot: snapshot,
+                                onFreshExperimentRequested: { try PassiveBluetoothExperimentOneCoordinator() }
+                            )
+                        }
+                    } else {
+                        ContentUnavailableView(
+                            "Simulator QA unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text("The package-owned synthetic Capture presentation could not be created.")
+                        )
+                        .navigationTitle("Nembra Capture")
+                        .accessibilityIdentifier("es80.capture.simulator-qa-unavailable")
+                    }
+                }
+                .preferredColorScheme(.dark)
+#endif
             }
         }
     }
 
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    ///
-    /// This Info.plist value is build-pipeline constructible and is therefore launch routing only,
-    /// never physical authority. The package-owned Experiment One field gate remains the mechanical
-    /// authority boundary for every procedure-advancing action.
+    /// The marker is launch routing only; it cannot mint package physical authority.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -85,6 +126,17 @@ struct NembraApp: App {
            fieldRecipe == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue {
             return .es80PassiveCapture
         }
+#if DEBUG && targetEnvironment(simulator)
+        if arguments.contains("--es80-passive-capture-simulator-qa") {
+            let prefix = "--es80-capture-qa-scenario="
+            let raw = arguments.first(where: { $0.hasPrefix(prefix) })
+                .map { String($0.dropFirst(prefix.count)) }
+            let scenario = raw
+                .flatMap(PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario.init(rawValue:))
+                ?? .stationaryPreflight
+            return .es80PassiveCaptureSimulatorQA(scenario.rawValue)
+        }
+#endif
 #if DEBUG
         if arguments.contains("--es80-passive-capture")
             || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
@@ -111,9 +163,19 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
+    private let simulatorQAEvidenceLabel: String?
+    private let freshExperimentCoordinatorFactory: () throws -> PassiveBluetoothExperimentOneCoordinator
 
-    init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQAEvidenceLabel: String? = nil,
+        freshExperimentCoordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
+            try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        }
+    ) {
         _coordinator = State(initialValue: coordinator)
+        self.simulatorQAEvidenceLabel = simulatorQAEvidenceLabel
+        self.freshExperimentCoordinatorFactory = freshExperimentCoordinatorFactory
     }
 
     var body: some View {
@@ -125,6 +187,16 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if let simulatorQAEvidenceLabel {
+                        Text("\(simulatorQAEvidenceLabel) · SYNTHETIC SOFTWARE STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.orange.opacity(0.10), in: Capsule())
+                            .accessibilityLabel("Simulator QA. Synthetic software state. Physical scooter capture remains locked.")
+                            .accessibilityIdentifier("es80.capture.simulator-qa")
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("NEMBRA CAPTURE")
                             .font(.caption.monospaced().weight(.bold))
@@ -229,7 +301,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     /// package-owned coordinator, but it must also return through charger preflight instead of
     /// carrying the previous run's disconnected declaration into new evidence.
     private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
-        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+        let freshCoordinator = try freshExperimentCoordinatorFactory()
         coordinator = freshCoordinator
         selectedChargerState = nil
         disconnectedDeclarationAccepted = false
@@ -410,7 +482,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .accessibilityHidden(true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

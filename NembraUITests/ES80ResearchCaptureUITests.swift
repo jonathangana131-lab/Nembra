@@ -273,6 +273,138 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
+    func testV14SimulatorQARendersStationaryPreflightWithoutPromotingFieldGo() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=stationaryPreflight"
+        ]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.stationary-preflight"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.buttons["Charger Disconnected"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Stationary Preflight"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQARendersObservationHorizonReadyInRealCaptureShell() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Capture can be sealed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture.finish"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQARendersCompleteAndShareRetryStates() {
+        let complete = XCUIApplication()
+        complete.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=captureComplete"
+        ]
+        complete.launch()
+
+        XCTAssertTrue(complete.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+        XCTAssertTrue(complete.staticTexts["CAPTURE COMPLETE"].waitForExistence(timeout: 3))
+        XCTAssertTrue(complete.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
+        XCTAssertTrue(complete.buttons["Share Capture"].waitForExistence(timeout: 3))
+        XCTAssertTrue(complete.buttons["View Details"].waitForExistence(timeout: 3))
+        XCTAssertFalse(complete.buttons["Vehicle controls"].exists)
+
+        complete.buttons["View Details"].tap()
+        XCTAssertTrue(
+            complete.descendants(matching: .any)["es80.capture.details.simulator-qa"].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(complete.staticTexts["Capture artifact"].waitForExistence(timeout: 3))
+        XCTAssertTrue(complete.staticTexts["Not created"].waitForExistence(timeout: 3))
+        XCTAssertFalse(complete.staticTexts["Correlation"].exists)
+
+        let detailsAttachment = XCTAttachment(screenshot: complete.screenshot())
+        detailsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Synthetic Details"
+        detailsAttachment.lifetime = .keepAlways
+        add(detailsAttachment)
+
+        complete.buttons["Done"].tap()
+        let completeAttachment = XCTAttachment(screenshot: complete.screenshot())
+        completeAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete"
+        completeAttachment.lifetime = .keepAlways
+        add(completeAttachment)
+        complete.terminate()
+
+        let retry = XCUIApplication()
+        retry.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=shareRetry"
+        ]
+        retry.launch()
+
+        XCTAssertTrue(retry.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+        XCTAssertTrue(retry.buttons["Retry Share file"].waitForExistence(timeout: 3))
+        XCTAssertTrue(retry.buttons["View Details"].waitForExistence(timeout: 3))
+        XCTAssertFalse(retry.buttons["Vehicle controls"].exists)
+
+        let retryAttachment = XCTAttachment(screenshot: retry.screenshot())
+        retryAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Share Retry"
+        retryAttachment.lifetime = .keepAlways
+        add(retryAttachment)
+    }
+
+    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
+        let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
+        let shellSource = try captureShellSource()
+        let fixtureSource = try repositorySource(
+            at: "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift"
+        )
+        let gateSource = try repositorySource(
+            at: "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift"
+        )
+
+        XCTAssertTrue(appSource.contains("#if DEBUG && targetEnvironment(simulator)"))
+        XCTAssertTrue(appSource.contains("--es80-passive-capture-simulator-qa"))
+        XCTAssertTrue(
+            appSource.contains("if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"),
+            "The normal research route must still be downstream of the package field gate."
+        )
+        XCTAssertTrue(
+            appSource.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"),
+            "The real field route must retain its package-owned attested factory."
+        )
+        XCTAssertTrue(shellSource.contains("simulatorQASnapshot"))
+        XCTAssertTrue(shellSource.contains("guard status.physicalProcedurePermitted else"))
+        XCTAssertTrue(shellSource.contains("Synthetic Simulator QA presentation only"))
+        XCTAssertTrue(fixtureSource.contains("physicalProcedurePermitted: false"))
+        XCTAssertTrue(fixtureSource.contains("mayUseBluetoothTransport: false"))
+        XCTAssertTrue(gateSource.contains(".noGo(.finalComposedBuildNotAuthorized)"))
+        XCTAssertFalse(appSource.contains("permitsPhysicalProcedure = true"))
+        XCTAssertFalse(shellSource.contains("permitsPhysicalProcedure = true"))
+        XCTAssertFalse(fixtureSource.contains("ForegroundCoreBluetoothCaptureController"))
+    }
+
     func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
         let source = try captureShellSource()
 
@@ -363,12 +495,15 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     }
 
     private func captureShellSource() throws -> String {
+        try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+    }
+
+    private func repositorySource(at path: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceURL = repositoryRoot
-            .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        let sourceURL = repositoryRoot.appendingPathComponent(path)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
