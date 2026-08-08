@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -85,17 +86,21 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
 
     struct Payload {
         let admissionIdentity: UUID
+        /// Local monotonic handoff boundary. Callback chronology only; never BLE/RF emission time.
+        let issuedAtUptimeNanoseconds: UInt64
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
 
         fileprivate init(
             admissionIdentity: UUID,
+            issuedAtUptimeNanoseconds: UInt64,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
             recorder: PassiveCoreBluetoothCaptureRecorder
         ) {
             self.admissionIdentity = admissionIdentity
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
@@ -112,6 +117,7 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     ) {
         payload = Payload(
             admissionIdentity: UUID(),
+            issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder
