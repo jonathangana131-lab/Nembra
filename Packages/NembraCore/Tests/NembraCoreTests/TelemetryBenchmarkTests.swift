@@ -207,12 +207,12 @@ struct SimulatedRawSpeedStreamTests {
 
         await service.simulateRide(speedKilometersPerHour: 19.2, elapsedSeconds: 0.1)
         let sample = await next.value
-        #expect(sample?.source == .scooterBluetooth)
+        #expect(sample?.source == .simulatorQA)
         #expect(sample?.provenance == .absoluteMeasurement)
         #expect(abs((sample?.kilometersPerHour ?? 0) - 19.2) < 0.000_001)
     }
 
-    @Test("back-to-back simulated BLE samples remain strictly monotonic")
+    @Test("back-to-back simulated QA samples remain strictly monotonic")
     func backToBackSamplesStayMonotonic() async throws {
         let service = SimulatedScooterService(
             initialState: SimulatedScooterService.state(for: .connectedStopped),
@@ -220,7 +220,7 @@ struct SimulatedRawSpeedStreamTests {
         )
         let stream = await service.speedTelemetryUpdates()
         var iterator = stream.makeAsyncIterator()
-        var collector = TelemetryBenchmarkCollector(source: .scooterBluetooth)
+        var collector = TelemetryBenchmarkCollector(source: .simulatorQA)
         var priorUptime: UInt64?
 
         for speed in [1.0, 2.0, 3.0, 4.0] {
