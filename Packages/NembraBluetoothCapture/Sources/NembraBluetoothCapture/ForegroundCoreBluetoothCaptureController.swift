@@ -999,6 +999,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                     do {
                         try self.requireForegroundEvidenceIntegrity()
                         try self.ensureCaptureHealthy()
+                        try self.validateBoundaryAuthority(admission.authority)
                     } catch {
                         let preAttemptFailure = error
                         do {
