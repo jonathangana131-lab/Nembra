@@ -9,9 +9,9 @@ import UIKit
 ///
 /// One package-owned coordinator now carries the complete software provenance life from
 /// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
-/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
-/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
-/// authoritative UUID, and never receives the sealed admission or mutable recorder.
+/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, immutable sealing,
+/// and a package-owned software export. SwiftUI never constructs a second correlation producer,
+/// never selects an authoritative UUID, and never receives the sealed admission or mutable recorder.
 ///
 /// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
 /// not permanent hardware authentication, RF emission-time proof, protocol semantics, or telemetry.
@@ -175,7 +175,7 @@ struct ES80CaptureShellView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Nembra carries the same package-owned Experiment One authority from repeated Bluetooth correlation into passive capture and immutable Horizon sealing. It performs no application characteristic-value writes and never turns a display name, RSSI, or service hint into target authority.")
+                Text("Nembra carries the same package-owned Experiment One authority from repeated Bluetooth correlation into passive capture and immutable Horizon sealing. Keep the charger disconnected and the stock scooter app closed for this stationary recipe. Nembra performs no application characteristic-value writes and never turns a display name, RSSI, or service hint into target authority.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -469,7 +469,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "SEALING",
                 title: "Freezing immutable evidence",
-                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.",
+                message: "Nembra is draining the accepted cutoff, committing Horizon, then package-binding the exact capture bytes to replayable correlation, recipe, stationary manifest, and running build provenance. Do not leave the app while this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -534,8 +534,8 @@ struct ES80CaptureShellView: View {
                 .foregroundStyle(.white)
 
             Text(window.operatorExpectedPowerOn
-                 ? "Set the scooter to ON, keep the stock app closed, then begin this bounded observation window."
-                 : "Set the scooter fully OFF, keep the stock app closed, then begin this bounded observation window.")
+                 ? "Set the scooter to ON, keep the charger disconnected and stock app closed, then begin this bounded observation window."
+                 : "Set the scooter fully OFF, keep the charger disconnected and stock app closed, then begin this bounded observation window.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -564,7 +564,7 @@ struct ES80CaptureShellView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.white)
 
-            Text("Nembra is recording the bounded CoreBluetooth advertisement catalog for this exact window. Keep the phone nearby and the app foregrounded; do not open the stock scooter app during this series.")
+            Text("Nembra is recording the bounded CoreBluetooth advertisement catalog for this exact window. Keep the phone nearby and the app foregrounded; keep the charger disconnected and do not open the stock scooter app during this series.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -613,7 +613,7 @@ struct ES80CaptureShellView: View {
             }
 
             if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable JSON bytes are sealed from this Experiment One authority. Correlation evidence is retained with the same package-owned result; no protocol field meaning is claimed yet.")
+                Text("\(artifact.captureJSON.count.formatted()) exact controller JSON bytes are sealed. Primary Share is enabled only after Nembra package-binds those bytes to replayable four-window correlation, recipe, stationary manifest, and running build provenance; no protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -642,7 +642,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics. Build-instance and executable-digest provenance do not authorize a field experiment by themselves.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -788,8 +788,13 @@ struct ES80CaptureShellView: View {
 
         Task {
             do {
-                let artifact = try await coordinator.finalizeObservationHorizon()
-                shareURL = try persistShareArtifact(artifact.captureJSON)
+                let finalizedArtifact = try await coordinator.finalizeObservationHorizon()
+                let softwareExport = try PassiveBluetoothExperimentOneSoftwareExportCodec
+                    .makeForCurrentApplication(finalizedArtifact: finalizedArtifact)
+                let shareJSON = try PassiveBluetoothExperimentOneSoftwareExportCodec
+                    .encode(softwareExport)
+                _ = try PassiveBluetoothExperimentOneSoftwareExportCodec.decodeAndVerify(shareJSON)
+                shareURL = try persistShareArtifact(shareJSON)
                 finalizationInFlight = false
             } catch {
                 finalizationInFlight = false
@@ -883,7 +888,7 @@ struct ES80CaptureShellView: View {
 
     private func persistShareArtifact(_ data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-Capture-\(UUID().uuidString).json")
+            .appendingPathComponent("Nembra-ES80-Experiment-One-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
     }
