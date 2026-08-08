@@ -405,8 +405,9 @@ import sys
 O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
-if O_DIRECTORY == 0 or O_NOFOLLOW == 0:
-    raise SystemExit("visual evidence custody requires O_DIRECTORY and O_NOFOLLOW")
+O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+if O_DIRECTORY == 0 or O_NOFOLLOW == 0 or O_NONBLOCK == 0:
+    raise SystemExit("visual evidence custody requires O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK")
 
 artifacts_root = Path(artifacts_root_text)
 manifest_name = Path(manifest_path_text).name
@@ -414,7 +415,7 @@ if manifest_name != "NembraCaptureSimulatorVisualEvidence.json":
     raise SystemExit("unexpected Simulator visual evidence manifest filename")
 
 DIRECTORY_FLAGS = os.O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
-FILE_FLAGS = os.O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
 
 
 def stable_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
