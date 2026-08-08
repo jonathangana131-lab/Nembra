@@ -59,6 +59,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             case uncommittedReadyRejectedBeforeRecorderMutation
             case recordedReadyInvalidatedBeforeGateCommit
             case committedReadyInvalidated
+            case uncommittedHorizonRejectedBeforeRecorderMutation
             case recordedHorizonInvalidatedBeforeGateCommit
         }
 
@@ -73,9 +74,19 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let origin: Origin
 
         /// Furthest queue prefix already represented by durable lifecycle evidence in
-        /// this abandoned epoch. Recorded-but-uncommitted Horizon extends it through H.
+        /// this abandoned epoch. A zero-mutation Horizon rejection retains H's exact
+        /// transaction identity for quarantine but does **not** promote H into durable
+        /// evidence. Only a recorded-but-uncommitted Horizon extends this cutoff to H.
         var abandonedEvidenceQueueCutoff: UInt64 {
-            abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
+            switch origin {
+            case .recordedHorizonInvalidatedBeforeGateCommit:
+                return abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
+            case .uncommittedReadyRejectedBeforeRecorderMutation,
+                 .recordedReadyInvalidatedBeforeGateCommit,
+                 .committedReadyInvalidated,
+                 .uncommittedHorizonRejectedBeforeRecorderMutation:
+                return abandonedReadyQueueCutoff
+            }
         }
 
         fileprivate init(
@@ -355,6 +366,34 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
+    /// Abandons an exact Horizon admission only when the canonical mutation fence
+    /// proves the one-shot recorder body never executed. H transaction identity is
+    /// retained for anti-substitution/quarantine, but H is not durable evidence and
+    /// therefore does not advance `abandonedEvidenceQueueCutoff` beyond Ready.
+    @discardableResult
+    mutating func abortUncommittedHorizon(
+        after rejection: PassiveCoreBluetoothHorizonRecorderMutationRejectionReceipt
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .drainingHorizon(currentHorizon) = phase,
+              let ready = committedReadyTransaction else {
+            throw StateError.invalidTransition
+        }
+        guard currentHorizon.authority == rejection.authority,
+              currentHorizon.queueCutoff == rejection.queueCutoff,
+              currentHorizon.revision == rejection.transactionRevision,
+              currentHorizon.identity == rejection.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: ready,
+            origin: .uncommittedHorizonRejectedBeforeRecorderMutation,
+            abandonedHorizonTransaction: currentHorizon
+        )
+        committedReadyTransaction = nil
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
     /// A Horizon recorder append may win under valid authority, then its queue commit
     /// can fail before terminal freeze. Preserve that durable H as incomplete historical
     /// evidence and quarantine the exact producer-issued epoch; never promote it to
@@ -385,9 +424,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
     /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
     /// retirement alone cannot reopen lifecycle admission because retired positions
-    /// still need a separate globally-resolved frontier update. #450 owns that
-    /// producer and its successor integration must make fresh-session reopen consume
-    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
+    /// still need a separate globally-resolved frontier update. #501/current successor
+    /// owns that producer; fresh-session reopen must consume accepted resolution proof.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
