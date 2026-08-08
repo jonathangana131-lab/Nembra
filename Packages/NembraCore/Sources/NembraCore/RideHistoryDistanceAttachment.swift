@@ -389,9 +389,17 @@ public struct RideHistoryDistanceRecord: Equatable, Sendable {
     }
 }
 
+/// Persistence owns only serialized checkpoint inputs. It never returns a
+/// trusted `RideHistoryDistanceRecord` directly. On every read the coordinator
+/// independently loads immutable base history, restores the checkpoint through
+/// the sealed constructor, and re-runs live aggregation + reconciliation before a
+/// joined trusted capability can exist.
 public protocol RideHistoryDistanceStore: Sendable {
-    func commit(_ record: RideHistoryDistanceRecord) async throws -> RideHistoryDistanceCommitResult
-    func record(sessionID: UUID) async throws -> RideHistoryDistanceRecord?
+    func commit(
+        _ checkpoint: RideHistoryDistanceCheckpoint
+    ) async throws -> RideHistoryDistanceCommitResult
+
+    func checkpoint(sessionID: UUID) async throws -> RideHistoryDistanceCheckpoint?
 }
 
 /// Freshly revalidated join between immutable base history and its trusted
@@ -430,12 +438,13 @@ public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public var sessionID: UUID { historyRecord.sessionID }
 }
 
-/// Idempotently attaches trusted deterministic reconciliation inputs to an
-/// already-durable completed ride, then requires exact durable read-back.
+/// Idempotently attaches a trusted deterministic distance record to an
+/// already-durable completed ride by persisting only its checkpoint inputs.
 ///
-/// Because `RideHistoryDistanceRecord` itself is not Decodable, ordinary public
-/// clients cannot manufacture a trusted attachment by deserializing arbitrary
-/// checkpoint bytes and passing them here.
+/// Durable read-back is verified at the checkpoint layer. Trusted runtime
+/// authority is never loaded from storage directly; `joinedRecord` reconstructs
+/// it only after an independently loaded exact `RideHistoryRecord` matches and
+/// reconciliation succeeds again.
 public actor RideHistoryDistanceCommitCoordinator {
     private let historyStore: any RideHistoryStore
     private let distanceStore: any RideHistoryDistanceStore
@@ -458,27 +467,33 @@ public actor RideHistoryDistanceCommitCoordinator {
 
         _ = try record.reconciledDistance(validatingAgainst: historyRecord.evidence)
 
-        let result = try await distanceStore.commit(record)
-        guard try await distanceStore.record(sessionID: record.sessionID) == record else {
+        let checkpoint = record.checkpoint
+        let result = try await distanceStore.commit(checkpoint)
+        guard try await distanceStore.checkpoint(sessionID: record.sessionID) == checkpoint else {
             throw RideHistoryDistanceAttachmentError.durableVerificationFailed(record.sessionID)
         }
         return result
     }
 
-    /// A base history row with no distance attachment is ordinary unavailability.
-    /// An orphaned attachment or mismatched immutable base fails closed.
+    /// A base history row with no distance checkpoint is ordinary unavailability.
+    /// An orphaned checkpoint or a checkpoint bound to different immutable base
+    /// evidence fails closed. The durable store never mints the trusted record.
     public func joinedRecord(
         sessionID: UUID
     ) async throws -> RideHistoryDistanceJoinedRecord? {
         let historyRecord = try await historyStore.record(sessionID: sessionID)
-        let distanceRecord = try await distanceStore.record(sessionID: sessionID)
+        let checkpoint = try await distanceStore.checkpoint(sessionID: sessionID)
 
-        switch (historyRecord, distanceRecord) {
+        switch (historyRecord, checkpoint) {
         case (nil, nil), (.some, nil):
             return nil
         case (nil, .some):
             throw RideHistoryDistanceAttachmentError.missingCompletedRide(sessionID)
-        case let (.some(historyRecord), .some(distanceRecord)):
+        case let (.some(historyRecord), .some(checkpoint)):
+            let distanceRecord = try RideHistoryDistanceRecord(
+                checkpoint: checkpoint,
+                historyRecord: historyRecord
+            )
             return try RideHistoryDistanceJoinedRecord(
                 historyRecord: historyRecord,
                 distanceRecord: distanceRecord
