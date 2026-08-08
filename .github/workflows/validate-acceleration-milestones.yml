@@ -1,0 +1,19 @@
+name: Validate Acceleration Milestones
+
+on:
+  push:
+    branches:
+      - parallel/validate-acceleration-milestones/chat-q7m4
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test NembraCore
+        run: swift test --package-path Packages/NembraCore
