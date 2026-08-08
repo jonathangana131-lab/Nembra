@@ -103,8 +103,24 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
     )
 }
 
+/// Opaque producer-owned identity for one uninterrupted guidance-evidence segment.
+/// It changes whenever the selected route is replaced, explicitly cleared, or a
+/// known continuity gap is recorded. Downstream reducers may compare identities
+/// for equality but cannot mint a generation or infer ordering from it.
+struct NavigationGuidanceContinuityGeneration: Equatable, Sendable {
+    private let id: UUID
+
+    fileprivate init() {
+        id = UUID()
+    }
+}
+
 /// Immutable proof that this exact observation was accepted by a guidance tracker
 /// and produced this exact resulting guidance state in the same mutation.
+///
+/// The receipt also seals the tracker's current continuity generation so a
+/// downstream evidence reducer can detect an explicit guidance gap even after a
+/// newer accepted observation has moved guidance back to `.active`.
 ///
 /// Construction is file-private so downstream NembraCore reducers cannot pair a
 /// replayed/rejected raw observation with a separately copied matching state and
@@ -112,13 +128,16 @@ public enum NavigationGuidanceProgressState: Equatable, Sendable {
 struct NavigationGuidanceAcceptedObservationReceipt: Equatable, Sendable {
     let observation: NavigationGuidanceProgressObservation
     let resultingState: NavigationGuidanceProgressState
+    let continuityGeneration: NavigationGuidanceContinuityGeneration
 
     fileprivate init(
         observation: NavigationGuidanceProgressObservation,
-        resultingState: NavigationGuidanceProgressState
+        resultingState: NavigationGuidanceProgressState,
+        continuityGeneration: NavigationGuidanceContinuityGeneration
     ) {
         self.observation = observation
         self.resultingState = resultingState
+        self.continuityGeneration = continuityGeneration
     }
 }
 
@@ -142,11 +161,13 @@ public struct NavigationGuidanceProgressTracker: Sendable {
     private var lastSelectionSequence: UInt64
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
     private var highestConfidentStepIndex: Int?
+    private var continuityGeneration: NavigationGuidanceContinuityGeneration
 
     public init() {
         trackerGenerationID = UUID()
         lastSelectionSequence = 0
         highestConfidentStepIndex = nil
+        continuityGeneration = NavigationGuidanceContinuityGeneration()
     }
 
     /// Internal construction exists only for sequence-exhaustion regression coverage.
@@ -155,6 +176,7 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         trackerGenerationID = UUID()
         lastSelectionSequence = initialSelectionSequence
         highestConfidentStepIndex = nil
+        continuityGeneration = NavigationGuidanceContinuityGeneration()
     }
 
     @discardableResult
@@ -173,6 +195,7 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         )
         lastAcceptedObservationUptimeNanoseconds = nil
         highestConfidentStepIndex = nil
+        continuityGeneration = NavigationGuidanceContinuityGeneration()
         state = .unavailable(token: token, route: route, reason: .awaitingEvidence)
         return token
     }
@@ -247,7 +270,8 @@ public struct NavigationGuidanceProgressTracker: Sendable {
 
     /// Atomically binds one accepted raw observation to the state produced by
     /// that exact `observe` mutation. Superseded selections return nil; rejected
-    /// current-selection observations throw and cannot mint a receipt.
+    /// current-selection observations throw and cannot mint a receipt. The
+    /// receipt also seals the current continuity generation.
     @discardableResult
     mutating func acceptanceReceipt(
         for observation: NavigationGuidanceProgressObservation
@@ -257,19 +281,24 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         }
         return NavigationGuidanceAcceptedObservationReceipt(
             observation: observation,
-            resultingState: state
+            resultingState: state,
+            continuityGeneration: continuityGeneration
         )
     }
 
     /// Known location/guidance continuity loss invalidates the displayed route
     /// progress immediately. The selected route remains available for rendering,
     /// while no current step/distance is claimed until fresh accepted evidence.
+    /// A fresh opaque continuity generation is minted at the same mutation so a
+    /// later accepted receipt still proves that downstream sustained evidence
+    /// must not bridge across this gap.
     public mutating func markKnownContinuityGap() {
         switch state {
         case .idle:
             return
         case let .unavailable(token, route, _),
              let .active(token, route, _):
+            continuityGeneration = NavigationGuidanceContinuityGeneration()
             state = .unavailable(token: token, route: route, reason: .continuityGap)
         }
     }
@@ -278,5 +307,6 @@ public struct NavigationGuidanceProgressTracker: Sendable {
         state = .idle
         lastAcceptedObservationUptimeNanoseconds = nil
         highestConfidentStepIndex = nil
+        continuityGeneration = NavigationGuidanceContinuityGeneration()
     }
 }
