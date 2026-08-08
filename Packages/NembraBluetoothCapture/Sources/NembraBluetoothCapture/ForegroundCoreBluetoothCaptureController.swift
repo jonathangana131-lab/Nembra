@@ -427,18 +427,34 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// A different selected target may start immediately and late callbacks from
     /// the cancelled target are ignored for that new session.
     public func cancelActiveConnection() {
-        cancelActiveConnection(boundary: .recordCancellationRequest)
+        cancelActiveConnection(cause: .operatorRequest)
     }
 
-    private func cancelActiveConnection(boundary: PassiveCoreBluetoothCancellationBoundary) {
+    /// Fails the live foreground-only evidence boundary with a cause-specific
+    /// interruption before transport teardown. Product shells should use this
+    /// instead of presenting foreground integrity loss as an operator cancel.
+    public func invalidateActiveCaptureForForegroundLoss() {
+        cancelActiveConnection(cause: .foregroundIntegrityLoss)
+    }
+
+    /// Ends transport only after the caller has already frozen its immutable
+    /// artifact. This intentionally adds no new interruption to that finalized
+    /// evidence timeline.
+    public func teardownActiveConnectionAfterFinalization() {
+        cancelActiveConnection(cause: .finalizedArtifactTeardown)
+    }
+
+    private func cancelActiveConnection(cause: PassiveCoreBluetoothCancellationCause) {
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         guard let peripheral = activePeripheral else { return }
-        lastDiagnostic = "Connection cancellation requested."
+        if let diagnosticMessage = cause.diagnosticMessage {
+            lastDiagnostic = diagnosticMessage
+        }
 
         if targetState.selectedTargetIdentifier == peripheral.identifier {
-            if boundary.shouldRecordCancellationRequest {
-                enqueueInterruption("connection cancellation requested")
+            if let interruptionReason = cause.interruptionReason {
+                enqueueInterruption(interruptionReason)
             }
             selectedTargetCancellationPending = true
             if !acquisitionLedger.isReady {
@@ -658,7 +674,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
             let timeoutDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
             self.enqueueInterruption("finite GATT acquisition progress timed out")
-            self.cancelActiveConnection(boundary: .interruptionAlreadyRecorded)
+            self.cancelActiveConnection(cause: .interruptionAlreadyRecorded)
             self.lastDiagnostic = timeoutDiagnostic
         }
     }
