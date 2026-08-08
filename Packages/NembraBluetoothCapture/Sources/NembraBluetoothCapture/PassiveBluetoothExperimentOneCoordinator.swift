@@ -84,13 +84,14 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         try controller.startScanning(captureAdvertisementCadence: true)
     }
 
-    /// Consumes the retained admission only after the exact correlated UUID has reappeared in the
-    /// controller catalog created after admission issuance. Calling this too early therefore fails
-    /// without consuming the one-shot handoff.
+    /// Attempts the retained admission only after the exact correlated UUID has reappeared in the
+    /// controller catalog created after admission issuance.
     ///
-    /// Once controller consumption is attempted, this coordinator clears its local admission even
-    /// if the controller fails: downstream failures may have consumed package authority, so retrying
-    /// the same opaque handoff would be ambiguous. A new Experiment One run is the fail-closed path.
+    /// The controller performs additional package-internal staging before its irreversible
+    /// `consume()`. If one of those checks rejects the attempt before consumption, the coordinator
+    /// retains this exact admission so the same completed OFF1/ON1/OFF2/ON2 evidence life can keep
+    /// scanning and retry safely. Once consumption occurred, success or failure both clear local
+    /// coordinator ownership because replaying a spent handoff would be ambiguous.
     public func connectPreparedCapture(
         timeout: TimeInterval = 12
     ) throws {
@@ -105,10 +106,16 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             throw CoordinatorError.targetNotConnectable(identifier)
         }
 
-        defer {
+        do {
+            try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
+        } catch {
+            if admission.isConsumed {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            }
+            throw error
         }
-        try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
     }
 }
