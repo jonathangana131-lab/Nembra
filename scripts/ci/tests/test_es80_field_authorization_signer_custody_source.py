@@ -47,6 +47,27 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must fail closed on writable executable/custody paths.",
         )
 
+    def test_release_openssl_requires_root_owned_executable_subject(self):
+        self.assertNotRegex(
+            self.source,
+            re.compile(r"executable_stat\.st_uid\s+not\s+in\s+\{\s*0\s*,\s*signing_uid\s*\}"),
+            "A signing-user-owned OpenSSL remains replaceable by that same principal after path validation.",
+        )
+        self.assertRegex(
+            self.source,
+            re.compile(r"executable_stat\.st_uid\s*!=\s*0|executable_stat\.st_uid\s+not\s+in\s+\{\s*0\s*\}"),
+            "Release OpenSSL must be rooted in a stronger custody principal than the signing user.",
+        )
+
+    def test_every_openssl_custody_directory_is_root_owned_and_not_group_world_writable(self):
+        self.assertIn("directory_stat.st_uid", self.source)
+        self.assertRegex(
+            self.source,
+            re.compile(r"directory_stat\.st_uid\s*!=\s*0|directory_stat\.st_uid\s+not\s+in\s+\{\s*0\s*\}"),
+            "Mode-only parent checks still allow a directory owner to replace the executable path entry.",
+        )
+        self.assertIn("0o022", self.source)
+
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
             'stat.S_IMODE' in self.source or 'st_mode' in self.source,
