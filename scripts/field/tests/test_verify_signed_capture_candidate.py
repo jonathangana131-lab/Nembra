@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import copy
 import hashlib
 import importlib.util
 import json
@@ -122,9 +121,10 @@ class SignedCaptureCandidateVerifierTests(unittest.TestCase):
             VERIFIER.verify_candidate(self.artifact_dir)
         self.assertIn(expected_fragment, str(context.exception))
 
-    def test_valid_candidate_accepts_only_byte_provenance(self) -> None:
+    def test_valid_candidate_proves_self_consistency_but_not_authenticity(self) -> None:
         result = VERIFIER.verify_candidate(self.artifact_dir)
-        self.assertEqual(result["verification"], "accepted-byte-provenance")
+        self.assertEqual(result["verification"], "self-consistent-byte-provenance")
+        self.assertEqual(result["authenticity"], "not-established-by-portable-verifier")
         self.assertEqual(result["fieldAuthorization"], "NO-GO")
         self.assertEqual(
             result["codeSignatureVerification"],
