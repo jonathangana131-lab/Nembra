@@ -12,15 +12,23 @@ struct PassiveCoreBluetoothDiscoveryAdmissionPolicy: Equatable, Sendable {
     }
 }
 
-/// Indicates whether the caller has already recorded the continuity boundary
-/// that justifies a connection cancellation. Public/operator cancellation owns
-/// its boundary here; watchdog timeout owns a more specific timeout boundary
-/// before it reaches the shared cancellation mechanics.
-enum PassiveCoreBluetoothCancellationBoundary: Equatable, Sendable {
-    case recordCancellationRequest
+/// Fixed evidence semantics for the shared transport-cancellation mechanics.
+/// Callers choose a concrete product cause rather than supplying arbitrary text,
+/// so teardown cannot silently mint misleading continuity evidence.
+enum PassiveCoreBluetoothCancellationCause: Equatable, Sendable {
+    case operatorRequest
+    case foregroundIntegrityLoss
+    case finalizedArtifactTeardown
     case interruptionAlreadyRecorded
 
-    var shouldRecordCancellationRequest: Bool {
-        self == .recordCancellationRequest
+    var interruptionReason: String? {
+        switch self {
+        case .operatorRequest:
+            "connection cancellation requested"
+        case .foregroundIntegrityLoss:
+            "foreground evidence integrity lost"
+        case .finalizedArtifactTeardown, .interruptionAlreadyRecorded:
+            nil
+        }
     }
 }
