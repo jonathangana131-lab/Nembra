@@ -135,6 +135,6 @@ struct SimulatedSpeedCurrentnessTests {
         #expect(sample.source == .simulatorQA)
         #expect(sample.source != .scooterBluetooth)
         #expect(sample.provenance == .absoluteMeasurement)
-        #expect(sample.kilometersPerHour == 12)
+        #expect(abs(sample.kilometersPerHour - 12) < 1e-9)
     }
 }
