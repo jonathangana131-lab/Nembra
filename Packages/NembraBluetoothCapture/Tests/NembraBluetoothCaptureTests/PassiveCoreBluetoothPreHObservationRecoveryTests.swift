@@ -63,7 +63,8 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         #expect(abort.abandonedReadyTransactionIdentity == fixture.epoch.transactionIdentity)
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 3) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetWasAdmittedBeforeRetirement = gate.resetForNewCaptureSession()
+        #expect(!resetWasAdmittedBeforeRetirement)
 
         var pending = [
             PendingEvent(
@@ -91,7 +92,8 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         // resolved-frontier producer is composed, the exact abort remains quarantined.
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetWasAdmittedAfterRetirement = gate.resetForNewCaptureSession()
+        #expect(!resetWasAdmittedAfterRetirement)
         #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
             _ = try gate.begin(
                 .finiteAcquisitionReady,
