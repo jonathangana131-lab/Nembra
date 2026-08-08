@@ -8,18 +8,21 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
     private typealias ReaderError = PassiveBluetoothCaptureRuntimeBuildIdentityError
 
     private let validCommit = "0123456789abcdef0123456789abcdef01234567"
+    private let validBuildInstanceID = "12345678-90ab-cdef-1234-567890abcdef"
 
-    @Test("embedded metadata binds build label, normalized commit, and exact executable bytes")
+    @Test("embedded metadata binds build label, build instance, normalized commit, and exact executable bytes")
     func validEmbeddedMetadata() throws {
         let identity = try Reader.resolveEmbeddedMetadata(
             infoDictionary: [
                 Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+                Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID.uppercased(),
                 Reader.sourceCommitSHAInfoDictionaryKey: validCommit.uppercased()
             ],
             executableData: Data("abc".utf8)
         )
 
         #expect(identity.buildIdentifier == "Capture Build V14-F1")
+        #expect(identity.buildInstanceID == validBuildInstanceID)
         #expect(identity.sourceCommitSHA == validCommit)
         #expect(identity.executableSHA256 == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
@@ -28,6 +31,7 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
     func executableDigestChangesWithBytes() throws {
         let metadata: [String: Any] = [
             Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+            Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID,
             Reader.sourceCommitSHAInfoDictionaryKey: validCommit
         ]
 
@@ -41,6 +45,7 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
         )
 
         #expect(first.buildIdentifier == second.buildIdentifier)
+        #expect(first.buildInstanceID == second.buildInstanceID)
         #expect(first.sourceCommitSHA == second.sourceCommitSHA)
         #expect(first.executableSHA256 != second.executableSHA256)
     }
@@ -48,6 +53,7 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
     @Test("missing build identifier fails closed")
     func missingBuildIdentifier() {
         expectFailure(.missingBuildIdentifier, infoDictionary: [
+            Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID,
             Reader.sourceCommitSHAInfoDictionaryKey: validCommit
         ])
     }
@@ -57,6 +63,7 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
         for invalid in ["", " Capture Build V14-F1", "Capture Build V14-F1 ", "\nCapture Build V14-F1"] {
             expectFailure(.invalidBuildIdentifier, infoDictionary: [
                 Reader.buildIdentifierInfoDictionaryKey: invalid,
+                Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID,
                 Reader.sourceCommitSHAInfoDictionaryKey: validCommit
             ])
         }
@@ -67,15 +74,51 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
         for invalid in ["Capture\u{0000}Build", String(repeating: "x", count: 129)] {
             expectFailure(.invalidBuildIdentifier, infoDictionary: [
                 Reader.buildIdentifierInfoDictionaryKey: invalid,
+                Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID,
                 Reader.sourceCommitSHAInfoDictionaryKey: validCommit
             ])
         }
     }
 
+    @Test("missing build instance fails closed")
+    func missingBuildInstanceID() {
+        expectFailure(.missingBuildInstanceID, infoDictionary: [
+            Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+            Reader.sourceCommitSHAInfoDictionaryKey: validCommit
+        ])
+    }
+
+    @Test("build instance must be one canonical UUID-shaped identifier")
+    func invalidBuildInstanceShape() {
+        let invalidValues = [
+            String(validBuildInstanceID.dropLast()),
+            validBuildInstanceID + "0",
+            "g" + String(validBuildInstanceID.dropFirst()),
+            " " + String(validBuildInstanceID.dropLast()),
+            "1234567890ab-cdef-1234-567890abcdef",
+            "HEAD"
+        ]
+
+        for invalid in invalidValues {
+            expectFailure(.invalidBuildInstanceID, infoDictionary: [
+                Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+                Reader.buildInstanceIDInfoDictionaryKey: invalid,
+                Reader.sourceCommitSHAInfoDictionaryKey: validCommit
+            ])
+        }
+    }
+
+    @Test("build instance is normalized only for hexadecimal case")
+    func buildInstanceNormalization() {
+        #expect(Reader.normalizedBuildInstanceID(validBuildInstanceID.uppercased()) == validBuildInstanceID)
+        #expect(Reader.normalizedBuildInstanceID(validBuildInstanceID) == validBuildInstanceID)
+    }
+
     @Test("missing source commit fails closed")
     func missingSourceCommit() {
         expectFailure(.missingSourceCommitSHA, infoDictionary: [
-            Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1"
+            Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+            Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID
         ])
     }
 
@@ -92,6 +135,7 @@ struct PassiveBluetoothCaptureRuntimeBuildIdentityTests {
         for invalid in invalidValues {
             expectFailure(.invalidSourceCommitSHA, infoDictionary: [
                 Reader.buildIdentifierInfoDictionaryKey: "Capture Build V14-F1",
+                Reader.buildInstanceIDInfoDictionaryKey: validBuildInstanceID,
                 Reader.sourceCommitSHAInfoDictionaryKey: invalid
             ])
         }
