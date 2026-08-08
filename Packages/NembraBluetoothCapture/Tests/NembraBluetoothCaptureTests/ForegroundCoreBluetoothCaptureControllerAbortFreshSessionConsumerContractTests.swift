@@ -56,7 +56,8 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
         #expect(controller.contains("isSelectedTargetAwaitingTerminalCallback"))
         #expect(controller.contains("eventDrainTask == nil"))
         #expect(controller.contains("scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("connectionPhase = .idle\n        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
+        #expect(controller.contains("activePeripheral == nil"))
+        #expect(controller.contains("connectionPhase == .idle else"))
         #expect(controller.contains("captureFailed = false"))
         #expect(controller.contains("case .abortQuarantined"))
     }
