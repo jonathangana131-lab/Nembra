@@ -1,0 +1,287 @@
+name: ES80 Live Authorization Envelope Atomic Transform
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-auth-envelope-exclusive-rename-live/gpt56-thinking
+
+permissions:
+  contents: write
+
+concurrency:
+  group: es80-auth-envelope-live-atomic-transform
+  cancel-in-progress: true
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify exact live parent
+        env:
+          EXPECTED_PARENT: dbdc82d305244bd045ce428f813aa07b00777e85
+        run: |
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/es80-auth-envelope-live-atomic-transform.yml"
+
+      - name: Apply guarded publication repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          signer_path = Path("scripts/ci/es80_field_authorization_envelope.py")
+          source = signer_path.read_text(encoding="utf-8")
+          if "def publish_file_no_replace(" in source:
+              raise SystemExit("exclusive publication helper unexpectedly already exists")
+          if "OPENSSL_COMMAND_TIMEOUT_SECONDS = 30" not in source:
+              raise SystemExit("merged hermetic signer contract is missing")
+          import_anchor = "import base64\n"
+          if source.count(import_anchor) != 1 or "import ctypes\n" in source or "import errno\n" in source:
+              raise SystemExit("unexpected signer import state")
+          source = source.replace(import_anchor, import_anchor + "import ctypes\nimport errno\n", 1)
+
+          start_marker = "def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:\n"
+          end_marker = "\ndef create_envelope(\n"
+          if source.count(start_marker) != 1:
+              raise SystemExit("unexpected authorization publication function count")
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          old = source[start:end]
+          for fragment in (
+              'with resolved.open("xb") as handle:',
+              "handle.write(envelope)",
+              "handle.flush()",
+              "os.fsync(handle.fileno())",
+              "if resolved.read_bytes() != envelope:",
+          ):
+              if fragment not in old:
+                  raise SystemExit(f"live direct-write contract changed: missing {fragment}")
+
+          replacement = dedent('''\
+          def publish_file_no_replace(staging_file: Path, output_file: Path) -> None:
+              """Atomically move one complete staged file without replacing an existing destination."""
+              libc = ctypes.CDLL(None, use_errno=True)
+              source = os.fsencode(staging_file)
+              destination = os.fsencode(output_file)
+
+              if sys.platform == "darwin":
+                  rename_exclusive = libc.renamex_np
+                  rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+                  rename_exclusive.restype = ctypes.c_int
+                  result = rename_exclusive(source, destination, 0x00000004)  # RENAME_EXCL
+              elif sys.platform.startswith("linux"):
+                  rename_exclusive = libc.renameat2
+                  rename_exclusive.argtypes = [
+                      ctypes.c_int,
+                      ctypes.c_char_p,
+                      ctypes.c_int,
+                      ctypes.c_char_p,
+                      ctypes.c_uint,
+                  ]
+                  rename_exclusive.restype = ctypes.c_int
+                  result = rename_exclusive(-100, source, -100, destination, 0x00000001)  # RENAME_NOREPLACE
+              else:
+                  raise AuthorizationEnvelopeError(
+                      f"atomic no-replace authorization publication is unsupported on {sys.platform!r}"
+                  )
+
+              if result != 0:
+                  error_number = ctypes.get_errno()
+                  if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+                      raise AuthorizationEnvelopeError(
+                          f"refusing to overwrite existing signed authorization envelope: {output_file}"
+                      )
+                  raise OSError(error_number, os.strerror(error_number), str(output_file))
+
+
+          def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:
+              """Publish one complete envelope without exposing a partial final pathname."""
+              resolved = require_external_path(output, "signed authorization envelope output")
+              resolved.parent.mkdir(parents=True, exist_ok=True)
+              staging_path: Path | None = None
+              descriptor = -1
+
+              try:
+                  descriptor, staging_name = tempfile.mkstemp(
+                      prefix=f".authorization-envelope-{resolved.name}.staging-",
+                      dir=resolved.parent,
+                  )
+                  staging_path = Path(staging_name)
+                  with os.fdopen(descriptor, "w+b", closefd=True) as handle:
+                      descriptor = -1
+                      if handle.write(envelope) != len(envelope):
+                          raise AuthorizationEnvelopeError(
+                              "could not write complete signed authorization envelope"
+                          )
+                      handle.flush()
+                      os.fsync(handle.fileno())
+                      handle.seek(0)
+                      if handle.read(len(envelope) + 1) != envelope:
+                          raise AuthorizationEnvelopeError(
+                              "staged authorization envelope bytes diverged"
+                          )
+
+                  publish_file_no_replace(staging_path, resolved)
+                  staging_path = None  # Exclusive rename consumed the staging pathname.
+                  return resolved
+              except Exception as error:
+                  cleanup_error: OSError | None = None
+                  if staging_path is not None:
+                      try:
+                          staging_path.unlink()
+                      except FileNotFoundError:
+                          pass
+                      except OSError as exc:
+                          cleanup_error = exc
+
+                  if cleanup_error is not None:
+                      raise AuthorizationEnvelopeError(
+                          "authorization envelope publication failed before final-path admission "
+                          "and staging cleanup also failed"
+                      ) from error
+                  if isinstance(error, AuthorizationEnvelopeError):
+                      raise
+                  raise AuthorizationEnvelopeError(
+                      "could not publish signed authorization envelope"
+                  ) from error
+              finally:
+                  if descriptor >= 0:
+                      try:
+                          os.close(descriptor)
+                      except OSError:
+                          pass
+          ''')
+          source = source[:start] + replacement + source[end:]
+          signer_path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Add adversarial publication regression
+        run: |
+          test ! -e scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          cat > scripts/ci/tests/test_es80_field_authorization_atomic_publication.py <<'PYTEST'
+          #!/usr/bin/env python3
+          """Regression for failure-atomic offline field-authorization publication."""
+
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+          import tempfile
+          from unittest import mock
+
+          REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+          SIGNER_PATH = REPOSITORY_ROOT / "scripts/ci/es80_field_authorization_envelope.py"
+          spec = importlib.util.spec_from_file_location("es80_field_authorization_envelope", SIGNER_PATH)
+          if spec is None or spec.loader is None:
+              raise RuntimeError("could not load field authorization signer")
+          signer = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(signer)
+
+          def assert_no_staging(directory: Path) -> None:
+              leftovers = list(directory.glob(".authorization-envelope-*.staging-*"))
+              if leftovers:
+                  raise AssertionError(f"authorization publication left staging artifacts: {leftovers}")
+
+          def expect_error(callable_, required_text: str) -> None:
+              try:
+                  callable_()
+              except signer.AuthorizationEnvelopeError as error:
+                  if required_text not in str(error):
+                      raise AssertionError(f"unexpected publication error: {error}") from error
+              else:
+                  raise AssertionError("authorization publication unexpectedly succeeded")
+
+          def main() -> None:
+              envelope = b'{"fixture":"signed-authorization-envelope"}\n'
+              replacement = b'{"fixture":"replacement-must-not-win"}\n'
+              with tempfile.TemporaryDirectory(prefix="nembra-auth-envelope-atomic-test-") as temporary:
+                  directory = Path(temporary)
+                  output = directory / "NembraCaptureFieldAuthorizationEnvelope.json"
+
+                  with mock.patch.object(signer.os, "fsync", side_effect=OSError("simulated durability failure")):
+                      expect_error(lambda: signer.write_envelope_no_replace(output, envelope), "could not publish")
+                  if output.exists():
+                      raise AssertionError("durability failure exposed a final authorization envelope")
+                  assert_no_staging(directory)
+
+                  with mock.patch.object(signer, "publish_file_no_replace", side_effect=OSError("simulated rename failure")):
+                      expect_error(lambda: signer.write_envelope_no_replace(output, envelope), "could not publish")
+                  if output.exists():
+                      raise AssertionError("rename failure exposed a final authorization envelope")
+                  assert_no_staging(directory)
+
+                  with mock.patch.object(Path, "unlink", side_effect=AssertionError("successful publish attempted cleanup")):
+                      published = signer.write_envelope_no_replace(output, envelope)
+                  if published != output.resolve() or output.read_bytes() != envelope:
+                      raise AssertionError("successful publication did not preserve exact envelope bytes")
+                  assert_no_staging(directory)
+
+                  expect_error(lambda: signer.write_envelope_no_replace(output, replacement), "refusing to overwrite")
+                  if output.read_bytes() != envelope:
+                      raise AssertionError("no-replace publication mutated the accepted envelope")
+                  assert_no_staging(directory)
+
+              print("field authorization atomic-publication regression: PASS")
+
+          if __name__ == "__main__":
+              main()
+          PYTEST
+
+      - name: Wire both exact-head authority gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path(".github/workflows/xcode27-pr-command.yml")
+          source = path.read_text(encoding="utf-8")
+          marker = "          python3 scripts/ci/es80_field_authorization_envelope.py --self-test\n"
+          if source.count(marker) != 2:
+              raise SystemExit(f"expected fast+Mac signer gates, found {source.count(marker)}")
+          if "test_es80_field_authorization_atomic_publication.py" in source:
+              raise SystemExit("atomic publication regression unexpectedly already wired")
+          addition = (
+              marker
+              + "          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n"
+              + "          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n"
+          )
+          source = source.replace(marker, addition)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Validate combined live authority contract
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/xcode27-pr-command.yml').read_text(encoding='utf-8')
+          if source.count('python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py') != 2:
+              raise SystemExit('atomic regression is not in both exact-head authority gates')
+          PY
+          git diff --check
+
+      - name: Commit and push product-only result
+        run: |
+          set -euxo pipefail
+          rm .github/workflows/es80-auth-envelope-live-atomic-transform.yml
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add -A
+          git diff --cached --check
+          git status --short
+          git config user.name "Nembra V14 Capture Worker"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git commit -m "Make authorization envelope publication failure-atomic" \
+            -m "Preserve the merged hermetic signer while staging, fsyncing, verifying, and exclusively renaming the final authority envelope. Gate adversarial publication failures in both fast authority tooling and final Mac QA. Physical Experiment One remains NO-GO."
+          git push origin HEAD:${GITHUB_REF_NAME}
