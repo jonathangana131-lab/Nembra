@@ -1,3 +1,5 @@
+import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -13,25 +15,47 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
         authorityGeneration: 11
     )
 
+    private let es80 = VehicleIdentity(
+        manufacturer: "AOVOPRO",
+        model: "ES80",
+        displayName: "AOVOPRO ES80",
+        protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
+    )
+
+    @MainActor
+    private func committedFixture(
+        readyCutoff: UInt64 = 4
+    ) async throws -> (
+        gate: PassiveCoreBluetoothObservationBoundaryQueueGate,
+        epoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch
+    ) {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
+            queueCutoff: readyCutoff,
+            processedThrough: readyCutoff,
+            authorityFence: fence,
+            gate: &gate
+        )
+        let recorded = try await admission.recordBoundary(on: recorder)
+        let epoch = try recorded.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: readyCutoff
+        )
+        return (gate, epoch)
+    }
+
+    @MainActor
     private func quarantinedGate(
         readyCutoff: UInt64 = 4
-    ) throws -> PassiveCoreBluetoothObservationBoundaryQueueGate {
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let ready = try gate.begin(
-            .finiteAcquisitionReady,
-            through: readyCutoff,
-            authority: authority
-        )
-        try gate.markBoundaryRecorded(
-            ready,
-            lastProcessedQueueSequence: readyCutoff,
-            currentAuthority: authority
-        )
-        _ = try gate.abortObservationEpoch(
-            expectedReadyAuthority: authority,
-            expectedReadyQueueCutoff: readyCutoff
-        )
-        return gate
+    ) async throws -> PassiveCoreBluetoothObservationBoundaryQueueGate {
+        var fixture = try await committedFixture(readyCutoff: readyCutoff)
+        _ = try fixture.gate.abortObservationEpoch(fixture.epoch)
+        return fixture.gate
     }
 
     private func identity(
@@ -42,13 +66,10 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("retires the complete contiguous abandoned-session suffix across authority generations")
     @MainActor
-    func retiresCompleteAbandonedSessionSuffix() throws {
-        let gate = try quarantinedGate()
+    func retiresCompleteAbandonedSessionSuffix() async throws {
+        let gate = try await quarantinedGate()
         var pending = [
-            PendingEvent(
-                queueSequence: 5,
-                authority: authority
-            ),
+            PendingEvent(queueSequence: 5, authority: authority),
             PendingEvent(
                 queueSequence: 6,
                 authority: .init(
@@ -85,8 +106,8 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("empty pending queue is valid only when settled frontier equals enqueue tail")
     @MainActor
-    func emptyQueueRequiresSettledTailEquality() throws {
-        let gate = try quarantinedGate()
+    func emptyQueueRequiresSettledTailEquality() async throws {
+        let gate = try await quarantinedGate()
         var empty: [PendingEvent] = []
 
         #expect(
@@ -120,8 +141,8 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("active drain rejects retirement before any pending mutation")
     @MainActor
-    func activeDrainFailsAtomically() throws {
-        let gate = try quarantinedGate()
+    func activeDrainFailsAtomically() async throws {
+        let gate = try await quarantinedGate()
         var pending = [PendingEvent(queueSequence: 5, authority: authority)]
         let original = pending
 
@@ -142,8 +163,8 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("sequence hole exposes a popped/in-flight or manually truncated FIFO and fails atomically")
     @MainActor
-    func queueHoleFailsAtomically() throws {
-        let gate = try quarantinedGate()
+    func queueHoleFailsAtomically() async throws {
+        let gate = try await quarantinedGate()
         var pending = [
             PendingEvent(queueSequence: 6, authority: authority),
             PendingEvent(queueSequence: 7, authority: authority),
@@ -167,8 +188,8 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("foreign target-session evidence is never collateral retirement")
     @MainActor
-    func foreignTargetSessionFailsAtomically() throws {
-        let gate = try quarantinedGate()
+    func foreignTargetSessionFailsAtomically() async throws {
+        let gate = try await quarantinedGate()
         var pending = [
             PendingEvent(queueSequence: 5, authority: authority),
             PendingEvent(
@@ -198,8 +219,8 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
 
     @Test("Ready prefix must already be settled before abandoned-session retirement")
     @MainActor
-    func unsettledReadyPrefixFailsClosed() throws {
-        let gate = try quarantinedGate(readyCutoff: 4)
+    func unsettledReadyPrefixFailsClosed() async throws {
+        let gate = try await quarantinedGate(readyCutoff: 4)
         var pending = [PendingEvent(queueSequence: 4, authority: authority)]
         let original = pending
 
@@ -218,20 +239,10 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
         #expect(pending == original)
     }
 
-    @Test("non-quarantined gate cannot authorize pre-H retirement")
+    @Test("observing gate cannot authorize pre-H queue retirement")
     @MainActor
-    func observingGateFailsClosed() throws {
-        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let ready = try gate.begin(
-            .finiteAcquisitionReady,
-            through: 4,
-            authority: authority
-        )
-        try gate.markBoundaryRecorded(
-            ready,
-            lastProcessedQueueSequence: 4,
-            currentAuthority: authority
-        )
+    func observingGateFailsClosed() async throws {
+        let fixture = try await committedFixture()
         var pending = [PendingEvent(queueSequence: 5, authority: authority)]
         let original = pending
 
@@ -242,7 +253,7 @@ struct PassiveCoreBluetoothAbortedObservationQueueRetirementTests {
                     currentLastEnqueuedEventSequence: 5,
                     currentSettledQueueSequence: 4,
                     drainIsIdle: true,
-                    abortedGate: gate,
+                    abortedGate: fixture.gate,
                     identity: identity
                 )
             } == .abortQuarantineRequired
