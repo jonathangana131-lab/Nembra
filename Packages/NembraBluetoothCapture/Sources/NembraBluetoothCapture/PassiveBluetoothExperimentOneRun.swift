@@ -6,6 +6,7 @@ import NembraCore
 /// These states describe Nembra's local evidence workflow only. They do not authenticate a
 /// physical scooter or imply any BLE/Tuya field semantics.
 enum PassiveBluetoothExperimentOneRunError: Error, Equatable, Sendable {
+    case invalidVehicleContext
     case powerCycleIncomplete
     case powerCycleAuthorityInvalid
     case powerCycleCorrelationNotUnique
@@ -24,7 +25,9 @@ struct PassiveBluetoothExperimentOnePowerCycleEvidence: Equatable, Sendable {
     let result: PassiveBluetoothPowerCycleObservationResult
     let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
 
-    init?(
+    /// Issuance is producer-file private. Other production files in this module may inspect an
+    /// issued value but cannot wrap an arbitrary detached result as Experiment One authority.
+    fileprivate init?(
         result: PassiveBluetoothPowerCycleObservationResult
     ) {
         let identities = result.correlation.observationSeriesIdentities
@@ -48,7 +51,9 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
     let session: PassiveBluetoothCaptureSession
     let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
 
-    init(
+    /// Issuance is producer-file private for the same reason as power-cycle evidence: same-module
+    /// consumers cannot join an arbitrary raw capture to a caller-chosen matching authority token.
+    fileprivate init(
         observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity,
         session: PassiveBluetoothCaptureSession
     ) {
@@ -70,6 +75,11 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 /// caller cannot shorten it to reach capture acquisition sooner. That duration remains a local
 /// callback-receipt procedure threshold, not a BLE cadence or RF-completeness claim.
 ///
+/// The caller may supply software vehicle context only so contradictory context can fail closed.
+/// This ES80-specific authority accepts exactly Nembra's canonical `VehicleProfile.aovoproES80`
+/// identity; the deferred MAXSHOT profile or any custom identity cannot originate this run. Matching
+/// declared context is still software metadata and is never physical ES80 authentication.
+///
 /// **Critical integration boundary:** this run and all authority-bearing result types remain
 /// package-internal until the accepted foreground CoreBluetooth controller can create/use the
 /// recorder internally and emit a finalized H-bounded artifact under current controller authority.
@@ -85,7 +95,11 @@ final class PassiveBluetoothExperimentOneRun {
     private var captureObservationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity?
 
     init(vehicleIdentity: VehicleIdentity) throws {
-        self.vehicleIdentity = vehicleIdentity
+        guard vehicleIdentity == VehicleProfile.aovoproES80.identity else {
+            throw PassiveBluetoothExperimentOneRunError.invalidVehicleContext
+        }
+
+        self.vehicleIdentity = VehicleProfile.aovoproES80.identity
         powerCycleObservationSession = try PassiveBluetoothPowerCycleObservationSession(
             minimumWindowDuration: TimeInterval(
                 PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
