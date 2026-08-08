@@ -8,6 +8,7 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
+BUILD_EVIDENCE_DIR="$ARTIFACTS_DIR/build-evidence"
 BUNDLE_ID="com.jonathangana131.nembra"
 
 CAPTURE_BUILD_COMMIT_SHA="$(git rev-parse --verify HEAD^{commit})"
@@ -27,7 +28,7 @@ if [[ -n "$REPOSITORY_STATUS" ]]; then
   exit 9
 fi
 
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
+mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR" "$BUILD_EVIDENCE_DIR"
 rm -rf "$RESULT_BUNDLE"
 
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
@@ -173,6 +174,39 @@ if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the built executable." >&2
   exit 13
 fi
+INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
+if [[ ! "$INFO_PLIST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a valid SHA-256 digest for the built Info.plist." >&2
+  exit 17
+fi
+
+# Retain the exact bytes whose identity is asserted by the external provenance record. A digest
+# alone is useful, but preserving these immutable copies lets a later reviewer independently
+# re-hash the same executable and inspect the exact generated build metadata after DerivedData is
+# gone. This is Simulator software evidence only; the physical pipeline must retain the exact final
+# signed field artifact (for example the accepted .ipa) rather than substituting these bytes.
+RETAINED_EXECUTABLE="$BUILD_EVIDENCE_DIR/Nembra"
+RETAINED_INFO_PLIST="$BUILD_EVIDENCE_DIR/Info.plist"
+cp -p "$EXECUTABLE_PATH" "$RETAINED_EXECUTABLE"
+cp -p "$INFO_PLIST" "$RETAINED_INFO_PLIST"
+if ! cmp -s "$EXECUTABLE_PATH" "$RETAINED_EXECUTABLE"; then
+  echo "Retained Capture executable bytes diverged from the measured build output." >&2
+  exit 18
+fi
+if ! cmp -s "$INFO_PLIST" "$RETAINED_INFO_PLIST"; then
+  echo "Retained Capture Info.plist bytes diverged from the measured build output." >&2
+  exit 19
+fi
+RETAINED_EXECUTABLE_SHA256="$(shasum -a 256 "$RETAINED_EXECUTABLE" | awk '{print $1}')"
+RETAINED_INFO_PLIST_SHA256="$(shasum -a 256 "$RETAINED_INFO_PLIST" | awk '{print $1}')"
+if [[ "$RETAINED_EXECUTABLE_SHA256" != "$EXECUTABLE_SHA256" ]]; then
+  echo "Retained Capture executable digest does not match the measured build output." >&2
+  exit 20
+fi
+if [[ "$RETAINED_INFO_PLIST_SHA256" != "$INFO_PLIST_SHA256" ]]; then
+  echo "Retained Capture Info.plist digest does not match the measured build output." >&2
+  exit 21
+fi
 
 # Keep the exact-executable digest record OUTSIDE the app bundle.
 #
@@ -196,6 +230,7 @@ python3 - \
   "$CAPTURE_BUILD_INSTANCE_ID" \
   "$CAPTURE_BUILD_COMMIT_SHA" \
   "$EXECUTABLE_SHA256" \
+  "$INFO_PLIST_SHA256" \
   "$CAPTURE_RECIPE_IDENTIFIER" \
   "$CAPTURE_PROCEDURE_VERSION" \
   "$BUNDLE_ID" \
@@ -212,6 +247,7 @@ import sys
     build_instance_id,
     source_commit_sha,
     executable_sha256,
+    info_plist_sha256,
     recipe_identifier,
     procedure_version,
     bundle_identifier,
@@ -220,11 +256,12 @@ import sys
 ) = sys.argv[1:]
 
 external_record = {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "buildIdentifier": build_identifier,
     "buildInstanceID": build_instance_id,
     "sourceCommitSHA": source_commit_sha,
     "executableSHA256": executable_sha256,
+    "infoPlistSHA256": info_plist_sha256,
     "experimentRecipeID": recipe_identifier,
     "procedureVersion": procedure_version,
 }
@@ -253,6 +290,9 @@ EXTERNAL_BUILD_RECORD_SHA256="$(shasum -a 256 "$EXTERNAL_BUILD_RECORD" | awk '{p
 
 printf '%s\n' \
   "capture_executable_sha256=$EXECUTABLE_SHA256" \
+  "capture_info_plist_sha256=$INFO_PLIST_SHA256" \
+  "capture_retained_executable=$RETAINED_EXECUTABLE" \
+  "capture_retained_info_plist=$RETAINED_INFO_PLIST" \
   "capture_external_build_record=$EXTERNAL_BUILD_RECORD" \
   "capture_external_build_record_sha256=$EXTERNAL_BUILD_RECORD_SHA256" \
   "capture_runner_metadata=$RUNNER_METADATA" \
