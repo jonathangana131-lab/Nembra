@@ -1,0 +1,72 @@
+name: Temp Capture extracted inspection subject integrity
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-extracted-inspection-subject-integrity/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Bind all signing reads to one extracted app tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          source = path.read_text(encoding="utf-8")
+
+          helper_anchor = '''def canonical_sha40(value: str) -> str:\n'''
+          helper = '''def capture_extracted_tree_integrity(root: Path) -> dict[str, tuple[tuple[int, int, int, int, int, int], str | None]]:\n    \"\"\"Capture one closed-world extracted tree including directory mutation evidence.\"\"\"\n    if not root.is_dir():\n        raise EvidenceError("extracted signing subject root must be one directory")\n    entries = [root, *sorted(root.rglob("*"), key=lambda item: str(item.relative_to(root)))]\n    manifest: dict[str, tuple[tuple[int, int, int, int, int, int], str | None]] = {}\n    for entry in entries:\n        try:\n            metadata = entry.lstat()\n        except OSError as exc:\n            raise EvidenceError("extracted signing subject became unreadable while sealing") from exc\n        relative = "." if entry == root else str(entry.relative_to(root))\n        if relative in manifest:\n            raise EvidenceError("extracted signing subject contains a duplicate path")\n        if stat.S_ISLNK(metadata.st_mode):\n            raise EvidenceError("extracted signing subject must not contain symbolic links")\n        if stat.S_ISDIR(metadata.st_mode):\n            digest = None\n        elif stat.S_ISREG(metadata.st_mode):\n            digest = sha256_file(entry)\n        else:\n            raise EvidenceError("extracted signing subject contains an unsupported filesystem object")\n        manifest[relative] = (_stable_file_identity(metadata), digest)\n    return manifest\n\n\ndef verify_extracted_tree_integrity(\n    root: Path,\n    *,\n    expected_manifest: dict[str, tuple[tuple[int, int, int, int, int, int], str | None]],\n) -> None:\n    current = capture_extracted_tree_integrity(root)\n    if current != expected_manifest:\n        raise EvidenceError(\n            "extracted signed-app inspection subject changed during signing/provisioning inspection"\n        )\n\n\ndef canonical_sha40(value: str) -> str:\n'''
+          if source.count(helper_anchor) != 1:
+              raise SystemExit(f"helper anchor drifted: {source.count(helper_anchor)}")
+          source = source.replace(helper_anchor, helper, 1)
+
+          extract_anchor = '''        app_path = extract_ipa_safely(ipa_path, root)\n        reject_embedded_external_authority(app_path)\n'''
+          extract_replacement = '''        app_path = extract_ipa_safely(ipa_path, root)\n        extracted_tree_manifest = capture_extracted_tree_integrity(root)\n        reject_embedded_external_authority(app_path)\n'''
+          if source.count(extract_anchor) != 1:
+              raise SystemExit(f"extract anchor drifted: {source.count(extract_anchor)}")
+          source = source.replace(extract_anchor, extract_replacement, 1)
+
+          verify_anchor = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):\n            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")\n\n    verify_exact_ipa_subject_unchanged(\n'''
+          verify_replacement = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):\n            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")\n\n        verify_extracted_tree_integrity(\n            root,\n            expected_manifest=extracted_tree_manifest,\n        )\n\n    verify_exact_ipa_subject_unchanged(\n'''
+          if source.count(verify_anchor) != 1:
+              raise SystemExit(f"verification anchor drifted: {source.count(verify_anchor)}")
+          source = source.replace(verify_anchor, verify_replacement, 1)
+
+          self_test_anchor = '''    try:\n        canonical_sha40("A" * 40)\n'''
+          self_test_insert = '''    with tempfile.TemporaryDirectory(prefix="nembra-extracted-subject-self-test-") as temporary:\n        extracted = Path(temporary) / "inspection"\n        app = extracted / "Payload" / "Nembra.app"\n        app.mkdir(parents=True)\n        executable = app / "Nembra"\n        executable.write_bytes(b"original executable")\n        info = app / "Info.plist"\n        info.write_bytes(b"original plist")\n        sealed = capture_extracted_tree_integrity(extracted)\n\n        parked = app / "Nembra.original"\n        executable.rename(parked)\n        executable.write_bytes(b"replacement executable")\n        executable.unlink()\n        parked.rename(executable)\n        try:\n            verify_extracted_tree_integrity(extracted, expected_manifest=sealed)\n        except EvidenceError as error:\n            assert "changed during signing/provisioning inspection" in str(error)\n        else:\n            raise AssertionError("swap-and-restore extracted app subject escaped integrity detection")\n\n    try:\n        canonical_sha40("A" * 40)\n'''
+          if source.count(self_test_anchor) != 1:
+              raise SystemExit(f"self-test anchor drifted: {source.count(self_test_anchor)}")
+          source = source.replace(self_test_anchor, self_test_insert, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-capture-extracted-inspection-subject-integrity.yml
+          git config user.name "nembra-v14-go"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_evidence.py .github/workflows/tmp-capture-extracted-inspection-subject-integrity.yml
+          git diff --cached --check
+          git commit -m "[Capture provenance v14] Seal extracted signing subject"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
