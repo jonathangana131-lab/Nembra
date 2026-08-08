@@ -374,6 +374,110 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(retryAttachment)
     }
 
+    @MainActor
+    func testV14SimulatorQAPreflightRemainsUsableAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=stationaryPreflight",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let preflight = app.descendants(matching: .any)["es80.capture.stationary-preflight"]
+        let simulatorTruth = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let disconnected = app.buttons["Charger Disconnected"]
+
+        XCTAssertTrue(preflight.waitForExistence(timeout: 5))
+        XCTAssertTrue(simulatorTruth.waitForExistence(timeout: 3))
+        XCTAssertTrue(disconnected.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let truthAttachment = XCTAttachment(screenshot: app.screenshot())
+        truthAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Preflight — Accessibility XXXL — Truth"
+        truthAttachment.lifetime = .keepAlways
+        add(truthAttachment)
+
+        for _ in 0..<4 {
+            if disconnected.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            disconnected.isHittable,
+            "The primary stationary preflight declaration must remain reachable at Accessibility XXXL."
+        )
+
+        let controlsAttachment = XCTAttachment(screenshot: app.screenshot())
+        controlsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Preflight — Accessibility XXXL — Controls"
+        controlsAttachment.lifetime = .keepAlways
+        add(controlsAttachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQACompletionAndRecoveryRemainUsableInLandscape() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let complete = XCUIApplication()
+        complete.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=captureComplete"
+        ]
+        complete.launch()
+        XCTAssertTrue(complete.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        XCTAssertTrue(complete.staticTexts["CAPTURE COMPLETE"].waitForExistence(timeout: 3))
+        XCTAssertTrue(complete.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
+        let shareCapture = complete.buttons["Share Capture"]
+        let viewDetails = complete.buttons["View Details"]
+        XCTAssertTrue(shareCapture.waitForExistence(timeout: 3))
+        XCTAssertTrue(viewDetails.waitForExistence(timeout: 3))
+        XCTAssertFalse(complete.buttons["Vehicle controls"].exists)
+        XCTAssertFalse(complete.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        for _ in 0..<4 {
+            if shareCapture.isHittable && viewDetails.isHittable { break }
+            complete.swipeUp()
+        }
+        XCTAssertTrue(shareCapture.isHittable, "Share Capture must remain reachable in landscape.")
+        XCTAssertTrue(viewDetails.isHittable, "View Details must remain reachable in landscape.")
+
+        let completeAttachment = XCTAttachment(screenshot: complete.screenshot())
+        completeAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Landscape"
+        completeAttachment.lifetime = .keepAlways
+        add(completeAttachment)
+        complete.terminate()
+
+        let retry = XCUIApplication()
+        retry.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=shareRetry"
+        ]
+        retry.launch()
+        XCTAssertTrue(retry.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let retryShare = retry.buttons["Retry Share file"]
+        XCTAssertTrue(retryShare.waitForExistence(timeout: 3))
+        XCTAssertFalse(retry.buttons["Vehicle controls"].exists)
+        XCTAssertFalse(retry.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        for _ in 0..<4 {
+            if retryShare.isHittable { break }
+            retry.swipeUp()
+        }
+        XCTAssertTrue(retryShare.isHittable, "Share retry must remain reachable in landscape recovery state.")
+
+        let retryAttachment = XCTAttachment(screenshot: retry.screenshot())
+        retryAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Share Retry — Landscape"
+        retryAttachment.lifetime = .keepAlways
+        add(retryAttachment)
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
