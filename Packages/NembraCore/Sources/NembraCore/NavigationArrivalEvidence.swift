@@ -102,6 +102,7 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
     private var selectedToken: NavigationGuidanceSelectionToken?
     private var selectedRoute: NavigationRouteSnapshot?
     private var lastAcceptedObservationUptimeNanoseconds: UInt64?
+    private var lastAcceptedGuidanceContinuityGeneration: NavigationGuidanceContinuityGeneration?
 
     public init(policy: NavigationArrivalEvidencePolicy) {
         self.policy = policy
@@ -136,6 +137,7 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         selectedToken = token
         selectedRoute = route
         lastAcceptedObservationUptimeNanoseconds = nil
+        lastAcceptedGuidanceContinuityGeneration = nil
         state = .awaitingEvidence(token: token)
         return true
     }
@@ -179,18 +181,11 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
         return result
     }
 
-    public mutating func markKnownContinuityGap() {
-        guard let selectedToken else { return }
-        guard case .arrived = state else {
-            state = .awaitingEvidence(token: selectedToken)
-            return
-        }
-    }
-
     public mutating func clearSelection() {
         selectedToken = nil
         selectedRoute = nil
         lastAcceptedObservationUptimeNanoseconds = nil
+        lastAcceptedGuidanceContinuityGeneration = nil
         state = .idle
     }
 
@@ -246,9 +241,23 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             throw NavigationArrivalEvidenceError.nonMonotonicObservation
         }
 
+        let guidanceContinuityChanged =
+            lastAcceptedGuidanceContinuityGeneration.map {
+                $0 != receipt.continuityGeneration
+            } ?? false
+
         if case .arrived = state {
             lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+            lastAcceptedGuidanceContinuityGeneration = receipt.continuityGeneration
             return .alreadyArrived
+        }
+
+        // A known guidance continuity gap is producer-sealed into the next
+        // accepted receipt by changing its opaque continuity generation. Arrival
+        // therefore cannot accidentally carry a pre-gap candidate forward even
+        // if the caller only invokes guidance's public gap operation.
+        if guidanceContinuityChanged {
+            state = .awaitingEvidence(token: selectedToken)
         }
 
         // Arrival evidence is contiguous only while accepted guidance samples
@@ -268,6 +277,7 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
 
         guard qualification else {
             lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+            lastAcceptedGuidanceContinuityGeneration = receipt.continuityGeneration
             state = .awaitingEvidence(token: selectedToken)
             return .awaitingEvidence
         }
@@ -299,6 +309,7 @@ public struct NavigationArrivalEvidenceTracker: Sendable {
             candidate.latestQualifyingObservationUptimeNanoseconds
             - candidate.firstQualifyingObservationUptimeNanoseconds
         lastAcceptedObservationUptimeNanoseconds = observation.receivedAtUptimeNanoseconds
+        lastAcceptedGuidanceContinuityGeneration = receipt.continuityGeneration
 
         guard candidate.qualifyingObservationCount >= policy.minimumQualifyingObservationCount,
               sustainedDuration >= policy.minimumSustainedDurationNanoseconds else {
