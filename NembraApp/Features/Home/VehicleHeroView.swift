@@ -34,9 +34,10 @@ struct VehicleHeroView: View {
 }
 
 /// Presentation-only silhouette for the primary AOVOPRO ES80 target. Public
-/// product appearance informs the compact dark frame, red accents, front lamp,
-/// mudguard and rear disc hardware. No Bluetooth capability or telemetry meaning
-/// is inferred from the drawing.
+/// product appearance informs the compact dark frame, reflector/cable detailing,
+/// front lamp, mudguard and rear disc hardware. Decorative details stay neutral so
+/// semantic green/amber/red remains reserved for meaningful product state. No
+/// Bluetooth capability or telemetry meaning is inferred from the drawing.
 private struct AOVOPROES80SideArtwork: View {
     let headlightOn: Bool
     let connected: Bool
@@ -68,7 +69,7 @@ private struct AOVOPROES80SideArtwork: View {
                 )
 
                 Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
+                    .fill(.secondary.opacity(0.48))
                     .frame(width: w * 0.31, height: 3)
                     .position(x: w * 0.52, y: h * 0.73)
 
@@ -111,7 +112,7 @@ private struct AOVOPROES80SideArtwork: View {
                         control: CGPoint(x: w * 0.365, y: h * 0.34)
                     )
                 }
-                .stroke(.red.opacity(0.58), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .stroke(.secondary.opacity(0.38), style: StrokeStyle(lineWidth: 2, lineCap: .round))
 
                 Path { path in
                     path.move(to: CGPoint(x: rearWheel.x - wheelSize * 0.42, y: rearWheel.y - wheelSize * 0.20))
@@ -126,7 +127,7 @@ private struct AOVOPROES80SideArtwork: View {
                 wheel(at: rearWheel, size: wheelSize, showsDisc: true)
 
                 Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
+                    .fill(.secondary.opacity(0.52))
                     .frame(width: w * 0.052, height: 4)
                     .rotationEffect(.degrees(-5))
                     .position(x: w * 0.73, y: h * 0.67)
@@ -158,7 +159,7 @@ private struct AOVOPROES80SideArtwork: View {
                     .stroke(.secondary.opacity(0.62), lineWidth: 1.5)
                     .padding(size * 0.29)
                 Capsule(style: .continuous)
-                    .fill(.red.opacity(0.62))
+                    .fill(.secondary.opacity(0.54))
                     .frame(width: size * 0.09, height: size * 0.18)
                     .offset(x: size * 0.19)
             }
@@ -248,13 +249,13 @@ private struct MaxshotV1SProSideArtwork: View {
                 wheel(at: rearWheel, size: wheelSize, front: false)
 
                 Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
+                    .fill(.secondary.opacity(0.48))
                     .frame(width: 5, height: 13)
                     .rotationEffect(.degrees(-8))
                     .position(x: w * 0.337, y: h * 0.50)
 
                 Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
+                    .fill(.secondary.opacity(0.48))
                     .frame(width: w * 0.055, height: 4)
                     .position(x: w * 0.70, y: h * 0.70)
 
@@ -277,7 +278,7 @@ private struct MaxshotV1SProSideArtwork: View {
                 .stroke(.secondary.opacity(0.42), lineWidth: 2)
                 .padding(size * 0.15)
             Circle()
-                .stroke(.red.opacity(front ? 0.58 : 0.24), lineWidth: front ? 2 : 1)
+                .stroke(.secondary.opacity(front ? 0.46 : 0.28), lineWidth: front ? 2 : 1)
                 .padding(size * 0.23)
             Circle()
                 .fill(.secondary.opacity(0.28))
