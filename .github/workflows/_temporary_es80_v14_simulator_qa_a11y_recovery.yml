@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore accepted locked disclosure hit target
+      - name: Patch and assert exact product source
         shell: bash
         run: |
           set -euo pipefail
@@ -44,9 +44,9 @@ jobs:
                     .accessibilityIdentifier("es80.capture.engineering-details")'''
 
           count = text.count(old)
-          print(f'engineering_details_stale_anchor_count={count}')
           if count != 1:
-              raise SystemExit(f'expected exactly one stale engineering-details anchor, found {count}')
+              print(f'::error::expected exactly one stale engineering-details anchor; found {count}')
+              raise SystemExit(1)
           text = text.replace(old, new, 1)
 
           required = (
@@ -58,24 +58,33 @@ jobs:
           )
           for token in required:
               if token not in text:
-                  raise SystemExit(f'missing required product/truth token: {token}')
+                  print(f'::error::missing required product/truth token: {token}')
+                  raise SystemExit(1)
           if 'permitsPhysicalProcedure = true' in text:
-              raise SystemExit('forbidden physical-permission assignment detected')
+              print('::error::forbidden physical-permission assignment detected')
+              raise SystemExit(1)
 
           path.write_text(text)
-          PY
 
-          python3 - <<'PY'
-          from pathlib import Path
           fixture = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift').read_text()
           for token in ('physicalProcedurePermitted: false', 'mayUseBluetoothTransport: false'):
               if token not in fixture:
-                  raise SystemExit(f'missing synthetic fail-closed fixture token: {token}')
+                  print(f'::error::missing synthetic fail-closed fixture token: {token}')
+                  raise SystemExit(1)
           PY
-
           git diff --check
+
+      - name: Commit exact accessibility repair
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add NembraApp/App/NembraApp.swift
           git commit -m 'fix(capture): preserve locked disclosure hit target in Simulator QA'
+
+      - name: Publish repaired product head
+        shell: bash
+        run: |
+          set -euo pipefail
           git push origin HEAD:recovery/es80-v14-simulator-qa-a11y/gpt56-thinking-go
