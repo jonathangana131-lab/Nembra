@@ -1,3 +1,5 @@
+import Foundation
+
 /// Converts an accepted terminal-retirement receipt into explicit controller-FIFO
 /// resolution authority without relabeling retired callbacks as recorder writes.
 ///
@@ -18,10 +20,12 @@
 struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     /// Producer-issued proof that the complete queue interval after terminal H and
     /// through `resolvedThroughQueueSequence` has been intentionally resolved by
-    /// accepted retirement rather than recorder mutation.
+    /// accepted retirement rather than recorder mutation. Exact process-local terminal
+    /// identity is preserved so equal-scalar foreign gates cannot substitute authority.
     struct Receipt: Equatable, Sendable {
         let terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext
         let terminalTransactionRevision: UInt64
+        let terminalTransactionIdentity: UUID
         let horizonQueueCutoff: UInt64
         let previouslyResolvedThroughQueueSequence: UInt64
         let resolvedThroughQueueSequence: UInt64
@@ -34,6 +38,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
         fileprivate init(
             terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
             terminalTransactionRevision: UInt64,
+            terminalTransactionIdentity: UUID,
             horizonQueueCutoff: UInt64,
             previouslyResolvedThroughQueueSequence: UInt64,
             resolvedThroughQueueSequence: UInt64,
@@ -41,6 +46,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
         ) {
             self.terminalAuthority = terminalAuthority
             self.terminalTransactionRevision = terminalTransactionRevision
+            self.terminalTransactionIdentity = terminalTransactionIdentity
             self.horizonQueueCutoff = horizonQueueCutoff
             self.previouslyResolvedThroughQueueSequence = previouslyResolvedThroughQueueSequence
             self.resolvedThroughQueueSequence = resolvedThroughQueueSequence
@@ -69,7 +75,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
     /// Admission is deliberately strict:
     /// - the supplied queue gate must still be the exact terminal transaction that
     ///   issued the retirement receipt. Resolution cannot be delayed until after a
-    ///   reopen or substituted with another terminal authority/revision/H;
+    ///   reopen or substituted with another terminal authority/revision/H/UUID;
     /// - the controller's already-resolved frontier must be *exactly* H. This
     ///   proves the terminal boundary did not leave an unresolved pre-H queue gap
     ///   and makes replay fail once the caller advances its frontier;
@@ -96,6 +102,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
             throw StateError.terminalHorizonRequired
         }
         guard transaction.revision == retirementReceipt.terminalTransactionRevision,
+              transaction.identity == retirementReceipt.terminalTransactionIdentity,
               transaction.queueCutoff == retirementReceipt.horizonQueueCutoff else {
             throw StateError.staleTerminalTransaction
         }
@@ -152,6 +159,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
         return Receipt(
             terminalAuthority: retirementReceipt.terminalAuthority,
             terminalTransactionRevision: retirementReceipt.terminalTransactionRevision,
+            terminalTransactionIdentity: retirementReceipt.terminalTransactionIdentity,
             horizonQueueCutoff: horizon,
             previouslyResolvedThroughQueueSequence: currentResolvedThroughQueueSequence,
             resolvedThroughQueueSequence: tail,
