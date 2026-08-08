@@ -1,0 +1,29 @@
+name: V14 compose terminal real-recorder gate
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compose exact gate authority
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git cherry-pick 5b5163b969da197ffcfc0c7d4e23464e7d9978df
+          rm .github/workflows/v14-compose-terminal-real-recorder-gate.yml
+          git add -A
+          git commit --amend --no-edit
+          git diff 1e75d7196bed85699a104eb8966c956a92bbb49a..HEAD --check
+          git push origin HEAD:integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
