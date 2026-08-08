@@ -88,17 +88,21 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
+        /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
+        let issuedAtUptimeNanoseconds: UInt64
 
         fileprivate init(
             admissionIdentity: UUID,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
-            recorder: PassiveCoreBluetoothCaptureRecorder
+            recorder: PassiveCoreBluetoothCaptureRecorder,
+            issuedAtUptimeNanoseconds: UInt64
         ) {
             self.admissionIdentity = admissionIdentity
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
         }
     }
 
@@ -114,7 +118,8 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
             admissionIdentity: UUID(),
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
-            recorder: recorder
+            recorder: recorder,
+            issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
     }
 
