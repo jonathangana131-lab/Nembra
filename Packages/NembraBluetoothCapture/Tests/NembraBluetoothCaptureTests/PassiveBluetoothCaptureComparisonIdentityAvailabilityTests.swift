@@ -123,12 +123,104 @@ struct PassiveBluetoothCaptureComparisonIdentityAvailabilityTests {
         #expect(stream.rawDifferenceScore == 3)
     }
 
+    @Test("GATT UUID representation changes do not manufacture one-sided comparison streams")
+    func canonicalizesGATTStreamIdentityAcrossCaptures() throws {
+        var baseline = try makeSession()
+        try appendValue(
+            peripheral: "selected-target",
+            service: "  a201\n",
+            characteristic: " 2b10 ",
+            payload: [0xAA],
+            sequence: 1,
+            to: &baseline
+        )
+
+        var comparison = try makeSession()
+        try appendValue(
+            peripheral: "selected-target",
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0xAA],
+            sequence: 1,
+            to: &comparison
+        )
+
+        let report = PassiveBluetoothCaptureComparison.compare(
+            baseline: baseline,
+            comparison: comparison
+        )
+
+        #expect(report.differenceAvailability == .comparable)
+        #expect(report.streamComparisons.count == 1)
+        let stream = try #require(report.streamComparisons.first)
+        #expect(stream.key.peripheralIdentifier == "selected-target")
+        #expect(stream.key.serviceUUID == "A201")
+        #expect(stream.key.characteristicUUID == "2B10")
+        #expect(stream.presence == .both)
+        #expect(stream.baseline?.key == stream.comparison?.key)
+        #expect(stream.sharedPayloadCount == 1)
+        #expect(stream.baselineOnlyPayloadCount == 0)
+        #expect(stream.comparisonOnlyPayloadCount == 0)
+        #expect(stream.rawDifferenceScore == 0)
+    }
+
+    @Test("equivalent GATT UUID spellings inside one capture collapse into one evidence stratum")
+    func canonicalizesGATTStreamIdentityWithinCapture() throws {
+        var baseline = try makeSession()
+        try appendValue(
+            peripheral: "selected-target",
+            service: "a201",
+            characteristic: "2b10",
+            payload: [0xAA],
+            sequence: 1,
+            to: &baseline
+        )
+        try appendValue(
+            peripheral: "selected-target",
+            service: " A201 ",
+            characteristic: " 2B10\n",
+            payload: [0xBB],
+            sequence: 2,
+            to: &baseline
+        )
+
+        var comparison = try makeSession()
+        try appendValue(
+            peripheral: "selected-target",
+            service: "A201",
+            characteristic: "2B10",
+            payload: [0xBB],
+            sequence: 1,
+            to: &comparison
+        )
+
+        let report = PassiveBluetoothCaptureComparison.compare(
+            baseline: baseline,
+            comparison: comparison
+        )
+
+        #expect(report.streamComparisons.count == 1)
+        let stream = try #require(report.streamComparisons.first)
+        #expect(stream.presence == .both)
+        #expect(stream.baseline?.sampleCount == 2)
+        #expect(stream.baseline?.continuitySegmentCount == 1)
+        #expect(stream.baseline?.uniquePayloads == Set([Data([0xAA]), Data([0xBB])]))
+        #expect(stream.comparison?.sampleCount == 1)
+        #expect(stream.sharedPayloadCount == 1)
+        #expect(stream.baselineOnlyPayloadCount == 1)
+        #expect(stream.comparisonOnlyPayloadCount == 0)
+        #expect(stream.lastPayloadChanged == false)
+        #expect(stream.rawDifferenceScore == 1)
+    }
+
     private func makeSession() throws -> PassiveBluetoothCaptureSession {
         try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
     }
 
     private func appendValue(
         peripheral: String,
+        service: String = "A201",
+        characteristic: String = "2B10",
         payload: [UInt8],
         sequence: UInt64,
         to session: inout PassiveBluetoothCaptureSession
@@ -136,8 +228,8 @@ struct PassiveBluetoothCaptureComparisonIdentityAvailabilityTests {
         try session.append(
             .value(try PassiveBluetoothValueObservation(
                 peripheralIdentifier: peripheral,
-                serviceUUID: "A201",
-                characteristicUUID: "2B10",
+                serviceUUID: service,
+                characteristicUUID: characteristic,
                 origin: .subscriptionUpdate,
                 payload: Data(payload)
             )),
