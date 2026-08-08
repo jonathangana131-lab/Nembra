@@ -22,77 +22,69 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+
           path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
-          source = path.read_text()
-          old = '''        do {
-              try artifactAuthorityFence.transition(
-                  from: previousAuthority,
-                  to: freshAuthority
-              )
-              targetSessionGeneration = freshAuthority.targetSessionGeneration
-              artifactAuthorityGeneration = freshAuthority.authorityGeneration
-              recorder = freshSession.recorder
-              hasUsedInitialSessionIdentity = true
-              acquisitionLedger.beginTargetSession()
-              gattIdentityRegistry.reset()
-              selectedTargetCancellationPending = false
-              foregroundEvidenceIntegrityValid = true
-              committedReadyEpoch = nil
+          lines = path.read_text().splitlines(keepends=True)
 
-              try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                  freshSession.receipt,
-                  installedRecorder: freshSession.recorder,
-                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-              )
-          } catch {
-              lastDiagnostic = Self.diagnostic(
-                  error,
-                  fallback: "Abort recovery failed while installing exact fresh capture authority."
-              )
-              throw ControllerError.captureFailed
-          }
-          '''
-          new = '''        do {
-              // Validate every throwing queue-gate precondition on a value copy before
-              // advancing the canonical reference-backed artifact-authority fence. A
-              // reopen rejection must leave both canonical authorities on the old abort
-              // quarantine rather than publishing a half-installed fresh recorder.
-              var reopenedGate = observationBoundaryQueueGate
-              try reopenedGate.reopenAfterAbortedFreshTargetSession(
-                  freshSession.receipt,
-                  installedRecorder: freshSession.recorder,
-                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-              )
+          method_start = next(i for i, line in enumerate(lines) if "private func completeAbortedFreshTargetSessionIfReady(" in line)
+          method_end = next(i for i in range(method_start + 1, len(lines)) if "private func beginTargetSessionIfNeeded(" in lines[i])
+          method = lines[method_start:method_end]
 
-              // This is the final throwing publication step. Everything after a
-              // successful fence transition is synchronous/non-failable owner state.
-              try artifactAuthorityFence.transition(
-                  from: previousAuthority,
-                  to: freshAuthority
-              )
-              targetSessionGeneration = freshAuthority.targetSessionGeneration
-              artifactAuthorityGeneration = freshAuthority.authorityGeneration
-              recorder = freshSession.recorder
-              hasUsedInitialSessionIdentity = true
-              acquisitionLedger.beginTargetSession()
-              gattIdentityRegistry.reset()
-              selectedTargetCancellationPending = false
-              foregroundEvidenceIntegrityValid = true
-              committedReadyEpoch = nil
-              observationBoundaryQueueGate = reopenedGate
-          } catch {
-              lastDiagnostic = Self.diagnostic(
-                  error,
-                  fallback: "Abort recovery failed while installing exact fresh capture authority."
-              )
-              throw ControllerError.captureFailed
-          }
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected exactly one vulnerable abort-recovery block, found {source.count(old)}")
-          path.write_text(source.replace(old, new))
+          transition_rel = [i for i, line in enumerate(method) if "try artifactAuthorityFence.transition(" in line]
+          reopen_rel = [i for i, line in enumerate(method) if "try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(" in line]
+          if len(transition_rel) != 1 or len(reopen_rel) != 1:
+              raise SystemExit(f"unexpected abort method shape transition={transition_rel} reopen={reopen_rel}")
+
+          t = method_start + transition_rel[0]
+          r = method_start + reopen_rel[0]
+          if not t < r:
+              raise SystemExit("abort recovery is not in the expected vulnerable transition-before-reopen order")
+
+          close = next(i for i in range(r + 1, method_end) if lines[i] == "            )\n")
+          reopen_block = lines[r:close + 1]
+          reopen_block[0] = reopen_block[0].replace(
+              "try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(",
+              "try reopenedGate.reopenAfterAbortedFreshTargetSession("
+          )
+
+          staged = [
+              "            // Preflight every throwing queue-gate condition on a value copy before\n",
+              "            // advancing the canonical reference-backed authority fence. Rejection\n",
+              "            // must leave the live controller wholly on the old abort quarantine.\n",
+              "            var reopenedGate = observationBoundaryQueueGate\n",
+          ] + reopen_block + ["\n"]
+
+          del lines[r:close + 1]
+          lines[t:t] = staged
+
+          # Locate the publication anchor again after the insertion/deletion edit.
+          method_end = next(i for i in range(method_start + 1, len(lines)) if "private func beginTargetSessionIfNeeded(" in lines[i])
+          commit_candidates = [i for i in range(method_start, method_end) if lines[i].strip() == "committedReadyEpoch = nil"]
+          if len(commit_candidates) != 1:
+              raise SystemExit(f"unexpected committedReadyEpoch anchors: {commit_candidates}")
+          publication = commit_candidates[0] + 1
+          lines[publication:publication] = [
+              "            // Fence transition is the final throwing publication step; publishing\n",
+              "            // this already-validated value state is synchronous and non-failable.\n",
+              "            observationBoundaryQueueGate = reopenedGate\n",
+          ]
+
+          result = "".join(lines)
+          method_end = result.index("    private func beginTargetSessionIfNeeded(", result.index("    private func completeAbortedFreshTargetSessionIfReady("))
+          method_text = result[result.index("    private func completeAbortedFreshTargetSessionIfReady("):method_end]
+          required = [
+              "var reopenedGate = observationBoundaryQueueGate",
+              "try reopenedGate.reopenAfterAbortedFreshTargetSession(",
+              "try artifactAuthorityFence.transition(",
+              "observationBoundaryQueueGate = reopenedGate",
+          ]
+          positions = [method_text.index(token) for token in required]
+          if positions != sorted(positions):
+              raise SystemExit(f"failure-atomic ordering not established: {positions}")
+          if "try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(" in method_text:
+              raise SystemExit("live gate still has a throwing reopen after publication")
+
+          path.write_text(result)
 
       - name: Remove temporary workflow from product tree
         run: git rm .github/workflows/tmp-es80-abort-atomic-go2.yml
