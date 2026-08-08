@@ -1,0 +1,154 @@
+name: Construct ES80 inspector launch-recipe proof
+
+on:
+  push:
+    branches:
+      - agent/es80-v14-inspector-launch-recipe-proof
+
+permissions:
+  contents: write
+
+jobs:
+  construct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind evidence recipe to signed Info.plist marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = path.read_text(encoding="utf-8")
+
+          helper_old = '''def plist_string(info: dict, key: str) -> str:
+              value = info.get(key)
+              if not isinstance(value, str) or not value:
+                  raise EvidenceError(f"signed app Info.plist is missing required string {key}")
+              return value
+
+
+          def verify_device_platform(info: dict) -> tuple[str, list[str]]:
+          '''
+          helper_new = '''def plist_string(info: dict, key: str) -> str:
+              value = info.get(key)
+              if not isinstance(value, str) or not value:
+                  raise EvidenceError(f"signed app Info.plist is missing required string {key}")
+              return value
+
+
+          def verified_field_recipe(info: dict) -> str:
+              value = info.get("NembraCaptureFieldRecipe")
+              if not isinstance(value, str) or value != RECIPE_ID:
+                  raise EvidenceError(
+                      "signed app Info.plist NembraCaptureFieldRecipe does not match the accepted field recipe: "
+                      f"{value!r} != {RECIPE_ID!r}"
+                  )
+              return value
+
+
+          def verify_device_platform(info: dict) -> tuple[str, list[str]]:
+          '''
+          if text.count(helper_old) != 1:
+              raise SystemExit("expected exactly one plist-string helper anchor")
+          text = text.replace(helper_old, helper_new, 1)
+
+          inspect_start = text.index("def _inspect_snapshotted_ipa(")
+          inspect_end = text.index("\ndef write_outputs(", inspect_start)
+          inspect = text[inspect_start:inspect_end]
+
+          source_anchor = '''        if embedded_source_sha != source_sha:
+              raise EvidenceError(
+                  f"embedded source commit does not match accepted source: {embedded_source_sha} != {source_sha}"
+              )
+
+              executable_name = plist_string(info, "CFBundleExecutable")
+          '''
+          source_replacement = '''        if embedded_source_sha != source_sha:
+              raise EvidenceError(
+                  f"embedded source commit does not match accepted source: {embedded_source_sha} != {source_sha}"
+              )
+
+              field_recipe = verified_field_recipe(info)
+
+              executable_name = plist_string(info, "CFBundleExecutable")
+          '''
+          if inspect.count(source_anchor) != 1:
+              raise SystemExit("expected exactly one embedded-source/recipe insertion anchor")
+          inspect = inspect.replace(source_anchor, source_replacement, 1)
+
+          old_recipe_record = '"experimentRecipeID": RECIPE_ID,'
+          new_recipe_record = '"experimentRecipeID": field_recipe,'
+          if inspect.count(old_recipe_record) != 3:
+              raise SystemExit(
+                  f"expected exactly three production recipe assertions; found {inspect.count(old_recipe_record)}"
+              )
+          inspect = inspect.replace(old_recipe_record, new_recipe_record)
+          if inspect.count(old_recipe_record) != 0 or inspect.count(new_recipe_record) != 3:
+              raise SystemExit("production recipe evidence replacement did not close exactly three fields")
+          text = text[:inspect_start] + inspect + text[inspect_end:]
+
+          self_test_anchor = '''    verify_device_platform({
+                  "DTPlatformName": "iphoneos",
+                  "CFBundleSupportedPlatforms": ["iPhoneOS"],
+              })
+          '''
+          self_test_replacement = '''    assert verified_field_recipe({"NembraCaptureFieldRecipe": RECIPE_ID}) == RECIPE_ID
+              invalid_field_recipes = (
+                  {},
+                  {"NembraCaptureFieldRecipe": "ES80-FINGERPRINT-v2"},
+                  {"NembraCaptureFieldRecipe": 7},
+                  {"NembraCaptureFieldRecipe": f" {RECIPE_ID}"},
+                  {"NembraCaptureFieldRecipe": f"{RECIPE_ID} "},
+              )
+              for malformed in invalid_field_recipes:
+                  try:
+                      verified_field_recipe(malformed)
+                  except EvidenceError:
+                      pass
+                  else:
+                      raise AssertionError("unverified signed field-launch recipe was accepted")
+
+              verify_device_platform({
+                  "DTPlatformName": "iphoneos",
+                  "CFBundleSupportedPlatforms": ["iPhoneOS"],
+              })
+          '''
+          if text.count(self_test_anchor) != 1:
+              raise SystemExit("expected exactly one platform self-test anchor")
+          text = text.replace(self_test_anchor, self_test_replacement, 1)
+
+          if text.count("def verified_field_recipe(info: dict) -> str:") != 1:
+              raise SystemExit("field-recipe verifier must exist exactly once")
+          if text.count("field_recipe = verified_field_recipe(info)") != 1:
+              raise SystemExit("signed Info.plist recipe must be verified exactly once in inspection")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Run portable inspector contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          git diff --check
+
+      - name: Commit source-only construction result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git rm .github/workflows/es80-inspector-recipe-proof-construction.yml
+          git add scripts/ci/es80_signed_field_artifact_evidence.py
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(capture): prove signed field launch recipe'
+          git push origin HEAD:agent/es80-v14-inspector-launch-recipe-proof
