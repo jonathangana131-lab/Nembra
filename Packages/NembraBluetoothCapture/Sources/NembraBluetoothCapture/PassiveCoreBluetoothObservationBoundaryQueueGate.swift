@@ -27,6 +27,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case freshRecorderIdentityMismatch
         case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
+        case abortResolutionReceiptMismatch
+        case abortResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case abortQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -579,8 +582,60 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         phase = .awaitingReady
     }
 
-    /// Abort quarantine remains irreversible here. Its sibling real-recorder producer
-    /// is separately owned and must converge without weakening terminal authority.
+    /// Reopens one abandoned Ready/Horizon epoch only after exact global FIFO resolution
+    /// has been applied and the controller has installed the exact fresh recorder whose
+    /// construction earned producer-issued abort-recovery authority.
+    ///
+    /// The transition is synchronous on MainActor. Raw retirement, an empty pending FIFO,
+    /// a caller-selected generation, or possession of a detached scalar identity are all
+    /// insufficient. The exact abort receipt must still name this quarantine, the globally
+    /// resolved frontier must equal the producer-validated tail, no callback may have
+    /// advanced that tail afterward, and the retained recorder must be the controller's
+    /// currently installed recorder.
+    @MainActor
+    mutating func reopenAfterAbortedFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.abortedResolution
+        guard resolution.abortReceipt == currentAbort else {
+            throw StateError.abortResolutionReceiptMismatch
+        }
+        guard freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard currentAbort.abandonedTargetSessionGeneration != UInt64.max,
+              freshTargetSession.targetSessionGeneration == currentAbort.abandonedTargetSessionGeneration + 1 else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    /// Requests a fresh lifecycle grammar only when no observation transaction has
+    /// begun yet. Accepted recovery may leave one exact target-session generation bound;
+    /// ordinary reset deliberately preserves that bind and cannot bypass terminal or
+    /// abort recovery authority.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else { return false }
