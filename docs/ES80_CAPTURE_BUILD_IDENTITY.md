@@ -76,27 +76,32 @@ The runner must fail closed if the built app does not preserve the exact generat
 
 The app-visible preflight / `View Details` surface should expose the build label, safely inspectable exact source SHA, and build-instance ID as **software build evidence**. A future field-admission design must not relabel those declarations as physical authorization or recreate the signed-bundle self-reference through another resource.
 
-## External record
+## External record — current schema v3
 
-The current runner emits `NembraCaptureExternalBuildRecord.json` outside the app bundle. Schema v2 carries:
+The current flagship runner emits `NembraCaptureExternalBuildRecord.json` outside the app bundle with a closed-world schema-v3 shape:
 
-- `schemaVersion = 2`;
+- `schemaVersion = 3`;
 - `buildIdentifier`;
 - `buildInstanceID`;
 - `sourceCommitSHA`;
 - `executableSHA256`;
+- `infoPlistSHA256`;
 - `experimentRecipeID = ES80-FINGERPRINT-v1`;
 - `procedureVersion = V14`.
 
-The workflow requests independent GitHub attestations for both the exact external record bytes and the exact executable digest. Those attestations are build-pipeline evidence; they are not physical scooter evidence.
+The same runner retains byte-for-byte copies of the exact built executable and generated Info.plist under `Artifacts/Xcode27Simulator/build-evidence/`, byte-compares them back to DerivedData, and re-hashes those retained bytes before accepting the record. `PassiveBluetoothCaptureExternalBuildRecordJSON` requires this schema-v3 vocabulary, and the current flagship composition therefore keeps producer and parser aligned.
+
+The dedicated `Xcode 27 Simulator QA` workflow independently requires the exact schema-v3 key set, re-hashes the retained executable and Info.plist against the record, attests the exact external-record file, and attests the retained executable by path. Those attestations are build-pipeline evidence; they are not physical scooter evidence.
+
+The PR exact-head Xcode command executes the checked-out runner and can establish build/test/UI evidence for one immutable PR head, including the runner's retained-byte checks. It does **not** by itself turn that PR run into the final externally attested physical field build. The dedicated workflow/main acceptance and the eventual signed-device acceptance remain distinct authorities.
 
 A final physical-device pipeline still needs the same pattern applied to the exact **signed** field build or installable artifact, followed by exact-head product acceptance and a completed external GO record. The Simulator record cannot be promoted into that role.
 
 ## Manifest integration
 
-The stationary-manifest lineage remains the provenance format owner for the captured evidence artifact. Its build fields should come from accepted runtime/build evidence rather than rider-entered strings.
+The stationary-manifest/final-Share lineage is the provenance format owner for the captured evidence artifact. Its build fields come from package-produced runtime/build evidence rather than rider-entered strings.
 
-The immutable exact-H capture bytes remain separately SHA-256-bound by the manifest. The build-instance ID should be carried through the eventual accepted artifact/manifest evolution when that schema owner performs the next deliberate version change; it must not be injected as an unknown field into an older closed-world schema.
+The immutable exact-H capture bytes remain separately SHA-256-bound inside that accepted evidence lineage. Build-instance identity is carried by the current package-owned SoftwareExport/final-Share path; unknown fields must never be injected into an older closed-world schema merely to make provenance look richer.
 
 ## Truth boundary
 
@@ -110,8 +115,13 @@ It does not prove:
 - battery, voltage, current, power, speed, cadence, scale, or signedness;
 - command authority or acknowledgement;
 - that an embedded Git SHA or UUID is authentic without the independent trusted build/acceptance evidence;
-- that a Simulator build is the accepted physical field build.
+- that a Simulator build is the accepted physical field build;
+- that a signed physical-device artifact has been installed and accepted.
 
 No application characteristic-value write path is added.
+
+## Current closure boundary
+
+Current flagship software work now has a schema-v3 Simulator producer/parser path and retained executable/Info.plist evidence. The remaining build-provenance blocker before physical GO is **not** another Simulator digest field: it is an independently accepted exact signed iPhone field build/installable artifact, correlated to the same build-instance/source/recipe/procedure tuple and then deliberately admitted by the package field execution gate.
 
 **PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN.**
