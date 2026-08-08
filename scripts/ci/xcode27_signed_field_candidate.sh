@@ -146,6 +146,14 @@ then
 fi
 PRIVATE_RUNNER_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"
 INSPECTOR_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"
+PRIVATE_RUNNER_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA")"
+INSPECTOR_BLOB_BYTES="$(git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA")"
+if [[ ! "$PRIVATE_RUNNER_BLOB_BYTES" =~ ^[1-9][0-9]*$ \
+   || ! "$INSPECTOR_BLOB_BYTES" =~ ^[1-9][0-9]*$ ]]
+then
+  echo "Accepted signed-field tool Git objects do not have valid positive byte sizes." >&2
+  exit 14
+fi
 if [[ "$(git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \
    || "$(git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]
 then
@@ -166,32 +174,63 @@ verify_open_git_blob_descriptor() {
   local descriptor_path="$1"
   local descriptor_number="$2"
   local expected_blob_sha="$3"
-  if ! "$PYTHON3" -I - "$descriptor_number" "$expected_blob_sha" <<'PYVERIFY'
+  local expected_blob_bytes="$4"
+  if ! "$PYTHON3" -I - "$descriptor_number" "$expected_blob_sha" "$expected_blob_bytes" <<'PYVERIFY'
 import hashlib
 import os
+import stat
 import sys
+
 fd = int(sys.argv[1])
 expected = sys.argv[2]
+expected_size = int(sys.argv[3])
+if expected_size < 1:
+    raise SystemExit("accepted Git object size must be positive")
 if len(expected) == 40:
-    digest_factory = hashlib.sha1
+    digest = hashlib.sha1()
 elif len(expected) == 64:
-    digest_factory = hashlib.sha256
+    digest = hashlib.sha256()
 else:
     raise SystemExit("unsupported Git object ID width")
+
+def stable_identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+metadata = os.fstat(fd)
+if not stat.S_ISREG(metadata.st_mode):
+    raise SystemExit("opened tool descriptor is not a regular file")
+if metadata.st_size != expected_size:
+    raise SystemExit("opened tool descriptor size does not match accepted Git blob")
+
 before = os.lseek(fd, 0, os.SEEK_CUR)
 if before != 0:
     raise SystemExit("tool descriptor was not positioned at byte zero")
-chunks = []
+
+header = b"blob " + str(expected_size).encode("ascii") + b"\0"
+digest.update(header)
 offset = 0
-while True:
-    chunk = os.pread(fd, 1024 * 1024, offset)
+while offset < expected_size:
+    chunk = os.pread(fd, min(1024 * 1024, expected_size - offset), offset)
     if not chunk:
-        break
-    chunks.append(chunk)
+        raise SystemExit("opened tool descriptor ended before accepted Git blob size")
+    digest.update(chunk)
     offset += len(chunk)
-raw = b"".join(chunks)
-header = b"blob " + str(len(raw)).encode("ascii") + b"\0"
-if digest_factory(header + raw).hexdigest() != expected:
+if os.pread(fd, 1, expected_size):
+    raise SystemExit("opened tool descriptor exceeds accepted Git blob size")
+
+final_metadata = os.fstat(fd)
+if stable_identity(final_metadata) != stable_identity(metadata):
+    raise SystemExit("descriptor subject changed during verification")
+if digest.hexdigest() != expected:
     raise SystemExit("opened tool descriptor does not match accepted Git blob")
 if os.lseek(fd, 0, os.SEEK_CUR) != before:
     raise SystemExit("tool descriptor verification changed execution offset")
@@ -201,9 +240,9 @@ PYVERIFY
     return 1
   fi
 }
-verify_open_git_blob_descriptor "/dev/fd/7" 7 "$PRIVATE_RUNNER_BLOB_SHA"
-verify_open_git_blob_descriptor "/dev/fd/8" 8 "$INSPECTOR_BLOB_SHA"
-verify_open_git_blob_descriptor "/dev/fd/9" 9 "$PRIVATE_RUNNER_BLOB_SHA"
+verify_open_git_blob_descriptor "/dev/fd/7" 7 "$PRIVATE_RUNNER_BLOB_SHA" "$PRIVATE_RUNNER_BLOB_BYTES"
+verify_open_git_blob_descriptor "/dev/fd/8" 8 "$INSPECTOR_BLOB_SHA" "$INSPECTOR_BLOB_BYTES"
+verify_open_git_blob_descriptor "/dev/fd/9" 9 "$PRIVATE_RUNNER_BLOB_SHA" "$PRIVATE_RUNNER_BLOB_BYTES"
 rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
 rmdir "$INSPECTION_TOOL_ROOT"
 
