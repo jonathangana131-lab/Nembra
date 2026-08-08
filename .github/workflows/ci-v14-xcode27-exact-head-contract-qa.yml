@@ -1,0 +1,75 @@
+name: CI V14 Xcode Exact-Head Contract QA
+
+on:
+  push:
+    branches:
+      - 'qa/ci-v14-xcode27-exact-head-contract/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pin trusted trigger and immutable-head scheduler contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/xcode27-pr-command.yml')
+          source = path.read_text(encoding='utf-8')
+
+          required = [
+              'pull_request_target:',
+              "const { data: livePr } = await github.rest.pulls.get({",
+              "const eventHeadSha = context.payload.pull_request.head.sha",
+              "const stillCurrent = eventHeadSha === livePr.head.sha",
+              "group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}",
+              'Revalidate live PR head before checkout',
+              "const stillCurrent = livePr.head.sha === process.env.EXPECTED_HEAD_SHA",
+              'Checkout immutable PR head',
+              'ref: ${{ needs.resolve.outputs.head_sha }}',
+              'Validate Capture package when present',
+              'Validate signed field evidence tooling when present',
+              'Validate signed field candidate producer source when present',
+          ]
+          missing = [needle for needle in required if needle not in source]
+          if missing:
+              raise SystemExit(f'missing exact-head CI contract elements: {missing}')
+
+          forbidden = [
+              '\n  pull_request:\n',
+              'group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}\n',
+          ]
+          present = [needle for needle in forbidden if needle in source]
+          if present:
+              raise SystemExit(f'regressed CI trigger/concurrency elements: {present}')
+
+          revalidate = source.index('Revalidate live PR head before checkout')
+          checkout = source.index('Checkout immutable PR head')
+          if revalidate >= checkout:
+              raise SystemExit('live PR revalidation must remain before any PR-head checkout')
+
+          if source.count('contents: read') != 1 or source.count('pull-requests: read') != 1:
+              raise SystemExit('workflow permissions must remain explicit and read-only')
+          PY
+
+      - name: Pin feature-aware checks as conditional
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/xcode27-pr-command.yml').read_text(encoding='utf-8')
+          required = [
+              'if [[ -f Packages/NembraBluetoothCapture/Package.swift ]]; then',
+              'if [[ -f "$evidence" ]]; then',
+              'if [[ -f "$producer" || -f "$source_test" ]]; then',
+              'python3 "$evidence" --self-test',
+              'python3 "$source_test"',
+          ]
+          missing = [needle for needle in required if needle not in source]
+          if missing:
+              raise SystemExit(f'missing conditional V14 validation elements: {missing}')
+          PY
