@@ -44,6 +44,15 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         case connected
     }
 
+    /// Post-seal transport cleanup is deliberately distinct from immutable-artifact success.
+    /// A cleanup failure can require recovery before another capture, but it cannot retroactively
+    /// relabel already-sealed bytes as a failed Horizon artifact.
+    public enum FinalizationCleanupStatus: Equatable, Sendable {
+        case notAttempted
+        case complete
+        case failed
+    }
+
     public struct Status: Equatable, Sendable {
         public let fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.Status
         public let physicalProcedurePermitted: Bool
@@ -56,6 +65,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         public let observationReady: Bool
         public let canFinalizeObservationHorizon: Bool
         public let artifactFinalized: Bool
+        public let finalizationCleanup: FinalizationCleanupStatus
         public let foregroundIntegrityLost: Bool
     }
 
@@ -75,6 +85,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private var preparedCorrelatedTargetIdentifier: UUID?
     private var foregroundIntegrityWasLost = false
     private var finalizedArtifactStorage: FinalizedArtifact?
+    private var finalizationCleanupStatusStorage: FinalizationCleanupStatus = .notAttempted
     private var experimentHasBegun = false
 
     /// Canonical ES80 only. No caller-selected vehicle/controller can enter the field authority path.
@@ -101,6 +112,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             observationReady: controller?.hasCompleteTargetEvidence ?? false,
             canFinalizeObservationHorizon: controller?.canFinalizeObservationHorizon ?? false,
             artifactFinalized: finalizedArtifactStorage != nil,
+            finalizationCleanup: finalizationCleanupStatusStorage,
             foregroundIntegrityLost: foregroundIntegrityWasLost
         )
     }
@@ -209,8 +221,17 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
         let data = try await controller.encodedFinalizedObservationHorizonJSON(prettyPrinted: true)
         let artifact = FinalizedArtifact(captureJSON: data, powerCycleResult: result)
+
+        // Once controller finalization returns, these exact bytes have crossed immutable Horizon.
+        // Publish that truth before fallible transport cleanup so cleanup cannot retroactively turn a
+        // legitimate artifact into a seal failure. Cleanup outcome remains separately observable.
         finalizedArtifactStorage = artifact
-        try? controller.teardownActiveConnectionAfterFinalization()
+        do {
+            try controller.teardownActiveConnectionAfterFinalization()
+            finalizationCleanupStatusStorage = .complete
+        } catch {
+            finalizationCleanupStatusStorage = .failed
+        }
         return artifact
     }
 
