@@ -24,8 +24,8 @@ class SignedFieldCandidateDescriptorSubjectCustodySourceTests(unittest.TestCase)
     def test_accepted_git_blob_sizes_are_bound_before_mutable_path_open(self) -> None:
         open_boundary = self.source.index('exec 7< "$PRIVATE_RUNNER_SNAPSHOT"')
         prefix = self.source[:open_boundary]
-        self.assertIn('git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA"', prefix)
-        self.assertIn('git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA"', prefix)
+        self.assertIn('run_git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA"', prefix)
+        self.assertIn('run_git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA"', prefix)
         self.assertIn("PRIVATE_RUNNER_BLOB_BYTES", prefix)
         self.assertIn("INSPECTOR_BLOB_BYTES", prefix)
 

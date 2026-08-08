@@ -60,10 +60,10 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_executes_inspection_code_from_exact_git_blob_descriptors(self):
         self.assertIn('PRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"', self.source)
         self.assertIn('INSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"', self.source)
-        self.assertIn('git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH"', self.source)
-        self.assertIn('git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH"', self.source)
-        self.assertIn('git hash-object "$PRIVATE_RUNNER_SNAPSHOT"', self.source)
-        self.assertIn('git hash-object "$INSPECTOR_SNAPSHOT"', self.source)
+        self.assertIn('run_git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH"', self.source)
+        self.assertIn('run_git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH"', self.source)
+        self.assertIn('run_git hash-object "$PRIVATE_RUNNER_SNAPSHOT"', self.source)
+        self.assertIn('run_git hash-object "$INSPECTOR_SNAPSHOT"', self.source)
         self.assertIn('exec 7< "$PRIVATE_RUNNER_SNAPSHOT"', self.source)
         self.assertIn('exec 8< "$INSPECTOR_SNAPSHOT"', self.source)
         self.assertIn('exec 9< "$PRIVATE_RUNNER_SNAPSHOT"', self.source)
@@ -74,7 +74,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertEqual(self.source.count('--repository-root "$ROOT"'), 2)
         self.assertNotIn('python3 scripts/ci/es80_signed_field_artifact_private_runner.py', self.source)
         self.assertLess(self.source.index('REPOSITORY_STATUS='), self.source.index('"$PYTHON3" -I /dev/fd/7'))
-        self.assertLess(self.source.index('"$PYTHON3" -I /dev/fd/7'), self.source.index('git worktree add --detach'))
+        self.assertLess(self.source.index('"$PYTHON3" -I /dev/fd/7'), self.source.index('run_git worktree add --detach'))
         self.assertIn('load_canonical_inspector_from_fd', self.runner_source)
         self.assertIn('descriptor = os.dup(descriptor_number)', self.runner_source)
         self.assertIn('code = compile(raw, module.__file__, "exec")', self.runner_source)
@@ -191,7 +191,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
         self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
-        self.assertIn('git check-ignore -q', self.source)
+        self.assertIn('run_git check-ignore -q', self.source)
         self.assertIn('ExportOptions.plist', self.source)
         self.assertIn('EXPORT_OPTIONS_SHA256', self.source)
         self.assertIn('POST_EXPORT_OPTIONS_SHA256', self.source)
@@ -201,14 +201,14 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
 
     def test_builds_from_fresh_detached_exact_commit_snapshot(self):
         self.assertIn('SOURCE_ROOT="$WORK_ROOT/source"', self.source)
-        self.assertIn('git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"', self.source)
+        self.assertIn('run_git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"', self.source)
         self.assertIn('cd "$SOURCE_ROOT"', self.source)
-        self.assertIn('IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"', self.source)
-        self.assertIn('IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"', self.source)
+        self.assertIn('IMMUTABLE_HEAD="$(run_git rev-parse --verify HEAD^{commit})"', self.source)
+        self.assertIn('IMMUTABLE_STATUS="$(run_git status --porcelain=v1 --untracked-files=all)"', self.source)
         self.assertIn('POST_BUILD_SOURCE_STATUS=', self.source)
         self.assertIn('POST_BUILD_HEAD=', self.source)
         self.assertIn('Archive/export changed immutable source state', self.source)
-        self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
+        self.assertIn('run_git worktree remove --force "$SOURCE_ROOT"', self.source)
 
     def test_is_bash_32_safe_for_optional_paths(self):
         self.assertIn('run_xcodebuild()', self.source)
