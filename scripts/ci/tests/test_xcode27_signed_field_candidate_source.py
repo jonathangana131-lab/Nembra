@@ -26,11 +26,22 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
 
-    def test_preserves_exact_checkout_before_evidence_emission(self):
+    def test_builds_from_fresh_detached_exact_commit_snapshot(self):
+        self.assertIn('SOURCE_ROOT="$WORK_ROOT/source"', self.source)
+        self.assertIn('git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"', self.source)
+        self.assertIn('cd "$SOURCE_ROOT"', self.source)
+        self.assertIn('IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"', self.source)
+        self.assertIn('IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"', self.source)
+        self.assertIn('POST_BUILD_SOURCE_STATUS=', self.source)
+        self.assertIn('POST_BUILD_HEAD=', self.source)
+        self.assertIn('Archive/export changed immutable source state', self.source)
+        self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
+
+    def test_keeps_generated_evidence_out_of_source_identity(self):
         self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
         self.assertIn('git check-ignore -q', self.source)
-        self.assertIn('POST_BUILD_REPOSITORY_STATUS=', self.source)
-        self.assertIn('Archive/export changed non-ignored repository state', self.source)
+        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+        self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
