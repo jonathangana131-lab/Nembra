@@ -42,9 +42,11 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 6
 fi
 
-# This spelling is owned by the accepted schema-v3/current field-artifact evidence contract.
+# These spellings are owned by the accepted V14 Capture build/procedure contracts. The field recipe
+# marker is launch routing only; it cannot grant physical authority and is committed by Info.plist SHA.
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
 BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
   exit 7
@@ -105,6 +107,7 @@ xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
+  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
   archive
 
 xcodebuild \
@@ -136,9 +139,10 @@ fi
 IPA_PATH="${IPA_FILES[0]}"
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
-# snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
-# exact final bytes, retains the IPA, and emits the one package-decodable field-build record plus a
-# separate signing-inspection companion. Neither record grants physical GO.
+# snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign plus
+# direct-device provisioning and the exact Capture launch recipe, hashes exact final bytes, retains
+# the IPA, and emits the one package-decodable field-build record plus a separate inspection
+# companion. Neither record grants physical GO.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
@@ -157,17 +161,19 @@ python3 - \
   "$SOURCE_SHA" \
   "$BUILD_IDENTIFIER" \
   "$BUILD_INSTANCE_ID" \
-  "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+  "$NEMBRA_DEVELOPMENT_TEAM" \
+  "$FIELD_RECIPE_ID" <<'PY'
 import hashlib
 import json
 import pathlib
+import re
 import sys
 
 external_path = pathlib.Path(sys.argv[1])
 field_path = pathlib.Path(sys.argv[2])
 inspection_path = pathlib.Path(sys.argv[3])
 ipa_path = pathlib.Path(sys.argv[4])
-source_sha, build_identifier, build_instance_id, expected_team = sys.argv[5:9]
+source_sha, build_identifier, build_instance_id, expected_team, field_recipe = sys.argv[5:10]
 
 external_bytes = external_path.read_bytes()
 field_bytes = field_path.read_bytes()
@@ -194,7 +200,7 @@ shared_expected = {
     "sourceCommitSHA": source_sha,
     "buildIdentifier": build_identifier,
     "buildInstanceID": build_instance_id,
-    "experimentRecipeID": "ES80-FINGERPRINT-v1",
+    "experimentRecipeID": field_recipe,
     "procedureVersion": "V14",
 }
 for record_name, record in (("field-build evidence", field), ("signing inspection", inspection)):
@@ -210,6 +216,14 @@ if inspection.get("teamIdentifier") != expected_team:
     raise SystemExit(
         f"Signing inspection TeamIdentifier mismatch: {inspection.get('teamIdentifier')!r} != {expected_team!r}"
     )
+if inspection.get("fieldLaunchRecipeID") != field_recipe:
+    raise SystemExit("Signed IPA inspection does not bind the exact Capture Home-Screen launch recipe")
+if inspection.get("provisioningTeamIdentifier") != expected_team:
+    raise SystemExit("Embedded provisioning profile team does not match the requested signing team")
+if not isinstance(inspection.get("provisionedDeviceCount"), int) or inspection["provisionedDeviceCount"] < 1:
+    raise SystemExit("Signed field candidate is not provisioned for at least one registered device")
+if not re.fullmatch(r"[0-9a-f]{64}", inspection.get("embeddedMobileProvisionSHA256", "")):
+    raise SystemExit("Signed field candidate lacks exact embedded provisioning-profile digest evidence")
 
 external_sha = hashlib.sha256(external_bytes).hexdigest()
 field_sha = hashlib.sha256(field_bytes).hexdigest()
@@ -235,7 +249,8 @@ PY
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
-  echo "experiment_recipe_id=ES80-FINGERPRINT-v1"
+  echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
+  echo "experiment_recipe_id=$FIELD_RECIPE_ID"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
