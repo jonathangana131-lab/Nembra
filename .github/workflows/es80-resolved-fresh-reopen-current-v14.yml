@@ -35,105 +35,88 @@ jobs:
                   raise SystemExit(f'{label}: expected one anchor, found {n}')
               s = s.replace(old, new, 1)
 
-          one(
-              '        case horizonArtifactNotReady\n',
-              '        case horizonArtifactNotReady\n        case freshTargetSessionRequired\n        case resolvedQueueTailChanged(expected: UInt64, actual: UInt64)\n',
-              'errors'
-          )
-          one(
-              '    private var committedReadyTransaction: Transaction?\n',
-              '    private var committedReadyTransaction: Transaction?\n    /// Exact already-created durable target session required by recovery.\n    /// Reset cannot erase this binding.\n    private var requiredReadyTargetSessionGeneration: UInt64?\n',
-              'state'
-          )
-          one(
-              '        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        guard nextRevision != UInt64.max else {\n',
-              '        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        if let requiredReadyTargetSessionGeneration {\n            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {\n                throw StateError.freshTargetSessionRequired\n            }\n        }\n        guard nextRevision != UInt64.max else {\n',
-              'Ready admission'
-          )
-          one(
-              '        phase = .drainingReady(transaction)\n        nextRevision += 1\n',
-              '        requiredReadyTargetSessionGeneration = nil\n        phase = .drainingReady(transaction)\n        nextRevision += 1\n',
-              'Ready consume'
-          )
+          one('        case horizonArtifactNotReady\n', '        case horizonArtifactNotReady\n        case freshTargetSessionRequired\n        case resolvedQueueTailChanged(expected: UInt64, actual: UInt64)\n', 'errors')
+          one('    private var committedReadyTransaction: Transaction?\n', '    private var committedReadyTransaction: Transaction?\n    /// Exact already-created durable target session required by recovery. Reset cannot erase it.\n    private var requiredReadyTargetSessionGeneration: UInt64?\n', 'state')
+          one('        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        guard nextRevision != UInt64.max else {\n', '        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        if let requiredReadyTargetSessionGeneration {\n            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {\n                throw StateError.freshTargetSessionRequired\n            }\n        }\n        guard nextRevision != UInt64.max else {\n', 'Ready admission')
+          one('        phase = .drainingReady(transaction)\n        nextRevision += 1\n', '        requiredReadyTargetSessionGeneration = nil\n        phase = .drainingReady(transaction)\n        nextRevision += 1\n', 'Ready consume')
 
           anchor = '    /// Abort quarantine is intentionally irreversible in this slice.'
           i = s.find(anchor)
           if i < 0:
               raise SystemExit('recovery-tail anchor missing')
-          tail = '''    /// Reopens an abandoned Ready/Horizon lifecycle only after producer-issued
-    /// globally-resolved FIFO authority and an unchanged global enqueue tail. The
-    /// controller must create the fresh durable target session first, then consume
-    /// resolution + reopen synchronously with no authority-changing await.
-    mutating func reopenAfterAbortedQueueResolution(
-        _ resolution: PassiveCoreBluetoothAbortedQueueResolution.Receipt,
-        currentLastEnqueuedEventSequence: UInt64,
-        freshTargetSessionGeneration: UInt64
-    ) throws {
-        guard case let .abortQuarantined(currentAbort) = phase else {
-            throw StateError.invalidTransition
-        }
-        guard resolution.abortReceipt == currentAbort else {
-            throw StateError.staleTransaction
-        }
-        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
-            throw StateError.resolvedQueueTailChanged(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentLastEnqueuedEventSequence
-            )
-        }
-        guard freshTargetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
-            throw StateError.freshTargetSessionRequired
-        }
-
-        committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
-        phase = .awaitingReady
-    }
-
-    /// Reopens a successful terminal Horizon only from exact terminal-resolution
-    /// proof, an unchanged global tail, and one already-created strictly newer durable
-    /// target session. Retired positions remain resolved-by-retirement, never recorder writes.
-    mutating func reopenAfterTerminalQueueResolution(
-        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
-        currentLastEnqueuedEventSequence: UInt64,
-        freshTargetSessionGeneration: UInt64
-    ) throws {
-        guard case let .terminal(transaction) = phase else {
-            throw StateError.invalidTransition
-        }
-        guard resolution.terminalTransactionRevision == transaction.revision,
-              resolution.horizonQueueCutoff == transaction.queueCutoff,
-              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
-            throw StateError.staleTransaction
-        }
-        guard resolution.terminalAuthority == transaction.authority else {
-            throw StateError.authorityChanged
-        }
-        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
-            throw StateError.resolvedQueueTailChanged(
-                expected: resolution.resolvedThroughQueueSequence,
-                actual: currentLastEnqueuedEventSequence
-            )
-        }
-        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {
-            throw StateError.freshTargetSessionRequired
-        }
-
-        committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
-        phase = .awaitingReady
-    }
-
-    /// Weak reset cannot reopen quarantine/terminal and cannot erase recovery binding.
-    @discardableResult
-    mutating func resetForNewCaptureSession() -> Bool {
-        guard phase == .awaitingReady else { return false }
-        committedReadyTransaction = nil
-        return true
-    }
-}
-'''
-          s = s[:i] + tail
+          lines = [
+              '    /// Reopens an abandoned Ready/Horizon lifecycle only after producer-issued',
+              '    /// globally-resolved FIFO authority and an unchanged global enqueue tail.',
+              '    mutating func reopenAfterAbortedQueueResolution(',
+              '        _ resolution: PassiveCoreBluetoothAbortedQueueResolution.Receipt,',
+              '        currentLastEnqueuedEventSequence: UInt64,',
+              '        freshTargetSessionGeneration: UInt64',
+              '    ) throws {',
+              '        guard case let .abortQuarantined(currentAbort) = phase else {',
+              '            throw StateError.invalidTransition',
+              '        }',
+              '        guard resolution.abortReceipt == currentAbort else {',
+              '            throw StateError.staleTransaction',
+              '        }',
+              '        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {',
+              '            throw StateError.resolvedQueueTailChanged(',
+              '                expected: resolution.resolvedThroughQueueSequence,',
+              '                actual: currentLastEnqueuedEventSequence',
+              '            )',
+              '        }',
+              '        guard freshTargetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {',
+              '            throw StateError.freshTargetSessionRequired',
+              '        }',
+              '',
+              '        committedReadyTransaction = nil',
+              '        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration',
+              '        phase = .awaitingReady',
+              '    }',
+              '',
+              '    /// Reopens a successful terminal Horizon only from exact terminal-resolution',
+              '    /// proof, unchanged global tail, and one already-created newer durable session.',
+              '    mutating func reopenAfterTerminalQueueResolution(',
+              '        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,',
+              '        currentLastEnqueuedEventSequence: UInt64,',
+              '        freshTargetSessionGeneration: UInt64',
+              '    ) throws {',
+              '        guard case let .terminal(transaction) = phase else {',
+              '            throw StateError.invalidTransition',
+              '        }',
+              '        guard resolution.terminalTransactionRevision == transaction.revision,',
+              '              resolution.horizonQueueCutoff == transaction.queueCutoff,',
+              '              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {',
+              '            throw StateError.staleTransaction',
+              '        }',
+              '        guard resolution.terminalAuthority == transaction.authority else {',
+              '            throw StateError.authorityChanged',
+              '        }',
+              '        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {',
+              '            throw StateError.resolvedQueueTailChanged(',
+              '                expected: resolution.resolvedThroughQueueSequence,',
+              '                actual: currentLastEnqueuedEventSequence',
+              '            )',
+              '        }',
+              '        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {',
+              '            throw StateError.freshTargetSessionRequired',
+              '        }',
+              '',
+              '        committedReadyTransaction = nil',
+              '        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration',
+              '        phase = .awaitingReady',
+              '    }',
+              '',
+              '    /// Weak reset cannot reopen quarantine/terminal or erase recovery binding.',
+              '    @discardableResult',
+              '    mutating func resetForNewCaptureSession() -> Bool {',
+              '        guard phase == .awaitingReady else { return false }',
+              '        committedReadyTransaction = nil',
+              '        return true',
+              '    }',
+              '}',
+              ''
+          ]
+          s = s[:i] + '\n'.join(lines)
           p.write_text(s)
           PY
 
@@ -144,8 +127,8 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
           s = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift').read_text()
-          assert 'uncommittedHorizonAbandonedBeforeRecorderMutation' in s, 'lost #568 four-state Horizon state'
-          assert 'abortUncommittedHorizon(\n        after abandonment:' in s, 'lost #568 pre-attempt producer consumer'
+          assert 'uncommittedHorizonAbandonedBeforeRecorderMutation' in s
+          assert 'after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.HorizonRecorderMutationAbandonmentReceipt' in s
           assert 'private var requiredReadyTargetSessionGeneration: UInt64?' in s
           assert 'reopenAfterAbortedQueueResolution(' in s
           assert 'reopenAfterTerminalQueueResolution(' in s
@@ -163,9 +146,7 @@ jobs:
           git config user.name 'nembra-chat-gpt56'
           git config user.email 'nembra-chat-gpt56@users.noreply.github.com'
           rm .github/workflows/es80-resolved-fresh-reopen-current-v14.yml
-          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift \
-                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateResolvedFreshReopenTests.swift \
-                  .github/workflows/es80-resolved-fresh-reopen-current-v14.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateResolvedFreshReopenTests.swift .github/workflows/es80-resolved-fresh-reopen-current-v14.yml
           git diff --cached --check
           git commit -m 'feat: bind resolved Capture recovery to exact fresh session on four-state gate'
           git push origin HEAD:parallel/es80-resolved-fresh-reopen-v14/chat-gpt56-3
