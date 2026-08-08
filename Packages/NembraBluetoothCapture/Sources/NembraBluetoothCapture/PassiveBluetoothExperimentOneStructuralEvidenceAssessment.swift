@@ -139,10 +139,12 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
     }
 
     /// Replays correlation only when the preserved raw snapshots still match the canonical receipt
-    /// metadata and serial monotonic chronology that claim to describe them. Sequence equality alone
-    /// is insufficient for imported or corrupted artifacts: phase order, receipt candidate counts,
-    /// and cross-window clock order must also agree exactly with what the one-window-at-a-time live
-    /// producer can issue.
+    /// metadata and serial monotonic chronology that claim to describe them. Experiment One's live
+    /// one-window-at-a-time producer issues the first series exactly as OFF1/ON1/OFF2/ON2 sequence
+    /// 1/2/3/4; generic correlation intentionally accepts any strictly increasing sequence, but an
+    /// imported Experiment One artifact may not substitute detached increasing counters. Phase,
+    /// exact sequence, receipt candidate counts, and cross-window clock order must all agree with
+    /// what that producer can issue.
     private static func replayedCorrelationIfConsistent(
         with result: PassiveBluetoothPowerCycleObservationResult
     ) -> PassiveBluetoothPowerCycleTargetCorrelationReport? {
@@ -163,6 +165,7 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
             }
 
             guard receipt.phase == expectedPhases[index],
+                  receipt.windowSequence.rawValue == UInt64(index + 1),
                   receipt.windowSequence == snapshot.windowSequence,
                   receipt.observedCandidateCount == snapshot.candidates.count else {
                 return nil
