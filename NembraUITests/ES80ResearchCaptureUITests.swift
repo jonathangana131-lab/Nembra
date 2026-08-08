@@ -9,41 +9,51 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     }
 
     @MainActor
-    func testPassiveResearchLaunchShowsProductCaptureShellWithoutVehicleControls() {
+    func testV14ResearchLaunchShowsMechanicalCorrelationAndKeepsFinalSealLocked() {
         let app = XCUIApplication()
         app.launchArguments = ["--es80-passive-capture"]
         app.launch()
 
         XCTAssertTrue(
             app.navigationBars["Nembra Capture"].waitForExistence(timeout: 5),
-            "The explicit research launch must open the dedicated passive capture shell."
+            "The explicit research launch must open the dedicated Nembra Capture surface."
         )
         XCTAssertTrue(
-            app.staticTexts["Passive evidence only"].waitForExistence(timeout: 3),
-            "The capture shell must keep its passive-only truth boundary visible."
+            app.staticTexts["NEMBRA CAPTURE"].waitForExistence(timeout: 3),
+            "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
-            app.staticTexts
-                .matching(NSPredicate(format: "label CONTAINS[c] %@", "foreground"))
-                .firstMatch
-                .waitForExistence(timeout: 3),
-            "Foreground-only capture continuity must be disclosed before any physical research session starts."
+            app.staticTexts["Physical Experiment One locked"].waitForExistence(timeout: 3),
+            "The app must expose the physical NO-GO boundary instead of implying a runnable experiment."
         )
         XCTAssertTrue(
-            app.buttons["Scan for scooter"].waitForExistence(timeout: 3),
-            "Stationary setup must expose one obvious scan action even when Simulator Bluetooth cannot perform a physical scan."
+            app.otherElements["es80.capture.correlation-progress"].waitForExistence(timeout: 3),
+            "The primary workflow must expose the four-window OFF1/ON1/OFF2/ON2 correlation sequence."
+        )
+        XCTAssertTrue(
+            app.buttons["es80.capture.begin-window"].waitForExistence(timeout: 3),
+            "Preflight must lead to the first bounded OFF window instead of a generic manual candidate scan."
+        )
+
+        XCTAssertFalse(
+            app.buttons["Scan for scooter"].exists,
+            "The V13 generic manual-candidate scan must not remain the primary correlation path."
         )
         XCTAssertFalse(
-            app.buttons["Advanced details"].exists,
-            "The product shell must not expose the package research console because that console owns independent scan/connect/export controls outside the shell lifecycle guard."
+            app.buttons["Finish Capture"].exists,
+            "Finish must remain unavailable until the accepted Horizon/seal controller authority is app-visible."
         )
         XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
-            "Research capture must not silently start or expose the normal vehicle-control experience."
+            "Research capture must not silently expose the normal vehicle-control experience."
+        )
+        XCTAssertFalse(
+            app.buttons["Advanced details"].exists,
+            "The control-capable package research console must not become a second acquisition workflow."
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra ES80 Capture Shell"
+        attachment.name = "Nembra Capture V14 — Physical Run Locked"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
