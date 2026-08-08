@@ -211,7 +211,7 @@ public struct RideHistoryDistanceCheckpoint: Codable, Equatable, Sendable {
 
     public var sessionID: UUID { completedRideEvidence.sessionID }
 
-    private init(
+    fileprivate init(
         schemaVersion: Int,
         completedRideEvidence: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
