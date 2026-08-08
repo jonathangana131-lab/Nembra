@@ -70,6 +70,17 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('export_options_file=ExportOptions.plist', self.source)
         self.assertIn('export_options_sha256=$EXPORT_OPTIONS_SHA256', self.source)
 
+    def test_optional_provisioning_path_is_safe_on_macos_bash_32(self):
+        self.assertIn('ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"', self.source)
+        self.assertIn('NEMBRA_ALLOW_PROVISIONING_UPDATES must be exactly 0 or 1.', self.source)
+        self.assertIn('run_xcodebuild()', self.source)
+        self.assertIn('xcodebuild -allowProvisioningUpdates "$@"', self.source)
+        self.assertIn('run_xcodebuild \\\n  -project Nembra.xcodeproj', self.source)
+        self.assertIn('run_xcodebuild \\\n  -exportArchive', self.source)
+        self.assertNotIn('PROVISIONING_ARGS=()', self.source)
+        self.assertNotIn('${PROVISIONING_ARGS[@]}', self.source)
+        self.assertIn('allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES', self.source)
+
     def test_retains_archive_and_export_logs(self):
         self.assertIn('logs/xcodebuild-archive.log', self.source)
         self.assertIn('logs/xcodebuild-export.log', self.source)
