@@ -11,8 +11,11 @@ public enum PassiveBluetoothCaptureValidationError: Error, Equatable, Sendable {
     case invalidConnectionMetadata
     case nonMonotonicSequence
     case nonMonotonicReceiptTime
+    case invalidObservationBoundaryWatermark
+    case evidenceAfterObservationHorizon
     case unsupportedSchemaVersion(Int)
     case eventNotSupportedBySchemaVersion(Int)
+    case observationBoundaryNotSupportedBySchemaVersion(Int)
 }
 
 /// Characteristic properties observed during GATT discovery.
@@ -543,6 +546,43 @@ public struct PassiveBluetoothCaptureRecord: Equatable, Codable, Sendable {
     }
 }
 
+/// Nembra-generated lifecycle evidence adjacent to, but deliberately not inside,
+/// the raw Bluetooth event stream. The watermark binds each boundary to the
+/// exact callback prefix accepted before the boundary while the uptime value
+/// uses the same system-boot-relative monotonic clock as capture records.
+///
+/// This is Nembra observation-session evidence only. It is never a Bluetooth
+/// packet, RF emission timestamp, scooter state, or physical authentication.
+public enum PassiveBluetoothObservationBoundaryKind: String, CaseIterable, Codable, Sendable {
+    /// Nembra's finite passive GATT acquisition ledger reached its accepted
+    /// ready state at this boundary.
+    case finiteAcquisitionReady
+    /// The immutable observation interval ended while capture authority was
+    /// still valid, before later transport teardown. This boundary is terminal.
+    case observationHorizon
+}
+
+public struct PassiveBluetoothObservationBoundary: Equatable, Codable, Sendable {
+    public let kind: PassiveBluetoothObservationBoundaryKind
+    /// Sequence number of the final raw capture record accepted before this
+    /// boundary, or zero when no raw capture record had yet been accepted.
+    public let recordSequenceWatermark: UInt64
+    public let observedAtUptimeNanoseconds: UInt64
+    public let observedAtDate: Date
+
+    public init(
+        kind: PassiveBluetoothObservationBoundaryKind,
+        recordSequenceWatermark: UInt64,
+        observedAtUptimeNanoseconds: UInt64,
+        observedAtDate: Date
+    ) {
+        self.kind = kind
+        self.recordSequenceWatermark = recordSequenceWatermark
+        self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
+        self.observedAtDate = observedAtDate
+    }
+}
+
 /// Platform-neutral in-memory capture state for one real-world observation
 /// session. Durable serialization is intentionally available only through
 /// `PassiveBluetoothCaptureJSON`, whose envelope owns the schema version. The
@@ -553,30 +593,44 @@ public struct PassiveBluetoothCaptureSession: Equatable, Sendable {
     public let vehicleIdentity: VehicleIdentity
     public let startedAt: Date
     public private(set) var records: [PassiveBluetoothCaptureRecord]
+    public private(set) var observationBoundaries: [PassiveBluetoothObservationBoundary]
 
     public init(
         id: UUID = UUID(),
         vehicleIdentity: VehicleIdentity,
         startedAt: Date,
-        records: [PassiveBluetoothCaptureRecord] = []
+        records: [PassiveBluetoothCaptureRecord] = [],
+        observationBoundaries: [PassiveBluetoothObservationBoundary] = []
     ) throws {
         self.id = id
         self.vehicleIdentity = vehicleIdentity
         self.startedAt = startedAt
         self.records = []
+        self.observationBoundaries = []
 
         for record in records {
             try append(record)
         }
+        for boundary in observationBoundaries {
+            try appendObservationBoundary(boundary)
+        }
     }
 
     public mutating func append(_ record: PassiveBluetoothCaptureRecord) throws {
+        if observationBoundaries.last?.kind == .observationHorizon {
+            throw PassiveBluetoothCaptureValidationError.evidenceAfterObservationHorizon
+        }
         try record.event.validateForCapture()
         if let last = records.last {
             guard record.sequenceNumber > last.sequenceNumber else {
                 throw PassiveBluetoothCaptureValidationError.nonMonotonicSequence
             }
             guard record.receivedAtUptimeNanoseconds >= last.receivedAtUptimeNanoseconds else {
+                throw PassiveBluetoothCaptureValidationError.nonMonotonicReceiptTime
+            }
+        }
+        if let boundary = observationBoundaries.last {
+            guard record.receivedAtUptimeNanoseconds >= boundary.observedAtUptimeNanoseconds else {
                 throw PassiveBluetoothCaptureValidationError.nonMonotonicReceiptTime
             }
         }
@@ -598,17 +652,68 @@ public struct PassiveBluetoothCaptureSession: Equatable, Sendable {
             )
         )
     }
+
+    public mutating func appendObservationBoundary(
+        _ boundary: PassiveBluetoothObservationBoundary
+    ) throws {
+        if observationBoundaries.last?.kind == .observationHorizon {
+            throw PassiveBluetoothCaptureValidationError.evidenceAfterObservationHorizon
+        }
+
+        if let previous = observationBoundaries.last {
+            guard boundary.recordSequenceWatermark >= previous.recordSequenceWatermark else {
+                throw PassiveBluetoothCaptureValidationError.invalidObservationBoundaryWatermark
+            }
+            guard boundary.observedAtUptimeNanoseconds >= previous.observedAtUptimeNanoseconds else {
+                throw PassiveBluetoothCaptureValidationError.nonMonotonicReceiptTime
+            }
+        }
+
+        if boundary.recordSequenceWatermark == 0 {
+            if let firstRecord = records.first,
+               firstRecord.receivedAtUptimeNanoseconds < boundary.observedAtUptimeNanoseconds {
+                throw PassiveBluetoothCaptureValidationError.invalidObservationBoundaryWatermark
+            }
+        } else {
+            guard let watermarkIndex = records.lastIndex(where: {
+                $0.sequenceNumber == boundary.recordSequenceWatermark
+            }) else {
+                throw PassiveBluetoothCaptureValidationError.invalidObservationBoundaryWatermark
+            }
+            let watermarkRecord = records[watermarkIndex]
+            guard watermarkRecord.receivedAtUptimeNanoseconds <= boundary.observedAtUptimeNanoseconds else {
+                throw PassiveBluetoothCaptureValidationError.nonMonotonicReceiptTime
+            }
+            let nextIndex = records.index(after: watermarkIndex)
+            if nextIndex < records.endIndex,
+               records[nextIndex].receivedAtUptimeNanoseconds < boundary.observedAtUptimeNanoseconds {
+                throw PassiveBluetoothCaptureValidationError.invalidObservationBoundaryWatermark
+            }
+        }
+
+        if boundary.kind == .observationHorizon {
+            let finalSequence = records.last?.sequenceNumber ?? 0
+            guard boundary.recordSequenceWatermark == finalSequence else {
+                throw PassiveBluetoothCaptureValidationError.invalidObservationBoundaryWatermark
+            }
+        }
+
+        observationBoundaries.append(boundary)
+    }
 }
 
 /// Stable, versioned JSON codec for sharing capture artifacts between
 /// physical-device sessions and offline parser/tests. Sorted keys plus explicit
 /// deterministic characteristic-property encoding keep semantically identical
 /// artifacts reviewable while millisecond epoch dates preserve sub-second
-/// correlation metadata. Schema v2 adds structured connection/subscription
-/// evidence; v1 remains readable so existing raw evidence is not discarded.
+/// correlation metadata. Schema v2 added structured connection/subscription
+/// evidence. Schema v3 adds Nembra-generated observation boundaries beside the
+/// BLE record stream so quiet observed time can be preserved without fabricating
+/// Bluetooth events. v1 and v2 remain readable so existing raw evidence is not
+/// discarded.
 public enum PassiveBluetoothCaptureJSON {
-    public static let currentSchemaVersion = 2
-    private static let supportedSchemaVersions: Set<Int> = [1, 2]
+    public static let currentSchemaVersion = 3
+    private static let supportedSchemaVersions: Set<Int> = [1, 2, 3]
 
     private struct VersionProbe: Decodable {
         let schemaVersion: Int
@@ -619,12 +724,16 @@ public enum PassiveBluetoothCaptureJSON {
         let vehicleIdentity: VehicleIdentity
         let startedAt: Date
         let records: [PassiveBluetoothCaptureRecord]
+        /// Optional only for backward decoding. Schema-v3 writers always encode
+        /// a concrete array, including an empty array when no boundary exists.
+        let observationBoundaries: [PassiveBluetoothObservationBoundary]?
 
         init(_ session: PassiveBluetoothCaptureSession) {
             id = session.id
             vehicleIdentity = session.vehicleIdentity
             startedAt = session.startedAt
             records = session.records
+            observationBoundaries = session.observationBoundaries
         }
 
         func validatedSession() throws -> PassiveBluetoothCaptureSession {
@@ -632,7 +741,8 @@ public enum PassiveBluetoothCaptureJSON {
                 id: id,
                 vehicleIdentity: vehicleIdentity,
                 startedAt: startedAt,
-                records: records
+                records: records,
+                observationBoundaries: observationBoundaries ?? []
             )
         }
     }
@@ -664,14 +774,20 @@ public enum PassiveBluetoothCaptureJSON {
 
         let envelope = try decoder.decode(Envelope.self, from: data)
         let session = try envelope.session.validatedSession()
-        try validateEventVocabulary(in: session, schemaVersion: envelope.schemaVersion)
+        try validateEvidenceVocabulary(in: session, schemaVersion: envelope.schemaVersion)
         return session
     }
 
-    private static func validateEventVocabulary(
+    private static func validateEvidenceVocabulary(
         in session: PassiveBluetoothCaptureSession,
         schemaVersion: Int
     ) throws {
+        if schemaVersion < 3, !session.observationBoundaries.isEmpty {
+            throw PassiveBluetoothCaptureValidationError.observationBoundaryNotSupportedBySchemaVersion(
+                schemaVersion
+            )
+        }
+
         guard schemaVersion == 1 else { return }
         for record in session.records {
             switch record.event {
