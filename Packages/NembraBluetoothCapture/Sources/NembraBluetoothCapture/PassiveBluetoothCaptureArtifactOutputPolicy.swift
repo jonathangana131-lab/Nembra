@@ -66,7 +66,9 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         )
     }
 
-    public static func writeDerivedReport(
+    /// Package-internal compatibility seam for focused policy tests. Product and
+    /// executable targets outside this module must carry the admission receipt.
+    static func writeDerivedReport(
         _ data: Data,
         inputURL: URL,
         outputURL: URL,
