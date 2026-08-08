@@ -21,15 +21,16 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         )
     }
 
-    @Test("research launch and fresh restart use only the canonical authorized factory")
-    func appUsesCanonicalAuthorizedFactoryForBothConstructionSites() throws {
+    @Test("field launch and fresh restart use only exact-running-build research authorization")
+    func appUsesResearchAuthorizedFactoryForBothProductionConstructionSites() throws {
         let source = try Self.appSource()
-        let factory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
-        let factoryCount = source.components(separatedBy: factory).count - 1
+        let researchFactory = "makeResearchAuthorizedES80ForCurrentApplication()"
 
-        #expect(factoryCount == 2)
-        #expect(!source.contains("try? PassiveBluetoothExperimentOneCoordinator()"))
-        #expect(!source.contains("try PassiveBluetoothExperimentOneCoordinator()"))
+        #expect(source.components(separatedBy: researchFactory).count - 1 == 2)
+        #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
+        #expect(!source.contains("verifiedAdmission:"))
+        #expect(!source.contains("PassiveBluetoothCaptureFieldAuthorizationVerifier"))
+        #expect(!source.contains("UserDefaults"))
         #expect(source.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
         #expect(source.contains("selectedChargerState = nil"))
         #expect(source.contains("disconnectedDeclarationAccepted = false"))
