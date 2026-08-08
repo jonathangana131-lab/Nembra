@@ -23,8 +23,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
-            app.staticTexts["Field capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned NO-GO must be the primary product state."
+            app.staticTexts["Capture not ready"].waitForExistence(timeout: 3),
+            "The current package-owned NO-GO must be the primary product state without engineering-gate jargon."
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
