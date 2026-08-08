@@ -67,9 +67,10 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         )
     }
 
-    /// Deterministic/testable observation-boundary path. Production callers
-    /// should normally use the clock-owning overload above.
-    public func recordObservationBoundary(
+    /// Package-internal deterministic boundary path for focused recorder tests.
+    /// Production clients intentionally cannot supply boundary clocks: the public
+    /// producer above owns the monotonic receipt clock used for duration evidence.
+    func recordObservationBoundary(
         _ kind: PassiveBluetoothObservationBoundaryKind,
         observedAtUptimeNanoseconds: UInt64,
         observedAtDate: Date
