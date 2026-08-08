@@ -84,6 +84,41 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("SEAL"))
     }
 
+    @Test("rendered status and failure helpers stay human-first too")
+    func renderedHelpersStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let helperStart = try #require(source.range(of: "private func phase("))
+        let helperSurface = source[helperStart.lowerBound..<source.endIndex]
+
+        let implementationPhrasesThatMustNotLeakThroughHelpers = [
+            "evidence life cannot regain capture authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow",
+            "fresh package-owned Experiment One workflow",
+            "package-owned physical execution gate",
+            "sealed correlated-target admission",
+            "fresh post-admission scan",
+            "package-owned passive capture controller",
+            "accepted Ready epoch",
+            "producer's monotonic receipt window",
+            "producer could not establish a monotonic observation window",
+            "package-owned Bluetooth controller",
+            "CoreBluetooth reported an unknown future state",
+            "observation Horizon ready to seal",
+            "Finite acquisition",
+            "Horizon ready",
+            "Sealing artifact"
+        ]
+
+        for phrase in implementationPhrasesThatMustNotLeakThroughHelpers {
+            #expect(
+                !helperSurface.contains(phrase),
+                "Rendered Capture helper still exposes engineering vocabulary: \(phrase)"
+            )
+        }
+    }
+
     @Test("engineering truth remains available in Details instead of being deleted")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
