@@ -66,7 +66,18 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "PASSIVE ACQUISITION",
             "HORIZON READY",
             "healthItem(\"FINITE\"",
-            "healthItem(\"HORIZON\""
+            "healthItem(\"HORIZON\"",
+            "PREFLIGHT / DECLARATION",
+            "operator declaration",
+            "CORRELATION STOPPED",
+            "NO UNIQUE TARGET",
+            "AMBIGUOUS TARGET",
+            "TARGET CONFIRMED",
+            "correlated signal evidence",
+            "Begin passive observation",
+            "final Capture artifact",
+            "Verify final artifact",
+            "The artifact remains sealed"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -80,11 +91,20 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("Scooter OFF"))
         #expect(riderSurface.contains("Scooter ON"))
         #expect(riderSurface.contains("CAPTURE LOCK"))
+        #expect(riderSurface.contains("PREFLIGHT / SETUP"))
+        #expect(riderSurface.contains("MATCHING STOPPED"))
+        #expect(riderSurface.contains("NO UNIQUE SIGNAL"))
+        #expect(riderSurface.contains("MULTIPLE SIGNALS MATCHED"))
+        #expect(riderSurface.contains("SIGNAL CONFIRMED"))
+        #expect(riderSurface.contains("SIGNAL MATCHED"))
+        #expect(riderSurface.contains("READ-ONLY CONNECTION"))
         #expect(riderSurface.contains("READ-ONLY SETUP"))
+        #expect(riderSurface.contains("Begin read-only observation"))
         #expect(riderSurface.contains("READY TO SEAL"))
         #expect(riderSurface.contains("healthItem(\"SIGNAL\""))
         #expect(riderSurface.contains("healthItem(\"SETUP\""))
         #expect(riderSurface.contains("healthItem(\"OBSERVE\""))
+        #expect(riderSurface.contains("Prepare Share file"))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
     }
