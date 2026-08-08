@@ -28,8 +28,7 @@ enum PassiveBluetoothStrictJSON {
         scope: DuplicateScope
     ) -> String? {
         let bytes = Array(data)
-        var seenKeysByObject = [Set<String>()]
-        seenKeysByObject.removeAll(keepingCapacity: true)
+        var seenKeysByObject: [Set<String>] = []
         var index = 0
 
         while index < bytes.count {
