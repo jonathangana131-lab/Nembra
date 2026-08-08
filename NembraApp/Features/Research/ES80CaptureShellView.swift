@@ -59,8 +59,14 @@ struct ES80CaptureShellView: View {
     @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var showingDetails = false
 
-    init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+    private let onFreshExperimentCreated: (PassiveBluetoothExperimentOneCoordinator) -> Void
+
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        onFreshExperimentCreated: @escaping (PassiveBluetoothExperimentOneCoordinator) -> Void
+    ) {
         _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentCreated = onFreshExperimentCreated
     }
 
     var body: some View {
@@ -946,7 +952,9 @@ struct ES80CaptureShellView: View {
         observationReadyBeganAtUptimeNanoseconds = nil
 
         do {
-            coordinator = try PassiveBluetoothExperimentOneCoordinator()
+            let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator()
+            coordinator = freshCoordinator
+            onFreshExperimentCreated(freshCoordinator)
         } catch {
             localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \(String(describing: error))"
         }
