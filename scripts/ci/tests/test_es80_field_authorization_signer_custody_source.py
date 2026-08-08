@@ -26,7 +26,7 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must select its OpenSSL executable through an explicit release-authority input.",
         )
 
-    def test_explicit_openssl_is_canonical_and_not_repository_controlled(self):
+    def test_explicit_openssl_is_canonical_and_root_custodied(self):
         self.assertIn(
             '.resolve(',
             self.source,
@@ -45,6 +45,21 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
         self.assertTrue(
             '0o022' in self.source or '0o002' in self.source or 'world-writable' in self.source.lower(),
             "The signer must fail closed on writable executable/custody paths.",
+        )
+        self.assertIn(
+            'executable_stat.st_uid != 0',
+            self.source,
+            "The validated OpenSSL executable must be root-owned rather than replaceable by the signing user.",
+        )
+        self.assertIn(
+            'directory_stat.st_uid != 0',
+            self.source,
+            "Every canonical OpenSSL custody directory must be root-owned so the signing user cannot swap the executable after validation.",
+        )
+        self.assertNotIn(
+            'executable_stat.st_uid not in {0, signing_uid}',
+            self.source,
+            "Signing-user executable ownership reintroduces a validate-to-exec replacement race.",
         )
 
     def test_openssl_subprocess_does_not_inherit_signing_environment_or_stdin(self):
