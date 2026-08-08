@@ -53,7 +53,6 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
             minimumDurationNanoseconds:
                 PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds
         )
-        let captureIdentifiers = gattPeripheralIdentifiers(in: captureSession)
         let replayedCorrelation = replayedCorrelationIfConsistent(with: powerCycleResult)
 
         let correlatedIdentifier: UUID?
@@ -62,6 +61,21 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
             correlatedIdentifier = identifier
         } else {
             correlatedIdentifier = nil
+        }
+
+        // Target attribution is only meaningful through one accepted Horizon watermark. Records
+        // appended after H are never allowed to establish, replace, or make ambiguous the target for
+        // this structural experiment decision. If duration/Horizon evidence itself is invalid, target
+        // evidence remains deliberately empty and the observation-duration status wins below.
+        let captureIdentifiers: [String]
+        if observationDuration.isDurationSufficient,
+           let horizon = observationDuration.horizonBoundary {
+            captureIdentifiers = gattPeripheralIdentifiers(
+                in: captureSession,
+                throughSequenceNumber: horizon.recordSequenceWatermark
+            )
+        } else {
+            captureIdentifiers = []
         }
 
         let capturedIdentifier: UUID?
@@ -78,7 +92,9 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
             status = .powerCycleEvidenceInconsistent
         } else if let replayedCorrelation,
                   case .singleRepeatableCandidate(_) = replayedCorrelation.disposition {
-            if captureIdentifiers.count != 1 {
+            if !observationDuration.isDurationSufficient {
+                status = .observationDurationRejected(observationDuration.status)
+            } else if captureIdentifiers.count != 1 {
                 status = .captureTargetUnresolved
             } else if capturedIdentifier == nil {
                 status = .captureTargetIdentifierMalformed(captureIdentifiers[0])
@@ -89,8 +105,6 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
                     correlated: correlatedIdentifier,
                     captured: capturedIdentifier
                 )
-            } else if !observationDuration.isDurationSufficient {
-                status = .observationDurationRejected(observationDuration.status)
             } else if let correlatedIdentifier {
                 status = .structurallyCoherent(correlatedIdentifier)
             } else {
@@ -155,11 +169,12 @@ struct PassiveBluetoothExperimentOneStructuralEvidenceAssessment: Equatable, Sen
     }
 
     private static func gattPeripheralIdentifiers(
-        in session: PassiveBluetoothCaptureSession
+        in session: PassiveBluetoothCaptureSession,
+        throughSequenceNumber horizonWatermark: UInt64
     ) -> [String] {
         var identifiers = Set<String>()
 
-        for record in session.records {
+        for record in session.records where record.sequenceNumber <= horizonWatermark {
             switch record.event {
             case let .service(observation):
                 identifiers.insert(observation.peripheralIdentifier)
