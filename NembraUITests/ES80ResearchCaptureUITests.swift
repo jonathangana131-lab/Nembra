@@ -33,9 +33,9 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.buttons["Scan for scooter"].waitForExistence(timeout: 3),
             "Stationary setup must expose one obvious scan action even when Simulator Bluetooth cannot perform a physical scan."
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             app.buttons["Advanced details"].exists,
-            "Technical capture detail should remain available behind explicit advanced disclosure."
+            "The product shell must not expose the package research console because that console owns independent scan/connect/export controls outside the shell lifecycle guard."
         )
         XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
