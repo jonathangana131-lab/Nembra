@@ -1,0 +1,36 @@
+name: ES80 frozen source snapshot
+
+on:
+  push:
+    branches:
+      - validation/es80-bcb-source-snapshot/chatgpt56-go
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Verify exact product parent
+        run: test "$(git rev-parse HEAD^)" = "bcb9bf250b9ffa9c6301ffcfc36c75634b55e525"
+      - name: Collect exact Capture source and tests
+        run: |
+          mkdir -p Artifacts/FrozenCaptureSource
+          cp -R Packages/NembraBluetoothCapture Artifacts/FrozenCaptureSource/
+          mkdir -p Artifacts/FrozenCaptureSource/NembraApp/Features/Research
+          mkdir -p Artifacts/FrozenCaptureSource/NembraApp/App
+          cp NembraApp/Features/Research/ES80CaptureShellView.swift Artifacts/FrozenCaptureSource/NembraApp/Features/Research/
+          cp NembraApp/App/NembraApp.swift Artifacts/FrozenCaptureSource/NembraApp/App/
+          mkdir -p Artifacts/FrozenCaptureSource/docs
+          cp docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md Artifacts/FrozenCaptureSource/docs/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: es80-bcb-frozen-source-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/FrozenCaptureSource
+          if-no-files-found: error
+          retention-days: 3
