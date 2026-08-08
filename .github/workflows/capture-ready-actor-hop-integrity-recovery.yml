@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - agent/es80-ready-actor-hop-integrity
-    paths:
-      - .github/workflows/capture-ready-actor-hop-integrity-recovery.yml
 
 permissions:
   contents: write
@@ -14,17 +12,18 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           ref: agent/es80-ready-actor-hop-integrity
-          fetch-depth: 3
+          fetch-depth: 4
 
       - name: Verify exact recovery ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^^)" = "ddc4e7fb1d02073173695b83200f6c70f2dd1382"
-          test "$(git diff --name-only HEAD^^ HEAD | sort)" = "$(printf '%s\n' \
+          test "$(git merge-base --is-ancestor ddc4e7fb1d02073173695b83200f6c70f2dd1382 HEAD; echo $?)" = "0"
+          test "$(git rev-list --count ddc4e7fb1d02073173695b83200f6c70f2dd1382..HEAD)" = "3"
+          test "$(git diff --name-only ddc4e7fb1d02073173695b83200f6c70f2dd1382 HEAD | sort)" = "$(printf '%s\n' \
             '.github/workflows/capture-ready-actor-hop-integrity-recovery.yml' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyActorHopIntegrityTests.swift' | sort)"
 
