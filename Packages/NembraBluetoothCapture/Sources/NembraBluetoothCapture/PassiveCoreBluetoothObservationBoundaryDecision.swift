@@ -1,0 +1,74 @@
+import Dispatch
+import Foundation
+import NembraCore
+
+/// One synchronous MainActor decision that binds a lifecycle-boundary intent to
+/// the exact controller FIFO prefix, recorder-completed prefix, artifact authority,
+/// and trusted local observation clock seen before the first asynchronous hop.
+///
+/// This is software observation/evidence ordering only. The clock is not a BLE or
+/// RF emission timestamp, and this type establishes no physical scooter state.
+struct PassiveCoreBluetoothObservationBoundaryDecision: Equatable, Sendable {
+    enum StateError: Error, Equatable, Sendable {
+        case processedFrontierBeyondCutoff
+    }
+
+    let queueKind: PassiveCoreBluetoothObservationBoundaryQueueGate.BoundaryKind
+    let queueCutoff: UInt64
+    let processedThrough: UInt64
+    let authority: PassiveCoreBluetoothArtifactAuthorityContext
+    let observedAtUptimeNanoseconds: UInt64
+    let observedAtDate: Date
+
+    /// Mechanical mapping into the already-accepted durable capture vocabulary.
+    /// Keeping it on the decision token prevents controller wiring from beginning
+    /// one queue-boundary kind and accidentally recording the other schema kind.
+    var observationBoundaryKind: PassiveBluetoothObservationBoundaryKind {
+        switch queueKind {
+        case .finiteAcquisitionReady:
+            .finiteAcquisitionReady
+        case .observationHorizon:
+            .observationHorizon
+        }
+    }
+
+    /// Captures the complete boundary decision synchronously on the MainActor.
+    /// Production callers cannot inject a future/past lifecycle clock through this
+    /// type; deterministic explicit-clock construction is intentionally private.
+    @MainActor
+    static func capture(
+        kind: PassiveCoreBluetoothObservationBoundaryQueueGate.BoundaryKind,
+        queueCutoff: UInt64,
+        processedThrough: UInt64,
+        authority: PassiveCoreBluetoothArtifactAuthorityContext
+    ) throws -> Self {
+        guard processedThrough <= queueCutoff else {
+            throw StateError.processedFrontierBeyondCutoff
+        }
+
+        return Self(
+            queueKind: kind,
+            queueCutoff: queueCutoff,
+            processedThrough: processedThrough,
+            authority: authority,
+            observedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            observedAtDate: Date()
+        )
+    }
+
+    private init(
+        queueKind: PassiveCoreBluetoothObservationBoundaryQueueGate.BoundaryKind,
+        queueCutoff: UInt64,
+        processedThrough: UInt64,
+        authority: PassiveCoreBluetoothArtifactAuthorityContext,
+        observedAtUptimeNanoseconds: UInt64,
+        observedAtDate: Date
+    ) {
+        self.queueKind = queueKind
+        self.queueCutoff = queueCutoff
+        self.processedThrough = processedThrough
+        self.authority = authority
+        self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
+        self.observedAtDate = observedAtDate
+    }
+}
