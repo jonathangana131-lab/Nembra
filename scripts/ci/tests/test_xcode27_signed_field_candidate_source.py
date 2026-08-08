@@ -91,7 +91,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('NEMBRA_ALLOW_PROVISIONING_UPDATES', self.source)
         self.assertNotIn('PROVISIONING_ARGS=()', self.source)
         self.assertNotIn('IPA_FILES=(', self.source)
-        self.assertNotIn('nullglob', self.source)
+        self.assertNotIn('shopt -s nullglob', self.source)
+        self.assertNotIn('shopt -u nullglob', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
