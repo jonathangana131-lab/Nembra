@@ -179,6 +179,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case connectionAlreadyActive
         case invalidConnectionTimeout
         case invalidAcquisitionProgressTimeout
+        case experimentOneVehicleContextMismatch
         case targetNotSelected
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
@@ -490,6 +491,132 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
         stopScanning()
         connectionPhase = .connecting(peripheralIdentifier)
+        activePeripheral = peripheral
+        peripheral.delegate = self
+        centralManager.connect(peripheral, options: nil)
+        scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)
+    }
+
+    /// Connects the exact correlated Experiment One target using the mutable recorder
+    /// already owned by that same sealed run. This package-internal bridge is the only
+    /// controller path that may turn `PassiveBluetoothExperimentOneCaptureAdmission`
+    /// into live capture ownership; app/UI code cannot call it directly.
+    ///
+    /// A repeated full CoreBluetooth UUID remains only a correlated Bluetooth target.
+    /// This path performs no application characteristic write.
+    func connectUsingExperimentOneAdmission(
+        _ admission: PassiveBluetoothExperimentOneCaptureAdmission,
+        timeout: TimeInterval = 12
+    ) throws {
+        try ensureCaptureHealthy()
+        guard vehicleIdentity == VehicleProfile.aovoproES80.identity else {
+            throw ControllerError.experimentOneVehicleContextMismatch
+        }
+        guard !observationBoundaryQueueGate.isTerminal else {
+            throw ControllerError.captureFinalized
+        }
+        guard !observationBoundaryBlocksArtifactMutation else {
+            throw ControllerError.captureIncomplete
+        }
+        guard centralManager.state == .poweredOn else {
+            throw ControllerError.bluetoothNotPoweredOn
+        }
+        guard let timeoutNanoseconds = PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(timeout) else {
+            throw ControllerError.invalidConnectionTimeout
+        }
+        guard connectionPhase == .idle else {
+            throw ControllerError.connectionAlreadyActive
+        }
+        guard recorder == nil,
+              targetState.selectedTargetIdentifier == nil else {
+            throw ControllerError.connectionAlreadyActive
+        }
+        guard targetSessionGeneration != UInt64.max else {
+            throw ControllerError.captureFailed
+        }
+
+        let payload = try admission.consume()
+        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
+                payload.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == payload.peripheralIdentifier else {
+            throw ControllerError.targetSessionChanged
+        }
+        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],
+              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        }
+        if discovery.isConnectable == false {
+            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+        }
+
+        do {
+            try targetState.validateCanBeginAttempt(for: payload.peripheralIdentifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
+            throw ControllerError.attemptGenerationExhausted
+        } catch {
+            throw ControllerError.targetNotSelected
+        }
+
+        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]
+        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
+            throw ControllerError.captureIncomplete
+        }
+        committedReadyEpoch = nil
+
+        let previousAuthority = currentArtifactAuthorityContext()
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: targetSessionGeneration + 1,
+            authorityGeneration: 1
+        )
+        do {
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+        } catch {
+            failCapture(error)
+            throw ControllerError.captureFailed
+        }
+        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        lastFinalizedArtifactAuthority = nil
+
+        targetState.selectTarget(payload.peripheralIdentifier)
+        acquisitionLedger.beginTargetSession()
+        gattIdentityRegistry.reset()
+        selectedTargetCancellationPending = false
+        hasUsedInitialSessionIdentity = true
+        recorder = payload.recorder
+        foregroundEvidenceIntegrityValid = true
+
+        if let latestAdvertisement {
+            enqueue(
+                .advertisement(latestAdvertisement.observation),
+                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+                receivedAtDate: latestAdvertisement.receivedAtDate
+            )
+        }
+
+        do {
+            _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
+            throw ControllerError.attemptGenerationExhausted
+        } catch {
+            throw ControllerError.targetNotSelected
+        }
+
+        acquisitionLedger.beginConnectionAttempt()
+        selectedTargetCancellationPending = false
+        guard advanceArtifactAuthority() else {
+            throw ControllerError.captureFailed
+        }
+
+        stopScanning()
+        connectionPhase = .connecting(payload.peripheralIdentifier)
         activePeripheral = peripheral
         peripheral.delegate = self
         centralManager.connect(peripheral, options: nil)
