@@ -62,6 +62,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "application characteristic-value writes",
             "package producer",
             "HORIZON READY",
+            "FIELD AUTHORITY",
             "healthItem(\"FINITE\"",
             "healthItem(\"HORIZON\""
         ]
