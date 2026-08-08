@@ -1,14 +1,13 @@
 import Foundation
-import NembraCore
 
 /// App-facing owner for one truthful Experiment One provenance life.
 ///
 /// SwiftUI may drive the public four-window observation session exposed here, but it never receives
-/// the package-internal capture admission, mutable recorder, or any caller-mintable authority token.
-/// After correlation completes, this coordinator issues the sealed admission itself, immediately
-/// starts a fresh controller scan (which clears the controller candidate catalog), retains the
-/// admission while the exact correlated UUID is rediscovered, and only then permits the foreground
-/// controller to consume that same one-shot admission.
+/// the package-internal capture admission, mutable recorder, caller-selected vehicle identity, or
+/// any caller-mintable authority token. After correlation completes, this coordinator issues the
+/// sealed admission itself, immediately starts a fresh controller scan (which clears the controller
+/// candidate catalog), retains the admission while the exact correlated UUID is rediscovered, and
+/// only then permits the foreground controller to consume that same one-shot admission.
 ///
 /// This is software callback/provenance authority only. A repeated CoreBluetooth UUID remains a
 /// correlated Bluetooth target, not authenticated AOVOPRO ES80 identity or RF emission-time proof.
@@ -41,12 +40,13 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    public init(
-        controller: ForegroundCoreBluetoothCaptureController,
-        vehicleIdentity: VehicleIdentity
-    ) throws {
+    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,
+    /// never injected by app/UI code merely to make a run eligible.
+    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
-        run = try PassiveBluetoothExperimentOneRun(vehicleIdentity: vehicleIdentity)
+        run = try PassiveBluetoothExperimentOneRun(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
     }
 
     /// Seals completed four-window correlation into this run's exact one-shot capture admission,
