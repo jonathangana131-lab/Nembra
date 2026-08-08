@@ -18,7 +18,7 @@ jobs:
         with:
           ref: parallel/es80-preh-observation-abort/chat-k4m7v
           fetch-depth: 0
-      - name: Merge exact #440 and reapply minimal recovery extensions
+      - name: Merge exact canonical #440 only
         shell: bash
         env:
           EXPECTED_PARENT_SHA: dd1075243c68b013f2e499902a0a1fb5836c2870
@@ -38,45 +38,23 @@ jobs:
           if [ "$status" -ne 0 ]; then
             conflicts="$(git diff --name-only --diff-filter=U)"
             printf 'Conflicts:\n%s\n' "$conflicts"
-            expected='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift'
-            test "$conflicts" = "$expected"
-            git checkout "$parent" -- "$expected"
-            git add "$expected"
+            while IFS= read -r path; do
+              case "$path" in
+                Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests.swift)
+                  git checkout "$parent" -- "$path"
+                  git add "$path"
+                  ;;
+                '') ;;
+                *)
+                  echo "Unexpected canonical conflict: $path" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$conflicts"
           fi
 
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift')
-          text = path.read_text()
-
-          def replace_once(old: str, new: str, label: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected 1 match, found {count}')
-              text = text.replace(old, new, 1)
-
-          replace_once(
-          '''    struct CommittedReadyEpoch: Equatable, Sendable {\n''',
-          '''    /// Producer-issued proof that this exact one-shot Ready admission was\n    /// rejected by the canonical authority fence before the recorder mutation body\n    /// executed. Its initializer is file-private so copied queue/authority scalars\n    /// cannot manufacture rollback authority.\n    struct ReadyRecorderMutationRejectionReceipt: Equatable, Sendable {\n        let queueCutoff: UInt64\n        let authority: PassiveCoreBluetoothArtifactAuthorityContext\n        let transactionRevision: UInt64\n        let transactionIdentity: UUID\n        let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext\n\n        fileprivate init(\n            decision: PassiveCoreBluetoothObservationBoundaryDecision,\n            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,\n            currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext\n        ) {\n            queueCutoff = decision.queueCutoff\n            authority = decision.authority\n            transactionRevision = transaction.revision\n            transactionIdentity = transaction.identity\n            self.currentAuthority = currentAuthority\n        }\n    }\n\n    enum ReadyRecorderMutationOutcome: Equatable, Sendable {\n        case recorded(RecordedReadyBoundary)\n        case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)\n    }\n\n    struct CommittedReadyEpoch: Equatable, Sendable {\n''',
-          'insert rejection proof types')
-
-          replace_once(
-          '''        var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }\n        var observedAtDate: Date { readyDecision.observedAtDate }\n''',
-          '''        var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }\n        var observedAtDate: Date { readyDecision.observedAtDate }\n        var transactionRevision: UInt64 { readyTransaction.revision }\n        var transactionIdentity: UUID { readyTransaction.identity }\n''',
-          'expose committed Ready transaction identity')
-
-          replace_once(
-          '''    func recordBoundary(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> RecordedReadyBoundary {\n        try mutationPermit.claim()\n        try await decision.recordBoundary(\n            on: recorder,\n            authorityFence: authorityFence\n        )\n\n        return RecordedReadyBoundary(\n            decision: decision,\n            transaction: transaction,\n            authorityFence: authorityFence\n        )\n    }\n\n    private init(\n''',
-          '''    func recordBoundary(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> RecordedReadyBoundary {\n        try mutationPermit.claim()\n        try await decision.recordBoundary(\n            on: recorder,\n            authorityFence: authorityFence\n        )\n\n        return RecordedReadyBoundary(\n            decision: decision,\n            transaction: transaction,\n            authorityFence: authorityFence\n        )\n    }\n\n    /// Uses the same shared one-shot mutation permit as `recordBoundary(on:)`. If\n    /// canonical authority was revoked before the recorder mutation body could run,\n    /// the admission is consumed and returns the only proof allowed to quarantine\n    /// that unresolved Ready transaction. All other failures still consume the\n    /// permit but issue no rollback authority.\n    func recordBoundaryWithMutationOutcome(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> ReadyRecorderMutationOutcome {\n        try mutationPermit.claim()\n        do {\n            try await decision.recordBoundary(\n                on: recorder,\n                authorityFence: authorityFence\n            )\n            return .recorded(\n                RecordedReadyBoundary(\n                    decision: decision,\n                    transaction: transaction,\n                    authorityFence: authorityFence\n                )\n            )\n        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {\n            switch error {\n            case let .authorityChanged(expected, current):\n                guard expected == decision.authority else { throw error }\n                return .rejectedBeforeMutation(\n                    ReadyRecorderMutationRejectionReceipt(\n                        decision: decision,\n                        transaction: transaction,\n                        currentAuthority: current\n                    )\n                )\n            case .nonAdvancingTransition:\n                throw error\n            }\n        }\n    }\n\n    private init(\n''',
-          'add one-shot recovery outcome')
-
-          path.write_text(text)
-          PY
-
           test -z "$(git diff --name-only --diff-filter=U)"
-          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift
-          git commit -m 'chore: reconcile pre-H recovery with one-shot boundary permits'
+          git commit -m 'chore: reconcile pre-H recovery onto exact #440 one-shot head'
           git rm .github/workflows/chat-k4m7v-reconcile-dd107.yml
-          git commit -m 'chore: remove dd107 reconciliation workflow'
+          git commit -m 'chore: remove canonical reconciliation workflow'
           git push origin HEAD:parallel/es80-preh-observation-abort/chat-k4m7v
