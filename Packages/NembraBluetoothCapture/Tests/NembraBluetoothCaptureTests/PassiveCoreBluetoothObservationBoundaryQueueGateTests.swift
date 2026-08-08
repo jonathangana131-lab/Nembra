@@ -207,7 +207,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         try gate.completeHorizonArtifactFreeze(horizon, currentAuthority: authority)
         #expect(gate.phase == .terminal(horizon))
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 5) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAfterTerminal = gate.resetForNewCaptureSession()
+        #expect(!resetAfterTerminal)
 
         let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: authority.targetSessionGeneration + 1,
