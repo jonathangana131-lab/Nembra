@@ -26,7 +26,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .sufficient)
-        #expect(assessment.isSufficient)
+        #expect(assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
         #expect(assessment.readyBoundary?.recordSequenceWatermark == 0)
         #expect(assessment.horizonBoundary?.recordSequenceWatermark == 0)
@@ -49,7 +49,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .insufficientDuration)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == 59_000_000_000)
     }
 
@@ -66,7 +66,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .ambiguousFiniteAcquisitionReady)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.readyBoundary == nil)
         #expect(assessment.horizonBoundary == horizon)
         #expect(assessment.observedDurationNanoseconds == nil)
@@ -83,7 +83,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .missingFiniteAcquisitionReady)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.readyBoundary == nil)
         #expect(assessment.horizonBoundary == horizon)
         #expect(assessment.observedDurationNanoseconds == nil)
@@ -100,7 +100,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .missingObservationHorizon)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.readyBoundary == ready)
         #expect(assessment.horizonBoundary == nil)
         #expect(assessment.observedDurationNanoseconds == nil)
@@ -131,7 +131,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .continuityBreakWithinWindow)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
         #expect(assessment.continuityBreakSequenceNumbers == [1])
     }
@@ -159,6 +159,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .sufficient)
+        #expect(assessment.isDurationSufficient)
         #expect(assessment.continuityBreakSequenceNumbers.isEmpty)
     }
 
@@ -174,7 +175,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .invalidMinimumDuration)
-        #expect(!assessment.isSufficient)
+        #expect(!assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == nil)
         #expect(assessment.readyBoundary == ready)
         #expect(assessment.horizonBoundary == horizon)
@@ -195,6 +196,7 @@ struct PassiveBluetoothObservationWindowDurationAssessmentTests {
         )
 
         #expect(assessment.status == .sufficient)
+        #expect(assessment.isDurationSufficient)
         #expect(assessment.observedDurationNanoseconds == 60_000_000_000)
     }
 
