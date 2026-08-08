@@ -88,6 +88,7 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
+- an operator-declared charger state of **Disconnected** for the fresh `ES80-FINGERPRINT-v1` run before OFF1, with the charger kept disconnected throughout Capture; this is a rider declaration, **not** charger state measured or sensed by Nembra;
 - any required stock-app/reference-marker setup;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
@@ -247,6 +248,7 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - the selected target/session changes unexpectedly;
 - acquisition never earns accepted Ready;
 - foreground integrity required by the recipe is lost;
+- the operator-declared charger-disconnected setup stops being true; stop the current experiment and restart from a fresh preflight only after the charger is disconnected again;
 - a discontinuity/authority transition invalidates the current recipe stage;
 - the accepted >=60-second post-Ready horizon cannot be proven;
 - Horizon/queue commit/immutable freeze cannot complete exactly;
