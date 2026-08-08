@@ -280,8 +280,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// Horizon begins. This is a recovery transition for an incomplete
     /// observation artifact, not a successful finalization path.
     ///
-    /// The caller must present the exact Ready transaction that established
-    /// `.observing`; stale/wrong transactions cannot reset another epoch.
+    /// The caller must present the exact Ready authority + queue cutoff that
+    /// established `.observing`; stale/wrong callers cannot reset another epoch.
+    /// These fields are exposed by the sealed boundary decision while its raw
+    /// queue transaction remains intentionally private.
     /// After abort, a later Ready is admitted only under a strictly newer
     /// `targetSessionGeneration`, mechanically requiring controller-level
     /// durable session/recorder rotation rather than reusing the abandoned
@@ -293,24 +295,26 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// accepted transaction/retirement contracts.
     @discardableResult
     mutating func abortObservationEpoch(
-        establishedBy readyTransaction: Transaction
+        expectedReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
+        expectedReadyQueueCutoff: UInt64
     ) throws -> ObservationEpochAbortReceipt {
         guard case .observing = phase else {
             throw StateError.invalidTransition
         }
-        guard let committedReadyTransaction,
-              committedReadyTransaction == readyTransaction else {
+        guard let committedReadyTransaction else {
             throw StateError.staleTransaction
         }
-        guard readyTransaction.boundaryKind == .finiteAcquisitionReady else {
+        guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,
+              committedReadyTransaction.authority == expectedReadyAuthority,
+              committedReadyTransaction.queueCutoff == expectedReadyQueueCutoff else {
             throw StateError.staleTransaction
         }
 
         let receipt = ObservationEpochAbortReceipt(
-            abandonedReadyTransaction: readyTransaction
+            abandonedReadyTransaction: committedReadyTransaction
         )
         abandonedTargetSessionGeneration =
-            readyTransaction.authority.targetSessionGeneration
+            committedReadyTransaction.authority.targetSessionGeneration
         self.committedReadyTransaction = nil
         phase = .awaitingReady
         return receipt

@@ -32,7 +32,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let oldReady = try committedReady(on: &gate)
 
-        let receipt = try gate.abortObservationEpoch(establishedBy: oldReady)
+        let receipt = try gate.abortObservationEpoch(
+            expectedReadyAuthority: oldReady.authority,
+            expectedReadyQueueCutoff: oldReady.queueCutoff
+        )
         #expect(receipt.abandonedReadyTransaction == oldReady)
         #expect(receipt.abandonedTargetSessionGeneration == authority.targetSessionGeneration)
         #expect(gate.phase == .awaitingReady)
@@ -69,7 +72,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
     func resetDoesNotEraseAbortFence() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let oldReady = try committedReady(on: &gate)
-        _ = try gate.abortObservationEpoch(establishedBy: oldReady)
+        _ = try gate.abortObservationEpoch(
+            expectedReadyAuthority: oldReady.authority,
+            expectedReadyQueueCutoff: oldReady.queueCutoff
+        )
 
         let resetAccepted = gate.resetForNewCaptureSession()
         #expect(resetAccepted)
@@ -94,7 +100,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
     func olderTargetSessionFailsClosed() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let oldReady = try committedReady(on: &gate)
-        _ = try gate.abortObservationEpoch(establishedBy: oldReady)
+        _ = try gate.abortObservationEpoch(
+            expectedReadyAuthority: oldReady.authority,
+            expectedReadyQueueCutoff: oldReady.queueCutoff
+        )
 
         let olderAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: authority.targetSessionGeneration - 1,
@@ -115,15 +124,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
     func staleReadyTransactionCannotAbortCurrentEpoch() throws {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let currentReady = try committedReady(on: &gate)
-        let stale = PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction(
-            boundaryKind: .finiteAcquisitionReady,
-            queueCutoff: currentReady.queueCutoff,
-            authority: currentReady.authority,
-            revision: currentReady.revision + 1
-        )
-
         let error = capturedAbortStateError {
-            try gate.abortObservationEpoch(establishedBy: stale)
+            try gate.abortObservationEpoch(
+                expectedReadyAuthority: currentReady.authority,
+                expectedReadyQueueCutoff: currentReady.queueCutoff + 1
+            )
         }
         #expect(error == .staleTransaction)
         #expect(gate.phase == .observing)
@@ -148,7 +153,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         )
         #expect(
             capturedAbortStateError {
-                try awaiting.abortObservationEpoch(establishedBy: fabricated)
+                try awaiting.abortObservationEpoch(
+                    expectedReadyAuthority: fabricated.authority,
+                    expectedReadyQueueCutoff: fabricated.queueCutoff
+                )
             } == .invalidTransition
         )
 
@@ -160,7 +168,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         )
         #expect(
             capturedAbortStateError {
-                try drainingReady.abortObservationEpoch(establishedBy: uncommittedReady)
+                try drainingReady.abortObservationEpoch(
+                    expectedReadyAuthority: uncommittedReady.authority,
+                    expectedReadyQueueCutoff: uncommittedReady.queueCutoff
+                )
             } == .invalidTransition
         )
         #expect(drainingReady.phase == .drainingReady(uncommittedReady))
@@ -175,7 +186,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         )
         #expect(
             capturedAbortStateError {
-                try drainingHorizon.abortObservationEpoch(establishedBy: committed)
+                try drainingHorizon.abortObservationEpoch(
+                    expectedReadyAuthority: committed.authority,
+                    expectedReadyQueueCutoff: committed.queueCutoff
+                )
             } == .invalidTransition
         )
         #expect(drainingHorizon.phase == .drainingHorizon(horizon))
@@ -199,7 +213,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
 
         #expect(
             capturedAbortStateError {
-                try gate.abortObservationEpoch(establishedBy: ready)
+                try gate.abortObservationEpoch(
+                    expectedReadyAuthority: ready.authority,
+                    expectedReadyQueueCutoff: ready.queueCutoff
+                )
             } == .invalidTransition
         )
         #expect(gate.phase == .horizonBoundaryRecorded(horizon))
@@ -210,7 +227,10 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests {
         )
         #expect(
             capturedAbortStateError {
-                try gate.abortObservationEpoch(establishedBy: ready)
+                try gate.abortObservationEpoch(
+                    expectedReadyAuthority: ready.authority,
+                    expectedReadyQueueCutoff: ready.queueCutoff
+                )
             } == .invalidTransition
         )
         #expect(gate.phase == .terminal(horizon))
