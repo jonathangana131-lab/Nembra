@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Invoke the canonical signed-field inspector without exposing the intended device ID in OS argv.
+"""Invoke the canonical signed-field inspector through private inputs and one frozen IPA subject.
 
 The intended-device identifier is verification-only input. This wrapper accepts only a path to a
 private one-value file, reads the identifier inside this Python process, and calls the incumbent
 `es80_signed_field_artifact_evidence.py` module directly with an in-memory argument list. The raw
 identifier is never placed in this process's command line, environment, artifact names, or output.
+
+Before canonical inspection begins, the candidate IPA is copied through one no-follow descriptor
+into a private attempt-local snapshot. That snapshot remains the sole IPA pathname visible to the
+canonical inspector for digesting, extraction/signing/provisioning inspection, and retained evidence
+publication. Later mutation or replacement of the caller-owned IPA path therefore cannot make field
+evidence describe bytes different from the bytes the production inspection actually consumed.
 
 This is still evidence production only. It cannot authorize physical Experiment One.
 """
@@ -18,29 +24,43 @@ import os
 import stat
 import sys
 import tempfile
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
+from typing import Iterator
 
 MAX_IDENTIFIER_BYTES = 128
 INSPECTOR_NAME = "es80_signed_field_artifact_evidence.py"
+SNAPSHOT_CHUNK_BYTES = 1024 * 1024
 
 
 class PrivateInputError(RuntimeError):
     pass
 
 
-def read_private_identifier(path: Path) -> str:
-    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
+def _no_follow_read_flags() -> int:
     if not hasattr(os, "O_NOFOLLOW"):
-        raise PrivateInputError("this platform cannot enforce no-follow private verification input")
-
+        raise PrivateInputError("this platform cannot enforce no-follow private input")
     flags = os.O_RDONLY | os.O_NOFOLLOW
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
+    return flags
 
+
+def _source_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def read_private_identifier(path: Path) -> str:
+    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(path, _no_follow_read_flags())
     except OSError as exc:
         raise PrivateInputError("intended-device verification file is not a readable regular file") from exc
 
@@ -72,6 +92,69 @@ def read_private_identifier(path: Path) -> str:
     if len(value.encode("utf-8")) > MAX_IDENTIFIER_BYTES:
         raise PrivateInputError("intended-device verification input exceeds the bounded size")
     return value
+
+
+@contextmanager
+def private_ipa_snapshot(path: Path) -> Iterator[Path]:
+    """Freeze the caller's IPA bytes into the sole private subject used by production inspection."""
+    try:
+        source_descriptor = os.open(path, _no_follow_read_flags())
+    except OSError as exc:
+        raise PrivateInputError("signed field candidate IPA is not a readable regular file") from exc
+
+    try:
+        before = os.fstat(source_descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise PrivateInputError("signed field candidate IPA must be one regular non-symlink file")
+        if before.st_size < 1:
+            raise PrivateInputError("signed field candidate IPA must not be empty")
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-signed-field-subject-") as temporary:
+            snapshot = Path(temporary) / "inspection-subject.ipa"
+            destination_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_CLOEXEC"):
+                destination_flags |= os.O_CLOEXEC
+            try:
+                destination_descriptor = os.open(snapshot, destination_flags, 0o600)
+            except OSError as exc:
+                raise PrivateInputError("private signed field candidate snapshot could not be created") from exc
+
+            copied = 0
+            try:
+                while True:
+                    chunk = os.read(source_descriptor, SNAPSHOT_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    view = memoryview(chunk)
+                    while view:
+                        written = os.write(destination_descriptor, view)
+                        if written <= 0:
+                            raise PrivateInputError(
+                                "signed field candidate IPA snapshot write made no progress"
+                            )
+                        copied += written
+                        view = view[written:]
+                os.fsync(destination_descriptor)
+            except OSError as exc:
+                raise PrivateInputError("signed field candidate IPA could not be snapshotted privately") from exc
+            finally:
+                os.close(destination_descriptor)
+
+            after = os.fstat(source_descriptor)
+            if _source_identity(after) != _source_identity(before) or copied != before.st_size:
+                raise PrivateInputError(
+                    "signed field candidate IPA changed while its exact subject was frozen"
+                )
+
+            snapshot.chmod(0o400)
+            snapshot_metadata = snapshot.lstat()
+            if not stat.S_ISREG(snapshot_metadata.st_mode) or stat.S_ISLNK(snapshot_metadata.st_mode):
+                raise PrivateInputError("private signed field candidate snapshot is not one regular file")
+            if snapshot_metadata.st_size != copied:
+                raise PrivateInputError("private signed field candidate snapshot has an unexpected size")
+            yield snapshot
+    finally:
+        os.close(source_descriptor)
 
 
 def load_canonical_inspector() -> ModuleType:
@@ -113,19 +196,21 @@ def run_inspector(args: argparse.Namespace) -> int:
     intended_device_identifier = read_private_identifier(args.intended_device_udid_file)
     inspector = load_canonical_inspector()
 
-    # The raw identifier exists only in this process's memory. `main(argv)` consumes this explicit
-    # list directly; `sys.argv` and the OS process table continue to contain only the private-file path.
-    inspector_arguments = [
-        "--ipa",
-        str(args.ipa),
-        "--output-dir",
-        str(args.output_dir),
-        "--expected-source-sha",
-        args.expected_source_sha,
-        "--intended-device-udid",
-        intended_device_identifier,
-    ]
-    return invoke_inspector_redacted(inspector, inspector_arguments)
+    with private_ipa_snapshot(args.ipa) as ipa_snapshot:
+        # The raw identifier exists only in this process's memory. `main(argv)` consumes this explicit
+        # list directly, while the inspector sees only the frozen private IPA subject—not the mutable
+        # caller-owned candidate path. The OS process table still carries neither private raw value.
+        inspector_arguments = [
+            "--ipa",
+            str(ipa_snapshot),
+            "--output-dir",
+            str(args.output_dir),
+            "--expected-source-sha",
+            args.expected_source_sha,
+            "--intended-device-udid",
+            intended_device_identifier,
+        ]
+        return invoke_inspector_redacted(inspector, inspector_arguments)
 
 
 def self_test() -> None:
@@ -180,6 +265,32 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("oversized verification input must fail closed")
+
+        original_ipa = b"exact signed candidate bytes"
+        replacement_ipa = b"different bytes placed at caller path later"
+        ipa_path = root / "candidate.ipa"
+        ipa_path.write_bytes(original_ipa)
+        with private_ipa_snapshot(ipa_path) as snapshot:
+            assert snapshot != ipa_path
+            assert snapshot.read_bytes() == original_ipa
+            assert stat.S_IMODE(snapshot.stat().st_mode) == 0o400
+            ipa_path.write_bytes(replacement_ipa)
+            assert snapshot.read_bytes() == original_ipa
+        assert not snapshot.exists()
+
+        ipa_symlink = root / "candidate-link.ipa"
+        try:
+            ipa_symlink.symlink_to(ipa_path)
+        except (OSError, NotImplementedError):
+            ipa_symlink = None
+        if ipa_symlink is not None:
+            try:
+                with private_ipa_snapshot(ipa_symlink):
+                    pass
+            except PrivateInputError:
+                pass
+            else:
+                raise AssertionError("symlink IPA input must fail closed")
 
     class ExplodingInspector:
         def main(self, argv: list[str]) -> int:
