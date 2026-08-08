@@ -4,8 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
-
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/Xcode27Simulator}"
 DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
@@ -376,10 +374,12 @@ printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
 
 # Bind every retained visual/test attachment byte to this exact Simulator build without promoting
-# screenshots into physical or protocol authority. The manifest is deliberately external to the app
-# and can be independently re-hashed after the Actions artifact is downloaded for visual review.
+# screenshots into physical or protocol authority. Every accepted evidence path is traversed from
+# one no-follow directory descriptor and every retained file is hashed from one no-follow file
+# descriptor whose identity is re-proved after the read. The manifest is external to the app and can
+# be independently re-hashed after the Actions artifact is downloaded for visual review.
 VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"
-python3 - \
+VISUAL_EVIDENCE_MANIFEST_SHA256="$(python3 - \
   "$VISUAL_EVIDENCE_MANIFEST" \
   "$ARTIFACTS_DIR" \
   "$CAPTURE_BUILD_IDENTIFIER" \
@@ -389,9 +389,9 @@ python3 - \
 import hashlib
 import json
 import os
+from pathlib import Path
 import stat
 import sys
-from pathlib import Path
 
 (
     manifest_path_text,
@@ -402,175 +402,157 @@ from pathlib import Path
     external_build_record_sha256,
 ) = sys.argv[1:]
 
-artifacts_root = Path(artifacts_root_text).resolve()
-manifest_path = Path(manifest_path_text).resolve()
+O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+if O_DIRECTORY == 0 or O_NOFOLLOW == 0:
+    raise SystemExit("visual evidence custody requires O_DIRECTORY and O_NOFOLLOW")
 
-if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
-    raise SystemExit("platform cannot enforce no-follow visual-evidence descriptor custody")
+artifacts_root = Path(artifacts_root_text)
+manifest_name = Path(manifest_path_text).name
+if manifest_name != "NembraCaptureSimulatorVisualEvidence.json":
+    raise SystemExit("unexpected Simulator visual evidence manifest filename")
 
-_DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-_FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW
-if hasattr(os, "O_CLOEXEC"):
-    _DIRECTORY_FLAGS |= os.O_CLOEXEC
-    _FILE_FLAGS |= os.O_CLOEXEC
+DIRECTORY_FLAGS = os.O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | O_NOFOLLOW | O_CLOEXEC
 
 
-def stable_identity(metadata: os.stat_result) -> tuple[int, ...]:
+def stable_identity(info: os.stat_result) -> tuple[int, int, int, int, int, int, int, int]:
     return (
-        metadata.st_dev,
-        metadata.st_ino,
-        metadata.st_mode,
-        metadata.st_uid,
-        metadata.st_gid,
-        metadata.st_nlink,
-        metadata.st_size,
-        metadata.st_mtime_ns,
-        metadata.st_ctime_ns,
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_uid,
+        info.st_gid,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
     )
 
 
-def hash_regular_file(parent_fd: int, name: str) -> tuple[int, str]:
+def digest_regular_file(parent_fd: int, name: str) -> tuple[int, str]:
     try:
-        descriptor = os.open(name, _FILE_FLAGS, dir_fd=parent_fd)
+        descriptor = os.open(name, FILE_FLAGS, dir_fd=parent_fd)
     except OSError as exc:
         raise SystemExit(f"could not open retained visual evidence without following links: {name}") from exc
-
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
-            raise SystemExit(f"visual evidence must be one non-empty regular file: {name}")
+        if not stat.S_ISREG(before.st_mode):
+            raise SystemExit(f"retained visual evidence must be a regular file: {name}")
+        if before.st_size <= 0:
+            raise SystemExit(f"visual evidence manifest refuses empty retained evidence files: {name}")
 
         digest = hashlib.sha256()
-        byte_count = 0
+        bytes_read = 0
         with os.fdopen(os.dup(descriptor), "rb", closefd=True) as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                bytes_read += len(chunk)
                 digest.update(chunk)
-                byte_count += len(chunk)
-
         after = os.fstat(descriptor)
-        if stable_identity(before) != stable_identity(after) or byte_count != before.st_size:
-            raise SystemExit(f"visual evidence changed while descriptor-bound bytes were hashed: {name}")
-        return byte_count, digest.hexdigest()
+
+        if stable_identity(before) != stable_identity(after) or bytes_read != before.st_size:
+            raise SystemExit(f"retained visual evidence changed while being hashed: {name}")
+        return before.st_size, digest.hexdigest()
     finally:
         os.close(descriptor)
 
 
 def collect_directory(
-    parent_fd: int,
-    name: str,
-    relative_prefix: str,
+    directory_fd: int,
+    relative_parts: tuple[str, ...],
     artifact_kind: str,
-) -> list[dict[str, object]]:
-    try:
-        directory_fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent_fd)
-    except FileNotFoundError:
-        return []
-    except OSError as exc:
-        raise SystemExit(f"could not open retained visual-evidence directory safely: {relative_prefix}") from exc
+    entries: list[dict[str, object]],
+) -> None:
+    for name in sorted(os.listdir(directory_fd)):
+        if name in {".", ".."} or "/" in name or "\x00" in name:
+            raise SystemExit(f"invalid retained visual evidence path component: {name!r}")
 
-    try:
-        before = os.fstat(directory_fd)
-        if not stat.S_ISDIR(before.st_mode):
-            raise SystemExit(f"visual-evidence ancestry is not a directory: {relative_prefix}")
+        try:
+            child_directory_fd = os.open(name, DIRECTORY_FLAGS, dir_fd=directory_fd)
+        except NotADirectoryError:
+            child_directory_fd = -1
+        except OSError as exc:
+            raise SystemExit(f"retained visual evidence directory entry is not safely traversable: {name}") from exc
 
-        records: list[dict[str, object]] = []
-        for entry_name in sorted(os.listdir(directory_fd)):
+        if child_directory_fd >= 0:
             try:
-                entry_metadata = os.stat(
-                    entry_name,
-                    dir_fd=directory_fd,
-                    follow_symlinks=False,
+                collect_directory(
+                    child_directory_fd,
+                    (*relative_parts, name),
+                    artifact_kind,
+                    entries,
                 )
-            except OSError as exc:
-                raise SystemExit(f"could not inspect retained visual evidence: {relative_prefix}/{entry_name}") from exc
+            finally:
+                os.close(child_directory_fd)
+            continue
 
-            relative_path = f"{relative_prefix}/{entry_name}"
-            if stat.S_ISLNK(entry_metadata.st_mode):
-                raise SystemExit(f"visual evidence must not contain symlinks: {relative_path}")
-            if stat.S_ISDIR(entry_metadata.st_mode):
-                records.extend(
-                    collect_directory(
-                        directory_fd,
-                        entry_name,
-                        relative_path,
-                        artifact_kind,
-                    )
-                )
-                continue
-            if not stat.S_ISREG(entry_metadata.st_mode):
-                raise SystemExit(f"visual evidence contains unsupported file type: {relative_path}")
-
-            byte_count, digest = hash_regular_file(directory_fd, entry_name)
-            records.append(
-                {
-                    "artifactKind": artifact_kind,
-                    "relativePath": relative_path,
-                    "byteCount": byte_count,
-                    "sha256": digest,
-                }
-            )
-
-        after = os.fstat(directory_fd)
-        if stable_identity(before) != stable_identity(after):
-            raise SystemExit(f"visual-evidence directory changed during enumeration: {relative_prefix}")
-        return records
-    finally:
-        os.close(directory_fd)
+        byte_count, digest = digest_regular_file(directory_fd, name)
+        entries.append({
+            "artifactKind": artifact_kind,
+            "relativePath": "/".join((*relative_parts, name)),
+            "byteCount": byte_count,
+            "sha256": digest,
+        })
 
 
 try:
-    artifacts_fd = os.open(artifacts_root, _DIRECTORY_FLAGS)
+    artifacts_fd = os.open(artifacts_root, DIRECTORY_FLAGS)
 except OSError as exc:
-    raise SystemExit("could not open exact Simulator artifact root without following links") from exc
+    raise SystemExit("could not open Simulator artifact root with no-follow directory custody") from exc
 
-entries = []
 try:
-    root_before = os.fstat(artifacts_fd)
-    if not stat.S_ISDIR(root_before.st_mode):
-        raise SystemExit("Simulator artifact root is not one directory")
-
+    entries: list[dict[str, object]] = []
     for artifact_kind, relative_root in (
         ("simulatorScreenshot", "screenshots"),
         ("xctestAttachment", "test-attachments"),
     ):
-        entries.extend(
-            collect_directory(
-                artifacts_fd,
-                relative_root,
-                relative_root,
-                artifact_kind,
-            )
-        )
+        try:
+            root_fd = os.open(relative_root, DIRECTORY_FLAGS, dir_fd=artifacts_fd)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise SystemExit(f"could not open retained visual evidence directory safely: {relative_root}") from exc
+        try:
+            collect_directory(root_fd, (relative_root,), artifact_kind, entries)
+        finally:
+            os.close(root_fd)
 
-    root_after = os.fstat(artifacts_fd)
-    if stable_identity(root_before) != stable_identity(root_after):
-        raise SystemExit("Simulator artifact root changed during visual-evidence enumeration")
+    entries.sort(key=lambda entry: (str(entry["artifactKind"]), str(entry["relativePath"])))
+    screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
+    if not screenshot_entries:
+        raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
+
+    manifest = {
+        "schemaVersion": 1,
+        "authority": "simulator-visual-evidence-not-physical-authorization",
+        "buildIdentifier": build_identifier,
+        "buildInstanceID": build_instance_id,
+        "sourceCommitSHA": source_commit_sha,
+        "externalBuildRecordSHA256": external_build_record_sha256,
+        "files": entries,
+    }
+    manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    manifest_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_NOFOLLOW | O_CLOEXEC
+    try:
+        manifest_fd = os.open(manifest_name, manifest_flags, 0o600, dir_fd=artifacts_fd)
+    except OSError as exc:
+        raise SystemExit("could not publish Simulator visual evidence manifest without replacement") from exc
+    try:
+        with os.fdopen(os.dup(manifest_fd), "wb", closefd=True) as handle:
+            handle.write(manifest_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        manifest_after = os.fstat(manifest_fd)
+        if not stat.S_ISREG(manifest_after.st_mode) or manifest_after.st_size != len(manifest_bytes):
+            raise SystemExit("published Simulator visual evidence manifest identity is invalid")
+    finally:
+        os.close(manifest_fd)
+
+    print(hashlib.sha256(manifest_bytes).hexdigest())
 finally:
     os.close(artifacts_fd)
-
-entries.sort(key=lambda entry: (str(entry["relativePath"]), str(entry["artifactKind"])))
-
-screenshot_entries = [entry for entry in entries if entry["artifactKind"] == "simulatorScreenshot"]
-if not screenshot_entries:
-    raise SystemExit("visual evidence manifest requires at least one retained Simulator screenshot")
-if any(entry["byteCount"] <= 0 for entry in entries):
-    raise SystemExit("visual evidence manifest refuses empty retained evidence files")
-
-manifest = {
-    "schemaVersion": 1,
-    "authority": "simulator-visual-evidence-not-physical-authorization",
-    "buildIdentifier": build_identifier,
-    "buildInstanceID": build_instance_id,
-    "sourceCommitSHA": source_commit_sha,
-    "externalBuildRecordSHA256": external_build_record_sha256,
-    "files": entries,
-}
-manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-with manifest_path.open("xb") as handle:
-    handle.write(manifest_bytes)
 PY
-
-VISUAL_EVIDENCE_MANIFEST_SHA256="$(shasum -a 256 "$VISUAL_EVIDENCE_MANIFEST" | awk '{print $1}')"
+)"
 if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
   exit 23
