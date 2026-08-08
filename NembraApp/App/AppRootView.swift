@@ -190,12 +190,19 @@ private struct RideHistoryView: View {
                     Spacer()
                     Text("\(history.records.count)")
                         .monospacedDigit()
-                        .accessibilityLabel("\(history.records.count) saved rides")
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(savedRidesAccessibilityLabel)
             }
         }
         .listStyle(.plain)
         .accessibilityIdentifier("rides.history")
+    }
+
+    private var savedRidesAccessibilityLabel: String {
+        history.records.count == 1
+            ? "1 saved ride"
+            : "\(history.records.count) saved rides"
     }
 }
 
@@ -211,7 +218,7 @@ private struct RideHistoryRowView: View {
                     distanceBlock(alignment: .leading)
                 }
             } else {
-                HStack(alignment: .center, spacing: 18) {
+                HStack(alignment: .center, spacing: 16) {
                     identityBlock
                     Spacer(minLength: 16)
                     distanceBlock(alignment: .trailing)
@@ -225,7 +232,7 @@ private struct RideHistoryRowView: View {
     }
 
     private var identityBlock: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .omitted))
                 .font(.headline)
                 .foregroundStyle(.primary)
@@ -246,7 +253,7 @@ private struct RideHistoryRowView: View {
 
     @ViewBuilder
     private func distanceBlock(alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 5) {
+        VStack(alignment: alignment, spacing: 4) {
             if let odometerDeltaKilometers {
                 distanceLine(
                     label: "Scooter",
@@ -272,7 +279,7 @@ private struct RideHistoryRowView: View {
     }
 
     private func distanceLine(label: String, value: String) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -352,7 +359,7 @@ private struct RideHistoryDetailView: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -365,6 +372,8 @@ private struct RideHistoryDetailView: View {
                 }
             }
             .padding(.vertical, 4)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
             .accessibilityElement(children: .combine)
         }
     }
@@ -376,7 +385,7 @@ private struct RideHistoryDetailView: View {
                 if geometry.hasDrawablePath {
                     RideRouteMapView(geometry: geometry)
                         .frame(height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Recorded ride route")
                         .accessibilityValue(routeAccessibilityValue(geometry))
@@ -459,7 +468,9 @@ private struct RideHistoryDetailView: View {
         } header: {
             Text("Distance")
         } footer: {
-            Text("Recorded sources stay separate when Nembra cannot prove one final ride distance.")
+            if hasMultipleDistanceSources {
+                Text("Scooter and GPS are recorded independently.")
+            }
         }
     }
 
@@ -479,8 +490,6 @@ private struct RideHistoryDetailView: View {
                     Text(isRecovered ? "Recovered after relaunch" : "Uninterrupted process")
                 }
             }
-        } footer: {
-            Text("Recording details preserve source and continuity truth without changing the ride summary above.")
         }
     }
 
@@ -531,6 +540,10 @@ private struct RideHistoryDetailView: View {
         record.evidence.continuity == .recoveredCheckpoint
     }
 
+    private var hasMultipleDistanceSources: Bool {
+        odometerDeltaKilometers != nil && record.evidence.qualityScreenedGPSDistanceMeters > 0
+    }
+
     private var odometerDeltaKilometers: Double? {
         guard let start = record.evidence.startingOdometerKilometers,
               let end = record.evidence.endingOdometerKilometers else {
@@ -551,6 +564,8 @@ private struct RideRouteMapView: View {
         Map(initialPosition: .region(routeRegion)) {
             ForEach(geometry.segments, id: \.index) { segment in
                 if segment.points.count >= 2 {
+                    MapPolyline(coordinates: coordinates(for: segment))
+                        .stroke(Color(uiColor: .systemBackground), lineWidth: 8)
                     MapPolyline(coordinates: coordinates(for: segment))
                         .stroke(.primary, lineWidth: 4)
                 }
