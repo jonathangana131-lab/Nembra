@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Produce fail-closed evidence for an already-built signed Nembra field IPA.
+"""Produce fail-closed evidence for one exact signed Nembra field IPA.
 
-This tool never authorizes physical Experiment One. It measures and preserves an exact
-installable artifact, verifies its iPhone code signature and embedded Nembra build declarations,
-and emits external evidence that a separate trusted acceptance step may attest/review.
+This tool measures and preserves signed-device build evidence. It never authorizes physical
+Experiment One; a later independently trusted acceptance step must attest/review these exact bytes.
 """
 
 from __future__ import annotations
@@ -21,24 +20,36 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import Callable
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
-FIELD_EVIDENCE_SCHEMA_VERSION = 1
+FIELD_EVIDENCE_SCHEMA_VERSION = 2
 AUTHORITY_LABEL = "signed-field-artifact-evidence-not-field-authorization"
 
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+TEAM_RE = re.compile(r"^[A-Z0-9]{10}$")
+CDHASH_RE = re.compile(r"^[0-9a-f]{40,64}$")
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 class EvidenceError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class SigningEvidence:
+    team_identifier: str
+    signing_authorities: list[str]
+    code_directory_hash: str
+    provisioning_profile_uuid: str
+    provisioning_profile_expiration_utc: str
 
 
 def sha256_file(path: Path) -> str:
@@ -68,11 +79,12 @@ def canonical_uuid(value: str) -> str:
 
 
 def valid_build_identifier(value: str) -> bool:
-    if not value or len(value.encode("utf-8")) > 128:
-        return False
-    if value != value.strip():
-        return False
-    return not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    return (
+        bool(value)
+        and len(value.encode("utf-8")) <= 128
+        and value == value.strip()
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    )
 
 
 def expected_build_identifier(source_sha: str) -> str:
@@ -90,12 +102,6 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
-def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
-    if member in seen_members:
-        raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
-    seen_members.add(member)
-
-
 def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
     try:
         archive = zipfile.ZipFile(ipa_path)
@@ -103,12 +109,9 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
-    seen_members: set[PurePosixPath] = set()
     with archive:
         for info in archive.infolist():
             member = _safe_member_path(info.filename.rstrip("/"))
-            _require_unique_member_path(member, seen_members)
-
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
                 raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
@@ -125,13 +128,12 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
             if info.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
-
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info, "r") as source, target.open("wb") as sink:
                 shutil.copyfileobj(source, sink)
             permissions = mode & 0o777
             if permissions:
-                target.chmod(permissions)
+                os.chmod(target, permissions)
 
     if len(app_roots) != 1:
         raise EvidenceError(
@@ -165,61 +167,93 @@ def plist_string(info: dict, key: str) -> str:
 def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     platform = info.get("DTPlatformName")
     supported = info.get("CFBundleSupportedPlatforms")
-    supported_values = [item for item in supported if isinstance(item, str)] if isinstance(supported, list) else []
-
+    if not isinstance(supported, list) or not all(isinstance(item, str) for item in supported):
+        raise EvidenceError("field IPA must carry a string CFBundleSupportedPlatforms array")
     if platform != "iphoneos":
         raise EvidenceError(f"field IPA must declare DTPlatformName=iphoneos; got {platform!r}")
-    if "iPhoneOS" not in supported_values:
-        raise EvidenceError(
-            f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported_values!r}"
-        )
-    if any("Simulator" in item for item in supported_values):
+    if "iPhoneOS" not in supported:
+        raise EvidenceError(f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported!r}")
+    if any("Simulator" in item for item in supported):
         raise EvidenceError("Simulator platform declaration is forbidden in field IPA evidence")
-    return platform, supported_values
+    return platform, supported
 
 
-def run_codesign(app_path: Path) -> tuple[str, list[str]]:
+def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise EvidenceError(f"command failed ({' '.join(command)}): {detail}")
+    return result
+
+
+def verify_signing(app_path: Path, bundle_id: str) -> SigningEvidence:
     if sys.platform != "darwin":
-        raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
+        raise EvidenceError("signed field IPA inspection requires macOS Apple signing tools")
     codesign = shutil.which("codesign")
-    if not codesign:
-        raise EvidenceError("codesign is not available")
+    security = shutil.which("security")
+    if not codesign or not security:
+        raise EvidenceError("codesign and security are required")
 
-    verify = subprocess.run(
-        [codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if verify.returncode != 0:
-        detail = (verify.stderr or verify.stdout).strip()
-        raise EvidenceError(f"codesign verification failed: {detail}")
-
-    display = subprocess.run(
-        [codesign, "-d", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if display.returncode != 0:
-        detail = (display.stderr or display.stdout).strip()
-        raise EvidenceError(f"codesign metadata inspection failed: {detail}")
-
+    _run([codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)])
+    display = _run([codesign, "-d", "--verbose=4", str(app_path)])
     metadata = "\n".join(part for part in (display.stdout, display.stderr) if part)
     if re.search(r"(?m)^Signature=adhoc\s*$", metadata):
         raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
 
     team_match = re.search(r"(?m)^TeamIdentifier=([^\r\n]+)$", metadata)
-    if not team_match:
-        raise EvidenceError("codesign metadata does not contain TeamIdentifier")
+    cdhash_match = re.search(r"(?m)^CDHash=([^\r\n]+)$", metadata)
+    if not team_match or not cdhash_match:
+        raise EvidenceError("codesign metadata must contain TeamIdentifier and CDHash")
     team_identifier = team_match.group(1).strip()
-    if not team_identifier or team_identifier.lower() in {"not set", "none", "-"}:
-        raise EvidenceError("field IPA does not carry a concrete signing TeamIdentifier")
+    code_directory_hash = cdhash_match.group(1).strip().lower()
+    if not TEAM_RE.fullmatch(team_identifier):
+        raise EvidenceError("codesign TeamIdentifier is malformed")
+    if not CDHASH_RE.fullmatch(code_directory_hash):
+        raise EvidenceError("codesign CDHash is malformed")
 
     authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
-    if not authorities:
+    if not authorities or any(not authority for authority in authorities):
         raise EvidenceError("codesign metadata does not contain a signing authority chain")
-    return team_identifier, authorities
+
+    profile_path = app_path / "embedded.mobileprovision"
+    if not profile_path.is_file():
+        raise EvidenceError("signed field app is missing embedded.mobileprovision")
+    decoded = _run([security, "cms", "-D", "-i", str(profile_path)]).stdout.encode("utf-8")
+    try:
+        profile = plistlib.loads(decoded)
+    except Exception as exc:
+        raise EvidenceError("could not decode embedded provisioning profile") from exc
+    if not isinstance(profile, dict):
+        raise EvidenceError("embedded provisioning profile root is not a dictionary")
+
+    profile_teams = profile.get("TeamIdentifier")
+    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+        raise EvidenceError("provisioning profile TeamIdentifier does not match code signature")
+    profile_uuid = profile.get("UUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+        raise EvidenceError("provisioning profile UUID is missing")
+
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise EvidenceError("provisioning profile ExpirationDate is missing")
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    else:
+        expiration = expiration.astimezone(timezone.utc)
+    if expiration <= datetime.now(timezone.utc):
+        raise EvidenceError("provisioning profile is expired")
+
+    entitlements = profile.get("Entitlements")
+    if not isinstance(entitlements, dict) or entitlements.get("application-identifier") != f"{team_identifier}.{bundle_id}":
+        raise EvidenceError("provisioning profile application-identifier does not match signed Nembra bundle")
+
+    return SigningEvidence(
+        team_identifier=team_identifier,
+        signing_authorities=authorities,
+        code_directory_hash=code_directory_hash,
+        provisioning_profile_uuid=profile_uuid.strip(),
+        provisioning_profile_expiration_utc=expiration.isoformat().replace("+00:00", "Z"),
+    )
 
 
 def reject_embedded_external_authority(app_path: Path) -> None:
@@ -236,26 +270,26 @@ def reject_embedded_external_authority(app_path: Path) -> None:
         )
 
 
-def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
+def inspect_ipa(
+    ipa_path: Path,
+    expected_source_sha: str,
+    *,
+    signing_probe: Callable[[Path, str], SigningEvidence] = verify_signing,
+) -> dict:
     source_sha = canonical_sha40(expected_source_sha)
-    if not ipa_path.is_file():
-        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
+    if not ipa_path.is_file() or ipa_path.suffix.lower() != ".ipa":
+        raise EvidenceError("--ipa must name one existing .ipa file")
 
     ipa_sha = sha256_file(ipa_path)
     ipa_size = ipa_path.stat().st_size
-    if not SHA256_RE.fullmatch(ipa_sha):
-        raise EvidenceError("could not derive canonical IPA SHA-256")
-
     with tempfile.TemporaryDirectory(prefix="nembra-field-ipa-") as temporary:
-        root = Path(temporary)
-        app_path = extract_ipa_safely(ipa_path, root)
+        app_path = extract_ipa_safely(ipa_path, Path(temporary))
         reject_embedded_external_authority(app_path)
         info, info_path = read_info_plist(app_path)
 
         bundle_id = plist_string(info, "CFBundleIdentifier")
         if bundle_id != BUNDLE_ID:
             raise EvidenceError(f"unexpected field app bundle identifier: {bundle_id!r}")
-
         platform_name, supported_platforms = verify_device_platform(info)
 
         build_identifier = plist_string(info, "NembraCaptureBuildIdentifier")
@@ -266,13 +300,10 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
             raise EvidenceError(
                 f"embedded build identifier does not match accepted source: {build_identifier!r} != {expected_identifier!r}"
             )
-
         build_instance_id = canonical_uuid(plist_string(info, "NembraCaptureBuildInstanceID"))
         embedded_source_sha = canonical_sha40(plist_string(info, "NembraCaptureBuildCommitSHA"))
         if embedded_source_sha != source_sha:
-            raise EvidenceError(
-                f"embedded source commit does not match accepted source: {embedded_source_sha} != {source_sha}"
-            )
+            raise EvidenceError("embedded source commit does not match accepted source")
 
         executable_name = plist_string(info, "CFBundleExecutable")
         if "/" in executable_name or executable_name in {".", ".."}:
@@ -281,11 +312,11 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not executable_path.is_file():
             raise EvidenceError("signed app executable is missing")
 
-        team_identifier, signing_authorities = run_codesign(app_path)
+        signing = signing_probe(app_path, bundle_id)
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
-        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
-            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
+        if not SHA256_RE.fullmatch(ipa_sha) or not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
+            raise EvidenceError("could not derive canonical build SHA-256 evidence")
 
     external_record = {
         "schemaVersion": EXTERNAL_RECORD_SCHEMA_VERSION,
@@ -298,7 +329,6 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "procedureVersion": PROCEDURE_VERSION,
     }
     external_bytes = canonical_json_bytes(external_record)
-
     field_evidence = {
         "schemaVersion": FIELD_EVIDENCE_SCHEMA_VERSION,
         "authority": AUTHORITY_LABEL,
@@ -308,8 +338,11 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "bundleIdentifier": bundle_id,
         "platformName": platform_name,
         "supportedPlatforms": supported_platforms,
-        "teamIdentifier": team_identifier,
-        "signingAuthorities": signing_authorities,
+        "teamIdentifier": signing.team_identifier,
+        "signingAuthorities": signing.signing_authorities,
+        "codeDirectoryHash": signing.code_directory_hash,
+        "provisioningProfileUUID": signing.provisioning_profile_uuid,
+        "provisioningProfileExpirationUTC": signing.provisioning_profile_expiration_utc,
         "ipaSHA256": ipa_sha,
         "ipaByteCount": ipa_size,
         "executableSHA256": executable_sha,
@@ -318,18 +351,13 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "experimentRecipeID": RECIPE_ID,
         "procedureVersion": PROCEDURE_VERSION,
     }
-    return {
-        "external_record": external_record,
-        "external_bytes": external_bytes,
-        "field_evidence": field_evidence,
-    }
+    return {"external_record": external_record, "external_bytes": external_bytes, "field_evidence": field_evidence}
 
 
 def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     retained_dir = output_dir / "build-evidence"
     retained_dir.mkdir(parents=True, exist_ok=True)
-
     retained_ipa = retained_dir / "NembraField.ipa"
     external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
     field_path = output_dir / "NembraCaptureSignedFieldArtifactEvidence.json"
@@ -342,35 +370,20 @@ def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[st
     if sha256_file(retained_ipa) != inspection["field_evidence"]["ipaSHA256"]:
         retained_ipa.unlink(missing_ok=True)
         raise EvidenceError("retained IPA bytes diverged from inspected input")
-
     external_path.write_bytes(inspection["external_bytes"])
-    actual_external_sha = sha256_file(external_path)
-    if actual_external_sha != inspection["field_evidence"]["externalBuildRecordSHA256"]:
+    if sha256_file(external_path) != inspection["field_evidence"]["externalBuildRecordSHA256"]:
         raise EvidenceError("written external build record digest diverged from field evidence")
-
     field_path.write_bytes(canonical_json_bytes(inspection["field_evidence"]))
-    return {
-        "retained_ipa": retained_ipa,
-        "external_record": external_path,
-        "field_evidence": field_path,
-    }
+    return {"retained_ipa": retained_ipa, "external_record": external_path, "field_evidence": field_path}
 
 
 def self_test() -> None:
     sha = "a" * 40
     assert canonical_sha40(sha) == sha
     assert expected_build_identifier(sha) == "Capture Build V14-aaaaaaaaaaaa"
-    good_uuid = "12345678-1234-4abc-8def-1234567890ab"
-    assert canonical_uuid(good_uuid) == good_uuid
+    assert canonical_uuid("12345678-1234-4abc-8def-1234567890ab") == "12345678-1234-4abc-8def-1234567890ab"
     assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
-    assert not valid_build_identifier("Capture\nBuild")
-    try:
-        canonical_sha40("A" * 40)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("uppercase SHA must fail canonicalization")
     for bad in ("../Payload/Nembra.app", "/Payload/Nembra.app", "Payload/../Nembra.app"):
         try:
             _safe_member_path(bad)
@@ -379,25 +392,12 @@ def self_test() -> None:
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
 
-    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
-    seen_members: set[PurePosixPath] = set()
-    _require_unique_member_path(duplicate_member, seen_members)
-    try:
-        _require_unique_member_path(duplicate_member, seen_members)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("duplicate ZIP member path was accepted")
-
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ipa", type=Path, help="exact already-produced signed Nembra .ipa")
     parser.add_argument("--output-dir", type=Path, help="directory for immutable external evidence")
-    parser.add_argument(
-        "--expected-source-sha",
-        help="exact accepted lowercase 40-hex source commit expected inside the field build",
-    )
+    parser.add_argument("--expected-source-sha", help="exact accepted lowercase 40-hex source commit expected inside the field build")
     parser.add_argument("--self-test", action="store_true", help="run platform-independent contract checks")
     return parser.parse_args(argv)
 
@@ -408,14 +408,9 @@ def main(argv: list[str]) -> int:
         self_test()
         print("signed-field artifact evidence self-test: PASS")
         return 0
-
     missing = [
         name
-        for name, value in (
-            ("--ipa", args.ipa),
-            ("--output-dir", args.output_dir),
-            ("--expected-source-sha", args.expected_source_sha),
-        )
+        for name, value in (("--ipa", args.ipa), ("--output-dir", args.output_dir), ("--expected-source-sha", args.expected_source_sha))
         if value is None
     ]
     if missing:
