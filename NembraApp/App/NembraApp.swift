@@ -273,26 +273,32 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
-    @State private var engineeringDetailsExpanded = false
-    private let runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
-
-    init() {
-        runtimeBuildIdentity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+    private enum RuntimeBuildIdentityState {
+        case checking
+        case available(PassiveBluetoothCaptureRuntimeBuildIdentity)
+        case unavailable
     }
+
+    @State private var engineeringDetailsExpanded = false
+    @State private var runtimeBuildIdentityState: RuntimeBuildIdentityState = .checking
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Capture locked on this build. Nembra is still completing the final app and build checks required before the scooter capture can begin. No scooter action is needed yet."
+        "Capture locked on this build. This exact build has not been explicitly cleared for physical scooter capture. Final app and build checks plus explicit physical authorization are still required. No scooter action is needed yet."
     }
 
     private var buildIdentityAccessibilityLabel: String {
-        if let runtimeBuildIdentity {
+        switch runtimeBuildIdentityState {
+        case .checking:
+            return "Capture build identity checking"
+        case .available(let runtimeBuildIdentity):
             return "Capture build, \(runtimeBuildIdentity.buildIdentifier)"
+        case .unavailable:
+            return "Capture build identity unavailable"
         }
-        return "Capture build identity unavailable"
     }
 
     var body: some View {
@@ -323,7 +329,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
+                    Text("This build is still finishing its final checks and has not been explicitly cleared for real ES80 capture.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -333,13 +339,21 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.caption2.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
 
-                        if let runtimeBuildIdentity {
+                        switch runtimeBuildIdentityState {
+                        case .checking:
+                            ProgressView()
+                                .controlSize(.mini)
+                                .accessibilityHidden(true)
+                            Text("Checking identity…")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        case .available(let runtimeBuildIdentity):
                             Text(runtimeBuildIdentity.buildIdentifier)
                                 .font(.caption.monospaced().weight(.semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
-                        } else {
+                        case .unavailable:
                             Text("Identity unavailable")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.orange)
@@ -361,7 +375,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build has passed its required checks. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
+                        Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and this build is explicitly cleared for the physical procedure. When that happens, Capture will guide the OFF / ON sequence step by step.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -428,7 +442,19 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                     .foregroundStyle(.orange)
                             }
 
-                            if let runtimeBuildIdentity {
+                            switch runtimeBuildIdentityState {
+                            case .checking:
+                                Divider().overlay(.white.opacity(0.12))
+
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .accessibilityHidden(true)
+                                    Text("Checking the running build identity…")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            case .available(let runtimeBuildIdentity):
                                 Divider().overlay(.white.opacity(0.12))
 
                                 VStack(alignment: .leading, spacing: 8) {
@@ -452,7 +478,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                         .accessibilityIdentifier("es80.capture.build-instance-id")
                                 }
-                            } else {
+                            case .unavailable:
                                 Divider().overlay(.white.opacity(0.12))
 
                                 VStack(alignment: .leading, spacing: 5) {
@@ -476,7 +502,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock from an accepted Nembra build; changing a setting or preference cannot bypass this lock.")
+                Text("No scooter action is required yet. Capture can unlock only from an accepted Nembra build that is explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -491,5 +517,23 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+        .task {
+            await loadRuntimeBuildIdentityIfNeeded()
+        }
+    }
+
+    private func loadRuntimeBuildIdentityIfNeeded() async {
+        guard case .checking = runtimeBuildIdentityState else { return }
+
+        let identity = await Task.detached(priority: .utility) {
+            try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        }.value
+
+        guard !Task.isCancelled else { return }
+        if let identity {
+            runtimeBuildIdentityState = .available(identity)
+        } else {
+            runtimeBuildIdentityState = .unavailable
+        }
     }
 }
