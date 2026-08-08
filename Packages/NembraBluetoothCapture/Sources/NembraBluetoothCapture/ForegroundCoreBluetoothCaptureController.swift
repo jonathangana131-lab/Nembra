@@ -548,7 +548,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
         }
         guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+              latestAdvertisement.receivedAtUptimeNanoseconds > payload.issuedAtUptimeNanoseconds else {
             throw ControllerError.experimentOnePostAdmissionRediscoveryRequired(payload.peripheralIdentifier)
         }
         if discovery.isConnectable == false {
