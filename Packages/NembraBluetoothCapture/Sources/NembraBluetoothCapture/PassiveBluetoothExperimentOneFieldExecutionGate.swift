@@ -3,40 +3,34 @@ import Foundation
 /// Package-owned field-execution lock for the first physical ES80 experiment.
 ///
 /// Release-grade authorization remains fail-closed behind the independent-signature verifier below.
-/// For the private first Capture only, the TODAY field-ready directive also permits a deliberately
-/// produced signed developer/research build to carry one build-time authorization marker. That marker
-/// is accepted only when it names the compiled passive recipe and rendezvous-binds the exact source
-/// commit plus per-build instance ID measured from the running signed application.
+/// For the private first Capture only, the TODAY field-ready directive also permits the canonical
+/// signed developer/research producer's existing build-time recipe marker to become a narrow research
+/// admission when it matches the package's compiled passive recipe and the running app's validated
+/// exact-source build identity.
 ///
 /// No Settings preference, launch argument, environment variable, typed identifier, or imported JSON
-/// can mint the research admission. Removing or changing the signed Info.plist marker after production
-/// changes the signed application subject; the runtime build identity also hashes the executable and
-/// raw Info.plist bytes for downstream artifact provenance.
+/// can mint this admission. The marker is part of the signed app Info.plist, while source commit,
+/// build-instance ID, executable bytes, and raw Info.plist bytes are read/measured from the running
+/// application by `PassiveBluetoothCaptureRuntimeBuildIdentityReader`.
 ///
 /// This is build/procedure authority only. Possession of any admission does not authenticate an
 /// AOVOPRO ES80, prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write
 /// callback into physical acknowledgement.
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
+    public static let researchRecipeInfoDictionaryKey = "NembraCaptureFieldRecipe"
 
     /// Release/public field authority remains deliberately NO-GO until the independent trust-root
     /// path is explicitly accepted. Private research admission is a separate, narrower TODAY path.
     public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
 
-    public static let researchAuthorizationInfoDictionaryKey = "NembraCaptureResearchFieldAuthorization"
-    public static let researchAuthorizationVersion = "v1"
-
-    /// True only for the running application when its signed build metadata carries the exact
-    /// research rendezvous marker for this compiled recipe/source/build instance.
+    /// True only for the running application when its signed field-recipe declaration and exact
+    /// runtime build identity match the canonical private research-build contract.
     public static var permitsPhysicalProcedure: Bool {
         currentResearchAdmission() != nil
     }
 
     /// Non-forgeable package capability derived only from a verified signed release authorization.
-    ///
-    /// Its initializer is private to this source file. Public callers can obtain an instance only by
-    /// first producing a `PassiveBluetoothCaptureVerifiedFieldAuthorization` through the package's
-    /// public production verifier, which currently fails closed while the trust anchor is nil.
     public struct VerifiedAdmission: Equatable, Sendable {
         public let buildIdentifier: String
         public let buildInstanceID: String
@@ -98,28 +92,20 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         return VerifiedAdmission(authorization: authorization)
     }
 
-    /// Deterministic package seam used by tests and by `currentResearchAdmission()`. Admission is
-    /// exact-string, fail-closed, and bound to the validated runtime source/build rendezvous.
+    /// Deterministic package seam used by tests and by `currentResearchAdmission()`. The canonical
+    /// signed field producer already stamps all of these values at archive time; ordinary application
+    /// state cannot synthesize them after signing.
     static func researchAdmission(
         infoDictionary: [String: Any],
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
     ) -> ResearchAdmission? {
-        guard let recipeMarker = infoDictionary["NembraCaptureFieldRecipe"] as? String,
+        guard let recipeMarker = infoDictionary[researchRecipeInfoDictionaryKey] as? String,
               recipeMarker == recipeID.rawValue else {
             return nil
         }
 
         let expectedBuildIdentifier = "Capture Build V14-\(runtimeBuildIdentity.sourceCommitSHA.prefix(12))"
         guard runtimeBuildIdentity.buildIdentifier == expectedBuildIdentifier else {
-            return nil
-        }
-
-        let expectedAuthorization = researchAuthorizationMarker(
-            sourceCommitSHA: runtimeBuildIdentity.sourceCommitSHA,
-            buildInstanceID: runtimeBuildIdentity.buildInstanceID
-        )
-        guard let authorization = infoDictionary[researchAuthorizationInfoDictionaryKey] as? String,
-              authorization == expectedAuthorization else {
             return nil
         }
 
@@ -137,13 +123,6 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
             infoDictionary: Bundle.main.infoDictionary ?? [:],
             runtimeBuildIdentity: runtimeBuildIdentity
         )
-    }
-
-    static func researchAuthorizationMarker(
-        sourceCommitSHA: String,
-        buildInstanceID: String
-    ) -> String {
-        "\(researchAuthorizationVersion):\(recipeID.rawValue):\(sourceCommitSHA):\(buildInstanceID)"
     }
 
     public enum Status: Equatable, Sendable {
