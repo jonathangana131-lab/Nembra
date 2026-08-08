@@ -44,14 +44,32 @@ struct PassiveBluetoothTuyaCandidateBridgeContinuityContractTests {
         let disconnectRecord = try #require(session.records.first { $0.sequenceNumber == 2 })
         #expect(disconnectRecord.event.breaksByteContinuity)
 
-        let transcripts = try PassiveBluetoothTuyaCandidateBridge.transcripts(
-            in: session,
-            peripheralIdentifier: "target-A"
+        let analyses = try PassiveBluetoothTuyaCandidateBridge.analyze(
+            session: session,
+            peripheralIdentifier: "target-A",
+            policy: try TuyaCandidateFragmentReassemblyPolicy(
+                maximumEncryptedMessageBytes: 64,
+                maximumFragmentCount: 8
+            )
         )
-        let transcript = try #require(transcripts.first)
+        let analysis = try #require(analyses.first)
 
-        #expect(transcript.fragments.map(\.captureSequenceNumber) == [1, 3])
-        #expect(transcript.fragments.map(\.observation.continuityGeneration) == [0, 1])
+        #expect(analysis.transcript.fragments.map(\.captureSequenceNumber) == [1, 3])
+        #expect(analysis.transcript.fragments.map(\.observation.continuityGeneration) == [0, 1])
+        #expect(analysis.events == [
+            .incompleteAtBoundary(
+                startObservationIndex: 0,
+                lastAcceptedObservationIndex: 0,
+                nextObservationIndex: 1,
+                boundary: .continuityGenerationChanged
+            ),
+            .rejectedCandidate(
+                startObservationIndex: 1,
+                lastAcceptedObservationIndex: nil,
+                failingObservationIndex: 1,
+                error: .unexpectedPacketIndex(expected: 0, actual: 1)
+            )
+        ])
     }
 
     private func appendValue(
