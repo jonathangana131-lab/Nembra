@@ -21,7 +21,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -32,6 +31,7 @@ AUTHORIZATION_PAYLOAD_SCHEMA_VERSION = 2
 DECISION = "GO"
 MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
+DEFAULT_OPENSSL_PATH = "/usr/bin/openssl"
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
@@ -119,10 +119,62 @@ def read_exact_subject(path: Path, label: str) -> bytes:
 
 
 def require_openssl() -> str:
-    executable = shutil.which("openssl")
-    if executable is None:
-        raise AuthorizationEnvelopeError("OpenSSL is required for offline P-256 signing")
-    return executable
+    """Resolve one explicitly controlled OpenSSL executable without consulting ambient PATH."""
+    configured = os.environ.get("NEMBRA_OPENSSL", DEFAULT_OPENSSL_PATH)
+    requested = Path(configured).expanduser()
+    if not requested.is_absolute():
+        raise AuthorizationEnvelopeError(
+            "NEMBRA_OPENSSL must name one absolute OpenSSL executable path"
+        )
+    if requested.is_symlink():
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be an explicit non-symlink path"
+        )
+    try:
+        resolved = requested.resolve(strict=True)
+        executable_stat = resolved.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError(
+            f"configured OpenSSL executable is unavailable: {requested}"
+        ) from exc
+
+    if path_is_within(resolved, REPOSITORY_ROOT):
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must not be controlled by the Nembra repository"
+        )
+    if not stat.S_ISREG(executable_stat.st_mode):
+        raise AuthorizationEnvelopeError("OpenSSL executable must be one regular file")
+    if executable_stat.st_mode & 0o022:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must not be writable by group or other users"
+        )
+    if executable_stat.st_mode & 0o111 == 0:
+        raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
+
+    if hasattr(os, "geteuid"):
+        signing_uid = os.geteuid()
+        if executable_stat.st_uid not in {0, signing_uid}:
+            raise AuthorizationEnvelopeError(
+                "OpenSSL executable must be owned by root or the signing user"
+            )
+
+    directory = resolved.parent
+    while True:
+        try:
+            directory_stat = directory.stat()
+        except OSError as exc:
+            raise AuthorizationEnvelopeError(
+                "could not inspect OpenSSL executable custody path"
+            ) from exc
+        if directory_stat.st_mode & 0o022:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path is group/world-writable: {directory}"
+            )
+        if directory == directory.parent:
+            break
+        directory = directory.parent
+
+    return str(resolved)
 
 
 def run_openssl(
@@ -179,6 +231,10 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError(
                 "P-256 private key must not be accessible by group or other users"
             )
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must be owned by the signing user"
+            )
 
         fd_path = Path("/dev/fd") / str(descriptor)
         if not fd_path.exists():
@@ -199,6 +255,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             before.st_dev,
             before.st_ino,
             before.st_mode,
+            before.st_uid,
+            before.st_gid,
             before.st_size,
             before.st_mtime_ns,
             before.st_ctime_ns,
@@ -206,6 +264,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             after.st_dev,
             after.st_ino,
             after.st_mode,
+            after.st_uid,
+            after.st_gid,
             after.st_size,
             after.st_mtime_ns,
             after.st_ctime_ns,
@@ -218,6 +278,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError("OpenSSL did not produce one private signing-key snapshot")
         if snapshot_stat.st_mode & 0o077:
             raise AuthorizationEnvelopeError("private signing-key snapshot permissions are not private")
+        if hasattr(os, "geteuid") and snapshot_stat.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError("private signing-key snapshot has the wrong owner")
         return snapshot_path
     finally:
         os.close(descriptor)
