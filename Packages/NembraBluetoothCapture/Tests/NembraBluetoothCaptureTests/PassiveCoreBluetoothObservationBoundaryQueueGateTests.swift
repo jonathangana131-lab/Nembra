@@ -21,14 +21,14 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
         #expect(gate.permittedDrainUpperBound(firstPending: 1, pendingTail: 6) == 4)
         #expect(gate.permittedDrainUpperBound(firstPending: 5, pendingTail: 6) == nil)
 
-        let earlyResult = Result {
+        let earlyError = capturedStateError {
             try gate.markBoundaryRecorded(
                 transaction,
                 lastProcessedQueueSequence: 3,
                 currentAuthority: authority
             )
         }
-        #expect(earlyResult == .failure(.cutoffNotDrained))
+        #expect(earlyError == .cutoffNotDrained)
 
         try gate.markBoundaryRecorded(
             transaction,
@@ -97,7 +97,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
     @Test("horizon cannot begin before one ready boundary")
     func horizonBeforeReadyFailsClosed() {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
-        let result = Result {
+        let error = capturedStateError {
             try gate.begin(
                 .observationHorizon,
                 through: 0,
@@ -105,7 +105,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             )
         }
 
-        #expect(result == .failure(.invalidTransition))
+        #expect(error == .invalidTransition)
         #expect(gate.phase == .awaitingReady)
     }
 
@@ -123,7 +123,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             currentAuthority: authority
         )
 
-        let result = Result {
+        let error = capturedStateError {
             try gate.begin(
                 .finiteAcquisitionReady,
                 through: 1,
@@ -131,7 +131,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             )
         }
 
-        #expect(result == .failure(.invalidTransition))
+        #expect(error == .invalidTransition)
         #expect(gate.phase == .observing)
     }
 
@@ -154,7 +154,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             authority: authority
         )
 
-        let staleResult = Result {
+        let staleError = capturedStateError {
             try gate.markBoundaryRecorded(
                 ready,
                 lastProcessedQueueSequence: 3,
@@ -162,7 +162,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             )
         }
 
-        #expect(staleResult == .failure(.staleTransaction))
+        #expect(staleError == .staleTransaction)
         #expect(gate.phase == .drainingHorizon(horizon))
     }
 
@@ -179,14 +179,14 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             through: 1,
             authority: authority
         )
-        let readyResult = Result {
+        let readyError = capturedStateError {
             try readyGate.markBoundaryRecorded(
                 ready,
                 lastProcessedQueueSequence: 1,
                 currentAuthority: changedAuthority
             )
         }
-        #expect(readyResult == .failure(.authorityChanged))
+        #expect(readyError == .authorityChanged)
         #expect(readyGate.phase == .drainingReady(ready))
 
         var horizonGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
@@ -210,13 +210,13 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             lastProcessedQueueSequence: 2,
             currentAuthority: authority
         )
-        let freezeResult = Result {
+        let freezeError = capturedStateError {
             try horizonGate.completeHorizonArtifactFreeze(
                 horizon,
                 currentAuthority: changedAuthority
             )
         }
-        #expect(freezeResult == .failure(.authorityChanged))
+        #expect(freezeError == .authorityChanged)
         #expect(horizonGate.phase == .horizonBoundaryRecorded(horizon))
     }
 
@@ -259,23 +259,28 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateTests {
             authority: freshAuthority
         )
 
-        let staleResult = Result {
+        let staleError = capturedStateError {
             try gate.markBoundaryRecorded(
                 oldReady,
                 lastProcessedQueueSequence: 5,
                 currentAuthority: freshAuthority
             )
         }
-        #expect(staleResult == .failure(.authorityChanged))
+        #expect(staleError == .authorityChanged)
         #expect(gate.phase == .drainingReady(freshReady))
         #expect(freshReady.revision > oldReady.revision)
     }
 }
 
-private extension Result where Success == Void, Failure == Error {
-    static func failure(
-        _ error: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError
-    ) -> Self {
-        .failure(error)
+private func capturedStateError<T>(
+    _ operation: () throws -> T
+) -> PassiveCoreBluetoothObservationBoundaryQueueGate.StateError? {
+    do {
+        _ = try operation()
+        return nil
+    } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+        return error
+    } catch {
+        return nil
     }
 }
