@@ -1,0 +1,81 @@
+name: Temporary ES80 V14 Simulator QA accessibility recovery
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-simulator-qa-a11y/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore accepted locked disclosure hit target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraApp.swift')
+          text = path.read_text()
+
+          old = '''                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
+                    .accessibilityIdentifier("es80.capture.engineering-details")'''
+          new = '''                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(engineeringDetailsExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint("Shows the exact software recipe, build provenance, and authorization state. It does not unlock scooter capture.")
+                    .accessibilityIdentifier("es80.capture.engineering-details")'''
+
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one stale engineering-details anchor, found {count}')
+          text = text.replace(old, new, 1)
+
+          required = (
+              '#if DEBUG && targetEnvironment(simulator)',
+              '--es80-passive-capture-simulator-qa',
+              'PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()',
+              'if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure',
+              '.frame(minHeight: 44)',
+          )
+          for token in required:
+              if token not in text:
+                  raise SystemExit(f'missing required product/truth token: {token}')
+          if 'permitsPhysicalProcedure = true' in text:
+              raise SystemExit('forbidden physical-permission assignment detected')
+
+          path.write_text(text)
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          fixture = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift').read_text()
+          for token in ('physicalProcedurePermitted: false', 'mayUseBluetoothTransport: false'):
+              if token not in fixture:
+                  raise SystemExit(f'missing synthetic fail-closed fixture token: {token}')
+          PY
+
+          git rm .github/workflows/_temporary_es80_v14_simulator_qa_a11y_recovery.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraApp.swift
+          git commit -m 'fix(capture): preserve locked disclosure hit target in Simulator QA'
+          git push origin HEAD:recovery/es80-v14-simulator-qa-a11y/gpt56-thinking-go
