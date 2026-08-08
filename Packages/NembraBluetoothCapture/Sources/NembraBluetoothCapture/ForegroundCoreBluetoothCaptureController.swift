@@ -1011,8 +1011,13 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                             // Recorder mutation already happened, so quarantine with
                             // the distinct recorded-before-commit origin. Never label
                             // this a zero-mutation rejection.
-                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
-                            throw error
+                            let recordedReadyFailure = error
+                            do {
+                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
+                            } catch {
+                                throw error
+                            }
+                            throw recordedReadyFailure
                         }
                     }
                 } catch {
