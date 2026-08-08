@@ -22,6 +22,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -60,7 +61,10 @@ def path_is_within(path: Path, directory: Path) -> bool:
 
 
 def require_external_path(path: Path, label: str) -> Path:
-    resolved = path.expanduser().resolve()
+    requested = path.expanduser().absolute()
+    if requested.is_symlink():
+        raise AuthorizationEnvelopeError(f"{label} must not be a symlink")
+    resolved = requested.resolve()
     if path_is_within(resolved, REPOSITORY_ROOT):
         raise AuthorizationEnvelopeError(
             f"{label} must remain outside the Nembra repository: {resolved}"
@@ -69,29 +73,62 @@ def require_external_path(path: Path, label: str) -> Path:
 
 
 def read_exact_subject(path: Path, label: str) -> bytes:
-    resolved = path.expanduser().resolve()
-    if not resolved.is_file() or resolved.is_symlink():
+    requested = path.expanduser().absolute()
+    if requested.is_symlink():
         raise AuthorizationEnvelopeError(f"{label} must be one regular non-symlink file")
+    resolved = requested.resolve()
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        size = resolved.stat().st_size
+        descriptor = os.open(resolved, flags)
     except OSError as exc:
-        raise AuthorizationEnvelopeError(f"cannot stat {label}") from exc
-    if size <= 0 or size > MAX_SUBJECT_BYTES:
-        raise AuthorizationEnvelopeError(
-            f"{label} size must be 1..{MAX_SUBJECT_BYTES} bytes; got {size}"
-        )
+        raise AuthorizationEnvelopeError(f"cannot open {label}") from exc
+
     try:
-        data = resolved.read_bytes()
-    except OSError as exc:
-        raise AuthorizationEnvelopeError(f"cannot read {label}") from exc
-    if len(data) != size:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise AuthorizationEnvelopeError(f"{label} must be one regular file")
+        if before.st_size <= 0 or before.st_size > MAX_SUBJECT_BYTES:
+            raise AuthorizationEnvelopeError(
+                f"{label} size must be 1..{MAX_SUBJECT_BYTES} bytes; got {before.st_size}"
+            )
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            data = handle.read(MAX_SUBJECT_BYTES + 1)
+            after = os.fstat(handle.fileno())
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    stable_identity = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ) == (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    if not stable_identity or len(data) != before.st_size:
         raise AuthorizationEnvelopeError(f"{label} changed while being read")
     return data
 
 
 def require_private_key(path: Path) -> Path:
-    resolved = require_external_path(path, "P-256 private key")
-    if not resolved.is_file() or resolved.is_symlink():
+    requested = path.expanduser().absolute()
+    if requested.is_symlink():
+        raise AuthorizationEnvelopeError(
+            "P-256 private key must be one regular non-symlink file outside the repository"
+        )
+    resolved = require_external_path(requested, "P-256 private key")
+    try:
+        key_stat = resolved.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("cannot stat P-256 private key") from exc
+    if not stat.S_ISREG(key_stat.st_mode):
         raise AuthorizationEnvelopeError(
             "P-256 private key must be one regular non-symlink file outside the repository"
         )
