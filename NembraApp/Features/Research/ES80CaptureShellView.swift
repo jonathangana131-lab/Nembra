@@ -52,6 +52,9 @@ struct ES80CaptureShellView: View {
     @State private var diagnosticMessage: String?
     @State private var localFailureMessage: String?
     @State private var shareURL: URL?
+    @State private var softwareExportData: Data?
+    @State private var sharePreparationWarning: String?
+    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
     @State private var showingDetails = false
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
@@ -270,13 +273,34 @@ struct ES80CaptureShellView: View {
             ) {}
 
         case let .correlationReady(window):
-            correlationReadyPanel(window)
-            primaryButton(
-                "Begin \(phaseShortName(window)) window",
-                systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
-                identifier: "es80.capture.begin-window"
-            ) {
-                beginCorrelationWindow()
+            if window == .firstPoweredOff, declaredStationarySetup == nil {
+                statePanel(
+                    eyebrow: "PREFLIGHT / DECLARATION",
+                    title: "Confirm stationary setup",
+                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
+                    symbol: "checkmark.shield"
+                )
+                primaryButton(
+                    "Confirm setup",
+                    systemImage: "checkmark.circle.fill",
+                    identifier: "es80.capture.confirm-setup"
+                ) {
+                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+                        chargerState: .disconnected,
+                        executionContext: .foregroundUnlockedScreenOn,
+                        stockAppReferenceSetup: .none
+                    )
+                }
+                guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")
+            } else {
+                correlationReadyPanel(window)
+                primaryButton(
+                    "Begin \(phaseShortName(window)) window",
+                    systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
+                    identifier: "es80.capture.begin-window"
+                ) {
+                    beginCorrelationWindow()
+                }
             }
 
         case let .correlationStarting(window):
@@ -490,6 +514,14 @@ struct ES80CaptureShellView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("es80.capture.share")
+            } else if coordinator.finalizedArtifact != nil {
+                primaryButton(
+                    "Prepare Share file",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.prepare-share"
+                ) {
+                    prepareSoftwareExportForShare()
+                }
             } else {
                 primaryButton(
                     "Share unavailable",
@@ -497,6 +529,9 @@ struct ES80CaptureShellView: View {
                     disabled: true,
                     identifier: "es80.capture.share-unavailable"
                 ) {}
+            }
+            if let sharePreparationWarning {
+                diagnosticBanner(sharePreparationWarning)
             }
             secondaryButton(
                 "View Details",
@@ -613,7 +648,8 @@ struct ES80CaptureShellView: View {
             }
 
             if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable JSON bytes are sealed from this Experiment One authority. Correlation evidence is retained with the same package-owned result; no protocol field meaning is claimed yet.")
+                let exportDescription = softwareExportData.map { " Package-owned Share envelope: \($0.count.formatted()) bytes." } ?? ""
+                Text("\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Correlation evidence remains bound to the same run.\(exportDescription) No protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -784,17 +820,41 @@ struct ES80CaptureShellView: View {
     private func finalizeCapture() {
         guard !finalizationInFlight else { return }
         diagnosticMessage = nil
+        sharePreparationWarning = nil
         finalizationInFlight = true
 
         Task {
             do {
-                let artifact = try await coordinator.finalizeObservationHorizon()
-                shareURL = try persistShareArtifact(artifact.captureJSON)
-                finalizationInFlight = false
+                _ = try await coordinator.finalizeObservationHorizon()
             } catch {
                 finalizationInFlight = false
                 localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
+                return
             }
+
+            // Horizon is already immutable here. Export/temporary-file failure is a
+            // recoverable presentation problem and must never relabel seal truth.
+            finalizationInFlight = false
+            prepareSoftwareExportForShare()
+        }
+    }
+
+    private func prepareSoftwareExportForShare() {
+        guard coordinator.finalizedArtifact != nil else { return }
+        guard let setup = declaredStationarySetup else {
+            sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
+            return
+        }
+        do {
+            let data = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
+                setup: setup,
+                prettyPrinted: true
+            )
+            softwareExportData = data
+            shareURL = try persistShareArtifact(data)
+            sharePreparationWarning = nil
+        } catch {
+            sharePreparationWarning = "Capture remains sealed, but the package-owned software Share envelope could not be prepared: \(experimentErrorMessage(error))"
         }
     }
 
@@ -805,6 +865,9 @@ struct ES80CaptureShellView: View {
         captureConnectionAttempted = false
         finalizationInFlight = false
         shareURL = nil
+        softwareExportData = nil
+        sharePreparationWarning = nil
+        declaredStationarySetup = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
@@ -883,7 +946,7 @@ struct ES80CaptureShellView: View {
 
     private func persistShareArtifact(_ data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nembra-ES80-Capture-\(UUID().uuidString).json")
+            .appendingPathComponent("Nembra-ES80-FINGERPRINT-v1-SoftwareExport-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
     }
