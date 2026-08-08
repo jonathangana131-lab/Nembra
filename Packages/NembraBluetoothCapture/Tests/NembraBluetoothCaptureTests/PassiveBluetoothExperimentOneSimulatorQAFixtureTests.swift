@@ -32,17 +32,23 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
     }
 
     #if DEBUG && targetEnvironment(simulator)
-    @Test("every positive scenario stays labeled and mechanically non-authorizing")
+    @Test("every scenario pins an exact truthful tuple and remains non-authorizing")
     @MainActor
     func everyScenarioStaysNonAuthorizing() {
-        let fixture = PassiveBluetoothExperimentOneSimulatorQAFixture.make()
-        var visited: [PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario] = []
+        typealias Fixture = PassiveBluetoothExperimentOneSimulatorQAFixture
+        typealias Correlation = PassiveBluetoothExperimentOneCoordinator.CorrelationStatus
+        typealias Connection = PassiveBluetoothExperimentOneCoordinator.ConnectionStatus
 
-        for expected in PassiveBluetoothExperimentOneSimulatorQAFixture.happyPathScenarios {
-            let snapshot = fixture.snapshot
-            visited.append(snapshot.scenario)
-
-            #expect(snapshot.scenario == expected)
+        func assertSnapshot(
+            _ snapshot: Fixture.Snapshot,
+            correlation: Correlation,
+            connection: Connection,
+            admissionPrepared: Bool,
+            targetRediscovered: Bool,
+            observationReady: Bool,
+            canFinalize: Bool,
+            artifactState: Fixture.ArtifactState
+        ) {
             #expect(snapshot.evidenceLabel == "SIMULATOR / QA")
             #expect(snapshot.recipeID == .es80FingerprintV1)
             #expect(
@@ -51,21 +57,151 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
             )
             #expect(!snapshot.physicalProcedurePermitted)
             #expect(!snapshot.mayUseBluetoothTransport)
+            #expect(snapshot.correlation == correlation)
+            #expect(snapshot.connection == connection)
+            #expect(snapshot.hasPreparedCaptureAdmission == admissionPrepared)
+            #expect(snapshot.isCorrelatedTargetRediscovered == targetRediscovered)
+            #expect(snapshot.observationReady == observationReady)
+            #expect(snapshot.canFinalizeObservationHorizon == canFinalize)
+            #expect(snapshot.artifactState == artifactState)
+        }
+
+        #expect(Fixture.Scenario.allCases == Fixture.happyPathScenarios + [.foregroundInterrupted])
+
+        let fixture = Fixture.make()
+        var visited: [Fixture.Scenario] = []
+
+        for expected in Fixture.happyPathScenarios {
+            let snapshot = fixture.snapshot
+            visited.append(snapshot.scenario)
+            #expect(snapshot.scenario == expected)
+
+            switch expected {
+            case .stationaryPreflight,
+                 .firstPoweredOff,
+                 .firstPoweredOn,
+                 .secondPoweredOff:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .incomplete,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .secondPoweredOn:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .targetConfirmation:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: true,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .passiveDiscovery:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connecting,
+                    admissionPrepared: true,
+                    targetRediscovered: true,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .observationReady:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .captureInProgress:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: true,
+                    artifactState: .unavailable
+                )
+            case .horizonSealed:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .sealed
+                )
+            case .captureComplete:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .completeReadyForAnalysis
+                )
+            case .shareRetry:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .shareRetry
+                )
+            case .foregroundInterrupted:
+                Issue.record("foreground interruption must not enter the happy path")
+            }
 
             _ = fixture.advance()
         }
 
-        #expect(visited == PassiveBluetoothExperimentOneSimulatorQAFixture.happyPathScenarios)
+        #expect(visited == Fixture.happyPathScenarios)
         #expect(fixture.snapshot.scenario == .shareRetry)
 
-        let interrupted = PassiveBluetoothExperimentOneSimulatorQAFixture.snapshot(
-            for: .foregroundInterrupted
+        let interruptedFixture = Fixture.make(scenario: .foregroundInterrupted)
+        let interrupted = interruptedFixture.snapshot
+        assertSnapshot(
+            interrupted,
+            correlation: .invalidEvidence,
+            connection: .unavailable,
+            admissionPrepared: false,
+            targetRediscovered: false,
+            observationReady: false,
+            canFinalize: false,
+            artifactState: .invalidated
         )
-        #expect(interrupted.artifactState == .invalidated)
-        #expect(interrupted.correlation == .invalidEvidence)
-        #expect(interrupted.connection == .unavailable)
-        #expect(!interrupted.physicalProcedurePermitted)
-        #expect(!interrupted.mayUseBluetoothTransport)
+        #expect(interruptedFixture.advance() == interrupted)
 
         let reset = fixture.reset()
         #expect(reset.scenario == .stationaryPreflight)
