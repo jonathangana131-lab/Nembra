@@ -25,6 +25,7 @@ public enum PassiveBluetoothPowerCycleObservationPhase: Int, CaseIterable, Equat
 public enum PassiveBluetoothPowerCycleObservationSessionError: Error, Equatable, Sendable {
     case invalidMinimumWindowDuration
     case seriesComplete
+    case seriesInvalidated
     case windowAlreadyActive
     case windowNotActive
     case bluetoothBecameUnavailable
@@ -38,6 +39,7 @@ public struct PassiveBluetoothPowerCycleObservationProgress: Equatable, Sendable
     public let phase: PassiveBluetoothPowerCycleObservationPhase
     public let isAwaitingBluetoothPower: Bool
     public let isScanning: Bool
+    public let isSeriesInvalidated: Bool
     public let currentObservedCandidateCount: Int
     public let completedWindowCount: Int
 }
@@ -69,11 +71,14 @@ public struct PassiveBluetoothPowerCycleObservationResult: Equatable, Sendable {
 /// The CoreBluetooth transport for each window is deliberately outside this value. The live
 /// session below replaces that transport for every window while retaining this one producer
 /// authority, preventing callbacks from an old manager from being relabeled as a later window.
+/// Any known window/transport failure invalidates this authority permanently so successful
+/// earlier windows can never be patched into a later restarted experiment.
 struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
     private let minimumWindowDurationNanoseconds: UInt64
     private let observationSeriesIdentity = PassiveBluetoothCandidateObservationSeriesIdentity()
     private(set) var completedSnapshots: [PassiveBluetoothCandidateObservationSnapshot] = []
     private(set) var completedReceipts: [PassiveBluetoothPowerCycleObservationWindowReceipt] = []
+    private(set) var isInvalidated = false
     private var nextWindowSequenceRawValue: UInt64 = 1
 
     init(minimumWindowDurationNanoseconds: UInt64) {
@@ -85,12 +90,19 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
         PassiveBluetoothPowerCycleObservationPhase(rawValue: completedSnapshots.count)
     }
 
+    mutating func invalidate() {
+        isInvalidated = true
+    }
+
     mutating func completeWindow(
         phase: PassiveBluetoothPowerCycleObservationPhase,
         startedAtUptimeNanoseconds: UInt64,
         endedAtUptimeNanoseconds: UInt64,
         candidates: [PassiveBluetoothCandidateObservationSnapshot.Candidate]
     ) throws -> PassiveBluetoothPowerCycleObservationResult? {
+        guard !isInvalidated else {
+            throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+        }
         guard let expectedPhase = nextPhase else {
             throw PassiveBluetoothPowerCycleObservationSessionError.seriesComplete
         }
@@ -102,6 +114,7 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
             throw PassiveBluetoothPowerCycleObservationSessionError.minimumWindowDurationNotReached
         }
         guard nextWindowSequenceRawValue != UInt64.max else {
+            isInvalidated = true
             throw PassiveBluetoothPowerCycleObservationSessionError.windowSequenceExhausted
         }
 
@@ -149,6 +162,10 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
 /// **fresh `CBCentralManager` instance**. `didDiscover` identifies the manager that delivered
 /// the callback, so callbacks from a retired window fail the exact-manager guard once a new
 /// transport is active instead of being stamped with a fabricated local scan generation.
+///
+/// Any Bluetooth-authority failure or explicit operator abandonment permanently invalidates the
+/// whole four-window series. The caller must construct a fresh session and restart at OFF₁;
+/// already-completed windows are never reused across a known gap.
 ///
 /// Safety / truth boundary:
 /// - broad discovery only; no connection and no characteristic-value writes;
@@ -210,6 +227,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
             phase: phase,
             isAwaitingBluetoothPower: awaitingPoweredOn,
             isScanning: windowStartedAtUptimeNanoseconds != nil,
+            isSeriesInvalidated: ledger.isInvalidated,
             currentObservedCandidateCount: candidatesByIdentifier.count,
             completedWindowCount: ledger.completedReceipts.count
         )
@@ -221,9 +239,12 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
     /// Starts the next operator-declared window using a brand-new CoreBluetooth manager epoch.
     /// If the manager has not reported powered-on state yet, scanning begins only after that
-    /// manager's own state callback says it is powered on. Terminal non-powered states retire
-    /// the transport without producing a snapshot, leaving the same phase retryable.
+    /// manager's own state callback says it is powered on. Terminal non-powered states invalidate
+    /// the entire series without producing a snapshot.
     public func startCurrentWindow() throws {
+        guard !ledger.isInvalidated else {
+            throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+        }
         guard ledger.nextPhase != nil, finalResult == nil else {
             throw PassiveBluetoothPowerCycleObservationSessionError.seriesComplete
         }
@@ -251,25 +272,30 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     }
 
     /// Freezes the current receipt-bounded catalog. Calling this early fails without advancing
-    /// phase or reusing the manager; the same window may continue until the minimum duration.
+    /// phase or reusing the manager; the same window genuinely keeps scanning on the same manager
+    /// until the minimum duration is satisfied.
     ///
-    /// The manager is retired synchronously before evidence is sealed. Any callback already
-    /// queued from that manager reaches the delegate with a non-active manager identity and is
-    /// rejected rather than leaking into the next window.
+    /// On success, the manager is retired synchronously before evidence is sealed. Any callback
+    /// already queued from that manager reaches the delegate with a non-active manager identity
+    /// and is rejected rather than leaking into the next window.
     @discardableResult
     public func finishCurrentWindow() throws -> PassiveBluetoothPowerCycleObservationResult? {
+        guard !ledger.isInvalidated else {
+            if lastWindowInvalidatedByBluetooth {
+                throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
+            }
+            throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+        }
         guard let manager = activeManager,
               manager.state == .poweredOn,
               let startedAt = windowStartedAtUptimeNanoseconds,
               let phase = ledger.nextPhase else {
-            if lastWindowInvalidatedByBluetooth {
-                throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
-            }
             throw PassiveBluetoothPowerCycleObservationSessionError.windowNotActive
         }
 
         let endedAt = DispatchTime.now().uptimeNanoseconds
         guard endedAt >= startedAt else {
+            ledger.invalidate()
             throw PassiveBluetoothPowerCycleObservationSessionError.nonMonotonicWindowClock
         }
         guard endedAt - startedAt >= minimumWindowDurationNanoseconds else {
@@ -291,18 +317,24 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
             }
         candidatesByIdentifier.removeAll(keepingCapacity: true)
 
-        let completed = try ledger.completeWindow(
-            phase: phase,
-            startedAtUptimeNanoseconds: startedAt,
-            endedAtUptimeNanoseconds: endedAt,
-            candidates: candidates
-        )
-        finalResult = completed
-        return completed
+        do {
+            let completed = try ledger.completeWindow(
+                phase: phase,
+                startedAtUptimeNanoseconds: startedAt,
+                endedAtUptimeNanoseconds: endedAt,
+                candidates: candidates
+            )
+            finalResult = completed
+            return completed
+        } catch {
+            ledger.invalidate()
+            throw error
+        }
     }
 
-    /// Abandons the current incomplete window without creating evidence. A retry of the same
-    /// phase will receive another fresh manager epoch.
+    /// Explicit operator abandonment is a known experiment gap. It invalidates the whole series
+    /// permanently; prior completed windows cannot be reused. Construct a fresh session and restart
+    /// the physical OFF₁ -> ON₁ -> OFF₂ -> ON₂ procedure.
     public func abandonCurrentWindow() {
         activeManager?.stopScan()
         activeManager = nil
@@ -310,6 +342,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         windowStartedAtUptimeNanoseconds = nil
         candidatesByIdentifier.removeAll(keepingCapacity: true)
         lastWindowInvalidatedByBluetooth = false
+        ledger.invalidate()
     }
 
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -335,7 +368,8 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard central === activeManager,
+        guard !ledger.isInvalidated,
+              central === activeManager,
               central.state == .poweredOn,
               windowStartedAtUptimeNanoseconds != nil else {
             return
@@ -355,7 +389,8 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     }
 
     private func beginScanIfAwaiting(on manager: CBCentralManager) {
-        guard manager === activeManager,
+        guard !ledger.isInvalidated,
+              manager === activeManager,
               awaitingPoweredOn,
               manager.state == .poweredOn,
               windowStartedAtUptimeNanoseconds == nil else {
@@ -376,6 +411,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
         if windowStartedAtUptimeNanoseconds != nil {
             manager.stopScan()
         }
+        ledger.invalidate()
         lastWindowInvalidatedByBluetooth = true
         activeManager = nil
         awaitingPoweredOn = false
