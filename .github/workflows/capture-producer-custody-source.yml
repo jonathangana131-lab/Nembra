@@ -10,119 +10,27 @@ on:
       - scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
       - scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+      - scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
       - .github/workflows/capture-producer-custody-source.yml
-      - .github/workflows/tmp-es80-producer-path-python-custody.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   exact-head-source-contract:
     runs-on: ubuntu-latest
     env:
       EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Verify exact PR head
         run: |
           actual="$(git rev-parse --verify HEAD^{commit})"
           test "$actual" = "$EXPECTED_HEAD_SHA"
-
-      - name: Construct guarded PATH and Python custody repair when needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -q '^PATH="/usr/bin:/bin:/usr/sbin:/sbin"$' scripts/ci/xcode27_signed_field_candidate.sh \
-            && grep -q 'owner_uid != 0' scripts/ci/xcode27_signed_field_candidate.sh \
-            && grep -q 'mode_value & 0022' scripts/ci/xcode27_signed_field_candidate.sh; then
-            echo "Producer already carries the repaired custody boundary; validation-only pass."
-            exit 0
-          fi
-
-          /usr/bin/python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
-          source = path.read_text()
-
-          prelude = "#!/bin/bash\nset -euo pipefail\n"
-          if not source.startswith(prelude):
-              raise SystemExit("unexpected producer prelude; refusing transform")
-          closed_path = (
-              "#!/bin/bash\n"
-              "set -euo pipefail\n\n"
-              "# Release-candidate production must not inherit executable selection from the caller.\n"
-              "# Establish one closed system PATH before dirname, uname, Git, Xcode, or any other child runs.\n"
-              "PATH=\"/usr/bin:/bin:/usr/sbin:/sbin\"\n"
-              "export PATH\n"
-          )
-          source = closed_path + source[len(prelude):]
-
-          old = '''# Python participates directly in private-input validation and signed-field evidence admission.
-          # Never discover it through caller PATH, and always use isolated mode so caller PYTHON* startup or
-          # import state cannot execute before the exact descriptor-bound Nembra source.
-          PYTHON3="/usr/bin/python3"
-          if [[ ! -x "$PYTHON3" || -L "$PYTHON3" ]]; then
-            echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
-            exit 2
-          fi
-          '''
-          new = '''# Python participates directly in private-input validation and signed-field evidence admission.
-          # Pin the macOS system interpreter independently of PATH, prove the executable and every canonical
-          # custody component through / are root-owned and non-group/world-writable before first use, and
-          # always launch Python with -I so caller PYTHON* startup/import authority is ignored.
-          PYTHON3="/usr/bin/python3"
-          validate_root_custodied_path() {
-            local candidate="$1"
-            local kind="$2"
-            local cursor="$candidate"
-            local owner_uid mode_value
-
-            if [[ "$kind" == "file" ]]; then
-              if [[ ! -f "$cursor" || ! -x "$cursor" || -L "$cursor" ]]; then
-                echo "Root-custodied executable must be one regular executable non-symlink: $cursor" >&2
-                return 1
-              fi
-            fi
-
-            while :; do
-              if [[ -L "$cursor" ]]; then
-                echo "Root-custodied path contains a symlink: $cursor" >&2
-                return 1
-              fi
-              owner_uid="$(/usr/bin/stat -f '%u' "$cursor")" || return 1
-              mode_value="0$(/usr/bin/stat -f '%Lp' "$cursor")" || return 1
-              if (( owner_uid != 0 )); then
-                echo "Root-custodied path is not root-owned: $cursor" >&2
-                return 1
-              fi
-              if (( mode_value & 0022 )); then
-                echo "Root-custodied path is group/world writable: $cursor" >&2
-                return 1
-              fi
-              [[ "$cursor" == "/" ]] && break
-              cursor="$(/usr/bin/dirname "$cursor")"
-            done
-          }
-          if ! validate_root_custodied_path "$PYTHON3" file; then
-            echo "Signed field-candidate production requires a root-custodied system Python 3." >&2
-            exit 2
-          fi
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected exactly one weak Python custody block, found {source.count(old)}")
-          path.write_text(source.replace(old, new, 1))
-          PY
-
-          git show 7ea8392dd6e4618e9d60741b0f5ddbff5ad86771:scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
-            > scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
-          git show f1bd5e25f61431b03c614793eaa5c255c489b27f:scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py \
-            > scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
 
       - name: Validate signed-field producer custody
         run: |
@@ -131,77 +39,9 @@ jobs:
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
           python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-          git diff --check
-
-      - name: Commit repaired product and restore read-only permanent gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- scripts/ci/xcode27_signed_field_candidate.sh \
-              scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
-              scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py; then
-            echo "No construction changes to commit."
-            exit 0
-          fi
-
-          rm -f .github/workflows/tmp-es80-producer-path-python-custody.yml
-          cat > .github/workflows/capture-producer-custody-source.yml <<'YAML'
-          name: Capture Producer Custody Source QA
-
-          on:
-            pull_request:
-              types: [opened, reopened, synchronize, ready_for_review]
-              paths:
-                - scripts/ci/xcode27_signed_field_candidate.sh
-                - scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-                - scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-                - scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
-                - scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
-                - scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
-                - .github/workflows/capture-producer-custody-source.yml
-
-          permissions:
-            contents: read
-
-          jobs:
-            exact-head-source-contract:
-              runs-on: ubuntu-latest
-              env:
-                EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-              steps:
-                - uses: actions/checkout@v4
-                  with:
-                    ref: ${{ github.event.pull_request.head.sha }}
-                    fetch-depth: 0
-
-                - name: Verify exact PR head
-                  run: |
-                    actual="$(git rev-parse --verify HEAD^{commit})"
-                    test "$actual" = "$EXPECTED_HEAD_SHA"
-
-                - name: Validate signed-field producer custody
-                  run: |
-                    bash -n scripts/ci/xcode27_signed_field_candidate.sh
-                    python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
-                    python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
-                    python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
-                    python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
-                    python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
-                    python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
-                    python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
-                    python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
-          YAML
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/ci/xcode27_signed_field_candidate.sh \
-            scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
-            scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py \
-            .github/workflows/capture-producer-custody-source.yml \
-            .github/workflows/tmp-es80-producer-path-python-custody.yml
-          git commit -m "[Capture field v14] Close producer PATH and Python custody"
-          git push origin HEAD:"$HEAD_BRANCH"
