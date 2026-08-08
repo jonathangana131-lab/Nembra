@@ -256,12 +256,14 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    @State private var engineeringDetailsExpanded = false
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Capture locked on this build. Nembra is still completing the final app and build checks required before the scooter capture can begin. No scooter action is needed yet."
+        "Field capture is not available on this build yet. Nembra keeps the scooter controls hidden until this exact build has passed its final software and device checks."
     }
 
     var body: some View {
@@ -286,30 +288,30 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Capture locked")
+                            Text("Capture unavailable")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
+                    Text("This build isn't ready for the first ES80 capture yet.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "exclamationmark.lock.fill")
+                    Image(systemName: "shield.lefthalf.filled")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.orange)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Not ready for scooter capture yet")
+                        Text("Nothing to do yet")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build has passed its required checks. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
+                        Text("Nembra keeps the scooter controls hidden until this exact build has passed its final software and device checks.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -323,21 +325,14 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("CAPTURE RECIPE")
+                        Text("BUILD STATUS")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("LOCKED")
+                        Text("NOT CLEARED")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.orange)
                     }
-
-                    Text(recipeID)
-                        .font(.title3.monospaced().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("es80.capture.recipe-id")
-
-                    Divider().overlay(.white.opacity(0.12))
 
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.seal")
@@ -352,7 +347,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Scooter capture unavailable on this build")
+                        Text("Scooter capture controls stay locked")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -360,7 +355,37 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock from an accepted Nembra build; changing a setting or preference cannot bypass this lock.")
+                DisclosureGroup(isExpanded: $engineeringDetailsExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        LabeledContent("Recipe") {
+                            Text(recipeID)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .accessibilityIdentifier("es80.capture.recipe-id")
+                        }
+
+                        LabeledContent("Authorization") {
+                            Text("NO-GO")
+                                .font(.caption.monospaced().weight(.semibold))
+                        }
+
+                        Text("The physical execution lock is package-owned. Local settings, typed identifiers, and app preferences cannot unlock it.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 10)
+                } label: {
+                    Text("Engineering details")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                .tint(.secondary)
+                .padding(18)
+                .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityIdentifier("es80.capture.engineering-details")
+
+                Text("When an accepted build is ready, Nembra will unlock the next step automatically. You can't override this lock with a setting or typed code.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
