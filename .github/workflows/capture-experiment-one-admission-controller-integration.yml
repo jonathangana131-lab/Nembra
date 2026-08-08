@@ -1,0 +1,56 @@
+name: Capture Experiment One admission controller integration
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-admission-on-unified-lifecycle/gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+          ref: integration/es80-v14-admission-on-unified-lifecycle/gpt56
+
+      - name: Verify exact current inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          runfile=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          test "$(git hash-object "$controller")" = "c931c11655f52ffe7cd98286943153e7952405c1"
+          test "$(git hash-object "$runfile")" = "5bfd17a81c809ee3442c95fc0fa1a35ea18fadf2"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionTests.swift
+          python3 -m py_compile scripts/ci/capture_experiment_one_admission_controller_integration.py
+
+      - name: Apply controller integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/capture_experiment_one_admission_controller_integration.py
+          git diff --check
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -q 'using admission: PassiveBluetoothExperimentOneCaptureAdmission' "$controller"
+          test "$(grep -c 'let payload = try admission.consume()' "$controller")" = "1"
+          test "$(grep -c 'private var experimentOneCaptureAuthority' "$controller")" = "1"
+          test "$(grep -c 'recorder: payload.recorder' "$controller")" = "1"
+          test "$(grep -c 'experimentOneAuthority: nil' "$controller")" = "1"
+          test "$(grep -c 'latestDiscoveryByIdentifier\[peripheralIdentifier\] != nil' "$controller")" = "1"
+
+      - name: Commit clean product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-experiment-one-admission-controller-integration.yml
+          rm scripts/ci/capture_experiment_one_admission_controller_integration.py
+          rm -rf scripts/ci/__pycache__
+          git config user.name "nembra-v14-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(capture): consume sealed Experiment One admission"
+          git push origin HEAD:integration/es80-v14-admission-on-unified-lifecycle/gpt56
