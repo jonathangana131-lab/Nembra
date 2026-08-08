@@ -40,6 +40,22 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
+            "The charger declaration is downstream of package field authority and must not appear while the package gate is NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-disconnected"].exists,
+            "Even the accepted charger choice must not become a UI-level bypass around package NO-GO."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.charger-connected"].exists,
+            "The blocked charger choice must remain unreachable until package field authority exists."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.preflight.continue"].exists,
+            "No local preflight state may instantiate the physical shell while the package field gate is closed."
+        )
+        XCTAssertFalse(
             app.buttons["Begin OFF 1 window"].exists,
             "A NO-GO build must not expose the first physical OFF/ON action."
         )
