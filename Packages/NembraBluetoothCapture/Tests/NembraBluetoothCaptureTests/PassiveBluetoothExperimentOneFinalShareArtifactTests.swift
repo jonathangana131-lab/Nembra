@@ -133,6 +133,42 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
         #expect(root["permitsPhysicalProcedure"] == nil)
     }
 
+    @Test
+    func duplicateTopLevelSchemaVersionIsRejectedBeforeFinalShareDecode() throws {
+        let artifact = try makeArtifact()
+        let tampered = try injectingDuplicateTopLevelField(
+            "schemaVersion",
+            jsonValue: "999",
+            into: artifact.json
+        )
+
+        #expect(
+            throws: PassiveBluetoothExperimentOneFinalShareArtifactError.malformedWireData
+        ) {
+            _ = try PassiveBluetoothExperimentOneFinalShareArtifactCodec.decodeAndVerify(tampered)
+        }
+    }
+
+    @Test
+    func duplicateTopLevelSchemaVersionIsRejectedBeforeSoftwareExportDecode() throws {
+        let softwareExport = try makeSoftwareExport()
+        let json = try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(
+            softwareExport,
+            prettyPrinted: false
+        )
+        let tampered = try injectingDuplicateTopLevelField(
+            "schemaVersion",
+            jsonValue: "999",
+            into: json
+        )
+
+        #expect(
+            throws: PassiveBluetoothExperimentOneSoftwareExportError.malformedWireData
+        ) {
+            _ = try PassiveBluetoothExperimentOneSoftwareExportCodec.decodeAndVerify(tampered)
+        }
+    }
+
     private func makeArtifact() throws -> PassiveBluetoothExperimentOneFinalShareArtifact {
         try PassiveBluetoothExperimentOneFinalShareArtifactCodec.make(
             softwareExport: makeSoftwareExport()
@@ -280,6 +316,18 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
             observationBoundaries: [ready, horizon]
         )
         return try PassiveBluetoothCaptureJSON.encode(session)
+    }
+
+    private func injectingDuplicateTopLevelField(
+        _ field: String,
+        jsonValue: String,
+        into data: Data
+    ) throws -> Data {
+        var text = try #require(String(data: data, encoding: .utf8))
+        let opening = try #require(text.firstIndex(of: "{"))
+        let insertion = text.index(after: opening)
+        text.insert(contentsOf: "\"\(field)\":\(jsonValue),", at: insertion)
+        return Data(text.utf8)
     }
 
     private func jsonObject(_ data: Data) throws -> [String: Any] {
