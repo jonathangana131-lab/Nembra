@@ -35,7 +35,7 @@ If the export options contain a `teamID`, it must exactly equal `NEMBRA_DEVELOPM
 
 No certificate private key, provisioning credential, authorization private key, device identifier, or secret is written to the repository by this producer.
 
-## Source admission
+## Source admission and non-destructive outputs
 
 Before any build output is created, the producer requires:
 
@@ -43,7 +43,9 @@ Before any build output is created, the producer requires:
 - no tracked modifications;
 - no non-ignored untracked files.
 
-Any generated `ARTIFACTS_DIR` or `DERIVED_DATA` path located inside the repository must already be ignored by Git. The default artifact path is the repository's already-ignored lowercase `artifacts/Xcode27FieldIPA/`; default DerivedData is outside the repository.
+Any generated `ARTIFACTS_DIR` or `DERIVED_DATA` path located inside the repository must already be ignored by Git. The default artifact directory is unique per source/build-instance under the repository's already-ignored lowercase `artifacts/` root; default DerivedData is a unique build-instance path outside the repository.
+
+The producer refuses an artifact or DerivedData path that already exists. It never `rm -rf`s caller-selected field-production state merely to make a rerun succeed. This keeps prior signed candidates/evidence durable and prevents a mistyped environment path from becoming a destructive cleanup target.
 
 The producer re-runs the source cleanliness check after archive and again after export. Any new non-ignored repository state invalidates the exact-source production claim.
 
@@ -96,6 +98,7 @@ A successful run does **not** prove:
 
 - independent Nembra acceptance of the retained IPA;
 - that the retained IPA was installed on the intended iPhone;
+- that the selected export policy makes the IPA appropriate for the intended installation route;
 - that an independently controlled authorization key approved these bytes;
 - that the package physical execution gate is GO;
 - that the V14 physical runbook is GO;
@@ -115,7 +118,7 @@ For the first physical Experiment One, the surviving final Capture composition s
 2. screenshot inspection plus final accessibility/performance acceptance;
 3. run this producer from that exact surviving source with the intended signing/export configuration;
 4. retain the complete canonical IPA evidence outputs;
-5. independently verify and accept the exact retained IPA + external schema-v3 record + running executable/Info.plist subjects;
+5. independently verify and accept the exact retained IPA + external schema-v3 record + running executable/Info.plist subjects, including the intended installation route;
 6. establish the independently controlled authorization keypair outside the repository/app and pin only the reviewed public trust root;
 7. issue and verify non-forgeable authorization for that exact accepted build;
 8. deliberately evolve the package field gate and physical runbook to GO for that exact build and re-run required exact-head product acceptance;
