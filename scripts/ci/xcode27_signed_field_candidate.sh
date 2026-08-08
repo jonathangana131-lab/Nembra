@@ -221,15 +221,23 @@ if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; 
   exit 17
 fi
 
-shopt -s nullglob
-IPA_FILES=("$EXPORT_DIR"/*.ipa)
-shopt -u nullglob
-if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
-  echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
-  printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 18
-fi
-IPA_PATH="${IPA_FILES[0]}"
+# Avoid optional shell arrays under Bash 3.2 + nounset. Python performs closed-world selection of
+# the final export subject and prints exactly one regular top-level .ipa path or fails the producer.
+IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+export_dir = Path(sys.argv[1])
+candidates = sorted(
+    path for path in export_dir.iterdir()
+    if path.is_file() and path.suffix.lower() == ".ipa"
+)
+if len(candidates) != 1:
+    rendered = ", ".join(path.name for path in candidates) or "<none>"
+    raise SystemExit(f"Expected exactly one exported .ipa; found {len(candidates)}: {rendered}")
+print(candidates[0])
+PY
+)"
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
 # snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
