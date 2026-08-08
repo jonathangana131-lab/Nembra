@@ -1,3 +1,5 @@
+import Foundation
+
 /// MainActor-facing ordering state for recording lifecycle boundaries against the
 /// controller's existing raw-event FIFO.
 ///
@@ -42,6 +44,25 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let queueCutoff: UInt64
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
         let revision: UInt64
+        /// Opaque process-local identity for this exact gate transaction. It is not
+        /// persisted evidence and carries no BLE/RF or scooter meaning. Its only
+        /// purpose is preventing a proof from another structurally identical gate
+        /// transaction from authorizing lifecycle mutation here.
+        let identity: UUID
+
+        init(
+            boundaryKind: BoundaryKind,
+            queueCutoff: UInt64,
+            authority: PassiveCoreBluetoothArtifactAuthorityContext,
+            revision: UInt64,
+            identity: UUID = UUID()
+        ) {
+            self.boundaryKind = boundaryKind
+            self.queueCutoff = queueCutoff
+            self.authority = authority
+            self.revision = revision
+            self.identity = identity
+        }
     }
 
     /// Producer-issued proof that one Ready attempt/epoch was intentionally
@@ -319,7 +340,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,
               committedReadyTransaction.authority == committedReadyEpoch.authority,
               committedReadyTransaction.queueCutoff == committedReadyEpoch.queueCutoff,
-              committedReadyTransaction.revision == committedReadyEpoch.transactionRevision else {
+              committedReadyTransaction.revision == committedReadyEpoch.transactionRevision,
+              committedReadyTransaction.identity == committedReadyEpoch.transactionIdentity else {
             throw StateError.staleTransaction
         }
 
@@ -350,7 +372,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         guard current.boundaryKind == .finiteAcquisitionReady,
               current.authority == rejection.authority,
               current.queueCutoff == rejection.queueCutoff,
-              current.revision == rejection.transactionRevision else {
+              current.revision == rejection.transactionRevision,
+              current.identity == rejection.transactionIdentity else {
             throw StateError.staleTransaction
         }
 

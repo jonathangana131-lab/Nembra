@@ -73,6 +73,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         let queueCutoff: UInt64
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
         let transactionRevision: UInt64
+        let transactionIdentity: UUID
         let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
 
         fileprivate init(
@@ -83,6 +84,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             queueCutoff = decision.queueCutoff
             authority = decision.authority
             transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
             self.currentAuthority = currentAuthority
         }
     }
@@ -102,6 +104,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }
         var observedAtDate: Date { readyDecision.observedAtDate }
         var transactionRevision: UInt64 { readyTransaction.revision }
+        var transactionIdentity: UUID { readyTransaction.identity }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.readyDecision == rhs.readyDecision
