@@ -1,0 +1,54 @@
+name: ES80 Window Isolation Feature QA
+
+on:
+  push:
+    branches:
+      - 'feature/qa-es80-window-isolation-chat-j8r5v'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Test isolated CoreBluetooth observation windows
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent and workflow-only delta
+        run: |
+          set -euo pipefail
+          product_sha="ed84c748406f7f691270284b1567728297725da9"
+          test "$(git rev-parse HEAD^)" = "$product_sha"
+          changed="$(git diff --name-only "$product_sha" HEAD)"
+          test "$changed" = ".github/workflows/es80-window-isolation-feature-qa.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 research package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraBluetoothCapture package
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build NembraBluetoothCapture for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
