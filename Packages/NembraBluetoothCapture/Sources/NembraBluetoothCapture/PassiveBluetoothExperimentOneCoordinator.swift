@@ -113,10 +113,10 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
         } catch {
-            // `stagingPreview()` is producer-owned and read-only. It succeeds only while this exact
-            // one-shot admission remains unconsumed. Preserve the handoff for a legitimate retry in
-            // that case; otherwise clear it because downstream ownership may already have changed.
-            if (try? admission.stagingPreview()) == nil {
+            // Retryability is the exact one-shot state, not the availability of a
+            // descriptive preview helper. Preserve this run only when the controller
+            // failed before admission consumption; otherwise clear fail-closed.
+            if admission.isConsumed {
                 pendingCaptureAdmission = nil
                 preparedCorrelatedTargetIdentifier = nil
             }

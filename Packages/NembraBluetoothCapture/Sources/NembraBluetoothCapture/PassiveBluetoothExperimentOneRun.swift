@@ -117,6 +117,13 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     private let payload: Payload
     private var hasBeenConsumed = false
 
+    /// Package-owned read-only one-shot state. This reveals no payload, recorder,
+    /// target identifier, or mutation authority; it only lets the coordinator decide
+    /// whether a controller error happened before or after irreversible consumption.
+    var isConsumed: Bool {
+        hasBeenConsumed
+    }
+
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
