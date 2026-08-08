@@ -31,6 +31,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
+        case staleTerminalRetirementReceipt
+        case terminalRetirementQueueAdvanced(expectedTail: UInt64, currentTail: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -249,15 +251,50 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return queueSequence > transaction.queueCutoff
     }
 
+    /// Reopens the lifecycle grammar only after the exact terminal generation's
+    /// post-H FIFO evidence was synchronously retired by the package-owned producer.
+    ///
+    /// The receipt must bind the current terminal transaction's authority, revision,
+    /// and Horizon cutoff. The controller's monotonic queue tail must also still equal
+    /// the exact tail validated by retirement. Any callback accepted between retirement
+    /// and this transition makes the receipt stale and leaves the terminal quarantine
+    /// unchanged.
+    ///
+    /// This operation is intentionally synchronous on MainActor and does not reset
+    /// `nextRevision`. A fresh Ready transaction therefore receives a revision newer
+    /// than every transaction from the sealed lifecycle, so an old async completion
+    /// can never alias a later capture after reopening.
+    @MainActor
+    mutating func reopenAfterTerminalQueueRetirement(
+        _ receipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .terminal(transaction) = phase else {
+            throw StateError.invalidTransition
+        }
+        guard receipt.terminalAuthority == transaction.authority,
+              receipt.terminalTransactionRevision == transaction.revision,
+              receipt.horizonQueueCutoff == transaction.queueCutoff else {
+            throw StateError.staleTerminalRetirementReceipt
+        }
+        guard currentLastEnqueuedEventSequence == receipt.validatedQueueTailSequence else {
+            throw StateError.terminalRetirementQueueAdvanced(
+                expectedTail: receipt.validatedQueueTailSequence,
+                currentTail: currentLastEnqueuedEventSequence
+            )
+        }
+
+        committedReadyTransaction = nil
+        phase = .awaitingReady
+    }
+
     /// Requests a fresh lifecycle grammar only when no observation transaction has
     /// begun yet. Once Ready starts, this gate remains closed through terminal freeze.
     ///
     /// Terminal artifact freeze proves the immutable artifact is sealed; it does NOT
     /// prove callbacks intentionally withheld after Horizon have been retired from
-    /// the controller FIFO. Reopening here would erase their terminal quarantine and
-    /// make old-generation post-cut evidence drainable again. A future explicit
-    /// controller-owned retirement/abort operation must prove the old queue generation
-    /// is gone before this gate gains a terminal -> awaitingReady transition.
+    /// the controller FIFO. Terminal reopening therefore requires the explicit
+    /// producer-issued receipt consumed by `reopenAfterTerminalQueueRetirement`.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else {
