@@ -22,11 +22,12 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             Event(queueSequence: 13, authority: terminalAuthority),
             Event(queueSequence: 14, authority: terminalAuthority)
         ]
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 14,
             horizonQueueCutoff: 12
         )
+        let retirement = result.receipt
         #expect(events.isEmpty)
         #expect(retirement.retiredEvidenceCount == 2)
         #expect(!retirement.requiresRetainedEvidenceRoutingBeforeReopen)
@@ -34,7 +35,8 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
             currentLastEnqueuedEventSequence: 14,
-            retirementReceipt: retirement
+            retirementReceipt: retirement,
+            terminalGate: result.terminalGate
         )
 
         #expect(resolution.terminalAuthority == terminalAuthority)
@@ -49,7 +51,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
     @Test
     func exactHorizonWithNoPostCutCallbacksIsAValidNoOpResolution() throws {
         var events: [Event] = []
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 12,
             horizonQueueCutoff: 12
@@ -58,7 +60,8 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         let resolution = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
             currentLastEnqueuedEventSequence: 12,
-            retirementReceipt: retirement
+            retirementReceipt: result.receipt,
+            terminalGate: result.terminalGate
         )
 
         #expect(resolution.horizonQueueCutoff == 12)
@@ -69,12 +72,90 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
     }
 
     @Test
+    func nonterminalGateCannotResolveTerminalRetirement() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority)
+        ]
+        let result = try retire(
+            &events,
+            currentTail: 13,
+            horizonQueueCutoff: 12
+        )
+
+        let error = capturedResolutionError {
+            _ = try Resolution.resolve(
+                currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 13,
+                retirementReceipt: result.receipt,
+                terminalGate: PassiveCoreBluetoothObservationBoundaryQueueGate()
+            )
+        }
+
+        #expect(error == .terminalHorizonRequired)
+    }
+
+    @Test
+    func differentTerminalTransactionCannotResolveRetirementReceipt() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority)
+        ]
+        let result = try retire(
+            &events,
+            currentTail: 13,
+            horizonQueueCutoff: 12
+        )
+        let differentTerminalGate = try terminalGate(horizonQueueCutoff: 13)
+
+        let error = capturedResolutionError {
+            _ = try Resolution.resolve(
+                currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 13,
+                retirementReceipt: result.receipt,
+                terminalGate: differentTerminalGate
+            )
+        }
+
+        #expect(error == .staleTerminalTransaction)
+    }
+
+    @Test
+    func differentTerminalAuthorityCannotResolveRetirementReceipt() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority)
+        ]
+        let result = try retire(
+            &events,
+            currentTail: 13,
+            horizonQueueCutoff: 12
+        )
+        let foreignAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 5,
+            authorityGeneration: 1
+        )
+        let foreignTerminalGate = try terminalGate(
+            horizonQueueCutoff: 12,
+            authority: foreignAuthority
+        )
+
+        let error = capturedResolutionError {
+            _ = try Resolution.resolve(
+                currentResolvedThroughQueueSequence: 12,
+                currentLastEnqueuedEventSequence: 13,
+                retirementReceipt: result.receipt,
+                terminalGate: foreignTerminalGate
+            )
+        }
+
+        #expect(error == .terminalAuthorityChanged)
+    }
+
+    @Test
     func callbackAfterRetirementInvalidatesQueueTailProof() throws {
         var events = [
             Event(queueSequence: 13, authority: terminalAuthority),
             Event(queueSequence: 14, authority: terminalAuthority)
         ]
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 14,
             horizonQueueCutoff: 12
@@ -85,7 +166,8 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 12,
                 currentLastEnqueuedEventSequence: 15,
-                retirementReceipt: retirement
+                retirementReceipt: result.receipt,
+                terminalGate: result.terminalGate
             )
         }
 
@@ -107,19 +189,20 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             Event(queueSequence: 13, authority: terminalAuthority),
             Event(queueSequence: 14, authority: newerAuthority)
         ]
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 14,
             horizonQueueCutoff: 12
         )
         #expect(events.map(\.queueSequence) == [14])
-        #expect(retirement.requiresRetainedEvidenceRoutingBeforeReopen)
+        #expect(result.receipt.requiresRetainedEvidenceRoutingBeforeReopen)
 
         let error = capturedResolutionError {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 12,
                 currentLastEnqueuedEventSequence: 14,
-                retirementReceipt: retirement
+                retirementReceipt: result.receipt,
+                terminalGate: result.terminalGate
             )
         }
 
@@ -131,7 +214,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         var events = [
             Event(queueSequence: 13, authority: terminalAuthority)
         ]
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 13,
             horizonQueueCutoff: 12
@@ -141,7 +224,8 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: 11,
                 currentLastEnqueuedEventSequence: 13,
-                retirementReceipt: retirement
+                retirementReceipt: result.receipt,
+                terminalGate: result.terminalGate
             )
         }
 
@@ -159,7 +243,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
             Event(queueSequence: 13, authority: terminalAuthority),
             Event(queueSequence: 14, authority: terminalAuthority)
         ]
-        let retirement = try retire(
+        let result = try retire(
             &events,
             currentTail: 14,
             horizonQueueCutoff: 12
@@ -167,14 +251,16 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         let first = try Resolution.resolve(
             currentResolvedThroughQueueSequence: 12,
             currentLastEnqueuedEventSequence: 14,
-            retirementReceipt: retirement
+            retirementReceipt: result.receipt,
+            terminalGate: result.terminalGate
         )
 
         let error = capturedResolutionError {
             _ = try Resolution.resolve(
                 currentResolvedThroughQueueSequence: first.resolvedThroughQueueSequence,
                 currentLastEnqueuedEventSequence: 14,
-                retirementReceipt: retirement
+                retirementReceipt: result.receipt,
+                terminalGate: result.terminalGate
             )
         }
 
@@ -190,11 +276,15 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
         _ events: inout [Event],
         currentTail: UInt64,
         horizonQueueCutoff: UInt64
-    ) throws -> Retirement.Receipt {
-        try Retirement.retire(
+    ) throws -> (
+        receipt: Retirement.Receipt,
+        terminalGate: PassiveCoreBluetoothObservationBoundaryQueueGate
+    ) {
+        let gate = try terminalGate(horizonQueueCutoff: horizonQueueCutoff)
+        let receipt = try Retirement.retire(
             from: &events,
             currentLastEnqueuedEventSequence: currentTail,
-            terminalGate: try terminalGate(horizonQueueCutoff: horizonQueueCutoff),
+            terminalGate: gate,
             identity: { event in
                 Retirement.PendingEvidenceIdentity(
                     queueSequence: event.queueSequence,
@@ -202,36 +292,39 @@ struct PassiveCoreBluetoothTerminalQueueResolutionTests {
                 )
             }
         )
+        return (receipt, gate)
     }
 
     private func terminalGate(
-        horizonQueueCutoff: UInt64
+        horizonQueueCutoff: UInt64,
+        authority: PassiveCoreBluetoothArtifactAuthorityContext? = nil
     ) throws -> PassiveCoreBluetoothObservationBoundaryQueueGate {
+        let boundaryAuthority = authority ?? terminalAuthority
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let ready = try gate.begin(
             .finiteAcquisitionReady,
             through: 5,
-            authority: terminalAuthority
+            authority: boundaryAuthority
         )
         try gate.markBoundaryRecorded(
             ready,
             lastProcessedQueueSequence: 5,
-            currentAuthority: terminalAuthority
+            currentAuthority: boundaryAuthority
         )
         let horizon = try gate.begin(
             .observationHorizon,
             through: horizonQueueCutoff,
             processedThrough: 8,
-            authority: terminalAuthority
+            authority: boundaryAuthority
         )
         try gate.markBoundaryRecorded(
             horizon,
             lastProcessedQueueSequence: horizonQueueCutoff,
-            currentAuthority: terminalAuthority
+            currentAuthority: boundaryAuthority
         )
         try gate.completeHorizonArtifactFreeze(
             horizon,
-            currentAuthority: terminalAuthority
+            currentAuthority: boundaryAuthority
         )
         return gate
     }
