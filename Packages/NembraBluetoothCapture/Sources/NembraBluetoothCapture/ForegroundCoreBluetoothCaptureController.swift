@@ -184,6 +184,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case attemptGenerationExhausted
         case targetSessionChanged
         case artifactReadAlreadyActive
+        case artifactNotFinalized
         case captureIncomplete
         case captureFailed
     }
@@ -225,7 +226,20 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     public private(set) var bluetoothState: CBManagerState = .unknown
-    public private(set) var isScanning = false
+
+    /// True while Nembra still owns an explicit foreground scan request. This is
+    /// request intent only; use `isScanning` for CoreBluetooth's current state.
+    public var isScanRequested: Bool {
+        scanRequested
+    }
+
+    /// True only when Nembra owns the request and the exact CoreBluetooth
+    /// manager currently reports that it is scanning. This is software transport
+    /// state, not RF completeness or scan-generation provenance.
+    public var isScanning: Bool {
+        scanRequested && centralManager?.isScanning == true
+    }
+
     public private(set) var connectionPhase: ConnectionPhase = .idle
     public private(set) var discoveredPeripherals: [DiscoveredPeripheral] = []
     public private(set) var lastDiagnostic: String?
@@ -273,10 +287,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
     private var artifactAuthorityGeneration: UInt64 = 0
+    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?
     private var targetState = PassiveCoreBluetoothTargetState()
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
     private var selectedTargetCancellationPending = false
+    private var scanRequested = false
 
     private var centralManager: CBCentralManager!
     private var peripheralByIdentifier: [UUID: CBPeripheral] = [:]
@@ -349,18 +365,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
 
         clearCandidateCatalog()
+        scanRequested = true
         centralManager.scanForPeripherals(
             withServices: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchServiceFilter,
             options: PassiveCoreBluetoothAcquisitionPolicy.foregroundResearchScanOptions(
                 captureAdvertisementCadence: captureAdvertisementCadence
             )
         )
-        isScanning = true
     }
 
     public func stopScanning() {
+        scanRequested = false
         centralManager.stopScan()
-        isScanning = false
     }
 
     /// Explicitly selects the observed peripheral as the current research target
@@ -427,12 +443,43 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// A different selected target may start immediately and late callbacks from
     /// the cancelled target are ignored for that new session.
     public func cancelActiveConnection() {
+        cancelActiveConnection(cause: .operatorRequest)
+    }
+
+    /// Fails the live foreground-only evidence boundary with a cause-specific
+    /// interruption before transport teardown. Product shells should use this
+    /// instead of presenting foreground integrity loss as an operator cancel.
+    public func invalidateActiveCaptureForForegroundLoss() {
+        cancelActiveConnection(cause: .foregroundIntegrityLoss)
+    }
+
+    /// Ends transport only after the caller has already frozen its immutable
+    /// artifact. This intentionally adds no new interruption to that finalized
+    /// evidence timeline.
+    public func teardownActiveConnectionAfterFinalization() throws {
+        guard activePeripheral != nil else { return }
+        guard let finalizedAuthority = lastFinalizedArtifactAuthority,
+              finalizedAuthority.matches(
+                targetSessionGeneration: targetSessionGeneration,
+                authorityGeneration: artifactAuthorityGeneration
+              ) else {
+            throw ControllerError.artifactNotFinalized
+        }
+        cancelActiveConnection(cause: .finalizedArtifactTeardown)
+    }
+
+    private func cancelActiveConnection(cause: PassiveCoreBluetoothCancellationCause) {
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         guard let peripheral = activePeripheral else { return }
-        lastDiagnostic = "Connection cancellation requested."
+        if let diagnosticMessage = cause.diagnosticMessage {
+            lastDiagnostic = diagnosticMessage
+        }
 
         if targetState.selectedTargetIdentifier == peripheral.identifier {
+            if let interruptionReason = cause.interruptionReason {
+                enqueueInterruption(interruptionReason)
+            }
             selectedTargetCancellationPending = true
             if !acquisitionLedger.isReady {
                 acquisitionLedger.finishWithoutGattAcquisition()
@@ -456,7 +503,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         note: String? = nil
     ) throws {
         try ensureCaptureHealthy()
-        guard recorder != nil else { throw ControllerError.targetNotSelected }
+        guard recorder != nil,
+              let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+            throw ControllerError.targetNotSelected
+        }
+        guard !selectedTargetCancellationPending,
+              !targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier) else {
+            throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+        }
         let observation = try PassiveBluetoothStockAppObservation(
             field: field,
             displayedValue: displayedValue,
@@ -474,6 +528,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         try validate(context)
         let snapshot = await context.recorder.snapshot()
         try validate(context)
+        lastFinalizedArtifactAuthority = context.authority
         return snapshot
     }
 
@@ -486,6 +541,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         try validate(context)
         let data = try await context.recorder.encodedJSON(prettyPrinted: prettyPrinted)
         try validate(context)
+        lastFinalizedArtifactAuthority = context.authority
         return data
     }
 
@@ -579,6 +635,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             failCapture(AcquisitionError.artifactAuthorityGenerationExhausted)
             return false
         }
+        lastFinalizedArtifactAuthority = nil
         artifactAuthorityGeneration += 1
         return true
     }
@@ -651,7 +708,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
             let timeoutDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
             self.enqueueInterruption("finite GATT acquisition progress timed out")
-            self.cancelActiveConnection()
+            self.cancelActiveConnection(cause: .interruptionAlreadyRecorded)
             self.lastDiagnostic = timeoutDiagnostic
         }
     }
@@ -893,8 +950,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         } else {
             lastDiagnostic = "Capture stopped after evidence/acquisition failure: \(String(describing: error))"
         }
+        scanRequested = false
         centralManager.stopScan()
-        isScanning = false
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         if let activePeripheral {
@@ -1028,9 +1085,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         hasObservedInitialCentralState = true
 
         guard central.state == .poweredOn else {
-            if isScanning {
+            scanRequested = false
+            if central.isScanning {
                 central.stopScan()
-                isScanning = false
             }
             if activePeripheral != nil {
                 activePeripheral?.delegate = nil
@@ -1058,6 +1115,12 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        guard PassiveCoreBluetoothDiscoveryAdmissionPolicy.accepts(
+            callbackIsFromActiveManager: central === centralManager,
+            isPoweredOn: central.state == .poweredOn,
+            isScanning: scanRequested && central.isScanning
+        ) else { return }
+
         let receipt = callbackReceipt()
         let normalizedRSSI = DiscoveredPeripheral.normalizedRSSI(RSSI.intValue)
 

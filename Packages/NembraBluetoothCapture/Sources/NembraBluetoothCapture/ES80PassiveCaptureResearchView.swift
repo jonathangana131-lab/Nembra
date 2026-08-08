@@ -90,12 +90,12 @@ public struct ES80PassiveCaptureResearchView: View {
             }
 
             Toggle("Capture advertisement cadence", isOn: $captureAdvertisementCadence)
-                .disabled(controller.isScanning || artifactInteractionLocked)
+                .disabled(controller.isScanRequested || artifactInteractionLocked)
 
             HStack {
-                Button(controller.isScanning ? "Stop scan" : "Start scan") {
+                Button(controller.isScanRequested ? "Stop scan" : "Start scan") {
                     perform {
-                        if controller.isScanning {
+                        if controller.isScanRequested {
                             controller.stopScanning()
                         } else {
                             try controller.startScanning(
@@ -144,7 +144,7 @@ public struct ES80PassiveCaptureResearchView: View {
         Section("Discovered peripherals") {
             if controller.discoveredPeripherals.isEmpty {
                 ContentUnavailableView(
-                    controller.isScanning ? "Scanning…" : "No discoveries yet",
+                    scanEmptyStateTitle,
                     systemImage: "antenna.radiowaves.left.and.right",
                     description: Text("The first ES80 fingerprint scan is intentionally not filtered to a guessed service family.")
                 )
@@ -346,6 +346,16 @@ public struct ES80PassiveCaptureResearchView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var scanEmptyStateTitle: String {
+        if controller.isScanning {
+            return "Scanning…"
+        }
+        if controller.isScanRequested {
+            return "Scan requested — not active"
+        }
+        return "No discoveries yet"
     }
 
     private var artifactInteractionLocked: Bool {
