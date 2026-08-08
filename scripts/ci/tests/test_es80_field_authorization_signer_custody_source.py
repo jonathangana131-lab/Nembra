@@ -47,6 +47,26 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must fail closed on writable executable/custody paths.",
         )
 
+    def test_every_openssl_parent_requires_trusted_ownership(self):
+        self.assertIn(
+            'trusted_owner_uids = {0, signing_uid}',
+            self.source,
+            "OpenSSL custody must define the trusted root/signing-user ownership set.",
+        )
+        self.assertRegex(
+            self.source,
+            re.compile(
+                r"while True:.*?directory_stat\s*=\s*directory\.stat\(\).*?directory_stat\.st_uid\s+not\s+in\s+trusted_owner_uids",
+                re.DOTALL,
+            ),
+            "Every canonical OpenSSL parent directory must reject an unrelated owner, even at mode 0755.",
+        )
+        self.assertIn(
+            'OpenSSL custody path has an untrusted owner',
+            self.source,
+            "The parent-owner failure must be explicit and fail closed.",
+        )
+
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
             'stat.S_IMODE' in self.source or 'st_mode' in self.source,
