@@ -24,6 +24,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
+        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_DEVICE_UDID"', self.source)
+        self.assertIn('--output-dir "$EVIDENCE_DIR"', self.source)
         self.assertIn('NembraCaptureExternalBuildRecord.json', self.source)
         self.assertIn('NembraCaptureFieldBuildEvidenceRecord.json', self.source)
         self.assertIn('NembraCaptureSignedFieldArtifactInspection.json', self.source)
@@ -47,11 +49,72 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_keeps_generated_evidence_out_of_source_identity(self):
-        self.assertIn('$ROOT/artifacts/Xcode27FieldCandidate', self.source)
+    def test_uses_unique_non_destructive_attempt_root_and_atomic_evidence_child(self):
+        self.assertIn('pwd -P', self.source)
+        self.assertIn(
+            'RAW_CANDIDATE_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID}"',
+            self.source,
+        )
+        self.assertIn('Path(sys.argv[1]).resolve(strict=False)', self.source)
+        self.assertIn('CANDIDATE_DIR=', self.source)
+        self.assertIn('PRODUCER_DIR="$CANDIDATE_DIR/producer"', self.source)
+        self.assertIn('EVIDENCE_DIR="$CANDIDATE_DIR/evidence"', self.source)
+        self.assertIn('if [[ -e "$CANDIDATE_DIR" ]]', self.source)
+        self.assertIn('refusing to mix or overwrite field-candidate state', self.source)
+        self.assertIn('mkdir -p "$PRODUCER_DIR/logs"', self.source)
+        self.assertIn('if [[ -e "$EVIDENCE_DIR" ]]', self.source)
+        self.assertNotIn('mkdir -p "$EVIDENCE_DIR"', self.source)
+        self.assertIn('--output-dir "$EVIDENCE_DIR"', self.source)
         self.assertIn('git check-ignore -q', self.source)
-        self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
-        self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
+
+    def test_snapshots_and_binds_exact_export_options_used_outside_atomic_evidence(self):
+        self.assertIn('EXPORT_OPTIONS_SNAPSHOT="$PRODUCER_DIR/ExportOptions.plist"', self.source)
+        self.assertIn('cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('-exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT"', self.source)
+        self.assertIn('options.get("teamID")', self.source)
+        self.assertIn('Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM', self.source)
+        self.assertIn('EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('POST_EXPORT_OPTIONS_SHA256=', self.source)
+        self.assertIn('Retained ExportOptions.plist changed during archive/export', self.source)
+        self.assertIn('export_options_file=producer/ExportOptions.plist', self.source)
+        self.assertIn('export_options_sha256=$EXPORT_OPTIONS_SHA256', self.source)
+        self.assertNotIn('EXPORT_OPTIONS_SNAPSHOT="$EVIDENCE_DIR/', self.source)
+
+    def test_requires_intended_device_for_verification_without_retaining_udid(self):
+        self.assertIn('NEMBRA_INTENDED_DEVICE_UDID', self.source)
+        self.assertIn('verification-only', self.source)
+        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_DEVICE_UDID"', self.source)
+        self.assertIn('intended_device_udid_retained=false', self.source)
+        self.assertNotIn('echo "$NEMBRA_INTENDED_DEVICE_UDID"', self.source)
+        self.assertNotIn('intended_device_udid=$NEMBRA_INTENDED_DEVICE_UDID', self.source)
+        self.assertNotIn('NEMBRA_INTENDED_DEVICE_UDID" >', self.source)
+
+    def test_optional_provisioning_path_is_safe_on_macos_bash_32(self):
+        self.assertIn('ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"', self.source)
+        self.assertIn('NEMBRA_ALLOW_PROVISIONING_UPDATES must be exactly 0 or 1.', self.source)
+        self.assertIn('run_xcodebuild()', self.source)
+        self.assertIn('xcodebuild -allowProvisioningUpdates "$@"', self.source)
+        self.assertGreaterEqual(self.source.count('run_xcodebuild'), 3)
+        self.assertNotIn('PROVISIONING_ARGS=()', self.source)
+        self.assertNotIn('${PROVISIONING_ARGS[@]}', self.source)
+        self.assertIn('allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES', self.source)
+
+    def test_exact_ipa_selection_avoids_optional_bash_arrays(self):
+        self.assertIn('IPA_PATH="$(python3 - "$EXPORT_DIR"', self.source)
+        self.assertIn('path.suffix.lower() == ".ipa"', self.source)
+        self.assertIn('Expected exactly one exported .ipa; found', self.source)
+        self.assertNotIn('IPA_FILES=(', self.source)
+        self.assertNotIn('shopt -s nullglob', self.source)
+        self.assertNotIn('${#IPA_FILES[@]}', self.source)
+
+    def test_retains_archive_and_export_logs_outside_evidence(self):
+        self.assertIn('$PRODUCER_DIR/logs/xcodebuild-archive.log', self.source)
+        self.assertIn('$PRODUCER_DIR/logs/xcodebuild-export.log', self.source)
+        self.assertIn('ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('archive_log=producer/logs/xcodebuild-archive.log', self.source)
+        self.assertIn('export_log=producer/logs/xcodebuild-export.log', self.source)
+        self.assertNotIn('$EVIDENCE_DIR/logs/', self.source)
 
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
