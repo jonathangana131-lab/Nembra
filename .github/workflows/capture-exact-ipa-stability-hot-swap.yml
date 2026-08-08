@@ -1,0 +1,159 @@
+name: Capture exact IPA stability hot-swap
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-signed-ipa-snapshot-stability/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-signed-ipa-snapshot-stability/gpt56-thinking-go
+          fetch-depth: 0
+
+      - name: Compose post-inspection exact-subject stability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = path.read_text(encoding="utf-8")
+          if "def verify_exact_ipa_subject_unchanged(" in text:
+              raise SystemExit("exact IPA post-inspection stability is already present")
+          if "destination.chmod(0o400)" not in text:
+              raise SystemExit("expected read-only private exact IPA snapshot contract")
+
+          anchor = "    finally:\n        os.close(descriptor)\n\ndef canonical_sha40(value: str) -> str:\n"
+          if text.count(anchor) != 1:
+              raise SystemExit("unexpected snapshot->canonical anchor")
+          helper = '''    finally:
+        os.close(descriptor)
+
+
+def verify_exact_ipa_subject_unchanged(
+    ipa_path: Path,
+    *,
+    expected_identity: tuple[int, int, int, int, int, int],
+    expected_sha256: str,
+) -> None:
+    try:
+        current_stat = ipa_path.lstat()
+        current_sha256 = sha256_file(ipa_path)
+    except OSError as exc:
+        raise EvidenceError("exact IPA inspection subject became unreadable during inspection") from exc
+    if (
+        _stable_file_identity(current_stat) != expected_identity
+        or current_sha256 != expected_sha256
+    ):
+        raise EvidenceError(
+            "exact IPA inspection subject changed during signing/provisioning inspection"
+        )
+
+
+def canonical_sha40(value: str) -> str:
+'''
+          text = text.replace(anchor, helper, 1)
+
+          old_start = '''    source_sha = canonical_sha40(expected_source_sha)
+    if not ipa_path.is_file():
+        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}")
+
+    ipa_sha = sha256_file(ipa_path)
+    ipa_size = ipa_path.stat().st_size
+'''
+          new_start = '''    source_sha = canonical_sha40(expected_source_sha)
+    try:
+        ipa_stat_before = ipa_path.lstat()
+    except OSError as exc:
+        raise EvidenceError(f"IPA does not exist as a file: {ipa_path}") from exc
+    if not stat.S_ISREG(ipa_stat_before.st_mode):
+        raise EvidenceError("exact IPA inspection subject must remain one regular file")
+    ipa_identity_before = _stable_file_identity(ipa_stat_before)
+
+    ipa_sha = sha256_file(ipa_path)
+    ipa_size = ipa_stat_before.st_size
+'''
+          if text.count(old_start) != 1:
+              raise SystemExit("unexpected snapshotted IPA inspection preamble")
+          text = text.replace(old_start, new_start, 1)
+
+          after_measurement = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
+            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
+
+    external_record = {
+'''
+          with_recheck = '''        if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
+            raise EvidenceError("could not derive canonical executable/Info.plist SHA-256")
+
+    verify_exact_ipa_subject_unchanged(
+        ipa_path,
+        expected_identity=ipa_identity_before,
+        expected_sha256=ipa_sha,
+    )
+
+    external_record = {
+'''
+          if text.count(after_measurement) != 1:
+              raise SystemExit("unexpected signing/provisioning measurement boundary")
+          text = text.replace(after_measurement, with_recheck, 1)
+
+          self_test_anchor = '''    assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
+    assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
+    assert not valid_build_identifier("Capture\\nBuild")
+'''
+          regression = self_test_anchor + '''
+    with tempfile.TemporaryDirectory(prefix="nembra-field-subject-stability-self-test-") as temporary:
+        subject = Path(temporary) / "subject.ipa"
+        original_bytes = b"exact subject bytes"
+        subject.write_bytes(original_bytes)
+        subject.chmod(0o400)
+        subject_identity = _stable_file_identity(subject.lstat())
+        subject_sha = sha256_file(subject)
+        subject.chmod(0o600)
+        subject.write_bytes(b"mutated subject bytes")
+        subject.write_bytes(original_bytes)
+        subject.chmod(0o400)
+        try:
+            verify_exact_ipa_subject_unchanged(
+                subject,
+                expected_identity=subject_identity,
+                expected_sha256=subject_sha,
+            )
+        except EvidenceError as error:
+            assert "changed during signing/provisioning inspection" in str(error)
+        else:
+            raise AssertionError("mutate-and-restore exact IPA snapshot escaped stability detection")
+'''
+          if text.count(self_test_anchor) != 1:
+              raise SystemExit("unexpected inspector self-test anchor")
+          text = text.replace(self_test_anchor, regression, 1)
+          path.write_text(text, encoding="utf-8")
+
+          subprocess.run([sys.executable, "-m", "py_compile", str(path)], check=True)
+          subprocess.run([sys.executable, str(path), "--self-test"], check=True)
+          subprocess.run([sys.executable, "scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py"], check=True)
+          PY
+          test "$(stat -c '%a' scripts/ci/es80_signed_field_artifact_evidence.py)" = "755"
+          git diff --check
+
+      - name: Commit hot-swap and remove transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-exact-ipa-stability-hot-swap.yml
+          git config user.name "nembra-v14-transform"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_evidence.py .github/workflows/capture-exact-ipa-stability-hot-swap.yml
+          git diff --cached --check
+          git commit -m "[Capture provenance v14] Re-prove exact IPA after inspection"
+          git push origin HEAD:fix/es80-v14-signed-ipa-snapshot-stability/gpt56-thinking-go
