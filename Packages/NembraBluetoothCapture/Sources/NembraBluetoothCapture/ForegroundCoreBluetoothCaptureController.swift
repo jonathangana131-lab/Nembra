@@ -545,15 +545,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.captureFailed
         }
 
-        // Inspect only immutable producer-owned staging metadata first. A target that has
-        // not reappeared yet is recoverable by continuing passive scan and retrying this same
-        // sealed admission, so do not burn its one-shot ownership handoff here.
-        let preview = admission.preview
-        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                preview.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == preview.peripheralIdentifier else {
-            throw ControllerError.targetSessionChanged
-        }
+        // Missing/not-yet-fresh rediscovery is recoverable. Inspect only the sealed
+        // producer's read-only staging authority until every controller-local precondition
+        // succeeds; do not burn the one-shot recorder handoff merely because scanning needs time.
+        let preview = try admission.previewForControllerStaging()
         guard let peripheral = peripheralByIdentifier[preview.peripheralIdentifier],
               let discovery = latestDiscoveryByIdentifier[preview.peripheralIdentifier] else {
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
@@ -573,21 +568,19 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
 
         guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.
+              latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds else {
+            // Equality does not prove this callback receipt happened after handoff. Keep the
+            // admission intact and require a strictly later current-controller observation.
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
         }
 
-        // Every recoverable controller-local staging check has passed. Consume exactly once
-        // at the irreversible ownership handoff and bind the consumed payload back to the
-        // same producer preview before publishing the run-owned recorder.
         let payload = try admission.consume()
         guard payload.admissionIdentity == preview.admissionIdentity,
-              payload.powerCycleEvidence == preview.powerCycleEvidence,
               payload.peripheralIdentifier == preview.peripheralIdentifier,
-              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds else {
+              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds,
+              case let .singleRepeatableCandidate(correlatedIdentifier) =
+                payload.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == payload.peripheralIdentifier else {
             throw ControllerError.targetSessionChanged
         }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
