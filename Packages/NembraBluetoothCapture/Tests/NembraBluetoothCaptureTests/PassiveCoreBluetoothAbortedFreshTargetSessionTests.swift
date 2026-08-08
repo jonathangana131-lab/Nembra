@@ -32,6 +32,27 @@ struct PassiveCoreBluetoothAbortedFreshTargetSessionTests {
         #expect(fresh.receipt.targetSessionGeneration == 8)
         #expect(fresh.receipt.sessionID == sessionID)
         #expect(fresh.receipt.recorderIdentity == ObjectIdentifier(fresh.recorder))
+        #expect(fresh.receipt.recorder === fresh.recorder)
+    }
+
+    @Test("detached abort receipt strongly retains the exact recorder that earned authority")
+    @MainActor
+    func detachedReceiptRetainsRecorderLifetime() async throws {
+        let resolution = try await resolvedAbort(previousGeneration: 7)
+        var fresh: PassiveCoreBluetoothAbortedFreshTargetSession? = try PassiveCoreBluetoothAbortedFreshTargetSession.create(
+            after: resolution,
+            vehicleIdentity: es80
+        )
+        weak var retainedRecorder = fresh?.recorder
+        var detachedReceipt: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt? = fresh?.receipt
+
+        #expect(retainedRecorder != nil)
+        fresh = nil
+        #expect(retainedRecorder != nil)
+        #expect(detachedReceipt?.recorder === retainedRecorder)
+
+        detachedReceipt = nil
+        #expect(retainedRecorder == nil)
     }
 
     @Test("equal-scalar provisioning events remain distinct recorder authority")
