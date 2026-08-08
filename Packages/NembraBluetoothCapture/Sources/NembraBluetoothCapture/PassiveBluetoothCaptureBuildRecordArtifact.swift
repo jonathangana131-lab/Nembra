@@ -140,7 +140,9 @@ public enum PassiveBluetoothCaptureBuildRecordArtifactJSON {
             procedureVersion: artifact.procedureVersion,
             toolchainIdentifier: artifact.toolchainIdentifier
         )
-        return try JSONEncoder.sorted.encode(wire)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(wire)
     }
 
     private static func isValidBoundedIdentifier(
@@ -163,13 +165,5 @@ public enum PassiveBluetoothCaptureBuildRecordArtifactJSON {
             return nil
         }
         return normalized
-    }
-}
-
-private extension JSONEncoder {
-    static var sorted: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return encoder
     }
 }
