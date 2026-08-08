@@ -1,0 +1,92 @@
+name: Temporary ES80 accessibility audit re-anchor
+
+on:
+  push:
+    branches:
+      - qa/es80-v14-accessibility-audit-current/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/es80-v14-accessibility-audit-current/gpt56-go
+          fetch-depth: 0
+
+      - name: Insert current-head Capture accessibility audit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          path = Path("NembraUITests/NembraUITests.swift")
+          source = path.read_text(encoding="utf-8")
+          if "testCaptureCriticalSimulatorStatesPassSystemAccessibilityAudit" in source:
+              raise SystemExit("Capture accessibility audit already exists on current head")
+
+          marker = "    @MainActor\n    func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls()"
+          if source.count(marker) != 1:
+              raise SystemExit("accessibility audit insertion boundary is not unique")
+
+          method = textwrap.dedent("""
+              @MainActor
+              func testCaptureCriticalSimulatorStatesPassSystemAccessibilityAudit() throws {
+                  let scenarios = [
+                      "stationaryPreflight",
+                      "observationHorizonReady",
+                      "captureComplete",
+                      "foregroundInterrupted"
+                  ]
+
+                  for scenario in scenarios {
+                      let app = XCUIApplication()
+                      app.launchArguments = [
+                          "--es80-passive-capture-simulator-qa",
+                          "--es80-capture-qa-scenario=\\(scenario)"
+                      ]
+                      app.launch()
+
+                      XCTAssertTrue(
+                          app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                          "Capture accessibility audit scenario \\(scenario) must render the real Capture shell."
+                      )
+                      XCTAssertTrue(
+                          app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                          "Capture accessibility audit scenario \\(scenario) must remain visibly synthetic and non-authorizing."
+                      )
+
+                      try app.performAccessibilityAudit()
+                      app.terminate()
+                  }
+              }
+
+          """)
+          method = textwrap.indent(method, "    ")
+          source = source.replace(marker, method + marker, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Source-contract verification
+        shell: bash
+        run: |
+          git diff --check -- NembraUITests/NembraUITests.swift
+          grep -F 'func testCaptureCriticalSimulatorStatesPassSystemAccessibilityAudit() throws' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'try app.performAccessibilityAudit()' NembraUITests/NembraUITests.swift >/dev/null
+          test "$(grep -c -- '--es80-capture-qa-scenario=' NembraUITests/NembraUITests.swift)" -ge 2
+
+      - name: Commit current audit and self-delete transformer
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_tmp_es80_accessibility_reanchor.yml
+          git add NembraUITests/NembraUITests.swift
+          git diff --cached --check
+          git commit -m "Capture accessibility: re-anchor critical-state system audit"
+          git push origin HEAD:qa/es80-v14-accessibility-audit-current/gpt56-go
