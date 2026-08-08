@@ -1,0 +1,38 @@
+name: ES80 Capture Observation Horizon Core Smoke
+
+on:
+  push:
+    branches:
+      - qa/es80-capture-observation-horizon/chat-v5q7n-f662534
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent and workflow-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_sha="f662534658b16b217cb785b823bf87245500d118"
+          test "$(git rev-parse HEAD^)" = "$product_sha"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = ".github/workflows/es80-capture-observation-horizon-core-smoke.yml"
+
+      - name: Run full NembraCore suite with Swift 6.2 warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/Packages/NembraCore \
+            swift:6.2 \
+            bash -lc 'swift --version && swift test -Xswiftc -warnings-as-errors'
