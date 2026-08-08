@@ -1,0 +1,54 @@
+name: Agent Terminal Fresh Session V14
+
+on:
+  push:
+    branches:
+      - agent/capture-terminal-fresh-session-v14-current
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-terminal-fresh-session-v14-current
+          fetch-depth: 0
+      - name: Compose reviewed terminal authority delta
+        run: |
+          set -euo pipefail
+          base=50732571e01929ef22c79bd7f99178cf4f78a6bf
+          source=28c9dde0398d14f353415b860d806215d597792b
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          gate=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          controller_test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests.swift
+          gate_test=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalRealRecorderReopenTests.swift
+
+          git fetch --no-tags origin "$base" "$source"
+          git diff --binary "$base" "$source" -- "$controller" "$gate" > /tmp/terminal.patch
+          test -s /tmp/terminal.patch
+          git apply --3way --index /tmp/terminal.patch
+          git show "$source:$controller_test" > "$controller_test"
+          git show "$source:$gate_test" > "$gate_test"
+          git add "$controller_test" "$gate_test"
+
+          # Preserve current flagship Experiment One and foreground-integrity contracts.
+          grep -q 'func connectUsingExperimentOneAdmission(' "$controller"
+          grep -q 'issuedAtUptimeNanoseconds' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          grep -q 'receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds' "$controller"
+          test "$(grep -c 'try self.requireForegroundEvidenceIntegrity()' "$controller")" -ge 4
+          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create' "$controller"
+          grep -q 'reopenAfterTerminalFreshTargetSession' "$gate"
+          grep -q 'pendingTerminalQueueResolution' "$controller"
+          grep -q 'attemptTerminalFreshSessionRecoveryIfPossible' "$controller"
+
+          git diff --cached --check
+          git rm .github/workflows/agent-terminal-fresh-session-v14.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -u
+          git commit -m '[Capture terminal] Restack exact fresh recorder handoff'
+          git push origin HEAD:agent/capture-terminal-fresh-session-v14-current
