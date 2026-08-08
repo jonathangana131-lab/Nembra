@@ -15,9 +15,9 @@ public enum PassiveBluetoothTuyaCaptureReportError: Error, Equatable, Sendable {
 /// It exists so a physical capture can be consumed reproducibly without asking
 /// the operator to copy/edit hex or manually reconstruct GATT streams.
 public struct PassiveBluetoothTuyaCaptureReport: Equatable, Codable, Sendable {
-    /// Schema v2 adds the accepted scoped receipt-sequence provenance and the
-    /// packet-zero candidate-restart boundary to the historical v1 report.
-    public static let currentSchemaVersion = 2
+    /// Schema v3 preserves the bridge's explicit software-only provenance class.
+    /// Schema v2 added scoped receipt chronology and packet-zero restart boundaries.
+    public static let currentSchemaVersion = 3
 
     public let schemaVersion: Int
     public let capture: CaptureSummary
@@ -29,6 +29,7 @@ public struct PassiveBluetoothTuyaCaptureReport: Equatable, Codable, Sendable {
         public let vehicleIdentity: VehicleIdentity
         public let sessionStartedAt: Date
         public let peripheralIdentifier: String
+        public let provenanceClass: PassiveBluetoothTuyaCandidateProvenanceClass
         public let totalCaptureRecordCount: Int
     }
 
@@ -169,6 +170,8 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
         let streams = try analyses.enumerated().map { streamIndex, analysis in
             try makeStreamReport(analysis, streamIndex: streamIndex)
         }
+        let provenanceClass = analyses.first?.transcript.captureContext.provenanceClass
+            ?? PassiveBluetoothTuyaCandidateProvenanceClass.validatedSoftwareSessionOnly
 
         return PassiveBluetoothTuyaCaptureReport(
             schemaVersion: PassiveBluetoothTuyaCaptureReport.currentSchemaVersion,
@@ -177,6 +180,7 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
                 vehicleIdentity: session.vehicleIdentity,
                 sessionStartedAt: session.startedAt,
                 peripheralIdentifier: peripheralIdentifier,
+                provenanceClass: provenanceClass,
                 totalCaptureRecordCount: session.records.count
             ),
             analysisPolicy: .init(
