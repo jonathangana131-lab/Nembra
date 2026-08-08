@@ -25,6 +25,9 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case horizonArtifactNotReady
         case freshTargetSessionRequired
         case freshRecorderIdentityMismatch
+        case abortResolutionReceiptMismatch
+        case abortResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
+        case abortQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
         case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
@@ -523,6 +526,54 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         committedReadyTransaction = nil
         phase = .abortQuarantined(receipt)
         return receipt
+    }
+
+    /// Reopens one abandoned observation epoch only after the controller has
+    /// installed the exact recorder whose construction earned producer-issued abort
+    /// fresh-session proof, applied the exact abandoned-queue resolution to its global
+    /// resolved frontier, and proved no callback advanced the FIFO tail afterward.
+    ///
+    /// Receipt possession, a caller-chosen generation, or scalar recorder identity alone
+    /// are deliberately insufficient. Retired FIFO positions remain resolved-by-retirement
+    /// and are never relabeled as recorder-written evidence.
+    @MainActor
+    mutating func reopenAfterAbortedFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothAbortedFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .abortQuarantined(currentAbort) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.abortedResolution
+        guard currentAbort == resolution.abortReceipt else {
+            throw StateError.abortResolutionReceiptMismatch
+        }
+        guard ObjectIdentifier(freshTargetSession.recorder) == ObjectIdentifier(installedRecorder),
+              freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.abortQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSession.targetSessionGeneration > currentAbort.abandonedTargetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
     }
 
     /// Reopens a successful terminal Horizon only after the controller has
