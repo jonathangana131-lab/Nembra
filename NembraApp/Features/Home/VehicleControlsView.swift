@@ -4,10 +4,14 @@ import UIKit
 struct VehicleControlsView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private let adaptiveColumns = [
-        GridItem(.adaptive(minimum: 116), spacing: 10)
-    ]
+    private var controlColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(), spacing: 10)]
+        }
+        return [GridItem(.adaptive(minimum: 116), spacing: 10)]
+    }
 
     var body: some View {
         ScrollView {
@@ -67,26 +71,7 @@ struct VehicleControlsView: View {
 
             if vehicle.state.connection != .connected {
                 Divider()
-
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: connectionIssuePresentation.icon)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(connectionIssuePresentation.title)
-                            .font(.subheadline.weight(.semibold))
-                        Text(connectionIssuePresentation.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    connectionAction
-                }
+                connectionIssueField
 
                 if vehicle.state.dataAvailability == .retained {
                     Label("Last confirmed settings shown below", systemImage: "clock.arrow.circlepath")
@@ -104,6 +89,40 @@ struct VehicleControlsView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(.primary.opacity(0.045))
+        }
+    }
+
+    @ViewBuilder
+    private var connectionIssueField: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                connectionIssueSummary
+                connectionAction
+            }
+        } else {
+            HStack(alignment: .center, spacing: 12) {
+                connectionIssueSummary
+                Spacer(minLength: 8)
+                connectionAction
+            }
+        }
+    }
+
+    private var connectionIssueSummary: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: connectionIssuePresentation.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectionIssuePresentation.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(connectionIssuePresentation.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -192,7 +211,7 @@ struct VehicleControlsView: View {
             title: "Ride Mode",
             subtitle: "Choose the vehicle's confirmed riding profile."
         ) {
-            LazyVGrid(columns: adaptiveColumns, spacing: 10) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
                 ForEach(supportedModes, id: \.self) { mode in
                     choiceControl(
                         title: mode.displayName,
@@ -214,7 +233,7 @@ struct VehicleControlsView: View {
             title: "Cruise Control",
             subtitle: "Availability and behavior remain governed by the scooter firmware."
         ) {
-            LazyVGrid(columns: adaptiveColumns, spacing: 10) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
                 choiceControl(
                     title: "Off",
                     subtitle: "Manual speed",
@@ -245,7 +264,7 @@ struct VehicleControlsView: View {
             title: "Start Behavior",
             subtitle: "Controls when throttle may engage from a stop."
         ) {
-            LazyVGrid(columns: adaptiveColumns, spacing: 10) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
                 ForEach(StartMode.allCases, id: \.self) { mode in
                     choiceControl(
                         title: mode.displayName,
