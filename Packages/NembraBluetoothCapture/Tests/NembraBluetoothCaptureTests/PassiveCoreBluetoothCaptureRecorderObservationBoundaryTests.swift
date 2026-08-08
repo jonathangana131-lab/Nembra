@@ -12,6 +12,19 @@ struct PassiveCoreBluetoothCaptureRecorderObservationBoundaryTests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
+    private static func recorderSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile
+            .deletingLastPathComponent() // NembraBluetoothCaptureTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // NembraBluetoothCapture package root
+        let recorder = packageRoot
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("NembraBluetoothCapture")
+            .appendingPathComponent("PassiveCoreBluetoothCaptureRecorder.swift")
+        return try String(contentsOf: recorder, encoding: .utf8)
+    }
+
     @Test("recorder atomically binds quiet boundaries to the accepted raw-record prefix")
     func recordsWatermarkedQuietInterval() async throws {
         let recorder = try PassiveCoreBluetoothCaptureRecorder(
@@ -111,5 +124,16 @@ struct PassiveCoreBluetoothCaptureRecorderObservationBoundaryTests {
                 observedAtDate: Date(timeIntervalSince1970: 6_203)
             )
         }
+    }
+
+    @Test("only the clock-owning observation-boundary API is public")
+    func explicitBoundaryClockIsPackageInternal() throws {
+        let source = try Self.recorderSource()
+        let publicBoundarySignature = "public func recordObservationBoundary("
+        #expect(source.components(separatedBy: publicBoundarySignature).count - 1 == 1)
+
+        let internalExplicitSignature = "func recordObservationBoundary(\n        _ kind: PassiveBluetoothObservationBoundaryKind,\n        observedAtUptimeNanoseconds: UInt64,"
+        #expect(source.contains(internalExplicitSignature))
+        #expect(!source.contains("public \(internalExplicitSignature)"))
     }
 }
