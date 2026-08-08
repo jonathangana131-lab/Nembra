@@ -1,0 +1,147 @@
+name: Capture exact inspection subject current
+
+on:
+  push:
+    branches:
+      - agent/capture-exact-inspection-subject-current-v14
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact flagship parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "c766e094fd9be3cc30cb61e0e5d17d83f7e80da5"
+
+      - name: Bind inspection implementation to exact Git objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement site, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          runner = Path("scripts/ci/es80_signed_field_artifact_private_runner.py")
+          producer = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          source_test = Path("scripts/ci/tests/test_xcode27_signed_field_candidate_source.py")
+
+          replace_once(runner, "import importlib.util\n", "")
+          replace_once(
+              runner,
+              '''def load_canonical_inspector() -> ModuleType:\n    inspector_path = Path(__file__).resolve().with_name(INSPECTOR_NAME)\n    try:\n        metadata = inspector_path.lstat()\n    except OSError as exc:\n        raise PrivateInputError("canonical signed-field inspector is missing") from exc\n    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):\n        raise PrivateInputError("canonical signed-field inspector must be one regular non-symlink file")\n\n    spec = importlib.util.spec_from_file_location("nembra_signed_field_artifact_evidence", inspector_path)\n    if spec is None or spec.loader is None:\n        raise PrivateInputError("canonical signed-field inspector could not be loaded")\n    module = importlib.util.module_from_spec(spec)\n    spec.loader.exec_module(module)\n    if not callable(getattr(module, "main", None)) or not hasattr(module, "EvidenceError"):\n        raise PrivateInputError("canonical signed-field inspector does not expose the expected contract")\n    return module\n''',
+              '''MAX_INSPECTOR_SOURCE_BYTES = 2 * 1024 * 1024\n\n\ndef load_canonical_inspector_from_fd(descriptor_number: int) -> ModuleType:\n    """Load one exact inspector source subject from an inherited regular-file descriptor."""\n    if descriptor_number < 3:\n        raise PrivateInputError("canonical inspector descriptor must not alias standard I/O")\n    try:\n        descriptor = os.dup(descriptor_number)\n    except OSError as exc:\n        raise PrivateInputError("canonical signed-field inspector descriptor is unavailable") from exc\n\n    try:\n        metadata = os.fstat(descriptor)\n        if not stat.S_ISREG(metadata.st_mode):\n            raise PrivateInputError("canonical signed-field inspector descriptor must name one regular file")\n        if metadata.st_size < 1 or metadata.st_size > MAX_INSPECTOR_SOURCE_BYTES:\n            raise PrivateInputError("canonical signed-field inspector source has an invalid bounded size")\n        with os.fdopen(os.dup(descriptor), "rb") as handle:\n            raw = handle.read(MAX_INSPECTOR_SOURCE_BYTES + 1)\n        final_metadata = os.fstat(descriptor)\n        if (\n            len(raw) != metadata.st_size\n            or _stable_file_identity(final_metadata) != _stable_file_identity(metadata)\n        ):\n            raise PrivateInputError("canonical signed-field inspector source changed while being read")\n    finally:\n        os.close(descriptor)\n\n    module = ModuleType("nembra_signed_field_artifact_evidence")\n    module.__file__ = f"<{INSPECTOR_NAME}:descriptor-bound>"\n    try:\n        code = compile(raw, module.__file__, "exec")\n        exec(code, module.__dict__)\n    except Exception as exc:\n        raise PrivateInputError("canonical signed-field inspector could not be loaded") from exc\n    if not callable(getattr(module, "main", None)) or not hasattr(module, "EvidenceError"):\n        raise PrivateInputError("canonical signed-field inspector does not expose the expected contract")\n    return module\n''',
+          )
+          replace_once(
+              runner,
+              "    inspector = load_canonical_inspector()\n",
+              "    inspector = load_canonical_inspector_from_fd(args.canonical_inspector_fd)\n",
+          )
+          replace_once(
+              runner,
+              '''    parser.add_argument(\n        "--validate-intended-device-udid-file",\n        type=Path,\n        help="validate one private intended-device file and exit without invoking the signed-field inspector",\n    )\n''',
+              '''    parser.add_argument(\n        "--canonical-inspector-fd",\n        type=int,\n        help="inherited descriptor containing the exact canonical inspector source subject",\n    )\n    parser.add_argument(\n        "--validate-intended-device-udid-file",\n        type=Path,\n        help="validate one private intended-device file and exit without invoking the signed-field inspector",\n    )\n''',
+          )
+          replace_once(
+              runner,
+              '''                args.intended_device_udid_file,\n                args.validate_intended_device_udid_file,\n''',
+              '''                args.intended_device_udid_file,\n                args.canonical_inspector_fd,\n                args.validate_intended_device_udid_file,\n''',
+          )
+          replace_once(
+              runner,
+              '''                args.expected_source_sha,\n                args.intended_device_udid_file,\n            )\n''',
+              '''                args.expected_source_sha,\n                args.intended_device_udid_file,\n                args.canonical_inspector_fd,\n            )\n''',
+          )
+          replace_once(
+              runner,
+              '''            ("--expected-source-sha", args.expected_source_sha),\n            ("--intended-device-udid-file", args.intended_device_udid_file),\n''',
+              '''            ("--expected-source-sha", args.expected_source_sha),\n            ("--intended-device-udid-file", args.intended_device_udid_file),\n            ("--canonical-inspector-fd", args.canonical_inspector_fd),\n''',
+          )
+          replace_once(
+              runner,
+              '''    class ExplodingInspector:\n''',
+              '''    with tempfile.TemporaryDirectory(prefix="nembra-inspector-source-") as temporary:\n        inspector_source = Path(temporary) / INSPECTOR_NAME\n        inspector_source.write_text(\n            "class EvidenceError(RuntimeError):\\n    pass\\n\\ndef main(argv):\\n    return 0\\n",\n            encoding="utf-8",\n        )\n        inspector_source.chmod(0o400)\n        descriptor = os.open(inspector_source, os.O_RDONLY)\n        try:\n            loaded = load_canonical_inspector_from_fd(descriptor)\n        finally:\n            os.close(descriptor)\n        assert loaded.main([]) == 0\n        assert hasattr(loaded, "EvidenceError")\n\n    class ExplodingInspector:\n''',
+          )
+
+          replace_once(
+              producer,
+              '''if ! python3 scripts/ci/es80_signed_field_artifact_private_runner.py \\\n  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"\nthen\n  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2\n  exit 4\nfi\n''',
+              "",
+          )
+          replace_once(
+              producer,
+              '''EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"\n''',
+              '''EXPORT_OPTIONS_SNAPSHOT="$WORK_ROOT/ExportOptions.plist"\nINSPECTION_TOOL_ROOT="$WORK_ROOT/inspection-tools"\nPRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"\nINSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"\nPRIVATE_RUNNER_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_private_runner.py"\nINSPECTOR_SNAPSHOT="$INSPECTION_TOOL_ROOT/es80_signed_field_artifact_evidence.py"\n''',
+          )
+          replace_once(
+              producer,
+              '''rm -rf "$WORK_ROOT"\nmkdir -p "$WORK_ROOT" "$LOG_DIR" "$ARTIFACTS_PARENT"\ncp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"\n''',
+              '''umask 077\nrm -rf "$WORK_ROOT"\nmkdir -p "$WORK_ROOT" "$LOG_DIR" "$INSPECTION_TOOL_ROOT" "$ARTIFACTS_PARENT"\nif ! git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH" > "$PRIVATE_RUNNER_SNAPSHOT" \\\n  || ! git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH" > "$INSPECTOR_SNAPSHOT"\nthen\n  echo "Could not materialize exact signed-field inspection tooling from SOURCE_SHA." >&2\n  exit 14\nfi\nPRIVATE_RUNNER_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH")"\nINSPECTOR_BLOB_SHA="$(git rev-parse "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH")"\nif [[ "$(git hash-object "$PRIVATE_RUNNER_SNAPSHOT")" != "$PRIVATE_RUNNER_BLOB_SHA" \\\n   || "$(git hash-object "$INSPECTOR_SNAPSHOT")" != "$INSPECTOR_BLOB_SHA" ]]\nthen\n  echo "Exact signed-field inspection tooling snapshot does not match SOURCE_SHA Git objects." >&2\n  exit 14\nfi\nchmod 0400 "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"\n\n# Bind exact source objects to inherited descriptors, then remove their mutable path names. FD 7 is\n# a one-shot preflight runner; FD 9 is the later evidence runner; FD 8 is the canonical inspector.\nexec 7< "$PRIVATE_RUNNER_SNAPSHOT"\nexec 8< "$INSPECTOR_SNAPSHOT"\nexec 9< "$PRIVATE_RUNNER_SNAPSHOT"\nrm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"\nrmdir "$INSPECTION_TOOL_ROOT"\n\nif ! python3 /dev/fd/7 \\\n  --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"\nthen\n  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2\n  exit 4\nfi\nexec 7<&-\n\ncp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"\n''',
+          )
+          replace_once(
+              producer,
+              '''# The intended-device UDID remains behind the private mode-0600 file boundary. The producer passes\n# only the file path; the private runner opens it once with O_NOFOLLOW and hands the value to the\n# canonical inspector only in process memory. The inspector publishes under temporary WORK_ROOT.\npython3 scripts/ci/es80_signed_field_artifact_private_runner.py \\\n  --ipa "$IPA_PATH" \\\n  --expected-source-sha "$SOURCE_SHA" \\\n  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \\\n  --output-dir "$INSPECTION_DIR"\n''',
+              '''# The intended-device UDID remains behind the private mode-0600 file boundary. Both executable\n# Python subjects are exact SOURCE_SHA Git blobs held by descriptors whose path names were removed\n# before build work; no mutable checkout path can swap the evidence implementation.\npython3 /dev/fd/9 \\\n  --ipa "$IPA_PATH" \\\n  --expected-source-sha "$SOURCE_SHA" \\\n  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \\\n  --canonical-inspector-fd 8 \\\n  --output-dir "$INSPECTION_DIR"\nexec 8<&-\nexec 9<&-\n''',
+          )
+          replace_once(
+              producer,
+              '''  echo "inspection_directory=inspection"\n''',
+              '''  echo "inspection_directory=inspection"\n  echo "private_runner_source_git_blob=$PRIVATE_RUNNER_BLOB_SHA"\n  echo "canonical_inspector_source_git_blob=$INSPECTOR_BLOB_SHA"\n''',
+          )
+
+          replace_once(
+              source_test,
+              '''from pathlib import Path\nimport subprocess\nimport sys\nimport unittest\n''',
+              '''from pathlib import Path\nimport os\nimport subprocess\nimport sys\nimport tempfile\nimport unittest\n''',
+          )
+          replace_once(
+              source_test,
+              '''    def test_reuses_live_canonical_signed_field_evidence_contract(self):\n''',
+              '''    def test_executes_inspection_code_from_exact_git_blob_descriptors(self):\n        self.assertIn('PRIVATE_RUNNER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"', self.source)\n        self.assertIn('INSPECTOR_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_evidence.py"', self.source)\n        self.assertIn('git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH"', self.source)\n        self.assertIn('git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH"', self.source)\n        self.assertIn('git hash-object "$PRIVATE_RUNNER_SNAPSHOT"', self.source)\n        self.assertIn('git hash-object "$INSPECTOR_SNAPSHOT"', self.source)\n        self.assertIn('exec 7< "$PRIVATE_RUNNER_SNAPSHOT"', self.source)\n        self.assertIn('exec 8< "$INSPECTOR_SNAPSHOT"', self.source)\n        self.assertIn('exec 9< "$PRIVATE_RUNNER_SNAPSHOT"', self.source)\n        self.assertIn('rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"', self.source)\n        self.assertIn('python3 /dev/fd/7', self.source)\n        self.assertIn('python3 /dev/fd/9', self.source)\n        self.assertIn('--canonical-inspector-fd 8', self.source)\n        self.assertNotIn('python3 scripts/ci/es80_signed_field_artifact_private_runner.py', self.source)\n        self.assertLess(self.source.index('REPOSITORY_STATUS='), self.source.index('python3 /dev/fd/7'))\n        self.assertLess(self.source.index('python3 /dev/fd/7'), self.source.index('git worktree add --detach'))\n        self.assertIn('load_canonical_inspector_from_fd', self.runner_source)\n        self.assertIn('descriptor = os.dup(descriptor_number)', self.runner_source)\n        self.assertIn('code = compile(raw, module.__file__, "exec")', self.runner_source)\n        self.assertNotIn('importlib.util', self.runner_source)\n        self.assertIn('private_runner_source_git_blob=', self.source)\n        self.assertIn('canonical_inspector_source_git_blob=', self.source)\n\n    def test_bound_descriptor_execution_path_is_real_not_source_only(self):\n        intended = "00008101-001234567890001E"\n        with tempfile.TemporaryDirectory(prefix="nembra-bound-runner-test-") as temporary:\n            root = Path(temporary)\n            private_file = root / "device-id"\n            private_file.write_text(intended, encoding="utf-8")\n            private_file.chmod(0o600)\n\n            runner_fd = os.open(PRIVATE_RUNNER, os.O_RDONLY)\n            try:\n                preflight = subprocess.run(\n                    [sys.executable, f"/dev/fd/{runner_fd}", "--validate-intended-device-udid-file", str(private_file)],\n                    pass_fds=(runner_fd,), check=False, capture_output=True, text=True,\n                )\n            finally:\n                os.close(runner_fd)\n            self.assertEqual(preflight.returncode, 0, preflight.stderr)\n            self.assertIn("private intended-device verification input: PASS", preflight.stdout)\n            self.assertNotIn(intended, preflight.stdout + preflight.stderr)\n\n            fake_inspector = root / "exact-inspector.py"\n            fake_inspector.write_text(\n                "class EvidenceError(RuntimeError):\\n    pass\\n\\ndef main(argv):\\n"\n                f"    assert {intended!r} in argv\\n    return 0\\n", encoding="utf-8",\n            )\n            fake_inspector.chmod(0o400)\n            runner_fd = os.open(PRIVATE_RUNNER, os.O_RDONLY)\n            inspector_fd = os.open(fake_inspector, os.O_RDONLY)\n            try:\n                inspection = subprocess.run(\n                    [\n                        sys.executable, f"/dev/fd/{runner_fd}",\n                        "--ipa", str(root / "candidate.ipa"),\n                        "--output-dir", str(root / "inspection"),\n                        "--expected-source-sha", "a" * 40,\n                        "--intended-device-udid-file", str(private_file),\n                        "--canonical-inspector-fd", str(inspector_fd),\n                    ],\n                    pass_fds=(runner_fd, inspector_fd), check=False, capture_output=True, text=True,\n                )\n            finally:\n                os.close(inspector_fd)\n                os.close(runner_fd)\n            self.assertEqual(inspection.returncode, 0, inspection.stderr)\n            self.assertNotIn(intended, inspection.stdout + inspection.stderr)\n\n    def test_reuses_live_canonical_signed_field_evidence_contract(self):\n''',
+          )
+          PY
+
+      - name: Validate exact-subject contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit product hardening and remove transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-capture-exact-inspection-subject-current.yml
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_private_runner.py \
+                  scripts/ci/xcode27_signed_field_candidate.sh \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+                  .github/workflows/zz-capture-exact-inspection-subject-current.yml
+          git diff --cached --check
+          git commit -m "fix(capture): bind inspector execution to exact source blobs"
+          git push origin HEAD:agent/capture-exact-inspection-subject-current-v14
