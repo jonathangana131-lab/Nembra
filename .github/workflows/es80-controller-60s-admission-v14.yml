@@ -1,0 +1,320 @@
+name: ES80 controller 60s Horizon admission v14
+
+on:
+  push:
+    branches:
+      - parallel/es80-controller-60s-admission-v14/chat-gpt56
+    paths:
+      - .github/workflows/es80-controller-60s-admission-v14.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-controller-60s-admission-v14/chat-gpt56
+          fetch-depth: 0
+
+      - name: Bind trusted 60s permit at controller Horizon mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift')
+          source = path.read_text()
+
+          old_can = '''    public var canFinalizeObservationHorizon: Bool {
+              guard hasCompleteTargetEvidence,
+                    !artifactReadBarrier.isActive,
+                    observationBoundaryTask == nil,
+                    case .observing = observationBoundaryQueueGate.phase,
+                    let committedReadyEpoch else { return false }
+              return committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority
+          }
+          '''
+          new_can = '''    public var canFinalizeObservationHorizon: Bool {
+              guard hasCompleteTargetEvidence,
+                    !artifactReadBarrier.isActive,
+                    observationBoundaryTask == nil,
+                    case .observing = observationBoundaryQueueGate.phase,
+                    let committedReadyEpoch,
+                    committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority else {
+                  return false
+              }
+
+              switch PassiveCoreBluetoothObservationHorizonMinimumDurationGate
+                  .currentExperimentOneStatus(for: committedReadyEpoch) {
+              case .eligible:
+                  return true
+              case .invalidMinimumDuration, .monotonicClockRegressed, .waiting:
+                  return false
+              }
+          }
+          '''
+          if source.count(old_can) != 1:
+              raise SystemExit('canFinalizeObservationHorizon anchor mismatch')
+          source = source.replace(old_can, new_can, 1)
+
+          old_h = '''        let horizonAdmission = try committedReadyEpoch.beginHorizon(
+              queueCutoff: lastEnqueuedEventSequence,
+              processedThrough: lastProcessedEventSequence,
+              gate: &observationBoundaryQueueGate
+          )
+          '''
+          new_h = '''        // Experiment One Horizon mutation is authorized only by the package-owned
+          // trusted monotonic clock. UI/display timers are guidance and cannot mint H.
+          let horizonPermit = try PassiveCoreBluetoothObservationHorizonMinimumDurationGate
+              .authorizeExperimentOneHorizon(for: committedReadyEpoch)
+          let horizonAdmission = try horizonPermit.beginHorizon(
+              queueCutoff: lastEnqueuedEventSequence,
+              processedThrough: lastProcessedEventSequence,
+              gate: &observationBoundaryQueueGate
+          )
+          '''
+          if source.count(old_h) != 1:
+              raise SystemExit('Horizon admission anchor mismatch')
+          source = source.replace(old_h, new_h, 1)
+          path.write_text(source)
+          PY
+
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Foreground controller terminal Horizon integration")
+          struct ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests {
+              private static func controllerSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let packageRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let controller = packageRoot
+                      .appendingPathComponent("Sources")
+                      .appendingPathComponent("NembraBluetoothCapture")
+                      .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift")
+                  return try String(contentsOf: controller, encoding: .utf8)
+              }
+
+              private static func section(
+                  in source: String,
+                  from startMarker: String,
+                  to endMarker: String
+              ) throws -> Substring {
+                  let start = try #require(source.range(of: startMarker)?.lowerBound)
+                  let end = try #require(source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound)
+                  return source[start..<end]
+              }
+
+              private static func offset(of needle: String, in haystack: Substring) throws -> Int {
+                  let range = try #require(haystack.range(of: needle))
+                  return haystack.distance(from: haystack.startIndex, to: range.lowerBound)
+              }
+
+              @Test("Horizon affordance requires current committed Ready and trusted sixty-second eligibility")
+              func horizonAffordanceIsAuthorityAndDurationBound() throws {
+                  let source = try Self.controllerSource()
+                  let admission = try Self.section(
+                      in: source,
+                      from: "    public var canFinalizeObservationHorizon: Bool {",
+                      to: "    private let vehicleIdentity"
+                  )
+
+                  #expect(admission.contains("hasCompleteTargetEvidence"))
+                  #expect(admission.contains("!artifactReadBarrier.isActive"))
+                  #expect(admission.contains("observationBoundaryTask == nil"))
+                  #expect(admission.contains("case .observing = observationBoundaryQueueGate.phase"))
+                  #expect(admission.contains("let committedReadyEpoch"))
+                  #expect(admission.contains("committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority"))
+                  #expect(admission.contains("PassiveCoreBluetoothObservationHorizonMinimumDurationGate"))
+                  #expect(admission.contains("currentExperimentOneStatus(for: committedReadyEpoch)"))
+                  #expect(admission.contains("case .eligible:"))
+                  #expect(admission.contains("case .invalidMinimumDuration, .monotonicClockRegressed, .waiting:"))
+              }
+
+              @Test("trusted sixty-second permit precedes Horizon allocation and first actor hop")
+              func trustedPermitPrecedesHorizonMutationAndAwait() throws {
+                  let source = try Self.controllerSource()
+                  let method = try Self.section(
+                      in: source,
+                      from: "    public func encodedFinalizedObservationHorizonJSON(",
+                      to: "    private func beginTargetSessionIfNeeded"
+                  )
+
+                  let authorizeOffset = try Self.offset(
+                      of: ".authorizeExperimentOneHorizon(for: committedReadyEpoch)",
+                      in: method
+                  )
+                  let beginOffset = try Self.offset(of: "let horizonAdmission = try horizonPermit.beginHorizon(", in: method)
+                  let cutoffOffset = try Self.offset(of: "queueCutoff: lastEnqueuedEventSequence", in: method)
+                  let frontierOffset = try Self.offset(of: "processedThrough: lastProcessedEventSequence", in: method)
+                  let firstAwaitOffset = try Self.offset(
+                      of: "await flushPendingEvents(through: horizonAdmission.queueCutoff)",
+                      in: method
+                  )
+
+                  #expect(authorizeOffset < beginOffset)
+                  #expect(beginOffset < cutoffOffset)
+                  #expect(cutoffOffset < frontierOffset)
+                  #expect(frontierOffset < firstAwaitOffset)
+                  #expect(!method.contains("committedReadyEpoch.beginHorizon("))
+              }
+
+              @Test("Horizon drains exact prefix, records boundary, freezes JSON, then terminalizes")
+              func horizonPipelineFreezesBeforePostCutRetirement() throws {
+                  let source = try Self.controllerSource()
+                  let method = try Self.section(
+                      in: source,
+                      from: "    public func encodedFinalizedObservationHorizonJSON(",
+                      to: "    private func beginTargetSessionIfNeeded"
+                  )
+
+                  let flushOffset = try Self.offset(
+                      of: "await flushPendingEvents(through: horizonAdmission.queueCutoff)",
+                      in: method
+                  )
+                  let recordOffset = try Self.offset(
+                      of: "let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)",
+                      in: method
+                  )
+                  let markOffset = try Self.offset(
+                      of: "let committedHorizon = try recordedHorizon.markBoundaryRecorded(",
+                      in: method
+                  )
+                  let encodeOffset = try Self.offset(
+                      of: "let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)",
+                      in: method
+                  )
+                  let terminalOffset = try Self.offset(
+                      of: "try committedHorizon.completeHorizonArtifactFreeze(on: &observationBoundaryQueueGate)",
+                      in: method
+                  )
+                  let retirementOffset = try Self.offset(
+                      of: "retireQueuedEvidenceAfterTerminalHorizon()",
+                      in: method
+                  )
+                  let finalizedAuthorityOffset = try Self.offset(
+                      of: "lastFinalizedArtifactAuthority = committedHorizon.authority",
+                      in: method
+                  )
+
+                  #expect(flushOffset < recordOffset)
+                  #expect(recordOffset < markOffset)
+                  #expect(markOffset < encodeOffset)
+                  #expect(encodeOffset < terminalOffset)
+                  #expect(terminalOffset < retirementOffset)
+                  #expect(retirementOffset < finalizedAuthorityOffset)
+              }
+
+              @Test("post-H FIFO retirement is authority-scoped and later callbacks cannot mutate sealed evidence")
+              func sealedArtifactQuarantinesPostHorizonEvidence() throws {
+                  let source = try Self.controllerSource()
+                  let retirement = try Self.section(
+                      in: source,
+                      from: "    private func retireQueuedEvidenceAfterTerminalHorizon() {",
+                      to: "    private func scheduleConnectionTimeout"
+                  )
+                  #expect(retirement.contains("pending.queueSequence"))
+                  #expect(retirement.contains("authority: pending.authority"))
+                  #expect(retirement.contains("shouldDiscardQueuedEvidenceAfterTerminalHorizon"))
+
+                  let enqueue = try Self.section(
+                      in: source,
+                      from: "    private func enqueue(\n        _ event: PassiveBluetoothCaptureEvent,\n        receivedAtUptimeNanoseconds:",
+                      to: "    private func enqueueInterruption("
+                  )
+                  let terminalGuardOffset = try Self.offset(
+                      of: "guard !observationBoundaryQueueGate.isTerminal else { return }",
+                      in: enqueue
+                  )
+                  let sequenceOffset = try Self.offset(
+                      of: "lastEnqueuedEventSequence += 1",
+                      in: enqueue
+                  )
+                  #expect(terminalGuardOffset < sequenceOffset)
+              }
+
+              @Test("ordinary snapshots cannot race an in-flight lifecycle boundary")
+              func artifactContextUsesOnlyStableBoundaryPhases() throws {
+                  let source = try Self.controllerSource()
+                  let context = try Self.section(
+                      in: source,
+                      from: "    private func currentArtifactContext() throws -> ArtifactContext {",
+                      to: "    private func validate(_ context: ArtifactContext) throws"
+                  )
+
+                  #expect(context.contains("case .observing:"))
+                  #expect(context.contains("eventWatermark = lastEnqueuedEventSequence"))
+                  #expect(context.contains("case .terminal:"))
+                  #expect(context.contains("terminalQueueCutoff"))
+                  #expect(context.contains("case .awaitingReady, .drainingReady, .abortQuarantined, .drainingHorizon, .horizonBoundaryRecorded:"))
+                  #expect(context.contains("throw ControllerError.captureIncomplete"))
+              }
+
+              @Test("transport teardown is authorized only after terminal artifact freeze")
+              func finalizedTeardownRequiresTerminalGate() throws {
+                  let source = try Self.controllerSource()
+                  let teardown = try Self.section(
+                      in: source,
+                      from: "    public func teardownActiveConnectionAfterFinalization() throws {",
+                      to: "    private func cancelActiveConnection(cause:"
+                  )
+
+                  let terminalOffset = try Self.offset(
+                      of: "guard observationBoundaryQueueGate.isTerminal else {",
+                      in: teardown
+                  )
+                  let authorityOffset = try Self.offset(
+                      of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+                      in: teardown
+                  )
+                  let transportOffset = try Self.offset(
+                      of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
+                      in: teardown
+                  )
+                  #expect(terminalOffset < authorityOffset)
+                  #expect(authorityOffset < transportOffset)
+              }
+          }
+          SWIFT
+
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift').read_text()
+          method_start = source.index('    public func encodedFinalizedObservationHorizonJSON(')
+          method_end = source.index('    private func beginTargetSessionIfNeeded', method_start)
+          method = source[method_start:method_end]
+          assert '.authorizeExperimentOneHorizon(for: committedReadyEpoch)' in method
+          assert 'let horizonAdmission = try horizonPermit.beginHorizon(' in method
+          assert 'committedReadyEpoch.beginHorizon(' not in method
+          assert method.index('.authorizeExperimentOneHorizon(for: committedReadyEpoch)') < method.index('let horizonAdmission = try horizonPermit.beginHorizon(') < method.index('await flushPendingEvents(through: horizonAdmission.queueCutoff)')
+
+          affordance_start = source.index('    public var canFinalizeObservationHorizon: Bool {')
+          affordance_end = source.index('    private let vehicleIdentity', affordance_start)
+          affordance = source[affordance_start:affordance_end]
+          assert 'currentExperimentOneStatus(for: committedReadyEpoch)' in affordance
+          assert 'case .eligible:' in affordance
+          PY
+
+          git diff --check
+
+      - name: Commit product checkpoint and remove mutation workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-chat-gpt56"
+          git config user.email "nembra-chat-gpt56@users.noreply.github.com"
+          rm .github/workflows/es80-controller-60s-admission-v14.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerHorizonIntegrationTests.swift \
+                  .github/workflows/es80-controller-60s-admission-v14.yml
+          git diff --cached --check
+          git commit -m "fix: require trusted 60s permit for Experiment One Horizon"
+          git push origin HEAD:parallel/es80-controller-60s-admission-v14/chat-gpt56
