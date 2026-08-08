@@ -29,25 +29,34 @@ class PrivateInputError(RuntimeError):
 
 
 def read_private_identifier(path: Path) -> str:
-    """Read one opaque identifier from a private, regular, non-symlink file without repairing it."""
-    try:
-        metadata = path.lstat()
-    except OSError as exc:
-        raise PrivateInputError("intended-device verification file is not readable") from exc
+    """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise PrivateInputError("this platform cannot enforce no-follow private verification input")
 
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise PrivateInputError("intended-device verification input must be one regular non-symlink file")
-    if metadata.st_size < 1 or metadata.st_size > MAX_IDENTIFIER_BYTES:
-        raise PrivateInputError("intended-device verification input has an invalid bounded size")
-    if metadata.st_mode & 0o077:
-        raise PrivateInputError("intended-device verification file must not be accessible by group/other")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
 
     try:
-        raw = path.read_bytes()
+        descriptor = os.open(path, flags)
     except OSError as exc:
-        raise PrivateInputError("intended-device verification file could not be read") from exc
-    if len(raw) != metadata.st_size:
-        raise PrivateInputError("intended-device verification file changed while being read")
+        raise PrivateInputError("intended-device verification file is not a readable regular file") from exc
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PrivateInputError("intended-device verification input must be one regular non-symlink file")
+        if metadata.st_size < 1 or metadata.st_size > MAX_IDENTIFIER_BYTES:
+            raise PrivateInputError("intended-device verification input has an invalid bounded size")
+        if metadata.st_mode & 0o077:
+            raise PrivateInputError("intended-device verification file must not be accessible by group/other")
+
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
+        if len(raw) != metadata.st_size:
+            raise PrivateInputError("intended-device verification file changed while being read")
+    finally:
+        os.close(descriptor)
 
     try:
         value = raw.decode("utf-8")
