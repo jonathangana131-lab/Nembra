@@ -21,7 +21,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -34,6 +33,7 @@ MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")
 P256_SPKI_PREFIX = bytes.fromhex(
     "3059301306072a8648ce3d020106082a8648ce3d030107034200"
 )
@@ -118,11 +118,67 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
-def require_openssl() -> str:
-    executable = shutil.which("openssl")
-    if executable is None:
-        raise AuthorizationEnvelopeError("OpenSSL is required for offline P-256 signing")
-    return executable
+def require_trusted_openssl(path: Path) -> str:
+    requested = path.expanduser().absolute()
+    if requested.is_symlink():
+        raise AuthorizationEnvelopeError("OpenSSL executable must not be a symlink")
+    resolved = requested.resolve()
+    if path_is_within(resolved, REPOSITORY_ROOT):
+        raise AuthorizationEnvelopeError(
+            f"OpenSSL executable must remain outside the Nembra repository: {resolved}"
+        )
+
+    try:
+        executable_stat = resolved.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("cannot inspect explicit OpenSSL executable") from exc
+    if not stat.S_ISREG(executable_stat.st_mode):
+        raise AuthorizationEnvelopeError("OpenSSL executable must be one regular file")
+    if executable_stat.st_mode & 0o022:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must not be writable by group or other users"
+        )
+    if executable_stat.st_mode & 0o111 == 0:
+        raise AuthorizationEnvelopeError("OpenSSL executable is not executable")
+    if hasattr(os, "geteuid") and executable_stat.st_uid not in (0, os.geteuid()):
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root or the signing user"
+        )
+
+    parent = resolved.parent
+    while True:
+        try:
+            parent_stat = parent.stat()
+        except OSError as exc:
+            raise AuthorizationEnvelopeError("cannot inspect OpenSSL custody directory") from exc
+        if parent_stat.st_mode & 0o022:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody directory must not be writable by group or other users: {parent}"
+            )
+        if parent == parent.parent:
+            break
+        parent = parent.parent
+
+    return str(resolved)
+
+
+def resolve_openssl(
+    explicit_path: Path | None,
+    *,
+    allow_system_default_for_self_test: bool = False,
+) -> str:
+    candidate = explicit_path
+    if candidate is None:
+        configured = os.environ.get("NEMBRA_OPENSSL")
+        if configured:
+            candidate = Path(configured)
+        elif allow_system_default_for_self_test:
+            candidate = DEFAULT_SELF_TEST_OPENSSL
+        else:
+            raise AuthorizationEnvelopeError(
+                "release authority must supply --openssl or NEMBRA_OPENSSL; ambient PATH lookup is forbidden"
+            )
+    return require_trusted_openssl(candidate)
 
 
 def run_openssl(
@@ -179,6 +235,10 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError(
                 "P-256 private key must not be accessible by group or other users"
             )
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must be owned by the signing user"
+            )
 
         fd_path = Path("/dev/fd") / str(descriptor)
         if not fd_path.exists():
@@ -199,6 +259,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             before.st_dev,
             before.st_ino,
             before.st_mode,
+            before.st_uid,
+            before.st_gid,
             before.st_size,
             before.st_mtime_ns,
             before.st_ctime_ns,
@@ -206,6 +268,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             after.st_dev,
             after.st_ino,
             after.st_mode,
+            after.st_uid,
+            after.st_gid,
             after.st_size,
             after.st_mtime_ns,
             after.st_ctime_ns,
@@ -347,6 +411,7 @@ def create_envelope(
     field_evidence_path: Path,
     private_key_path: Path,
     output_path: Path,
+    openssl_path: Path,
 ) -> dict[str, str]:
     external_record = read_exact_subject(external_record_path, "external build record")
     field_evidence = read_exact_subject(field_evidence_path, "field-build evidence record")
@@ -356,7 +421,7 @@ def create_envelope(
         raise AuthorizationEnvelopeError("authorization output cannot replace the private key")
 
     payload = build_payload(external_record, field_evidence)
-    openssl = require_openssl()
+    openssl = require_trusted_openssl(openssl_path)
     signature, public_key_x963 = sign_payload(openssl, private_key, payload)
     envelope = build_envelope(external_record, field_evidence, payload, signature)
     published = write_envelope_no_replace(output, envelope)
@@ -373,8 +438,11 @@ def create_envelope(
     }
 
 
-def self_test() -> None:
-    openssl = require_openssl()
+def self_test(openssl_path: Path | None = None) -> None:
+    openssl = resolve_openssl(
+        openssl_path,
+        allow_system_default_for_self_test=True,
+    )
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-self-test-") as temporary:
         directory = Path(temporary)
         private_key = directory / "candidate-authority-private-key.pem"
@@ -397,6 +465,7 @@ def self_test() -> None:
             field_evidence,
             private_key,
             envelope_path,
+            Path(openssl),
         )
         envelope = json.loads(envelope_path.read_bytes())
         if set(envelope) != {
@@ -439,6 +508,7 @@ def self_test() -> None:
                 field_evidence,
                 private_key,
                 envelope_path,
+                Path(openssl),
             )
         except AuthorizationEnvelopeError as error:
             if "refusing to overwrite" not in str(error):
@@ -458,6 +528,7 @@ def self_test() -> None:
                 field_evidence,
                 permissive_key,
                 directory / "permissive-key-envelope.json",
+                Path(openssl),
             )
         except AuthorizationEnvelopeError as error:
             if "group or other" not in str(error):
@@ -465,8 +536,6 @@ def self_test() -> None:
         else:
             raise AssertionError("group/other-readable authority private key was accepted")
 
-        # Prove signer identity is detached from later source-path replacement: snapshot key A once,
-        # replace the source path with key B, and require the snapshot's public point to stay key A.
         snapshot_directory = directory / "snapshot-test"
         snapshot_directory.mkdir(mode=0o700)
         snapshot = snapshot_private_key(openssl, private_key, snapshot_directory)
@@ -484,6 +553,14 @@ def self_test() -> None:
         if public_key_x963_from_private_key(openssl, snapshot) != snapshot_x963:
             raise AssertionError("private signing snapshot changed after source-path replacement")
 
+        try:
+            resolve_openssl(None)
+        except AuthorizationEnvelopeError as error:
+            if "ambient PATH lookup is forbidden" not in str(error):
+                raise
+        else:
+            raise AssertionError("production signer accepted an implicit OpenSSL from ambient PATH")
+
     repository_private_key = REPOSITORY_ROOT / "never-create-this-private-key.pem"
     try:
         require_external_path(repository_private_key, "P-256 private key")
@@ -500,6 +577,14 @@ def self_test() -> None:
     else:
         raise AssertionError("repository-contained authorization output path was accepted")
 
+    repository_openssl = REPOSITORY_ROOT / "never-run-this-openssl"
+    try:
+        require_trusted_openssl(repository_openssl)
+    except AuthorizationEnvelopeError:
+        pass
+    else:
+        raise AssertionError("repository-controlled OpenSSL path was accepted")
+
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -507,6 +592,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field-evidence", type=Path)
     parser.add_argument("--private-key-pem", type=Path)
     parser.add_argument("--output-envelope", type=Path)
+    parser.add_argument(
+        "--openssl",
+        type=Path,
+        help="Explicit trusted OpenSSL executable outside the repository; NEMBRA_OPENSSL is also accepted.",
+    )
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
@@ -514,7 +604,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     arguments = parse_args(argv)
     if arguments.self_test:
-        self_test()
+        self_test(arguments.openssl)
         print("field authorization envelope self-test: PASS")
         return 0
 
@@ -533,11 +623,13 @@ def main(argv: list[str]) -> int:
             f"required arguments missing: {', '.join(missing)}"
         )
 
+    openssl = resolve_openssl(arguments.openssl)
     result = create_envelope(
         arguments.external_record,
         arguments.field_evidence,
         arguments.private_key_pem,
         arguments.output_envelope,
+        Path(openssl),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
