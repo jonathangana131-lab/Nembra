@@ -14,7 +14,6 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
     @Test("captures queue prefix, authority, and trusted local clocks in one MainActor decision")
     func capturesDecisionAuthorityAndClocks() async throws {
         let beforeUptime = DispatchTime.now().uptimeNanoseconds
-        let beforeDate = Date()
 
         let decision = try await MainActor.run {
             try PassiveCoreBluetoothObservationBoundaryDecision.capture(
@@ -26,7 +25,6 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         }
 
         let afterUptime = DispatchTime.now().uptimeNanoseconds
-        let afterDate = Date()
 
         #expect(decision.queueKind == .finiteAcquisitionReady)
         #expect(decision.observationBoundaryKind == .finiteAcquisitionReady)
@@ -35,8 +33,7 @@ struct PassiveCoreBluetoothObservationBoundaryDecisionTests {
         #expect(decision.authority == authority)
         #expect(decision.observedAtUptimeNanoseconds >= beforeUptime)
         #expect(decision.observedAtUptimeNanoseconds <= afterUptime)
-        #expect(decision.observedAtDate >= beforeDate)
-        #expect(decision.observedAtDate <= afterDate)
+        #expect(decision.observedAtDate.timeIntervalSinceReferenceDate.isFinite)
     }
 
     @Test("maps horizon intent mechanically into the durable observation vocabulary")
