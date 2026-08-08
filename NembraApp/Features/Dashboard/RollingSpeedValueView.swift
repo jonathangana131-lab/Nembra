@@ -37,11 +37,11 @@ struct RollingSpeedValueView: View {
         let roundedValue = value.rounded(.toNearestOrAwayFromZero)
         switch roundedValue {
         case ...99:
-            Self.twoDigitNumberModel
+            return Self.twoDigitNumberModel
         case ...999:
-            Self.threeDigitNumberModel
+            return Self.threeDigitNumberModel
         default:
-            nil
+            return nil
         }
     }
 
