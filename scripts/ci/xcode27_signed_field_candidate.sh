@@ -49,7 +49,18 @@ fi
 WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BUILD_INSTANCE_ID}"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/Artifacts/ES80FieldCandidate}"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
+
+# Candidate evidence written inside the checkout must already be ignored. Otherwise a successful
+# producer run would silently dirty the exact source checkout after admission and weaken provenance.
+if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
+  RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
+  if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
+    echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
+    exit 8
+  fi
+fi
+
 rm -rf "$WORK_ROOT"
 mkdir -p "$EXPORT_DIR"
 
@@ -78,13 +89,22 @@ xcodebuild \
   -exportOptionsPlist "$NEMBRA_EXPORT_OPTIONS_PLIST" \
   "${PROVISIONING_ARGS[@]}"
 
+# Re-prove exact source after archive/export but before writing field-candidate evidence. All Xcode
+# output above lives outside the checkout, so any visible delta is an unexpected source mutation.
+POST_BUILD_REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ -n "$POST_BUILD_REPOSITORY_STATUS" ]]; then
+  echo "Archive/export changed non-ignored repository state; refusing exact-HEAD candidate evidence." >&2
+  printf '%s\n' "$POST_BUILD_REPOSITORY_STATUS" >&2
+  exit 9
+fi
+
 shopt -s nullglob
 IPA_FILES=("$EXPORT_DIR"/*.ipa)
 shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 8
+  exit 10
 fi
 IPA_PATH="${IPA_FILES[0]}"
 
