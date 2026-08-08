@@ -23,8 +23,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The V14 capture identity must remain visible."
         )
         XCTAssertTrue(
-            app.staticTexts["Field capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned NO-GO must be the primary product state."
+            app.staticTexts["Capture locked"].waitForExistence(timeout: 3),
+            "The current package-owned lock must be the primary rider-facing product state."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Not ready for scooter capture yet"].waitForExistence(timeout: 3),
+            "The primary blocker must explain the rider state without exposing internal architecture terminology."
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
@@ -37,6 +41,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
+        )
+        XCTAssertFalse(
+            app.staticTexts["Single-authority workflow installed"].exists,
+            "Internal architecture vocabulary must not return to the primary rider-facing lock screen."
+        )
+        XCTAssertFalse(
+            app.staticTexts["Physical Experiment One locked"].exists,
+            "The primary rider-facing lock screen must not regress to internal experiment terminology."
         )
 
         XCTAssertFalse(
