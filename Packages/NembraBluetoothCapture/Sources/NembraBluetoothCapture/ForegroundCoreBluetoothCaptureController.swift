@@ -374,6 +374,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var artifactReadBarrier = PassiveCoreBluetoothArtifactReadBarrier()
     private var observationBoundaryQueueGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
     private var observationBoundaryTask: Task<Void, Never>?
+    /// Waits only for an already-running old-session recorder drain to settle after
+    /// the real terminal CoreBluetooth callback clears transport quarantine. It never
+    /// spans retirement -> resolution -> fresh-recorder installation -> gate reopen.
+    private var abortedFreshSessionRecoveryTask: Task<Void, Never>?
     private var committedReadyEpoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch?
 
     public init(
@@ -405,6 +409,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionWatchdogTask?.cancel()
         eventDrainTask?.cancel()
         observationBoundaryTask?.cancel()
+        abortedFreshSessionRecoveryTask?.cancel()
     }
 
     /// Starts an explicit foreground research scan. Every explicit scan owns a
@@ -545,15 +550,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.captureFailed
         }
 
-        // Inspect only immutable producer-owned staging metadata first. A target that has
-        // not reappeared yet is recoverable by continuing passive scan and retrying this same
-        // sealed admission, so do not burn its one-shot ownership handoff here.
-        let preview = admission.preview
-        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
-                preview.powerCycleEvidence.result.correlation.disposition,
-              correlatedIdentifier == preview.peripheralIdentifier else {
-            throw ControllerError.targetSessionChanged
-        }
+        // Missing/not-yet-fresh rediscovery is recoverable. Inspect only the sealed
+        // producer's read-only staging authority until every controller-local precondition
+        // succeeds; do not burn the one-shot recorder handoff merely because scanning needs time.
+        let preview = try admission.previewForControllerStaging()
         guard let peripheral = peripheralByIdentifier[preview.peripheralIdentifier],
               let discovery = latestDiscoveryByIdentifier[preview.peripheralIdentifier] else {
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
@@ -574,20 +574,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
         guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
               latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received strictly after
-            // that handoff. Equality does not prove ordering when two monotonic reads share one tick. Replaying an older cached advertisement would splice two software
-            // chronology lives and could enqueue evidence that predates this recorder.
+            // Equality does not prove this callback receipt happened after handoff. Keep the
+            // admission intact and require a strictly later current-controller observation.
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
         }
 
-        // Every recoverable controller-local staging check has passed. Consume exactly once
-        // at the irreversible ownership handoff and bind the consumed payload back to the
-        // same producer preview before publishing the run-owned recorder.
         let payload = try admission.consume()
         guard payload.admissionIdentity == preview.admissionIdentity,
-              payload.powerCycleEvidence == preview.powerCycleEvidence,
               payload.peripheralIdentifier == preview.peripheralIdentifier,
-              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds else {
+              payload.issuedAtUptimeNanoseconds == preview.issuedAtUptimeNanoseconds,
+              case let .singleRepeatableCandidate(correlatedIdentifier) =
+                payload.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == payload.peripheralIdentifier else {
             throw ControllerError.targetSessionChanged
         }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
@@ -1017,6 +1015,138 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         return true
     }
 
+    /// Starts abort recovery only after the real terminal CoreBluetooth callback has
+    /// released same-target attempt quarantine. If the old recorder already owns a
+    /// drain, wait for that one drain to settle first; retirement itself then remains
+    /// one synchronous MainActor transaction through resolution, recorder installation,
+    /// authority publication, and exact gate reopen.
+    private func scheduleAbortedFreshTargetSessionRecoveryIfNeeded() {
+        guard captureFailed,
+              case .abortQuarantined = observationBoundaryQueueGate.phase,
+              abortedFreshSessionRecoveryTask == nil,
+              targetState.selectedTargetIdentifier != nil,
+              !isSelectedTargetAwaitingTerminalCallback else {
+            return
+        }
+
+        let inFlightDrain = eventDrainTask
+        abortedFreshSessionRecoveryTask = Task { @MainActor [weak self] in
+            if let inFlightDrain {
+                await inFlightDrain.value
+            }
+            guard let self, !Task.isCancelled else { return }
+            defer { self.abortedFreshSessionRecoveryTask = nil }
+
+            do {
+                _ = try self.completeAbortedFreshTargetSessionIfReady()
+            } catch {
+                self.lastDiagnostic = Self.diagnostic(
+                    error,
+                    fallback: "Aborted capture could not establish an exact fresh durable session."
+                )
+            }
+        }
+    }
+
+    /// Converts one exact abort-quarantined lifecycle into a genuinely fresh durable
+    /// recorder/session. Retired callbacks advance only `lastResolvedEventSequence`;
+    /// `lastProcessedEventSequence` remains recorder-written truth. No await occurs
+    /// after FIFO retirement begins, so callback/tail drift cannot slip between proof,
+    /// applied frontier, fresh-recorder publication, and gate consumption.
+    @discardableResult
+    private func completeAbortedFreshTargetSessionIfReady(
+        startedAt: Date = Date()
+    ) throws -> Bool {
+        guard captureFailed,
+              case .abortQuarantined = observationBoundaryQueueGate.phase else {
+            return false
+        }
+        guard !artifactReadBarrier.isActive,
+              observationBoundaryTask == nil,
+              eventDrainTask == nil,
+              activePeripheral == nil,
+              connectionPhase == .idle else {
+            return false
+        }
+        guard targetState.selectedTargetIdentifier != nil else {
+            throw ControllerError.targetNotSelected
+        }
+        guard !isSelectedTargetAwaitingTerminalCallback else {
+            return false
+        }
+
+        let retirement = try PassiveCoreBluetoothAbortedObservationQueueRetirement.retire(
+            from: &pendingEvents,
+            currentLastEnqueuedEventSequence: lastEnqueuedEventSequence,
+            currentSettledQueueSequence: lastResolvedEventSequence,
+            drainIsIdle: eventDrainTask == nil,
+            abortedGate: observationBoundaryQueueGate
+        ) { pending in
+            PassiveCoreBluetoothAbortedObservationQueueRetirement.PendingEvidenceIdentity(
+                queueSequence: pending.queueSequence,
+                authority: pending.authority
+            )
+        }
+
+        let resolution = try PassiveCoreBluetoothAbortedQueueResolution.resolve(
+            currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+            currentLastEnqueuedEventSequence: lastEnqueuedEventSequence,
+            retirementReceipt: retirement,
+            abortedGate: observationBoundaryQueueGate
+        )
+        lastResolvedEventSequence = resolution.resolvedThroughQueueSequence
+
+        let freshSession = try PassiveCoreBluetoothAbortedFreshTargetSession.create(
+            after: resolution,
+            vehicleIdentity: vehicleIdentity,
+            startedAt: startedAt
+        )
+        let previousAuthority = currentArtifactAuthorityContext()
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: freshSession.receipt.targetSessionGeneration,
+            authorityGeneration: 1
+        )
+
+        do {
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+            targetSessionGeneration = freshAuthority.targetSessionGeneration
+            artifactAuthorityGeneration = freshAuthority.authorityGeneration
+            recorder = freshSession.recorder
+            hasUsedInitialSessionIdentity = true
+            acquisitionLedger.beginTargetSession()
+            gattIdentityRegistry.reset()
+            selectedTargetCancellationPending = false
+            foregroundEvidenceIntegrityValid = true
+            committedReadyEpoch = nil
+
+            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
+        } catch {
+            lastDiagnostic = Self.diagnostic(
+                error,
+                fallback: "Abort recovery failed while installing exact fresh capture authority."
+            )
+            throw ControllerError.captureFailed
+        }
+
+        // Candidate objects/advertisements predate the recovered durable session.
+        // Keep the correlated UUID selection, but require fresh rediscovery before a
+        // later connection attempt can proceed on this recorder.
+        clearCandidateCatalog()
+        pendingTerminalQueueResolution = nil
+        lastFinalizedArtifactAuthority = nil
+        captureFailed = false
+        lastDiagnostic = "Aborted observation epoch retired exactly; fresh capture session is ready for rediscovery."
+        return true
+    }
+
     private func beginTargetSessionIfNeeded(for identifier: UUID) throws {
         if targetState.selectedTargetIdentifier == identifier, recorder != nil {
             return
@@ -1136,6 +1266,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         if eventDrainTask == nil, !pendingEvents.isEmpty, !captureFailed {
             startDrainIfNeeded()
         }
+        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()
     }
 
     private func advanceArtifactAuthority() -> Bool {
@@ -1707,6 +1838,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
         clearAcquisitionObjects()
         connectionPhase = .idle
+        // Abort quarantine may be entered by the terminal callback itself.
+        // Schedule here so recovery does not depend on a second callback that
+        // CoreBluetooth is not required to deliver. The scheduler still refuses
+        // to run while any retired same-target attempt awaits its real terminal.
+        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()
     }
 
     private func ensureCaptureHealthy() throws {
@@ -1792,6 +1928,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             } catch {
                 failCapture(error)
             }
+            return
+        }
+
+        // Abort quarantine is recoverable only after this real terminal callback has
+        // cleared the old attempt's same-identifier quarantine. Do not enqueue the
+        // callback into the abandoned recorder or advance its authority again.
+        if case .abortQuarantined = observationBoundaryQueueGate.phase {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            scheduleAbortedFreshTargetSessionRecoveryIfNeeded()
             return
         }
 
@@ -1995,6 +2143,15 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             } catch {
                 failCapture(error)
             }
+            return
+        }
+
+        if case .abortQuarantined = observationBoundaryQueueGate.phase {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            scheduleAbortedFreshTargetSessionRecoveryIfNeeded()
             return
         }
 
