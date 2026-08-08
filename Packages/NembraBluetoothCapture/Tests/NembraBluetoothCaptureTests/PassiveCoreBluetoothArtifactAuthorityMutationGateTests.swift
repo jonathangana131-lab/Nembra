@@ -123,4 +123,43 @@ struct PassiveCoreBluetoothArtifactAuthorityMutationGateTests {
         #expect(rejection == .unchangedAuthority)
         #expect(gate.snapshot() == authorityA)
     }
+
+    @Test("retired authority cannot be resurrected")
+    func authorityGenerationNeverMovesBackward() throws {
+        let gate = PassiveCoreBluetoothArtifactAuthorityMutationGate(
+            initialAuthority: authorityA
+        )
+        try gate.transition(from: authorityA, to: authorityB)
+
+        var rejection: PassiveCoreBluetoothArtifactAuthorityMutationGate.StateError?
+        do {
+            try gate.transition(from: authorityB, to: authorityA)
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityMutationGate.StateError {
+            rejection = error
+        }
+
+        #expect(rejection == .nonMonotonicAuthority)
+        #expect(gate.snapshot() == authorityB)
+    }
+
+    @Test("target-session generation cannot regress behind newer authority")
+    func targetSessionGenerationNeverMovesBackward() throws {
+        let gate = PassiveCoreBluetoothArtifactAuthorityMutationGate(
+            initialAuthority: authorityB
+        )
+        let regressingTarget = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 6,
+            authorityGeneration: 13
+        )
+
+        var rejection: PassiveCoreBluetoothArtifactAuthorityMutationGate.StateError?
+        do {
+            try gate.transition(from: authorityB, to: regressingTarget)
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityMutationGate.StateError {
+            rejection = error
+        }
+
+        #expect(rejection == .nonMonotonicAuthority)
+        #expect(gate.snapshot() == authorityB)
+    }
 }
