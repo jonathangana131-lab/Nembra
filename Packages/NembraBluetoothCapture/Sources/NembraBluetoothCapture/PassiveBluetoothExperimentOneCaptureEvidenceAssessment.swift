@@ -12,10 +12,16 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
     public static let minimumPostReadyObservationDurationNanoseconds: UInt64 = 60_000_000_000
 }
 
-/// Fail-closed composition of the software evidence required from experiment one's passive capture.
+/// Fail-closed composition of the software evidence required from Experiment One's passive capture.
 ///
-/// This assessment closes several otherwise-detachable evidence boundaries in one producer:
-/// - the exact four receipt-bounded OFF₁ -> ON₁ -> OFF₂ -> ON₂ result must meet experiment one's
+/// The public composition boundary accepts only evidence wrappers issued by a package-owned
+/// `PassiveBluetoothExperimentOneRun`. Raw power-cycle results and raw capture sessions cannot be
+/// supplied directly. Before any cross-artifact interpretation, both wrappers must carry the same
+/// hidden run authority. This prevents a valid result from run A from inheriting the observation
+/// horizon of a later same-UUID capture from run B.
+///
+/// Within one matching software run, this assessment also closes these evidence boundaries:
+/// - the exact four receipt-bounded OFF₁ -> ON₁ -> OFF₂ -> ON₂ result must meet Experiment One's
 ///   per-window duration policy;
 /// - the raw package-issued candidate snapshots must still align with their window receipts and
 ///   replay to the exact stored correlation report;
@@ -32,6 +38,9 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
 /// remain separate gates.
 public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendable {
     public enum Status: Equatable, Sendable {
+        /// The two otherwise-valid artifacts were issued by different package-owned experiment
+        /// runs. UUID equality cannot repair this provenance break.
+        case experimentRunAuthorityMismatch
         case powerCycleDurationRejected(
             PassiveBluetoothPowerCycleObservationWindowDurationAssessment.Status
         )
@@ -88,12 +97,15 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
         self.capturedPeripheralIdentifier = capturedPeripheralIdentifier
     }
 
-    /// Recomputes every component from the exact producer result and capture session instead of
-    /// accepting detached caller-authored booleans or weakened thresholds.
+    /// Recomputes every component from package-bound evidence instead of accepting raw independently
+    /// produced artifacts, detached caller-authored booleans, or weakened thresholds.
     public static func assess(
-        powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
-        captureSession: PassiveBluetoothCaptureSession
+        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
+        captureEvidence: PassiveBluetoothExperimentOneCaptureEvidence
     ) -> Self {
+        let powerCycleResult = powerCycleEvidence.result
+        let captureSession = captureEvidence.session
+
         let powerCycleDuration = PassiveBluetoothPowerCycleObservationWindowDurationAssessment.assess(
             result: powerCycleResult,
             minimumDurationNanoseconds:
@@ -123,7 +135,9 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
         }
 
         let status: Status
-        if !powerCycleDuration.isDurationSufficient {
+        if powerCycleEvidence.runAuthorityID != captureEvidence.runAuthorityID {
+            status = .experimentRunAuthorityMismatch
+        } else if !powerCycleDuration.isDurationSufficient {
             status = .powerCycleDurationRejected(powerCycleDuration.status)
         } else if replayedCorrelation == nil || replayedCorrelation != powerCycleResult.correlation {
             status = .powerCycleEvidenceInconsistent
