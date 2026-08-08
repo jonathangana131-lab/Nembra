@@ -31,7 +31,7 @@ struct PassiveCoreBluetoothTerminalQueueResolution: Sendable {
             resolvedThroughQueueSequence > previouslyResolvedThroughQueueSequence
         }
 
-        private init(
+        fileprivate init(
             terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
             terminalTransactionRevision: UInt64,
             horizonQueueCutoff: UInt64,
