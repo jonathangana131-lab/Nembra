@@ -59,7 +59,10 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(recovery.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(recovery.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(recovery.contains("pendingTerminalQueueResolution = nil"))
-        #expect(!recovery.contains("await "))
+
+        let recorderInstall = try #require(recovery.range(of: "recorder = freshSession.recorder"))
+        let gateReopen = try #require(recovery.range(of: "reopenAfterTerminalFreshTargetSession("))
+        #expect(recorderInstall.lowerBound < gateReopen.lowerBound)
     }
 
     @Test("recovery is downstream of finalized teardown and real terminal callback")
