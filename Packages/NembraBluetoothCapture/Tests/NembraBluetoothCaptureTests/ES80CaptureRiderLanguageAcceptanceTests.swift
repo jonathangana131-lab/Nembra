@@ -33,6 +33,17 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         return source[beginning.lowerBound..<details.lowerBound]
     }
 
+    private static func phaseSurface(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private func phase("))
+        let end = try #require(
+            source.range(
+                of: "private var presentationAnalysisReady",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<end.lowerBound]
+    }
+
     @Test("primary Capture states use rider language instead of implementation vocabulary")
     func primaryStatesStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -82,6 +93,32 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("View Details"))
         #expect(riderSurface.contains("DISCOVERY"))
         #expect(riderSurface.contains("SEAL"))
+    }
+
+    @Test("failure and recovery states use rider language instead of authority vocabulary")
+    func failureAndRecoveryStatesStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let phaseSurface = try Self.phaseSurface(in: source)
+
+        let engineeringPhrasesThatMustStayOutOfFailureCopy = [
+            "evidence life",
+            "consumed authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow"
+        ]
+
+        for phrase in engineeringPhrasesThatMustStayOutOfFailureCopy {
+            #expect(
+                !phaseSurface.contains(phrase),
+                "Primary failure/recovery copy still exposes engineering vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(phaseSurface.contains("This capture cannot safely continue"))
+        #expect(phaseSurface.contains("Bluetooth capture is unavailable in this build"))
+        #expect(phaseSurface.contains("Start again from OFF 1"))
+        #expect(phaseSurface.contains("Simulator QA interruption fixture"))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
