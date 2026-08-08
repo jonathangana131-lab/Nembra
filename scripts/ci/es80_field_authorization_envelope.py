@@ -117,6 +117,30 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
+def private_key_identity(path: Path) -> tuple[int, int, int, int, int, int]:
+    try:
+        key_stat = path.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("cannot stat P-256 private key") from exc
+    if not stat.S_ISREG(key_stat.st_mode):
+        raise AuthorizationEnvelopeError(
+            "P-256 private key must be one regular non-symlink file outside the repository"
+        )
+    mode = stat.S_IMODE(key_stat.st_mode)
+    if mode & 0o077:
+        raise AuthorizationEnvelopeError(
+            "P-256 private key must be owner-only; group/world permission bits are not allowed"
+        )
+    return (
+        key_stat.st_dev,
+        key_stat.st_ino,
+        key_stat.st_size,
+        key_stat.st_mtime_ns,
+        key_stat.st_ctime_ns,
+        mode,
+    )
+
+
 def require_private_key(path: Path) -> Path:
     requested = path.expanduser().absolute()
     if requested.is_symlink():
@@ -124,14 +148,7 @@ def require_private_key(path: Path) -> Path:
             "P-256 private key must be one regular non-symlink file outside the repository"
         )
     resolved = require_external_path(requested, "P-256 private key")
-    try:
-        key_stat = resolved.stat()
-    except OSError as exc:
-        raise AuthorizationEnvelopeError("cannot stat P-256 private key") from exc
-    if not stat.S_ISREG(key_stat.st_mode):
-        raise AuthorizationEnvelopeError(
-            "P-256 private key must be one regular non-symlink file outside the repository"
-        )
+    private_key_identity(resolved)
     return resolved
 
 
@@ -188,21 +205,38 @@ def sign_payload(
     private_key: Path,
     payload: bytes,
 ) -> tuple[bytes, bytes]:
-    x963 = public_key_x963_from_private_key(openssl, private_key)
+    original_identity = private_key_identity(private_key)
+    original_x963 = public_key_x963_from_private_key(openssl, private_key)
+
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-sign-") as temporary:
         directory = Path(temporary)
+        snapshot_key_path = directory / "authorization-private-key.snapshot.pem"
         payload_path = directory / "authorization-payload.json"
         signature_path = directory / "authorization-signature.der"
         public_key_path = directory / "authorization-public-key.pem"
-        payload_path.write_bytes(payload)
 
+        # OpenSSL snapshots the external PEM into a private 0700 temporary directory. Python never
+        # reads secret key bytes. Every later signing operation uses only this immutable attempt-local
+        # key subject, so replacing the external pathname cannot switch authority mid-signature.
+        run_openssl(
+            openssl,
+            ["pkey", "-in", str(private_key), "-out", str(snapshot_key_path)],
+        )
+        os.chmod(snapshot_key_path, 0o600)
+
+        after_snapshot_identity = private_key_identity(private_key)
+        snapshot_x963 = public_key_x963_from_private_key(openssl, snapshot_key_path)
+        if after_snapshot_identity != original_identity or snapshot_x963 != original_x963:
+            raise AuthorizationEnvelopeError("authorization private key changed while being snapshotted")
+
+        payload_path.write_bytes(payload)
         run_openssl(
             openssl,
             [
                 "dgst",
                 "-sha256",
                 "-sign",
-                str(private_key),
+                str(snapshot_key_path),
                 "-out",
                 str(signature_path),
                 str(payload_path),
@@ -210,7 +244,7 @@ def sign_payload(
         )
         run_openssl(
             openssl,
-            ["pkey", "-in", str(private_key), "-pubout", "-out", str(public_key_path)],
+            ["pkey", "-in", str(snapshot_key_path), "-pubout", "-out", str(public_key_path)],
         )
         signature = signature_path.read_bytes()
         if not signature:
@@ -229,7 +263,13 @@ def sign_payload(
         )
         if payload_path.read_bytes() != payload:
             raise AuthorizationEnvelopeError("authorization payload bytes changed during signing")
-    return signature, x963
+
+        final_snapshot_x963 = public_key_x963_from_private_key(openssl, snapshot_key_path)
+        final_external_identity = private_key_identity(private_key)
+        if final_snapshot_x963 != snapshot_x963 or final_external_identity != original_identity:
+            raise AuthorizationEnvelopeError("authorization private key changed during signing")
+
+    return signature, snapshot_x963
 
 
 def build_payload(external_record: bytes, field_evidence: bytes) -> bytes:
@@ -323,6 +363,7 @@ def self_test() -> None:
             openssl,
             ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(private_key)],
         )
+        os.chmod(private_key, 0o600)
         external_bytes = b'{"schemaVersion":3,"fixture":"opaque-external-subject"}\n'
         evidence_bytes = b'{"schemaVersion":1,"fixture":"opaque-field-evidence-subject"}\n'
         external_record.write_bytes(external_bytes)
@@ -381,6 +422,20 @@ def self_test() -> None:
                 raise
         else:
             raise AssertionError("existing authorization envelope was overwritten")
+
+        insecure_key = directory / "insecure-authority-private-key.pem"
+        run_openssl(
+            openssl,
+            ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(insecure_key)],
+        )
+        os.chmod(insecure_key, 0o644)
+        try:
+            require_private_key(insecure_key)
+        except AuthorizationEnvelopeError as error:
+            if "owner-only" not in str(error):
+                raise
+        else:
+            raise AssertionError("group/world-readable authorization private key was accepted")
 
     repository_private_key = REPOSITORY_ROOT / "never-create-this-private-key.pem"
     try:
