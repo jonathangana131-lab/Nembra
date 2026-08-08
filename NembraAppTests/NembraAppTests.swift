@@ -64,9 +64,6 @@ final class NembraAppTests: XCTestCase {
         XCTAssertLessThan(eco.ambientOpacity, drive.ambientOpacity)
         XCTAssertLessThan(drive.ambientOpacity, sport.ambientOpacity)
 
-        // Mode personality is presentation state only. The verified MAXSHOT
-        // protocol model must remain unmapped until real hardware proves a
-        // relationship between ride modes and the three speed-limit slots.
         XCTAssertTrue(VehicleProfile.maxshotV1SPro.capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
@@ -292,7 +289,6 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-
 /// V14 app-visible Experiment One authority regression. These source checks intentionally live in
 /// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
@@ -308,18 +304,55 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellUsesFinalV14ShareAsTheAnalysisReadinessBoundary() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
             contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
             encoding: .utf8
         )
+
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+
+        XCTAssertTrue(shell.contains("finalizedCaptureData = artifact.captureJSON"))
+        XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneFinalShareArtifactIntegrity.inspect(artifact.json)"))
+        XCTAssertTrue(shell.contains("finalShareData = artifact.json"))
+        XCTAssertTrue(shell.contains("analysisIntegrityReport = report"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+
+        XCTAssertFalse(shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"))
+        XCTAssertFalse(shell.contains("persistShareArtifact(artifact.captureJSON"))
+        XCTAssertFalse(shell.contains("SoftwareExport-\(UUID().uuidString)"))
+
+        XCTAssertTrue(shell.contains("analysisIntegrityReport != nil ? \"READY\" :" ) == false)
+        XCTAssertTrue(shell.contains("if analysisIntegrityReport != nil { return \"READY\" }"))
+        XCTAssertTrue(shell.contains("capture sealed; analysis package verification still required"))
+        XCTAssertTrue(shell.contains("Ready for analysis"))
+        XCTAssertTrue(shell.contains("CAPTURE SEALED"))
+    }
+
+    func testCaptureShareRetryUsesRetainedVerifiedBytesWithoutResealing() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let shell = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+
+        let retryStart = try XCTUnwrap(shell.range(of: "private func stageVerifiedFinalShare()"))
+        let restartStart = try XCTUnwrap(
+            shell.range(of: "private func restartExperiment()", range: retryStart.upperBound..<shell.endIndex)
+        )
+        let retryBody = String(shell[retryStart.lowerBound..<restartStart.lowerBound])
+
+        XCTAssertTrue(retryBody.contains("let data = finalShareData"))
+        XCTAssertTrue(retryBody.contains("persistShareArtifact(data, suggestedFilename: suggestedFilename)"))
+        XCTAssertFalse(retryBody.contains("finalizeObservationHorizon"))
+        XCTAssertFalse(retryBody.contains("finalizedShareArtifactForCurrentApplication"))
     }
 }
