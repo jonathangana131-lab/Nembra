@@ -77,8 +77,8 @@ struct PassiveBluetoothValueStreamStatisticsTests {
         try expectApproximately(stats.maximumCallbackIntervalSeconds, 0.0000004, tolerance: 1e-15)
     }
 
-    @Test("unrelated peripheral disconnect does not fragment target cadence")
-    func unrelatedDisconnectDoesNotBreakCadence() throws {
+    @Test("unrelated peripheral disconnect is still a capture-wide cadence boundary")
+    func unrelatedDisconnectBreaksCadence() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
         try appendValue(to: &session, sequence: 1, uptime: 100, payload: [0x01], peripheral: "target-a")
         try appendDisconnect(to: &session, sequence: 2, uptime: 150, peripheral: "unrelated-b")
@@ -86,9 +86,9 @@ struct PassiveBluetoothValueStreamStatisticsTests {
 
         let stats = try #require(PassiveBluetoothValueStreamAnalysis.summarize(session).first)
         #expect(stats.key.peripheralIdentifier == "target-a")
-        #expect(stats.continuitySegmentCount == 1)
-        #expect(stats.callbackIntervalCount == 1)
-        try expectApproximately(stats.meanCallbackIntervalSeconds, 0.0000003, tolerance: 1e-15)
+        #expect(stats.continuitySegmentCount == 2)
+        #expect(stats.callbackIntervalCount == 0)
+        #expect(stats.meanCallbackIntervalSeconds == nil)
     }
 
     @Test("different characteristics remain independent streams and sort deterministically")
