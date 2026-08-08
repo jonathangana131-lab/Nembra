@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
