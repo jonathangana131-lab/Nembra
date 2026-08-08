@@ -33,10 +33,14 @@ Before producing evidence, the inspector requires all of the following:
 - `CFBundleExecutable` resolves to one bundle-local executable file;
 - `codesign --verify --deep --strict` succeeds on the extracted signed app;
 - the signature is not ad-hoc;
-- code-signing metadata contains a concrete TeamIdentifier and displayed authority chain;
+- code-signing metadata contains one canonical 10-character TeamIdentifier, a concrete displayed authority chain, and a canonical CDHash;
+- `embedded.mobileprovision` exists and decodes through Apple's `security cms` tool;
+- the provisioning profile contains the code-signing TeamIdentifier;
+- the provisioning profile has a UUID and a future ExpirationDate;
+- the provisioning profile `application-identifier` is exactly `<TeamIdentifier>.com.jonathangana131.nembra`;
 - no executable-digest/trusted-field record is embedded inside the signed app bundle.
 
-The inspector never repairs malformed metadata, trims source identities, substitutes Simulator values, or accepts a caller-provided artifact digest instead of hashing the exact bytes.
+The inspector never repairs malformed metadata, trims source identities, substitutes Simulator values, accepts an expired/mismatched provisioning profile, or accepts a caller-provided artifact digest instead of hashing the exact bytes.
 
 ## One machine-readable field-build contract
 
@@ -45,9 +49,9 @@ A successful run refuses to overwrite an existing evidence set and writes:
 - `build-evidence/NembraField.ipa` — byte-for-byte retained copy of the inspected installable artifact;
 - `NembraCaptureExternalBuildRecord.json` — closed-world schema-v3 build record containing build label, build-instance rendezvous, exact source SHA, executable SHA-256, Info.plist SHA-256, `ES80-FINGERPRINT-v1`, and procedure `V14`;
 - `NembraCaptureFieldBuildEvidenceRecord.json` — the exact schema-v1 signed-installable declaration consumed by `PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON`;
-- `NembraCaptureSignedFieldArtifactInspection.json` — separate signing/platform inspection metadata that is deliberately **not** the package rendezvous record.
+- `NembraCaptureSignedFieldArtifactInspection.json` — separate signing/platform/provisioning inspection metadata that is deliberately **not** the package rendezvous record.
 
-`NembraCaptureFieldBuildEvidenceRecord.json` contains exactly:
+`NembraCaptureFieldBuildEvidenceRecord.json` remains schema v1 and contains exactly:
 
 - `schemaVersion = 1`;
 - SHA-256 of the exact external build-record bytes;
@@ -61,24 +65,28 @@ A successful run refuses to overwrite an existing evidence set and writes:
 - `ES80-FINGERPRINT-v1`;
 - procedure `V14`.
 
-It intentionally contains no `physicalGO`, `authorized`, signing-team, platform, byte-count, or other extra fields because the package parser is closed-world. This gives the package one unambiguous field-build evidence contract instead of two competing schema-v1 formats.
+It intentionally contains no `physicalGO`, `authorized`, signing-team, platform, byte-count, provisioning, or other extra fields because the package parser is closed-world. This gives the package one unambiguous field-build evidence contract instead of competing field-build schemas.
 
-## Separate signing inspection
+## Separate signing inspection v2
 
-`NembraCaptureSignedFieldArtifactInspection.json` carries non-authorizing diagnostics including:
+`NembraCaptureSignedFieldArtifactInspection.json` is a non-authorizing diagnostics companion. Schema v2 carries:
 
 - explicit `signed-field-artifact-inspection-not-field-authorization` authority wording;
 - SHA-256 of the exact field-build evidence record bytes;
 - SHA-256 of the exact external build record and signed IPA;
 - IPA byte count;
 - bundle and iPhone platform declarations;
-- code-signing TeamIdentifier and displayed authority chain;
+- canonical code-signing TeamIdentifier and displayed authority chain;
+- code-directory hash (`CDHash`);
+- embedded provisioning-profile UUID;
+- provisioning-profile expiration normalized to UTC and proven non-expired at inspection time;
+- exact provisioning `application-identifier` bound to the code-signing team and Nembra bundle ID;
 - exact build/source/executable/Info.plist tuple;
 - recipe and procedure identity.
 
 The retained IPA is re-hashed after copy. The external build record and field-build evidence record are also re-hashed after write and must match the digests carried by their dependent evidence.
 
-This local `codesign` inspection is still not independent release acceptance. In particular, stronger provisioning-profile and signed-entitlement policy checks may be layered into the trusted candidate verifier before field acceptance; they must not create a competing package record schema.
+These signing/provisioning facts remain locally measured evidence. Schema v2 does **not** promote the signing team, certificate, profile, or this script into independent release authority. The final acceptance layer must separately establish which signing/authorization public key and exact retained evidence subjects are trusted.
 
 ## Non-self-referential topology
 
@@ -88,7 +96,7 @@ The signed IPA is the subject being measured; these external records may describ
 
 ## Independent acceptance still required
 
-A successful inspection means only that one exact signed IPA passed the local structural/signature/build-identity checks and that its exact bytes were retained and measured.
+A successful inspection means only that one exact signed IPA passed the local structural/signature/build-identity/provisioning checks and that its exact bytes were retained and measured.
 
 It does **not** prove that:
 
@@ -102,17 +110,19 @@ It does **not** prove that:
 - any GATT/Tuya/DP/telemetry semantic is known;
 - any command/write is safe or acknowledged.
 
-The next trusted pipeline rung must independently attest/accept the exact retained IPA plus the exact external evidence subjects, bind them to the running app through the package-owned runtime rendezvous, and only then deliberately evolve the package-owned physical field gate. Arbitrary parsed JSON, matching UUID/SHA spelling, or this script's exit code must never unlock Experiment One.
+The next trusted pipeline rung must independently attest/accept the exact retained IPA plus the exact external evidence subjects, bind them to the running app through the package-owned runtime rendezvous, and only then deliberately evolve the package-owned physical field gate. Arbitrary parsed JSON, matching UUID/SHA spelling, a locally valid Apple provisioning profile, or this script's exit code must never unlock Experiment One.
 
-## Development-only self-test
+## Development-only tests
 
-The script has a platform-independent contract smoke test for canonical SHA/UUID/build-label handling, unsafe/ambiguous ZIP paths, and the exact closed-world field-build record key set:
+The script retains a platform-independent contract smoke test for canonical SHA/UUID/build-label handling, unsafe/ambiguous ZIP paths, and the exact closed-world package field-build record key set:
 
 ```sh
 python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
 ```
 
-That self-test is development evidence only. It does not substitute for running the full inspector on macOS against the final signed field IPA.
+Focused unit tests also exercise the pure signing/provisioning parser and inject a fake signing probe into IPA inspection. This allows deterministic coverage of TeamIdentifier/CDHash/profile/app-ID/expiration fail-closed behavior without pretending to verify a real Apple signature on a non-macOS host.
+
+Those tests are development evidence only. The final field candidate still requires the real macOS inspector against the exact signed IPA.
 
 ## Physical status
 
