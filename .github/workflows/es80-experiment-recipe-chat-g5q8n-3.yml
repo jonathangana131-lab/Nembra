@@ -1,0 +1,84 @@
+name: ES80 Experiment Recipe QA Wire Hardened
+
+on:
+  push:
+    branches:
+      - cell/es80-experiment-recipe/ci/chat-g5q8n-3
+
+permissions:
+  contents: read
+
+jobs:
+  validate-recipe:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          PRODUCT_SHA: 176c67d4d4cf0cf52e4df28e80685c2c11ea3ed8
+          WORKFLOW_PATH: .github/workflows/es80-experiment-recipe-chat-g5q8n-3.yml
+        run: |
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_SHA"
+          changed="$(git diff --name-only "$PRODUCT_SHA" HEAD)"
+          test "$changed" = "$WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Reject application characteristic writes
+        run: |
+          if grep -R -n -E 'writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive capture package must not add application characteristic writes.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraCore with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Test Bluetooth capture package with warnings as errors
+        run: swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          xcodebuild \
+            -scheme NembraBluetoothCapture \
+            -destination 'generic/platform=iOS Simulator' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Guard recipe identity, authority, and wire boundary
+        run: |
+          source='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentRecipe.swift'
+          compact="$(tr -d '[:space:]' < "$source")"
+          grep -Fq 'casees80FingerprintV1="ES80-FINGERPRINT-v1"' <<<"$compact"
+          grep -Fq 'publicenumPassiveBluetoothExperimentRecipeID:String,Codable,CaseIterable,Sendable' <<<"$compact"
+          grep -Fq 'publicenumPassiveBluetoothExperimentRecipeStep:CaseIterable,Sendable' <<<"$compact"
+          if grep -Fq 'PassiveBluetoothExperimentRecipeStep:String' <<<"$compact" || \
+             grep -Eq 'PassiveBluetoothExperimentRecipeStep:[^{]*(Codable|RawRepresentable)' <<<"$compact"; then
+            echo 'Internal recipe steps accidentally gained a wire/raw-value contract.' >&2
+            exit 1
+          fi
+          grep -Fq 'privateinit(id:PassiveBluetoothExperimentRecipeID,requiredSteps:[PassiveBluetoothExperimentRecipeStep])' <<<"$compact"
+          grep -Fq 'mutatingfunccomplete(_step:PassiveBluetoothExperimentRecipeStep)throws' <<<"$compact"
+          if grep -Fq 'publicmutatingfunccomplete(' <<<"$compact"; then
+            echo 'Recipe advancement became public to app/UI clients.' >&2
+            exit 1
+          fi
+          if grep -Fq 'publicenumPassiveBluetoothExperimentRecipeProgressError' <<<"$compact"; then
+            echo 'Internal advancement failure surface became public.' >&2
+            exit 1
+          fi
+          grep -Fq 'casepowerOffFirst' "$source"
+          grep -Fq 'casepowerOnFirst' "$source"
+          grep -Fq 'casepowerOffSecond' "$source"
+          grep -Fq 'casepowerOnSecond' "$source"
+          grep -Fq 'caseobservationHorizonAndSeal' "$source"
