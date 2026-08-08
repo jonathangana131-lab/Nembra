@@ -119,7 +119,7 @@ def read_exact_subject(path: Path, label: str) -> bytes:
 
 
 def require_openssl() -> str:
-    """Resolve one explicitly controlled OpenSSL executable without consulting ambient PATH."""
+    """Resolve one root-custodied OpenSSL executable without consulting ambient PATH."""
     configured = os.environ.get("NEMBRA_OPENSSL", DEFAULT_OPENSSL_PATH)
     requested = Path(configured).expanduser()
     if not requested.is_absolute():
@@ -150,13 +150,10 @@ def require_openssl() -> str:
         )
     if executable_stat.st_mode & 0o111 == 0:
         raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
-
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+    if executable_stat.st_uid != 0:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be root-owned to prevent signing-user path replacement"
+        )
 
     directory = resolved.parent
     while True:
@@ -166,6 +163,10 @@ def require_openssl() -> str:
             raise AuthorizationEnvelopeError(
                 "could not inspect OpenSSL executable custody path"
             ) from exc
+        if directory_stat.st_uid != 0:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must be root-owned: {directory}"
+            )
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
