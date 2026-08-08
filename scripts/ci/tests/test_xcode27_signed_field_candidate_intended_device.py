@@ -17,9 +17,14 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         )
         self.assertIn('es80_signed_field_artifact_private_runner.py', source)
         self.assertIn(
+            '--validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
+            source,
+        )
+        self.assertIn(
             '--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
             source,
         )
+        self.assertIn('failed private content/mode validation', source)
         self.assertNotIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set', source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
         self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', source)
@@ -29,6 +34,7 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         self.assertIn('os.O_NOFOLLOW', runner)
         self.assertIn('os.fstat(descriptor)', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
+        self.assertIn('--validate-intended-device-udid-file', runner)
         self.assertNotIn('subprocess', runner)
         self.assertNotIn('os.environ', runner)
 
