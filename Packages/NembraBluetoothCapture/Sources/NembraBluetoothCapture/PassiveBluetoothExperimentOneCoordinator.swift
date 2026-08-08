@@ -185,7 +185,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     /// Consumes the hidden admission only after the hidden exact UUID appears in the post-admission
     /// catalog. No UUID or timeout is caller-selectable. A staging failure remains retryable only
-    /// while producer `stagingPreview()` proves this exact admission is still unconsumed.
+    /// while producer `previewForControllerStaging()` proves this exact admission is still unconsumed.
     public func connectPreparedCapture() throws {
         try requireExecutionAuthority()
         guard let admission = pendingCaptureAdmission,
@@ -203,7 +203,16 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
         } catch {
-            if (try? admission.stagingPreview()) == nil {
+            // The narrowed producer staging preview remains readable only before
+            // irreversible one-shot consumption. Preserve the same completed
+            // OFF/ON evidence life only while that exact authority still exists.
+            do {
+                _ = try admission.previewForControllerStaging()
+            } catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            } catch {
+                // Unknown/future staging-state failures are not proven retryable.
                 pendingCaptureAdmission = nil
                 preparedCorrelatedTargetIdentifier = nil
             }
