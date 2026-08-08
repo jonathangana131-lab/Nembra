@@ -2,15 +2,19 @@
 """Produce fail-closed evidence for an already-built signed Nembra field IPA.
 
 This tool never authorizes physical Experiment One. It measures and preserves an exact
-installable artifact, verifies its iPhone code signature and embedded Nembra build declarations,
-and emits external evidence that a separate trusted acceptance step may attest/review.
+installable artifact, verifies its iPhone code signature, provisioning relationship, and embedded
+Nembra build declarations, and emits external evidence that a separate trusted acceptance step may
+attest/review.
 """
 
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
+import os
 import plistlib
 import re
 import shutil
@@ -18,8 +22,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 RECIPE_ID = "ES80-FINGERPRINT-v1"
@@ -27,7 +33,7 @@ PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
 FIELD_BUILD_EVIDENCE_SCHEMA_VERSION = 1
-SIGNING_INSPECTION_SCHEMA_VERSION = 1
+SIGNING_INSPECTION_SCHEMA_VERSION = 2
 SIGNED_INSTALLABLE_KIND = "ipa"
 INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"
 
@@ -36,10 +42,48 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+TEAM_IDENTIFIER_RE = re.compile(r"^[A-Z0-9]{10}$")
+CDHASH_RE = re.compile(r"^[0-9a-f]{40,64}$")
 
 
 class EvidenceError(RuntimeError):
     pass
+
+
+def publish_directory_no_replace(staging_dir: Path, output_dir: Path) -> None:
+    """Atomically rename a complete directory while refusing any existing destination."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    source = os.fsencode(staging_dir)
+    destination = os.fsencode(output_dir)
+
+    if sys.platform == "darwin":
+        rename_exclusive = libc.renamex_np
+        rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(source, destination, 0x00000004)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename_exclusive = libc.renameat2
+        rename_exclusive.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(-100, source, -100, destination, 0x00000001)  # RENAME_NOREPLACE
+    else:
+        raise EvidenceError(
+            f"atomic no-replace evidence publication is unsupported on {sys.platform!r}"
+        )
+
+    if result != 0:
+        error_number = ctypes.get_errno()
+        if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+            raise EvidenceError(
+                f"refusing to overwrite concurrently created field evidence: {output_dir}"
+            )
+        raise OSError(error_number, os.strerror(error_number), str(output_dir))
 
 
 def sha256_file(path: Path) -> str:
@@ -91,14 +135,20 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
+def _filesystem_collision_key(path: PurePosixPath) -> tuple[str, ...]:
+    return tuple(unicodedata.normalize("NFC", part).casefold() for part in path.parts)
+
+
 def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, PurePosixPath]:
     """Reject archive ambiguity before any member is read or extracted.
 
-    Exact duplicate member names are ambiguous to zip readers, while case-fold collisions can
-    overwrite one another on the default case-insensitive filesystems commonly used by macOS.
+    Exact duplicate member names are ambiguous to zip readers. Distinct ZIP names can also alias
+    on normal case-insensitive, Unicode-normalizing macOS filesystems. Validate every path prefix,
+    not only each complete filename, so differently-spelled parent directories cannot merge during
+    extraction before code-signing verification.
     """
     exact: set[str] = set()
-    folded: dict[str, str] = {}
+    filesystem_paths: dict[tuple[str, ...], PurePosixPath] = {}
     result: dict[str, PurePosixPath] = {}
     for info in infos:
         raw_name = info.filename.rstrip("/")
@@ -107,13 +157,19 @@ def _validated_unique_member_paths(infos: list[zipfile.ZipInfo]) -> dict[str, Pu
         if canonical in exact:
             raise EvidenceError(f"IPA contains duplicate ZIP member path: {canonical!r}")
         exact.add(canonical)
-        casefolded = canonical.casefold()
-        previous = folded.get(casefolded)
-        if previous is not None and previous != canonical:
-            raise EvidenceError(
-                f"IPA contains case-fold-colliding ZIP member paths: {previous!r} and {canonical!r}"
-            )
-        folded[casefolded] = canonical
+
+        parts = member.parts
+        for depth in range(1, len(parts) + 1):
+            prefix = PurePosixPath(*parts[:depth])
+            collision_key = _filesystem_collision_key(prefix)
+            previous = filesystem_paths.get(collision_key)
+            if previous is not None and previous != prefix:
+                raise EvidenceError(
+                    "IPA contains filesystem-aliasing ZIP member paths: "
+                    f"{str(previous)!r} and {str(prefix)!r}"
+                )
+            filesystem_paths[collision_key] = prefix
+
         result[info.filename] = member
     return result
 
@@ -199,48 +255,154 @@ def verify_device_platform(info: dict) -> tuple[str, list[str]]:
     return platform, supported_values
 
 
-def run_codesign(app_path: Path) -> tuple[str, list[str]]:
+def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise EvidenceError(f"command failed ({' '.join(command)}): {detail}")
+    return result
+
+
+def run_codesign(app_path: Path) -> tuple[str, list[str], str]:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS code-signing tools")
     codesign = shutil.which("codesign")
     if not codesign:
         raise EvidenceError("codesign is not available")
 
-    verify = subprocess.run(
-        [codesign, "--verify", "--deep", "--strict", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
+    _run_text(
+        [
+            codesign,
+            "--verify",
+            "--deep",
+            "--strict",
+            "--all-architectures",
+            "--verbose=4",
+            str(app_path),
+        ]
     )
-    if verify.returncode != 0:
-        detail = (verify.stderr or verify.stdout).strip()
-        raise EvidenceError(f"codesign verification failed: {detail}")
-
-    display = subprocess.run(
-        [codesign, "-d", "--verbose=4", str(app_path)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if display.returncode != 0:
-        detail = (display.stderr or display.stdout).strip()
-        raise EvidenceError(f"codesign metadata inspection failed: {detail}")
+    display = _run_text([codesign, "-d", "--verbose=4", str(app_path)])
 
     metadata = "\n".join(part for part in (display.stdout, display.stderr) if part)
     if re.search(r"(?m)^Signature=adhoc\s*$", metadata):
         raise EvidenceError("ad-hoc signature cannot become signed field artifact evidence")
 
+    identifier_match = re.search(r"(?m)^Identifier=([^\r\n]+)$", metadata)
+    if not identifier_match or identifier_match.group(1).strip() != BUNDLE_ID:
+        raise EvidenceError("code-signing identifier does not match Nembra bundle identifier")
+
     team_match = re.search(r"(?m)^TeamIdentifier=([^\r\n]+)$", metadata)
     if not team_match:
         raise EvidenceError("codesign metadata does not contain TeamIdentifier")
     team_identifier = team_match.group(1).strip()
-    if not team_identifier or team_identifier.lower() in {"not set", "none", "-"}:
-        raise EvidenceError("field IPA does not carry a concrete signing TeamIdentifier")
+    if not TEAM_IDENTIFIER_RE.fullmatch(team_identifier):
+        raise EvidenceError("field IPA does not carry a canonical Apple TeamIdentifier")
+
+    cdhash_match = re.search(r"(?m)^CDHash=([^\r\n]+)$", metadata)
+    if not cdhash_match:
+        raise EvidenceError("codesign metadata does not contain CDHash")
+    code_directory_hash = cdhash_match.group(1).strip().lower()
+    if not CDHASH_RE.fullmatch(code_directory_hash):
+        raise EvidenceError("codesign CDHash is malformed")
 
     authorities = [match.group(1).strip() for match in re.finditer(r"(?m)^Authority=([^\r\n]+)$", metadata)]
-    if not authorities:
-        raise EvidenceError("codesign metadata does not contain a signing authority chain")
-    return team_identifier, authorities
+    if not authorities or any(not authority for authority in authorities):
+        raise EvidenceError("codesign metadata does not contain a complete signing authority chain")
+    return team_identifier, authorities, code_directory_hash
+
+
+def _normalized_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def validate_provisioning_profile(
+    profile: dict,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+    now: datetime | None = None,
+) -> tuple[str, str, str]:
+    profile_teams = profile.get("TeamIdentifier")
+    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+        raise EvidenceError("provisioning profile TeamIdentifier does not match the code signature")
+
+    profile_uuid = profile.get("UUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+        raise EvidenceError("provisioning profile UUID is missing")
+
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise EvidenceError("provisioning profile ExpirationDate is missing")
+    expiration_utc = _normalized_utc(expiration)
+    current_utc = _normalized_utc(now or datetime.now(timezone.utc))
+    if expiration_utc <= current_utc:
+        raise EvidenceError("provisioning profile is expired")
+
+    entitlements = profile.get("Entitlements")
+    if not isinstance(entitlements, dict):
+        raise EvidenceError("provisioning profile Entitlements are missing")
+    expected_application_identifier = f"{team_identifier}.{bundle_identifier}"
+    if entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError(
+            "provisioning profile application-identifier does not match the signed Nembra bundle"
+        )
+    entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+    if entitlement_team is not None and entitlement_team != team_identifier:
+        raise EvidenceError("provisioning profile entitlement TeamIdentifier does not match code signing")
+
+    return (
+        profile_uuid.strip(),
+        expiration_utc.isoformat().replace("+00:00", "Z"),
+        expected_application_identifier,
+    )
+
+
+def verify_provisioning_profile(
+    app_path: Path,
+    *,
+    team_identifier: str,
+    bundle_identifier: str,
+) -> tuple[str, str, str, str]:
+    if sys.platform != "darwin":
+        raise EvidenceError("provisioning verification requires macOS Apple signing tools")
+    security = shutil.which("security")
+    if not security:
+        raise EvidenceError("security is not available for provisioning-profile verification")
+
+    profile_path = app_path / "embedded.mobileprovision"
+    if not profile_path.is_file():
+        raise EvidenceError("signed field IPA is missing embedded.mobileprovision")
+    profile_sha256 = sha256_file(profile_path)
+
+    result = subprocess.run(
+        [security, "cms", "-D", "-i", str(profile_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise EvidenceError(f"could not decode embedded provisioning profile: {detail}")
+    try:
+        profile = plistlib.loads(result.stdout)
+    except Exception as exc:
+        raise EvidenceError("decoded embedded provisioning profile is not a valid plist") from exc
+    if not isinstance(profile, dict):
+        raise EvidenceError("decoded embedded provisioning profile root is not a dictionary")
+
+    profile_uuid, expiration_utc, application_identifier = validate_provisioning_profile(
+        profile,
+        team_identifier=team_identifier,
+        bundle_identifier=bundle_identifier,
+    )
+    return profile_sha256, profile_uuid, expiration_utc, application_identifier
 
 
 def reject_embedded_external_authority(app_path: Path) -> None:
@@ -304,7 +466,17 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         if not executable_path.is_file():
             raise EvidenceError("signed app executable is missing")
 
-        team_identifier, signing_authorities = run_codesign(app_path)
+        team_identifier, signing_authorities, code_directory_hash = run_codesign(app_path)
+        (
+            provisioning_profile_sha256,
+            provisioning_profile_uuid,
+            provisioning_profile_expiration_utc,
+            provisioning_application_identifier,
+        ) = verify_provisioning_profile(
+            app_path,
+            team_identifier=team_identifier,
+            bundle_identifier=bundle_id,
+        )
         executable_sha = sha256_file(executable_path)
         info_plist_sha = sha256_file(info_path)
         if not SHA256_RE.fullmatch(executable_sha) or not SHA256_RE.fullmatch(info_plist_sha):
@@ -357,6 +529,11 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
         "supportedPlatforms": supported_platforms,
         "teamIdentifier": team_identifier,
         "signingAuthorities": signing_authorities,
+        "codeDirectoryHash": code_directory_hash,
+        "provisioningProfileSHA256": provisioning_profile_sha256,
+        "provisioningProfileUUID": provisioning_profile_uuid,
+        "provisioningProfileExpirationUTC": provisioning_profile_expiration_utc,
+        "provisioningApplicationIdentifier": provisioning_application_identifier,
         "executableSHA256": executable_sha,
         "infoPlistSHA256": info_plist_sha,
         "experimentRecipeID": RECIPE_ID,
@@ -372,40 +549,50 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
 
 
 def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    retained_dir = output_dir / "build-evidence"
-    retained_dir.mkdir(parents=True, exist_ok=True)
+    output_parent = output_dir.parent
+    output_parent.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists() or output_dir.is_symlink():
+        raise EvidenceError(f"refusing to overwrite existing field evidence directory: {output_dir}")
 
-    retained_ipa = retained_dir / "NembraField.ipa"
-    external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
-    field_build_path = output_dir / "NembraCaptureFieldBuildEvidenceRecord.json"
-    signing_inspection_path = output_dir / "NembraCaptureSignedFieldArtifactInspection.json"
-    targets = (retained_ipa, external_path, field_build_path, signing_inspection_path)
-    existing = [str(path) for path in targets if path.exists()]
-    if existing:
-        raise EvidenceError(f"refusing to overwrite existing field evidence: {existing!r}")
+    staging_dir = Path(
+        tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=output_parent)
+    )
+    published = False
+    try:
+        retained_dir = staging_dir / "build-evidence"
+        retained_dir.mkdir()
 
-    shutil.copy2(ipa_path, retained_ipa)
-    if sha256_file(retained_ipa) != inspection["field_build_record"]["signedInstallableSHA256"]:
-        retained_ipa.unlink(missing_ok=True)
-        raise EvidenceError("retained IPA bytes diverged from inspected input")
+        retained_ipa = retained_dir / "NembraField.ipa"
+        external_path = staging_dir / "NembraCaptureExternalBuildRecord.json"
+        field_build_path = staging_dir / "NembraCaptureFieldBuildEvidenceRecord.json"
+        signing_inspection_path = staging_dir / "NembraCaptureSignedFieldArtifactInspection.json"
 
-    external_path.write_bytes(inspection["external_bytes"])
-    actual_external_sha = sha256_file(external_path)
-    if actual_external_sha != inspection["field_build_record"]["externalBuildRecordSHA256"]:
-        raise EvidenceError("written external build record digest diverged from field-build evidence")
+        shutil.copy2(ipa_path, retained_ipa)
+        if sha256_file(retained_ipa) != inspection["field_build_record"]["signedInstallableSHA256"]:
+            raise EvidenceError("retained IPA bytes diverged from inspected input")
 
-    field_build_path.write_bytes(inspection["field_build_bytes"])
-    actual_field_build_sha = sha256_file(field_build_path)
-    if actual_field_build_sha != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
-        raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+        external_path.write_bytes(inspection["external_bytes"])
+        actual_external_sha = sha256_file(external_path)
+        if actual_external_sha != inspection["field_build_record"]["externalBuildRecordSHA256"]:
+            raise EvidenceError("written external build record digest diverged from field-build evidence")
 
-    signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
+        field_build_path.write_bytes(inspection["field_build_bytes"])
+        actual_field_build_sha = sha256_file(field_build_path)
+        if actual_field_build_sha != inspection["signing_inspection"]["fieldBuildEvidenceRecordSHA256"]:
+            raise EvidenceError("written field-build evidence digest diverged from signing inspection")
+
+        signing_inspection_path.write_bytes(canonical_json_bytes(inspection["signing_inspection"]))
+        publish_directory_no_replace(staging_dir, output_dir)
+        published = True
+    finally:
+        if not published:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
     return {
-        "retained_ipa": retained_ipa,
-        "external_record": external_path,
-        "field_build_record": field_build_path,
-        "signing_inspection": signing_inspection_path,
+        "retained_ipa": output_dir / "build-evidence" / "NembraField.ipa",
+        "external_record": output_dir / "NembraCaptureExternalBuildRecord.json",
+        "field_build_record": output_dir / "NembraCaptureFieldBuildEvidenceRecord.json",
+        "signing_inspection": output_dir / "NembraCaptureSignedFieldArtifactInspection.json",
     }
 
 
@@ -432,6 +619,72 @@ def self_test() -> None:
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
 
+    with tempfile.TemporaryDirectory(prefix="nembra-field-publish-self-test-") as temporary:
+        root = Path(temporary)
+        ipa_path = root / "candidate.ipa"
+        ipa_path.write_bytes(b"exact retained ipa")
+        external_bytes = canonical_json_bytes({"schemaVersion": 3})
+        field_build_record = {
+            "signedInstallableSHA256": sha256_file(ipa_path),
+            "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
+        }
+        field_build_bytes = canonical_json_bytes(field_build_record)
+        signing_inspection = {
+            "fieldBuildEvidenceRecordSHA256": hashlib.sha256(field_build_bytes).hexdigest(),
+        }
+        inspection = {
+            "external_bytes": external_bytes,
+            "field_build_record": field_build_record,
+            "field_build_bytes": field_build_bytes,
+            "signing_inspection": signing_inspection,
+        }
+
+        failed_output = root / "failed-evidence"
+        mismatched = {
+            **inspection,
+            "signing_inspection": {
+                "fieldBuildEvidenceRecordSHA256": "0" * 64,
+            },
+        }
+        try:
+            write_outputs(ipa_path, failed_output, mismatched)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("late evidence digest mismatch must fail publication")
+        assert not failed_output.exists()
+        assert not list(root.glob(".failed-evidence.staging-*"))
+
+        published_output = root / "published-evidence"
+        paths = write_outputs(ipa_path, published_output, inspection)
+        assert paths["retained_ipa"].read_bytes() == ipa_path.read_bytes()
+        assert paths["external_record"].read_bytes() == external_bytes
+        assert paths["field_build_record"].read_bytes() == field_build_bytes
+        assert paths["signing_inspection"].read_bytes() == canonical_json_bytes(signing_inspection)
+        assert not list(root.glob(".published-evidence.staging-*"))
+
+        try:
+            write_outputs(ipa_path, published_output, inspection)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("existing evidence directory must never be overwritten")
+
+        competing_staging = root / ".competing.staging"
+        competing_staging.mkdir()
+        (competing_staging / "complete").write_text("candidate", encoding="utf-8")
+        competing_output = root / "competing-output"
+        competing_output.mkdir()
+        (competing_output / "owner").write_text("incumbent", encoding="utf-8")
+        try:
+            publish_directory_no_replace(competing_staging, competing_output)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("no-replace publication must reject a competing destination")
+        assert (competing_output / "owner").read_text(encoding="utf-8") == "incumbent"
+        assert (competing_staging / "complete").read_text(encoding="utf-8") == "candidate"
+
     duplicate = [zipfile.ZipInfo("Payload/Nembra.app/Nembra"), zipfile.ZipInfo("Payload/Nembra.app/Nembra")]
     try:
         _validated_unique_member_paths(duplicate)
@@ -440,16 +693,31 @@ def self_test() -> None:
     else:
         raise AssertionError("duplicate ZIP member path must fail closed")
 
-    case_collision = [
-        zipfile.ZipInfo("Payload/Nembra.app/Info.plist"),
-        zipfile.ZipInfo("payload/nembra.app/info.plist"),
-    ]
-    try:
-        _validated_unique_member_paths(case_collision)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("case-fold-colliding ZIP member paths must fail closed")
+    def assert_alias_rejected(first: str, second: str) -> None:
+        infos = [zipfile.ZipInfo(first), zipfile.ZipInfo(second)]
+        try:
+            _validated_unique_member_paths(infos)
+        except EvidenceError as error:
+            assert "filesystem-aliasing" in str(error)
+        else:
+            raise AssertionError(f"filesystem-aliasing ZIP paths must fail closed: {first!r}, {second!r}")
+
+    assert_alias_rejected(
+        "Payload/Nembra.app/Info.plist",
+        "Payload/Nembra.app/info.plist",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Nembra",
+        "Payload/Nembra.app/nembra",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Info.plist",
+        "Payload/nembra.app/Other",
+    )
+    assert_alias_rejected(
+        "Payload/Nembra.app/Caf\u00e9",
+        "Payload/Nembra.app/Cafe\u0301",
+    )
 
     exact_field_keys = {
         "schemaVersion",
@@ -491,6 +759,58 @@ def self_test() -> None:
     assert set(fixture_field) == exact_field_keys
     assert "physicalGO" not in fixture_field
     assert "authorized" not in fixture_field
+
+    team = "ABCDE12345"
+    expiry = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    valid_profile = {
+        "TeamIdentifier": [team],
+        "UUID": "PROFILE-UUID",
+        "ExpirationDate": expiry,
+        "Entitlements": {
+            "application-identifier": f"{team}.{BUNDLE_ID}",
+            "com.apple.developer.team-identifier": team,
+        },
+    }
+    profile_uuid, expiration_utc, application_id = validate_provisioning_profile(
+        valid_profile,
+        team_identifier=team,
+        bundle_identifier=BUNDLE_ID,
+        now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+    )
+    assert profile_uuid == "PROFILE-UUID"
+    assert expiration_utc == "2099-01-01T00:00:00Z"
+    assert application_id == f"{team}.{BUNDLE_ID}"
+
+    invalid_profiles = (
+        {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
+        {**valid_profile, "ExpirationDate": datetime(2097, 1, 1, tzinfo=timezone.utc)},
+        {
+            **valid_profile,
+            "Entitlements": {
+                **valid_profile["Entitlements"],
+                "application-identifier": f"{team}.com.example.other",
+            },
+        },
+        {
+            **valid_profile,
+            "Entitlements": {
+                **valid_profile["Entitlements"],
+                "com.apple.developer.team-identifier": "OTHER12345",
+            },
+        },
+    )
+    for malformed in invalid_profiles:
+        try:
+            validate_provisioning_profile(
+                malformed,
+                team_identifier=team,
+                bundle_identifier=BUNDLE_ID,
+                now=datetime(2098, 1, 1, tzinfo=timezone.utc),
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("invalid provisioning profile relationship was accepted")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
