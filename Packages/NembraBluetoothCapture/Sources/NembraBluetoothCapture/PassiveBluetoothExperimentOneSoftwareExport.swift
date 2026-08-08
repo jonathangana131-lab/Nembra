@@ -75,12 +75,14 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
 public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     public static func make(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
-        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try make(
             captureJSON: finalizedArtifact.captureJSON,
             powerCycleResult: finalizedArtifact.powerCycleResult,
-            runtimeBuildIdentity: runtimeBuildIdentity
+            runtimeBuildIdentity: runtimeBuildIdentity,
+            setup: setup
         )
     }
 
@@ -89,7 +91,8 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     package static func make(
         captureJSON: Data,
         powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
-        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         guard powerCycleResult.windows.count == 4,
               powerCycleResult.observationSnapshots.count == 4 else {
@@ -120,11 +123,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             nembraBuildInstanceID: runtimeBuildIdentity.buildInstanceID,
             nembraBuildCommitSHA: runtimeBuildIdentity.sourceCommitSHA,
             selectedPeripheralIdentifier: selectedTarget.uuidString,
-            setup: .init(
-                chargerState: .disconnected,
-                executionContext: .foregroundUnlockedScreenOn,
-                stockAppReferenceSetup: .none
-            )
+            setup: setup
         )
         let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
 
@@ -144,11 +143,13 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     }
 
     public static func makeForCurrentApplication(
-        finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact
+        finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try make(
             finalizedArtifact: finalizedArtifact,
-            runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+            runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication(),
+            setup: setup
         )
     }
 
@@ -459,19 +460,24 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
 public extension PassiveBluetoothExperimentOneCoordinator {
     /// Available only after immutable Horizon finalization. External field authorization remains
     /// separate; this method cannot unlock a physical experiment.
-    func finalizedSoftwareExportForCurrentApplication()
-        throws -> PassiveBluetoothExperimentOneSoftwareExport {
+    func finalizedSoftwareExportForCurrentApplication(
+        setup: PassiveBluetoothStationaryCaptureSetup
+    ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         guard let finalizedArtifact else {
             throw PassiveBluetoothExperimentOneSoftwareExportError.artifactNotFinalized
         }
         return try PassiveBluetoothExperimentOneSoftwareExportCodec.makeForCurrentApplication(
-            finalizedArtifact: finalizedArtifact
+            finalizedArtifact: finalizedArtifact,
+            setup: setup
         )
     }
 
-    func encodedFinalizedSoftwareExportForCurrentApplication(prettyPrinted: Bool = true) throws -> Data {
+    func encodedFinalizedSoftwareExportForCurrentApplication(
+        setup: PassiveBluetoothStationaryCaptureSetup,
+        prettyPrinted: Bool = true
+    ) throws -> Data {
         try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(
-            finalizedSoftwareExportForCurrentApplication(),
+            finalizedSoftwareExportForCurrentApplication(setup: setup),
             prettyPrinted: prettyPrinted
         )
     }
