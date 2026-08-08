@@ -3,12 +3,14 @@ import NembraCore
 
 /// Whether two controlled captures can support direct raw-difference metrics.
 ///
-/// Direct state-to-state metrics are available only when both captures resolve
-/// to the same observed GATT target and the relevant target timelines contain
-/// no known observation gap. Identity ambiguity and continuity ambiguity are
-/// distinct so downstream tooling can explain why Nembra withheld a score.
+/// Direct state-to-state metrics are available only when both captures carry
+/// the same immutable Nembra vehicle context, resolve to the same observed GATT
+/// target, and the relevant target timelines contain no known observation gap.
+/// Capture-context, identity, and continuity ambiguity remain distinct so
+/// downstream tooling can explain why Nembra withheld a score.
 public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable, Sendable {
     case comparable
+    case captureContextMismatch
     case identityAmbiguous
     case continuityAmbiguous
 }
@@ -58,7 +60,7 @@ public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
 
 /// Evidence-derived direct-comparison output. Construction is package-internal
 /// so external clients cannot manufacture `.comparable` metrics without passing
-/// through the producer's identity and continuity gates.
+/// through the producer's capture-context, identity, and continuity gates.
 public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identifiable {
     public enum Presence: String, Sendable {
         case baselineOnly
@@ -81,10 +83,10 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
         PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 
-    /// A descriptive sorting hint only when the captures resolve to the same
-    /// observed GATT target and each relevant timeline is uninterrupted. `nil`
-    /// means Nembra deliberately withheld a cross-capture score because target
-    /// attribution or continuity is ambiguous.
+    /// A descriptive sorting hint only when the captures carry the same Nembra
+    /// vehicle context, resolve to the same observed GATT target, and each
+    /// relevant timeline is uninterrupted. `nil` means Nembra deliberately
+    /// withheld a cross-capture score because attribution is ambiguous.
     public var rawDifferenceScore: Int? {
         guard differenceAvailability == .comparable,
               let baselineOnlyPayloadCount,
@@ -116,7 +118,16 @@ public enum PassiveBluetoothCapturePeripheralRelationship: String, Sendable {
 /// Top-level evidence-derived controlled-comparison report. Its memberwise
 /// initializer is intentionally package-internal: callers may inspect reports,
 /// but only `PassiveBluetoothCaptureComparison.compare` issues them.
+///
+/// The exact source session IDs and immutable Nembra vehicle identities are
+/// retained so a report is mechanically bound to the capture pair/context that
+/// earned it. Equality of vehicle metadata is a fail-closed software evidence
+/// gate only; it does not authenticate physical hardware.
 public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
+    public let baselineCaptureSessionID: UUID
+    public let comparisonCaptureSessionID: UUID
+    public let baselineVehicleIdentity: VehicleIdentity
+    public let comparisonVehicleIdentity: VehicleIdentity
     public let baselineRecordCount: Int
     public let comparisonRecordCount: Int
     public let baselinePeripheralIdentifier: String?
@@ -137,8 +148,9 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let comparisonServices: Set<String>
 
     /// Direct topology deltas are available only for captures with the same
-    /// observed GATT identity and uninterrupted evidence. `nil` means the
-    /// comparison is not attributable enough for a direct topology delta.
+    /// immutable Nembra vehicle context, the same observed GATT identity, and
+    /// uninterrupted evidence. `nil` means the comparison is not attributable
+    /// enough for a direct topology delta.
     public let addedServices: Set<String>?
     public let removedServices: Set<String>?
     public let sharedServices: Set<String>?
@@ -152,9 +164,12 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
 /// byte/statistics based. It never declares a stream to be voltage/current/etc.
 ///
 /// Direct payload/topology difference metrics are fail-closed unless both
-/// captures resolve to the same observed GATT peripheral and both relevant
-/// target timelines remain uninterrupted. Nembra preserves descriptive
-/// per-capture evidence but does not invent target or segment correspondence.
+/// captures carry exactly equal immutable Nembra vehicle metadata, resolve to
+/// the same observed GATT peripheral, and both relevant target timelines remain
+/// uninterrupted. Exact vehicle-metadata equality is only a software capture-
+/// context consistency check; it is not physical scooter authentication.
+/// Nembra preserves descriptive per-capture evidence but does not invent target,
+/// vehicle-context, or segment correspondence.
 ///
 /// The report also exposes whether both sessions conservatively resolved to the
 /// same CoreBluetooth peripheral identifier from typed GATT-path evidence. That
@@ -182,7 +197,9 @@ public enum PassiveBluetoothCaptureComparison {
         )
 
         let differenceAvailability: PassiveBluetoothControlledComparisonAvailability
-        if peripheralRelationship != .sameObservedIdentifier {
+        if baseline.vehicleIdentity != comparison.vehicleIdentity {
+            differenceAvailability = .captureContextMismatch
+        } else if peripheralRelationship != .sameObservedIdentifier {
             differenceAvailability = .identityAmbiguous
         } else if baselineContinuityBreakCount == 0 && comparisonContinuityBreakCount == 0 {
             differenceAvailability = .comparable
@@ -246,6 +263,10 @@ public enum PassiveBluetoothCaptureComparison {
                 : nil
 
         return PassiveBluetoothCaptureComparisonReport(
+            baselineCaptureSessionID: baseline.id,
+            comparisonCaptureSessionID: comparison.id,
+            baselineVehicleIdentity: baseline.vehicleIdentity,
+            comparisonVehicleIdentity: comparison.vehicleIdentity,
             baselineRecordCount: baseline.records.count,
             comparisonRecordCount: comparison.records.count,
             baselinePeripheralIdentifier: baselineIdentifier,
