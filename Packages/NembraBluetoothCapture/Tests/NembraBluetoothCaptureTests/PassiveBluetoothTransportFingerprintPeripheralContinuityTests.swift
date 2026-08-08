@@ -12,7 +12,7 @@ struct PassiveBluetoothTransportFingerprintPeripheralContinuityTests {
     )
 
     @Test
-    func unrelatedPeripheralDisconnectDoesNotFragmentSelectedFingerprint() throws {
+    func unrelatedPeripheralDisconnectStillFragmentsCaptureWideFingerprintContinuity() throws {
         var session = try PassiveBluetoothCaptureSession(vehicleIdentity: identity, startedAt: .now)
         try appendServiceAndCharacteristic(
             peripheral: "target-a",
@@ -34,9 +34,10 @@ struct PassiveBluetoothTransportFingerprintPeripheralContinuityTests {
         ))
         let match = try #require(report.candidateMatches.first)
 
+        #expect(report.characteristicUUIDsByService["A201"] == ["2B10", "2B11"])
         #expect(match.family == .tuyaLegacyA201)
-        #expect(match.strength == .expectedDataPathObserved)
-        #expect(match.observedCharacteristicUUIDs == ["2B10", "2B11"])
+        #expect(match.strength == .characteristicFamilyObserved)
+        #expect(match.observedCharacteristicUUIDs != ["2B10", "2B11"])
     }
 
     @Test
