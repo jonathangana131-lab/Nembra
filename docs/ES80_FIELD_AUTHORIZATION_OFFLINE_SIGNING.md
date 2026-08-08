@@ -63,6 +63,20 @@ A signing-user-owned executable is deliberately rejected even if its mode is `07
 
 Do not point `NEMBRA_OPENSSL` at a user-managed toolchain, Homebrew cellar under a user-writable prefix, repository helper, shell wrapper, or other path the signing identity can replace. An override is acceptable only when its actual live executable and complete canonical parent chain satisfy the same root-custody checks.
 
+### OpenSSL child-environment custody
+
+Root-custody of the executable is necessary but not sufficient when that process receives the private-key descriptor. The signer therefore does **not** inherit the signing shell environment into OpenSSL.
+
+Every OpenSSL invocation receives one explicit minimal environment:
+
+- `LANG=C`;
+- `LC_ALL=C`;
+- `OPENSSL_CONF=/dev/null`.
+
+All other parent variables are absent. In particular, dynamic-loader and OpenSSL extension/configuration inputs such as `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`, `OPENSSL_MODULES`, and `OPENSSL_ENGINES` are not inherited. `NEMBRA_OPENSSL` is consulted only by the Python signer to select the already-custody-checked executable; it is not forwarded as child authority.
+
+This preserves the reviewed executable's compiled-in system provider/engine policy while preventing the signing shell from injecting user-selected loader/config/module code into the process that consumes the key descriptor.
+
 ## One semantic parser
 
 The offline signer intentionally does **not** decode or reinterpret either evidence record.
@@ -115,6 +129,8 @@ The tool:
 - uses `/usr/bin/openssl` by default and never searches ambient `PATH`;
 - accepts only an absolute explicit `NEMBRA_OPENSSL` override that passes the same custody checks;
 - requires the selected OpenSSL executable and every canonical parent directory to be root-owned and not group/world-writable;
+- launches OpenSSL with a minimal explicit child environment rather than inheriting the signing shell;
+- pins locale to `C`, sends `OPENSSL_CONF=/dev/null`, and omits ambient dynamic-loader/OpenSSL module/engine variables;
 - requires a P-256 / `prime256v1` private key;
 - requires an owner-only external private-key file and fails closed on group/other access;
 - opens the authority key once with no-follow semantics and snapshots that exact descriptor into a private operation-local key file;
@@ -147,7 +163,7 @@ python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 
 The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
 
-The trusted exact-head Xcode 27 workflow compiles the signer, executes the dedicated signer-custody source regression, and then executes the signer self-test. The source regression pins the no-ambient-PATH and root-owned executable/canonical-ancestor contract. A passing source regression or self-test is still software acceptance evidence only; neither creates or accepts a production authority.
+The trusted exact-head Xcode 27 workflow compiles the signer, executes the executable/key-custody source regression, executes the child-environment-custody source regression, and then executes the signer self-test. The environment regression pins explicit `env=` use and the ambient loader/OpenSSL configuration families that must not regain authority. A passing source regression or self-test is still software acceptance evidence only; neither creates or accepts a production authority.
 
 ## What a cryptographically valid envelope still does not prove
 

@@ -33,6 +33,20 @@ MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
 DEFAULT_OPENSSL_PATH = "/usr/bin/openssl"
 
+# The selected OpenSSL executable is root-custodied, but the process image is not the whole code
+# execution subject if the child inherits loader/OpenSSL module configuration from the signing
+# shell. Keep these ambient code-loading families explicit in the contract even though the actual
+# child environment below is an allowlist rather than a mutable-parent blacklist.
+OPENSSL_AMBIENT_CODE_LOADING_ENVIRONMENT_KEYS = (
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "OPENSSL_CONF",
+    "OPENSSL_MODULES",
+    "OPENSSL_ENGINES",
+)
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 P256_SPKI_PREFIX = bytes.fromhex(
     "3059301306072a8648ce3d020106082a8648ce3d030107034200"
@@ -183,6 +197,22 @@ def require_openssl() -> str:
     return str(resolved)
 
 
+def openssl_subprocess_environment() -> dict[str, str]:
+    """Return a minimal deterministic environment for the root-custodied OpenSSL child.
+
+    Do not copy `os.environ`: the signing shell is an operator input and must not acquire code-loading
+    authority over the OpenSSL process that receives the private-key descriptor. Absence from this
+    allowlist neutralizes LD_*/DYLD_* loader injection plus OPENSSL_MODULES/OPENSSL_ENGINES. An
+    explicit empty configuration file also prevents ambient/default OPENSSL_CONF selection while
+    retaining the compiled-in system provider/engine search policy of the reviewed executable.
+    """
+    return {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "OPENSSL_CONF": os.devnull,
+    }
+
+
 def run_openssl(
     openssl: str,
     arguments: list[str],
@@ -196,6 +226,7 @@ def run_openssl(
             check=False,
             stdout=subprocess.PIPE if capture_stdout else None,
             pass_fds=pass_fds,
+            env=openssl_subprocess_environment(),
         )
     except OSError as exc:
         raise AuthorizationEnvelopeError("could not execute OpenSSL") from exc
