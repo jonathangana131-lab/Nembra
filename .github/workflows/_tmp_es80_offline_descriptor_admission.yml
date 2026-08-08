@@ -17,8 +17,22 @@ jobs:
         with:
           ref: fix/es80-v14-offline-report-descriptor-admission/gpt56-go
           fetch-depth: 0
-      - name: Focused package test
-        run: swift test --package-path Packages/NembraBluetoothCapture --filter PassiveBluetoothCaptureArtifactInputPolicyTests
+      - name: Focused package test with durable failure tail
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture --filter PassiveBluetoothCaptureArtifactInputPolicyTests > /tmp/nembra-focused.log 2>&1
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 220 /tmp/nembra-focused.log > .tmp_es80_offline_descriptor_failure.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .tmp_es80_offline_descriptor_failure.log
+            git commit -m "Temporary offline descriptor failure diagnostic"
+            git push origin HEAD:fix/es80-v14-offline-report-descriptor-admission/gpt56-go
+            exit "$status"
+          fi
       - name: Full package tests
         run: swift test --package-path Packages/NembraBluetoothCapture
       - name: Diff hygiene
@@ -29,5 +43,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/_tmp_es80_offline_descriptor_admission.yml
+          if [[ -f .tmp_es80_offline_descriptor_failure.log ]]; then
+            git rm .tmp_es80_offline_descriptor_failure.log
+          fi
           git commit -m "Remove temporary offline descriptor QA"
           git push origin HEAD:fix/es80-v14-offline-report-descriptor-admission/gpt56-go
