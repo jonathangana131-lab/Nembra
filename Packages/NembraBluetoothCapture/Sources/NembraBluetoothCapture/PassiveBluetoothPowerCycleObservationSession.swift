@@ -186,13 +186,16 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     public init(minimumWindowDuration: TimeInterval) throws {
         guard minimumWindowDuration.isFinite,
               minimumWindowDuration > 0,
-              minimumWindowDuration <= Double(UInt64.max) / 1_000_000_000 else {
+              minimumWindowDuration < Double(UInt64.max) / 1_000_000_000 else {
             throw PassiveBluetoothPowerCycleObservationSessionError.invalidMinimumWindowDuration
         }
-        let nanoseconds = UInt64((minimumWindowDuration * 1_000_000_000).rounded(.up))
-        guard nanoseconds > 0 else {
+        let nanosecondsDouble = (minimumWindowDuration * 1_000_000_000).rounded(.up)
+        guard nanosecondsDouble.isFinite,
+              nanosecondsDouble >= 1,
+              nanosecondsDouble < Double(UInt64.max) else {
             throw PassiveBluetoothPowerCycleObservationSessionError.invalidMinimumWindowDuration
         }
+        let nanoseconds = UInt64(nanosecondsDouble)
 
         minimumWindowDurationNanoseconds = nanoseconds
         ledger = PassiveBluetoothPowerCycleObservationLedger(
@@ -218,7 +221,8 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
     /// Starts the next operator-declared window using a brand-new CoreBluetooth manager epoch.
     /// If the manager has not reported powered-on state yet, scanning begins only after that
-    /// manager's own state callback says it is powered on.
+    /// manager's own state callback says it is powered on. Terminal non-powered states retire
+    /// the transport without producing a snapshot, leaving the same phase retryable.
     public func startCurrentWindow() throws {
         guard ledger.nextPhase != nil, finalResult == nil else {
             throw PassiveBluetoothPowerCycleObservationSessionError.seriesComplete
@@ -234,8 +238,15 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
 
         let manager = CBCentralManager(delegate: self, queue: .main, options: nil)
         activeManager = manager
-        if manager.state == .poweredOn {
+        switch manager.state {
+        case .poweredOn:
             beginScanIfAwaiting(on: manager)
+        case .poweredOff, .unauthorized, .unsupported:
+            invalidateCurrentTransportForBluetoothState(manager)
+        case .unknown, .resetting:
+            break
+        @unknown default:
+            invalidateCurrentTransportForBluetoothState(manager)
         }
     }
 
@@ -304,19 +315,18 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central === activeManager else { return }
 
-        guard central.state == .poweredOn else {
+        switch central.state {
+        case .poweredOn:
+            beginScanIfAwaiting(on: central)
+        case .unknown, .resetting:
             if windowStartedAtUptimeNanoseconds != nil {
-                central.stopScan()
-                lastWindowInvalidatedByBluetooth = true
-                activeManager = nil
-                awaitingPoweredOn = false
-                windowStartedAtUptimeNanoseconds = nil
-                candidatesByIdentifier.removeAll(keepingCapacity: true)
+                invalidateCurrentTransportForBluetoothState(central)
             }
-            return
+        case .poweredOff, .unauthorized, .unsupported:
+            invalidateCurrentTransportForBluetoothState(central)
+        @unknown default:
+            invalidateCurrentTransportForBluetoothState(central)
         }
-
-        beginScanIfAwaiting(on: central)
     }
 
     public func centralManager(
@@ -359,5 +369,17 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject, CBCen
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+    }
+
+    private func invalidateCurrentTransportForBluetoothState(_ manager: CBCentralManager) {
+        guard manager === activeManager else { return }
+        if windowStartedAtUptimeNanoseconds != nil {
+            manager.stopScan()
+        }
+        lastWindowInvalidatedByBluetooth = true
+        activeManager = nil
+        awaitingPoweredOn = false
+        windowStartedAtUptimeNanoseconds = nil
+        candidatesByIdentifier.removeAll(keepingCapacity: true)
     }
 }
