@@ -86,6 +86,7 @@ from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
 PY
 )"
+INSPECTION_DIR="$ARTIFACTS_DIR/inspection"
 
 # Field-production evidence is immutable output. Resolve lexical traversal and existing symlink
 # ancestors before safety decisions; never allow a root/repository target and never mix a new
@@ -94,7 +95,7 @@ if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$RO
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
   exit 9
 fi
-if [[ -e "$ARTIFACTS_DIR" ]]; then
+if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
   echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
   exit 10
 fi
@@ -109,6 +110,8 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   fi
 fi
 
+# Producer-owned provenance is retained in the immutable outer directory. The canonical inspector
+# owns INSPECTION_DIR and requires that child path not to exist before its atomic publication.
 mkdir -p "$ARTIFACTS_DIR/logs"
 EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
@@ -243,20 +246,19 @@ PY
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
 # snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign plus
-# direct-device provisioning and the exact Capture launch recipe, hashes exact final bytes, retains
-# the IPA, and emits the one package-decodable field-build record plus a separate inspection
-# companion. The intended device is verification-only input and is never persisted by the inspector.
-# Neither record grants physical GO.
+# direct-device provisioning, hashes exact final bytes, retains the IPA, and emits the one package-
+# decodable field-build record plus a separate inspection companion. The intended device is
+# verification-only input and is never persisted by the inspector. Neither record grants physical GO.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID" \
-  --output-dir "$ARTIFACTS_DIR"
+  --output-dir "$INSPECTION_DIR"
 
-EXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
-FIELD_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
-SIGNING_INSPECTION="$ARTIFACTS_DIR/NembraCaptureSignedFieldArtifactInspection.json"
-RETAINED_IPA="$ARTIFACTS_DIR/build-evidence/NembraField.ipa"
+EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
+FIELD_BUILD_RECORD="$INSPECTION_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
+SIGNING_INSPECTION="$INSPECTION_DIR/NembraCaptureSignedFieldArtifactInspection.json"
+RETAINED_IPA="$INSPECTION_DIR/build-evidence/NembraField.ipa"
 
 python3 - \
   "$EXTERNAL_RECORD" \
@@ -271,8 +273,10 @@ python3 - \
 import hashlib
 import json
 import pathlib
+import plistlib
 import re
 import sys
+import zipfile
 
 external_path = pathlib.Path(sys.argv[1])
 field_path = pathlib.Path(sys.argv[2])
@@ -301,6 +305,35 @@ expected_field_keys = {
 if set(field) != expected_field_keys:
     raise SystemExit(f"Canonical field-build evidence shape drifted: {sorted(field)!r}")
 
+expected_inspection_keys = {
+    "schemaVersion",
+    "authority",
+    "fieldBuildEvidenceRecordSHA256",
+    "externalBuildRecordSHA256",
+    "signedInstallableSHA256",
+    "signedInstallableKind",
+    "ipaByteCount",
+    "buildIdentifier",
+    "buildInstanceID",
+    "sourceCommitSHA",
+    "bundleIdentifier",
+    "platformName",
+    "supportedPlatforms",
+    "teamIdentifier",
+    "signingAuthorities",
+    "codeDirectoryHash",
+    "provisioningProfileSHA256",
+    "provisioningProfileUUID",
+    "provisioningProfileExpirationUTC",
+    "provisioningApplicationIdentifier",
+    "executableSHA256",
+    "infoPlistSHA256",
+    "experimentRecipeID",
+    "procedureVersion",
+}
+if set(inspection) != expected_inspection_keys:
+    raise SystemExit(f"Signing inspection shape drifted: {sorted(inspection)!r}")
+
 shared_expected = {
     "sourceCommitSHA": source_sha,
     "buildIdentifier": build_identifier,
@@ -313,22 +346,24 @@ for record_name, record in (("field-build evidence", field), ("signing inspectio
         if record.get(key) != value:
             raise SystemExit(f"{record_name} mismatch for {key}: {record.get(key)!r} != {value!r}")
 
-if field.get("signedInstallableKind") != "ipa":
-    raise SystemExit("Canonical field-build evidence no longer describes an IPA installable")
+if field.get("signedInstallableKind") != "ipa" or inspection.get("signedInstallableKind") != "ipa":
+    raise SystemExit("Signed field evidence no longer describes one IPA installable")
 if inspection.get("authority") != "signed-field-artifact-inspection-not-field-authorization":
     raise SystemExit("Signing inspection authority boundary changed unexpectedly")
 if inspection.get("teamIdentifier") != expected_team:
-    raise SystemExit(
-        f"Signing inspection TeamIdentifier mismatch: {inspection.get('teamIdentifier')!r} != {expected_team!r}"
-    )
-if inspection.get("fieldLaunchRecipeID") != field_recipe:
-    raise SystemExit("Signed IPA inspection does not bind the exact Capture Home-Screen launch recipe")
-if inspection.get("provisioningTeamIdentifier") != expected_team:
-    raise SystemExit("Embedded provisioning profile team does not match the requested signing team")
-if not isinstance(inspection.get("provisionedDeviceCount"), int) or inspection["provisionedDeviceCount"] < 1:
-    raise SystemExit("Signed field candidate is not provisioned for at least one registered device")
-if not re.fullmatch(r"[0-9a-f]{64}", inspection.get("embeddedMobileProvisionSHA256", "")):
+    raise SystemExit("Signing inspection TeamIdentifier does not match requested development team")
+if inspection.get("bundleIdentifier") != "com.jonathangana131.nembra":
+    raise SystemExit("Signing inspection bundle identifier drifted")
+if inspection.get("platformName") != "iphoneos" or "iPhoneOS" not in inspection.get("supportedPlatforms", []):
+    raise SystemExit("Signing inspection no longer describes a physical iPhone build")
+if inspection.get("provisioningApplicationIdentifier") != f"{expected_team}.com.jonathangana131.nembra":
+    raise SystemExit("Provisioning application identifier does not match the requested signed Nembra app")
+if not re.fullmatch(r"[0-9a-f]{64}", inspection.get("provisioningProfileSHA256", "")):
     raise SystemExit("Signed field candidate lacks exact embedded provisioning-profile digest evidence")
+if not isinstance(inspection.get("provisioningProfileUUID"), str) or not inspection["provisioningProfileUUID"].strip():
+    raise SystemExit("Signed field candidate lacks provisioning-profile identity")
+if not isinstance(inspection.get("provisioningProfileExpirationUTC"), str) or not inspection["provisioningProfileExpirationUTC"].endswith("Z"):
+    raise SystemExit("Signed field candidate lacks normalized provisioning-profile expiration")
 
 external_sha = hashlib.sha256(external_bytes).hexdigest()
 field_sha = hashlib.sha256(field_bytes).hexdigest()
@@ -340,6 +375,10 @@ if inspection.get("fieldBuildEvidenceRecordSHA256") != field_sha:
     raise SystemExit("Signing inspection is not bound to the exact field-build evidence bytes")
 if inspection.get("signedInstallableSHA256") != field.get("signedInstallableSHA256"):
     raise SystemExit("Signing inspection and field-build evidence disagree on the exact IPA digest")
+if inspection.get("executableSHA256") != field.get("executableSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on executable bytes")
+if inspection.get("infoPlistSHA256") != field.get("infoPlistSHA256"):
+    raise SystemExit("Signing inspection and field-build evidence disagree on raw Info.plist bytes")
 
 ipa_digest = hashlib.sha256()
 with ipa_path.open("rb") as handle:
@@ -347,6 +386,26 @@ with ipa_path.open("rb") as handle:
         ipa_digest.update(chunk)
 if ipa_digest.hexdigest() != field.get("signedInstallableSHA256"):
     raise SystemExit("Retained IPA bytes do not match canonical field-build evidence")
+
+# The canonical inspector has already rejected duplicate/case-fold/Unicode-colliding archive members.
+# Re-open the exact retained IPA only to prove the Home-Screen launch marker exists on the same raw
+# Info.plist bytes whose digest is carried by canonical field evidence.
+with zipfile.ZipFile(ipa_path) as archive:
+    plist_members = [
+        info for info in archive.infolist()
+        if len(pathlib.PurePosixPath(info.filename).parts) == 3
+        and pathlib.PurePosixPath(info.filename).parts[0] == "Payload"
+        and pathlib.PurePosixPath(info.filename).parts[1].endswith(".app")
+        and pathlib.PurePosixPath(info.filename).parts[2] == "Info.plist"
+    ]
+    if len(plist_members) != 1:
+        raise SystemExit("Retained IPA does not contain exactly one top-level signed Info.plist")
+    raw_info_plist = archive.read(plist_members[0])
+    info = plistlib.loads(raw_info_plist)
+if not isinstance(info, dict) or info.get("NembraCaptureFieldRecipe") != field_recipe:
+    raise SystemExit("Signed IPA does not contain the exact Nembra Capture field-launch recipe")
+if hashlib.sha256(raw_info_plist).hexdigest() != field.get("infoPlistSHA256"):
+    raise SystemExit("Signed field-launch recipe was not verified on the exact Info.plist evidence bytes")
 PY
 
 {
@@ -361,6 +420,7 @@ PY
   echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
   echo "archive_log=logs/xcodebuild-archive.log"
   echo "export_log=logs/xcodebuild-export.log"
+  echo "inspection_directory=inspection"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
@@ -368,6 +428,6 @@ PY
 } > "$ARTIFACTS_DIR/field-candidate-environment.txt"
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
-echo "Exact ExportOptions.plist and archive/export logs were retained with the candidate."
+echo "Exact ExportOptions.plist, archive/export logs, and failure-atomic signed evidence were retained."
 echo "Independent acceptance has NOT occurred."
 echo "PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN."
