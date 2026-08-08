@@ -1,10 +1,10 @@
 import Foundation
 import Testing
 
-@Suite("Experiment One external-client authority surface")
+@Suite("Experiment One authority surface")
 struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
-    @Test("unfinished authority/PASS types remain package-internal")
-    func authorityTypesAreNotPublic() throws {
+    @Test("unfinished PASS surface stays package-internal and evidence issuance stays producer-file private")
+    func authoritySurfaceIsSealed() throws {
         let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         let sourcesDirectory = testsDirectory
             .deletingLastPathComponent()
@@ -35,5 +35,28 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(!compactRun.contains("publicfunccaptureEvidenceAssessment("))
         #expect(!compactAssessment.contains("publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment"))
         #expect(!compactAssessment.contains("publicstaticfuncassess("))
+
+        // Package-internal alone is not enough: another production file in this same module must
+        // not be able to manufacture authority-bearing wrappers around detached raw evidence.
+        #expect(
+            compactRun.contains(
+                "fileprivateinit?(result:PassiveBluetoothPowerCycleObservationResult)"
+            )
+        )
+        #expect(
+            compactRun.contains(
+                "fileprivateinit(observationSeriesIdentity:PassiveBluetoothCandidateObservationSeriesIdentity,session:PassiveBluetoothCaptureSession)"
+            )
+        )
+        #expect(
+            !compactRun.contains(
+                "internalinit?(result:PassiveBluetoothPowerCycleObservationResult)"
+            )
+        )
+        #expect(
+            !compactRun.contains(
+                "internalinit(observationSeriesIdentity:PassiveBluetoothCandidateObservationSeriesIdentity,session:PassiveBluetoothCaptureSession)"
+            )
+        )
     }
 }
