@@ -18,7 +18,7 @@ import os
 import stat
 import sys
 import tempfile
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
 
@@ -94,14 +94,17 @@ def load_canonical_inspector() -> ModuleType:
 
 
 def invoke_inspector_redacted(inspector: ModuleType, inspector_arguments: list[str]) -> int:
-    """Invoke inspector without allowing ordinary exception text to cross the privacy boundary."""
+    """Invoke inspector while containing every output path that can observe the private argv."""
+    inspector_stdout = io.StringIO()
+    inspector_stderr = io.StringIO()
     try:
-        return int(inspector.main(inspector_arguments))
-    except Exception:
-        # The in-memory argv intentionally contains the verification-only identifier. Never echo an
-        # inspector exception here: a future diagnostic may include one or more argument values.
-        # Process-control exceptions such as KeyboardInterrupt/SystemExit remain deliberate because
-        # they inherit from BaseException rather than Exception.
+        with redirect_stdout(inspector_stdout), redirect_stderr(inspector_stderr):
+            return int(inspector.main(inspector_arguments))
+    except (Exception, SystemExit):
+        # The in-memory argv intentionally contains the verification-only identifier. Inspector-owned
+        # stdout/stderr is never replayed because future parsing/diagnostics may echo argument values.
+        # SystemExit is included because argparse writes its diagnostic before raising it. Genuine
+        # operator interruption (KeyboardInterrupt) still propagates because it is not caught here.
         print("ERROR: canonical signed-field inspector rejected the field candidate", file=sys.stderr)
         return 2
 
@@ -184,15 +187,48 @@ def self_test() -> None:
                 raise AssertionError("redaction self-test did not supply the exact private value")
             raise RuntimeError(f"future diagnostic accidentally included {expected}")
 
-    captured_stderr = io.StringIO()
-    with redirect_stderr(captured_stderr):
+    ordinary_stderr = io.StringIO()
+    with redirect_stderr(ordinary_stderr):
         result = invoke_inspector_redacted(
             ExplodingInspector(),
             ["--intended-device-udid", expected],
         )
     assert result == 2
-    assert expected not in captured_stderr.getvalue()
-    assert "future diagnostic" not in captured_stderr.getvalue()
+    assert expected not in ordinary_stderr.getvalue()
+    assert "future diagnostic" not in ordinary_stderr.getvalue()
+
+    class SystemExitInspector:
+        def main(self, argv: list[str]) -> int:
+            print(f"argparse rejected {expected}", file=sys.stderr)
+            raise SystemExit(2)
+
+    system_exit_stderr = io.StringIO()
+    with redirect_stderr(system_exit_stderr):
+        result = invoke_inspector_redacted(
+            SystemExitInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 2
+    assert expected not in system_exit_stderr.getvalue()
+    assert "argparse rejected" not in system_exit_stderr.getvalue()
+    assert system_exit_stderr.getvalue().strip() == "ERROR: canonical signed-field inspector rejected the field candidate"
+
+    class NoisySuccessInspector:
+        def main(self, argv: list[str]) -> int:
+            print(f"stdout accidentally included {expected}")
+            print(f"stderr accidentally included {expected}", file=sys.stderr)
+            return 0
+
+    noisy_stdout = io.StringIO()
+    noisy_stderr = io.StringIO()
+    with redirect_stdout(noisy_stdout), redirect_stderr(noisy_stderr):
+        result = invoke_inspector_redacted(
+            NoisySuccessInspector(),
+            ["--intended-device-udid", expected],
+        )
+    assert result == 0
+    assert expected not in noisy_stdout.getvalue()
+    assert expected not in noisy_stderr.getvalue()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
