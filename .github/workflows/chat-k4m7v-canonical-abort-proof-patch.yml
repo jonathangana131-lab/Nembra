@@ -1,0 +1,87 @@
+name: chat-k4m7v canonical abort proof patch
+
+on:
+  push:
+    branches:
+      - 'parallel/es80-preh-observation-abort/chat-k4m7v'
+    paths:
+      - '.github/workflows/chat-k4m7v-canonical-abort-proof-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-preh-observation-abort/chat-k4m7v
+          fetch-depth: 0
+      - name: Bind abort recovery to canonical #440 typestate proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          transaction_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift')
+          transaction = transaction_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          transaction = replace_once(
+              transaction,
+              '''    struct CommittedReadyEpoch: Equatable, Sendable {\n''',
+              '''    /// Producer-issued proof that this sealed Ready admission was rejected by\n    /// the canonical authority fence before the recorder mutation body executed.\n    /// The initializer is file-private so package callers cannot manufacture rollback\n    /// authority from copied queue/authority scalars.\n    struct ReadyRecorderMutationRejectionReceipt: Equatable, Sendable {\n        let queueCutoff: UInt64\n        let authority: PassiveCoreBluetoothArtifactAuthorityContext\n        let transactionRevision: UInt64\n        let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext\n\n        fileprivate init(\n            decision: PassiveCoreBluetoothObservationBoundaryDecision,\n            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,\n            currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext\n        ) {\n            queueCutoff = decision.queueCutoff\n            authority = decision.authority\n            transactionRevision = transaction.revision\n            self.currentAuthority = currentAuthority\n        }\n    }\n\n    enum ReadyRecorderMutationOutcome: Equatable, Sendable {\n        case recorded(RecordedReadyBoundary)\n        case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)\n    }\n\n    struct CommittedReadyEpoch: Equatable, Sendable {\n''',
+              'insert canonical rejection proof types'
+          )
+
+          transaction = replace_once(
+              transaction,
+              '''        var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }\n        var observedAtDate: Date { readyDecision.observedAtDate }\n''',
+              '''        var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }\n        var observedAtDate: Date { readyDecision.observedAtDate }\n        var transactionRevision: UInt64 { readyTransaction.revision }\n''',
+              'expose committed Ready transaction revision'
+          )
+
+          transaction = replace_once(
+              transaction,
+              '''    func recordBoundary(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> RecordedReadyBoundary {\n        try await decision.recordBoundary(\n            on: recorder,\n            authorityFence: authorityFence\n        )\n\n        return RecordedReadyBoundary(\n            decision: decision,\n            transaction: transaction,\n            authorityFence: authorityFence\n        )\n    }\n\n    private init(\n''',
+              '''    func recordBoundary(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> RecordedReadyBoundary {\n        try await decision.recordBoundary(\n            on: recorder,\n            authorityFence: authorityFence\n        )\n\n        return RecordedReadyBoundary(\n            decision: decision,\n            transaction: transaction,\n            authorityFence: authorityFence\n        )\n    }\n\n    /// Performs the same canonical authority-fenced Ready append, but preserves a\n    /// mechanically safe recovery authority for the one failure that proves the\n    /// recorder mutation body never ran. Generic recorder/session errors still throw\n    /// and issue no rollback proof because their durable-mutation status is not\n    /// established by this admission.\n    func recordBoundaryWithMutationOutcome(\n        on recorder: PassiveCoreBluetoothCaptureRecorder\n    ) async throws -> ReadyRecorderMutationOutcome {\n        do {\n            return .recorded(try await recordBoundary(on: recorder))\n        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {\n            switch error {\n            case let .authorityChanged(expected, current):\n                guard expected == decision.authority else {\n                    throw error\n                }\n                return .rejectedBeforeMutation(\n                    ReadyRecorderMutationRejectionReceipt(\n                        decision: decision,\n                        transaction: transaction,\n                        currentAuthority: current\n                    )\n                )\n            case .nonAdvancingTransition:\n                throw error\n            }\n        }\n    }\n\n    private init(\n''',
+              'add canonical Ready mutation outcome'
+          )
+          transaction_path.write_text(transaction)
+
+          gate_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
+          gate = gate_path.read_text()
+
+          gate = replace_once(
+              gate,
+              '''    /// Abandons an already-committed Ready epoch before Horizon begins. The old\n    /// recorder/session becomes incomplete evidence and normal FIFO draining is\n    /// immediately quarantined. Queue retirement + fresh durable session binding\n    /// are separate required steps; abort itself never reopens `.awaitingReady`.\n    @discardableResult\n    mutating func abortObservationEpoch(\n        expectedReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext,\n        expectedReadyQueueCutoff: UInt64\n    ) throws -> ObservationEpochAbortReceipt {\n        guard case .observing = phase else {\n            throw StateError.invalidTransition\n        }\n        guard let committedReadyTransaction else {\n            throw StateError.staleTransaction\n        }\n        guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,\n              committedReadyTransaction.authority == expectedReadyAuthority,\n              committedReadyTransaction.queueCutoff == expectedReadyQueueCutoff else {\n            throw StateError.staleTransaction\n        }\n\n        let receipt = ObservationEpochAbortReceipt(\n            abandonedReadyTransaction: committedReadyTransaction,\n            origin: .committedReadyInvalidated\n        )\n        self.committedReadyTransaction = nil\n        phase = .abortQuarantined(receipt)\n        return receipt\n    }\n''',
+              '''    /// Abandons an already-committed Ready epoch before Horizon begins. The old\n    /// recorder/session becomes incomplete evidence and normal FIFO draining is\n    /// immediately quarantined. Queue retirement + fresh durable session binding\n    /// are separate required steps; abort itself never reopens `.awaitingReady`.\n    ///\n    /// The caller must provide #440's producer-issued `CommittedReadyEpoch`; copied\n    /// authority/cutoff scalars cannot authorize retirement of a committed epoch.\n    @discardableResult\n    mutating func abortObservationEpoch(\n        _ committedReadyEpoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch\n    ) throws -> ObservationEpochAbortReceipt {\n        guard case .observing = phase else {\n            throw StateError.invalidTransition\n        }\n        guard let committedReadyTransaction else {\n            throw StateError.staleTransaction\n        }\n        guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,\n              committedReadyTransaction.authority == committedReadyEpoch.authority,\n              committedReadyTransaction.queueCutoff == committedReadyEpoch.queueCutoff,\n              committedReadyTransaction.revision == committedReadyEpoch.transactionRevision else {\n            throw StateError.staleTransaction\n        }\n\n        let receipt = ObservationEpochAbortReceipt(\n            abandonedReadyTransaction: committedReadyTransaction,\n            origin: .committedReadyInvalidated\n        )\n        self.committedReadyTransaction = nil\n        phase = .abortQuarantined(receipt)\n        return receipt\n    }\n''',
+              'replace committed abort admission'
+          )
+
+          gate = replace_once(
+              gate,
+              '''    mutating func abortUncommittedReady(\n        after rejection: PassiveCoreBluetoothObservationBoundaryRecorderMutationRejectionReceipt\n    ) throws -> ObservationEpochAbortReceipt {\n        guard case let .drainingReady(current) = phase else {\n            throw StateError.invalidTransition\n        }\n        guard rejection.queueKind == .finiteAcquisitionReady,\n              current.boundaryKind == .finiteAcquisitionReady,\n              current.authority == rejection.authority,\n              current.queueCutoff == rejection.queueCutoff else {\n            throw StateError.staleTransaction\n        }\n''',
+              '''    mutating func abortUncommittedReady(\n        after rejection: PassiveCoreBluetoothObservationBoundaryTransactionDecision.ReadyRecorderMutationRejectionReceipt\n    ) throws -> ObservationEpochAbortReceipt {\n        guard case let .drainingReady(current) = phase else {\n            throw StateError.invalidTransition\n        }\n        guard current.boundaryKind == .finiteAcquisitionReady,\n              current.authority == rejection.authority,\n              current.queueCutoff == rejection.queueCutoff,\n              current.revision == rejection.transactionRevision else {\n            throw StateError.staleTransaction\n        }\n''',
+              'replace uncommitted rejection proof admission'
+          )
+          gate_path.write_text(gate)
+          PY
+
+          obsolete='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryRecorderMutationOutcome.swift'
+          test -f "$obsolete"
+          git rm "$obsolete"
+          git rm .github/workflows/chat-k4m7v-canonical-abort-proof-patch.yml
+          git config user.name 'nembra-chat-k4m7v'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift \
+                  Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          git commit -m 'refactor: bind pre-H aborts to canonical Ready typestate proofs'
+          git push origin HEAD:parallel/es80-preh-observation-abort/chat-k4m7v
