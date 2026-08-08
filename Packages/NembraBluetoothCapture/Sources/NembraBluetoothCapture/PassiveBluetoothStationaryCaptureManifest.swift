@@ -18,6 +18,7 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case ambiguousTargetGATTEvidence([String])
     case stockAppMarkersWithoutDeclaredReference(markerCount: Int)
     case unsupportedSchemaVersion(Int)
+    case unexpectedManifestField(String)
     case manifestDoesNotMatchCapture
 }
 
@@ -391,6 +392,61 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         }
     }
 
+    private static func validateSchemaShape(_ data: Data) throws {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        try rejectUnexpectedKeys(
+            in: root,
+            allowed: [
+                "schemaVersion", "experimentKind", "experimentID", "preparedAt",
+                "nembraBuildCommitSHA", "setup", "sourceArtifact", "evidenceSummary"
+            ],
+            path: ""
+        )
+
+        if let setup = root["setup"] as? [String: Any] {
+            try rejectUnexpectedKeys(
+                in: setup,
+                allowed: ["chargerState", "executionContext", "stockAppReferenceSetup"],
+                path: "setup"
+            )
+        }
+        if let sourceArtifact = root["sourceArtifact"] as? [String: Any] {
+            try rejectUnexpectedKeys(
+                in: sourceArtifact,
+                allowed: [
+                    "sha256", "byteCount", "captureSessionID",
+                    "selectedPeripheralIdentifier"
+                ],
+                path: "sourceArtifact"
+            )
+        }
+        if let evidenceSummary = root["evidenceSummary"] as? [String: Any] {
+            try rejectUnexpectedKeys(
+                in: evidenceSummary,
+                allowed: [
+                    "targetGATTRecordCount", "targetValueRecordCount",
+                    "stockAppMarkerCount", "continuityBreakCount"
+                ],
+                path: "evidenceSummary"
+            )
+        }
+    }
+
+    private static func rejectUnexpectedKeys(
+        in object: [String: Any],
+        allowed: Set<String>,
+        path: String
+    ) throws {
+        for key in object.keys.sorted() where !allowed.contains(key) {
+            let qualified = path.isEmpty ? key : "\(path).\(key)"
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .unexpectedManifestField(qualified)
+        }
+    }
+
     public static func encode(
         _ manifest: PassiveBluetoothStationaryCaptureManifest,
         prettyPrinted: Bool = true
@@ -410,6 +466,8 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         manifestJSON: Data,
         captureJSON: Data
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
+        try validateSchemaShape(manifestJSON)
+
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let wire = try decoder.decode(Wire.self, from: manifestJSON)

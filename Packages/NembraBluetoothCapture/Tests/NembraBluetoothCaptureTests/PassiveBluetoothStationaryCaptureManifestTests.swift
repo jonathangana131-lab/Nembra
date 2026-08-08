@@ -221,6 +221,37 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         }
     }
 
+    @Test
+    func unknownSchemaVersionOneFieldsFailClosedInsteadOfBeingIgnored() throws {
+        let captureJSON = try makeCapture()
+        let manifest = try makeManifest(captureJSON: captureJSON)
+        let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
+
+        var topLevel = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        topLevel["physicallyVerified"] = true
+        let topLevelJSON = try JSONSerialization.data(withJSONObject: topLevel, options: [.sortedKeys])
+
+        #expect(throws: PassiveBluetoothStationaryCaptureManifestError.unexpectedManifestField("physicallyVerified")) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+                manifestJSON: topLevelJSON,
+                captureJSON: captureJSON
+            )
+        }
+
+        var nested = try #require(JSONSerialization.jsonObject(with: manifestJSON) as? [String: Any])
+        var setup = try #require(nested["setup"] as? [String: Any])
+        setup["backgroundCaptureAttested"] = true
+        nested["setup"] = setup
+        let nestedJSON = try JSONSerialization.data(withJSONObject: nested, options: [.sortedKeys])
+
+        #expect(throws: PassiveBluetoothStationaryCaptureManifestError.unexpectedManifestField("setup.backgroundCaptureAttested")) {
+            _ = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+                manifestJSON: nestedJSON,
+                captureJSON: captureJSON
+            )
+        }
+    }
+
     private func makeManifest(captureJSON: Data) throws -> PassiveBluetoothStationaryCaptureManifest {
         try PassiveBluetoothStationaryCaptureManifestBuilder.make(
             captureJSON: captureJSON,

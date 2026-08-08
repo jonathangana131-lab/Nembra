@@ -79,6 +79,8 @@ SHA-256 is artifact-integrity/binding evidence for the provided bytes. It does n
 
 The schema-v1 execution context is required rather than defaulted. An imported sidecar missing `setup.executionContext` fails JSON decoding instead of silently assuming the physical procedure was followed.
 
+Schema v1 is also closed-world during verification: unrecognized keys at the top level or inside `setup`, `sourceArtifact`, or `evidenceSummary` are rejected rather than silently ignored by `JSONDecoder`. An unsupported field such as `physicallyVerified` therefore cannot travel beside an otherwise valid sidecar and appear to gain legitimacy from a successful capture-binding check. New semantics require a deliberate schema/version change.
+
 ## Stock-app provenance consistency
 
 `stockAppReferenceSetup` is operator-declared setup context, while `stockAppMarkerCount` is derived from immutable raw capture events. They are not allowed to make a direct factual contradiction.
