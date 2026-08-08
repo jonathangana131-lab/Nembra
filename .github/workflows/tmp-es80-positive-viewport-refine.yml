@@ -1,0 +1,165 @@
+name: TEMP ES80 positive viewport QA refinement
+
+on:
+  push:
+    branches:
+      - test/es80-v14-positive-a11y-landscape/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Make positive viewport acceptance scroll-aware
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
+          text = path.read_text(encoding="utf-8")
+          old = '''        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: windowFrame,
+            context: "Capture Complete status at Accessibility XXXL"
+        )
+
+        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        bringIntoScreenshotViewport(
+            share,
+'''
+          new = '''        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
+            primaryStatus,
+            in: app,
+            context: "Capture Complete status at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture Complete status at Accessibility XXXL"
+        )
+        let statusAttachment = XCTAttachment(screenshot: app.screenshot())
+        statusAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
+        statusAttachment.lifetime = .keepAlways
+        add(statusAttachment)
+
+        bringIntoScreenshotViewport(
+            share,
+'''
+          if old not in text:
+              raise SystemExit("XXXL top-state refinement marker not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        assertVisibleInScreenshotViewport(
+            details,
+            windowFrame: actionWindowFrame,
+            context: "View Details action at Accessibility XXXL"
+        )
+
+        let actionsAttachment = XCTAttachment(screenshot: app.screenshot())
+        actionsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Actions"
+        actionsAttachment.lifetime = .keepAlways
+        add(actionsAttachment)
+'''
+          new = '''        let shareAttachment = XCTAttachment(screenshot: app.screenshot())
+        shareAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Share"
+        shareAttachment.lifetime = .keepAlways
+        add(shareAttachment)
+
+        bringIntoScreenshotViewport(
+            details,
+            in: app,
+            context: "View Details action at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            details,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "View Details action at Accessibility XXXL"
+        )
+
+        let detailsAttachment = XCTAttachment(screenshot: app.screenshot())
+        detailsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — View Details"
+        detailsAttachment.lifetime = .keepAlways
+        add(detailsAttachment)
+'''
+          if old not in text:
+              raise SystemExit("XXXL actions refinement marker not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+'''
+          new = '''        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
+            primaryStatus,
+            in: app,
+            context: "Capture can be sealed status in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture can be sealed status in landscape"
+        )
+        let statusAttachment = XCTAttachment(screenshot: app.screenshot())
+        statusAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
+        statusAttachment.lifetime = .keepAlways
+        add(statusAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+'''
+          if old not in text:
+              raise SystemExit("landscape top-state refinement marker not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: actionWindowFrame,
+            context: "Capture can be sealed status in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+'''
+          new = '''        assertVisibleInScreenshotViewport(
+            finish,
+'''
+          if old not in text:
+              raise SystemExit("landscape action refinement marker not found")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+          grep -q 'Accessibility XXXL — Disclosure' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'Accessibility XXXL — View Details' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'Horizon Ready — Landscape — Disclosure' NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -q 'bringIntoScreenshotViewport' NembraUITests/ES80ResearchCaptureUITests.swift
+          git diff --check
+          rm .github/workflows/tmp-es80-positive-viewport-refine.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Make positive viewport checks scroll-aware"
+          git push origin HEAD:${{ github.ref_name }}
