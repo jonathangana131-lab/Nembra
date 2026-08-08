@@ -30,6 +30,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Verify pristine Capture build inputs
+        run: |
+          set -euo pipefail
+          dirty="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$dirty" ]]; then
+            echo "Capture provenance refuses tracked or non-ignored untracked build inputs." >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
+
       - name: Validate project structure
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
