@@ -72,7 +72,7 @@ public struct PassiveBluetoothExperimentRecipe: Equatable, Sendable {
     }
 }
 
-public enum PassiveBluetoothExperimentRecipeProgressError: Error, Equatable, Sendable {
+enum PassiveBluetoothExperimentRecipeProgressError: Error, Equatable, Sendable {
     case alreadyComplete
     case unexpectedStep(
         expected: PassiveBluetoothExperimentRecipeStep,
@@ -85,6 +85,7 @@ public enum PassiveBluetoothExperimentRecipeProgressError: Error, Equatable, Sen
 /// Progress can mechanically prevent the product from skipping required procedure stages, but it is
 /// deliberately not evidence. Completed steps must never be promoted into target identity, capture
 /// health, physical state, telemetry, or artifact integrity without the accepted evidence producer.
+/// Advancement stays package-internal so app/UI clients cannot self-promote readiness or sealing.
 public struct PassiveBluetoothExperimentRecipeProgress: Equatable, Sendable {
     public let recipeID: PassiveBluetoothExperimentRecipeID
     public let requiredSteps: [PassiveBluetoothExperimentRecipeStep]
@@ -109,7 +110,7 @@ public struct PassiveBluetoothExperimentRecipeProgress: Equatable, Sendable {
         completedStepCount == requiredSteps.count
     }
 
-    public mutating func complete(
+    mutating func complete(
         _ step: PassiveBluetoothExperimentRecipeStep
     ) throws {
         guard let expected = nextRequiredStep else {

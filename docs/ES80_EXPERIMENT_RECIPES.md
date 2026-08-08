@@ -23,6 +23,8 @@ The first stationary ES80 fingerprint recipe is:
 
 `PassiveBluetoothExperimentRecipe.es80FingerprintV1` owns that exact sequence. Construction is sealed, so a caller cannot publish the same official recipe ID with omitted/reordered steps. `PassiveBluetoothExperimentRecipeProgress` accepts only the exact next stage and remains unchanged after an out-of-order attempt.
 
+Recipe advancement is intentionally package-internal. App/UI clients may inspect the current/next recipe state but cannot self-advance `observationReady`, sealing, integrity, analysis, or completion. The accepted controller/evidence producer must own those transitions when this contract is integrated.
+
 `PassiveBluetoothExperimentRecipeID.es80FingerprintV1` encodes as the stable string `ES80-FINGERPRINT-v1`. That spelling is intended for eventual capture-artifact provenance once the accepted final artifact/schema owner integrates it; this slice does not modify the capture schema or claim that current exported artifacts already contain the recipe ID.
 
 ## Truth boundary
@@ -35,7 +37,7 @@ The existing evidence producers remain authoritative for power-cycle correlation
 
 This additive slice deliberately avoids the actively owned foreground-controller, boundary queue, recovery, artifact schema, app-shell, and offline-report files. The next safe integration after those owners converge is to:
 
-- bind each UI recipe transition to the accepted evidence producer rather than a caller-declared success;
+- bind each package-owned recipe transition to the accepted evidence producer rather than a caller-declared success;
 - embed the stable recipe ID in the final immutable exported artifact/provenance contract;
 - expose the recipe/version in the field build UI without replacing exact build SHA provenance;
 - keep the first physical Experiment One status at **DO NOT RUN** until the final composed exact build passes its software, visual/accessibility, and physical GO gates.
