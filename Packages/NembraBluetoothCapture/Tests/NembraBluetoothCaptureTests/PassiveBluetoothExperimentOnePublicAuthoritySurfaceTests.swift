@@ -64,7 +64,12 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         )
         #expect(
             compactRun.contains(
-                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder)"
+                "fileprivateinit(admissionIdentity:UUID,peripheralIdentifier:UUID,issuedAtUptimeNanoseconds:UInt64)"
+            )
+        )
+        #expect(
+            compactRun.contains(
+                "fileprivateinit(admissionIdentity:UUID,powerCycleEvidence:PassiveBluetoothExperimentOnePowerCycleEvidence,peripheralIdentifier:UUID,recorder:PassiveCoreBluetoothCaptureRecorder,issuedAtUptimeNanoseconds:UInt64)"
             )
         )
         #expect(
@@ -132,5 +137,6 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(compact.contains("guard!hasBeenConsumedelse{throwConsumptionError.alreadyConsumed}"))
         #expect(compact.contains("hasBeenConsumed=true"))
         #expect(compact.contains("admissionIdentity:UUID()"))
+        #expect(compact.contains("issuedAtUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds"))
     }
 }
