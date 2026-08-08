@@ -23,17 +23,21 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('raw_info_plist', self.source)
         self.assertIn('field.get("infoPlistSHA256")', self.source)
 
-    def test_forwards_intended_device_only_to_current_canonical_inspector(self):
-        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
-        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertIn('is not a valid bounded verification input', self.source)
+    def test_forwards_intended_device_only_through_private_path_runner(self):
+        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', self.source)
+        self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
+        self.assertIn('--validate-intended-device-udid-file "$INTENDED_DEVICE_UDID_FILE"', self.source)
+        self.assertIn('--intended-device-udid-file "$INTENDED_DEVICE_UDID_FILE"', self.source)
+        self.assertIn('is not a valid private verification input', self.source)
+        self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
         self.assertNotIn('intended_device_udid=', self.source)
         self.assertNotIn('field_device_udid=', self.source)
-        self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertNotIn('${NEMBRA_INTENDED_FIELD_DEVICE_UDID}', self.source)
+        self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
+        self.assertNotIn('${NEMBRA_INTENDED_FIELD_DEVICE_UDID:?', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
-        self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
+        self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
         self.assertIn('--output-dir "$INSPECTION_DIR"', self.source)
