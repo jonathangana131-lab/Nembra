@@ -94,13 +94,15 @@ Those values describe intended procedure/provenance. They are not proof that the
 
 Do not manually copy or decode packet hex after the capture.
 
-When the accepted descendant of Nembra's offline capture-report lane is available, feed the **unchanged raw JSON file** directly to its CLI. For example, if the exported file is named `capture.json`:
+When the accepted descendant of Nembra's offline capture-report lane is available, feed the **unchanged raw JSON file** directly to its CLI. For example, if the exported file is named `capture.json`, write the derived report to a separate new path:
 
 ```text
-nembra-es80-capture-report capture.json
+nembra-es80-capture-report capture.json --output capture-report.json
 ```
 
-The report must remain a separate derived artifact bound to the exact input bytes. Use its target attribution, GATT/value-stream provenance, continuity, and bounded framing-candidate outcomes to decide the next experiment.
+The current CLI protects existing outputs by default and refuses to replace its raw capture input even when force replacement is requested. Do not use `--force-output` for the first physical artifact; a pre-existing report filename should be treated as a naming conflict, not something to overwrite casually.
+
+Preserve `capture-report.json` beside the unchanged source artifact/sidecar. The report remains a separate derived artifact bound to the exact input byte count and SHA-256. Use its target attribution, GATT/value-stream provenance, continuity, and bounded framing-candidate outcomes to decide the next experiment.
 
 A structurally completed framing candidate is still only a public-family hypothesis. Do not rename candidate streams Battery, Voltage, Current, Power, Speed, Throttle, or Regen because the CLI found a frame shape. If the accepted CLI contract changes before physical execution, use the exact accepted command/contract rather than this historical spelling.
 
