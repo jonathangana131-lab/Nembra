@@ -134,6 +134,10 @@ jobs:
           python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
           python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
           python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_output_parent_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_output_parent_custody.py
 
       - name: Validate signed field candidate producer source
         run: |
