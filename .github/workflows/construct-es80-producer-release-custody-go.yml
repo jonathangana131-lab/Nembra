@@ -1,0 +1,372 @@
+name: Construct ES80 Producer Release Custody GO
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-producer-git-xcode-source-custody-go
+
+permissions:
+  contents: write
+
+jobs:
+  construct:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/es80-v14-producer-git-xcode-source-custody-go
+
+      - name: Verify construction parent
+        run: |
+          test "$(git rev-parse HEAD^)" = "febc4e7da938cca83f573bbc54eecca13911afdd"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/construct-es80-producer-release-custody-go.yml"
+
+      - name: Apply guarded current-spine producer repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          producer_path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          source = producer_path.read_text(encoding="utf-8")
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one source match, found {count}")
+              return text.replace(old, new, 1)
+
+          run_git_block = r'''run_git() {
+            /usr/bin/env -i \
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              /usr/bin/git "$@"
+          }
+
+          '''
+          produce_marker = "# Produce one exact signed iOS Nembra Capture field-build CANDIDATE.\n"
+          if "run_git()" in source:
+              raise SystemExit("run_git already exists before guarded construction")
+          source = replace_once(
+              source,
+              produce_marker,
+              run_git_block + produce_marker,
+              "isolated Git wrapper insertion",
+          )
+
+          darwin_block = '''if [[ "$(uname -s)" != "Darwin" ]]; then
+            echo "Signed iOS field-candidate production requires macOS." >&2
+            exit 2
+          fi
+
+          '''
+          developer_dir_block = darwin_block + '''DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
+          if [[ -z "$DEVELOPER_DIR" ]] || ! validate_root_custodied_path "$DEVELOPER_DIR" directory; then
+            echo "Signed field-candidate production requires the system-selected Xcode Developer directory to be root-custodied and non-writable by group/world." >&2
+            exit 2
+          fi
+
+          '''
+          source = replace_once(
+              source,
+              darwin_block,
+              developer_dir_block,
+              "selected Xcode developer-directory custody",
+          )
+
+          old_xcode_wrapper = '''run_xcodebuild() {
+            if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
+              xcodebuild -allowProvisioningUpdates "$@"
+            else
+              xcodebuild "$@"
+            fi
+          }
+          '''
+          new_xcode_wrapper = '''run_xcodebuild() {
+            if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
+              /usr/bin/env -i \\
+                PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                DEVELOPER_DIR="$DEVELOPER_DIR" \\
+                /usr/bin/xcodebuild -allowProvisioningUpdates "$@"
+            else
+              /usr/bin/env -i \\
+                PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                DEVELOPER_DIR="$DEVELOPER_DIR" \\
+                /usr/bin/xcodebuild "$@"
+            fi
+          }
+
+          XCODE_VERSION_OUTPUT="$(run_xcodebuild -version)"
+          XCODE_VERSION_LINE="$(printf '%s\\n' "$XCODE_VERSION_OUTPUT" | /usr/bin/sed -n '1p')"
+          case "$XCODE_VERSION_LINE" in
+            "Xcode 27"|"Xcode 27."*) ;;
+            *)
+              echo "Signed field-candidate production requires Xcode 27; selected toolchain reported: $XCODE_VERSION_LINE" >&2
+              exit 6
+              ;;
+          esac
+          '''
+          source = replace_once(
+              source,
+              old_xcode_wrapper,
+              new_xcode_wrapper,
+              "closed Xcode environment wrapper",
+          )
+
+          # Replace every remaining unqualified Git/Xcode executable invocation in shell/Python
+          # source lines. Comments are left intact so the resulting source can document the old
+          # supporting `git status` evidence without creating an executable bypass.
+          rewritten = []
+          for line in source.splitlines(keepends=True):
+              if not line.lstrip().startswith("#"):
+                  line = re.sub(r'(?<![/A-Za-z0-9_])git(?=\s)', 'run_git', line)
+                  line = re.sub(r'(?<![/A-Za-z0-9_])xcodebuild(?=\s)', 'run_xcodebuild', line)
+              rewritten.append(line)
+          source = "".join(rewritten)
+
+          dirty_marker = "# A dirty invocation checkout is never accepted. The real build below is additionally produced from\n"
+          source = replace_once(
+              source,
+              dirty_marker,
+              "# Keep git status as supporting evidence; exact raw SOURCE_SHA blob audits provide independent byte authority.\n" + dirty_marker,
+              "supporting status truth marker",
+          )
+
+          worktree_line = 'run_git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"\n'
+          audit_block = worktree_line + r'''
+          SOURCE_TREE_MANIFEST="$WORK_ROOT/source-tree.ls-tree"
+          verify_source_tree_blob_custody() {
+            run_git -C "$ROOT" ls-tree -r -z "$SOURCE_SHA" > "$SOURCE_TREE_MANIFEST"
+            "$PYTHON3" -I - "$SOURCE_ROOT" "$SOURCE_TREE_MANIFEST" <<'PYSOURCETREE'
+          import hashlib
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          source_root = os.fsencode(sys.argv[1])
+          manifest_path = Path(sys.argv[2])
+          raw_manifest = manifest_path.read_bytes()
+
+          def stable_identity(metadata):
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  metadata.st_mode,
+                  metadata.st_uid,
+                  metadata.st_gid,
+                  metadata.st_size,
+                  metadata.st_mtime_ns,
+                  metadata.st_ctime_ns,
+              )
+
+          def git_blob_digest(payload_size, chunks, object_id):
+              if len(object_id) == 40:
+                  digest = hashlib.sha1()
+              elif len(object_id) == 64:
+                  digest = hashlib.sha256()
+              else:
+                  raise SystemExit("unsupported SOURCE_SHA blob object ID width")
+              digest.update(b"blob " + str(payload_size).encode("ascii") + b"\0")
+              for chunk in chunks:
+                  digest.update(chunk)
+              return digest.hexdigest()
+
+          for entry in raw_manifest.split(b"\0"):
+              if not entry:
+                  continue
+              try:
+                  metadata, relative = entry.split(b"\t", 1)
+                  mode, object_type, object_id = metadata.split(b" ", 2)
+              except ValueError as error:
+                  raise SystemExit("malformed SOURCE_SHA ls-tree entry") from error
+              if object_type != b"blob":
+                  raise SystemExit("signed field source tree contains unsupported non-blob entry")
+              if not relative or relative.startswith(b"/"):
+                  raise SystemExit("signed field source tree contains invalid tracked path")
+              components = relative.split(b"/")
+              if any(component in (b"", b".", b"..") for component in components):
+                  raise SystemExit("signed field source tree contains unsafe tracked path")
+              filesystem_path = os.path.join(source_root, *components)
+
+              if mode == b"120000":
+                  before = os.lstat(filesystem_path)
+                  if not stat.S_ISLNK(before.st_mode):
+                      raise SystemExit("SOURCE_SHA symlink is not a symlink in detached checkout")
+                  target = os.readlink(filesystem_path)
+                  if isinstance(target, str):
+                      target = os.fsencode(target)
+                  after = os.lstat(filesystem_path)
+                  if stable_identity(after) != stable_identity(before):
+                      raise SystemExit("SOURCE_SHA symlink changed during raw blob audit")
+                  actual = git_blob_digest(len(target), (target,), object_id)
+              elif mode in (b"100644", b"100755"):
+                  flags = os.O_RDONLY
+                  if hasattr(os, "O_CLOEXEC"):
+                      flags |= os.O_CLOEXEC
+                  if hasattr(os, "O_NOFOLLOW"):
+                      flags |= os.O_NOFOLLOW
+                  descriptor = os.open(filesystem_path, flags)
+                  try:
+                      before = os.fstat(descriptor)
+                      if not stat.S_ISREG(before.st_mode):
+                          raise SystemExit("SOURCE_SHA tracked file is not a regular file")
+                      expected_executable = mode == b"100755"
+                      if bool(before.st_mode & 0o111) != expected_executable:
+                          raise SystemExit("SOURCE_SHA tracked executable mode differs from Git tree")
+                      if len(object_id) == 40:
+                          digest = hashlib.sha1()
+                      elif len(object_id) == 64:
+                          digest = hashlib.sha256()
+                      else:
+                          raise SystemExit("unsupported SOURCE_SHA blob object ID width")
+                      digest.update(b"blob " + str(before.st_size).encode("ascii") + b"\0")
+                      total = 0
+                      while True:
+                          chunk = os.read(descriptor, 1024 * 1024)
+                          if not chunk:
+                              break
+                          total += len(chunk)
+                          digest.update(chunk)
+                      after = os.fstat(descriptor)
+                      if total != before.st_size or stable_identity(after) != stable_identity(before):
+                          raise SystemExit("SOURCE_SHA tracked file changed during raw blob audit")
+                      actual = digest.hexdigest()
+                  finally:
+                      os.close(descriptor)
+              else:
+                  raise SystemExit("signed field source tree contains unsupported Git file mode")
+
+              if actual.encode("ascii") != object_id:
+                  raise SystemExit("detached checkout bytes do not match exact SOURCE_SHA Git blob")
+          PYSOURCETREE
+          }
+          '''
+          source = replace_once(
+              source,
+              worktree_line,
+              audit_block,
+              "raw SOURCE_SHA tree audit definition",
+          )
+
+          prearchive_anchor = '''if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
+            echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
+            exit 15
+          fi
+          mkdir -p "$EXPORT_DIR"
+          '''
+          prearchive_replacement = '''if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
+            echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
+            exit 15
+          fi
+          verify_source_tree_blob_custody
+          mkdir -p "$EXPORT_DIR"
+          '''
+          source = replace_once(
+              source,
+              prearchive_anchor,
+              prearchive_replacement,
+              "pre-archive raw source audit",
+          )
+
+          postexport_anchor = '''POST_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
+          '''
+          source = replace_once(
+              source,
+              postexport_anchor,
+              '''verify_source_tree_blob_custody
+
+          ''' + postexport_anchor,
+              "post-export raw source audit",
+          )
+
+          raw_git = [
+              line for line in source.splitlines()
+              if not line.lstrip().startswith("#")
+              and re.search(r'(?<![/A-Za-z0-9_])git(?=\s)', line)
+          ]
+          if raw_git:
+              raise SystemExit("unwrapped Git authority remained: " + " | ".join(raw_git))
+          raw_xcode = [
+              line for line in source.splitlines()
+              if not line.lstrip().startswith("#")
+              and re.search(r'(?<![/A-Za-z0-9_])xcodebuild(?=\s)', line)
+          ]
+          if raw_xcode:
+              raise SystemExit("unwrapped Xcode authority remained: " + " | ".join(raw_xcode))
+          if source.count("verify_source_tree_blob_custody") != 3:
+              raise SystemExit("raw SOURCE_SHA audit must be defined once and invoked exactly twice")
+          producer_path.write_text(source, encoding="utf-8")
+
+          source_test = Path("scripts/ci/tests/test_xcode27_signed_field_candidate_source.py")
+          test_source = source_test.read_text(encoding="utf-8")
+          replacements = {
+              'git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH"': 'run_git show "$SOURCE_SHA:$PRIVATE_RUNNER_RELATIVE_PATH"',
+              'git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH"': 'run_git show "$SOURCE_SHA:$INSPECTOR_RELATIVE_PATH"',
+              'git hash-object "$PRIVATE_RUNNER_SNAPSHOT"': 'run_git hash-object "$PRIVATE_RUNNER_SNAPSHOT"',
+              'git hash-object "$INSPECTOR_SNAPSHOT"': 'run_git hash-object "$INSPECTOR_SNAPSHOT"',
+              'git worktree add --detach': 'run_git worktree add --detach',
+              'git check-ignore -q': 'run_git check-ignore -q',
+              'IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"': 'IMMUTABLE_HEAD="$(run_git rev-parse --verify HEAD^{commit})"',
+              'IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"': 'IMMUTABLE_STATUS="$(run_git status --porcelain=v1 --untracked-files=all)"',
+              'git worktree remove --force "$SOURCE_ROOT"': 'run_git worktree remove --force "$SOURCE_ROOT"',
+          }
+          for old, new in replacements.items():
+              if old not in test_source:
+                  raise SystemExit(f"existing producer source regression missing expected literal: {old}")
+              test_source = test_source.replace(old, new)
+          source_test.write_text(test_source, encoding="utf-8")
+
+          descriptor_test = Path("scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py")
+          descriptor_source = descriptor_test.read_text(encoding="utf-8")
+          for old, new in (
+              ('git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA"', 'run_git -C "$ROOT" cat-file -s "$PRIVATE_RUNNER_BLOB_SHA"'),
+              ('git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA"', 'run_git -C "$ROOT" cat-file -s "$INSPECTOR_BLOB_SHA"'),
+          ):
+              if old not in descriptor_source:
+                  raise SystemExit(f"descriptor regression missing expected literal: {old}")
+              descriptor_source = descriptor_source.replace(old, new)
+          descriptor_test.write_text(descriptor_source, encoding="utf-8")
+
+          startup_test = Path("scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py")
+          startup_source = startup_test.read_text(encoding="utf-8")
+          startup_source = startup_source.replace(
+              r"(?m)^\s*(?:export\s+)?PATH\s*=",
+              r"(?m)^(?:export\s+)?PATH\s*=",
+          )
+          startup_source = startup_source.replace(
+              r"(?m)^\s*(?:export\s+)?PATH\s*=.*\$\{?PATH\}?",
+              r"(?m)^(?:export\s+)?PATH\s*=.*\$\{?PATH\}?",
+          )
+          startup_test.write_text(startup_source, encoding="utf-8")
+          PY
+
+      - name: Validate full portable producer custody contract
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_developer_dir_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          git diff --check
+
+      - name: Publish constructed product and self-delete
+        run: |
+          rm .github/workflows/construct-es80-producer-release-custody-go.yml
+          git config user.name "nembra-go-constructor"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/xcode27_signed_field_candidate.sh \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py \
+            .github/workflows/construct-es80-producer-release-custody-go.yml
+          git commit -m "fix(capture): isolate signed-field release authority"
+          git push origin HEAD:fix/es80-v14-producer-git-xcode-source-custody-go
