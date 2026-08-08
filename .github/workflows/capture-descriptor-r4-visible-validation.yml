@@ -1,0 +1,26 @@
+name: Capture descriptor r4 visible validation
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-descriptor-diagnostic-r4/gpt56-thinking-go
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-descriptor-diagnostic-r4/gpt56-thinking-go
+      - name: Python compile
+        run: python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+      - name: Inspector self-test
+        run: python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+      - name: Exact-subject adversarial tests
+        run: python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+      - name: Executable modes
+        run: |
+          test "$(stat -c '%a' scripts/ci/es80_signed_field_artifact_evidence.py)" = "755"
+          test "$(stat -c '%a' scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py)" = "755"
+      - name: Diff hygiene
+        run: git diff --check dbdc82d305244bd045ce428f813aa07b00777e85...HEAD
