@@ -256,6 +256,12 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    private let runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
+
+    init() {
+        runtimeBuildIdentity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+    }
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
@@ -336,6 +342,59 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .font(.title3.monospaced().weight(.semibold))
                         .foregroundStyle(.white)
                         .accessibilityIdentifier("es80.capture.recipe-id")
+
+                    Divider().overlay(.white.opacity(0.12))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("BUILD")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+
+                        if let runtimeBuildIdentity {
+                            Text(runtimeBuildIdentity.buildIdentifier)
+                                .font(.headline.monospaced().weight(.semibold))
+                                .foregroundStyle(.white)
+
+                            Text("Runtime identity available")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            DisclosureGroup("Build details") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Source commit")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(runtimeBuildIdentity.sourceCommitSHA)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.white)
+                                        .textSelection(.enabled)
+
+                                    Text("Build instance")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text(runtimeBuildIdentity.buildInstanceID)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.white)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.top, 6)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .tint(.secondary)
+                            .accessibilityIdentifier("es80.capture.build-details")
+                        } else {
+                            Text("Build identity unavailable")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Text("Nembra couldn’t verify the embedded build information, so capture stays locked.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("es80.capture.build-identity")
 
                     Divider().overlay(.white.opacity(0.12))
 
