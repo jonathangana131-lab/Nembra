@@ -8,6 +8,7 @@ import Glibc
 public enum PassiveBluetoothCaptureArtifactOutputPolicyError: Error, Equatable, Sendable {
     case outputMatchesInput(String)
     case outputAlreadyExists(String)
+    case inputSourceChangedSinceAdmission(String)
 }
 
 extension PassiveBluetoothCaptureArtifactOutputPolicyError: CustomStringConvertible {
@@ -17,6 +18,8 @@ extension PassiveBluetoothCaptureArtifactOutputPolicyError: CustomStringConverti
             "refusing to overwrite the raw capture artifact with its derived report: \(path)"
         case let .outputAlreadyExists(path):
             "output already exists; choose another path or pass --force-output: \(path)"
+        case let .inputSourceChangedSinceAdmission(path):
+            "raw capture path no longer names the exact filesystem subject admitted for analysis: \(path)"
         }
     }
 }
@@ -45,9 +48,16 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         }
     }
 
+    /// Publishes a report only while the raw input pathname still names the exact
+    /// filesystem subject that supplied `inputReceipt.bytes`.
+    ///
+    /// This receipt closes the read -> analyze -> publish custody boundary. Output
+    /// protection is therefore anchored to the admitted source inode, not to a
+    /// later untrusted reinterpretation of the input pathname.
     public static func writeDerivedReport(
         _ data: Data,
         inputURL: URL,
+        inputReceipt: PassiveBluetoothCaptureArtifactInputReceipt,
         outputURL: URL,
         allowReplacingExistingOutput: Bool,
         fileManager: FileManager = .default
@@ -70,11 +80,15 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         let parentFD = try openDirectoryCustody(outputParent)
         defer { _ = close(parentFD) }
 
-        let inputIdentity = try fileIdentity(canonicalInput)
+        let currentInputIdentity = try fileIdentity(canonicalInput)
+        guard currentInputIdentity == inputReceipt.admittedSourceIdentity else {
+            throw PassiveBluetoothCaptureArtifactOutputPolicyError
+                .inputSourceChangedSinceAdmission(canonicalInput.path)
+        }
+
         if allowReplacingExistingOutput,
            let outputIdentity = try existingEntryIdentity(parentFD: parentFD, name: outputName),
-           outputIdentity.st_dev == inputIdentity.st_dev,
-           outputIdentity.st_ino == inputIdentity.st_ino {
+           sameFilesystemSubject(outputIdentity, inputReceipt.admittedSourceIdentity) {
             throw PassiveBluetoothCaptureArtifactOutputPolicyError.outputMatchesInput(
                 canonicalInput.path
             )
@@ -111,7 +125,20 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
             throw posixError("verify derived report staging file")
         }
 
+        // Re-prove the admitted source again immediately before publication so a
+        // pathname swap during report staging cannot change the protected subject.
+        guard try fileIdentity(canonicalInput) == inputReceipt.admittedSourceIdentity else {
+            throw PassiveBluetoothCaptureArtifactOutputPolicyError
+                .inputSourceChangedSinceAdmission(canonicalInput.path)
+        }
+
         if allowReplacingExistingOutput {
+            if let outputIdentity = try existingEntryIdentity(parentFD: parentFD, name: outputName),
+               sameFilesystemSubject(outputIdentity, inputReceipt.admittedSourceIdentity) {
+                throw PassiveBluetoothCaptureArtifactOutputPolicyError.outputMatchesInput(
+                    canonicalInput.path
+                )
+            }
             guard renameat(parentFD, temporaryName, parentFD, outputName) == 0 else {
                 throw posixError("publish forced derived report")
             }
@@ -134,6 +161,28 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         guard fsync(parentFD) == 0 else {
             throw posixError("fsync derived report directory")
         }
+    }
+
+    /// Package-internal compatibility helper for focused policy tests. Production
+    /// callers outside this module must carry the admission receipt explicitly.
+    static func writeDerivedReport(
+        _ data: Data,
+        inputURL: URL,
+        outputURL: URL,
+        allowReplacingExistingOutput: Bool,
+        fileManager: FileManager = .default
+    ) throws {
+        let inputReceipt = try PassiveBluetoothCaptureArtifactInputPolicy.readExactArtifact(
+            at: inputURL
+        )
+        try writeDerivedReport(
+            data,
+            inputURL: inputURL,
+            inputReceipt: inputReceipt,
+            outputURL: outputURL,
+            allowReplacingExistingOutput: allowReplacingExistingOutput,
+            fileManager: fileManager
+        )
     }
 
     private static func canonicalFileURL(_ url: URL) -> URL {
@@ -185,7 +234,9 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
         }
     }
 
-    private static func fileIdentity(_ url: URL) throws -> stat {
+    private static func fileIdentity(
+        _ url: URL
+    ) throws -> PassiveBluetoothCaptureArtifactSourceIdentity {
         let canonical = canonicalFileURL(url)
         let parentFD = try openDirectoryCustody(canonical.deletingLastPathComponent())
         defer { _ = close(parentFD) }
@@ -197,10 +248,48 @@ public enum PassiveBluetoothCaptureArtifactOutputPolicy {
 
         var metadata = stat()
         guard fstat(fd, &metadata) == 0,
-              (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else {
+              (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
+              metadata.st_size >= 0 else {
             throw posixError("verify raw capture subject")
         }
-        return metadata
+        return sourceIdentity(metadata)
+    }
+
+    private static func sourceIdentity(
+        _ metadata: stat
+    ) -> PassiveBluetoothCaptureArtifactSourceIdentity {
+        #if canImport(Darwin)
+        let modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
+        #else
+        let modifiedSeconds = Int64(metadata.st_mtim.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtim.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctim.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctim.tv_nsec)
+        #endif
+
+        return PassiveBluetoothCaptureArtifactSourceIdentity(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            mode: UInt64(metadata.st_mode),
+            ownerUser: UInt64(metadata.st_uid),
+            ownerGroup: UInt64(metadata.st_gid),
+            byteCount: Int64(metadata.st_size),
+            modifiedSeconds: modifiedSeconds,
+            modifiedNanoseconds: modifiedNanoseconds,
+            changedSeconds: changedSeconds,
+            changedNanoseconds: changedNanoseconds
+        )
+    }
+
+    private static func sameFilesystemSubject(
+        _ metadata: stat,
+        _ sourceIdentity: PassiveBluetoothCaptureArtifactSourceIdentity
+    ) -> Bool {
+        UInt64(metadata.st_dev) == sourceIdentity.device &&
+            UInt64(metadata.st_ino) == sourceIdentity.inode
     }
 
     private static func existingEntryIdentity(parentFD: Int32, name: String) throws -> stat? {
