@@ -36,6 +36,7 @@ jobs:
             'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift' \
             'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneStructuralEvidenceAssessment.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStatusPromotionPolicyTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralEvidenceAssessmentTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneVehicleContextTests.swift' | sort)"
           test "$changed" = "$expected"
@@ -93,6 +94,7 @@ jobs:
             'publicfunccaptureEvidenceSnapshot('
             'publicfunccaptureEvidenceAssessment('
             'publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment'
+            'publicenumPassiveBluetoothExperimentOneStatusPromotionPolicy'
             'publicstaticfuncassess('
           )
           for token in "${forbidden[@]}"; do
