@@ -60,6 +60,39 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
             executableSHA256: executableSHA256
         )
     }
+
+    /// Fail-closed mechanical comparison against the identity measured from the running app.
+    ///
+    /// Exact equality here proves only that this parsed declaration names the same build facts the
+    /// app can measure locally. It does **not** prove that the external record was independently
+    /// attested or accepted, and it never authorizes the physical Experiment One procedure.
+    public func validateRuntimeBinding(
+        to runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        guard buildIdentifier == runtimeIdentity.buildIdentifier else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.buildIdentifierMismatch
+        }
+        guard buildInstanceID == runtimeIdentity.buildInstanceID else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.buildInstanceIDMismatch
+        }
+        guard sourceCommitSHA == runtimeIdentity.sourceCommitSHA else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.sourceCommitSHAMismatch
+        }
+        guard executableSHA256 == runtimeIdentity.executableSHA256 else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.executableSHA256Mismatch
+        }
+        guard infoPlistSHA256 == runtimeIdentity.infoPlistSHA256 else {
+            throw PassiveBluetoothCaptureExternalBuildRuntimeBindingError.infoPlistSHA256Mismatch
+        }
+    }
+}
+
+public enum PassiveBluetoothCaptureExternalBuildRuntimeBindingError: Error, Equatable, Sendable {
+    case buildIdentifierMismatch
+    case buildInstanceIDMismatch
+    case sourceCommitSHAMismatch
+    case executableSHA256Mismatch
+    case infoPlistSHA256Mismatch
 }
 
 public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, Sendable {

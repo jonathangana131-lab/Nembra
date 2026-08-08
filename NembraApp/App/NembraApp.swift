@@ -96,14 +96,20 @@ struct NembraApp: App {
 /// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
-    let coordinator: PassiveBluetoothExperimentOneCoordinator
-
+    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
 
+    init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+        _coordinator = State(initialValue: coordinator)
+    }
+
     var body: some View {
         if disconnectedDeclarationAccepted {
-            ES80CaptureShellView(coordinator: coordinator)
+            ES80CaptureShellView(
+                coordinator: coordinator,
+                onFreshExperimentRequested: makeFreshExperimentCoordinator
+            )
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -205,6 +211,17 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("es80.capture.stationary-preflight")
         }
+    }
+
+    /// A new Experiment One is a new declared setup life. A restart may mint a fresh
+    /// package-owned coordinator, but it must also return through charger preflight instead of
+    /// carrying the previous run's disconnected declaration into new evidence.
+    private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
+        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator()
+        coordinator = freshCoordinator
+        selectedChargerState = nil
+        disconnectedDeclarationAccepted = false
+        return freshCoordinator
     }
 
     private var canContinue: Bool {

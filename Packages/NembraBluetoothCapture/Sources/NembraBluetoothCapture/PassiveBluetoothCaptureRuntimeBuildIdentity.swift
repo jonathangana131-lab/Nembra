@@ -4,27 +4,30 @@ import Foundation
 /// Build identity read from the running Nembra application rather than rider/operator input.
 ///
 /// The embedded build identifier, build-instance identifier, and source commit are declarations
-/// produced by the accepted build pipeline. `executableSHA256` is computed from the exact
-/// executable bytes visible to the running application. The build-instance identifier is an
-/// opaque per-produced-build rendezvous key: it lets an independently attested external build
-/// record identify this exact build without embedding the final executable digest back into the
-/// signed app bundle and creating a code-signing self-reference.
+/// produced by the accepted build pipeline. `executableSHA256` and `infoPlistSHA256` are computed
+/// from the exact executable and raw `Info.plist` bytes visible to the running application. The
+/// build-instance identifier is an opaque per-produced-build rendezvous key: it lets an independently
+/// attested external build record identify this exact build without embedding final artifact digests
+/// back into the signed app bundle and creating a code-signing self-reference.
 public struct PassiveBluetoothCaptureRuntimeBuildIdentity: Equatable, Sendable {
     public let buildIdentifier: String
     public let buildInstanceID: String
     public let sourceCommitSHA: String
     public let executableSHA256: String
+    public let infoPlistSHA256: String
 
     fileprivate init(
         buildIdentifier: String,
         buildInstanceID: String,
         sourceCommitSHA: String,
-        executableSHA256: String
+        executableSHA256: String,
+        infoPlistSHA256: String
     ) {
         self.buildIdentifier = buildIdentifier
         self.buildInstanceID = buildInstanceID
         self.sourceCommitSHA = sourceCommitSHA
         self.executableSHA256 = executableSHA256
+        self.infoPlistSHA256 = infoPlistSHA256
     }
 }
 
@@ -38,20 +41,23 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityError: Error, Equatable, 
     case executableUnavailable
     case executableNotRegularFile
     case executableUnreadable
+    case infoPlistUnavailable
+    case infoPlistNotRegularFile
+    case infoPlistUnreadable
 }
 
 /// Fail-closed producer for the build identity of the application that is actually running.
 ///
 /// Production callers intentionally receive no API that accepts arbitrary metadata or bytes.
-/// The only public producer reads `Bundle.main` and hashes its executable. Tests use the
-/// package-scoped resolver below to exercise validation deterministically.
+/// The only public producer reads `Bundle.main` and hashes its executable plus raw `Info.plist`.
+/// Tests use the package-scoped resolver below to exercise validation deterministically.
 public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
     public static let buildIdentifierInfoDictionaryKey = "NembraCaptureBuildIdentifier"
     public static let buildInstanceIDInfoDictionaryKey = "NembraCaptureBuildInstanceID"
     public static let sourceCommitSHAInfoDictionaryKey = "NembraCaptureBuildCommitSHA"
 
     /// Reads build identity from the running application's main bundle and hashes the exact
-    /// executable bytes. Missing or malformed build metadata fails closed.
+    /// executable plus raw root `Info.plist` bytes. Missing or malformed build metadata fails closed.
     public static func currentApplication() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
         let bundle = Bundle.main
 
@@ -77,15 +83,40 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
             throw PassiveBluetoothCaptureRuntimeBuildIdentityError.executableUnreadable
         }
 
+        let infoPlistURL = bundle.bundleURL.appendingPathComponent("Info.plist", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: infoPlistURL.path) else {
+            throw PassiveBluetoothCaptureRuntimeBuildIdentityError.infoPlistUnavailable
+        }
+
+        do {
+            let resourceValues = try infoPlistURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard resourceValues.isRegularFile == true else {
+                throw PassiveBluetoothCaptureRuntimeBuildIdentityError.infoPlistNotRegularFile
+            }
+        } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
+            throw error
+        } catch {
+            throw PassiveBluetoothCaptureRuntimeBuildIdentityError.infoPlistUnreadable
+        }
+
+        let infoPlistData: Data
+        do {
+            infoPlistData = try Data(contentsOf: infoPlistURL, options: .mappedIfSafe)
+        } catch {
+            throw PassiveBluetoothCaptureRuntimeBuildIdentityError.infoPlistUnreadable
+        }
+
         return try resolveEmbeddedMetadata(
             infoDictionary: bundle.infoDictionary ?? [:],
-            executableData: executableData
+            executableData: executableData,
+            infoPlistData: infoPlistData
         )
     }
 
     package static func resolveEmbeddedMetadata(
         infoDictionary: [String: Any],
-        executableData: Data
+        executableData: Data,
+        infoPlistData: Data
     ) throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
         guard let rawBuildIdentifier = infoDictionary[buildIdentifierInfoDictionaryKey] as? String else {
             throw PassiveBluetoothCaptureRuntimeBuildIdentityError.missingBuildIdentifier
@@ -112,7 +143,8 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
             buildIdentifier: rawBuildIdentifier,
             buildInstanceID: normalizedBuildInstanceID,
             sourceCommitSHA: normalizedCommitSHA,
-            executableSHA256: sha256Hex(executableData)
+            executableSHA256: sha256Hex(executableData),
+            infoPlistSHA256: sha256Hex(infoPlistData)
         )
     }
 
