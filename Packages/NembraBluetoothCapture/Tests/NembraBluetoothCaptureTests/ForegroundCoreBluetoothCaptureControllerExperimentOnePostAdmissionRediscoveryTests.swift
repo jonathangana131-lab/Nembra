@@ -23,11 +23,11 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOnePostAdmissionRedisco
         #expect(source.contains("DispatchTime.now().uptimeNanoseconds"))
     }
 
-    @Test("controller requires rediscovery after admission before recorder installation")
+    @Test("controller requires rediscovery after admission preview before recorder installation")
     func currentCatalogMustBePostAdmissionEvidence() throws {
         let body = try Self.consumerBody(try Self.source(named: "ForegroundCoreBluetoothCaptureController.swift"))
-        let latestAdvertisement = try #require(body.range(of: "latestAdvertisementByIdentifier[payload.peripheralIdentifier]"))
-        let freshness = try #require(body.range(of: "receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds"))
+        let latestAdvertisement = try #require(body.range(of: "latestAdvertisementByIdentifier[preview.peripheralIdentifier]"))
+        let freshness = try #require(body.range(of: "receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds"))
         let selectTarget = try #require(body.range(of: "targetState.selectTarget(payload.peripheralIdentifier)"))
         let installRecorder = try #require(body.range(of: "recorder = payload.recorder"))
         #expect(latestAdvertisement.lowerBound < freshness.lowerBound)
