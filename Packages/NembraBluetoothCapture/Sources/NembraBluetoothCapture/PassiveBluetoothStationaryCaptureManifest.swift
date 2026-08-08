@@ -2,12 +2,12 @@ import CryptoKit
 import Foundation
 import NembraCore
 
-/// Operator-context validation for the first stationary physical ES80 capture.
+/// Declared experiment-context binding for the first stationary physical ES80 capture.
 ///
-/// This sidecar never changes the raw capture JSON. It binds a small amount of
-/// structured setup context to the exact immutable capture bytes so later
-/// offline analysis can tell which build/setup produced the evidence without
-/// reinterpreting that context as scooter telemetry.
+/// This sidecar never changes the raw capture JSON. It retains a small amount of
+/// structured, operator-declared setup context next to the exact immutable capture
+/// bytes. Those declarations are not independently authenticated by the capture;
+/// downstream code must not reinterpret them as scooter telemetry or OS attestation.
 public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Sendable {
     case invalidBuildCommitSHA(String)
     case invalidPreparedAt
@@ -68,12 +68,13 @@ public struct PassiveBluetoothStationaryCaptureSetup: Equatable, Codable, Sendab
     }
 }
 
-/// A verified sidecar projection for one stationary physical-capture artifact.
+/// A capture-consistent sidecar projection for one stationary physical-capture artifact.
 ///
 /// Construction is intentionally sealed behind `PassiveBluetoothStationaryCaptureManifestBuilder`.
-/// The SHA-256 binds the sidecar to exact capture bytes, but it is only artifact
-/// integrity/provenance. It does not authenticate the scooter, prove ES80 identity,
-/// or verify any battery/current/power/speed semantic.
+/// The sidecar records SHA-256 of the exact capture bytes and recomputable capture-derived
+/// facts. Operator-declared build/setup fields are not cryptographically authenticated.
+/// Nothing here authenticates the scooter, proves ES80 identity, or verifies any
+/// battery/current/power/speed semantic.
 public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -151,8 +152,9 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 
 public enum PassiveBluetoothStationaryCaptureManifestBuilder {
     /// Creates one machine-readable sidecar for the smallest useful physical
-    /// experiment: scooter stationary, exact Nembra build known, charger state
-    /// explicitly recorded, and one selected target already represented by GATT evidence.
+    /// experiment: scooter stationary by procedure, Nembra build revision declared,
+    /// charger state explicitly declared, and one selected target already represented
+    /// by GATT evidence.
     public static func make(
         captureJSON: Data,
         experimentID: UUID = UUID(),
@@ -401,10 +403,12 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         return try encoder.encode(Wire(manifest))
     }
 
-    /// Verifies an imported sidecar against the exact immutable capture bytes.
-    /// A manifest is never accepted from JSON alone because its derived counts,
-    /// session identity, selected target, and digest all need the raw artifact.
-    public static func verify(
+    /// Verifies the sidecar's capture binding and capture-derived fields against the
+    /// exact immutable capture bytes. A manifest is never accepted from JSON alone
+    /// for those facts. Operator-declared experiment ID/time/build/setup fields are
+    /// schema-checked and subject to direct consistency gates, but are not independently
+    /// authenticated by this function; that would require an external trust anchor.
+    public static func verifyCaptureBinding(
         manifestJSON: Data,
         captureJSON: Data
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
