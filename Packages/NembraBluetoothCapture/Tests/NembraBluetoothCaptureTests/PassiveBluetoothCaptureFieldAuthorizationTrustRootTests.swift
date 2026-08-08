@@ -20,6 +20,18 @@ struct PassiveBluetoothCaptureFieldAuthorizationTrustRootTests {
         #expect(source.contains("package static func verify("))
     }
 
+    @Test("GO schema binds both exact build record and exact signed IPA evidence")
+    func productionAuthorizationSubjectIncludesSignedIPAEvidence() throws {
+        let source = try Self.source()
+
+        #expect(source.contains("public static let envelopeSchemaVersion = 2"))
+        #expect(source.contains("public static let authorizationPayloadSchemaVersion = 2"))
+        #expect(source.contains("signedFieldArtifactEvidenceBase64"))
+        #expect(source.contains("signedFieldArtifactEvidenceSHA256"))
+        #expect(source.contains("signedEvidence.externalBuildRecordSHA256 == exactExternalRecordSHA256"))
+        #expect(source.contains("signedFieldArtifactEvidence: signedEvidence"))
+    }
+
     private static func source() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
