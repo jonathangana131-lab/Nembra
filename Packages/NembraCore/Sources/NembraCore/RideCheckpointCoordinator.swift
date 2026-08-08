@@ -195,8 +195,9 @@ public actor RideCheckpointCoordinator {
         }
 
         let waiterID = UUID()
-        let outcome = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
+        let outcome: MutationPermitOutcome = await withTaskCancellationHandler {
+            await withCheckedContinuation {
+                (continuation: CheckedContinuation<MutationPermitOutcome, Never>) in
                 if Task.isCancelled {
                     continuation.resume(returning: .cancelled)
                     return
