@@ -36,14 +36,25 @@ struct PassiveCoreBluetoothLifecycleAdmissionTests {
     }
 
     @Test
-    func onlyExplicitCancellationOwnsCancellationRequestBoundary() {
+    func cancellationCausesHaveFixedEvidenceSemantics() {
         #expect(
-            PassiveCoreBluetoothCancellationBoundary.recordCancellationRequest
-                .shouldRecordCancellationRequest
+            PassiveCoreBluetoothCancellationCause.operatorRequest.interruptionReason
+                == "connection cancellation requested"
         )
         #expect(
-            !PassiveCoreBluetoothCancellationBoundary.interruptionAlreadyRecorded
-                .shouldRecordCancellationRequest
+            PassiveCoreBluetoothCancellationCause.foregroundIntegrityLoss.interruptionReason
+                == "foreground evidence integrity lost"
         )
+        #expect(
+            PassiveCoreBluetoothCancellationCause.finalizedArtifactTeardown.interruptionReason == nil
+        )
+        #expect(
+            PassiveCoreBluetoothCancellationCause.interruptionAlreadyRecorded.interruptionReason == nil
+        )
+
+        #expect(PassiveCoreBluetoothCancellationCause.operatorRequest.diagnosticMessage != nil)
+        #expect(PassiveCoreBluetoothCancellationCause.foregroundIntegrityLoss.diagnosticMessage != nil)
+        #expect(PassiveCoreBluetoothCancellationCause.finalizedArtifactTeardown.diagnosticMessage == nil)
+        #expect(PassiveCoreBluetoothCancellationCause.interruptionAlreadyRecorded.diagnosticMessage == nil)
     }
 }
