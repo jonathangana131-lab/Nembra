@@ -1,0 +1,89 @@
+name: Agent ES80 NO-GO product copy
+
+on:
+  push:
+    branches:
+      - visual/es80-v14-no-go-product-copy/chatgpt56
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: visual/es80-v14-no-go-product-copy/chatgpt56
+          fetch-depth: 0
+      - name: Simplify rider-facing locked-state language
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraApp.swift')
+          text = app.read_text()
+          replacements = {
+              '"Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."':
+                  '"Physical ES80 capture is locked. This build still needs final safety and quality approval before Nembra can enable the OFF and ON steps."',
+              'Text("Field capture locked")': 'Text("Capture not ready yet")',
+              'Text("This exact build is not authorized to begin the physical ES80 procedure.")':
+                  'Text("This build can’t start the physical ES80 test yet.")',
+              'Text("Physical Experiment One locked")': 'Text("Physical test locked")',
+              'Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")':
+                  'Text("Nembra will enable the OFF/ON steps only after this build passes the remaining safety, quality, and field-approval checks.")',
+              'Text("PROCEDURE")': 'Text("EXPERIMENT")',
+              'Text("NO-GO")': 'Text("LOCKED")',
+              'Text("Single-authority workflow installed")': 'Text("One guided capture workflow")',
+              'Text("Field execution unavailable on this build")': 'Text("Physical test unavailable on this build")',
+              'Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")':
+                  'Text("No action is needed right now. Only an approved Nembra build can unlock this test; there is no in-app override.")',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one copy anchor, found {count}: {old}')
+              text = text.replace(old, new, 1)
+          app.write_text(text)
+
+          tests = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          source = tests.read_text()
+          old = 'app.staticTexts["Field capture locked"].waitForExistence(timeout: 3)'
+          new = 'app.staticTexts["Capture not ready yet"].waitForExistence(timeout: 3)'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one primary title assertion, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+
+          anchor = '''    func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {'''
+          test = '''    func testNoGoProductCopyRemovesEngineeringJargonWithoutWeakeningPhysicalLock() throws {\n        let testFile = URL(fileURLWithPath: #filePath)\n        let repositoryRoot = testFile\n            .deletingLastPathComponent()\n            .deletingLastPathComponent()\n        let source = try String(\n            contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/NembraApp.swift"),\n            encoding: .utf8\n        )\n\n        XCTAssertTrue(source.contains("Capture not ready yet"))\n        XCTAssertTrue(source.contains("Physical test locked"))\n        XCTAssertTrue(source.contains("Only an approved Nembra build can unlock this test; there is no in-app override."))\n        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))\n        XCTAssertTrue(source.contains("ES80ExperimentOneFieldNoGoView()"))\n        XCTAssertTrue(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))\n\n        XCTAssertFalse(source.contains("final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates"))\n        XCTAssertFalse(source.contains("Single-authority workflow installed"))\n        XCTAssertFalse(source.contains("package-owned authorization"))\n        XCTAssertFalse(source.contains("typed identifier, or local preference"))\n    }\n\n    func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {'''
+          if source.count(anchor) != 1:
+              raise SystemExit(f'expected one UI source-contract anchor, found {source.count(anchor)}')
+          tests.write_text(source.replace(anchor, test, 1))
+          PY
+      - name: Verify locked-state truth and copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=NembraApp/App/NembraApp.swift
+          tests=NembraUITests/ES80ResearchCaptureUITests.swift
+          grep -F 'Text("Capture not ready yet")' "$app"
+          grep -F 'Text("Physical test locked")' "$app"
+          grep -F 'Only an approved Nembra build can unlock this test; there is no in-app override.' "$app"
+          grep -F 'PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure' "$app"
+          grep -F 'PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue' "$app"
+          grep -F 'testNoGoProductCopyRemovesEngineeringJargonWithoutWeakeningPhysicalLock' "$tests"
+          ! grep -F 'final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates' "$app"
+          ! grep -F 'Single-authority workflow installed' "$app"
+          ! grep -F 'package-owned authorization' "$app"
+          git diff --check
+      - name: Remove helper and checkpoint product edit
+        shell: bash
+        run: |
+          rm .github/workflows/agent-es80-no-go-product-copy.yml
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraApp.swift NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/agent-es80-no-go-product-copy.yml
+          git commit -m 'polish(capture): simplify physical NO-GO product copy'
+          git push origin HEAD:visual/es80-v14-no-go-product-copy/chatgpt56
