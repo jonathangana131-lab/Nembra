@@ -40,9 +40,20 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,
-    /// never injected by app/UI code merely to make a run eligible.
-    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
+    /// Creates the canonical ES80 Experiment One software life, including its foreground controller.
+    /// App/UI code therefore cannot mint a generic controller and later present it as field authority.
+    /// The ES80 vehicle profile selected here is declared software context only, not authentication.
+    public convenience init() throws {
+        let controller = try ForegroundCoreBluetoothCaptureController(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
+        try self.init(controller: controller)
+    }
+
+    /// Internal composition seam retained for package tests and reviewed package-owned construction.
+    /// Normal app code should use the zero-argument initializer so one package owner creates the
+    /// controller and Experiment One run together.
+    init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
