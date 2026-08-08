@@ -8,6 +8,7 @@ import plistlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 import warnings
 import zipfile
@@ -93,6 +94,30 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             self.assertEqual(paths["external_record"].read_bytes(), inspection["external_bytes"])
             emitted = json.loads(paths["field_evidence"].read_text())
             self.assertEqual(emitted, inspection["field_evidence"])
+
+    def test_write_outputs_failure_never_publishes_partial_final_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            ipa = root / "Nembra.ipa"
+            make_ipa(ipa)
+            inspection = signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+            output = root / "field-evidence"
+
+            with mock.patch.object(Path, "rename", side_effect=OSError("simulated publish failure")):
+                with self.assertRaisesRegex(OSError, "simulated publish failure"):
+                    signed_field_evidence.write_outputs(ipa, output, inspection)
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(root.glob(".field-evidence.staging-*")), [])
+
+            paths = signed_field_evidence.write_outputs(ipa, output, inspection)
+            self.assertTrue(output.is_dir())
+            self.assertTrue(all(path.is_file() for path in paths.values()))
+            with self.assertRaisesRegex(
+                signed_field_evidence.EvidenceError,
+                "refusing to overwrite existing field evidence directory",
+            ):
+                signed_field_evidence.write_outputs(ipa, output, inspection)
 
     def test_source_bundle_platform_and_build_label_mismatches_fail_closed(self):
         cases = [

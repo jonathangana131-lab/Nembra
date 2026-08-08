@@ -364,26 +364,52 @@ def inspect_ipa(
 
 
 def write_outputs(ipa_path: Path, output_dir: Path, inspection: dict) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    retained_dir = output_dir / "build-evidence"
-    retained_dir.mkdir(parents=True, exist_ok=True)
-    retained_ipa = retained_dir / "NembraField.ipa"
-    external_path = output_dir / "NembraCaptureExternalBuildRecord.json"
-    field_path = output_dir / "NembraCaptureSignedFieldArtifactEvidence.json"
-    targets = (retained_ipa, external_path, field_path)
-    existing = [str(path) for path in targets if path.exists()]
-    if existing:
-        raise EvidenceError(f"refusing to overwrite existing field evidence: {existing!r}")
+    """Publish the complete evidence set only after every staged subject re-verifies."""
+    ipa_path = ipa_path.resolve()
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        raise EvidenceError(f"refusing to overwrite existing field evidence directory: {output_dir}")
 
-    shutil.copy2(ipa_path, retained_ipa)
-    if sha256_file(retained_ipa) != inspection["field_evidence"]["ipaSHA256"]:
-        retained_ipa.unlink(missing_ok=True)
-        raise EvidenceError("retained IPA bytes diverged from inspected input")
-    external_path.write_bytes(inspection["external_bytes"])
-    if sha256_file(external_path) != inspection["field_evidence"]["externalBuildRecordSHA256"]:
-        raise EvidenceError("written external build record digest diverged from field evidence")
-    field_path.write_bytes(canonical_json_bytes(inspection["field_evidence"]))
-    return {"retained_ipa": retained_ipa, "external_record": external_path, "field_evidence": field_path}
+    field_evidence = inspection["field_evidence"]
+    external_bytes = inspection["external_bytes"]
+    field_bytes = canonical_json_bytes(field_evidence)
+    if sha256_file(ipa_path) != field_evidence["ipaSHA256"]:
+        raise EvidenceError("input IPA digest diverged after inspection")
+    if hashlib.sha256(external_bytes).hexdigest() != field_evidence["externalBuildRecordSHA256"]:
+        raise EvidenceError("external build record digest diverged from field evidence")
+
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=str(output_dir.parent)))
+    try:
+        retained_ipa = staging / "build-evidence" / "NembraField.ipa"
+        retained_ipa.parent.mkdir(parents=True, exist_ok=True)
+        external_path = staging / "NembraCaptureExternalBuildRecord.json"
+        field_path = staging / "NembraCaptureSignedFieldArtifactEvidence.json"
+
+        shutil.copy2(ipa_path, retained_ipa)
+        external_path.write_bytes(external_bytes)
+        field_path.write_bytes(field_bytes)
+
+        if sha256_file(retained_ipa) != field_evidence["ipaSHA256"]:
+            raise EvidenceError("retained IPA bytes diverged from inspected input")
+        if sha256_file(external_path) != field_evidence["externalBuildRecordSHA256"]:
+            raise EvidenceError("written external build record digest diverged from field evidence")
+        if field_path.read_bytes() != field_bytes:
+            raise EvidenceError("written signed-field evidence bytes diverged from staged evidence")
+
+        if output_dir.exists():
+            raise EvidenceError(f"field evidence directory appeared during staging: {output_dir}")
+        staging.rename(output_dir)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    return {
+        "retained_ipa": output_dir / "build-evidence" / "NembraField.ipa",
+        "external_record": output_dir / "NembraCaptureExternalBuildRecord.json",
+        "field_evidence": output_dir / "NembraCaptureSignedFieldArtifactEvidence.json",
+    }
 
 
 def self_test() -> None:
