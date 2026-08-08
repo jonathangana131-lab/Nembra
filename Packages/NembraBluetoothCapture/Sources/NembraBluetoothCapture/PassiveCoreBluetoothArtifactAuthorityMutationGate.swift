@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 
 /// A tiny synchronous serialization point shared by MainActor artifact-authority
 /// transitions and recorder-actor lifecycle-boundary mutation.
