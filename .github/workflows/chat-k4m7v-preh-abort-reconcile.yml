@@ -1,0 +1,159 @@
+name: chat-k4m7v pre-H abort reconcile
+
+on:
+  push:
+    branches:
+      - 'parallel/es80-preh-observation-abort/chat-k4m7v'
+    paths:
+      - '.github/workflows/chat-k4m7v-preh-abort-reconcile.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-preh-observation-abort/chat-k4m7v
+          fetch-depth: 0
+      - name: Adapt abort admission and reconcile exact dependency
+        shell: bash
+        env:
+          EXPECTED_BASE_SHA: 463a15236150f01f06f05aed11cc333afd9ae0c6
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
+          source = source_path.read_text()
+
+          old = '''    mutating func abortObservationEpoch(
+                  establishedBy readyTransaction: Transaction
+              ) throws -> ObservationEpochAbortReceipt {
+                  guard case .observing = phase else {
+                      throw StateError.invalidTransition
+                  }
+                  guard let committedReadyTransaction,
+                        committedReadyTransaction == readyTransaction else {
+                      throw StateError.staleTransaction
+                  }
+                  guard readyTransaction.boundaryKind == .finiteAcquisitionReady else {
+                      throw StateError.staleTransaction
+                  }
+
+                  let receipt = ObservationEpochAbortReceipt(
+                      abandonedReadyTransaction: readyTransaction
+                  )
+                  abandonedTargetSessionGeneration =
+                      readyTransaction.authority.targetSessionGeneration
+                  self.committedReadyTransaction = nil
+                  phase = .awaitingReady
+                  return receipt
+              }
+          '''
+          new = '''    mutating func abortObservationEpoch(
+                  expectedReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
+                  expectedReadyQueueCutoff: UInt64
+              ) throws -> ObservationEpochAbortReceipt {
+                  guard case .observing = phase else {
+                      throw StateError.invalidTransition
+                  }
+                  guard let committedReadyTransaction else {
+                      throw StateError.staleTransaction
+                  }
+                  guard committedReadyTransaction.boundaryKind == .finiteAcquisitionReady,
+                        committedReadyTransaction.authority == expectedReadyAuthority,
+                        committedReadyTransaction.queueCutoff == expectedReadyQueueCutoff else {
+                      throw StateError.staleTransaction
+                  }
+
+                  let receipt = ObservationEpochAbortReceipt(
+                      abandonedReadyTransaction: committedReadyTransaction
+                  )
+                  abandonedTargetSessionGeneration =
+                      committedReadyTransaction.authority.targetSessionGeneration
+                  self.committedReadyTransaction = nil
+                  phase = .awaitingReady
+                  return receipt
+              }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one old abort implementation, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          source = source.replace(
+              '    /// The caller must present the exact Ready transaction that established\n'
+              '    /// `.observing`; stale/wrong transactions cannot reset another epoch.\n',
+              '    /// The caller must present the exact Ready authority + queue cutoff that\n'
+              '    /// established `.observing`; stale/wrong callers cannot reset another epoch.\n'
+              '    /// These fields are exposed by the sealed boundary decision while its raw\n'
+              '    /// queue transaction remains intentionally private.\n',
+              1,
+          )
+          source_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests.swift')
+          tests = test_path.read_text()
+
+          tests = tests.replace(
+              'gate.abortObservationEpoch(establishedBy: oldReady)',
+              'gate.abortObservationEpoch(\n            expectedReadyAuthority: oldReady.authority,\n            expectedReadyQueueCutoff: oldReady.queueCutoff\n        )',
+          )
+          tests = tests.replace(
+              'try gate.abortObservationEpoch(establishedBy: stale)',
+              'try gate.abortObservationEpoch(\n                expectedReadyAuthority: currentReady.authority,\n                expectedReadyQueueCutoff: currentReady.queueCutoff + 1\n            )',
+              1,
+          )
+          stale_block = '''        let stale = PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction(
+                      boundaryKind: .finiteAcquisitionReady,
+                      queueCutoff: currentReady.queueCutoff,
+                      authority: currentReady.authority,
+                      revision: currentReady.revision + 1
+                  )
+
+          '''
+          if stale_block not in tests:
+              raise SystemExit('expected stale transaction fixture block')
+          tests = tests.replace(stale_block, '', 1)
+
+          tests = tests.replace(
+              'try awaiting.abortObservationEpoch(establishedBy: fabricated)',
+              'try awaiting.abortObservationEpoch(\n                    expectedReadyAuthority: fabricated.authority,\n                    expectedReadyQueueCutoff: fabricated.queueCutoff\n                )',
+              1,
+          )
+          tests = tests.replace(
+              'try drainingReady.abortObservationEpoch(establishedBy: uncommittedReady)',
+              'try drainingReady.abortObservationEpoch(\n                    expectedReadyAuthority: uncommittedReady.authority,\n                    expectedReadyQueueCutoff: uncommittedReady.queueCutoff\n                )',
+              1,
+          )
+          tests = tests.replace(
+              'try drainingHorizon.abortObservationEpoch(establishedBy: committed)',
+              'try drainingHorizon.abortObservationEpoch(\n                    expectedReadyAuthority: committed.authority,\n                    expectedReadyQueueCutoff: committed.queueCutoff\n                )',
+              1,
+          )
+          tests = tests.replace(
+              'try gate.abortObservationEpoch(establishedBy: ready)',
+              'try gate.abortObservationEpoch(\n                    expectedReadyAuthority: ready.authority,\n                    expectedReadyQueueCutoff: ready.queueCutoff\n                )',
+          )
+          if 'abortObservationEpoch(establishedBy:' in tests:
+              raise SystemExit('old transaction-based abort call remains in tests')
+          test_path.write_text(tests)
+          PY
+
+          git config user.name 'nembra-chat-k4m7v'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateAbortTests.swift
+          git commit -m 'refactor: bind abort to exposed Ready identity'
+
+          git fetch origin parallel/es80-boundary-transaction-decision/chat-k4v7p
+          actual_base="$(git rev-parse FETCH_HEAD)"
+          printf 'Expected dependency: %s\nFetched dependency:  %s\n' "$EXPECTED_BASE_SHA" "$actual_base"
+          test "$actual_base" = "$EXPECTED_BASE_SHA"
+          git merge --no-edit "$actual_base"
+
+          git rm .github/workflows/chat-k4m7v-preh-abort-reconcile.yml
+          git commit -m 'chore: remove reconciliation workflow'
+          git push origin HEAD:parallel/es80-preh-observation-abort/chat-k4m7v
