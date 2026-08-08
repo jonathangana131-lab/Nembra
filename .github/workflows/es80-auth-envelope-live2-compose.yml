@@ -1,0 +1,100 @@
+name: ES80 Atomic Signer Live2 Composer
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-auth-envelope-exclusive-rename-live2/gpt56-thinking
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify exact live parent
+        env:
+          EXPECTED_PARENT: dbdc82d305244bd045ce428f813aa07b00777e85
+        run: |
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/es80-auth-envelope-live2-compose.yml"
+
+      - name: Compose validated atomic publication change
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Capture Worker"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git fetch --no-tags origin cb6a3b9c7376dbdf0f7821e9acd8ba51c2b27cd6
+          git cherry-pick cb6a3b9c7376dbdf0f7821e9acd8ba51c2b27cd6
+          grep -q 'def publish_file_no_replace' scripts/ci/es80_field_authorization_envelope.py
+          grep -q 'OPENSSL_COMMAND_TIMEOUT_SECONDS = 30' scripts/ci/es80_field_authorization_envelope.py
+          grep -q 'DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")' scripts/ci/es80_field_authorization_envelope.py
+
+      - name: Wire atomic regression into fast authority gate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/xcode27-pr-command.yml')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('  authority-tooling-qa:\n')
+          end = source.index('\n  simulator-qa:\n', start)
+          block = source[start:end]
+          marker = '          python3 scripts/ci/es80_field_authorization_envelope.py --self-test\n'
+          compile_line = '          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n'
+          run_line = '          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n'
+          if block.count(marker) != 1:
+              raise SystemExit('unexpected fast authority signer marker count')
+          if 'test_es80_field_authorization_atomic_publication.py' in block:
+              raise SystemExit('atomic regression unexpectedly already in fast authority gate')
+          block = block.replace(marker, marker + compile_line + run_line, 1)
+          source = source[:start] + block + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Validate combined authority contract
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/xcode27-pr-command.yml').read_text(encoding='utf-8')
+          if workflow.count('python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py') != 2:
+              raise SystemExit('atomic regression must be present in fast and Mac gates')
+          PY
+          git diff --check
+
+      - name: Stage product-only cleanup
+        run: |
+          set -euxo pipefail
+          rm .github/workflows/es80-auth-envelope-live2-compose.yml
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add -A
+          git diff --cached --check
+          git status --short
+
+      - name: Commit product-only cleanup
+        run: |
+          set -euxo pipefail
+          git config user.name "Nembra V14 Capture Worker"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git commit -m "Gate atomic publication in fast authority QA" \
+            -m "Remove the temporary composer and run the authorization-envelope atomic publication regression in the fast exact-head authority job as well as final Mac QA. Physical Experiment One remains NO-GO."
+
+      - name: Push composed checkpoint
+        run: |
+          set -euxo pipefail
+          git push origin HEAD:${GITHUB_REF_NAME}
