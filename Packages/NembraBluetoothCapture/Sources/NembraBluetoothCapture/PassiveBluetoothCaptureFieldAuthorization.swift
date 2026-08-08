@@ -68,8 +68,10 @@ enum PassiveBluetoothCaptureFieldAuthorizationTrustAnchor {
 /// signed IPA, its closed-world field evidence, and the schema-v3 external build record are known
 /// and independently accepted.
 public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
-    public static let envelopeSchemaVersion = 1
-    public static let authorizationPayloadSchemaVersion = 1
+    /// v2 adds mandatory exact signed-IPA field-evidence bytes to the envelope and binds their exact
+    /// SHA-256 into the signed GO payload. v1 cannot be reinterpreted as this stronger authority.
+    public static let envelopeSchemaVersion = 2
+    public static let authorizationPayloadSchemaVersion = 2
 
     private struct EnvelopeWire: Decodable {
         let schemaVersion: Int
