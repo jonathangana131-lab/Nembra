@@ -17,9 +17,9 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
 /// Raw replay/target/duration policy is delegated to
 /// `PassiveBluetoothExperimentOneStructuralEvidenceAssessment`, whose output is deliberately
 /// descriptive-only and directly testable. That evaluator cannot issue Experiment One authority.
-/// This type accepts only producer-private evidence wrappers and first requires exact continuity of
-/// the package-issued power-cycle observation-series identity before a structurally coherent result
-/// can become authority-bearing coherence.
+/// This type accepts only producer-private evidence wrappers and requires exact continuity of the
+/// package-issued power-cycle observation-series identity before any structural status can be
+/// promoted into authority-bearing software coherence.
 ///
 /// This type deliberately is not public yet. Until the accepted foreground controller owns the
 /// authority-bearing recorder and H-bounded finalization, ordinary app/UI code must have **no API**
@@ -76,7 +76,8 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendab
     }
 
     /// Converts descriptive structural analysis into authority-bearing software coherence only for
-    /// producer-private wrappers that retain the exact same package-issued observation-series life.
+    /// producer-private wrappers. The final status mapping is itself a pure policy so precedence can
+    /// be regression-tested without exposing or constructing authority-bearing evidence envelopes.
     static func assess(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         captureEvidence: PassiveBluetoothExperimentOneCaptureEvidence
@@ -85,35 +86,51 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendab
             powerCycleResult: powerCycleEvidence.result,
             captureSession: captureEvidence.session
         )
-
-        guard PassiveBluetoothExperimentOneStructuralEvidenceAssessment
+        let authorityMatches = PassiveBluetoothExperimentOneStructuralEvidenceAssessment
             .observationSeriesAuthorityMatches(
                 powerCycle: powerCycleEvidence.observationSeriesIdentity,
                 capture: captureEvidence.observationSeriesIdentity
-            ) else {
-            return Self(status: .observationSeriesAuthorityMismatch, structural: structural)
-        }
-
-        let status: Status
-        switch structural.status {
-        case let .powerCycleDurationRejected(reason):
-            status = .powerCycleDurationRejected(reason)
-        case .powerCycleEvidenceInconsistent:
-            status = .powerCycleEvidenceInconsistent
-        case let .correlationRejected(disposition):
-            status = .correlationRejected(disposition)
-        case .captureTargetUnresolved:
-            status = .captureTargetUnresolved
-        case let .captureTargetIdentifierMalformed(identifier):
-            status = .captureTargetIdentifierMalformed(identifier)
-        case let .captureTargetMismatch(correlated, captured):
-            status = .captureTargetMismatch(correlated: correlated, captured: captured)
-        case let .observationDurationRejected(reason):
-            status = .observationDurationRejected(reason)
-        case let .structurallyCoherent(identifier):
-            status = .coherentCaptureEvidence(identifier)
-        }
-
+            )
+        let status = PassiveBluetoothExperimentOneStatusPromotionPolicy.promotedStatus(
+            authorityMatches: authorityMatches,
+            structuralStatus: structural.status
+        )
         return Self(status: status, structural: structural)
+    }
+}
+
+/// Pure status-mapping seam for deterministic tests of the final authority gate.
+///
+/// This policy cannot construct the authority-bearing assessment object, cannot issue either sealed
+/// evidence wrapper, and cannot access the mutable recorder. It merely maps already-derived software
+/// status. Authority mismatch always dominates structural success or failure; only a matching exact
+/// producer life may map `.structurallyCoherent` to the assessor's internal coherent status.
+enum PassiveBluetoothExperimentOneStatusPromotionPolicy {
+    static func promotedStatus(
+        authorityMatches: Bool,
+        structuralStatus: PassiveBluetoothExperimentOneStructuralEvidenceAssessment.Status
+    ) -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment.Status {
+        guard authorityMatches else {
+            return .observationSeriesAuthorityMismatch
+        }
+
+        switch structuralStatus {
+        case let .powerCycleDurationRejected(reason):
+            return .powerCycleDurationRejected(reason)
+        case .powerCycleEvidenceInconsistent:
+            return .powerCycleEvidenceInconsistent
+        case let .correlationRejected(disposition):
+            return .correlationRejected(disposition)
+        case .captureTargetUnresolved:
+            return .captureTargetUnresolved
+        case let .captureTargetIdentifierMalformed(identifier):
+            return .captureTargetIdentifierMalformed(identifier)
+        case let .captureTargetMismatch(correlated, captured):
+            return .captureTargetMismatch(correlated: correlated, captured: captured)
+        case let .observationDurationRejected(reason):
+            return .observationDurationRejected(reason)
+        case let .structurallyCoherent(identifier):
+            return .coherentCaptureEvidence(identifier)
+        }
     }
 }
