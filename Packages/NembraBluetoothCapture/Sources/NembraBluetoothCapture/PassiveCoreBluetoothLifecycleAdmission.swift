@@ -31,4 +31,15 @@ enum PassiveCoreBluetoothCancellationCause: Equatable, Sendable {
             nil
         }
     }
+
+    var diagnosticMessage: String? {
+        switch self {
+        case .operatorRequest:
+            "Connection cancellation requested."
+        case .foregroundIntegrityLoss:
+            "Connection ended because foreground evidence integrity was lost."
+        case .finalizedArtifactTeardown, .interruptionAlreadyRecorded:
+            nil
+        }
+    }
 }
