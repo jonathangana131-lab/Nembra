@@ -23,7 +23,7 @@ jobs:
 
           path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
           text = path.read_text(encoding="utf-8")
-          start = text.index("    private var passiveSafetyPanel")
+          start = text.index("    private func hero(for phase: Phase)")
           end = text.index("    private var captureDetailsSheet", start)
           surface = text[start:end]
 
@@ -93,15 +93,24 @@ jobs:
 
           text = text[:start] + surface + text[end:]
           path.write_text(text, encoding="utf-8")
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+          test_text = test_path.read_text(encoding="utf-8")
+          stale_boundary = 'let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))'
+          live_boundary = 'let beginning = try #require(source.range(of: "private func hero(for phase: Phase)"))'
+          if test_text.count(stale_boundary) != 1:
+              raise SystemExit("rider-language test boundary no longer matches expected stale contract")
+          test_text = test_text.replace(stale_boundary, live_boundary)
+          test_path.write_text(test_text, encoding="utf-8")
           PY
 
       - name: Verify bounded diff and remove temporary workflow
         run: |
           git diff --check
-          git diff -- NembraApp/Features/Research/ES80CaptureShellView.swift
+          git diff -- NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
           rm .github/workflows/_temp_es80_rider_language_transform.yml
           git config user.name "nembra-v14-bot"
           git config user.email "nembra-v14-bot@users.noreply.github.com"
-          git add NembraApp/Features/Research/ES80CaptureShellView.swift .github/workflows/_temp_es80_rider_language_transform.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift .github/workflows/_temp_es80_rider_language_transform.yml
           git commit -m "[Capture product v14] Make primary field copy rider-first"
           git push origin HEAD:integration/es80-v14-rider-language-current-gpt56-go
