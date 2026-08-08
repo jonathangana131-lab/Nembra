@@ -45,10 +45,12 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "producer's evidence clock",
             "producer accepts the window only from its own monotonic receipt boundary",
             "full CoreBluetooth identifier",
+            "selectable full Bluetooth identifier",
             "post-admission scan",
             "fresh scan epoch created after the sealed admission",
             "package-owned correlated target",
             "finite acquisition",
+            "Finite acquisition",
             "accepted Horizon authority",
             "accepted monotonic observation interval",
             "package-owned Ready epoch",
@@ -56,7 +58,12 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "immutable JSON artifact",
             "Evidence failed closed",
             "bounded CoreBluetooth advertisement catalog",
-            "package-owned outer, SoftwareExport, and immutable Capture integrity checks"
+            "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+            "application characteristic-value writes",
+            "package producer",
+            "HORIZON READY",
+            "healthItem(\"FINITE\"",
+            "healthItem(\"HORIZON\""
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -66,11 +73,15 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             )
         }
 
-        #expect(riderSurface.contains("PASSIVE / READ ONLY"))
+        // The persistent read-only badge sits above `passiveSafetyPanel`, so validate it against
+        // the full shell rather than accidentally requiring it to be duplicated in every state.
+        #expect(source.contains("PASSIVE / READ ONLY"))
         #expect(riderSurface.contains("Scooter OFF"))
         #expect(riderSurface.contains("Scooter ON"))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
+        #expect(riderSurface.contains("DISCOVERY"))
+        #expect(riderSurface.contains("SEAL"))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
