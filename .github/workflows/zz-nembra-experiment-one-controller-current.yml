@@ -1,0 +1,203 @@
+name: Nembra Experiment One controller current-spine transform
+
+"on":
+  push:
+    branches:
+      - integration/es80-v14-experiment-one-controller-current/chat-gpt56-go3
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact hardened controller source
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test "$(git hash-object "$file")" = "2fb5808b18cd83d0e27d4e66e1e79fe096c98055"
+
+      - name: Install sealed Experiment One controller consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+
+          error_needle = "        case invalidAcquisitionProgressTimeout\n        case targetNotSelected\n"
+          error_replacement = "        case invalidAcquisitionProgressTimeout\n        case experimentOneVehicleContextMismatch\n        case targetNotSelected\n"
+          if source.count(error_needle) != 1:
+              raise SystemExit(f"expected one ControllerError insertion point, found {source.count(error_needle)}")
+          source = source.replace(error_needle, error_replacement, 1)
+
+          marker = "    /// Cancels the active attempt without allowing a subsequent attempt to the\n"
+          if source.count(marker) != 1:
+              raise SystemExit(f"expected one Experiment One method insertion point, found {source.count(marker)}")
+
+          lines = [
+              "    /// Connects the exact correlated Experiment One target using the mutable recorder",
+              "    /// already owned by that same sealed run. This package-internal bridge is the only",
+              "    /// controller path that may turn `PassiveBluetoothExperimentOneCaptureAdmission`",
+              "    /// into live capture ownership; app/UI code cannot call it directly.",
+              "    ///",
+              "    /// A repeated full CoreBluetooth UUID remains only a correlated Bluetooth target.",
+              "    /// This path performs no application characteristic write.",
+              "    func connectUsingExperimentOneAdmission(",
+              "        _ admission: PassiveBluetoothExperimentOneCaptureAdmission,",
+              "        timeout: TimeInterval = 12",
+              "    ) throws {",
+              "        try ensureCaptureHealthy()",
+              "        guard vehicleIdentity == VehicleProfile.aovoproES80.identity else {",
+              "            throw ControllerError.experimentOneVehicleContextMismatch",
+              "        }",
+              "        guard !observationBoundaryQueueGate.isTerminal else {",
+              "            throw ControllerError.captureFinalized",
+              "        }",
+              "        guard !observationBoundaryBlocksArtifactMutation else {",
+              "            throw ControllerError.captureIncomplete",
+              "        }",
+              "        guard centralManager.state == .poweredOn else {",
+              "            throw ControllerError.bluetoothNotPoweredOn",
+              "        }",
+              "        guard let timeoutNanoseconds = PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(timeout) else {",
+              "            throw ControllerError.invalidConnectionTimeout",
+              "        }",
+              "        guard connectionPhase == .idle else {",
+              "            throw ControllerError.connectionAlreadyActive",
+              "        }",
+              "        guard recorder == nil,",
+              "              targetState.selectedTargetIdentifier == nil else {",
+              "            throw ControllerError.connectionAlreadyActive",
+              "        }",
+              "        guard targetSessionGeneration != UInt64.max else {",
+              "            throw ControllerError.captureFailed",
+              "        }",
+              "",
+              "        let payload = try admission.consume()",
+              "        guard case let .singleRepeatableCandidate(correlatedIdentifier) =",
+              "                payload.powerCycleEvidence.result.correlation.disposition,",
+              "              correlatedIdentifier == payload.peripheralIdentifier else {",
+              "            throw ControllerError.targetSessionChanged",
+              "        }",
+              "        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],",
+              "              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {",
+              "            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)",
+              "        }",
+              "        if discovery.isConnectable == false {",
+              "            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)",
+              "        }",
+              "",
+              "        do {",
+              "            try targetState.validateCanBeginAttempt(for: payload.peripheralIdentifier)",
+              "        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {",
+              "            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)",
+              "        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {",
+              "            throw ControllerError.attemptGenerationExhausted",
+              "        } catch {",
+              "            throw ControllerError.targetNotSelected",
+              "        }",
+              "",
+              "        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]",
+              "        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {",
+              "            throw ControllerError.captureIncomplete",
+              "        }",
+              "        committedReadyEpoch = nil",
+              "",
+              "        let previousAuthority = currentArtifactAuthorityContext()",
+              "        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(",
+              "            targetSessionGeneration: targetSessionGeneration + 1,",
+              "            authorityGeneration: 1",
+              "        )",
+              "        do {",
+              "            try artifactAuthorityFence.transition(",
+              "                from: previousAuthority,",
+              "                to: freshAuthority",
+              "            )",
+              "        } catch {",
+              "            failCapture(error)",
+              "            throw ControllerError.captureFailed",
+              "        }",
+              "        targetSessionGeneration = freshAuthority.targetSessionGeneration",
+              "        artifactAuthorityGeneration = freshAuthority.authorityGeneration",
+              "        lastFinalizedArtifactAuthority = nil",
+              "",
+              "        targetState.selectTarget(payload.peripheralIdentifier)",
+              "        acquisitionLedger.beginTargetSession()",
+              "        gattIdentityRegistry.reset()",
+              "        selectedTargetCancellationPending = false",
+              "        hasUsedInitialSessionIdentity = true",
+              "        recorder = payload.recorder",
+              "        foregroundEvidenceIntegrityValid = true",
+              "",
+              "        if let latestAdvertisement {",
+              "            enqueue(",
+              "                .advertisement(latestAdvertisement.observation),",
+              "                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,",
+              "                receivedAtDate: latestAdvertisement.receivedAtDate",
+              "            )",
+              "        }",
+              "",
+              "        do {",
+              "            _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)",
+              "        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {",
+              "            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)",
+              "        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {",
+              "            throw ControllerError.attemptGenerationExhausted",
+              "        } catch {",
+              "            throw ControllerError.targetNotSelected",
+              "        }",
+              "",
+              "        acquisitionLedger.beginConnectionAttempt()",
+              "        selectedTargetCancellationPending = false",
+              "        guard advanceArtifactAuthority() else {",
+              "            throw ControllerError.captureFailed",
+              "        }",
+              "",
+              "        stopScanning()",
+              "        connectionPhase = .connecting(payload.peripheralIdentifier)",
+              "        activePeripheral = peripheral",
+              "        peripheral.delegate = self",
+              "        centralManager.connect(peripheral, options: nil)",
+              "        scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)",
+              "    }",
+              "",
+          ]
+          method = "\n".join(lines) + "\n"
+          source = source.replace(marker, method + marker, 1)
+          path.write_text(source)
+          PY
+
+      - name: Assert sealed-consumer grammar
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq 'func connectUsingExperimentOneAdmission(' "$file"
+          ! grep -Fq 'public func connectUsingExperimentOneAdmission(' "$file"
+          test "$(grep -Fc 'admission.consume()' "$file")" = "1"
+          grep -Fq 'recorder = payload.recorder' "$file"
+          grep -Fq 'foregroundEvidenceIntegrityValid = true' "$file"
+          ! sed -n '/func connectUsingExperimentOneAdmission(/,/Cancels the active attempt/p' "$file" | grep -Fq 'writeValue('
+          git diff --check
+
+      - name: Remove one-shot workflow and commit product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-nembra-experiment-one-controller-current.yml
+          git config user.name 'nembra-chatgpt56-go3'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  .github/workflows/zz-nembra-experiment-one-controller-current.yml
+          git diff --cached --check
+          git commit -m 'feat: consume sealed Experiment One admission on flagship controller'
+          git push origin HEAD:integration/es80-v14-experiment-one-controller-current/chat-gpt56-go3
