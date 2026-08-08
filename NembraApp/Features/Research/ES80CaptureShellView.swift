@@ -244,7 +244,7 @@ struct ES80CaptureShellView: View {
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Nembra keeps one continuous read-only capture from Scooter OFF / Scooter ON matching through the final seal. It never sends application characteristic-value writes, and names, signal strength, or service hints never decide which signal belongs to this run.")
+                Text("Nembra keeps one continuous read-only capture from Scooter OFF / Scooter ON matching through the final seal. It never sends scooter control commands, and names, signal strength, or service hints never decide which signal belongs to this run.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -322,7 +322,7 @@ struct ES80CaptureShellView: View {
         switch phase {
         case .physicalProcedureLocked:
             statePanel(
-                eyebrow: "FIELD AUTHORITY",
+                eyebrow: "CAPTURE LOCKED",
                 title: "This build is not authorized",
                 message: "This build is still locked for real scooter capture. No OFF / ON step, connection, recording, or seal can start until the field checks are complete.",
                 symbol: "lock.shield.fill"
@@ -345,9 +345,9 @@ struct ES80CaptureShellView: View {
         case let .correlationReady(window):
             if window == .firstPoweredOff, declaredStationarySetup == nil {
                 statePanel(
-                    eyebrow: "PREFLIGHT / DECLARATION",
+                    eyebrow: "PREFLIGHT / SETUP",
                     title: "Confirm stationary setup",
-                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
+                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when this is how the scooter and phone are set up for this capture.",
                     symbol: "checkmark.shield"
                 )
                 primaryButton(
@@ -361,7 +361,7 @@ struct ES80CaptureShellView: View {
                         stockAppReferenceSetup: .none
                     )
                 }
-                guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")
+                guidanceFootnote("Nembra records your confirmation for this run; it cannot independently prove the charger or stock-app state stayed unchanged.")
             } else {
                 correlationReadyPanel(window)
                 primaryButton(
@@ -397,7 +397,7 @@ struct ES80CaptureShellView: View {
                     ? "Keep the scooter on"
                     : "Keep the scooter off"
             )
-            .accessibilityHint("Nembra is recording this bounded Bluetooth observation window.")
+            .accessibilityHint("Nembra is recording this Bluetooth observation window.")
 
             let remaining = correlationGuidanceRemainingSeconds(
                 nowUptimeNanoseconds: nowUptimeNanoseconds
@@ -413,16 +413,16 @@ struct ES80CaptureShellView: View {
             .accessibilityLabel("\(phaseShortName(window)) observation timer")
             .accessibilityValue(
                 remaining == 0
-                    ? "Display guidance complete; ready to request window completion"
+                    ? "Display guidance complete; Nembra can now check this window"
                     : "\(remaining) seconds of display guidance remaining"
             )
-            .accessibilityHint("The package producer, not this timer, decides whether the window has enough evidence.")
+            .accessibilityHint("Nembra accepts this window only after the required observation has been recorded.")
 
             guidanceFootnote("This countdown is guidance only. Nembra records the window only after the required observation is accepted; tapping early cannot shorten it.")
 
         case let .correlationFailed(message):
             statePanel(
-                eyebrow: "CORRELATION STOPPED",
+                eyebrow: "MATCHING STOPPED",
                 title: "Restart from OFF 1",
                 message: message,
                 symbol: "arrow.counterclockwise.circle"
@@ -439,7 +439,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "NO UNIQUE TARGET",
                 title: "No scooter signal repeated twice",
-                message: "No selectable full Bluetooth identifier was absent in both OFF windows and repeated in both ON windows. Nembra will not guess from name, signal strength, service hints, or short IDs.",
+                message: "No single Bluetooth signal stayed absent in both OFF windows and returned in both ON windows. Nembra will not guess from a name, signal strength, or service hints.",
                 symbol: "questionmark.circle"
             )
             primaryButton(
@@ -454,7 +454,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "AMBIGUOUS TARGET",
                 title: "\(count) signals followed the same pattern",
-                message: "More than one selectable full Bluetooth identifier repeated the OFF / ON pattern. Nembra refuses to break the tie with display name, RSSI, services, or a short identifier.",
+                message: "More than one Bluetooth signal followed the same OFF / ON pattern. Nembra will not guess which one is the scooter from a name, signal strength, or service hints.",
                 symbol: "point.3.filled.connected.trianglepath.dotted"
             )
             primaryButton(
@@ -468,12 +468,12 @@ struct ES80CaptureShellView: View {
         case .correlatedTarget:
             statePanel(
                 eyebrow: "SCOOTER SIGNAL FOUND",
-                title: "One target repeated twice",
+                title: "One signal matched the pattern",
                 message: "One Bluetooth signal appeared in both ON windows and stayed absent from both OFF windows. Nembra has correlated that signal to this run; this is not permanent scooter identity.",
                 symbol: "checkmark.circle"
             )
             primaryButton(
-                "Confirm correlated target",
+                "Confirm scooter signal",
                 systemImage: "checkmark.shield",
                 identifier: "es80.capture.confirm-correlated-target"
             ) {
@@ -483,7 +483,7 @@ struct ES80CaptureShellView: View {
         case .rediscoveringTarget:
             statePanel(
                 eyebrow: "TARGET CONFIRMED",
-                title: "Reacquiring the exact signal",
+                title: "Checking the same signal again",
                 message: "Nembra is looking again for the same Bluetooth signal that passed both OFF / ON cycles. Keep the scooter ON as it was in the final window.",
                 symbol: "scope"
             )
@@ -501,9 +501,9 @@ struct ES80CaptureShellView: View {
 
         case .targetReacquired:
             statePanel(
-                eyebrow: "CORRELATED TARGET",
-                title: "Exact signal reacquired",
-                message: "The same Bluetooth signal has reappeared after confirmation. It is ready for read-only observation, but it is still correlated signal evidence—not permanent hardware identity.",
+                eyebrow: "SIGNAL CONFIRMED",
+                title: "Same signal found again",
+                message: "The same Bluetooth signal has reappeared after confirmation. It is ready for read-only observation, but this match applies only to this capture and is not permanent scooter identity.",
                 symbol: "checkmark.circle"
             )
             primaryButton(
@@ -516,9 +516,9 @@ struct ES80CaptureShellView: View {
 
         case .connecting:
             statePanel(
-                eyebrow: "PASSIVE CONNECTION",
-                title: "Opening the correlated target",
-                message: "Nembra is connecting only to the signal confirmed by the OFF / ON sequence. This workflow remains read only and does not send application characteristic-value writes.",
+                eyebrow: "READ-ONLY CONNECTION",
+                title: "Opening the confirmed signal",
+                message: "Nembra is connecting only to the signal confirmed by the OFF / ON sequence. This capture stays read only and never sends scooter control commands.",
                 symbol: "link"
             )
             ProgressView()
@@ -528,8 +528,8 @@ struct ES80CaptureShellView: View {
 
         case .acquiring:
             statePanel(
-                eyebrow: "PASSIVE ACQUISITION",
-                title: "Learning the readable surface",
+                eyebrow: "READ-ONLY SETUP",
+                title: "Checking available Bluetooth data",
                 message: "Nembra is reading the available Bluetooth surface without sending control writes. Ready appears only after this read-only setup is complete.",
                 symbol: "waveform.path.ecg.rectangle"
             )
@@ -572,13 +572,13 @@ struct ES80CaptureShellView: View {
                     ? "Ready"
                     : "Unavailable; waiting for capture readiness"
             )
-            .accessibilityHint("Available only after the package accepts the required monotonic observation duration.")
+            .accessibilityHint("Available only after Nembra records the full required observation time.")
 
         case .readyToSeal:
             statePanel(
-                eyebrow: "HORIZON READY",
+                eyebrow: "READY TO SEAL",
                 title: "Capture can be sealed",
-                message: "The read-only setup and required observation time are complete. Sealing now freezes this run into one final Capture artifact.",
+                message: "The read-only setup and required observation time are complete. Sealing now freezes this run into one final Capture file.",
                 symbol: "checkmark.seal"
             )
             observationHealthStrip(status: status)

@@ -56,7 +56,15 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "immutable JSON artifact",
             "Evidence failed closed",
             "bounded CoreBluetooth advertisement catalog",
-            "package-owned outer, SoftwareExport, and immutable Capture integrity checks"
+            "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+    "application characteristic-value writes",
+    "package producer",
+    "selectable full Bluetooth identifier",
+    "RSSI",
+    "accepted monotonic observation duration",
+    "HORIZON READY",
+    "PREFLIGHT / DECLARATION",
+    "FIELD AUTHORITY"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
