@@ -75,7 +75,8 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "HORIZON READY",
             "FIELD AUTHORITY",
             "healthItem(\"FINITE\"",
-            "healthItem(\"HORIZON\""
+            "healthItem(\"HORIZON\"",
+            "Start a fresh Experiment One"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -90,6 +91,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(source.contains("PASSIVE / READ ONLY"))
         #expect(riderSurface.contains("Scooter OFF"))
         #expect(riderSurface.contains("Scooter ON"))
+        #expect(riderSurface.contains("Start a fresh Capture"))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
         #expect(riderSurface.contains("DISCOVERY"))
