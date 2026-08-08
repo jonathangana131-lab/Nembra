@@ -1,5 +1,19 @@
 import Foundation
 
+/// Opaque software provenance for one producer/controller observation series.
+///
+/// This identity is package-issued and intentionally not a scooter identifier.
+/// Reconstructing the live observation producer, resetting its authority, or
+/// otherwise ending one bounded correlation series must mint a different value.
+/// App/UI code cannot construct identities and splice unrelated producer lives.
+public struct PassiveBluetoothCandidateObservationSeriesIdentity: Equatable, Hashable, Sendable {
+    public let rawValue: UUID
+
+    init(rawValue: UUID = UUID()) {
+        self.rawValue = rawValue
+    }
+}
+
 /// Package-issued local ordering for one candidate-observation window.
 ///
 /// This sequence is deliberately **not** a CoreBluetooth callback generation ID.
@@ -20,10 +34,9 @@ public struct PassiveBluetoothCandidateObservationWindowSequence: Equatable, Has
 /// Construction is intentionally package-internal. A future live producer may
 /// expose snapshots only after its CoreBluetooth lifecycle policy can honestly
 /// establish a bounded observation window and isolation from adjacent windows.
-/// A sequence number alone never establishes that isolation.
-///
-/// This remains presentation/research targeting evidence only. It is not a
-/// durable scooter identity and does not prove any candidate is an AOVOPRO ES80.
+/// `observationSeriesIdentity` prevents cross-producer/session splicing, while the
+/// local sequence orders windows *within* that software authority. Neither field
+/// proves CoreBluetooth callback origin or physical scooter identity.
 public struct PassiveBluetoothCandidateObservationSnapshot: Equatable, Sendable {
     public struct Candidate: Equatable, Sendable {
         public let id: UUID
@@ -35,10 +48,12 @@ public struct PassiveBluetoothCandidateObservationSnapshot: Equatable, Sendable 
         }
     }
 
+    public let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
     public let windowSequence: PassiveBluetoothCandidateObservationWindowSequence
     public let candidates: [Candidate]
 
     init(
+        observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity,
         windowSequence: PassiveBluetoothCandidateObservationWindowSequence,
         candidates: [Candidate]
     ) throws {
@@ -50,6 +65,7 @@ public struct PassiveBluetoothCandidateObservationSnapshot: Equatable, Sendable 
             }
         }
 
+        self.observationSeriesIdentity = observationSeriesIdentity
         self.windowSequence = windowSequence
         self.candidates = candidates.sorted {
             $0.id.uuidString < $1.id.uuidString
@@ -75,6 +91,10 @@ enum PassiveBluetoothCandidateObservationSnapshotError: Error, Equatable, Sendab
 /// boundaries, app code cannot drive this report honestly.
 public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Sendable {
     public enum Disposition: Equatable, Sendable {
+        /// The snapshots were issued by more than one software observation
+        /// authority. Foreign producer/controller lifetimes may never be spliced.
+        case invalidObservationAuthority
+
         /// The four local window sequences are not strictly increasing in the
         /// required OFF₁ -> ON₁ -> OFF₂ -> ON₂ order. This is only a local
         /// chronology sanity check, never CoreBluetooth callback provenance.
@@ -90,6 +110,10 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
         /// explicit operator selection as correlation evidence only.
         case singleRepeatableCandidate(UUID)
     }
+
+    /// OFF₁, ON₁, OFF₂, ON₂ software-series identities in chronological input
+    /// order. Keeping all four makes a rejected mixed-authority report auditable.
+    public let observationSeriesIdentities: [PassiveBluetoothCandidateObservationSeriesIdentity]
 
     public let firstOffWindowSequence: PassiveBluetoothCandidateObservationWindowSequence
     public let firstOnWindowSequence: PassiveBluetoothCandidateObservationWindowSequence
@@ -120,6 +144,7 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
     public let disposition: Disposition
 
     fileprivate init(
+        observationSeriesIdentities: [PassiveBluetoothCandidateObservationSeriesIdentity],
         firstOffWindowSequence: PassiveBluetoothCandidateObservationWindowSequence,
         firstOnWindowSequence: PassiveBluetoothCandidateObservationWindowSequence,
         secondOffWindowSequence: PassiveBluetoothCandidateObservationWindowSequence,
@@ -133,6 +158,7 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
         repeatableCandidateIdentifiers: [UUID],
         disposition: Disposition
     ) {
+        self.observationSeriesIdentities = observationSeriesIdentities
         self.firstOffWindowSequence = firstOffWindowSequence
         self.firstOnWindowSequence = firstOnWindowSequence
         self.secondOffWindowSequence = secondOffWindowSequence
@@ -150,47 +176,43 @@ public struct PassiveBluetoothPowerCycleTargetCorrelationReport: Equatable, Send
 
 public enum PassiveBluetoothPowerCycleTargetCorrelation {
     /// Require the same full UUID to repeat the operator-controlled OFF/ON pattern
-    /// twice. Names, RSSI, services, short UUID prefixes, ordering, and Tuya/product
-    /// signatures never break ties or create authority.
+    /// twice under one package-issued software observation authority. Names, RSSI,
+    /// services, short UUID prefixes, ordering, and Tuya/product signatures never
+    /// break ties or create authority.
     ///
-    /// The caller cannot publicly construct snapshots or local sequence values.
-    /// A future producer must separately prove its bounded CoreBluetooth window
-    /// isolation policy; the sequence checks here only reject locally malformed
-    /// ordering and never establish callback provenance.
+    /// The caller cannot publicly construct snapshots, authority identities, or
+    /// local sequence values. A future producer must separately prove its bounded
+    /// CoreBluetooth window-isolation policy. Scope equality prevents cross-life
+    /// splicing; sequence checks only reject local ordering errors. Neither proves
+    /// callback provenance.
     public static func assess(
         firstOff: PassiveBluetoothCandidateObservationSnapshot,
         firstOn: PassiveBluetoothCandidateObservationSnapshot,
         secondOff: PassiveBluetoothCandidateObservationSnapshot,
         secondOn: PassiveBluetoothCandidateObservationSnapshot
     ) -> PassiveBluetoothPowerCycleTargetCorrelationReport {
+        let snapshots = [firstOff, firstOn, secondOff, secondOn]
+        let seriesIdentities = snapshots.map(\.observationSeriesIdentity)
+        let sequences = snapshots.map { $0.windowSequence.rawValue }
+
+        guard allEqual(seriesIdentities) else {
+            return rejectedReport(
+                snapshots: snapshots,
+                disposition: .invalidObservationAuthority
+            )
+        }
+
+        guard strictlyIncreasing(sequences) else {
+            return rejectedReport(
+                snapshots: snapshots,
+                disposition: .invalidObservationWindowOrder
+            )
+        }
+
         let firstOffObserved = observedIdentifiers(in: firstOff)
         let secondOffObserved = observedIdentifiers(in: secondOff)
         let firstOnSelectable = selectableIdentifiers(in: firstOn)
         let secondOnSelectable = selectableIdentifiers(in: secondOn)
-
-        let sequences = [
-            firstOff.windowSequence.rawValue,
-            firstOn.windowSequence.rawValue,
-            secondOff.windowSequence.rawValue,
-            secondOn.windowSequence.rawValue
-        ]
-
-        guard strictlyIncreasing(sequences) else {
-            return .init(
-                firstOffWindowSequence: firstOff.windowSequence,
-                firstOnWindowSequence: firstOn.windowSequence,
-                secondOffWindowSequence: secondOff.windowSequence,
-                secondOnWindowSequence: secondOn.windowSequence,
-                firstOffObservedIdentifiers: firstOffObserved,
-                secondOffObservedIdentifiers: secondOffObserved,
-                firstOnSelectableIdentifiers: firstOnSelectable,
-                secondOnSelectableIdentifiers: secondOnSelectable,
-                firstCycleNewSelectableIdentifiers: [],
-                secondCycleNewSelectableIdentifiers: [],
-                repeatableCandidateIdentifiers: [],
-                disposition: .invalidObservationWindowOrder
-            )
-        }
 
         let firstOffSet = Set(firstOffObserved)
         let secondOffSet = Set(secondOffObserved)
@@ -211,6 +233,7 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
         }
 
         return .init(
+            observationSeriesIdentities: seriesIdentities,
             firstOffWindowSequence: firstOff.windowSequence,
             firstOnWindowSequence: firstOn.windowSequence,
             secondOffWindowSequence: secondOff.windowSequence,
@@ -222,6 +245,28 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
             firstCycleNewSelectableIdentifiers: firstCycleNew,
             secondCycleNewSelectableIdentifiers: secondCycleNew,
             repeatableCandidateIdentifiers: repeatable,
+            disposition: disposition
+        )
+    }
+
+    private static func rejectedReport(
+        snapshots: [PassiveBluetoothCandidateObservationSnapshot],
+        disposition: PassiveBluetoothPowerCycleTargetCorrelationReport.Disposition
+    ) -> PassiveBluetoothPowerCycleTargetCorrelationReport {
+        precondition(snapshots.count == 4)
+        return .init(
+            observationSeriesIdentities: snapshots.map(\.observationSeriesIdentity),
+            firstOffWindowSequence: snapshots[0].windowSequence,
+            firstOnWindowSequence: snapshots[1].windowSequence,
+            secondOffWindowSequence: snapshots[2].windowSequence,
+            secondOnWindowSequence: snapshots[3].windowSequence,
+            firstOffObservedIdentifiers: [],
+            secondOffObservedIdentifiers: [],
+            firstOnSelectableIdentifiers: [],
+            secondOnSelectableIdentifiers: [],
+            firstCycleNewSelectableIdentifiers: [],
+            secondCycleNewSelectableIdentifiers: [],
+            repeatableCandidateIdentifiers: [],
             disposition: disposition
         )
     }
@@ -242,6 +287,11 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
                     .map(\.id)
             )
         )
+    }
+
+    private static func allEqual<T: Equatable>(_ values: [T]) -> Bool {
+        guard let first = values.first else { return true }
+        return values.dropFirst().allSatisfy { $0 == first }
     }
 
     private static func strictlyIncreasing(_ values: [UInt64]) -> Bool {
