@@ -660,7 +660,8 @@ struct ES80CaptureShellView: View {
             if controller.bluetoothState != .poweredOn {
                 return .bluetoothUnavailable(bluetoothUnavailableMessage)
             }
-            if let candidate = controller.discoveredPeripherals.first(where: { $0.id == identifier }) {
+            if rediscoveryRequested,
+               let candidate = controller.discoveredPeripherals.first(where: { $0.id == identifier }) {
                 return candidate.isConnectable == false
                     ? .targetNotConnectable(identifier)
                     : .targetReacquired(identifier)
@@ -799,7 +800,14 @@ struct ES80CaptureShellView: View {
     }
 
     private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
-        guard newScenePhase != .active else { return }
+        if newScenePhase == .active {
+            if let identifier = correlatedTargetIdentifier,
+               !rediscoveryRequested,
+               lifecycleFailureMessage == nil {
+                startExactTargetRediscovery(identifier)
+            }
+            return
+        }
 
         if correlationEvidenceIsLive {
             correlationSession?.abandonCurrentWindow()
