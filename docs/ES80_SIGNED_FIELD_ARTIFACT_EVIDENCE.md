@@ -31,9 +31,14 @@ Before producing evidence, the inspector requires all of the following:
 - `NembraCaptureBuildInstanceID` is one canonical lowercase UUID-shaped value;
 - `NembraCaptureBuildCommitSHA` exactly equals the accepted source SHA;
 - `CFBundleExecutable` resolves to one bundle-local executable file;
-- `codesign --verify --deep --strict` succeeds on the extracted signed app;
-- the signature is not ad-hoc;
-- code-signing metadata contains a concrete TeamIdentifier and displayed authority chain;
+- `codesign --verify --deep --strict --all-architectures` succeeds on the extracted signed app;
+- the signature is not ad-hoc and its signing identifier is exactly `com.jonathangana131.nembra`;
+- code-signing metadata contains a canonical 10-character Apple TeamIdentifier, a canonical CDHash, and a displayed authority chain;
+- `embedded.mobileprovision` exists and can be decoded by macOS `security cms -D`;
+- the provisioning profile contains the same TeamIdentifier as the code signature;
+- the provisioning profile has a nonblank UUID and is not expired at inspection time;
+- the provisioning profile entitlement `application-identifier` is exactly `<TeamIdentifier>.com.jonathangana131.nembra`;
+- when present, the profile entitlement `com.apple.developer.team-identifier` matches the code-signing TeamIdentifier;
 - no executable-digest/trusted-field record is embedded inside the signed app bundle.
 
 The inspector never repairs malformed metadata, trims source identities, substitutes Simulator values, or accepts a caller-provided artifact digest instead of hashing the exact bytes.
@@ -42,10 +47,10 @@ The inspector never repairs malformed metadata, trims source identities, substit
 
 A successful run refuses to overwrite an existing evidence set and writes:
 
-- `build-evidence/NembraField.ipa` — byte-for-byte retained copy of the inspected installable artifact;
+- `build-evidence/NembraField.ipa` — byte-for-byte retained copy of the inspected installable candidate;
 - `NembraCaptureExternalBuildRecord.json` — closed-world schema-v3 build record containing build label, build-instance rendezvous, exact source SHA, executable SHA-256, Info.plist SHA-256, `ES80-FINGERPRINT-v1`, and procedure `V14`;
 - `NembraCaptureFieldBuildEvidenceRecord.json` — the exact schema-v1 signed-installable declaration consumed by `PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON`;
-- `NembraCaptureSignedFieldArtifactInspection.json` — separate signing/platform inspection metadata that is deliberately **not** the package rendezvous record.
+- `NembraCaptureSignedFieldArtifactInspection.json` — separate signing/platform/provisioning inspection metadata that is deliberately **not** the package rendezvous record.
 
 `NembraCaptureFieldBuildEvidenceRecord.json` contains exactly:
 
@@ -61,24 +66,27 @@ A successful run refuses to overwrite an existing evidence set and writes:
 - `ES80-FINGERPRINT-v1`;
 - procedure `V14`.
 
-It intentionally contains no `physicalGO`, `authorized`, signing-team, platform, byte-count, or other extra fields because the package parser is closed-world. This gives the package one unambiguous field-build evidence contract instead of two competing schema-v1 formats.
+It intentionally contains no `physicalGO`, `authorized`, signing-team, platform, byte-count, provisioning, or other extra fields because the package parser is closed-world. This gives the package one unambiguous field-build evidence contract instead of two competing authority-adjacent formats.
 
 ## Separate signing inspection
 
-`NembraCaptureSignedFieldArtifactInspection.json` carries non-authorizing diagnostics including:
+`NembraCaptureSignedFieldArtifactInspection.json` is schema v2 and carries non-authorizing diagnostics including:
 
 - explicit `signed-field-artifact-inspection-not-field-authorization` authority wording;
 - SHA-256 of the exact field-build evidence record bytes;
 - SHA-256 of the exact external build record and signed IPA;
 - IPA byte count;
 - bundle and iPhone platform declarations;
-- code-signing TeamIdentifier and displayed authority chain;
+- code-signing TeamIdentifier, displayed authority chain, and CDHash;
+- SHA-256 of the exact embedded provisioning-profile bytes;
+- provisioning-profile UUID and expiration timestamp;
+- the exact accepted provisioning `application-identifier`;
 - exact build/source/executable/Info.plist tuple;
 - recipe and procedure identity.
 
 The retained IPA is re-hashed after copy. The external build record and field-build evidence record are also re-hashed after write and must match the digests carried by their dependent evidence.
 
-This local `codesign` inspection is still not independent release acceptance. In particular, stronger provisioning-profile and signed-entitlement policy checks may be layered into the trusted candidate verifier before field acceptance; they must not create a competing package record schema.
+These signing/provisioning facts remain inspection evidence, not package authority. The inspector proves the relationships it can observe locally; it does not decide that a particular team/certificate/profile is the independently accepted Nembra release authority, prove that the profile authorizes a particular field iPhone, or prove that installation succeeded on that device. Any additional signed-entitlement/device-eligibility policy belongs in the trusted field-candidate acceptance rung and must not create a competing package record schema.
 
 ## Non-self-referential topology
 
@@ -88,13 +96,13 @@ The signed IPA is the subject being measured; these external records may describ
 
 ## Independent acceptance still required
 
-A successful inspection means only that one exact signed IPA passed the local structural/signature/build-identity checks and that its exact bytes were retained and measured.
+A successful inspection means only that one exact signed IPA passed the local structural/signature/provisioning/build-identity checks and that its exact bytes were retained and measured.
 
 It does **not** prove that:
 
-- the signing team/certificate/provisioning profile is an accepted Nembra release authority;
+- the signing team/certificate/provisioning profile is the independently accepted Nembra release authority;
+- the profile authorizes the exact field iPhone or that installation on that device succeeded;
 - GitHub or another trusted acceptance service attested the exact retained IPA and records;
-- the artifact was installed on the field iPhone;
 - the installed executable/Info.plist are the artifact independently accepted;
 - the package physical execution gate is GO;
 - the final runbook is GO;
@@ -106,7 +114,7 @@ The next trusted pipeline rung must independently attest/accept the exact retain
 
 ## Development-only self-test
 
-The script has a platform-independent contract smoke test for canonical SHA/UUID/build-label handling, unsafe/ambiguous ZIP paths, and the exact closed-world field-build record key set:
+The script has a platform-independent contract smoke test for canonical SHA/UUID/build-label handling, unsafe/ambiguous ZIP paths, the exact closed-world field-build record key set, and fail-closed provisioning-profile relationship checks including wrong team, expiration, wrong app identifier, and wrong team entitlement:
 
 ```sh
 python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
