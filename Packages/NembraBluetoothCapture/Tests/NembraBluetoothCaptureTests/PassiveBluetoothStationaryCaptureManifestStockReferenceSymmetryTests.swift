@@ -60,21 +60,16 @@ struct PassiveBluetoothStationaryCaptureManifestStockReferenceSymmetryTests {
             stockAppReferenceSetup: .sameDeviceBeforeCapture
         )
 
-        do {
+        #expect(
+            throws: PassiveBluetoothStationaryCaptureManifestError
+                .stockAppReferenceDeclaredWithoutMarkers
+        ) {
             _ = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
                 captureJSON: captureJSON,
                 preparedAt: startedAt.addingTimeInterval(100),
                 nembraBuildCommitSHA: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
                 selectedPeripheralIdentifier: target,
                 setup: setup
-            )
-            Issue.record(
-                "A declared non-none stock-app reference with zero immutable stock-app markers must fail closed"
-            )
-        } catch {
-            #expect(
-                String(describing: error).contains("stockAppReferenceDeclaredWithoutMarkers"),
-                "The manifest should expose the dedicated symmetric stock-reference evidence error"
             )
         }
     }
