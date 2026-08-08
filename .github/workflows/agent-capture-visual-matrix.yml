@@ -17,113 +17,11 @@ jobs:
           ref: qa/es80-v14-capture-visual-matrix-gpt56
           fetch-depth: 0
 
-      - name: Add representative Capture Simulator state matrix
+      - name: Apply representative Capture Simulator state matrix
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
-          text = path.read_text(encoding="utf-8")
-          anchor = "    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {"
-          if text.count(anchor) != 1:
-              raise SystemExit(f"Expected one insertion anchor, found {text.count(anchor)}")
-
-          block = r'''    @MainActor
-    func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates() {
-        struct ScenarioExpectation {
-            let scenario: String
-            let requiredText: String
-            let requiredIdentifier: String?
-            let screenshotName: String
-        }
-
-        let scenarios = [
-            ScenarioExpectation(
-                scenario: "firstPoweredOff",
-                requiredText: "Scooter OFF",
-                requiredIdentifier: "es80.capture.begin-window",
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — OFF 1 Ready"
-            ),
-            ScenarioExpectation(
-                scenario: "secondPoweredOn",
-                requiredText: "One target repeated twice",
-                requiredIdentifier: "es80.capture.confirm-correlated-target",
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — Scooter Signal Found"
-            ),
-            ScenarioExpectation(
-                scenario: "passiveDiscovery",
-                requiredText: "Opening the correlated target",
-                requiredIdentifier: nil,
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — Passive Connection"
-            ),
-            ScenarioExpectation(
-                scenario: "captureInProgress",
-                requiredText: "OBSERVATION READY",
-                requiredIdentifier: "es80.capture.finish",
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — Observation In Progress"
-            ),
-            ScenarioExpectation(
-                scenario: "horizonSealed",
-                requiredText: "Freezing final evidence",
-                requiredIdentifier: nil,
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
-            ),
-            ScenarioExpectation(
-                scenario: "foregroundInterrupted",
-                requiredText: "Capture stopped safely",
-                requiredIdentifier: "es80.capture.restart-experiment",
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — Foreground Interrupted"
-            )
-        ]
-
-        for expectation in scenarios {
-            let app = XCUIApplication()
-            app.launchArguments = [
-                "--es80-passive-capture-simulator-qa",
-                "--es80-capture-qa-scenario=\(expectation.scenario)"
-            ]
-            app.launch()
-
-            XCTAssertTrue(
-                app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
-                "Scenario \(expectation.scenario) must render the real Capture shell."
-            )
-            XCTAssertTrue(
-                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
-                "Scenario \(expectation.scenario) must stay explicitly labeled SIMULATOR / QA."
-            )
-            XCTAssertTrue(
-                app.staticTexts[expectation.requiredText].waitForExistence(timeout: 3),
-                "Scenario \(expectation.scenario) did not render its expected rider-facing state."
-            )
-            if let identifier = expectation.requiredIdentifier {
-                XCTAssertTrue(
-                    app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
-                    "Scenario \(expectation.scenario) lost its stable state/action identifier \(identifier)."
-                )
-            }
-            XCTAssertFalse(
-                app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
-                "Synthetic QA presentation should exercise the real Capture state instead of the field lock surface."
-            )
-            XCTAssertFalse(
-                app.buttons["Vehicle controls"].exists,
-                "Capture QA must never expose the ordinary vehicle-control surface."
-            )
-
-            let attachment = XCTAttachment(screenshot: app.screenshot())
-            attachment.name = expectation.screenshotName
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            app.terminate()
-        }
-    }
-
-'''
-          text = text.replace(anchor, block + anchor, 1)
-          path.write_text(text, encoding="utf-8")
-          PY
+          python3 -m py_compile .github/scripts/agent_capture_visual_matrix.py
+          python3 .github/scripts/agent_capture_visual_matrix.py
           git diff --check
           grep -F 'testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates' NembraUITests/ES80ResearchCaptureUITests.swift
           grep -F 'foregroundInterrupted' NembraUITests/ES80ResearchCaptureUITests.swift
@@ -136,9 +34,12 @@ jobs:
         shell: bash
         run: |
           rm .github/workflows/agent-capture-visual-matrix.yml
+          rm .github/scripts/agent_capture_visual_matrix.py
           git config user.name 'nembra-go-worker'
           git config user.email 'actions@users.noreply.github.com'
-          git add NembraUITests/ES80ResearchCaptureUITests.swift .github/workflows/agent-capture-visual-matrix.yml
+          git add NembraUITests/ES80ResearchCaptureUITests.swift \
+                  .github/workflows/agent-capture-visual-matrix.yml \
+                  .github/scripts/agent_capture_visual_matrix.py
           git diff --cached --check
           git commit -m 'test(capture): retain representative Simulator visual states'
           git push origin HEAD:qa/es80-v14-capture-visual-matrix-gpt56
