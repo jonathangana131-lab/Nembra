@@ -263,7 +263,10 @@ python3 - \
 import hashlib
 import json
 import pathlib
+import plistlib
+from pathlib import PurePosixPath
 import sys
+import zipfile
 
 external_path = pathlib.Path(sys.argv[1])
 field_path = pathlib.Path(sys.argv[2])
@@ -312,8 +315,6 @@ if inspection.get("teamIdentifier") != expected_team:
     raise SystemExit("Signing inspection TeamIdentifier does not match requested development team")
 if inspection.get("provisioningApplicationIdentifier") != f"{expected_team}.com.jonathangana131.nembra":
     raise SystemExit("Provisioning application identifier does not match requested team + Nembra bundle")
-if inspection.get("fieldLaunchRecipeID") != field_recipe:
-    raise SystemExit("Signed IPA inspection does not bind the exact Capture Home-Screen launch recipe")
 
 external_sha = hashlib.sha256(external_bytes).hexdigest()
 field_sha = hashlib.sha256(field_bytes).hexdigest()
@@ -332,6 +333,31 @@ with ipa_path.open("rb") as handle:
         ipa_digest.update(chunk)
 if ipa_digest.hexdigest() != field.get("signedInstallableSHA256"):
     raise SystemExit("Retained IPA bytes do not match canonical field-build evidence")
+
+# The canonical inspector has already fail-closed validated this exact IPA archive and retained these
+# exact bytes. Reopen that immutable subject only to verify the app-visible Release launch marker that
+# routes Home-Screen launch into Capture; this value remains routing, never physical authority.
+with zipfile.ZipFile(ipa_path) as archive:
+    info_members = []
+    for info in archive.infolist():
+        member = PurePosixPath(info.filename.rstrip("/"))
+        parts = member.parts
+        if (
+            len(parts) == 3
+            and parts[0] == "Payload"
+            and parts[1].endswith(".app")
+            and parts[2] == "Info.plist"
+            and not info.is_dir()
+        ):
+            info_members.append(info)
+    if len(info_members) != 1:
+        raise SystemExit("Retained IPA does not contain exactly one top-level app Info.plist")
+    try:
+        info_plist = plistlib.loads(archive.read(info_members[0]))
+    except Exception as error:
+        raise SystemExit("Retained IPA app Info.plist is not a readable plist") from error
+if not isinstance(info_plist, dict) or info_plist.get("NembraCaptureFieldRecipe") != field_recipe:
+    raise SystemExit("Retained signed IPA does not contain the exact Capture Home-Screen launch recipe")
 
 # Verification-only device identity must never become a retained evidence field.
 def contains_udid_key(value):
