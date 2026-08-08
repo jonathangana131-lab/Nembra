@@ -4,6 +4,9 @@ import Testing
 @testable import NembraBluetoothCapture
 
 struct PassiveBluetoothCaptureExternalBuildRecordTests {
+    private typealias RuntimeReader = PassiveBluetoothCaptureRuntimeBuildIdentityReader
+    private typealias BindingError = PassiveBluetoothCaptureExternalBuildRuntimeBindingError
+
     private let buildIdentifier = "Capture Build V14-abcdef012345"
     private let buildInstanceID = "a1b2c3d4-e5f6-47a8-90bc-def123456789"
     private let sourceCommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
@@ -49,6 +52,45 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         #expect(compactRecord.exactRecordSHA256 == sha256Hex(compact))
         #expect(prettyRecord.exactRecordSHA256 == sha256Hex(pretty))
         #expect(compactRecord.exactRecordSHA256 != prettyRecord.exactRecordSHA256)
+    }
+
+    @Test
+    func parsedRecordMechanicallyBindsEveryMeasuredRuntimeBuildFact() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
+
+        try record.validateRuntimeBinding(to: runtimeIdentity)
+    }
+
+    @Test
+    func runtimeBindingFailsClosedForEveryMismatchedBuildFact() throws {
+        let runtimeIdentity = try makeRuntimeIdentity()
+
+        try expectRuntimeBindingFailure(
+            .buildIdentifierMismatch,
+            overrides: ["buildIdentifier": "Capture Build V14-other"],
+            runtimeIdentity: runtimeIdentity
+        )
+        try expectRuntimeBindingFailure(
+            .buildInstanceIDMismatch,
+            overrides: ["buildInstanceID": "11111111-2222-3333-4444-555555555555"],
+            runtimeIdentity: runtimeIdentity
+        )
+        try expectRuntimeBindingFailure(
+            .sourceCommitSHAMismatch,
+            overrides: ["sourceCommitSHA": String(repeating: "c", count: 40)],
+            runtimeIdentity: runtimeIdentity
+        )
+        try expectRuntimeBindingFailure(
+            .executableSHA256Mismatch,
+            overrides: ["executableSHA256": String(repeating: "d", count: 64)],
+            runtimeIdentity: runtimeIdentity
+        )
+        try expectRuntimeBindingFailure(
+            .infoPlistSHA256Mismatch,
+            overrides: ["infoPlistSHA256": String(repeating: "e", count: 64)],
+            runtimeIdentity: runtimeIdentity
+        )
     }
 
     @Test
@@ -140,6 +182,49 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
 
         #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.malformedJSON) {
             _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(missing)
+        }
+    }
+
+    private func makeRuntimeIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
+        try RuntimeReader.resolveEmbeddedMetadata(
+            infoDictionary: [
+                RuntimeReader.buildIdentifierInfoDictionaryKey: buildIdentifier,
+                RuntimeReader.buildInstanceIDInfoDictionaryKey: buildInstanceID,
+                RuntimeReader.sourceCommitSHAInfoDictionaryKey: sourceCommitSHA,
+            ],
+            executableData: Data("runtime executable fixture".utf8),
+            infoPlistData: Data("runtime Info.plist fixture".utf8)
+        )
+    }
+
+    private func makeRuntimeBoundRecord(
+        runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        overrides: [String: Any] = [:]
+    ) throws -> PassiveBluetoothCaptureExternalBuildRecord {
+        var runtimeOverrides: [String: Any] = [
+            "executableSHA256": runtimeIdentity.executableSHA256,
+            "infoPlistSHA256": runtimeIdentity.infoPlistSHA256,
+        ]
+        for (key, value) in overrides {
+            runtimeOverrides[key] = value
+        }
+        return try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+            try makeRecordJSON(overrides: runtimeOverrides)
+        )
+    }
+
+    private func expectRuntimeBindingFailure(
+        _ expected: BindingError,
+        overrides: [String: Any],
+        runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws {
+        let record = try makeRuntimeBoundRecord(
+            runtimeIdentity: runtimeIdentity,
+            overrides: overrides
+        )
+        #expect(throws: expected, sourceLocation: sourceLocation) {
+            try record.validateRuntimeBinding(to: runtimeIdentity)
         }
     }
 
