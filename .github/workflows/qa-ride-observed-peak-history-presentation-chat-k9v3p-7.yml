@@ -1,0 +1,42 @@
+name: Observed-peak history presentation exact-product QA v7
+
+on:
+  push:
+    branches:
+      - cell/ride-observed-peak-history-presentation/ci/chat-k9v3p-7
+
+permissions:
+  contents: read
+
+jobs:
+  presentation-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and validation-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: aedd6ffa75c3382d6ccbdb86b1ab0e92a90f5550
+          EXPECTED_SCRIPT_PATH: .github/validation/verify_ride_observed_peak_history_presenter_chat_k9v3p.sh
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-ride-observed-peak-history-presentation-chat-k9v3p-7.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          actual="$(git diff --name-only HEAD^ HEAD | sort)"
+          expected="$(printf '%s\n%s\n' "$EXPECTED_SCRIPT_PATH" "$EXPECTED_WORKFLOW_PATH" | sort)"
+          test "$actual" = "$expected"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Run NembraCore tests with warnings as errors
+        run: swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Verify external presenter authority boundary
+        run: bash .github/validation/verify_ride_observed_peak_history_presenter_chat_k9v3p.sh
