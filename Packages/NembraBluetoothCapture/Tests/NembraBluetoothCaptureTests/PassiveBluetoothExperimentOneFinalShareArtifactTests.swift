@@ -7,6 +7,7 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
     private let target = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     private let ambient = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
     private let seriesID = UUID(uuidString: "12345678-1234-4234-8234-123456789ABC")!
+    private let captureSessionID = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
     private let buildInstanceID = "A1B2C3D4-E5F6-47A8-90BC-DEF123456789"
     private let commit = "abcdef0123456789abcdef0123456789abcdef01"
 
@@ -31,6 +32,24 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
         )
         #expect(verified.experimentID == manifest.experimentID)
         #expect(artifact.suggestedFilename == "Nembra-ES80-Fingerprint-\(manifest.experimentID.uuidString).json")
+    }
+
+    @Test
+    func exactPrimaryShareBytesEarnDeterministicAnalysisReadinessFacts() throws {
+        let artifact = try makeArtifact()
+        let report = try PassiveBluetoothExperimentOneFinalShareArtifactIntegrity.inspect(artifact.json)
+
+        #expect(report.finalShareSHA256 == sha256Hex(artifact.json))
+        #expect(report.finalShareByteCount == artifact.json.count)
+        #expect(report.experimentRecipeID == .es80FingerprintV1)
+        #expect(report.procedureVersion == "V14")
+        #expect(report.buildInstanceID == buildInstanceID.lowercased())
+        #expect(report.sourceCommitSHA == commit)
+        #expect(report.softwareExportSHA256.count == 64)
+        #expect(report.capture.captureSessionID == captureSessionID)
+        #expect(report.capture.recordCount == 3)
+        #expect(report.capture.rawValueRecordCount == 1)
+        #expect(report.capture.sha256.count == 64)
     }
 
     @Test
@@ -212,37 +231,71 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
     }
 
     private func makeCapture() throws -> Data {
-        var session = try PassiveBluetoothCaptureSession(
-            id: UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!,
+        let startedAt = Date(timeIntervalSince1970: 1_750_000_000)
+        let service = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: startedAt,
+            event: .service(
+                try PassiveBluetoothServiceObservation(
+                    peripheralIdentifier: target.uuidString,
+                    serviceUUID: "FFE0",
+                    isPrimary: true
+                )
+            )
+        )
+        let characteristic = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: startedAt.addingTimeInterval(1),
+            event: .characteristic(
+                try PassiveBluetoothCharacteristicObservation(
+                    peripheralIdentifier: target.uuidString,
+                    serviceUUID: "FFE0",
+                    characteristicUUID: "FFE1",
+                    properties: [.notify]
+                )
+            )
+        )
+        let value = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 3,
+            receivedAtUptimeNanoseconds: 3,
+            receivedAtDate: startedAt.addingTimeInterval(2),
+            event: .value(
+                try PassiveBluetoothValueObservation(
+                    peripheralIdentifier: target.uuidString,
+                    serviceUUID: "FFE0",
+                    characteristicUUID: "FFE1",
+                    origin: .subscriptionUpdate,
+                    payload: Data([0x01, 0x02])
+                )
+            )
+        )
+        let readyUptime: UInt64 = 1_000
+        let ready = PassiveBluetoothObservationBoundary(
+            kind: .finiteAcquisitionReady,
+            recordSequenceWatermark: 3,
+            observedAtUptimeNanoseconds: readyUptime,
+            observedAtDate: startedAt.addingTimeInterval(3)
+        )
+        let horizon = PassiveBluetoothObservationBoundary(
+            kind: .observationHorizon,
+            recordSequenceWatermark: 3,
+            observedAtUptimeNanoseconds: readyUptime
+                + PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds,
+            observedAtDate: startedAt.addingTimeInterval(63)
+        )
+        let session = try PassiveBluetoothCaptureSession(
+            id: captureSessionID,
             vehicleIdentity: .init(
                 manufacturer: "AOVOPRO",
                 model: "ES80",
                 displayName: "AOVOPRO ES80",
                 protocolFamily: "unverified-tuya"
             ),
-            startedAt: Date(timeIntervalSince1970: 1_750_000_000)
-        )
-        try session.append(
-            .service(try PassiveBluetoothServiceObservation(
-                peripheralIdentifier: target.uuidString,
-                serviceUUID: "FFE0",
-                isPrimary: true
-            )),
-            sequenceNumber: 1,
-            receivedAtUptimeNanoseconds: 1,
-            receivedAtDate: Date(timeIntervalSince1970: 1_750_000_001)
-        )
-        try session.append(
-            .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: target.uuidString,
-                serviceUUID: "FFE0",
-                characteristicUUID: "FFE1",
-                origin: .subscriptionUpdate,
-                payload: Data([0x01, 0x02])
-            )),
-            sequenceNumber: 2,
-            receivedAtUptimeNanoseconds: 2,
-            receivedAtDate: Date(timeIntervalSince1970: 1_750_000_002)
+            startedAt: startedAt,
+            records: [service, characteristic, value],
+            observationBoundaries: [ready, horizon]
         )
         return try PassiveBluetoothCaptureJSON.encode(session)
     }
