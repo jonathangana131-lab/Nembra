@@ -43,8 +43,42 @@ struct PassiveCoreBluetoothTerminalFreshTargetSessionTests {
         #expect(fresh.receipt.targetSessionGeneration == 8)
         #expect(fresh.receipt.sessionID == sessionID)
         #expect(fresh.receipt.recorderIdentity == ObjectIdentifier(fresh.recorder))
+        #expect(ObjectIdentifier(fresh.receipt.recorder) == ObjectIdentifier(fresh.recorder))
 
         let snapshot = await fresh.recorder.snapshot()
+        #expect(snapshot.id == sessionID)
+        #expect(snapshot.vehicleIdentity == es80)
+        #expect(snapshot.startedAt == startedAt)
+        #expect(snapshot.records.isEmpty)
+    }
+
+    @Test("detached receipt strongly retains the exact recorder that earned authority")
+    @MainActor
+    func detachedReceiptRetainsExactRecorder() async throws {
+        let authority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 9,
+            authorityGeneration: 4
+        )
+        let resolution = try await terminalResolution(authority: authority)
+        let sessionID = UUID(uuidString: "A2000000-0000-0000-0000-000000000002")!
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_100)
+
+        let receipt: FreshSession.Receipt = try {
+            let fresh = try FreshSession.create(
+                after: resolution,
+                id: sessionID,
+                vehicleIdentity: es80,
+                startedAt: startedAt
+            )
+            #expect(ObjectIdentifier(fresh.receipt.recorder) == ObjectIdentifier(fresh.recorder))
+            return fresh.receipt
+        }()
+
+        // The outer fresh-session value is gone. The detached authority still owns the
+        // exact actor, so its process-local identity cannot become a dangling scalar
+        // that a later recorder could satisfy through address reuse.
+        #expect(receipt.recorderIdentity == ObjectIdentifier(receipt.recorder))
+        let snapshot = await receipt.recorder.snapshot()
         #expect(snapshot.id == sessionID)
         #expect(snapshot.vehicleIdentity == es80)
         #expect(snapshot.startedAt == startedAt)
