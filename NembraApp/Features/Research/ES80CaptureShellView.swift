@@ -1312,7 +1312,7 @@ struct ES80CaptureShellView: View {
             case .physicalProcedureLocked:
                 return "Field capture is locked for this build."
             case .foregroundIntegrityLost:
-                return "Foreground integrity was lost after Experiment One began. Start a fresh experiment."
+                return "Nembra left the foreground after capture began. Start a fresh capture."
             case .captureAdmissionAlreadyPrepared:
                 return "The correlated target is already prepared. Continue the current rediscovery."
             case .captureAdmissionNotPrepared:
@@ -1332,28 +1332,28 @@ struct ES80CaptureShellView: View {
             case .observationNotReady:
                 return "Passive discovery and the minimum observation period are not complete yet."
             case .artifactAlreadyFinalized:
-                return "This Experiment One capture is already sealed."
+                return "This capture is already sealed."
             }
         }
 
         if let error = error as? PassiveBluetoothPowerCycleObservationSessionError {
             switch error {
             case .invalidMinimumWindowDuration:
-                return "The accepted correlation-window duration is invalid in this build."
+                return "This build has an invalid observation-window duration. Capture cannot continue."
             case .seriesComplete:
                 return "All four correlation windows are already sealed."
             case .seriesInvalidated:
-                return "This correlation series was invalidated by a known evidence gap."
+                return "This OFF / ON series has an evidence gap. Start a fresh capture."
             case .windowAlreadyActive:
                 return "The current correlation window is already active."
             case .windowNotActive:
                 return "No correlation window is currently active."
             case .bluetoothBecameUnavailable:
-                return "Bluetooth became unavailable during the bounded window."
+                return "Bluetooth became unavailable during this observation window."
             case .scanReadinessPending:
                 return "Scanning was requested, but the observation window has not opened yet."
             case .scanReadinessTimedOut:
-                return "Bluetooth never confirmed scan readiness inside the bounded startup interval."
+                return "Bluetooth did not become ready in time for this observation window."
             case .scanBecameInactive:
                 return "This window's Bluetooth scan became inactive."
             case .minimumWindowDurationNotReached:
@@ -1361,11 +1361,11 @@ struct ES80CaptureShellView: View {
             case .nonMonotonicWindowClock:
                 return "Nembra could not establish a valid observation window."
             case .windowSequenceExhausted:
-                return "The local observation-window sequence was exhausted."
+                return "This OFF / ON sequence cannot continue. Start a fresh capture."
             }
         }
 
-        return String(describing: error)
+        return "Capture stopped because an unexpected error occurred. Start a fresh capture."
     }
 
     private func bluetoothUnavailableMessage(_ state: CBManagerState?) -> String {
