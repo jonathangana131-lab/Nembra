@@ -63,6 +63,9 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case correlationWindowPhaseMismatch(index: Int)
     case correlationWindowSequenceMismatch(index: Int)
     case correlationCandidateCountMismatch(index: Int)
+    case correlationWindowClockInvalid(index: Int)
+    case correlationWindowTooShort(index: Int)
+    case correlationWindowOverlap(index: Int)
     case unsupportedSchemaVersion(Int)
     case unsupportedRecipe(PassiveBluetoothExperimentRecipeID)
     case manifestRecipeMismatch
@@ -73,14 +76,20 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
 }
 
 public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
+    /// The accepted Experiment One recipe requires a 10-second minimum local callback-receipt
+    /// interval per OFF/ON window. This is software chronology, not RF completeness or BLE cadence.
+    private static let minimumCorrelationWindowDurationNanoseconds: UInt64 = 10_000_000_000
+
     public static func make(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
-        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try make(
             captureJSON: finalizedArtifact.captureJSON,
             powerCycleResult: finalizedArtifact.powerCycleResult,
-            runtimeBuildIdentity: runtimeBuildIdentity
+            runtimeBuildIdentity: runtimeBuildIdentity,
+            setup: setup
         )
     }
 
@@ -89,7 +98,8 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     package static func make(
         captureJSON: Data,
         powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
-        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         guard powerCycleResult.windows.count == 4,
               powerCycleResult.observationSnapshots.count == 4 else {
@@ -99,6 +109,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
 
         let windows = try makeCorrelationWindows(powerCycleResult)
+        try validateCorrelationWindowTiming(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -120,11 +131,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             nembraBuildInstanceID: runtimeBuildIdentity.buildInstanceID,
             nembraBuildCommitSHA: runtimeBuildIdentity.sourceCommitSHA,
             selectedPeripheralIdentifier: selectedTarget.uuidString,
-            setup: .init(
-                chargerState: .disconnected,
-                executionContext: .foregroundUnlockedScreenOn,
-                stockAppReferenceSetup: .none
-            )
+            setup: setup
         )
         let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(manifest)
 
@@ -143,12 +150,16 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         )
     }
 
+    /// Reads build provenance mechanically from the running application. `setup` must come from the
+    /// product's explicit preflight declarations; this layer never fabricates charger/reference state.
     public static func makeForCurrentApplication(
-        finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact
+        finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
+        setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try make(
             finalizedArtifact: finalizedArtifact,
-            runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+            runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication(),
+            setup: setup
         )
     }
 
@@ -193,6 +204,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         let windows = try wire.correlationWindows.enumerated().map { index, item in
             try decodedWindow(item, index: index)
         }
+        try validateCorrelationWindowTiming(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -262,6 +274,28 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
     }
 
+    private static func validateCorrelationWindowTiming(
+        _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
+    ) throws {
+        for (index, window) in windows.enumerated() {
+            guard window.endedAtUptimeNanoseconds >= window.startedAtUptimeNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError
+                    .correlationWindowClockInvalid(index: index)
+            }
+            guard window.endedAtUptimeNanoseconds - window.startedAtUptimeNanoseconds
+                    >= minimumCorrelationWindowDurationNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError
+                    .correlationWindowTooShort(index: index)
+            }
+            if index > 0 {
+                guard window.startedAtUptimeNanoseconds >= windows[index - 1].endedAtUptimeNanoseconds else {
+                    throw PassiveBluetoothExperimentOneSoftwareExportError
+                        .correlationWindowOverlap(index: index)
+                }
+            }
+        }
+    }
+
     private static func replayCorrelation(
         _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
     ) throws -> PassiveBluetoothPowerCycleTargetCorrelationReport {
@@ -292,7 +326,6 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow {
         guard let phase = PassiveBluetoothPowerCycleObservationPhase(rawValue: wire.phase),
               phase.rawValue == index,
-              wire.endedAtUptimeNanoseconds >= wire.startedAtUptimeNanoseconds,
               let authority = canonicalUUID(wire.observationSeriesIdentity) else {
             throw PassiveBluetoothExperimentOneSoftwareExportError
                 .correlationWindowPhaseMismatch(index: index)
@@ -458,20 +491,26 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
 
 public extension PassiveBluetoothExperimentOneCoordinator {
     /// Available only after immutable Horizon finalization. External field authorization remains
-    /// separate; this method cannot unlock a physical experiment.
-    func finalizedSoftwareExportForCurrentApplication()
-        throws -> PassiveBluetoothExperimentOneSoftwareExport {
+    /// separate; this method cannot unlock a physical experiment. `setup` must come from explicit
+    /// preflight declarations and is not inferred from the fact that finalization succeeded.
+    func finalizedSoftwareExportForCurrentApplication(
+        setup: PassiveBluetoothStationaryCaptureSetup
+    ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         guard let finalizedArtifact else {
             throw PassiveBluetoothExperimentOneSoftwareExportError.artifactNotFinalized
         }
         return try PassiveBluetoothExperimentOneSoftwareExportCodec.makeForCurrentApplication(
-            finalizedArtifact: finalizedArtifact
+            finalizedArtifact: finalizedArtifact,
+            setup: setup
         )
     }
 
-    func encodedFinalizedSoftwareExportForCurrentApplication(prettyPrinted: Bool = true) throws -> Data {
+    func encodedFinalizedSoftwareExportForCurrentApplication(
+        setup: PassiveBluetoothStationaryCaptureSetup,
+        prettyPrinted: Bool = true
+    ) throws -> Data {
         try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(
-            finalizedSoftwareExportForCurrentApplication(),
+            finalizedSoftwareExportForCurrentApplication(setup: setup),
             prettyPrinted: prettyPrinted
         )
     }
