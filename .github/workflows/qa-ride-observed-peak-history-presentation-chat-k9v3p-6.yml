@@ -1,0 +1,119 @@
+name: Observed-peak history presentation exact-product QA v6
+
+on:
+  push:
+    branches:
+      - cell/ride-observed-peak-history-presentation/ci/chat-k9v3p-6
+
+permissions:
+  contents: read
+
+jobs:
+  observed-peak-history-presentation-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: aedd6ffa75c3382d6ccbdb86b1ab0e92a90f5550
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-ride-observed-peak-history-presentation-chat-k9v3p-6.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Run NembraCore tests with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Verify external package sees projection but cannot mint it
+        run: |
+          set -euo pipefail
+          package_root="$PWD/Packages/NembraCore"
+          probe_dir="$(mktemp -d)"
+          trap 'rm -rf "$probe_dir"' EXIT
+          mkdir -p "$probe_dir/Sources/Probe"
+          ln -s "$package_root" "$probe_dir/NembraCore"
+
+          cat > "$probe_dir/Package.swift" <<'MANIFEST'
+          // swift-tools-version: 6.2
+          import PackageDescription
+
+          let package = Package(
+              name: "ExternalObservedPeakPresentationProbe",
+              dependencies: [
+                  .package(path: "NembraCore")
+              ],
+              targets: [
+                  .executableTarget(
+                      name: "Probe",
+                      dependencies: [
+                          .product(name: "NembraCore", package: "nembracore")
+                      ]
+                  )
+              ]
+          )
+          MANIFEST
+
+          # Positive control: dependency resolution and public projection visibility
+          # must work before a negative access result can count as authority proof.
+          cat > "$probe_dir/Sources/Probe/main.swift" <<'SWIFT'
+          import NembraCore
+
+          let state: RideHistoryObservedPeakPresentationState = .observedPeakUnavailable
+          print(state.rawValue)
+          SWIFT
+
+          swift build \
+            --package-path "$probe_dir" \
+            --scratch-path "$probe_dir/.build-positive"
+
+          # Negative control: the public projection exists, but external callers
+          # must not be able to mint it from caller-authored durable joined history.
+          cat > "$probe_dir/Sources/Probe/main.swift" <<'SWIFT'
+          import NembraCore
+
+          func attempt(_ joined: RideHistoryObservedPeakJoinedRecord) {
+              _ = try? RideHistoryObservedPeakPresenter.present(joined)
+          }
+          SWIFT
+
+          set +e
+          swift build \
+            --package-path "$probe_dir" \
+            --scratch-path "$probe_dir/.build-negative" \
+            >"$probe_dir/negative.log" 2>&1
+          status=$?
+          set -e
+
+          if [[ $status -eq 0 ]]; then
+            echo "ERROR: external package unexpectedly minted observed-peak presentation." >&2
+            exit 1
+          fi
+
+          if ! grep -Fq "RideHistoryObservedPeakPresenter" "$probe_dir/negative.log"; then
+            echo "ERROR: negative probe failed without naming the protected presenter." >&2
+            cat "$probe_dir/negative.log" >&2
+            exit 1
+          fi
+
+          if ! grep -Eiq "inaccessible|internal|protection level|access level|cannot find.*in scope|not in scope" "$probe_dir/negative.log"; then
+            echo "ERROR: presenter probe failed for an unexpected reason; this does not prove the authority boundary." >&2
+            cat "$probe_dir/negative.log" >&2
+            exit 1
+          fi
+
+          echo "PASS: external package can consume the public projection type but cannot invoke the module-owned presenter."
