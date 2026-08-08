@@ -58,6 +58,7 @@ public struct PassiveBluetoothExperimentOneVerifiedFinalShareArtifact: Equatable
 
 public enum PassiveBluetoothExperimentOneFinalShareArtifactError: Error, Equatable, Sendable {
     case malformedWireData
+    case duplicateWireField(String)
     case unsupportedSchemaVersion(Int)
     case unexpectedArtifactKind(String)
     case unsupportedRecipe(PassiveBluetoothExperimentRecipeID)
@@ -221,6 +222,9 @@ public enum PassiveBluetoothExperimentOneFinalShareArtifactCodec {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothExperimentOneFinalShareArtifactError.duplicateWireField(duplicateKey)
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PassiveBluetoothExperimentOneFinalShareArtifactError.malformedWireData
         }
