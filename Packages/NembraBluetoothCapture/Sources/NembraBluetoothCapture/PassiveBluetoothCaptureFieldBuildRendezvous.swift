@@ -1,7 +1,7 @@
 import Foundation
 
 /// Runtime-bound build rendezvous produced only after three independent software identities agree:
-/// the exact field-build evidence bytes, the exact external build record, and the executable that
+/// the exact field-build evidence bytes, the exact external build record, and the installed bundle
 /// Nembra is actually running.
 ///
 /// Possession of this value is still **not field acceptance or GO**. It proves only exact equality
@@ -55,7 +55,7 @@ public enum PassiveBluetoothCaptureFieldBuildRendezvousError: Error, Equatable, 
 
 public extension PassiveBluetoothCaptureFieldBuildEvidenceRecord {
     /// Requires exact byte/build agreement with the external build record and exact identity of the
-    /// executable currently running. `PassiveBluetoothCaptureRuntimeBuildIdentity` cannot be
+    /// installed bundle currently running. `PassiveBluetoothCaptureRuntimeBuildIdentity` cannot be
     /// caller-constructed by app code; production obtains it from `currentApplication()`.
     func makeRuntimeBoundRendezvous(
         matching externalRecord: PassiveBluetoothCaptureExternalBuildRecord,
@@ -75,7 +75,8 @@ public extension PassiveBluetoothCaptureFieldBuildEvidenceRecord {
         guard buildIdentifier == runtimeIdentity.buildIdentifier,
               buildInstanceID == runtimeIdentity.buildInstanceID,
               sourceCommitSHA == runtimeIdentity.sourceCommitSHA,
-              executableSHA256 == runtimeIdentity.executableSHA256 else {
+              executableSHA256 == runtimeIdentity.executableSHA256,
+              infoPlistSHA256 == runtimeIdentity.infoPlistSHA256 else {
             throw PassiveBluetoothCaptureFieldBuildRendezvousError.runningBuildMismatch
         }
 
