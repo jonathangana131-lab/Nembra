@@ -26,6 +26,7 @@ from pathlib import Path, PurePosixPath
 RECIPE_ID = "ES80-FINGERPRINT-v1"
 PROCEDURE_VERSION = "V14"
 BUNDLE_ID = "com.jonathangana131.nembra"
+FIELD_RECIPE_INFO_KEY = "NembraCaptureFieldRecipe"
 EXTERNAL_RECORD_SCHEMA_VERSION = 3
 FIELD_EVIDENCE_SCHEMA_VERSION = 1
 AUTHORITY_LABEL = "signed-field-artifact-evidence-not-field-authorization"
@@ -77,6 +78,14 @@ def valid_build_identifier(value: str) -> bool:
 
 def expected_build_identifier(source_sha: str) -> str:
     return f"Capture Build V14-{source_sha[:12]}"
+
+
+def validate_field_recipe(value: str) -> str:
+    if value != RECIPE_ID:
+        raise EvidenceError(
+            f"signed field app must declare {FIELD_RECIPE_INFO_KEY}={RECIPE_ID}; got {value!r}"
+        )
+    return value
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -264,6 +273,7 @@ def inspect_ipa(ipa_path: Path, expected_source_sha: str) -> dict:
             raise EvidenceError(
                 f"embedded source commit does not match accepted source: {embedded_source_sha} != {source_sha}"
             )
+        validate_field_recipe(plist_string(info, FIELD_RECIPE_INFO_KEY))
 
         executable_name = plist_string(info, "CFBundleExecutable")
         if "/" in executable_name or executable_name in {".", ".."}:
@@ -356,6 +366,13 @@ def self_test() -> None:
     assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier("Capture\nBuild")
+    assert validate_field_recipe(RECIPE_ID) == RECIPE_ID
+    try:
+        validate_field_recipe("ES80-FINGERPRINT-v999")
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("unknown field launch recipe must fail")
     try:
         canonical_sha40("A" * 40)
     except EvidenceError:
