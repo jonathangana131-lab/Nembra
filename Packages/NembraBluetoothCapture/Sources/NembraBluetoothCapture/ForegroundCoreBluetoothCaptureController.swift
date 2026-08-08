@@ -991,7 +991,29 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
-                    try self.ensureCaptureHealthy()
+                    // The Ready FIFO drain is an actor suspension. Foreground loss may
+                    // poison this exact durable capture while it is suspended, so prove
+                    // foreground integrity and generic health before the first recorder
+                    // attempt. If either fails, consume the exact unused Ready admission
+                    // and quarantine its transaction rather than leaving `.drainingReady`.
+                    do {
+                        try self.requireForegroundEvidenceIntegrity()
+                        try self.ensureCaptureHealthy()
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderAttempt()
+                            try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(
+                                after: abandonment
+                            )
+                        } catch {
+                            // Exact lifecycle-quarantine failure is stronger than the
+                            // triggering foreground/health error. Keep capture fail-closed.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):
