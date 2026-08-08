@@ -479,6 +479,64 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testV14SimulatorQACorrelationLifecycleScreenshotMatrix() {
+        captureSimulatorQAScreenshot(
+            scenario: "firstPoweredOff",
+            expectedText: "Confirm stationary setup",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — OFF 1 Ready"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "firstPoweredOn",
+            expectedText: "Scooter ON",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — ON 1 Ready"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "secondPoweredOff",
+            expectedText: "Scooter OFF",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — OFF 2 Ready"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "secondPoweredOn",
+            expectedText: "Scooter ON",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — ON 2 Ready"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "targetConfirmation",
+            expectedText: "One target repeated twice",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Target Confirmation"
+        )
+    }
+
+    @MainActor
+    func testV14SimulatorQADiscoveryObservationAndInterruptionScreenshotMatrix() {
+        captureSimulatorQAScreenshot(
+            scenario: "passiveDiscovery",
+            expectedText: "Opening the correlated target",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Passive Discovery"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "observationReady",
+            expectedText: "OBSERVATION READY",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Observation Ready"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "captureInProgress",
+            expectedText: "OBSERVATION READY",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Capture In Progress"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "horizonSealed",
+            expectedText: "Freezing final evidence",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Sealing"
+        )
+        captureSimulatorQAScreenshot(
+            scenario: "foregroundInterrupted",
+            expectedText: "Capture stopped safely",
+            attachmentName: "Nembra Capture V14 — SIMULATOR QA — Foreground Interruption"
+        )
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
@@ -545,6 +603,47 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             source.contains("softwareExportData"),
             "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
         )
+    }
+
+    @MainActor
+    private func captureSimulatorQAScreenshot(
+        scenario: String,
+        expectedText: String,
+        attachmentName: String
+    ) {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=\(scenario)"
+        ]
+        app.launch()
+        defer { app.terminate() }
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+            "Synthetic scenario \(scenario) must render through the real Capture shell."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+            "Synthetic scenario \(scenario) must keep the Simulator-only truth disclosure visible."
+        )
+        XCTAssertTrue(
+            app.staticTexts[expectedText].waitForExistence(timeout: 3),
+            "Synthetic scenario \(scenario) did not render its expected primary state."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.field-no-go"].exists,
+            "The synthetic presentation route is not the package physical field route."
+        )
+        XCTAssertFalse(
+            app.buttons["Vehicle controls"].exists,
+            "Capture QA must never expose normal vehicle controls."
+        )
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = attachmentName
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertVisibleInScreenshotViewport(
