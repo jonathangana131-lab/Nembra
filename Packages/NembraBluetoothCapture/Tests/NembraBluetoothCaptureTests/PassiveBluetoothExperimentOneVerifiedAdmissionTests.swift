@@ -13,7 +13,7 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
     private let signedInstallableSHA256 = String(repeating: "c", count: 64)
 
     @Test("verified signed authority can mint only an audit-bound package admission")
-    func verifiedAuthorizationMintsAdmissionWithoutChangingDefaultNoGo() throws {
+    func verifiedAuthorizationMintsAdmissionWithoutChangingOrdinaryTestNoGo() throws {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
         let externalRecord = try json(externalRecordObject())
@@ -54,9 +54,8 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.fieldEvidenceRecordSHA256 == sha256Hex(fieldEvidence))
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
-        // Minting a capability in a deterministic package test does not mutate global product
-        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
-        // field gate is NO-GO.
+        // The package-test host is not a physical iOS Release Research Field Build, so producing
+        // deterministic verified evidence here does not mutate process authority.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -64,13 +63,15 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("future live factory requires admission plus final field GO and legacy factory stays sealed")
-    func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
+    @Test("canonical live factory requires process-owned research admission before CoreBluetooth construction")
+    func canonicalFactoryKeepsCallerTogglesAndImportedEvidenceOut() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
+        let gateSource = try sourceFile(
+            "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFieldExecutionGate.swift"
+        )
 
-        let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
         let zeroFactoryStart = try #require(
             source.range(of: "static func makeAuthorizedES80() throws")?.lowerBound
         )
@@ -87,27 +88,49 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         )
 
         let zeroFactory = source[zeroFactoryStart..<verifiedFactoryStart]
-        #expect(zeroFactory.contains("throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized"))
-        #expect(!zeroFactory.contains("makeLiveES80Coordinator()"))
-        #expect(!zeroFactory.contains(gateGuard))
+        let researchStatusGuard = try #require(
+            zeroFactory.range(of: "guard case .researchBuildAuthorized")
+        )
+        let researchAdmissionGuard = try #require(
+            zeroFactory.range(
+                of: "PassiveBluetoothExperimentOneFieldExecutionGate.currentResearchBuildAdmission != nil"
+            )
+        )
+        let physicalGateGuard = try #require(
+            zeroFactory.range(of: "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure")
+        )
+        let zeroLiveConstruction = try #require(
+            zeroFactory.range(of: "return try makeLiveES80Coordinator()")
+        )
+        #expect(researchStatusGuard.lowerBound < zeroLiveConstruction.lowerBound)
+        #expect(researchAdmissionGuard.lowerBound < zeroLiveConstruction.lowerBound)
+        #expect(physicalGateGuard.lowerBound < zeroLiveConstruction.lowerBound)
 
         let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
-        let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
-        let liveConstruction = try #require(
+        let verifiedGate = try #require(
+            verifiedFactory.range(of: "PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure")
+        )
+        let verifiedLiveConstruction = try #require(
             verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
         )
-        #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
-        #expect(source.components(separatedBy: gateGuard).count - 1 == 1)
+        #expect(verifiedGate.lowerBound < verifiedLiveConstruction.lowerBound)
 
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        #expect(!source.contains("UserDefaults."))
+        #expect(!source.contains("ProcessInfo."))
+
+        #expect(gateSource.contains("#if os(iOS) && !targetEnvironment(simulator) && !DEBUG"))
+        #expect(gateSource.contains("Bundle.main.infoDictionary"))
+        #expect(gateSource.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
+        #expect(gateSource.contains(".currentApplication()"))
+        #expect(!gateSource.contains("UserDefaults."))
+        #expect(!gateSource.contains("ProcessInfo."))
     }
 
-    @Test("current app has no verified-admission consumption path")
-    func appRemainsOnLockedZeroArgumentFactory() throws {
+    @Test("current app consumes only the package-owned canonical factory")
+    func appUsesNoCallerConstructedAdmission() throws {
         let source = try repositorySourceFile("NembraApp/App/NembraApp.swift")
         let zeroArgumentFactory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
 
