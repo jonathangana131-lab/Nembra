@@ -18,7 +18,7 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         )
     }
 
-    @Test("public coordinator owns one internal run and never exposes admission or recorder")
+    @Test("public coordinator owns one internal run and never exposes admission recorder or vehicle injection")
     func publicSurfaceKeepsMutationAuthorityInsidePackage() throws {
         let source = try Self.coordinatorSource()
 
@@ -26,11 +26,14 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(source.contains("private let run: PassiveBluetoothExperimentOneRun"))
         #expect(source.contains("private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?"))
         #expect(source.contains("public var powerCycleObservationSession: PassiveBluetoothPowerCycleObservationSession"))
+        #expect(source.contains("public init(controller: ForegroundCoreBluetoothCaptureController) throws"))
+        #expect(source.contains("vehicleIdentity: VehicleProfile.aovoproES80.identity"))
 
         #expect(!source.contains("public var pendingCaptureAdmission"))
         #expect(!source.contains("public let pendingCaptureAdmission"))
         #expect(!source.contains("public func issueCaptureAdmission"))
         #expect(!source.contains("recorder: PassiveCoreBluetoothCaptureRecorder"))
+        #expect(!source.contains("public init(\n        controller: ForegroundCoreBluetoothCaptureController,\n        vehicleIdentity:"))
     }
 
     @Test("admission is issued before a fresh controller scan epoch")
