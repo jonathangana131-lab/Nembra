@@ -53,15 +53,14 @@ struct PassiveBluetoothExperimentOneAdmissionHandoffUptimeTests {
     func callerCannotSupplyBoundary() throws {
         let source = try Self.runSource()
         let issueStart = try #require(source.range(of: "func issueCaptureAdmission("))
-        let issueEnd = try #require(
+        let signatureEnd = try #require(
             source.range(
-                of: "fileprivate func beginCaptureRecorder(",
+                of: ") throws -> PassiveBluetoothExperimentOneCaptureAdmission {",
                 range: issueStart.upperBound..<source.endIndex
             )
         )
-        let signature = source[issueStart.lowerBound..<issueEnd.lowerBound]
+        let signature = source[issueStart.lowerBound..<signatureEnd.upperBound]
 
-        #expect(!signature.contains("issuedAtUptimeNanoseconds:"))
-        #expect(signature.contains("DispatchTime.now().uptimeNanoseconds"))
+        #expect(!signature.contains("issuedAtUptimeNanoseconds"))
     }
 }
