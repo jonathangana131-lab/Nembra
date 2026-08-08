@@ -15,7 +15,9 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
             ': "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing the verification-only intended field iPhone UDID.}"',
             source,
         )
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID', source)
         self.assertIn('es80_signed_field_artifact_private_runner.py', source)
+        self.assertIn('--validate-private-input', source)
         self.assertIn(
             '--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"',
             source,
@@ -27,7 +29,9 @@ class SignedFieldCandidateIntendedDeviceSourceTests(unittest.TestCase):
         # The verification value is read only inside the runner after a no-follow descriptor open.
         # It must never become an OS-visible child-process argument or environment value.
         self.assertIn('os.O_NOFOLLOW', runner)
-        self.assertIn('os.fstat(descriptor)', runner)
+        self.assertIn('before = os.fstat(descriptor)', runner)
+        self.assertIn('after = os.fstat(descriptor)', runner)
+        self.assertIn('before_identity != after_identity', runner)
         self.assertIn('inspector.main(inspector_arguments)', runner)
         self.assertNotIn('subprocess', runner)
         self.assertNotIn('os.environ', runner)
