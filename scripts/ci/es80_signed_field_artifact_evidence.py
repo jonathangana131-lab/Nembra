@@ -491,13 +491,46 @@ def _trusted_system_apple_tool(path: Path, label: str) -> str:
     return str(path)
 
 
+APPLE_TOOL_ENVIRONMENT = {"PATH": "/usr/bin:/bin"}
+APPLE_TOOL_TIMEOUT_SECONDS = 30
+
+
+def _run_apple_tool(
+    command: list[str],
+    *,
+    text: bool,
+) -> subprocess.CompletedProcess:
+    """Run one root-custodied Apple verifier with closed process startup authority."""
+    try:
+        if text:
+            return subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=dict(APPLE_TOOL_ENVIRONMENT),
+                cwd="/",
+                stdin=subprocess.DEVNULL,
+                timeout=APPLE_TOOL_TIMEOUT_SECONDS,
+            )
+        return subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=dict(APPLE_TOOL_ENVIRONMENT),
+            cwd="/",
+            stdin=subprocess.DEVNULL,
+            timeout=APPLE_TOOL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EvidenceError("trusted Apple verification process timed out") from exc
+    except OSError as exc:
+        raise EvidenceError("trusted Apple verification process could not be executed") from exc
+
+
 def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    result = _run_apple_tool(command, text=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise EvidenceError(f"command failed ({' '.join(command)}): {detail}")
@@ -740,11 +773,9 @@ def verify_provisioning_profile(
         raise EvidenceError("signed field IPA is missing embedded.mobileprovision")
     profile_sha256 = sha256_file(profile_path)
 
-    result = subprocess.run(
+    result = _run_apple_tool(
         [security, "cms", "-D", "-i", str(profile_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+        text=False,
     )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
