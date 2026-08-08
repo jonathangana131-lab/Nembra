@@ -119,4 +119,75 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalTransportIsolationTests {
 
         #expect(terminalGuard < sequenceAllocation)
     }
+
+    @Test("Horizon-closing reconnect cannot replace artifact authority")
+    func reconnectAdmissionStopsBeforeAuthorityReplacementWhileHorizonCloses() throws {
+        let source = try Self.controllerSource()
+        let method = try Self.section(
+            in: source,
+            from: "    public func connect(\n        to peripheralIdentifier: UUID,",
+            to: "    /// Cancels the active attempt"
+        )
+
+        let horizonFence = try Self.offset(of: "observationBoundaryBlocksArtifactMutation", in: method)
+        let authorityAdvance = try Self.offset(of: "advanceArtifactAuthority()", in: method)
+        #expect(horizonFence < authorityAdvance)
+    }
+
+    @Test("late didConnect cannot restart finite acquisition after Horizon admission")
+    func connectedCallbackStopsBeforeDiscoveryWhileHorizonCloses() throws {
+        let source = try Self.controllerSource()
+        let method = try Self.section(
+            in: source,
+            from: "    public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {",
+            to: "    public func centralManager(\n        _ central: CBCentralManager,\n        didFailToConnect peripheral: CBPeripheral,"
+        )
+
+        let horizonFence = try Self.offset(of: "observationBoundaryBlocksArtifactMutation", in: method)
+        let discovery = try Self.offset(of: "beginDiscovery(on: peripheral)", in: method)
+        #expect(horizonFence < discovery)
+    }
+
+    @Test("late failed connect cannot revoke authority after Horizon admission")
+    func failedConnectionStopsBeforeAuthorityReplacementWhileHorizonCloses() throws {
+        let source = try Self.controllerSource()
+        let method = try Self.section(
+            in: source,
+            from: "    public func centralManager(\n        _ central: CBCentralManager,\n        didFailToConnect peripheral: CBPeripheral,",
+            to: "    public func centralManager(\n        _ central: CBCentralManager,\n        didDisconnectPeripheral peripheral: CBPeripheral,"
+        )
+
+        let horizonFence = try Self.offset(of: "observationBoundaryBlocksArtifactMutation", in: method)
+        let authorityAdvance = try Self.offset(of: "advanceArtifactAuthority()", in: method)
+        #expect(horizonFence < authorityAdvance)
+    }
+
+    @Test("connection timeout cannot revoke authority after Horizon admission")
+    func connectionTimeoutStopsBeforeAuthorityReplacementWhileHorizonCloses() throws {
+        let source = try Self.controllerSource()
+        let method = try Self.section(
+            in: source,
+            from: "    private func scheduleConnectionTimeout(for peripheral: CBPeripheral, nanoseconds: UInt64) {",
+            to: "    private func currentAcquisitionWatchdogContext()"
+        )
+
+        let horizonFence = try Self.offset(of: "observationBoundaryBlocksArtifactMutation", in: method)
+        let authorityAdvance = try Self.offset(of: "advanceArtifactAuthority()", in: method)
+        #expect(horizonFence < authorityAdvance)
+    }
+
+    @Test("authority helper itself refuses replacement while Horizon owns the cutoff")
+    func authorityAdvanceHasHorizonDefenseInDepth() throws {
+        let source = try Self.controllerSource()
+        let method = try Self.section(
+            in: source,
+            from: "    private func advanceArtifactAuthority() -> Bool {",
+            to: "    private func currentArtifactAuthorityContext()"
+        )
+
+        let horizonFence = try Self.offset(of: "observationBoundaryBlocksArtifactMutation", in: method)
+        let transition = try Self.offset(of: "artifactAuthorityFence.transition", in: method)
+        #expect(horizonFence < transition)
+    }
+
 }
