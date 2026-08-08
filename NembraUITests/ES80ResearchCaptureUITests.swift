@@ -38,6 +38,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-identity"].waitForExistence(timeout: 3),
+            "The locked field surface must expose the running build identity or a fail-closed unavailable state rather than making 'this exact build' an invisible claim."
+        )
 
         XCTAssertFalse(
             app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
@@ -131,6 +135,35 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    func testNoGoSourceUsesPackageRuntimeBuildIdentityReader() throws {
+        let source = try nembraAppSource()
+
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"),
+            "The field NO-GO surface must consume the package-owned fail-closed runtime build identity reader instead of reconstructing build provenance in SwiftUI."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"),
+            "The app-visible build identity must remain a stable acceptance surface."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildIdentifier"),
+            "The human-readable build identifier must be visible on the exact-build field surface."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.sourceCommitSHA"),
+            "The exact embedded source commit must remain visible without rider transcription."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildInstanceID"),
+            "The produced-build rendezvous identity must remain visible without granting field authority."
+        )
+        XCTAssertTrue(
+            source.contains("Build identity unavailable"),
+            "Failure to read exact runtime build identity must remain an explicit fail-closed product state."
+        )
+    }
+
     private func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
@@ -138,6 +171,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repositoryRoot
             .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func nembraAppSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/App/NembraApp.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
