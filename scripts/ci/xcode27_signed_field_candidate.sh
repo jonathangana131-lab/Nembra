@@ -14,6 +14,7 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
+: "${NEMBRA_FIELD_DEVICE_UDID:?Set NEMBRA_FIELD_DEVICE_UDID to the intended field iPhone UDID for verification only.}"
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
@@ -244,10 +245,12 @@ PY
 # snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign plus
 # direct-device provisioning and the exact Capture launch recipe, hashes exact final bytes, retains
 # the IPA, and emits the one package-decodable field-build record plus a separate inspection
-# companion. Neither record grants physical GO.
+# companion. The intended device is verification-only input and is never persisted by the inspector.
+# Neither record grants physical GO.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
+  --intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID" \
   --output-dir "$ARTIFACTS_DIR"
 
 EXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
