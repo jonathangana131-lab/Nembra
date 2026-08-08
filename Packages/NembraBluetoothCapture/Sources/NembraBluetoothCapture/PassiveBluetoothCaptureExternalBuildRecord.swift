@@ -98,8 +98,10 @@ public enum PassiveBluetoothCaptureExternalBuildRuntimeBindingError: Error, Equa
 public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, Sendable {
     case malformedJSON
     case unexpectedField(String)
+    case duplicateField(String)
     case unsupportedSchemaVersion(Int)
     case invalidBuildIdentifier
+    case buildIdentifierSourceMismatch
     case invalidBuildInstanceID
     case invalidSourceCommitSHA
     case invalidExecutableSHA256
@@ -152,6 +154,9 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
               normalizedSourceCommitSHA == wire.sourceCommitSHA else {
             throw PassiveBluetoothCaptureExternalBuildRecordError.invalidSourceCommitSHA
         }
+        guard wire.buildIdentifier == expectedBuildIdentifier(for: normalizedSourceCommitSHA) else {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch
+        }
         guard isCanonicalSHA256(wire.executableSHA256) else {
             throw PassiveBluetoothCaptureExternalBuildRecordError.invalidExecutableSHA256
         }
@@ -181,6 +186,9 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(duplicateKey)
+        }
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
@@ -204,6 +212,10 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
         for key in root.keys.sorted() where !allowed.contains(key) {
             throw PassiveBluetoothCaptureExternalBuildRecordError.unexpectedField(key)
         }
+    }
+
+    private static func expectedBuildIdentifier(for sourceCommitSHA: String) -> String {
+        "Capture Build V14-\(sourceCommitSHA.prefix(12))"
     }
 
     private static func isValidBuildIdentifier(_ value: String) -> Bool {
