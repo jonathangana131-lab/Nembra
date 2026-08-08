@@ -106,7 +106,8 @@ struct PassiveBluetoothExperimentOneSoftwareExportBuildReferenceTests {
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
                     commit
             ],
-            executableData: Data("fixture executable".utf8)
+            executableData: Data("fixture executable".utf8),
+            infoPlistData: Data("fixture Info.plist".utf8)
         )
     }
 
@@ -131,12 +132,13 @@ struct PassiveBluetoothExperimentOneSoftwareExportBuildReferenceTests {
             endedAtUptimeNanoseconds: 40_000_000_000 + duration,
             candidates: []
         )
-        return try #require(ledger.completeWindow(
+        let completed = try ledger.completeWindow(
             phase: .secondPoweredOn,
             startedAtUptimeNanoseconds: 60_000_000_000,
             endedAtUptimeNanoseconds: 60_000_000_000 + duration,
             candidates: [.init(id: scooter, isConnectable: true)]
-        ))
+        )
+        return try #require(completed)
     }
 
     private func makeCaptureJSON() throws -> Data {
