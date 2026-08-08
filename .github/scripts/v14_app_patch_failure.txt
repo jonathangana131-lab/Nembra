@@ -12,7 +12,7 @@
   """    private func confirmCorrelatedTarget(_ identifier: UUID) {
 /home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py:256: SyntaxWarning: invalid escape sequence '\('
   """    private func confirmCorrelatedTarget(_ identifier: UUID) {
-  File "/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py", line 334
-    "checkmark.circle.fill"""",
-                             ^
-SyntaxError: unterminated string literal (detected at line 334)
+  File "/home/runner/work/Nembra/Nembra/.github/scripts/v14_app_single_authority.py", line 333
+    '        case .correlatedTarget, .targetReacquired:
+    ^
+SyntaxError: unterminated string literal (detected at line 333)
