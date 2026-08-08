@@ -276,6 +276,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     public var hasCompleteTargetEvidence: Bool {
         recorder != nil
             && !captureFailed
+            && foregroundEvidenceIntegrityValid
             && acquisitionLedger.isReady
             && !selectedTargetCancellationPending
     }
@@ -323,6 +324,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
     private var selectedTargetCancellationPending = false
+    /// Foreground-only evidence remains valid for exactly one durable target capture.
+    /// Once the app leaves foreground, that capture cannot regain export/finalization
+    /// authority merely by reconnecting transport.
+    private var foregroundEvidenceIntegrityValid = true
     private var scanRequested = false
 
     private var centralManager: CBCentralManager!
@@ -503,6 +508,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// interruption before transport teardown. Product shells should use this
     /// instead of presenting foreground integrity loss as an operator cancel.
     public func invalidateActiveCaptureForForegroundLoss() {
+        // A terminal artifact is already immutable. Before terminal freeze,
+        // foreground loss permanently poisons this durable capture even when H
+        // intentionally blocks transport teardown from changing artifact authority.
+        if !observationBoundaryQueueGate.isTerminal {
+            foregroundEvidenceIntegrityValid = false
+        }
         cancelActiveConnection(cause: .foregroundIntegrityLoss)
     }
 
@@ -653,9 +664,24 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
-            await flushPendingEvents(through: horizonAdmission.queueCutoff)
-            try ensureCaptureHealthy()
-            try validateBoundaryAuthority(horizonAdmission.authority)
+            do {
+                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try requireForegroundEvidenceIntegrity()
+                try ensureCaptureHealthy()
+                try validateBoundaryAuthority(horizonAdmission.authority)
+            } catch {
+                let preAttemptFailure = error
+                do {
+                    let abandonment = try horizonAdmission.abandonBeforeRecorderMutation()
+                    try observationBoundaryQueueGate.abortUncommittedHorizon(after: abandonment)
+                } catch {
+                    // Recovery authority failure is stronger than the original
+                    // pre-attempt error because the allocated H lifecycle could not
+                    // be proven quarantined. Surface it to the outer fail-closed path.
+                    throw error
+                }
+                throw preAttemptFailure
+            }
 
             let horizonMutationOutcome = try await horizonAdmission
                 .recordBoundaryWithMutationOutcome(on: recorder)
@@ -678,15 +704,25 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             // durable H without fabricating terminal/frozen success.
             let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
             do {
+                // Foreground loss can interleave while the recorder actor owns H.
+                // Re-check before promoting durable H into queue-committed authority.
+                try requireForegroundEvidenceIntegrity()
                 committedHorizon = try recordedHorizon.markBoundaryRecorded(
                     on: &observationBoundaryQueueGate,
                     lastProcessedQueueSequence: lastProcessedEventSequence
                 )
             } catch {
-                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
-                    recordedHorizon
-                )
-                throw error
+                let recordedHorizonFailure = error
+                do {
+                    _ = try observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                        recordedHorizon
+                    )
+                } catch {
+                    // Exact quarantine failure is stronger than the triggering
+                    // foreground/commit failure; never leave ambiguous recorded H.
+                    throw error
+                }
+                throw recordedHorizonFailure
             }
 
             let data: Data
@@ -697,6 +733,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 // quarantine the exact producer-issued committed H rather than retry
                 // under a newer authority or fabricate terminal success.
                 data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                // JSON materialization is an actor hop. Foreground integrity must
+                // still be valid immediately before the synchronous terminal freeze.
+                try requireForegroundEvidenceIntegrity()
                 try validateBoundaryAuthority(committedHorizon.authority)
                 try committedHorizon.completeHorizonArtifactFreeze(
                     on: &observationBoundaryQueueGate
@@ -789,6 +828,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
+        // Only publication of a genuinely fresh durable recorder/session may
+        // restore foreground-only evidence validity after a prior scene loss.
+        foregroundEvidenceIntegrityValid = true
         hasUsedInitialSessionIdentity = true
         recorder = newRecorder
 
@@ -984,6 +1026,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             }
         } catch {
             failCapture(error)
+        }
+    }
+
+    private func requireForegroundEvidenceIntegrity() throws {
+        guard foregroundEvidenceIntegrityValid else {
+            throw ControllerError.captureIncomplete
         }
     }
 
