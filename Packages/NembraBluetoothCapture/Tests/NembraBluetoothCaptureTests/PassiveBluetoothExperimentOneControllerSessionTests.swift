@@ -4,7 +4,7 @@ import Testing
 @Suite("Experiment One app controller session")
 struct PassiveBluetoothExperimentOneControllerSessionTests {
     @Test @MainActor
-    func ownsTheCanonicalFourWindowProducerFromTheStartOfOneRun() throws {
+    func ownsCanonicalFourWindowProducerAndPrivateControllerFromOneOwner() throws {
         let session = try PassiveBluetoothExperimentOneControllerSession()
 
         let progress = try #require(session.powerCycleObservationSession.progress)
@@ -12,16 +12,37 @@ struct PassiveBluetoothExperimentOneControllerSessionTests {
         #expect(progress.completedWindowCount == 0)
         #expect(progress.isScanning == false)
         #expect(session.powerCycleObservationSession.result == nil)
+        #expect(session.hasTargetSession == false)
+        #expect(session.hasCompleteTargetEvidence == false)
+        #expect(session.canFinalizeObservationHorizon == false)
     }
 
     @Test @MainActor
     func connectFailsClosedBeforeRunOwnedAdmissionIsPrepared() throws {
         let session = try PassiveBluetoothExperimentOneControllerSession()
 
-        // The controller is intentionally not constructed here. This test pins the
-        // package-owned precondition structurally: connection cannot be attempted
-        // without first issuing the same run's hidden admission and opening its
-        // post-admission rediscovery epoch.
-        #expect(session.powerCycleObservationSession.result == nil)
+        #expect(
+            throws: PassiveBluetoothExperimentOneControllerSession.SessionError
+                .captureRediscoveryNotPrepared
+        ) {
+            try session.connectReacquiredTarget()
+        }
+        #expect(session.hasTargetSession == false)
+    }
+
+    @Test @MainActor
+    func preCaptureRestartReplacesTheWholeExperimentOneProducer() throws {
+        let session = try PassiveBluetoothExperimentOneControllerSession()
+        let firstProducer = session.powerCycleObservationSession
+
+        try session.restartExperimentOne()
+
+        let secondProducer = session.powerCycleObservationSession
+        #expect(firstProducer !== secondProducer)
+        let progress = try #require(secondProducer.progress)
+        #expect(progress.phase == .firstPoweredOff)
+        #expect(progress.completedWindowCount == 0)
+        #expect(secondProducer.result == nil)
+        #expect(session.hasTargetSession == false)
     }
 }
