@@ -40,6 +40,13 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('NembraCaptureSignedFieldCandidateEvidence.json', self.source)
         self.assertNotIn('es80_field_candidate_verify.py', self.source)
 
+    def test_forwards_verification_only_intended_field_device_without_persisting_it(self):
+        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
+        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('intended_device_udid=', self.source)
+        self.assertNotIn('field_device_udid=', self.source)
+        self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+
     def test_builds_from_fresh_detached_exact_commit_snapshot(self):
         self.assertIn('SOURCE_ROOT="$WORK_ROOT/source"', self.source)
         self.assertIn('git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"', self.source)
