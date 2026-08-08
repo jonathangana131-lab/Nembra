@@ -41,9 +41,9 @@ struct PassiveCoreBluetoothHorizonPreAttemptAbandonmentTests {
         )
     }
 
-    @Test("unused Horizon admission can quarantine before any recorder attempt")
+    @Test("unused H admission quarantines without fabricating recorder rejection or durable H")
     @MainActor
-    func exactUnusedHorizonQuarantinesWithoutFabricatingDurableH() async throws {
+    func unusedAdmissionQuarantinesAsDistinctZeroMutationOrigin() async throws {
         let recorder = try PassiveCoreBluetoothCaptureRecorder(
             vehicleIdentity: es80,
             startedAt: Date(timeIntervalSince1970: 1)
@@ -71,21 +71,37 @@ struct PassiveCoreBluetoothHorizonPreAttemptAbandonmentTests {
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(!gate.isTerminal)
         #expect(gate.permittedDrainUpperBound(firstPending: 5, pendingTail: 5) == nil)
-        #expect(!gate.resetForNewCaptureSession())
-        #expect((await recorder.snapshot()).observationBoundaries.count == 1)
 
-        #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
-            _ = try horizon.abandonBeforeRecorderAttempt()
-        }
         await #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
             _ = try await horizon.recordBoundaryWithMutationOutcome(on: recorder)
         }
         #expect((await recorder.snapshot()).observationBoundaries.count == 1)
     }
 
-    @Test("a recorder attempt consumes the same permit before abandonment can win")
+    @Test("copied H admission shares the one-shot permit between abandonment and recording")
     @MainActor
-    func recorderAttemptAndPreAttemptAbandonmentAreMutuallyExclusive() async throws {
+    func copiedAdmissionCannotRecordAfterAbandonmentWins() async throws {
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let fence = PassiveCoreBluetoothArtifactAuthorityFence(authority: authority)
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let horizon = try await horizonAdmission(gate: &gate, fence: fence, recorder: recorder)
+        let copiedHorizon = horizon
+
+        let abandonment = try copiedHorizon.abandonBeforeRecorderAttempt()
+        _ = try gate.abortHorizonBeforeRecorderAttempt(after: abandonment)
+
+        await #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
+            _ = try await horizon.recordBoundary(on: recorder)
+        }
+        #expect((await recorder.snapshot()).observationBoundaries.count == 1)
+    }
+
+    @Test("recorder attempt winning first permanently prevents pre-attempt abandonment")
+    @MainActor
+    func recorderAttemptCannotBeRelabeledAsPreAttemptAbandonment() async throws {
         let recorder = try PassiveCoreBluetoothCaptureRecorder(
             vehicleIdentity: es80,
             startedAt: Date(timeIntervalSince1970: 1)
@@ -94,16 +110,21 @@ struct PassiveCoreBluetoothHorizonPreAttemptAbandonmentTests {
         var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
         let horizon = try await horizonAdmission(gate: &gate, fence: fence, recorder: recorder)
 
-        _ = try await horizon.recordBoundary(on: recorder)
-        #expect((await recorder.snapshot()).observationBoundaries.count == 2)
-
+        let recorded = try await horizon.recordBoundary(on: recorder)
         #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
             _ = try horizon.abandonBeforeRecorderAttempt()
         }
-        #expect(!gate.isAbortQuarantined)
+
+        let committed = try recorded.markBoundaryRecorded(
+            on: &gate,
+            lastProcessedQueueSequence: recorded.queueCutoff
+        )
+        try committed.completeHorizonArtifactFreeze(on: &gate)
+        #expect(gate.isTerminal)
+        #expect((await recorder.snapshot()).observationBoundaries.count == 2)
     }
 
-    @Test("equal-scalar foreign pre-attempt receipt cannot quarantine another gate")
+    @Test("equal-scalar foreign abandonment receipt cannot quarantine another gate")
     @MainActor
     func foreignPreAttemptReceiptFailsExactTransactionIdentity() async throws {
         let recorderA = try PassiveCoreBluetoothCaptureRecorder(
@@ -122,12 +143,14 @@ struct PassiveCoreBluetoothHorizonPreAttemptAbandonmentTests {
         _ = try await horizonAdmission(gate: &gateB, fence: fenceB, recorder: recorderB)
 
         let abandonmentA = try horizonA.abandonBeforeRecorderAttempt()
-
         #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.staleTransaction) {
             _ = try gateB.abortHorizonBeforeRecorderAttempt(after: abandonmentA)
         }
         #expect(!gateB.isAbortQuarantined)
-        #expect((await recorderA.snapshot()).observationBoundaries.count == 1)
         #expect((await recorderB.snapshot()).observationBoundaries.count == 1)
+
+        let abortA = try gateA.abortHorizonBeforeRecorderAttempt(after: abandonmentA)
+        #expect(abortA.origin == .uncommittedHorizonAbandonedBeforeRecorderAttempt)
+        #expect(gateA.isAbortQuarantined)
     }
 }
