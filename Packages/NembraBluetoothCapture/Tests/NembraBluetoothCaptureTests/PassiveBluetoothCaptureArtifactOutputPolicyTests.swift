@@ -49,6 +49,29 @@ struct PassiveBluetoothCaptureArtifactOutputPolicyTests {
         #expect(String(decoding: try Data(contentsOf: capture), as: UTF8.self) == "raw")
     }
 
+    @Test("hard-link aliases cannot bypass raw-input protection")
+    func rejectsHardLinkAliasOfInput() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let capture = directory.appendingPathComponent("capture.json")
+        let alias = directory.appendingPathComponent("capture-hardlink.json")
+        try Data("raw".utf8).write(to: capture)
+        try FileManager.default.linkItem(at: capture, to: alias)
+
+        #expect(throws: PassiveBluetoothCaptureArtifactOutputPolicyError.outputMatchesInput(
+            capture.standardizedFileURL.resolvingSymlinksInPath().path
+        )) {
+            try PassiveBluetoothCaptureArtifactOutputPolicy.writeDerivedReport(
+                Data("derived".utf8),
+                inputURL: capture,
+                outputURL: alias,
+                allowReplacingExistingOutput: true
+            )
+        }
+        #expect(String(decoding: try Data(contentsOf: capture), as: UTF8.self) == "raw")
+        #expect(String(decoding: try Data(contentsOf: alias), as: UTF8.self) == "raw")
+    }
+
     @Test("existing derived report remains byte-for-byte unchanged without force")
     func protectsExistingReportByDefault() throws {
         let directory = try temporaryDirectory()
