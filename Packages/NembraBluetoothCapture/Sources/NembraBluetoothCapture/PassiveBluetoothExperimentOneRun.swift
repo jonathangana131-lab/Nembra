@@ -58,6 +58,10 @@ public struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable 
 /// receives a different authority even when CoreBluetooth later reports the same peripheral UUID,
 /// so stale/swapped same-UUID artifacts cannot satisfy the public evidence-composition API.
 ///
+/// Experiment One's 10-second per-window policy is fixed inside this product-specific owner. The
+/// caller cannot shorten it to reach capture acquisition sooner. That duration remains a local
+/// callback-receipt procedure threshold, not a BLE cadence or RF-completeness claim.
+///
 /// This type intentionally does **not** connect the existing foreground GATT controller to the
 /// recorder yet. Until that integration is made explicitly, the real physical experiment remains
 /// blocked rather than silently wrapping an independently owned capture as same-run evidence.
@@ -69,13 +73,12 @@ public final class PassiveBluetoothExperimentOneRun {
     private let runAuthorityID = UUID()
     private var captureRecorder: PassiveCoreBluetoothCaptureRecorder?
 
-    public init(
-        vehicleIdentity: VehicleIdentity,
-        minimumPowerCycleWindowDuration: TimeInterval
-    ) throws {
+    public init(vehicleIdentity: VehicleIdentity) throws {
         self.vehicleIdentity = vehicleIdentity
         powerCycleObservationSession = try PassiveBluetoothPowerCycleObservationSession(
-            minimumWindowDuration: minimumPowerCycleWindowDuration
+            minimumWindowDuration: TimeInterval(
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
+            ) / 1_000_000_000
         )
     }
 
