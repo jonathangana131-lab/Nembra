@@ -264,7 +264,7 @@ struct ES80CaptureShellView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("EXPERIMENT ONE")
+                Text("CAPTURE PROGRESS")
                     .font(.caption.monospaced().weight(.bold))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -347,7 +347,7 @@ struct ES80CaptureShellView: View {
                 statePanel(
                     eyebrow: "PREFLIGHT / DECLARATION",
                     title: "Confirm stationary setup",
-                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
+                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this capture.",
                     symbol: "checkmark.shield"
                 )
                 primaryButton(
@@ -428,7 +428,7 @@ struct ES80CaptureShellView: View {
                 symbol: "arrow.counterclockwise.circle"
             )
             primaryButton(
-                "Restart Experiment One",
+                "Start a fresh capture",
                 systemImage: "arrow.counterclockwise",
                 identifier: "es80.capture.restart-correlation"
             ) {
@@ -593,7 +593,7 @@ struct ES80CaptureShellView: View {
         case .finalizing:
             statePanel(
                 eyebrow: "SEALING",
-                title: "Freezing final evidence",
+                title: "Securing capture",
                 message: "Nembra is sealing the final evidence cutoff, checking capture integrity, and preparing the final capture artifact. Do not leave the app while this finishes.",
                 symbol: "lock.doc"
             )
@@ -670,7 +670,7 @@ struct ES80CaptureShellView: View {
                 symbol: "exclamationmark.triangle"
             )
             primaryButton(
-                "Start a fresh Experiment One",
+                "Start a fresh capture",
                 systemImage: "arrow.counterclockwise",
                 identifier: "es80.capture.restart-experiment"
             ) {
@@ -797,7 +797,7 @@ struct ES80CaptureShellView: View {
             }
 
             if coordinator.status.finalizationCleanup == .failed {
-                Text("The artifact remains sealed, but post-seal Bluetooth cleanup did not complete. Preserve this capture and restart Nembra before another Experiment One run.")
+                Text("The artifact remains sealed, but post-seal Bluetooth cleanup did not complete. Preserve this capture and restart Nembra before another capture.")
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1159,7 +1159,7 @@ struct ES80CaptureShellView: View {
     private func prepareFinalShareForAnalysisAndSharing() {
         guard coordinator.finalizedArtifact != nil else { return }
         guard let setup = declaredStationarySetup else {
-            sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
+            sharePreparationWarning = "Capture is sealed, but its setup confirmation is missing. Start a fresh capture instead of exporting incomplete setup information."
             return
         }
 
