@@ -1,457 +1,299 @@
 # NEMBRA SWARM OPERATING SYSTEM
-CURRENT_PROTOCOL_VERSION: 8
+CURRENT_PROTOCOL_VERSION: 13
 STATUS: ACTIVE
-CODENAME: QUOTA-INDEPENDENT SELF-HEALING ENGINEERING ORGANIZATION
+CODENAME: EXTREME-QUALITY PRODUCT CLOSURE
 
 Repository: `jonathangana131-lab/Nembra`
+Primary physical target: current/newer Tuya-generation **AOVOPRO ES80**
+Baseline: **iPhone 12 / iOS 27**
 
-This document governs parallel ChatGPT engineering workers and supersedes v7 coordination/execution rules when they conflict. Product truth still comes from the current repository, especially `MASTER_CONTINUATION_DIRECTIVE.md`, `PROJECT_STATE.md`, `DECISIONS.md`, `DESIGN_SYSTEM.md`, `PROTOCOL_NOTES.md`, `docs/PRODUCTION_VISUAL_PERFORMANCE_OVERHAUL.md`, and current ES80/battery/ride/navigation/accessibility docs.
+V13 preserves V12's product-first autonomy and minimal bureaucracy, then raises the quality bar and pushes workers to finish capabilities deeper instead of stopping at clean foundations.
 
-V8 exists because v7 survived dead chats and duplicate workers, but a shared Codex automated code-review quota became a team-wide failure point. V8 removes that dependency.
+## Prime directive
 
-## 0. PRIME DIRECTIVE
+**BUILD NEMBRA INTO EXCEPTIONAL VEHICLE SOFTWARE.**
 
-**NO SINGLE OPTIONAL EXTERNAL SERVICE MAY STOP NEMBRA DEVELOPMENT.**
+Optimize wasted effort, duplicate work, unnecessary process, and reasoning stalls — **never product quality**.
 
-A worker must distinguish a PROJECT BLOCKER from ONE TOOL / SERVICE / QUOTA BEING UNAVAILABLE.
+A technically correct feature that looks unfinished is unfinished.
+A beautiful feature that lies about telemetry is unfinished.
+A fast feature that creates fragile architecture is unfinished.
+A perfect foundation that never reaches the user is unfinished.
 
-These are never, by themselves, valid reasons to stop:
-- Codex automated code-review quota exhausted;
-- automated review unavailable;
-- GitHub Actions queued;
-- Xcode runner busy;
-- one connector action temporarily rate-limited;
-- one GitHub read/write route failing while alternatives remain;
-- one PR event skipped;
-- one CI run stale;
-- one reviewer unavailable.
+V13 becomes faster through parallelism, evidence reuse, bounded implementation cycles, and less ceremony — not through weaker engineering, weaker testing, uglier UI, or lower acceptance standards.
 
-Never evade a real service quota by rotating accounts, credentials, identities, or other circumvention. V8 bypasses quota dependency architecturally: it simply does not require that optional service.
+## Existing workers migrate in place
 
-## 1. PRODUCT KERNEL
+Existing V12 workers do **not** restart branches or create migration PRs. Keep coherent source/tests/evidence. At the next natural checkpoint, absorb V13's quality/closure rules and continue the same useful capability. Historical V12 evidence remains valid where content is unchanged.
 
-Primary physical target: current/newer Tuya-generation **AOVOPRO ES80**.
+No feature-cell ceremony, epochs, mandatory captains, release-train bureaucracy, migration spam, or status theater returns under V13.
 
-Nembra must remain a premium native iOS 27 scooter companion, ride computer, evidence system, navigation experience, and truthful vehicle interface.
-
-Permanent rules:
-- measured / estimated / displayed / derived / unknown remain distinct;
-- never invent telemetry;
-- Simulator evidence never becomes physical ES80 proof;
-- software implementation never equals physical validation;
-- no unverified motorized-hardware writes;
-- public/internet research before physical protocol blocking;
-- automatic rides remain automatic; no Start Ride workaround;
-- ride recovery/history/maps/stats remain truth-preserving;
-- battery `% ↔ estimated range` remains a signature interaction;
-- range learns from legitimate battery consumption + trustworthy real distance, never advertised range × percent;
-- ODO/GPS/route/provider-route evidence remain distinct;
-- MapKit cycling suggestions do not prove scooter legality/safety;
-- current systems-era UI is not final;
-- final visual/interaction/motion/haptics/accessibility/performance work remains a major product program, reasonably half or more of remaining effort after systems mature;
-- iPhone 12 / iOS 27 remains the baseline acceptance target unless repository policy changes.
+## Primary loop
 
-Final experience target: world-class native iOS vehicle software, original Nembra identity, premium EV-instrumentation quality, glanceable/tactile/fluid/fast/accessibile/trustworthy, with no generic Tuya UI, gamer RGB, card soup, debug-first hierarchy, cheap cross-platform look, or giant empty black space accepted as final quality.
+`UNDERSTAND PRODUCT → INSPECT LIVE GITHUB → FIND HIGHEST-VALUE NON-CONFLICTING PRODUCT GAP → BUILD → TEST → INTEGRATE → RUN → LOOK → FEEL → PROFILE → POLISH → FIX → SHIP → CONTINUE UP THE FEATURE LADDER`
 
-## 2. ORGANIZATION
+A commit, passing test, PR, review, merge, or correct domain primitive is a checkpoint, not a normal endpoint. Keep working while the outer platform permits and useful work exists.
 
-Workers are disposable compute. GitHub durable state is the organization.
+After each checkpoint ask: **what is the next adjacent step required for this capability to become genuinely excellent in Nembra?**
 
-Roles:
-- RELEASE / INTEGRATION LEAD
-- BUILD / CI SHERIFF
-- FEATURE ENGINEER
-- HARDWARE / PROTOCOL RESEARCH
-- PRODUCT / VISUAL ENGINEER
-- PERFORMANCE / ACCESSIBILITY ENGINEER
-- RECOVERY ENGINEER
-- PEER REVIEW / HARDENING ENGINEER
+## Product-closure ladder
 
-Suggested 7-worker staffing: 1 integration/release, 1 CI/build, 2 feature/domain, 1 product/visual, 1 ES80/protocol or navigation, 1 peer-review/performance/accessibility. Do not manufacture work merely to occupy workers. Prefer finishing/recovering existing work over opening more PRs.
+Follow meaningful capabilities upward as far as safely possible:
 
-## 3. IDENTITIES / LANES / EPOCHS
+`DOMAIN/TRUTH → INTEGRATION → PERSISTENCE → APP WIRING → USER EXPERIENCE → VISUAL/MOTION → RUNTIME → ACCESSIBILITY → PERFORMANCE → ADVERSARIAL TESTING → FINAL POLISH`
 
-WORKER_ID: `chat-<5 lowercase alphanumeric>`
-LANE_ID: stable conceptual work name.
-EPOCH: ownership generation for a lane.
+Do not keep polishing a 98% foundation while the production layer above it is 50%, unless the remaining foundation defect actually blocks correctness or safety.
 
-Highest coherent non-superseded epoch owns the lane. A returning lower-epoch worker MUST yield and pivot.
+## Simple collaboration
 
-Branches:
-- `parallel/<lane>/<WORKER_ID>`
-- `parallel/recover-<lane>/<WORKER_ID>`
-- `parallel/integrate-<lane>/<WORKER_ID>`
+1. Inspect current `main`, active PRs, and changed paths before choosing work.
+2. Avoid active file conflicts unless collaboration is clearly intentional.
+3. Own one meaningful product capability deeply rather than scattering across unrelated micro-fixes.
+4. Split huge features only across genuinely non-overlapping layers.
+5. Prefer coherent product slices over PR soup.
+6. When another worker already owns a good solution, do not compete; move to an adjacent layer or bottleneck.
+7. If GitHub writes are throttled, keep coding/testing/reviewing and batch useful writes rather than retry-spamming.
+8. Do not create process artifacts unless they directly help ship Nembra.
 
-Never hijack or force-push another worker's branch.
+## Critical-path gravity
 
-## 4. V8 CONTROL PLANE
+Continuously compare subsystem maturity and prefer work that closes the largest real product gap or unlocks the most downstream capability.
 
-Current policy: `docs/SWARM_OPERATING_SYSTEM.md`.
-Current control issue: open issue titled `[SWARM CONTROL] Nembra Developer Team v8`.
+The AOVOPRO ES80 is Nembra's primary real product target. When meaningful non-conflicting work can move ES80 from mature research tooling toward **verified read-only production telemetry**, that work has high priority over marginal hardening of already-mature unrelated foundations.
 
-PR body + branch + commits are the worker's primary durable state. The control issue is for ownership and organization-level messages, not routine narration. This replaces the v7 pattern that grew to hundreds of control-plane comments.
+Do not pile many workers into the same files. Parallelize ES80 work across independent layers such as passive capture, offline protocol analysis, production read-only bridging, telemetry truth, battery/range consumption, cockpit presentation, physical experiment tooling, and adversarial verification.
 
-Use these message types when needed:
-- `### V8 CLAIM`
-- `### V8 TAKEOVER`
-- `### V8 HANDOFF`
-- `### V8 RELEASE`
-- `### V8 GLOBAL DIRECTIVE`
-- `### V8 SERVICE INCIDENT`
+## Design north star
 
-Routine checkpoints belong primarily in the PR body/commits.
+Nembra should reach the perceived quality, depth, restraint, hierarchy, tactility, and machine/software unity associated with premium **Stark Future / Stark VARG / Stark phone-style vehicle software and Tesla vehicle OS**, while remaining an original Nembra design.
 
-## 5. CLAIM FIRST, EDIT SECOND
+Do **not** clone copyrighted layouts, assets, icons, animations, trade dress, or brand identity.
 
-Before deep edits:
-1. inspect current main;
-2. inspect relevant open PRs;
-3. inspect recent v8 claims;
-4. identify intended paths;
-5. post CLAIM;
-6. re-read recent claims for race;
-7. only then edit.
+Desired language:
+- modern flat-first precision with selective depth;
+- matte/adaptive dark surfaces, excellent typography and spacing;
+- restrained color used for meaningful state, not decoration;
+- no gamer RGB, neon-ring sci-fi HUD, card soup, glossy battery tubes, debug-dashboard feel, or fake-premium empty black space;
+- strong glanceability while riding;
+- deliberate normal and accessibility layouts;
+- motion that communicates physical/state response rather than decorative movement.
 
-Earlier meaningful incumbent wins. Later duplicate pivots to review, tests, dependency work, another subsystem, or stale-lane recovery. Never fight for ownership.
+## Visual acceptance is engineering
 
-## 6. LOCK CLASSES
+For app-visible work:
 
-CLASS A — EXCLUSIVE:
-- `Nembra.xcodeproj/project.pbxproj`
-- app bootstrap/root composition
-- global navigation shell
-- shared persistence factories
-- global environment wiring
-- GitHub workflow/scheduler files
-- permanent global policy docs
+`SIMULATOR → INTERACT → SCREENSHOT → CRITIQUE → REDESIGN → IMPLEMENT → SCREENSHOT → COMPARE → PROFILE → ACCESSIBILITY → FIX → REPEAT`
 
-CLASS B — SUBSYSTEM:
-- Home
-- Dashboard
-- ride persistence
-- battery truth chain
-- adaptive range
-- navigation
-- Bluetooth capture / production transport
+A screen is not excellent because it compiles. Running SwiftUI in the target Simulator is the visual source of truth. Generated concept art/static mockups are references, not runtime acceptance evidence.
 
-CLASS C — ADDITIVE:
-- isolated NembraCore type/tests
-- isolated research/audit docs
-- independent fixtures
-- non-overlapping package work
+## Home
 
-Class A gets extra review rigor. No drive-by edits into another active Class A lane.
+Home should feel like opening a premium vehicle companion, not a settings page. Quickly communicate vehicle identity, connection/recovery, battery/range, confirmed mode, known state/controls where legitimate, current trip context, recent ride, and at most one clear action when something actually needs attention.
 
-## 7. MICROBURST LIVENESS
+Keep it compact, confident, tactile, non-duplicative, and visually integrated with the vehicle rather than stacking generic cards.
 
-Assume any chat may disappear. Target atomic packet: roughly 5–12 minutes.
+## Live Ride / Dashboard — flagship surface
 
-Loop:
-TARGETED READ → ONE PACKET → FOCUSED VERIFY → COMMIT/PUSH → UPDATE PR STATE → IMMEDIATELY NEXT PACKET.
+The riding cockpit is a signature Nembra experience. It should feel physically connected to the scooter.
 
-Create durable state early. Do not hold large irreplaceable work only in chat context. Do not create meaningless heartbeat commits.
+Prioritize:
+- huge truthful speed;
+- signature propulsion/power visualization;
+- battery ↔ learned range;
+- confirmed ride mode;
+- ride distance and observed duration;
+- navigation integrated into the same cockpit when active;
+- connection/vehicle truth without clutter;
+- legitimate peak information;
+- sparse safe controls.
 
-## 8. SERVICE-STATE MACHINE
+Use one dominant primary instrument, a small number of secondary instruments, and context-sensitive detail. Speed, propulsion, battery/range, navigation, mode, and trip context should feel like one machine interface, not unrelated widgets.
 
-Every shared dependency is classified independently:
-`HEALTHY / DEGRADED / EXHAUSTED / UNAVAILABLE / UNKNOWN`.
+## Signature propulsion / power gauge
 
-Services include:
-- GitHub metadata/API reads;
-- GitHub writes;
-- automated Codex code review;
-- GitHub Actions;
-- self-hosted Xcode 27 runner;
-- web/public research;
-- Simulator/device tooling;
-- physical ES80 access.
+Build a premium Tesla/Stark-inspired but original Nembra propulsion visualization near the speed instrumentation. It may be a restrained band, arc, line, field, or another original form, but it must be extremely fluid, glanceable, and mechanically connected in feel.
 
-A failure in one service changes only work that truly depends on it. Never flatten one outage into “GitHub is broken” unless GitHub itself is genuinely unavailable.
+Use the strongest **verified** production signal available. Candidate future physical sources include watts/power, current/amps, voltage, or a safely derived value only after raw source, scaling, units, signedness, cadence, continuity, and provenance are verified.
 
-## 9. AUTOMATED CODE REVIEW — HARD RULE
+The target generation's stock Tuya app has been observed displaying battery %, voltage, current/amps, and watts/power. Those are correlation anchors until Nembra verifies underlying transport/DP semantics.
 
-**AUTOMATED CODEX CODE REVIEW IS OPTIONAL. IT IS NOT A MERGE GATE. IT IS NOT A LIVENESS REQUIREMENT.**
+Do **not** label the visualization `throttle` unless a real throttle/demand signal is physically verified. Until then it is propulsion/power.
 
-Initial v8 mode:
-`AUTOMATED_CODE_REVIEW_MODE = DISABLED_BY_DEFAULT`
+### Measurement clock vs display clock
 
-Workers MUST NOT request or repeatedly retry automated Codex Code Review unless the Integration Lead / CI Sheriff explicitly allocates it to a specific high-risk PR, the service is known available, and it adds value beyond peer review + tests.
+The scooter does not need to publish at 60 Hz for the cockpit to render at 60 Hz.
 
-If a PR receives `You have reached your Codex usage limits for code reviews`:
-1. record `AUTOMATED_REVIEW = UNAVAILABLE_QUOTA`;
-2. do not retry;
-3. do not wait;
-4. do not ask the user to buy credits;
-5. do not stop;
-6. continue under V8 PEER REVIEW MODE.
+Keep separate:
+1. **measurement clock** — accepted physical samples at their real cadence;
+2. **display clock** — render-only motion at display refresh rate.
 
-Never attempt quota circumvention.
+Use a retargetable, bounded, critically-damped or equivalently robust presentation model so gauge motion continuously approaches the latest accepted sample without visual jitter or misleading overshoot.
 
-## 10. V8 PEER REVIEW MODE
+Interpolated display frames must never become telemetry evidence, persisted samples, acceleration evidence, peak evidence, battery-energy evidence, range-learning evidence, or protocol truth.
 
-Peer review uses ordinary repository reads/diffs + engineering reasoning and does not depend on the automated Codex Code Review product.
+Do not extrapolate indefinitely through a data gap. Stale/interrupted/disconnected evidence must transition to truthful retained/unavailable presentation.
 
-A peer review records reviewer, PR, exact head, scope/files/contracts/evidence inspected, blocker/important/nonblocking findings, verdict, and truth boundary.
+### Learned observed full-power envelope
 
-Reviewer rules:
-- do not edit worker-owned files unless ownership transfers;
-- review exact head;
-- read actual source/diff, not PR prose only;
-- inspect neighboring contracts and tests;
-- distinguish software semantics from hardware proof.
+After current/power semantics are physically verified, Nembra may learn a stable per-scooter visual full-power scale from repeated authoritative observations.
 
-Acceptance review by effect:
-- docs/research: owner self-review + currentness/isolation; peer optional unless risky factual claim;
-- isolated code: at least one independent peer where practical + focused deterministic tests + exact-head repository gate when required by effect;
-- cross-domain/product: at least one strong peer + dependency/consumer review + exact-head Xcode/Simulator;
-- Class A / CI / persistence / security / global composition: two independent peers where practical + adversarial/static matrix + exact-head appropriate CI + official platform/security docs where applicable.
+This is **not** rated/certified motor maximum. Use concepts like `learned observed power ceiling`, `observed full-power region`, or `learned gauge scale`.
 
-Automated Codex review may supplement this but never gates it.
+Requirements:
+- repeated robust evidence, not one spike;
+- high-percentile/sustained upper-envelope behavior plus restrained visual headroom;
+- hysteresis so the gauge does not resize constantly;
+- upward adaptation when stronger repeated evidence appears;
+- much slower evidence-heavy downward adaptation;
+- scooter-identity binding;
+- mode-specific envelopes only when mode identity is trustworthy;
+- preserve real measured watts/amps even when normalized presentation is used;
+- do not normalize away low-battery/thermal reduction and call it rated full power.
 
-## 11. REVIEW BUDGET
+When accepted live output is legitimately near the learned observed ceiling, the gauge should reach or nearly reach its edge so sustained hard/pinned acceleration visually reads as full output rather than an arbitrary 70%.
 
-If automated review is ever re-enabled, only Integration Lead/CI Sheriff allocates it.
+A subtle peak-hold marker is allowed when it represents accepted evidence.
 
-Priority:
-- R0 security / CI trust boundary / destructive persistence
-- R1 global composition / motorized-command safety
-- R2 complex cross-domain merge-ready feature
-- R3 normal isolated feature
-- R4 docs/audits
+Do not show `FULL THROTTLE` without a verified throttle signal. `FULL POWER` / `NEAR OBSERVED MAX` requires a strong explicit evidence policy.
 
-R3/R4 should normally consume zero automated review quota.
+If a real throttle/demand field is later verified, preserve it separately from delivered power. A future premium gauge may show a thin **demand** marker plus **delivered power** fill, allowing Nembra to show requested output versus delivered output without guessing why they differ.
 
-## 12. GITHUB API / CONNECTOR THROTTLING MODE
+Only show a reverse/regen side if negative current/power or another authoritative regen signal is physically verified.
 
-If reads are rate-limited/throttled:
-- stop repeated broad searches;
-- use exact known PR/file/branch refs;
-- batch reads;
-- reuse fresh durable facts within the packet;
-- switch to local code/test/review work;
-- inspect only relevant logs/files;
-- re-check GitHub naturally at the next checkpoint.
+## Fluidity / perceived latency
 
-Do not hammer retry loops. A rate limit on one route is not a project blocker.
+Target smooth 60 Hz cockpit presentation where appropriate on iPhone 12. Localize high-frequency state; do not invalidate giant SwiftUI trees every telemetry/display frame.
 
-## 13. GITHUB WRITE-DEGRADED MODE
+New accepted telemetry should begin affecting presentation at the next practical render opportunity rather than waiting behind a coarse timer. Smoothness must not create noticeable lag behind the scooter.
 
-If writes temporarily fail but reads/local tooling work:
-- do not start a huge unpushable rewrite;
-- complete at most one small coherent local packet;
-- preserve a patch/diff locally when possible;
-- pivot to read-only review, research, test diagnosis, or other reconstructable work;
-- retry writes only at natural checkpoints, never tight-loop.
+Test deterministic step response, ramps, jitter, abrupt release, cadence changes, stale gaps, reconnect, maps + telemetry, and long rides. Avoid display overshoot that visually implies more speed/power than the latest accepted target.
 
-If all durable-write paths remain unavailable and the chat may die, prefer reconstructable read-only work over accumulating large uncheckpointed source changes.
+Synthetic Simulator telemetry should include: idle → gentle launch → hard acceleration → sustained near-max output → release → coast; noisy low-cadence samples; cadence changes; stale gap/reconnect; low-battery reduced output; and mode-specific envelope scenarios. These fixtures are for runtime/design QA only, never physical protocol evidence.
 
-## 14. ACTIONS / XCODE QUEUE MODE
+## Battery and range
 
-Xcode is a scarce acceptance resource. Do not gate every micro-commit. Use focused/local/package tests during development; request exact-head Xcode at a coherent acceptance checkpoint.
+Battery is a signature Nembra system, not an old phone-style icon.
 
-When queued:
-- freeze candidate SHA when practical;
-- perform useful read-only same-lane work;
-- avoid trivial head churn;
-- do not busy-poll;
-- do not request duplicate runs.
+Keep distinct:
+`RAW → VERIFIED → MEASURED SoC → ESTIMATED SoC → DISPLAY SoC → RETAINED → UNKNOWN`
 
-Queued is not green. Resolver success is not Simulator success. Skipped is not acceptance. Green ancestor is not green final head.
+Never present retained or estimated battery as fresh measured battery.
 
-Long runner outage may leave a feature as `software candidate, acceptance pending`; the team continues other safe work without fabricating merge proof.
+Primary battery/range interaction remains direct, e.g. `73% ↔ 8.4 mi`; battery fill always means charge.
 
-## 15. CI FAILURE MODE
+Learn range from legitimate battery consumption plus trustworthy real ride distance. Never advertised manufacturer range × battery percent. Handle insufficient learning, stale evidence, gaps, low SoC, incomplete rides, outliers, confidence, reconnects, and scooter identity. Do not invent Wh/mi until electrical energy semantics are actually verified.
 
-On failure: inspect exact failing job/step, inspect narrow log region, reproduce with cheapest relevant focused test, fix evidence-backed cause, rerun once on new coherent exact head. Never blind-rerun repeatedly. Distinguish infrastructure failure from code failure.
+If voltage/current/power later become independently verified, Nembra may cross-check their relationship conservatively. Do not assume `watts = volts × amps` proves any field by itself; account for sign, timing, quantization, derivation, and asynchronous sampling. Integrate electrical energy only when cadence/units/continuity/provenance are strong enough.
 
-## 16. CONTROL-PLANE OUTAGE MODE
+## Automatic rides / history
 
-If control comments cannot be written, ownership fallback order is: incumbent open PR, branch name + PR body state, latest durable commit/PR update, then control issue once available. Do not create duplicate implementation merely because the message bus is temporarily unavailable.
+No manual Start Ride workaround replacing the architecture. Ride lifecycle must survive disconnect/reconnect/suspension/process interruption/crash/relaunch/partial route capture/duplicate completion.
 
-## 17. V8 WORKER STATE
+Require durable session identity, explicit gaps, idempotent completion, crash-safe recovery, immutable history, no stale-checkpoint resurrection, and no invented time/distance through missing observation.
 
-Every active v8 worker PR maintains:
+History should be a premium vehicle logbook, not an evidence debugger. Keep ODO, GPS distance, integrated speed distance, recorded route geometry, provider route distance, observed duration, imported values, estimates, and unknowns distinct.
 
-### V8 WORKER STATE
-PROTOCOL_VERSION: 8
-WORKER_ID:
-ROLE:
-LANE_ID:
-EPOCH:
-CONTROL_CLAIM:
-CURRENT_HEAD:
-BASE_OR_PARENT:
-OWNED_PATHS:
-LOCK_CLASS:
-LAST_KNOWN_GREEN:
-CURRENT_STATE:
-NEXT_PACKET:
-DEPENDENCIES:
-KNOWN_OVERLAP:
-CI_STATE:
-AUTOMATED_REVIEW_STATE:
-PEER_REVIEW_STATE:
-SERVICE_DEGRADATIONS:
-BLOCKED_ON:
-HARDWARE_STATUS:
-HANDOFF_READY: false
+## Navigation
 
-`BLOCKED_ON` lists only real blockers to the lane's next meaningful action. Unavailable optional code review is not a blocker. Preserve V5/V7 state as history.
+MapKit navigation should eventually feel native to the live cockpit rather than pasted on. Keep route planning, alternatives, selection, guidance, progress, reroute, arrival, and ride measurement separate. Provider route geometry/distance/ETA never becomes measured ride truth.
 
-## 18. STALE / RECOVERY
+Require cancellation, generation identity, stale-callback rejection, explicit selection, quality-screened progress, backward-regression protection, sustained reroute evidence, sustained arrival evidence, and fail-closed ambiguity.
 
-ACTIVE: durable movement within ~15 minutes OR active queued/running acceptance OR explicit long operation.
-QUIET: ~15–25 minutes.
-SUSPECTED DEAD: ~25–35 minutes with no durable movement and no active operation.
-RECOVERY ELIGIBLE: ~35+ minutes for ordinary lanes; Class A use extra caution (~45 min or coordinator decision).
+## ES80 / Tuya / Bluetooth — critical product path
 
-Recovery preserves predecessor, identifies exact durable SHA, posts TAKEOVER, increments epoch, creates a NEW recovery branch, reconciles minimally, and continues the exact next packet. Returning lower epoch yields.
+**PUBLIC FIRST, SCOOTER SECOND, PHYSICAL EVIDENCE BEFORE CLAIMS.**
 
-A quota warning is not proof a worker is dead; check whether it continued via other tools before takeover.
+Use official/public AOVO/AOVOPRO information, Tuya docs, Apple CoreBluetooth docs, public reverse engineering, safe passive capture, and offline analysis. Preserve raw bytes, timing, GATT identity, transport provenance, continuity generations, subscription/read origin, and capture metadata.
 
-## 19. WORK SELECTION
+Never:
+- send random characteristic writes;
+- treat `.write` capability as permission;
+- treat CoreBluetooth write completion as scooter acknowledgement;
+- treat subscription success as vehicle acknowledgement;
+- invent services/characteristics/DP IDs/types/scales/signedness/cadence;
+- promote stock-app display values directly into protocol truth;
+- make the user manually decode hex when tooling can automate correlation.
 
-P0 broken main / safety / truth regression
-P1 parent blocking multiple dependents
-P2 near-ready/recoverable PR
-P3 diagnosed failed acceptance
-P4 required dependency/main reconciliation
-P5 high-value product/system feature
-P6 visual/performance/accessibility implementation
-P7 ES80 public-first research/passive tooling
-P8 review/test hardening
+Move the ES80 path upward whenever evidence allows:
 
-Prefer WIP reduction. If many PRs wait on the same scarce service, stop creating more immediate demand for that service and shift workers to peer review, deterministic hardening, independent subsystems, product/visual work, public research, and dependency cleanup.
+`PUBLIC RESEARCH → PASSIVE COREBLUETOOTH CAPTURE → RELIABLE TARGET/SESSION IDENTITY → PHYSICAL CAPTURE UX → RAW GATT/VALUE EVIDENCE → STOCK-APP CORRELATION MARKERS → TRANSPORT/FRAMING CANDIDATES → REPEATABLE PHYSICAL CORRELATION → VERIFIED READ-ONLY FIELD DECODING → PRODUCTION READ-ONLY VEHICLE SERVICE → BATTERY/VOLTAGE/CURRENT/POWER INTEGRATION → DASHBOARD PROPULSION GAUGE → RANGE/ENERGY FEATURES WHEN LEGITIMATE → ONLY THEN EVIDENCE-GATED COMMAND RESEARCH`
 
-## 20. DEPENDENCY DAG
+When passive infrastructure is already mature, do not spend endless cycles polishing it if the next real blocker is physical capture or production read-only integration.
 
-Dependent PR records parent PR, branch, and exact SHA. Parent movement triggers narrow reconcile only when semantically needed or before acceptance. Parent merge triggers fresh-main retarget/reconcile and exact-final-head re-gate where required. Do not duplicate parent code.
+## Physical-blocker escalation
 
-## 21. RELEASE / INTEGRATION LEAD
+Exhaust reasonable software/public work first. When a specific remaining uncertainty genuinely requires the physical scooter, do not merely write `physical verification required` and wander into unrelated theory.
 
-Integration Lead manages merge/dependency order, claim races, scarce resource budgets, service incidents, near-ready work, docs-only main-sync churn, historical-lane cleanup, and future protocol migrations. It must keep optional-tool outages from becoming organization outages.
+Produce **one precise minimal safe experiment** that Nembra tooling can consume: exact app/build/tool, exact scooter state, short duration, exact stock-app action/value marker, exact evidence expected, and no manual hex interpretation by the user.
 
-Workers may merge ordinary isolated work when the v8 acceptance contract is satisfied and ownership is clear.
+## Commands / vehicle control
 
-## 22. CI SHERIFF
+Desired lifecycle:
+`REQUESTED → PENDING → OBSERVED / ACKNOWLEDGED EVIDENCE → CONFIRMED`
 
-CI Sheriff owns workflow/scheduler architecture, trusted self-hosted Xcode admission, runner backlog, duplicate-gate suppression, filtered/skipped vs real acceptance, Xcode priority, and automated review allocation only if that optional service is ever enabled.
+Do not claim success because the user tapped or because a Bluetooth write callback completed. Physical/motorized writes require strong protocol evidence, clear authorization boundaries, fail-closed behavior, and separation of transport completion from scooter-state confirmation.
 
-Security requirement: untrusted fork/PR-controlled workflow bytes must never gain arbitrary execution on persistent self-hosted runner before trusted same-repository/current-head admission.
+## Acceleration / peaks
 
-## 23. ES80 / HARDWARE PROGRAM
+Propulsion/power display and acceleration measurement are different concepts. Acceleration uses trustworthy velocity change over time; never display-interpolated frames.
 
-Public first, scooter second. Exhaust official AOVOPRO/AOVO material, Tuya docs, Apple CoreBluetooth/AccessorySetupKit docs, public reverse engineering, component/module docs, regulatory/source material, safe passive capture, and offline analysis before physical blocking.
+For 0→10 / 0→15 / 0→20 / top-speed measurements, reject weak cadence, rolling starts, source changes, gaps, poor GPS when relevant, interruptions, or ambiguous start/end state.
 
-Evidence classes: DIRECT PHYSICAL / APP OBSERVATION; VERIFIED PUBLIC; CORROBORATED / PROBABLE; GENERIC TUYA/FAMILY FACT; SIMULATOR / SOFTWARE FIXTURE; UNKNOWN / PHYSICAL VERIFICATION REQUIRED.
+Peak means highest **accepted observed** measurement under the relevant quality policy, not unknowable perfect continuous-time maximum. Persist provenance/continuity and never convert render interpolation into peak evidence.
 
-No candidate UUID/DP/encryption theory authorizes motorized writes. Characteristic `.write` property is metadata, not permission. Subscription success is not scooter-command acknowledgement. The user should not be asked to decode hex.
+## Performance / tactility / accessibility
 
-## 24. BATTERY / RANGE
+Profile launch, Home, continuous Dashboard rendering, power/speed motion, maps + telemetry, navigation + ride recording, long rides, history scrolling, persistence, CPU/main thread, memory/leaks, material/blur cost, and orientation transitions.
 
-Pipeline:
-RAW EVIDENCE → CLASSIFIED/VERIFIED EVIDENCE → MEASURED SOC → ESTIMATED SOC → DISPLAY SOC → LEARNING WINDOWS → EFFICIENCY MODEL → ESTIMATED RANGE → PRESENTATION.
+Touch acknowledgement should feel immediate. Confirmed motorized actions may use restrained success haptics only after accepted confirmation. Never buzz continuously with telemetry. Reduce Motion must remain excellent.
 
-Display animation frames never become hardware evidence. Stock-app-visible numbers do not become raw verified ES80 telemetry without source proof.
+Support VoiceOver, Dynamic Type, Reduce Motion, Reduce Transparency, Increase Contrast, Differentiate Without Color, Voice Control, Switch Control, touch targets, and orientation changes. Warnings/gauge state must not rely on color alone. Recompose large-text layouts instead of shrinking/clipping the default design.
 
-Learned range uses meaningful authoritative battery consumption, trustworthy distance, continuity/truth gates, recent + historical behavior, confidence, outlier rejection, and exclusion of incomplete/bad rides. Never manufacturer-range multiplication. Numeric range presentation fails closed when evidence/currentness/authority is insufficient.
+## Simulation
 
-## 25. SPEED / RIDE / NAVIGATION TRUTH
+Simulator is essential development evidence and **never physical ES80 proof**. Synthetic current/watts/power may be used for cockpit QA only when explicitly simulator-only.
 
-Speed: authoritative measurement is separate from motion assist/presentation interpolation; serialization cannot bypass evidence validation; observed peak is sampled evidence, not perfect continuous-time top speed; acceleration timing must state its clock/evidence basis and never overclaim physical crossing time.
+Cover disconnected, Bluetooth off, permission denied, reconnecting, retained/stale data, stopped, riding, low battery, modes, command pending/confirmed/unavailable, routes, gaps, recovery, history, learned/unavailable range, navigation/reroute/arrival, orientation, and accessibility states.
 
-Rides: automatic, crash-safe, transport gaps explicit, ODO/GPS/route sources distinct, recovery never invents continuity.
+## Truth constitution
 
-Navigation: provider route is planning evidence, route selection is explicit, stale async requests fail closed, suggestions do not prove scooter legality, route geometry/ETA never becomes measured ride-history distance.
+Never fabricate speed, battery %, voltage, current, watts/power, energy, Wh/mi, temperature, torque, throttle, regen, distance, odometer, GPS accuracy, route geometry, ETA provenance, protocol semantics, command acknowledgement, battery health, charging state, physical maximums, or legality/safety.
 
-## 26. PRODUCT VISUAL / PERFORMANCE PROGRAM
+Keep distinct:
+`MEASURED / ESTIMATED / DISPLAYED / INTERPOLATED / DERIVED / RETAINED / UNKNOWN / SIMULATOR / PUBLIC / PHYSICAL`
 
-Current UI is a functional baseline, not protected final composition.
+Simulator != physical.
+Public evidence != physical verification.
+Display interpolation != measurement.
+Observed peak != perfect physical maximum.
+Learned gauge ceiling != rated motor/controller maximum.
+High measured power != verified throttle position.
+Disconnect != measured zero.
 
-Required loop:
-REAL iPHONE 12 / iOS 27 SIMULATOR → SCREENSHOT → CRITIQUE → REDESIGN → IMPLEMENT → INTERACT → SCREENSHOT → PROFILE → ACCESSIBILITY → FIX → REPEAT.
+## Testing / acceptance
 
-Major targets: premium Home hierarchy, signature landscape cockpit, battery/range interaction, live ride + navigation, Ride History/Details/maps/stats, charging/low-battery/reconnect/error/learning states, cohesive motion/haptics, polished orientation continuity.
+Use risk-proportional judgment.
 
-Performance: 60 Hz where appropriate; narrow high-frequency observation; no telemetry invalidating whole screen; avoid excessive blur/material work; profile maps/routes/history/navigation + telemetry, launch, transitions, long sessions, memory/leaks; physical iPhone where Simulator cannot prove behavior.
+- Isolated package/domain: focused compile/tests, adversarial tests where useful, source review; no mandatory full Simulator gate for every tiny edit.
+- App-visible: focused tests, Xcode build/test, Simulator interaction, screenshots/visual critique, accessibility verification, and performance checks when rendering/high-frequency behavior changes.
+- Persistence/security/global build wiring/physical command boundaries: stronger adversarial testing, corruption/recovery/error paths, and exact-head acceptance.
 
-Accessibility: VoiceOver, Dynamic Type, Reduce Motion, Reduce Transparency, Increase Contrast, Differentiate Without Color, Voice Control, Switch Control, touch targets, and physical-device validation where required.
+Do not call queued=green, skipped=green, resolver-only=accepted, or old-SHA green=new-SHA green. Do not rerun expensive full-app acceptance merely because unrelated docs moved.
 
-## 27. CONTEXT ECONOMY
+## Anti-patterns
 
-DO exact file/PR reads, narrow diffs, focused logs, concise PR state, reuse current packet facts, batch related reads/writes, and load only relevant product docs after boot.
+Do not confuse sophistication with progress. If two designs are equally truthful and robust, prefer the simpler architecture that moves Nembra closer to an excellent working product.
 
-DO NOT repeatedly enumerate all PRs, reread the whole OS every packet, dump giant logs, repeatedly fetch unchanged files, maintain a second roadmap in chat, narrate every tool call, or request automated reviews on every PR.
+Avoid endless foundation polishing while downstream integration is missing, abstraction-for-every-edge-case, micro-PR factories, debug UI in the final product, generic component libraries replacing deliberate screen design, premature physical command work, fake precision, animation that changes truth semantics, visual novelty that hurts glanceability, or speed achieved by lowering quality.
 
-## 28. FINAL MERGE GATE BY EFFECT
+## Success metric
 
-Docs/research: current, isolated, source claims checked, no fabricated Xcode requirement.
+Optimize for complete capabilities, extraordinary perceived quality, truthful vehicle behavior, premium fluid motion, robust architecture, accessibility, real runtime evidence, fewer defects, less duplication, and meaningful progress toward verified ES80 integration.
 
-Isolated package/domain code: deterministic tests, independent peer review where practical, exact-head repository/Xcode gate when repository policy/effect requires it.
+Do not optimize for PR count, comments, process documents, agents appearing busy, shallow throughput, or arbitrary speed at the expense of quality.
 
-App/UI/integration: focused tests, peer review, exact final head Xcode 27/iPhone 12/iOS 27 Simulator, screenshots/artifacts where visual, accessibility/performance evidence appropriate to change.
+## Startup
 
-Class A/security/persistence: stronger adversarial review, two peers where practical, exact-head gate, official docs/security contract as relevant, expected-head merge protection.
+Inspect live GitHub and current main. Determine what is occupied, mature, weak, and what unlocks the most real Nembra product value. Choose the highest-value safe non-conflicting work. If you start a capability, follow it upward toward production quality instead of stopping at the first clean primitive.
 
-Physical claims: software gates never substitute for required physical ES80/iPhone proof.
-
-Automated Codex Code Review is optional and not part of the required gate.
-
-## 29. MIGRATING V7 → V8
-
-Existing worker:
-1. DO NOT restart.
-2. DO NOT abandon/recreate branch.
-3. preserve V5/V7 history.
-4. read current v8 OS.
-5. keep current lane/epoch unless superseded.
-6. add/update `### V8 WORKER STATE`.
-7. set `AUTOMATED_REVIEW_STATE` accurately.
-8. if code-review quota is exhausted, switch immediately to peer-review mode.
-9. remove automated code review from `BLOCKED_ON`.
-10. continue from exact durable head.
-11. do not re-request automated review.
-12. after merge/release, use v8 control plane/work queue.
-
-Migration changes organization mechanics, not product semantics.
-
-## 30. LEGITIMATE STOP CONDITIONS
-
-Intentional stop only when:
-A. a truly user-only external fact/action is required AND no independent useful work exists;
-B. next action would be unsafe;
-C. all available tool/service paths needed for ANY useful work are unavailable;
-D. all meaningful work is actively owned and even review/research would duplicate it;
-E. platform externally ends the run.
-
-NOT stop conditions: Codex review quota, queued CI, one connector error, one stale run, one merge, one completed packet, one reviewer unavailable.
-
-Before final response ask: `Is there any safe useful tool action available under current service states?` If yes, execute it.
-
-## 31. V8 BOOT ALGORITHM
-
-1. inspect live main;
-2. read CURRENT_PROTOCOL_VERSION;
-3. read newest v8 control issue GLOBAL DIRECTIVE / service incident;
-4. inspect only relevant/recent open PRs;
-5. determine service states;
-6. generate unique WORKER_ID;
-7. choose role;
-8. select highest-value unowned/recoverable lane;
-9. identify paths + lock class;
-10. post V8 CLAIM;
-11. re-scan recent claims;
-12. branch;
-13. execute first 5–12 minute packet;
-14. focused verify;
-15. push durable checkpoint;
-16. open/update PR with V8 WORKER STATE;
-17. request NO automated Codex review by default;
-18. obtain peer review + tests appropriate to risk;
-19. use exact-head Xcode only at coherent acceptance checkpoint;
-20. if any optional service fails, enter its degraded mode and KEEP WORKING;
-21. merge with expected-head protection when actual acceptance contract is satisfied;
-22. release lane;
-23. inspect fresh team and immediately continue safe work.
-
-DO NOT BEGIN WITH A GIANT PLAN. START WITH LIVE TOOLS. DO NOT ASK THE USER TO BABYSIT THE TEAM.
+**Preserve truth. Preserve quality. Look at the actual app. Make it feel exceptional. Keep going.**

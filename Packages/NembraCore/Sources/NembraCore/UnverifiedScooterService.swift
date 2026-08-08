@@ -59,25 +59,26 @@ public actor UnverifiedScooterService: ScooterService {
     public func snapshot() -> VehicleState { state }
 
     /// A connection attempt cannot be made until hardware/protocol identity is
-    /// verified. Re-publish the current state rather than faking progress.
+    /// verified. Re-publish the current state without changing its existing
+    /// timestamp or faking connection progress.
     public func connect() async {
-        publish()
+        publishCurrentState()
     }
 
     public func disconnect() async {
-        state.connection = .disconnected
-        publish()
+        // This placeholder can never leave `.disconnected`. Preserve the exact
+        // state, including its existing timestamp, on this idempotent republish.
+        publishCurrentState()
     }
 
-    public func setHeadlight(_ enabled: Bool) async throws { throw ScooterCommandError.disconnected }
-    public func setLocked(_ locked: Bool) async throws { throw ScooterCommandError.disconnected }
-    public func setCruise(_ enabled: Bool) async throws { throw ScooterCommandError.disconnected }
-    public func setRideMode(_ mode: RideMode) async throws { throw ScooterCommandError.disconnected }
-    public func setStartMode(_ mode: StartMode) async throws { throw ScooterCommandError.disconnected }
-    public func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws { throw ScooterCommandError.disconnected }
+    public func setHeadlight(_ enabled: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setLocked(_ locked: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setCruise(_ enabled: Bool) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setRideMode(_ mode: RideMode) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setStartMode(_ mode: StartMode) async throws { throw ScooterCommandError.unverifiedConfiguration }
+    public func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws { throw ScooterCommandError.unverifiedConfiguration }
 
-    private func publish() {
-        state.lastUpdated = .now
+    private func publishCurrentState() {
         for continuation in continuations.values {
             continuation.yield(state)
         }
