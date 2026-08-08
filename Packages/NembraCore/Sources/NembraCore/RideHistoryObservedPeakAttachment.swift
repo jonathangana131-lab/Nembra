@@ -11,6 +11,10 @@ public enum RideHistoryObservedPeakStoreError: Error, Equatable, Sendable {
 
 /// Supplemental immutable history record. Base completed-ride history remains
 /// unchanged, so app persistence can adopt this attachment independently.
+///
+/// The record is descriptive persisted evidence. Public construction/decoding is
+/// not authority to promote a peak into observed-maximum wording; the eligibility
+/// assessment remains module-owned until a sealed persistence adapter exists.
 public struct RideHistoryObservedPeakRecord: Codable, Equatable, Sendable {
     public let evidence: RideObservedPeakHistoryEvidence
 
@@ -30,8 +34,10 @@ public enum RideHistoryObservedPeakJoinError: Error, Equatable, Sendable {
     case completedRideMismatch(UUID)
 }
 
-/// Runtime-only trusted join. Construction revalidates the supplemental evidence
-/// against the exact immutable completed ride rather than trusting UUID alone.
+/// Runtime-only trusted structural join. Construction revalidates the supplemental
+/// evidence against the exact immutable completed ride rather than trusting UUID
+/// alone. This join still does not make public decoded bytes provenance authority;
+/// eligibility promotion is intentionally module-owned.
 public struct RideHistoryObservedPeakJoinedRecord: Equatable, Sendable {
     public let historyRecord: RideHistoryRecord
     public let observedPeakRecord: RideHistoryObservedPeakRecord
@@ -58,7 +64,10 @@ public struct RideHistoryObservedPeakJoinedRecord: Equatable, Sendable {
 
     public var sessionID: UUID { historyRecord.sessionID }
 
-    public func assessment() throws -> RideObservedPeakHistoryAssessment {
+    /// Module-owned qualification boundary. Public callers may retain/read the
+    /// descriptive joined evidence but cannot obtain Nembra's observed-max verdict
+    /// from caller-authored Codable snapshots.
+    func assessment() throws -> RideObservedPeakHistoryAssessment {
         try observedPeakRecord.evidence.assessment()
     }
 
@@ -80,9 +89,10 @@ public enum RideHistoryObservedPeakCommitCoordinatorError: Error, Equatable, Sen
     case durableVerificationFailed(UUID)
 }
 
-/// Safely attaches observed-peak quality provenance after base history is durable.
-/// Commit requires exact read-back. Missing attachment is ordinary unavailability;
-/// an orphan attachment without its completed ride is durable inconsistency.
+/// Safely attaches observed-peak descriptive provenance after base history is
+/// durable. Commit requires exact read-back. Missing attachment is ordinary
+/// unavailability; an orphan attachment without its completed ride is durable
+/// inconsistency. Commit/read-back does not itself authorize observed-max wording.
 public actor RideHistoryObservedPeakCommitCoordinator {
     private let historyStore: any RideHistoryStore
     private let observedPeakStore: any RideHistoryObservedPeakStore
@@ -117,6 +127,8 @@ public actor RideHistoryObservedPeakCommitCoordinator {
         return result
     }
 
+    /// Returns only the structurally joined descriptive history. The public result
+    /// intentionally has no public eligibility-bearing method.
     public func joinedRecord(
         sessionID: UUID
     ) async throws -> RideHistoryObservedPeakJoinedRecord? {
