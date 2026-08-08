@@ -68,6 +68,20 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(catalogGuard.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered(identifier)"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable(identifier)"))
-        #expect(connection.contains("defer {"))
+    }
+
+    @Test("controller staging failure keeps coordinator handoff only while admission is unconsumed")
+    func connectionFailurePreservesOnlyUnconsumedAuthority() throws {
+        let source = try Self.coordinatorSource()
+        let start = try #require(source.range(of: "    public func connectPreparedCapture(")?.lowerBound)
+        let connection = source[start...]
+
+        #expect(!connection.contains("defer {"))
+        let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)"))
+        let preview = try #require(connection.range(of: "if (try? admission.stagingPreview()) == nil"))
+        let clear = try #require(connection.range(of: "pendingCaptureAdmission = nil", range: preview.lowerBound..<connection.endIndex))
+        #expect(connect.lowerBound < preview.lowerBound)
+        #expect(preview.lowerBound < clear.lowerBound)
+        #expect(connection.contains("preparedCorrelatedTargetIdentifier = nil"))
     }
 }
