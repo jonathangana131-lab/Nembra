@@ -113,9 +113,11 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture()")?.lowerBound)
         let connection = source[start...]
-        let catalogGuard = try #require(connection.range(of: "controller.discoveredPeripherals.first(where: { $0.id == identifier })"))
+        let catalogGuard = try #require(connection.range(of: "controller.hasDiscoveredPeripheral(identifier: identifier)"))
+        let candidateLookup = try #require(connection.range(of: "controller.discoveredPeripheral(identifier: identifier)"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
-        #expect(catalogGuard.lowerBound < connect.lowerBound)
+        #expect(catalogGuard.lowerBound < candidateLookup.lowerBound)
+        #expect(candidateLookup.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable"))
     }
