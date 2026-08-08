@@ -73,6 +73,22 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testPrimaryES80HeroRendersOnTruthfulUnverifiedLaunch() {
+        let app = launchOrdinary(orientation: .portrait)
+
+        XCTAssertTrue(
+            app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3),
+            "Ordinary launch must keep the primary ES80 identity instead of borrowing a synthetic QA profile."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3),
+            "The ES80 visual fixture must remain in the truthful unsupported/unverified production state."
+        )
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
@@ -200,6 +216,14 @@ final class NembraUITests: XCTestCase {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func launchOrdinary(orientation: UIDeviceOrientation) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
+        let app = XCUIApplication()
         app.launch()
         return app
     }
