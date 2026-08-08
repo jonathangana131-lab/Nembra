@@ -39,6 +39,18 @@ struct PassiveBluetoothPowerCycleScanReadinessPolicyTests {
         #expect(decision == .timedOut)
     }
 
+    @Test("a first scanning observation at the deadline is too late")
+    func lateScanningCannotCrossDeadline() {
+        let decision = PassiveBluetoothPowerCycleScanReadinessPolicy.decide(
+            isPoweredOn: true,
+            isScanning: true,
+            nowUptimeNanoseconds: 200,
+            deadlineUptimeNanoseconds: 200
+        )
+
+        #expect(decision == .timedOut)
+    }
+
     @Test("Bluetooth authority loss dominates an apparent scanning flag")
     func poweredOffCannotBecomeReady() {
         let decision = PassiveBluetoothPowerCycleScanReadinessPolicy.decide(
