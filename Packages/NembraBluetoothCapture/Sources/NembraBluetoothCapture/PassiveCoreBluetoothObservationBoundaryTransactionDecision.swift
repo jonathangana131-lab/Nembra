@@ -45,9 +45,37 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         }
     }
 
+    /// Issued only when the exact one-shot Horizon admission loses canonical
+    /// authority before the recorder mutation body executes. Unlike a recorded
+    /// Horizon token, this proves that no durable H boundary was appended.
+    struct HorizonRecorderMutationRejectionReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let transactionIdentity: UUID
+        let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,
+            currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
+            self.currentAuthority = currentAuthority
+        }
+    }
+
     enum ReadyRecorderMutationOutcome: Equatable, Sendable {
         case recorded(RecordedReadyBoundary)
         case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)
+    }
+
+    enum HorizonRecorderMutationOutcome: Equatable, Sendable {
+        case recorded(RecordedHorizonBoundary)
+        case rejectedBeforeMutation(HorizonRecorderMutationRejectionReceipt)
     }
 
     struct RecordedReadyBoundary: Equatable, Sendable {
@@ -192,6 +220,40 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 transaction: transaction,
                 authorityFence: authorityFence
             )
+        }
+
+        /// Consumes the same one-shot permit as ordinary `recordBoundary`. Only
+        /// canonical authority revocation before the recorder mutation body executes
+        /// can mint zero-H recovery proof. Generic recorder failures remain errors
+        /// because they do not prove the absence of a durable mutation.
+        func recordBoundaryWithMutationOutcome(
+            on recorder: PassiveCoreBluetoothCaptureRecorder
+        ) async throws -> HorizonRecorderMutationOutcome {
+            try mutationPermit.claim()
+            do {
+                try await decision.recordBoundary(on: recorder, authorityFence: authorityFence)
+                return .recorded(
+                    RecordedHorizonBoundary(
+                        decision: decision,
+                        transaction: transaction,
+                        authorityFence: authorityFence
+                    )
+                )
+            } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+                switch error {
+                case let .authorityChanged(expected, current):
+                    guard expected == decision.authority else { throw error }
+                    return .rejectedBeforeMutation(
+                        HorizonRecorderMutationRejectionReceipt(
+                            decision: decision,
+                            transaction: transaction,
+                            currentAuthority: current
+                        )
+                    )
+                case .nonAdvancingTransition:
+                    throw error
+                }
+            }
         }
 
         fileprivate init(

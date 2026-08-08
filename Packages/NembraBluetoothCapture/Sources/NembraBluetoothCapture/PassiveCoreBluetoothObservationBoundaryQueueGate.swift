@@ -59,6 +59,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             case uncommittedReadyRejectedBeforeRecorderMutation
             case recordedReadyInvalidatedBeforeGateCommit
             case committedReadyInvalidated
+            case uncommittedHorizonRejectedBeforeRecorderMutation
             case recordedHorizonInvalidatedBeforeGateCommit
         }
 
@@ -74,6 +75,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
         /// Furthest queue prefix already represented by durable lifecycle evidence in
         /// this abandoned epoch. Recorded-but-uncommitted Horizon extends it through H.
+        /// A zero-mutation Horizon rejection deliberately leaves these H fields nil,
+        /// so retirement remains anchored at the durable Ready prefix.
         var abandonedEvidenceQueueCutoff: UInt64 {
             abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
         }
@@ -351,6 +354,33 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             abandonedReadyTransaction: current,
             origin: .recordedReadyInvalidatedBeforeGateCommit
         )
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
+    /// Covers the Horizon interlock where exact H admission succeeded but the
+    /// authority-fenced recorder mutation was rejected before its mutation body ran.
+    /// The producer-issued rejection receipt proves zero durable H, so quarantine must
+    /// preserve Ready as the furthest durable lifecycle boundary rather than inventing H.
+    @discardableResult
+    mutating func abortUncommittedHorizon(
+        after rejection: PassiveCoreBluetoothObservationBoundaryTransactionDecision.HorizonRecorderMutationRejectionReceipt
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .drainingHorizon(currentHorizon) = phase,
+              let ready = committedReadyTransaction else {
+            throw StateError.invalidTransition
+        }
+        guard currentHorizon.authority == rejection.authority,
+              currentHorizon.queueCutoff == rejection.queueCutoff,
+              currentHorizon.revision == rejection.transactionRevision,
+              currentHorizon.identity == rejection.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: ready,
+            origin: .uncommittedHorizonRejectedBeforeRecorderMutation
+        )
+        committedReadyTransaction = nil
         phase = .abortQuarantined(receipt)
         return receipt
     }
