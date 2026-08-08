@@ -625,10 +625,52 @@ final class ES80ResearchCaptureUITests: XCTestCase {
                 "Capture QA must never expose the ordinary vehicle-control surface."
             )
 
-            let attachment = XCTAttachment(screenshot: app.screenshot())
-            attachment.name = expectation.screenshotName
-            attachment.lifetime = .keepAlways
-            add(attachment)
+            let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+            let requiredState = app.staticTexts[expectation.requiredText]
+
+            assertVisibleInScreenshotViewport(
+                qaDisclosure,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "Simulator QA disclosure for \(expectation.scenario)"
+            )
+            let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+            disclosureAttachment.name = "\(expectation.screenshotName) — Disclosure"
+            disclosureAttachment.lifetime = .keepAlways
+            add(disclosureAttachment)
+
+            bringIntoScreenshotViewport(
+                requiredState,
+                in: app,
+                context: "rider-facing state for \(expectation.scenario)"
+            )
+            assertVisibleInScreenshotViewport(
+                requiredState,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "rider-facing state for \(expectation.scenario)"
+            )
+            let stateAttachment = XCTAttachment(screenshot: app.screenshot())
+            stateAttachment.name = "\(expectation.screenshotName) — State"
+            stateAttachment.lifetime = .keepAlways
+            add(stateAttachment)
+
+            if let identifier = expectation.requiredIdentifier {
+                let requiredAction = app.descendants(matching: .any)[identifier]
+                bringIntoScreenshotViewport(
+                    requiredAction,
+                    in: app,
+                    context: "required action for \(expectation.scenario)"
+                )
+                assertVisibleInScreenshotViewport(
+                    requiredAction,
+                    windowFrame: app.windows.firstMatch.frame,
+                    context: "required action for \(expectation.scenario)"
+                )
+                let actionAttachment = XCTAttachment(screenshot: app.screenshot())
+                actionAttachment.name = "\(expectation.screenshotName) — Action"
+                actionAttachment.lifetime = .keepAlways
+                add(actionAttachment)
+            }
+
             app.terminate()
         }
     }
