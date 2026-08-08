@@ -96,6 +96,55 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
     }
 
     @Test
+    func missingFirstPostHorizonSequenceFailsWithoutMutation() throws {
+        var events = [
+            Event(queueSequence: 14, authority: terminalAuthority, label: "gap-after-h")
+        ]
+        let before = events
+
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 14,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+
+        #expect(
+            error == .nonContiguousPendingQueueSequence(
+                expected: 13,
+                actual: 14
+            )
+        )
+        #expect(events == before)
+    }
+
+    @Test
+    func missingInteriorPostHorizonSequenceFailsWithoutMutation() throws {
+        var events = [
+            Event(queueSequence: 13, authority: terminalAuthority, label: "first"),
+            Event(queueSequence: 15, authority: terminalAuthority, label: "gap")
+        ]
+        let before = events
+
+        let error = captureStateError {
+            _ = try retire(
+                &events,
+                currentTail: 15,
+                gate: try terminalGate(horizonQueueCutoff: 12)
+            )
+        }
+
+        #expect(
+            error == .nonContiguousPendingQueueSequence(
+                expected: 14,
+                actual: 15
+            )
+        )
+        #expect(events == before)
+    }
+
+    @Test
     func controllerTailCannotRegressBehindTerminalHorizon() throws {
         var events: [Event] = []
         let before = events
@@ -275,36 +324,37 @@ struct PassiveCoreBluetoothTerminalQueueRetirementTests {
     @Test
     func malformedQueueChronologyFailsAtomically() throws {
         var duplicate = [
-            Event(queueSequence: 14, authority: terminalAuthority, label: "a"),
-            Event(queueSequence: 14, authority: terminalAuthority, label: "b")
+            Event(queueSequence: 13, authority: terminalAuthority, label: "a"),
+            Event(queueSequence: 13, authority: terminalAuthority, label: "b")
         ]
         let duplicateBefore = duplicate
         let duplicateError = captureStateError {
             _ = try retire(
                 &duplicate,
-                currentTail: 14,
+                currentTail: 13,
                 gate: try terminalGate(horizonQueueCutoff: 12)
             )
         }
         #expect(
-            duplicateError == .nonIncreasingQueueSequence(previous: 14, current: 14)
+            duplicateError == .nonIncreasingQueueSequence(previous: 13, current: 13)
         )
         #expect(duplicate == duplicateBefore)
 
         var regressing = [
-            Event(queueSequence: 15, authority: terminalAuthority, label: "a"),
-            Event(queueSequence: 14, authority: terminalAuthority, label: "b")
+            Event(queueSequence: 13, authority: terminalAuthority, label: "a"),
+            Event(queueSequence: 14, authority: terminalAuthority, label: "b"),
+            Event(queueSequence: 13, authority: terminalAuthority, label: "c")
         ]
         let regressingBefore = regressing
         let regressingError = captureStateError {
             _ = try retire(
                 &regressing,
-                currentTail: 14,
+                currentTail: 13,
                 gate: try terminalGate(horizonQueueCutoff: 12)
             )
         }
         #expect(
-            regressingError == .nonIncreasingQueueSequence(previous: 15, current: 14)
+            regressingError == .nonIncreasingQueueSequence(previous: 14, current: 13)
         )
         #expect(regressing == regressingBefore)
 
