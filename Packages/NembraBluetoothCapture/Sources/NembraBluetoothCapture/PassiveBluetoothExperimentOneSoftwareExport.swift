@@ -63,6 +63,9 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case correlationWindowPhaseMismatch(index: Int)
     case correlationWindowSequenceMismatch(index: Int)
     case correlationCandidateCountMismatch(index: Int)
+    case correlationWindowClockInvalid(index: Int)
+    case correlationWindowTooShort(index: Int)
+    case correlationWindowOverlap(index: Int)
     case unsupportedSchemaVersion(Int)
     case unsupportedRecipe(PassiveBluetoothExperimentRecipeID)
     case manifestRecipeMismatch
@@ -73,6 +76,10 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
 }
 
 public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
+    /// The accepted Experiment One recipe requires a 10-second minimum local callback-receipt
+    /// interval per OFF/ON window. This is software chronology, not RF completeness or BLE cadence.
+    private static let minimumCorrelationWindowDurationNanoseconds: UInt64 = 10_000_000_000
+
     public static func make(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
@@ -102,6 +109,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
 
         let windows = try makeCorrelationWindows(powerCycleResult)
+        try validateCorrelationWindowTiming(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -142,6 +150,8 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         )
     }
 
+    /// Current-app convenience. Runtime build provenance is read mechanically from `Bundle.main`;
+    /// stationary setup must come from explicit product preflight declarations.
     public static func makeForCurrentApplication(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
         setup: PassiveBluetoothStationaryCaptureSetup
@@ -194,6 +204,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         let windows = try wire.correlationWindows.enumerated().map { index, item in
             try decodedWindow(item, index: index)
         }
+        try validateCorrelationWindowTiming(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -263,6 +274,28 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
     }
 
+    private static func validateCorrelationWindowTiming(
+        _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
+    ) throws {
+        for (index, window) in windows.enumerated() {
+            guard window.endedAtUptimeNanoseconds >= window.startedAtUptimeNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError
+                    .correlationWindowClockInvalid(index: index)
+            }
+            guard window.endedAtUptimeNanoseconds - window.startedAtUptimeNanoseconds
+                    >= minimumCorrelationWindowDurationNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError
+                    .correlationWindowTooShort(index: index)
+            }
+            if index > 0 {
+                guard window.startedAtUptimeNanoseconds >= windows[index - 1].endedAtUptimeNanoseconds else {
+                    throw PassiveBluetoothExperimentOneSoftwareExportError
+                        .correlationWindowOverlap(index: index)
+                }
+            }
+        }
+    }
+
     private static func replayCorrelation(
         _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
     ) throws -> PassiveBluetoothPowerCycleTargetCorrelationReport {
@@ -293,7 +326,6 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow {
         guard let phase = PassiveBluetoothPowerCycleObservationPhase(rawValue: wire.phase),
               phase.rawValue == index,
-              wire.endedAtUptimeNanoseconds >= wire.startedAtUptimeNanoseconds,
               let authority = canonicalUUID(wire.observationSeriesIdentity) else {
             throw PassiveBluetoothExperimentOneSoftwareExportError
                 .correlationWindowPhaseMismatch(index: index)
@@ -459,7 +491,8 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
 
 public extension PassiveBluetoothExperimentOneCoordinator {
     /// Available only after immutable Horizon finalization. External field authorization remains
-    /// separate; this method cannot unlock a physical experiment.
+    /// separate; this method cannot unlock a physical experiment. `setup` must come from explicit
+    /// product preflight declarations and is not inferred from finalization success.
     func finalizedSoftwareExportForCurrentApplication(
         setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
