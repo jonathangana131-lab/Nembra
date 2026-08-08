@@ -56,8 +56,29 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
         #expect(controller.contains("isSelectedTargetAwaitingTerminalCallback"))
         #expect(controller.contains("eventDrainTask == nil"))
         #expect(controller.contains("scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("connectionPhase = .idle\n        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("captureFailed = false"))
         #expect(controller.contains("case .abortQuarantined"))
+
+        let disconnectStart = try #require(controller.range(of: "    private func handleDisconnect("))
+        let disconnect = controller[disconnectStart.lowerBound...]
+        let idleOffset = try #require(disconnect.range(of: "clearActiveConnectionState(for: identifier)"))
+        let scheduleOffset = try #require(
+            disconnect.range(
+                of: "scheduleAbortedFreshTargetSessionRecoveryIfNeeded()",
+                range: idleOffset.upperBound..<disconnect.endIndex
+            )
+        )
+        #expect(idleOffset.lowerBound < scheduleOffset.lowerBound)
+
+        let recoveryStart = try #require(controller.range(of: "    private func completeAbortedFreshTargetSessionIfReady("))
+        let recoveryEnd = try #require(
+            controller.range(
+                of: "    private func beginTargetSessionIfNeeded",
+                range: recoveryStart.upperBound..<controller.endIndex
+            )
+        )
+        let recovery = controller[recoveryStart.lowerBound..<recoveryEnd.lowerBound]
+        let installOffset = try #require(recovery.range(of: "recorder = freshSession.recorder"))
+        let clearFailureOffset = try #require(recovery.range(of: "captureFailed = false"))
+        #expect(installOffset.lowerBound < clearFailureOffset.lowerBound)
     }
 }
