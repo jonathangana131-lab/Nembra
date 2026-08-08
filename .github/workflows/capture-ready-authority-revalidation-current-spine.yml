@@ -1,0 +1,68 @@
+name: Capture Ready authority revalidation current spine
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-ready-authority-revalidation-gpt56
+    paths:
+      - .github/workflows/capture-ready-authority-revalidation-current-spine.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-current-ready-authority-revalidation-gpt56
+          fetch-depth: 2
+
+      - name: Verify exact staging parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "77e49a6ee4ee5eb2617fca0a918a0c1c8593cf7e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-ready-authority-revalidation-current-spine.yml"
+
+      - name: Apply exact Ready authority revalidation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = controller.read_text()
+          old = '''                        try self.requireForegroundEvidenceIntegrity()
+                                  try self.ensureCaptureHealthy()
+          '''
+          new = '''                        try self.requireForegroundEvidenceIntegrity()
+                                  try self.ensureCaptureHealthy()
+                                  try self.validateBoundaryAuthority(admission.authority)
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"Ready authority revalidation: expected one site, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+          controller.write_text(source)
+          Path(".github/workflows/capture-ready-authority-revalidation-current-spine.yml").unlink()
+          PY
+
+          git diff --check
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test "$(grep -c 'try self.validateBoundaryAuthority(admission.authority)' "$controller")" = "1"
+          test "$(grep -c 'let abandonment = try admission.abandonBeforeRecorderAttempt()' "$controller")" = "1"
+          test "$(grep -c 'let recordedReadyFailure = error' "$controller")" = "1"
+          test "$(grep -c 'let recordedHorizonFailure = error' "$controller")" = "1"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerReadyPreAttemptAuthorityValidationTests.swift
+          test ! -e .github/workflows/capture-ready-authority-revalidation-current-spine.yml
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56-v14"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: revalidate Ready authority before recorder attempt"
+          git push origin HEAD:integration/es80-v14-current-ready-authority-revalidation-gpt56
