@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Experiment One authority surface")
 struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
-    @Test("unfinished PASS surface stays package-internal and evidence issuance stays producer-file private")
+    @Test("unfinished PASS surface and mutable evidence handoff stay producer-file private")
     func authoritySurfaceIsSealed() throws {
         let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         let sourcesDirectory = testsDirectory
@@ -32,6 +32,7 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
         #expect(!compactRun.contains("publicstructPassiveBluetoothExperimentOnePowerCycleEvidence"))
         #expect(!compactRun.contains("publicstructPassiveBluetoothExperimentOneCaptureEvidence"))
         #expect(!compactRun.contains("publicfuncbeginCaptureRecorder("))
+        #expect(!compactRun.contains("publicfunccaptureEvidenceSnapshot("))
         #expect(!compactRun.contains("publicfunccaptureEvidenceAssessment("))
         #expect(!compactAssessment.contains("publicstructPassiveBluetoothExperimentOneCaptureEvidenceAssessment"))
         #expect(!compactAssessment.contains("publicstaticfuncassess("))
@@ -48,6 +49,14 @@ struct PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests {
                 "fileprivateinit(observationSeriesIdentity:PassiveBluetoothCandidateObservationSeriesIdentity,session:PassiveBluetoothCaptureSession)"
             )
         )
+
+        // The current product intentionally has no same-module mutable recorder/PASS handoff. The
+        // live-controller owner must introduce a reviewed ownership bridge rather than merely calling
+        // an existing internal method from another source file.
+        #expect(compactRun.contains("fileprivatefuncbeginCaptureRecorder("))
+        #expect(compactRun.contains("fileprivatefunccaptureEvidenceSnapshot()"))
+        #expect(compactRun.contains("fileprivatefunccaptureEvidenceAssessment()"))
+
         #expect(
             !compactRun.contains(
                 "internalinit?(result:PassiveBluetoothPowerCycleObservationResult)"
