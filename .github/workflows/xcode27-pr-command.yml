@@ -152,9 +152,9 @@ jobs:
               return digest.hexdigest()
 
           if sha256(executable) != record["executableSHA256"]:
-            raise SystemExit("Retained Capture executable no longer matches the exact-head external record")
+              raise SystemExit("Retained Capture executable no longer matches the exact-head external record")
           if sha256(info_plist) != record["infoPlistSHA256"]:
-            raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
+              raise SystemExit("Retained Capture Info.plist no longer matches the exact-head external record")
           PY
 
       - name: Upload Simulator screenshots and logs
