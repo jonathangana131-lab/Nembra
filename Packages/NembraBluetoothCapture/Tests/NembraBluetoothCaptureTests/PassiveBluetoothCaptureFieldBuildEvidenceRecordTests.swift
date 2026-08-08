@@ -76,6 +76,49 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
         }
     }
 
+    @Test("duplicate evidence fields fail closed before decoding")
+    func duplicateEvidenceFieldsFailClosedBeforeDecoding() throws {
+        let externalData = try makeExternalRecordJSON()
+        let canonical = try makeFieldRecordJSON(externalRecordData: externalData)
+        let decodedObject = try JSONSerialization.jsonObject(with: canonical)
+        let object = try #require(decodedObject as? [String: Any])
+
+        for field in baseFieldRecordObject(externalRecordData: externalData).keys.sorted() {
+            let duplicated = try insertingDuplicateField(
+                field,
+                value: try #require(object[field]),
+                into: canonical
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError.duplicateField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON
+                    .decodeDeclaration(duplicated)
+            }
+        }
+    }
+
+    @Test("escape-equivalent duplicate evidence key fails closed by semantic name")
+    func escapedDuplicateEvidenceKeyFailsClosedBySemanticName() throws {
+        let externalData = try makeExternalRecordJSON()
+        let canonical = String(
+            decoding: try makeFieldRecordJSON(externalRecordData: externalData),
+            as: UTF8.self
+        )
+        let duplicated = Data(
+            ("{\"signedInstallableSH\\u0041256\":\"\(signedInstallableSHA256)\"," +
+                canonical.dropFirst()).utf8
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldBuildEvidenceRecordError
+                .duplicateField("signedInstallableSHA256")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON
+                .decodeDeclaration(duplicated)
+        }
+    }
+
     @Test("unsupported schema and installable kind fail closed")
     func unsupportedSchemaAndInstallableKindFailClosed() throws {
         let externalData = try makeExternalRecordJSON()
@@ -226,9 +269,34 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordTests {
         ]
     }
 
+    private func insertingDuplicateField(
+        _ field: String,
+        value: Any,
+        into objectData: Data
+    ) throws -> Data {
+        let canonicalObject = String(decoding: objectData, as: UTF8.self)
+        guard canonicalObject.first == "{" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+
+        let wrappedValue = try JSONSerialization.data(withJSONObject: [value])
+        let wrappedValueJSON = String(decoding: wrappedValue, as: UTF8.self)
+        guard wrappedValueJSON.first == "[", wrappedValueJSON.last == "]" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+        let valueJSON = wrappedValueJSON.dropFirst().dropLast()
+        return Data(
+            ("{\"\(field)\":\(valueJSON)," + canonicalObject.dropFirst()).utf8
+        )
+    }
+
     private func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private enum TestFixtureError: Error {
+        case expectedJSONObject
     }
 }
