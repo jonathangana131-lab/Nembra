@@ -12,9 +12,27 @@ BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf "$RESULT_BUNDLE"
 
+CAPTURE_BUILD_COMMIT_SHA="$(git rev-parse --verify HEAD^{commit})"
+if [[ ! "$CAPTURE_BUILD_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Capture build identity requires an exact 40-hex Git commit; got: $CAPTURE_BUILD_COMMIT_SHA" >&2
+  exit 8
+fi
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "Capture build identity refuses a checkout with tracked-file modifications." >&2
+  git status --short --untracked-files=no >&2
+  exit 9
+fi
+CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
+CAPTURE_RECIPE_IDENTIFIER="ES80-FINGERPRINT-v1"
+CAPTURE_PROCEDURE_VERSION="V14"
+
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
+  echo "capture_build_identifier=$CAPTURE_BUILD_IDENTIFIER"
+  echo "capture_build_commit_sha=$CAPTURE_BUILD_COMMIT_SHA"
+  echo "capture_recipe_identifier=$CAPTURE_RECIPE_IDENTIFIER"
+  echo "capture_procedure_version=$CAPTURE_PROCEDURE_VERSION"
   sw_vers
   xcodebuild -version
   xcrun simctl list runtimes
@@ -78,6 +96,8 @@ xcodebuild \
   -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
+  "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$CAPTURE_BUILD_IDENTIFIER" \
+  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$CAPTURE_BUILD_COMMIT_SHA" \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 TEST_STATUS=${PIPESTATUS[0]}
@@ -108,6 +128,111 @@ if [[ ! -d "$APP_PATH" ]]; then
   echo "Expected built app was not found at $APP_PATH" >&2
   find "$DERIVED_DATA/Build/Products" -name 'Nembra.app' -print >&2 || true
   exit 4
+fi
+
+INFO_PLIST="$APP_PATH/Info.plist"
+EMBEDDED_BUILD_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
+EMBEDDED_BUILD_COMMIT_SHA="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildCommitSHA' "$INFO_PLIST" 2>/dev/null || true)"
+if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
+  echo "Built app did not preserve the exact Capture build identifier." >&2
+  exit 10
+fi
+if [[ "$EMBEDDED_BUILD_COMMIT_SHA" != "$CAPTURE_BUILD_COMMIT_SHA" ]]; then
+  echo "Built app did not preserve the exact Capture source commit SHA." >&2
+  exit 11
+fi
+
+EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+EXECUTABLE_PATH="$APP_PATH/$EXECUTABLE_NAME"
+if [[ ! -f "$EXECUTABLE_PATH" ]]; then
+  echo "Expected built executable was not found at $EXECUTABLE_PATH" >&2
+  exit 12
+fi
+EXECUTABLE_SHA256="$(shasum -a 256 "$EXECUTABLE_PATH" | awk '{print $1}')"
+if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a valid SHA-256 digest for the built executable." >&2
+  exit 13
+fi
+
+# Keep the exact-executable digest record OUTSIDE the app bundle.
+#
+# On a signed Apple-platform app, bundle resources participate in the code-signing resource seal,
+# while the code signature itself is stored in the Mach-O executable. Embedding a resource that
+# contains the hash of the final signed executable would therefore create a self-reference loop:
+# the record changes the resource seal/signature, which changes the executable digest recorded by
+# that same resource. Simulator uses CODE_SIGNING_ALLOWED=NO, but this harness must not normalize a
+# topology that cannot truthfully carry over to the final physical-device build.
+EXTERNAL_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
+RUNNER_METADATA="$ARTIFACTS_DIR/capture-runner-metadata.json"
+python3 - \
+  "$EXTERNAL_BUILD_RECORD" \
+  "$RUNNER_METADATA" \
+  "$CAPTURE_BUILD_IDENTIFIER" \
+  "$CAPTURE_BUILD_COMMIT_SHA" \
+  "$EXECUTABLE_SHA256" \
+  "$CAPTURE_RECIPE_IDENTIFIER" \
+  "$CAPTURE_PROCEDURE_VERSION" \
+  "$BUNDLE_ID" \
+  "${GITHUB_RUN_ID:-local}" \
+  "${GITHUB_RUN_ATTEMPT:-0}" <<'PY'
+import hashlib
+import json
+import sys
+
+(
+    external_record_path,
+    runner_metadata_path,
+    build_identifier,
+    source_commit_sha,
+    executable_sha256,
+    recipe_identifier,
+    procedure_version,
+    bundle_identifier,
+    run_id,
+    run_attempt,
+) = sys.argv[1:]
+
+external_record = {
+    "schemaVersion": 1,
+    "buildIdentifier": build_identifier,
+    "sourceCommitSHA": source_commit_sha,
+    "executableSHA256": executable_sha256,
+    "experimentRecipeID": recipe_identifier,
+    "procedureVersion": procedure_version,
+}
+external_bytes = (
+    json.dumps(external_record, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+)
+with open(external_record_path, "wb") as handle:
+    handle.write(external_bytes)
+
+runner_metadata = {
+    "schemaVersion": 1,
+    "authority": "external-runner-simulator-provenance-not-field-authorization",
+    "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
+    "bundleIdentifier": bundle_identifier,
+    "platform": "iOS Simulator",
+    "githubRunID": run_id,
+    "githubRunAttempt": run_attempt,
+}
+with open(runner_metadata_path, "w", encoding="utf-8") as handle:
+    json.dump(runner_metadata, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+
+EXTERNAL_BUILD_RECORD_SHA256="$(shasum -a 256 "$EXTERNAL_BUILD_RECORD" | awk '{print $1}')"
+
+printf '%s\n' \
+  "capture_executable_sha256=$EXECUTABLE_SHA256" \
+  "capture_external_build_record=$EXTERNAL_BUILD_RECORD" \
+  "capture_external_build_record_sha256=$EXTERNAL_BUILD_RECORD_SHA256" \
+  "capture_runner_metadata=$RUNNER_METADATA" \
+  >> "$ARTIFACTS_DIR/environment.txt"
+
+# Assert the final Simulator app was not mutated with a self-referential executable-digest record.
+if [[ -e "$APP_PATH/NembraCaptureTrustedBuildRecord.json" || -e "$APP_PATH/NembraCaptureExternalBuildRecord.json" ]]; then
+  echo "Executable-digest provenance record must remain external to the built app bundle." >&2
+  exit 14
 fi
 
 xcrun simctl install "$UDID" "$APP_PATH"
