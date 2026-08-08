@@ -219,7 +219,8 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             throw CoordinatorError.captureAdmissionNotPrepared
         }
         guard let controller else { throw CoordinatorError.controllerUnavailable }
-        guard let discovery = controller.discoveredPeripherals.first(where: { $0.id == identifier }) else {
+        guard controller.hasDiscoveredPeripheral(identifier: identifier),
+              let discovery = controller.discoveredPeripheral(identifier: identifier) else {
             throw CoordinatorError.targetNotRediscovered
         }
         guard discovery.isConnectable != false else { throw CoordinatorError.targetNotConnectable }
@@ -311,7 +312,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         guard let identifier = preparedCorrelatedTargetIdentifier,
               pendingCaptureAdmission != nil,
               let controller else { return false }
-        return controller.discoveredPeripherals.contains { $0.id == identifier }
+        return controller.hasDiscoveredPeripheral(identifier: identifier)
     }
 
     private var connectionStatus: ConnectionStatus {

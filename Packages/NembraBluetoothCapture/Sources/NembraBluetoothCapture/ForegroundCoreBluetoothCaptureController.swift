@@ -243,7 +243,25 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     public private(set) var connectionPhase: ConnectionPhase = .idle
-    public private(set) var discoveredPeripherals: [DiscoveredPeripheral] = []
+    /// Deterministic presentation snapshot. Sorting is deliberately paid by the
+    /// presentation reader, never by CoreBluetooth's high-cadence discovery callback.
+    public var discoveredPeripherals: [DiscoveredPeripheral] {
+        latestDiscoveryByIdentifier.values.sorted {
+            DiscoveredPeripheral.sortsBefore($0, $1)
+        }
+    }
+
+    /// Exact UUID rediscovery authority is dictionary-backed and does not materialize
+    /// or sort the presentation catalog.
+    func hasDiscoveredPeripheral(identifier: UUID) -> Bool {
+        latestDiscoveryByIdentifier[identifier] != nil
+    }
+
+    /// Read-only exact candidate lookup for coordinator connectability policy. This
+    /// remains presentation/candidate state, not physical scooter authentication.
+    func discoveredPeripheral(identifier: UUID) -> DiscoveredPeripheral? {
+        latestDiscoveryByIdentifier[identifier]
+    }
     public private(set) var lastDiagnostic: String?
     public private(set) var captureFailed = false
 
@@ -1859,17 +1877,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
     }
 
-    private func updateDiscoveryList() {
-        discoveredPeripherals = latestDiscoveryByIdentifier.values.sorted {
-            DiscoveredPeripheral.sortsBefore($0, $1)
-        }
-    }
-
     private func clearCandidateCatalog() {
         peripheralByIdentifier.removeAll()
         latestDiscoveryByIdentifier.removeAll()
         latestAdvertisementByIdentifier.removeAll()
-        updateDiscoveryList()
     }
 
     private func clearAcquisitionObjects() {
@@ -2054,7 +2065,6 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             isConnectable: connectable
         )
         latestDiscoveryByIdentifier[peripheral.identifier] = discovery
-        updateDiscoveryList()
 
         do {
             let observation = try CoreBluetoothCaptureMapping.advertisement(
