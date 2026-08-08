@@ -23,6 +23,11 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 9
 fi
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
+CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+if [[ ! "$CAPTURE_BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  echo "Capture build instance must be one canonical lowercase UUID; got: $CAPTURE_BUILD_INSTANCE_ID" >&2
+  exit 15
+fi
 CAPTURE_RECIPE_IDENTIFIER="ES80-FINGERPRINT-v1"
 CAPTURE_PROCEDURE_VERSION="V14"
 
@@ -30,6 +35,7 @@ CAPTURE_PROCEDURE_VERSION="V14"
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
   echo "capture_build_identifier=$CAPTURE_BUILD_IDENTIFIER"
+  echo "capture_build_instance_id=$CAPTURE_BUILD_INSTANCE_ID"
   echo "capture_build_commit_sha=$CAPTURE_BUILD_COMMIT_SHA"
   echo "capture_recipe_identifier=$CAPTURE_RECIPE_IDENTIFIER"
   echo "capture_procedure_version=$CAPTURE_PROCEDURE_VERSION"
@@ -97,6 +103,7 @@ xcodebuild \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$CAPTURE_BUILD_IDENTIFIER" \
+  "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$CAPTURE_BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$CAPTURE_BUILD_COMMIT_SHA" \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
@@ -132,10 +139,15 @@ fi
 
 INFO_PLIST="$APP_PATH/Info.plist"
 EMBEDDED_BUILD_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
+EMBEDDED_BUILD_INSTANCE_ID="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildInstanceID' "$INFO_PLIST" 2>/dev/null || true)"
 EMBEDDED_BUILD_COMMIT_SHA="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildCommitSHA' "$INFO_PLIST" 2>/dev/null || true)"
 if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
   echo "Built app did not preserve the exact Capture build identifier." >&2
   exit 10
+fi
+if [[ "$EMBEDDED_BUILD_INSTANCE_ID" != "$CAPTURE_BUILD_INSTANCE_ID" ]]; then
+  echo "Built app did not preserve the exact Capture build-instance identifier." >&2
+  exit 16
 fi
 if [[ "$EMBEDDED_BUILD_COMMIT_SHA" != "$CAPTURE_BUILD_COMMIT_SHA" ]]; then
   echo "Built app did not preserve the exact Capture source commit SHA." >&2
@@ -162,12 +174,18 @@ fi
 # the record changes the resource seal/signature, which changes the executable digest recorded by
 # that same resource. Simulator uses CODE_SIGNING_ALLOWED=NO, but this harness must not normalize a
 # topology that cannot truthfully carry over to the final physical-device build.
+#
+# `buildInstanceID` is generated before the build and embedded in the app, then repeated in this
+# external post-build record. It is an opaque rendezvous identifier, not an attestation by itself.
+# The workflow attestation over this exact record is what gives the external record independent
+# provenance without feeding its final executable digest back into the signed app.
 EXTERNAL_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"
 RUNNER_METADATA="$ARTIFACTS_DIR/capture-runner-metadata.json"
 python3 - \
   "$EXTERNAL_BUILD_RECORD" \
   "$RUNNER_METADATA" \
   "$CAPTURE_BUILD_IDENTIFIER" \
+  "$CAPTURE_BUILD_INSTANCE_ID" \
   "$CAPTURE_BUILD_COMMIT_SHA" \
   "$EXECUTABLE_SHA256" \
   "$CAPTURE_RECIPE_IDENTIFIER" \
@@ -183,6 +201,7 @@ import sys
     external_record_path,
     runner_metadata_path,
     build_identifier,
+    build_instance_id,
     source_commit_sha,
     executable_sha256,
     recipe_identifier,
@@ -193,8 +212,9 @@ import sys
 ) = sys.argv[1:]
 
 external_record = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "buildIdentifier": build_identifier,
+    "buildInstanceID": build_instance_id,
     "sourceCommitSHA": source_commit_sha,
     "executableSHA256": executable_sha256,
     "experimentRecipeID": recipe_identifier,
@@ -210,6 +230,7 @@ runner_metadata = {
     "schemaVersion": 1,
     "authority": "external-runner-simulator-provenance-not-field-authorization",
     "externalBuildRecordSHA256": hashlib.sha256(external_bytes).hexdigest(),
+    "buildInstanceID": build_instance_id,
     "bundleIdentifier": bundle_identifier,
     "platform": "iOS Simulator",
     "githubRunID": run_id,
