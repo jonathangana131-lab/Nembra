@@ -35,11 +35,11 @@ struct ES80CapturePrimaryProgressRiderLanguageAcceptanceTests {
     }
 
     /// Rider-facing Capture presentation before the intentionally engineering-heavy Details sheet.
-    /// This spans safety/progress/primary state panels plus their directly rendered helpers.
+    /// This includes the hero plus safety/progress/primary state panels and directly rendered helpers.
     private static func primarySurface(_ source: String) throws -> Substring {
         try section(
             source,
-            from: "private var passiveSafetyPanel",
+            from: "private func hero(for phase: Phase)",
             to: "private var captureDetailsSheet"
         )
     }
