@@ -26,7 +26,7 @@ public struct AccelerationMilestoneEvidenceSuitePolicy: Equatable, Sendable {
         maximumSampleIntervalNanoseconds: UInt64,
         telemetry: SpeedTelemetryQualityPolicy
     ) throws {
-        guard let firstTarget = targetsMetersPerSecond.first else {
+        guard !targetsMetersPerSecond.isEmpty else {
             throw AccelerationMilestoneEvidenceSuitePolicyError.targetListRequired
         }
 
@@ -65,10 +65,6 @@ public struct AccelerationMilestoneEvidenceSuitePolicy: Equatable, Sendable {
             previousTarget = target
         }
 
-        // Keep this explicit even though the loop necessarily consumes the first
-        // target. It makes the nonempty invariant obvious to future readers and
-        // avoids silently weakening the contract if construction changes later.
-        _ = firstTarget
         self.targetsMetersPerSecond = targetsMetersPerSecond
         self.sessionPolicies = policies
     }
@@ -122,7 +118,9 @@ public struct AccelerationMilestoneEvidenceSuite: Sendable {
 
     public init(policy: AccelerationMilestoneEvidenceSuitePolicy) {
         self.policy = policy
-        self.sessions = policy.sessionPolicies.map(AccelerationEvidenceSession.init(policy:))
+        self.sessions = policy.sessionPolicies.map { sessionPolicy in
+            AccelerationEvidenceSession(policy: sessionPolicy)
+        }
     }
 
     public mutating func record(_ sample: SpeedTelemetrySample) {
