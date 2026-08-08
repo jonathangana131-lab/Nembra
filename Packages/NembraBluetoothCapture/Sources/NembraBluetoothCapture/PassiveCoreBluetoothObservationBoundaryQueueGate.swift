@@ -25,6 +25,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case horizonArtifactNotReady
         case freshTargetSessionRequired
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
+        case terminalResolutionNotApplied(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -465,17 +466,23 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return receipt
     }
 
-    /// Reopens boundary admission after a successful terminal Horizon only when the
-    /// producer-issued retired-FIFO resolution receipt still matches this exact gate
-    /// transaction, including its process-local UUID, and the controller has already
-    /// created one strictly newer durable target session. The exact fresh generation
-    /// remains bound until its first Ready begins; a different later generation cannot
-    /// steal the reopened lifecycle.
+    /// Reopens boundary admission after a successful terminal Horizon only when:
+    /// - the producer-issued retirement resolution still names this exact terminal
+    ///   transaction (revision + process-local UUID + H + artifact authority);
+    /// - the controller enqueue tail has not advanced since resolution;
+    /// - the controller has already applied that resolution to its global resolved
+    ///   frontier; and
+    /// - a non-caller-constructible fresh-session authority proves the replacement
+    ///   recorder was successfully created for the exact predecessor terminal.
+    ///
+    /// The exact fresh generation remains bound until its first Ready begins. A raw
+    /// reset cannot erase the binding and an unrelated later generation cannot steal it.
     @MainActor
     mutating func reopenAfterTerminalQueueResolution(
         _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
+        freshSession: PassiveCoreBluetoothFreshTerminalCaptureSession,
         currentLastEnqueuedEventSequence: UInt64,
-        freshTargetSessionGeneration: UInt64
+        currentResolvedThroughQueueSequence: UInt64
     ) throws {
         guard case let .terminal(transaction) = phase else {
             throw StateError.invalidTransition
@@ -495,12 +502,32 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
                 actual: currentLastEnqueuedEventSequence
             )
         }
-        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.terminalResolutionNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+
+        let freshAuthority = freshSession.reopenAuthority
+        guard freshAuthority.terminalTransactionRevision == resolution.terminalTransactionRevision,
+              freshAuthority.terminalTransactionIdentity == resolution.terminalTransactionIdentity,
+              freshAuthority.horizonQueueCutoff == resolution.horizonQueueCutoff,
+              freshAuthority.resolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.staleTransaction
+        }
+        guard freshAuthority.terminalAuthority == resolution.terminalAuthority else {
+            throw StateError.authorityChanged
+        }
+        guard transaction.authority.targetSessionGeneration < UInt64.max,
+              freshAuthority.freshArtifactAuthority.targetSessionGeneration
+                == transaction.authority.targetSessionGeneration + 1,
+              freshAuthority.freshArtifactAuthority.authorityGeneration == 1 else {
             throw StateError.freshTargetSessionRequired
         }
 
         committedReadyTransaction = nil
-        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration
+        requiredReadyTargetSessionGeneration = freshAuthority.freshArtifactAuthority.targetSessionGeneration
         phase = .awaitingReady
     }
 
