@@ -1,0 +1,85 @@
+name: ES80 primary progress final transform
+
+on:
+  push:
+    branches:
+      - product/es80-v14-primary-progress-final-gpt56
+    paths:
+      - .github/workflows/es80-primary-progress-final-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: product/es80-v14-primary-progress-final-gpt56
+          fetch-depth: 0
+      - name: Reduce reviewed transform to current shell only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/ci/es80_human_first_final_gpt56.py')
+          original = p.read_text()
+          start = original.index('shell = SHELL.read_text()')
+          end = original.index('\ntest = RIDER_TEST.read_text()', start)
+          body = original[start:end]
+          prefix = '''from pathlib import Path\n\nSHELL = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")\n\ndef replace_exact(source: str, old: str, new: str, label: str) -> str:\n    if old not in source:\n        print(f"current flagship already differs for {label}: {old!r}")\n        return source\n    return source.replace(old, new)\n\n'''
+          p.write_text(prefix + body + '\nprint("current shell transform complete")\n')
+          PY
+      - name: Adapt current post-seal recovery wording
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          s = p.read_text()
+          old = 'The artifact remains sealed, but post-seal Bluetooth cleanup did not complete. Preserve this capture and restart Nembra before another capture.'
+          new = 'The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.'
+          if old not in s:
+              raise SystemExit('post-seal recovery source changed; inspect before composing')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Apply remaining shell transform
+        run: |
+          python3 - <<'PY'
+          import runpy
+          try:
+              runpy.run_path('scripts/ci/es80_human_first_final_gpt56.py', run_name='__main__')
+          except SystemExit as exc:
+              print(f'::error title=Rider transform guard::{exc}')
+              raise
+          PY
+      - name: Validate current contracts
+        run: |
+          git diff --check
+          grep -F 'Text("CAPTURE PROGRESS")' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Begin OFF 1 check' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Confirm scooter signal' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("SIGNAL"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("DISCOVERY"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("SEAL"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'The Capture is sealed, but Bluetooth cleanup did not finish.' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Nembra could not prepare the Share file' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'Nembra could not verify the Share file for analysis' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'CoreBluetooth correlation uses full peripheral identity' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'primary and progress rider language' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CapturePrimaryProgressRiderLanguageAcceptanceTests.swift
+          grep -F 'Share recovery rider language' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureShareRecoveryLanguageTests.swift
+          grep -F 'guard status.physicalProcedurePermitted else' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)' NembraApp/Features/Research/ES80CaptureShellView.swift
+      - name: Commit clean product checkpoint
+        env:
+          TARGET_BRANCH: product/es80-v14-primary-progress-final-gpt56
+        run: |
+          rm .github/workflows/es80-primary-progress-final-gpt56.yml
+          rm scripts/ci/es80_human_first_final_gpt56.py
+          git config user.name "nembra-gpt56-worker"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CapturePrimaryProgressRiderLanguageAcceptanceTests.swift \
+                  .github/workflows/es80-primary-progress-final-gpt56.yml \
+                  scripts/ci/es80_human_first_final_gpt56.py
+          git commit -m "[Capture product v14] Finish remaining primary and progress rider language"
+          git push origin "HEAD:${TARGET_BRANCH}"
