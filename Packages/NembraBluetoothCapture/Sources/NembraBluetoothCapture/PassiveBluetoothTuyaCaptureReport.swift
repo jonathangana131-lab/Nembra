@@ -15,7 +15,9 @@ public enum PassiveBluetoothTuyaCaptureReportError: Error, Equatable, Sendable {
 /// It exists so a physical capture can be consumed reproducibly without asking
 /// the operator to copy/edit hex or manually reconstruct GATT streams.
 public struct PassiveBluetoothTuyaCaptureReport: Equatable, Codable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// Schema v2 adds the accepted scoped receipt-sequence provenance and the
+    /// packet-zero candidate-restart boundary to the historical v1 report.
+    public static let currentSchemaVersion = 2
 
     public let schemaVersion: Int
     public let capture: CaptureSummary
@@ -51,6 +53,8 @@ public struct PassiveBluetoothTuyaCaptureReport: Equatable, Codable, Sendable {
         public let analysisObservationIndex: Int
         public let captureRecordIndex: Int
         public let captureSequenceNumber: UInt64
+        public let receiptSequenceScope: String?
+        public let receiptSequenceNumber: UInt64?
         public let receivedAtUptimeNanoseconds: UInt64
         public let receivedAtDate: Date
         public let continuityGeneration: UInt64
@@ -88,6 +92,9 @@ public struct PassiveBluetoothTuyaCaptureReport: Equatable, Codable, Sendable {
         public let protocolVersionHighNibble: UInt8
         public let encryptedByteCount: Int
         public let fragmentCount: Int
+        public let receiptSequenceScope: String?
+        public let firstReceiptSequenceNumber: UInt64?
+        public let lastReceiptSequenceNumber: UInt64?
         public let firstReceiptUptimeNanoseconds: UInt64
         public let lastReceiptUptimeNanoseconds: UInt64
     }
@@ -245,6 +252,9 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
                     protocolVersionHighNibble: message.protocolVersionHighNibble,
                     encryptedByteCount: message.encryptedBytes.count,
                     fragmentCount: message.fragmentCount,
+                    receiptSequenceScope: message.receiptSequenceScope,
+                    firstReceiptSequenceNumber: message.firstReceiptSequenceNumber,
+                    lastReceiptSequenceNumber: message.lastReceiptSequenceNumber,
                     firstReceiptUptimeNanoseconds: message.firstReceiptUptimeNanoseconds,
                     lastReceiptUptimeNanoseconds: message.lastReceiptUptimeNanoseconds
                 )
@@ -396,6 +406,8 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
             analysisObservationIndex: observationIndex,
             captureRecordIndex: fragment.captureRecordIndex,
             captureSequenceNumber: fragment.captureSequenceNumber,
+            receiptSequenceScope: fragment.observation.receiptSequenceScope,
+            receiptSequenceNumber: fragment.observation.receiptSequenceNumber,
             receivedAtUptimeNanoseconds: fragment.observation.receiptUptimeNanoseconds,
             receivedAtDate: fragment.receivedAtDate,
             continuityGeneration: fragment.observation.continuityGeneration,
@@ -411,6 +423,8 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
             "continuityGenerationChanged"
         case .streamIdentityAndContinuityGenerationChanged:
             "streamIdentityAndContinuityGenerationChanged"
+        case .candidatePacketZeroRestart:
+            "candidatePacketZeroRestart"
         }
     }
 
@@ -420,6 +434,12 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
             "emptyStreamIdentityField"
         case .emptyFragment:
             "emptyFragment"
+        case .emptyReceiptSequenceScope:
+            "emptyReceiptSequenceScope"
+        case .receiptSequenceScopeRequiresSequence:
+            "receiptSequenceScopeRequiresSequence"
+        case .receiptSequenceRequiresScope:
+            "receiptSequenceRequiresScope"
         case .malformedVarint:
             "malformedVarint"
         case .varintOverflow:
@@ -442,6 +462,12 @@ public enum PassiveBluetoothTuyaCaptureReportBuilder {
             "streamChanged"
         case .continuityGenerationChanged:
             "continuityGenerationChanged"
+        case .receiptOrderingAuthorityChanged:
+            "receiptOrderingAuthorityChanged"
+        case let .receiptSequenceScopeChanged(expected, actual):
+            "receiptSequenceScopeChanged(expected:\(expected ?? "nil"),actual:\(actual ?? "nil"))"
+        case let .nonMonotonicReceiptSequence(previous, actual):
+            "nonMonotonicReceiptSequence(previous:\(previous),actual:\(actual))"
         case .nonMonotonicReceiptUptime:
             "nonMonotonicReceiptUptime"
         case let .assembledLengthExceeded(declared, actual):
