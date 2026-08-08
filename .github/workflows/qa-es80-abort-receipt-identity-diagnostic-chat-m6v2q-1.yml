@@ -1,0 +1,44 @@
+name: ES80 abort receipt identity expected-red diagnostic
+
+on:
+  push:
+    branches:
+      - cell/es80-abort-receipt-identity-diagnostic/ci/chat-m6v2q-1
+
+permissions:
+  contents: read
+
+jobs:
+  identity-diagnostic:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact diagnostic parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: feaa6e1615e354ea17976731ee6afbd0042be4dc
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-abort-receipt-identity-diagnostic-chat-m6v2q-1.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Run focused expected-red identity diagnostic
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            -Xswiftc -warnings-as-errors \
+            --filter PassiveCoreBluetoothObservationBoundaryAbortReceiptIdentityDiagnosticTests
