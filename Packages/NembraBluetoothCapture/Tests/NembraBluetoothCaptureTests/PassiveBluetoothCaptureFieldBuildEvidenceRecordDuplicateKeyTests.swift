@@ -64,7 +64,7 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordDuplicateKeyTests {
 
     @Test
     func conflictingInstallableDigestPrecedenceCannotReachRendezvous() throws {
-        var reviewerObject = baseEvidenceObject()
+        var reviewerObject = try baseEvidenceObject()
         reviewerObject["signedInstallableSHA256"] = String(repeating: "d", count: 64)
         let reviewerRecord = try json(reviewerObject)
         let ambiguous = try insertingDuplicateField(
@@ -82,8 +82,8 @@ struct PassiveBluetoothCaptureFieldBuildEvidenceRecordDuplicateKeyTests {
         }
     }
 
-    private func baseEvidenceObject() -> [String: Any] {
-        let externalRecordData = try! JSONSerialization.data(
+    private func baseEvidenceObject() throws -> [String: Any] {
+        let externalRecordData = try JSONSerialization.data(
             withJSONObject: [
                 "schemaVersion": 3,
                 "buildIdentifier": buildIdentifier,
