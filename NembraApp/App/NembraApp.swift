@@ -3,8 +3,9 @@ import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
 
-private enum ES80ResearchBuildPreflightState: Equatable {
+private enum ES80ResearchBuildPreflightState: Equatable, Sendable {
     case notApplicable
+    case checking
     case matched(PassiveBluetoothCaptureRuntimeBuildBinding)
     case blocked(String)
 
@@ -23,7 +24,7 @@ struct NembraApp: App {
     }
 
     private let launchMode: LaunchMode
-    private let researchBuildPreflight: ES80ResearchBuildPreflightState
+    @State private var researchBuildPreflight: ES80ResearchBuildPreflightState
     @State private var runtime: AppRuntime?
     @State private var researchController: ForegroundCoreBluetoothCaptureController?
 
@@ -31,20 +32,10 @@ struct NembraApp: App {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-
-        let researchBuildPreflight: ES80ResearchBuildPreflightState = launchMode == .es80PassiveCapture
-            ? Self.resolveES80ResearchBuildPreflight()
-            : .notApplicable
-        self.researchBuildPreflight = researchBuildPreflight
-
-        let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
-            && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
-            && researchBuildPreflight.permitsFieldRuntime
-        _researchController = State(
-            initialValue: fieldCaptureAuthorized
-                ? Self.makeES80ResearchController()
-                : nil
+        _researchBuildPreflight = State(
+            initialValue: launchMode == .es80PassiveCapture ? .checking : .notApplicable
         )
+        _researchController = State(initialValue: nil)
     }
 
     var body: some Scene {
@@ -86,8 +77,36 @@ struct NembraApp: App {
                     }
                 }
                 .preferredColorScheme(.dark)
+                .task { await resolveES80ResearchFieldAdmission() }
             }
         }
+    }
+
+    private func resolveES80ResearchFieldAdmission() async {
+        guard launchMode == .es80PassiveCapture,
+              researchBuildPreflight == .checking else {
+            return
+        }
+
+        // Reading and hashing the exact running executable can be materially more expensive
+        // than normal launch work. Keep it off MainActor while the product remains fail-closed:
+        // there is no field controller and no physical action is visible during `.checking`.
+        let preflight = await Task.detached(priority: .utility) {
+            Self.resolveES80ResearchBuildPreflight()
+        }.value
+
+        guard !Task.isCancelled else { return }
+        researchBuildPreflight = preflight
+
+        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure,
+              preflight.permitsFieldRuntime else {
+            researchController = nil
+            return
+        }
+
+        // Controller construction and publication remain MainActor-isolated. The exact trusted
+        // binding has already been established and no await occurs between this gate and publish.
+        researchController = Self.makeES80ResearchController()
     }
 
     private static func resolveLaunchMode(
@@ -103,7 +122,7 @@ struct NembraApp: App {
         return .standard
     }
 
-    private static func resolveES80ResearchBuildPreflight() -> ES80ResearchBuildPreflightState {
+    nonisolated private static func resolveES80ResearchBuildPreflight() -> ES80ResearchBuildPreflightState {
         do {
             return .matched(try PassiveBluetoothCaptureBuildPreflight.currentApplication())
         } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
@@ -266,6 +285,33 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     @ViewBuilder
     private var buildPreflightPanel: some View {
         switch buildPreflight {
+        case .checking:
+            HStack(alignment: .top, spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("BUILD PREFLIGHT / CHECKING")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+
+                    Text("Verifying exact field build")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+
+                    Text("Nembra is measuring the running executable and comparing it with the trusted V14 acceptance-pipeline record. Field controls remain unavailable during verification.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(18)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("es80.capture.build-preflight")
+
         case let .matched(binding):
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
