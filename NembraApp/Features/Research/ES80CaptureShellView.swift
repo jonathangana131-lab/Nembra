@@ -52,6 +52,9 @@ struct ES80CaptureShellView: View {
     @State private var finalizedCaptureData: Data?
     @State private var finalizedCaptureURL: URL?
     @State private var isFinalizingCapture = false
+    @State private var isShowingCaptureDetails = false
+    @State private var transportCleanupWarning: String?
+    @State private var sharePreparationWarning: String?
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
         _coordinator = State(initialValue: coordinator)
@@ -455,7 +458,11 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "CAPTURE COMPLETE",
                 title: "Ready for analysis",
-                message: finalizedCaptureData.map { "Sealed artifact: \($0.count) bytes. Share the exact JSON unchanged for offline analysis." } ?? "The immutable capture is sealed and ready to share.",
+                message: finalizedCaptureData.map { data in
+                    finalizedCaptureURL == nil
+                        ? "Sealed artifact: \(data.count) bytes. The immutable capture is retained; prepare its Share file when ready."
+                        : "Sealed artifact: \(data.count) bytes. Share the exact JSON unchanged for offline analysis."
+                } ?? "The immutable capture is sealed and ready to share.",
                 symbol: "checkmark.seal.fill"
             )
             if let finalizedCaptureURL {
@@ -469,13 +476,36 @@ struct ES80CaptureShellView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("es80.capture.share")
+            } else if finalizedCaptureData != nil {
+                secondaryButton(
+                    "Prepare share file",
+                    systemImage: "arrow.clockwise",
+                    identifier: "es80.capture.prepare-share"
+                ) {
+                    prepareShareFile()
+                }
             }
+
+            if let warning = captureCompletionWarning {
+                diagnosticBanner(warning)
+            }
+
             if let finalizedCaptureData {
-                Text("View details · JSON bytes \(finalizedCaptureData.count) · ES80-FINGERPRINT-v1 · software evidence only")
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("es80.capture.details")
+                secondaryButton(
+                    isShowingCaptureDetails ? "Hide details" : "View details",
+                    systemImage: isShowingCaptureDetails ? "chevron.up" : "doc.text.magnifyingglass",
+                    identifier: "es80.capture.view-details"
+                ) {
+                    isShowingCaptureDetails.toggle()
+                }
+
+                if isShowingCaptureDetails {
+                    Text("JSON bytes \(finalizedCaptureData.count) · ES80-FINGERPRINT-v1 · software evidence only · correlated Bluetooth target, not authenticated vehicle identity")
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("es80.capture.details")
+                }
             }
 
         case let .failed(message):
@@ -912,24 +942,57 @@ struct ES80CaptureShellView: View {
         guard !isFinalizingCapture, finalizedCaptureData == nil else { return }
         isFinalizingCapture = true
         diagnosticMessage = nil
+        transportCleanupWarning = nil
+        sharePreparationWarning = nil
         Task { @MainActor in
             do {
                 let data = try await controller.encodedFinalizedObservationHorizonJSON(prettyPrinted: true)
-                let url = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("Nembra-ES80-FINGERPRINT-v1-\(UUID().uuidString).json")
-                try data.write(to: url, options: .atomic)
+
+                // Once the controller returns, the immutable artifact is legitimate. Promote the
+                // exact bytes immediately so later Share staging/transport cleanup can never relabel
+                // a successfully sealed evidence artifact as a seal failure.
                 finalizedCaptureData = data
-                finalizedCaptureURL = url
+
                 do {
                     try controller.teardownActiveConnectionAfterFinalization()
                 } catch {
-                    diagnosticMessage = "Artifact sealed successfully; transport cleanup needs a fresh app session before another capture."
+                    transportCleanupWarning = "Artifact sealed successfully; transport cleanup needs a fresh app session before another capture."
+                }
+
+                do {
+                    finalizedCaptureURL = try makeShareFile(for: data)
+                } catch {
+                    sharePreparationWarning = "Artifact sealed successfully; the temporary Share file could not be prepared. The exact sealed bytes are retained and can be staged again without re-running capture."
                 }
             } catch {
                 lifecycleFailureMessage = "Capture could not seal its immutable Horizon artifact: \(String(describing: error))"
             }
             isFinalizingCapture = false
         }
+    }
+
+    private func makeShareFile(for data: Data) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Nembra-ES80-FINGERPRINT-v1-\(UUID().uuidString).json")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private func prepareShareFile() {
+        guard let data = finalizedCaptureData else { return }
+        do {
+            finalizedCaptureURL = try makeShareFile(for: data)
+            sharePreparationWarning = nil
+        } catch {
+            sharePreparationWarning = "The capture remains sealed, but its temporary Share file still could not be prepared. The exact in-memory bytes are unchanged."
+        }
+    }
+
+    private var captureCompletionWarning: String? {
+        [transportCleanupWarning, sharePreparationWarning]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .nilIfEmpty
     }
 
     private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
@@ -1123,5 +1186,11 @@ struct ES80CaptureShellView: View {
              .connectingTarget, .acquiringEvidence, .observingHorizon, .finalizingCapture:
             .white.opacity(0.78)
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
