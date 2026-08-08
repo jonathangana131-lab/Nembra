@@ -48,7 +48,9 @@ struct NembraApp: App {
                 NavigationStack {
                     if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
                         if let researchCoordinator {
-                            ES80CaptureShellView(coordinator: researchCoordinator)
+                            ES80ExperimentOneStationaryPreflightView(
+                                coordinator: researchCoordinator
+                            )
                         } else {
                             ContentUnavailableView(
                                 "Capture unavailable",
@@ -78,6 +80,177 @@ struct NembraApp: App {
         }
 #endif
         return .standard
+    }
+}
+
+/// Product-level prerequisite between accepted package field authority and the Experiment One shell.
+///
+/// The physical recipe requires the charger disconnected. The app therefore cannot turn a generic
+/// confirmation tap into `.disconnected` setup provenance: the operator first declares the actual
+/// charger state here. A connected declaration is a hard blocker. Only an explicit disconnected
+/// declaration can instantiate the shell, where the existing final setup confirmation records the
+/// same condition into the package-owned stationary setup object.
+///
+/// This remains an operator declaration, not electrical sensing or continuous-condition attestation.
+/// It cannot bypass the package-owned physical execution gate because this view is reachable only
+/// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
+@MainActor
+private struct ES80ExperimentOneStationaryPreflightView: View {
+    let coordinator: PassiveBluetoothExperimentOneCoordinator
+
+    @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
+    @State private var disconnectedDeclarationAccepted = false
+
+    var body: some View {
+        if disconnectedDeclarationAccepted {
+            ES80CaptureShellView(coordinator: coordinator)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text("Stationary preflight")
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+
+                        Text("Declare the scooter charger state before Experiment One can expose OFF 1.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("CHARGER STATE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+
+                        chargerStateButton(
+                            title: "Disconnected",
+                            detail: "Required for ES80-FINGERPRINT-v1",
+                            systemImage: "bolt.slash.fill",
+                            state: .disconnected
+                        )
+
+                        chargerStateButton(
+                            title: "Connected",
+                            detail: "Experiment One remains blocked",
+                            systemImage: "bolt.fill",
+                            state: .connected
+                        )
+                    }
+
+                    if selectedChargerState?.rawValue == PassiveBluetoothStationaryCaptureChargerState.connected.rawValue {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.lock.fill")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Disconnect charger to continue")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+
+                                Text("The accepted stationary fingerprint recipe requires the scooter charger disconnected. Nembra will not convert a connected declaration into disconnected provenance. Unplug the charger, then select Disconnected.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(18)
+                        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("es80.capture.preflight.charger-blocked")
+                    }
+
+                    Button {
+                        guard selectedChargerState?.rawValue
+                                == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue else {
+                            return
+                        }
+                        disconnectedDeclarationAccepted = true
+                    } label: {
+                        Label("Continue to setup confirmation", systemImage: "checkmark.shield.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 56)
+                            .foregroundStyle(canContinue ? Color.black : Color.secondary)
+                            .background(
+                                canContinue ? Color.white : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canContinue)
+                    .accessibilityHint("Available only after declaring that the charger is disconnected.")
+                    .accessibilityIdentifier("es80.capture.preflight.continue")
+
+                    Text("This is an operator declaration, not charger sensing or proof that the condition remains unchanged. Keep the charger disconnected, Nembra foregrounded with the screen unlocked, and the stock scooter app closed through the run.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: 660)
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 42)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Nembra Capture")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("es80.capture.stationary-preflight")
+        }
+    }
+
+    private var canContinue: Bool {
+        selectedChargerState?.rawValue
+            == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue
+    }
+
+    private func chargerStateButton(
+        title: String,
+        detail: String,
+        systemImage: String,
+        state: PassiveBluetoothStationaryCaptureChargerState
+    ) -> some View {
+        let selected = selectedChargerState?.rawValue == state.rawValue
+
+        return Button {
+            selectedChargerState = state
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(selected ? Color.black : Color.secondary)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(selected ? Color.black.opacity(0.7) : Color.secondary)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .foregroundStyle(selected ? Color.black : Color.white)
+            .background(
+                selected ? Color.white : Color.white.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Charger \(title)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("es80.capture.preflight.charger-\(state.rawValue)")
     }
 }
 
