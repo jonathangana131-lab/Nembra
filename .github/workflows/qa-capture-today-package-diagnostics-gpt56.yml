@@ -1,0 +1,51 @@
+name: Capture TODAY package diagnostics
+
+on:
+  push:
+    branches:
+      - cell/capture-today-package-diagnostics/ci/gpt56-1
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostics:
+    runs-on: xcode-27
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact repaired parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: ee21c57ebc3b0cd6a742875d9cb0a476a71e41f6
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-capture-today-package-diagnostics-gpt56.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected repaired parent: %s\nActual repaired parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Diagnostic-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Run Capture package and annotate compiler failure
+        shell: bash
+        run: |
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors 2>&1 | tee /tmp/capture-package.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo 'Capture package failed; surfacing diagnostic lines as check annotations.'
+            grep -E '(^|:)(error|warning):|error:|fatal error:' /tmp/capture-package.log | tail -n 40 | while IFS= read -r line; do
+              safe=${line//'%'/'%25'}
+              safe=${safe//$'\r'/'%0D'}
+              safe=${safe//$'\n'/'%0A'}
+              echo "::error title=Capture package diagnostic::$safe"
+            done
+            exit "$status"
+          fi
