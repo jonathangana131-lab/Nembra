@@ -7,73 +7,129 @@ run_source = run_path.read_text()
 controller_source = controller_path.read_text()
 
 
-def replace_once(source: str, old: str, new: str, label: str) -> str:
+def once(source: str, old: str, new: str, label: str) -> str:
     count = source.count(old)
     if count != 1:
-        raise SystemExit(f"{label}: expected exactly one source anchor, found {count}")
+        raise SystemExit(f"{label}: expected 1 occurrence of {old!r}, found {count}")
     return source.replace(old, new, 1)
 
 
-run_source = replace_once(
+# Producer: carry one monotonic software handoff boundary in the producer-sealed
+# payload. Use intentionally tiny anchors so formatting/comment churn cannot turn
+# this transform into a broad rewrite.
+run_source = once(
     run_source,
-    """    struct Payload {\n        let admissionIdentity: UUID\n        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence\n""",
-    """    struct Payload {\n        let admissionIdentity: UUID\n        /// Local monotonic software handoff boundary captured when this sealed\n        /// admission is issued. It orders controller callback receipts only; it is\n        /// not BLE/RF emission time and carries no physical timing semantics.\n        let issuedAtUptimeNanoseconds: UInt64\n        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence\n""",
+    "        let admissionIdentity: UUID\n",
+    """        let admissionIdentity: UUID
+        /// Local monotonic software handoff boundary captured when this sealed
+        /// admission is issued. It orders controller callback receipts only; it is
+        /// not BLE/RF emission time and carries no physical timing semantics.
+        let issuedAtUptimeNanoseconds: UInt64
+""",
     "payload property",
 )
-
-run_source = replace_once(
+run_source = once(
     run_source,
-    """        fileprivate init(\n            admissionIdentity: UUID,\n            powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,\n""",
-    """        fileprivate init(\n            admissionIdentity: UUID,\n            issuedAtUptimeNanoseconds: UInt64,\n            powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,\n""",
-    "payload initializer signature",
+    "            admissionIdentity: UUID,\n",
+    """            admissionIdentity: UUID,
+            issuedAtUptimeNanoseconds: UInt64,
+""",
+    "payload initializer parameter",
 )
-
-run_source = replace_once(
+run_source = once(
     run_source,
-    """            self.admissionIdentity = admissionIdentity\n            self.powerCycleEvidence = powerCycleEvidence\n""",
-    """            self.admissionIdentity = admissionIdentity\n            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds\n            self.powerCycleEvidence = powerCycleEvidence\n""",
+    "            self.admissionIdentity = admissionIdentity\n",
+    """            self.admissionIdentity = admissionIdentity
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
+""",
     "payload initializer assignment",
 )
-
-run_source = replace_once(
+run_source = once(
     run_source,
-    """    fileprivate init(\n        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,\n        peripheralIdentifier: UUID,\n        recorder: PassiveCoreBluetoothCaptureRecorder\n    ) {\n        payload = Payload(\n            admissionIdentity: UUID(),\n            powerCycleEvidence: powerCycleEvidence,\n""",
-    """    fileprivate init(\n        issuedAtUptimeNanoseconds: UInt64,\n        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,\n        peripheralIdentifier: UUID,\n        recorder: PassiveCoreBluetoothCaptureRecorder\n    ) {\n        payload = Payload(\n            admissionIdentity: UUID(),\n            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,\n            powerCycleEvidence: powerCycleEvidence,\n""",
-    "admission initializer",
+    """    fileprivate init(
+        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
+""",
+    """    fileprivate init(
+        issuedAtUptimeNanoseconds: UInt64,
+        powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
+""",
+    "admission initializer parameter",
 )
-
-run_source = replace_once(
+run_source = once(
     run_source,
-    """        let recorder = try beginCaptureRecorder(startedAt: startedAt)\n        return PassiveBluetoothExperimentOneCaptureAdmission(\n            powerCycleEvidence: evidence,\n            peripheralIdentifier: peripheralIdentifier,\n            recorder: recorder\n        )\n""",
-    """        let recorder = try beginCaptureRecorder(startedAt: startedAt)\n        // This monotonic boundary is captured only after the exact run-owned recorder\n        // constructor succeeds, immediately before the sealed handoff is minted.\n        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds\n        return PassiveBluetoothExperimentOneCaptureAdmission(\n            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,\n            powerCycleEvidence: evidence,\n            peripheralIdentifier: peripheralIdentifier,\n            recorder: recorder\n        )\n""",
+    "            admissionIdentity: UUID(),\n",
+    """            admissionIdentity: UUID(),
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
+""",
+    "payload construction",
+)
+run_source = once(
+    run_source,
+    """        let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        return PassiveBluetoothExperimentOneCaptureAdmission(
+""",
+    """        let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        // Captured only after the exact run-owned recorder constructor succeeds and
+        // immediately before the sealed one-shot handoff is minted.
+        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        return PassiveBluetoothExperimentOneCaptureAdmission(
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
+""",
     "admission issuance",
 )
 
-controller_source = replace_once(
+# Controller: require a callback receipt on/after that boundary before any target
+# publication or exact recorder installation.
+controller_source = once(
     controller_source,
-    """        case experimentOneVehicleContextMismatch\n        case targetNotSelected\n""",
-    """        case experimentOneVehicleContextMismatch\n        case experimentOneRediscoveryRequired(UUID)\n        case targetNotSelected\n""",
+    "        case experimentOneVehicleContextMismatch\n",
+    """        case experimentOneVehicleContextMismatch
+        case experimentOneRediscoveryRequired(UUID)
+""",
     "controller error",
 )
-
-controller_source = replace_once(
+controller_source = once(
     controller_source,
-    """        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],\n              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {\n            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)\n        }\n        if discovery.isConnectable == false {\n            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)\n        }\n\n        do {\n""",
-    """        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],\n              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {\n            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)\n        }\n        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],\n              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {\n            throw ControllerError.experimentOneRediscoveryRequired(payload.peripheralIdentifier)\n        }\n        if discovery.isConnectable == false {\n            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)\n        }\n\n        do {\n""",
+    """        if discovery.isConnectable == false {
+            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+        }
+
+        do {
+""",
+    """        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            throw ControllerError.experimentOneRediscoveryRequired(payload.peripheralIdentifier)
+        }
+        if discovery.isConnectable == false {
+            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+        }
+
+        do {
+""",
     "post-admission rediscovery guard",
 )
-
-controller_source = replace_once(
+controller_source = once(
     controller_source,
-    """        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]\n        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {\n""",
-    """        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {\n""",
+    "        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]\n",
+    "",
     "remove stale optional advertisement lookup",
 )
-
-controller_source = replace_once(
+controller_source = once(
     controller_source,
-    """        if let latestAdvertisement {\n            enqueue(\n                .advertisement(latestAdvertisement.observation),\n                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,\n                receivedAtDate: latestAdvertisement.receivedAtDate\n            )\n        }\n""",
-    """        enqueue(\n            .advertisement(latestAdvertisement.observation),\n            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,\n            receivedAtDate: latestAdvertisement.receivedAtDate\n        )\n""",
+    """        if let latestAdvertisement {
+            enqueue(
+                .advertisement(latestAdvertisement.observation),
+                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+                receivedAtDate: latestAdvertisement.receivedAtDate
+            )
+        }
+""",
+    """        enqueue(
+            .advertisement(latestAdvertisement.observation),
+            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+            receivedAtDate: latestAdvertisement.receivedAtDate
+        )
+""",
     "fresh advertisement enqueue",
 )
 
