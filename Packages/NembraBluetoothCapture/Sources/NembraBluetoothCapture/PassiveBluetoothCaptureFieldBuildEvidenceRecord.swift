@@ -195,10 +195,9 @@ public enum PassiveBluetoothCaptureFieldBuildEvidenceRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
-        if let duplicateKey = PassiveBluetoothStrictJSONObject.duplicateTopLevelObjectKey(in: data) {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
             throw PassiveBluetoothCaptureFieldBuildEvidenceRecordError.duplicateField(duplicateKey)
         }
-
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
