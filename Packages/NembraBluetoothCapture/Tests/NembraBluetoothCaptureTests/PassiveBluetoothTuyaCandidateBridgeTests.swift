@@ -295,8 +295,8 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
         #expect(transcripts.isEmpty)
     }
 
-    @Test("all Core continuity breaks split downstream target framing")
-    func preservesAuthoritativeCaptureContinuity() throws {
+    @Test("unrelated disconnect does not split target continuity; target and global gaps do")
+    func scopesContinuityToTarget() throws {
         var session = try makeSession()
         try appendValue(
             to: &session,
@@ -350,41 +350,37 @@ struct PassiveBluetoothTuyaCandidateBridgeTests {
             policy: policy()
         )
         let analysis = try #require(analyses.first)
-        #expect(analysis.transcript.fragments.map(\.observation.continuityGeneration) == [0, 1, 2, 3])
+        #expect(analysis.transcript.fragments.map(\.observation.continuityGeneration) == [0, 0, 1, 2])
         #expect(analysis.transcript.fragments.map(\.captureSequenceNumber) == [1, 3, 5, 7])
         #expect(analysis.transcript.fragments.map(\.observation.receiptSequenceNumber) == [1, 3, 5, 7])
 
-        #expect(analysis.events.count == 4)
-        #expect(analysis.events[0] == .incompleteAtBoundary(
-            startObservationIndex: 0,
-            lastAcceptedObservationIndex: 0,
-            nextObservationIndex: 1,
-            boundary: .continuityGenerationChanged
-        ))
-        #expect(analysis.events[1] == .rejectedCandidate(
-            startObservationIndex: 1,
-            lastAcceptedObservationIndex: nil,
-            failingObservationIndex: 1,
-            error: .unexpectedPacketIndex(expected: 0, actual: 1)
-        ))
+        #expect(analysis.events.count == 3)
+        guard case let .completed(firstStart, firstEnd, firstMessage) = analysis.events[0] else {
+            Issue.record("Expected unrelated-device disconnect to preserve target candidate")
+            return
+        }
+        #expect(firstStart == 0)
+        #expect(firstEnd == 1)
+        #expect(firstMessage.encryptedBytes == [0xAA, 0xBB])
+        #expect(firstMessage.continuityGeneration == 0)
 
-        guard case let .completed(secondStart, secondEnd, secondMessage) = analysis.events[2] else {
+        guard case let .completed(secondStart, secondEnd, secondMessage) = analysis.events[1] else {
             Issue.record("Expected post-interruption packet zero to begin a new candidate")
             return
         }
         #expect(secondStart == 2)
         #expect(secondEnd == 2)
         #expect(secondMessage.encryptedBytes == [0xCC])
-        #expect(secondMessage.continuityGeneration == 2)
+        #expect(secondMessage.continuityGeneration == 1)
 
-        guard case let .completed(thirdStart, thirdEnd, thirdMessage) = analysis.events[3] else {
+        guard case let .completed(thirdStart, thirdEnd, thirdMessage) = analysis.events[2] else {
             Issue.record("Expected post-target-disconnect packet zero to begin a new candidate")
             return
         }
         #expect(thirdStart == 3)
         #expect(thirdEnd == 3)
         #expect(thirdMessage.encryptedBytes == [0xDD])
-        #expect(thirdMessage.continuityGeneration == 3)
+        #expect(thirdMessage.continuityGeneration == 2)
     }
 
     @Test("known capture gap terminates an incomplete candidate instead of splicing")
