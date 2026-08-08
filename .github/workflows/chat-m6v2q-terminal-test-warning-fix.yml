@@ -1,0 +1,54 @@
+name: chat-m6v2q terminal test warning fix
+
+on:
+  push:
+    branches:
+      - parallel/es80-terminal-fresh-reopen/chat-m6v2q-3
+    paths:
+      - .github/workflows/chat-m6v2q-terminal-test-warning-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: parallel/es80-terminal-fresh-reopen/chat-m6v2q-3
+
+      - name: Make warning-as-errors test calls explicit
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateFreshReopenTests.swift')
+          s = path.read_text()
+
+          old = '''        let sameSessionError = captureGateError {\n            try gate.begin(\n                .finiteAcquisitionReady,\n                through: 14,\n                authority: sameSessionNewAuthority\n            )\n        }\n'''
+          new = '''        let sameSessionError = captureGateError {\n            _ = try gate.begin(\n                .finiteAcquisitionReady,\n                through: 14,\n                authority: sameSessionNewAuthority\n            )\n        }\n'''
+          if s.count(old) != 1:
+              raise SystemExit(f'same-session begin block count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = '        #expect(gate.resetForNewCaptureSession())\n'
+          new = '''        let resetAccepted = gate.resetForNewCaptureSession()\n        #expect(resetAccepted)\n'''
+          if s.count(old) != 1:
+              raise SystemExit(f'mutating reset assertion count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = '''        let error = captureGateError {\n            try gate.begin(\n                .finiteAcquisitionReady,\n                through: 12,\n                authority: sameSessionAuthority\n            )\n        }\n'''
+          new = '''        let error = captureGateError {\n            _ = try gate.begin(\n                .finiteAcquisitionReady,\n                through: 12,\n                authority: sameSessionAuthority\n            )\n        }\n'''
+          if s.count(old) != 1:
+              raise SystemExit(f'reset-fence begin block count={s.count(old)}')
+          s = s.replace(old, new, 1)
+          path.write_text(s)
+          PY
+
+          git config user.name 'nembra-chat-m6v2q'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateFreshReopenTests.swift
+          git rm .github/workflows/chat-m6v2q-terminal-test-warning-fix.yml
+          git commit -m 'Fix strict fresh-reopen test warnings'
+          git push origin HEAD:parallel/es80-terminal-fresh-reopen/chat-m6v2q-3
