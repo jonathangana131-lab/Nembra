@@ -1,0 +1,55 @@
+name: ES80 Stationary Manifest Current Runtime QA a6ad7384
+
+on:
+  push:
+    branches:
+      - 'cell/es80-stationary-manifest-current-runtime/ci/chat-r6v9m-a6ad7384'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable validation head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Verify exact product parent and validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT=a6ad73845e62d9535cbb284bf8cff5d125aca582
+          WORKFLOW=.github/workflows/es80-stationary-manifest-current-runtime-qa-chat-r6v9m-a6ad7384.yml
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$WORKFLOW"
+          git diff --check HEAD^
+      - name: Verify toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Guard passive package against application writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture package must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+      - name: Test NembraCore with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+      - name: Test NembraBluetoothCapture with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+      - name: Build capture package for generic iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build
