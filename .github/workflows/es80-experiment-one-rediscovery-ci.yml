@@ -40,7 +40,7 @@ jobs:
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOnePublicAuthoritySurfaceTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStatusPromotionPolicyTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralEvidenceAssessmentTests.swift' \
-            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralHorizonScopeTests.swift' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralObservationPrecedenceTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneStructuralReceiptIntegrityTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneVehicleContextTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothPowerCycleScanDeliveryPolicyTests.swift' | sort)"
