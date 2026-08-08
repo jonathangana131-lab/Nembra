@@ -240,11 +240,11 @@ struct ES80CaptureShellView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("One sealed evidence life")
+                Text("One capture from start to finish")
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Nembra carries the same package-owned Experiment One authority from repeated Bluetooth correlation into passive capture and immutable Horizon sealing. It performs no application characteristic-value writes and never turns a display name, RSSI, or service hint into target authority.")
+                Text("Nembra keeps one continuous capture session from the four OFF / ON checks through passive observation and sealing. It sends no scooter commands and never guesses the target from its name, signal strength, or service hints.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -324,7 +324,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "FIELD AUTHORITY",
                 title: "This build is not authorized",
-                message: "The package-owned physical execution gate is closed. No OFF / ON window, connection, capture, or seal action can advance through this coordinator.",
+                message: "This exact build is still locked for real scooter capture. No capture step can begin until the final field checks are complete.",
                 symbol: "lock.shield.fill"
             )
 
@@ -376,8 +376,8 @@ struct ES80CaptureShellView: View {
         case let .correlationStarting(window):
             statePanel(
                 eyebrow: "\(phaseShortName(window)) / STARTING",
-                title: "Opening a fresh scan window",
-                message: "Nembra is waiting for this exact window to report Bluetooth powered-on and active scanning. The producer's evidence clock has not started yet.",
+                title: "Starting a fresh Bluetooth check",
+                message: "Nembra is opening a fresh Bluetooth check for this step. The timer begins only when scanning is actually ready.",
                 symbol: "dot.radiowaves.left.and.right"
             )
             ProgressView()
@@ -416,9 +416,9 @@ struct ES80CaptureShellView: View {
                     ? "Display guidance complete; ready to request window completion"
                     : "\(remaining) seconds of display guidance remaining"
             )
-            .accessibilityHint("The package producer, not this timer, decides whether the window has enough evidence.")
+            .accessibilityHint("Nembra decides whether this window contains enough accepted evidence; the displayed timer cannot finish it early.")
 
-            guidanceFootnote("This countdown is display guidance only. The package producer accepts the window only from its own monotonic receipt boundary; tapping early cannot create evidence.")
+            guidanceFootnote("This countdown is guidance only. Nembra decides when enough evidence has been recorded; tapping early cannot finish the step.")
 
         case let .correlationFailed(message):
             statePanel(
@@ -439,7 +439,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "NO UNIQUE TARGET",
                 title: "No scooter signal repeated twice",
-                message: "No selectable full Bluetooth identifier was absent in both OFF windows and repeated in both ON windows. Nembra will not guess from name, signal strength, service hints, or short IDs.",
+                message: "No Bluetooth signal was absent in both OFF windows and present in both ON windows. Nembra will not guess from name, signal strength, service hints, or short IDs.",
                 symbol: "questionmark.circle"
             )
             primaryButton(
@@ -454,7 +454,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "AMBIGUOUS TARGET",
                 title: "\(count) signals followed the same pattern",
-                message: "More than one selectable full Bluetooth identifier repeated the OFF / ON pattern. Nembra refuses to break the tie with display name, RSSI, services, or a short identifier.",
+                message: "More than one Bluetooth signal repeated the OFF / ON pattern. Nembra refuses to break the tie with display name, signal strength, services, or a short identifier.",
                 symbol: "point.3.filled.connected.trianglepath.dotted"
             )
             primaryButton(
@@ -468,8 +468,8 @@ struct ES80CaptureShellView: View {
         case .correlatedTarget:
             statePanel(
                 eyebrow: "SCOOTER SIGNAL FOUND",
-                title: "One target repeated twice",
-                message: "One full CoreBluetooth identifier was selectable in both ON windows and absent from both OFF catalogs under this exact package-owned observation series. Treat it only as a correlated Bluetooth target.",
+                title: "One signal repeated twice",
+                message: "One Bluetooth signal was present in both ON steps and absent in both OFF steps. Treat it only as a correlated target until stronger physical evidence exists.",
                 symbol: "checkmark.circle"
             )
             primaryButton(
@@ -483,8 +483,8 @@ struct ES80CaptureShellView: View {
         case .rediscoveringTarget:
             statePanel(
                 eyebrow: "TARGET CONFIRMED",
-                title: "Reacquiring the exact signal",
-                message: "A fresh post-admission scan is looking for the exact full identifier that passed both OFF / ON cycles. Keep the scooter in the ON state from the final window.",
+                title: "Finding the same signal again",
+                message: "Nembra is looking again for the exact signal that passed both OFF / ON checks. Keep the scooter ON.",
                 symbol: "scope"
             )
             ProgressView()
@@ -502,8 +502,8 @@ struct ES80CaptureShellView: View {
         case .targetReacquired:
             statePanel(
                 eyebrow: "CORRELATED TARGET",
-                title: "Exact signal reacquired",
-                message: "The same full CoreBluetooth identifier reappeared in the fresh scan epoch created after the sealed admission. This remains local correlation evidence, not permanent hardware authentication.",
+                title: "Same signal found again",
+                message: "The same Bluetooth signal appeared again after confirmation. This is still correlation evidence, not permanent hardware identity.",
                 symbol: "checkmark.circle"
             )
             primaryButton(
@@ -518,7 +518,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "PASSIVE CONNECTION",
                 title: "Opening the correlated target",
-                message: "Nembra is connecting only to the package-owned correlated target. No application characteristic-value writes are permitted by this workflow.",
+                message: "Nembra is opening a passive connection to the correlated target. This workflow sends no scooter commands.",
                 symbol: "link"
             )
             ProgressView()
@@ -528,9 +528,9 @@ struct ES80CaptureShellView: View {
 
         case .acquiring:
             statePanel(
-                eyebrow: "PASSIVE ACQUISITION",
-                title: "Learning the readable surface",
-                message: "Nembra is passively discovering services, characteristics, descriptors, reads, and notifications for the exact run-owned target session. Ready is not shown until finite acquisition is mechanically complete.",
+                eyebrow: "PASSIVE DISCOVERY",
+                title: "Reading what the scooter exposes",
+                message: "Nembra is passively discovering what the correlated target exposes without sending commands. Continue when Nembra reports observation ready.",
                 symbol: "waveform.path.ecg.rectangle"
             )
             ProgressView()
@@ -544,15 +544,15 @@ struct ES80CaptureShellView: View {
             )
             statePanel(
                 eyebrow: "OBSERVATION READY",
-                title: remaining == 0 ? "Waiting for accepted Horizon authority" : "Hold observation — \(remaining)s",
-                message: "Finite acquisition is Ready. Keep Nembra foregrounded and the scooter stationary while the accepted monotonic observation interval matures. The displayed timer is guidance only.",
+                title: remaining == 0 ? "Waiting for capture timing" : "Hold observation — \(remaining)s",
+                message: "Passive discovery is ready. Keep Nembra foregrounded and the scooter stationary until Nembra accepts the required observation time. The displayed timer is guidance only.",
                 symbol: "timer"
             )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Observation ready")
             .accessibilityValue(
                 remaining == 0
-                    ? "Display guidance complete; waiting for accepted Horizon authority"
+                    ? "Display guidance complete; waiting for capture timing"
                     : "\(remaining) seconds of display guidance remaining"
             )
             .accessibilityHint("Keep Nembra foregrounded and the scooter stationary.")
@@ -570,15 +570,15 @@ struct ES80CaptureShellView: View {
             .accessibilityValue(
                 canFinalize
                     ? "Ready"
-                    : "Unavailable; waiting for accepted Horizon authority"
+                    : "Unavailable; waiting for the required capture timing"
             )
-            .accessibilityHint("Available only after the package accepts the required monotonic observation duration.")
+            .accessibilityHint("Available only after Nembra accepts the required observation duration.")
 
         case .readyToSeal:
             statePanel(
-                eyebrow: "HORIZON READY",
+                eyebrow: "READY TO SEAL",
                 title: "Capture can be sealed",
-                message: "The package-owned Ready epoch and required monotonic observation duration are both accepted. Finishing now requests one immutable Horizon from this same authority life.",
+                message: "The required observation time has been accepted. Sealing now freezes this capture so later Bluetooth callbacks cannot change it.",
                 symbol: "checkmark.seal"
             )
             observationHealthStrip(status: status)
@@ -593,8 +593,8 @@ struct ES80CaptureShellView: View {
         case .finalizing:
             statePanel(
                 eyebrow: "SEALING",
-                title: "Freezing immutable evidence",
-                message: "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.",
+                title: "Freezing this capture",
+                message: "Nembra is finishing queued observations, freezing the accepted cutoff, and preparing the shareable capture. Keep the app open until this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -665,7 +665,7 @@ struct ES80CaptureShellView: View {
         case let .failed(message):
             statePanel(
                 eyebrow: "CAPTURE STOPPED",
-                title: "Evidence failed closed",
+                title: "Capture stopped safely",
                 message: message,
                 symbol: "exclamationmark.triangle"
             )
@@ -720,7 +720,7 @@ struct ES80CaptureShellView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.white)
 
-            Text("Nembra is recording the bounded CoreBluetooth advertisement catalog for this exact window. Keep the phone nearby and the app foregrounded; do not open the stock scooter app during this series.")
+            Text("Nembra is recording nearby Bluetooth signals for this step. Keep the phone nearby and Nembra foregrounded; do not open the stock scooter app during this series.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -739,15 +739,15 @@ struct ES80CaptureShellView: View {
         return HStack(spacing: 12) {
             healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
             Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("FINITE", value: observationReady ? "READY" : "WAIT")
+            healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
             Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")
+            healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
         }
         .padding(14)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "Capture health. Target \(connection == .connected ? "bound" : "waiting"). Finite acquisition \(observationReady ? "ready" : "waiting"). Horizon \(horizonReady ? "ready" : "waiting")."
+            "Capture health. Target \(connection == .connected ? "bound" : "waiting"). Discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
         )
     }
 
@@ -785,12 +785,12 @@ struct ES80CaptureShellView: View {
 #else
             if let report = finalShareIntegrityReport {
 #endif
-                Text("The exact \(report.finalShareByteCount.formatted())-byte final Share artifact passed the package-owned outer, SoftwareExport, and immutable Capture integrity checks. No protocol field meaning is claimed yet.")
+                Text("The exact \(report.finalShareByteCount.formatted())-byte Share Capture passed all Nembra integrity checks. No protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Analysis readiness is not earned until the package verifies the exact final Share bytes and their nested evidence.")
+                Text("\(artifact.captureJSON.count.formatted()) capture bytes are sealed. Analysis readiness is not earned until Nembra verifies the exact final Share bytes and their nested evidence.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -898,7 +898,7 @@ struct ES80CaptureShellView: View {
             return .physicalProcedureLocked
         }
         if status.foregroundIntegrityLost {
-            return .failed("Nembra left the active foreground after Experiment One began. This evidence life cannot regain capture authority; start a fresh Experiment One.")
+            return .failed("Nembra left the active foreground after Experiment One began. This capture cannot continue; start a fresh Experiment One.")
         }
         if finalizationInFlight {
             return .finalizing
@@ -920,10 +920,10 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before observation could be sealed. Start a fresh Experiment One rather than retrying this capture.")
             }
         case .unavailable:
-            return .bluetoothUnavailable("The package-owned CoreBluetooth controller is unavailable for this coordinator.")
+            return .bluetoothUnavailable("Bluetooth capture is unavailable for this session.")
         }
 
         if status.hasPreparedCaptureAdmission {
@@ -932,7 +932,7 @@ struct ES80CaptureShellView: View {
 
         switch status.correlation {
         case .invalidEvidence:
-            return .correlationFailed("The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.")
+            return .correlationFailed("The four OFF / ON windows were interrupted, invalid, or out of order. Restart from OFF 1.")
         case .noRepeatableCandidate:
             return .noRepeatableTarget
         case let .ambiguousRepeatableCandidates(count):
@@ -947,10 +947,10 @@ struct ES80CaptureShellView: View {
             return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
         }
         guard let progress = status.powerCycleProgress else {
-            return .correlationFailed("The package-owned Experiment One workflow has no active correlation progress and no final result.")
+            return .correlationFailed("Experiment One has no active OFF / ON progress. Start a fresh Experiment One.")
         }
         if progress.isSeriesInvalidated {
-            return .correlationFailed("A known Bluetooth, scan-liveness, or foreground gap invalidated this four-window observation series.")
+            return .correlationFailed("A Bluetooth, scan, or foreground interruption invalidated these four OFF / ON checks.")
         }
         if progress.isScanning {
             return .correlationObserving(progress.phase)
@@ -985,7 +985,7 @@ struct ES80CaptureShellView: View {
         case .captureComplete, .shareRetry:
             return .complete
         case .foregroundInterrupted:
-            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated evidence life; it is not physical evidence.")
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-invalidated capture; it is not physical evidence.")
         }
     }
 #endif
@@ -1227,7 +1227,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh package-owned Experiment One workflow: \(String(describing: error))"
+            localFailureMessage = "Nembra could not create a fresh Capture workflow: \(String(describing: error))"
         }
     }
 
@@ -1310,56 +1310,56 @@ struct ES80CaptureShellView: View {
         if let error = error as? PassiveBluetoothExperimentOneCoordinator.CoordinatorError {
             switch error {
             case .physicalProcedureLocked:
-                return "The package-owned physical execution gate is closed for this build."
+                return "Real scooter capture is still locked for this build."
             case .foregroundIntegrityLost:
-                return "Foreground integrity was lost after Experiment One began. Start a fresh experiment."
+                return "Nembra left the foreground after Experiment One began. Start a fresh experiment."
             case .captureAdmissionAlreadyPrepared:
-                return "The correlated-target admission is already prepared. Continue the current rediscovery."
+                return "The correlated target is already confirmed. Continue looking for the same signal."
             case .captureAdmissionNotPrepared:
-                return "No sealed correlated-target admission is ready for this step."
+                return "Confirm the correlated target before this step."
             case .correlationIncomplete:
                 return "All four OFF / ON windows must complete before target confirmation."
             case .correlationEvidenceInvalid:
-                return "The four-window evidence authority or ordering is invalid."
+                return "The four-window evidence or ordering is invalid."
             case .correlationNotUnique:
                 return "The four-window series did not produce exactly one repeatable target."
             case .targetNotRediscovered:
-                return "The exact correlated target has not reappeared in the fresh post-admission scan yet. Keep scanning and retry."
+                return "The correlated target has not appeared again after confirmation. Keep the scooter ON and retry."
             case .targetNotConnectable:
-                return "The exact correlated target is visible but CoreBluetooth reports it as non-connectable."
+                return "The correlated target is visible but cannot be connected right now."
             case .controllerUnavailable:
-                return "The package-owned passive capture controller is unavailable."
+                return "Bluetooth capture is unavailable."
             case .observationNotReady:
-                return "The accepted Ready epoch and minimum monotonic observation interval are not complete yet."
+                return "Nembra is still waiting for the required observation time."
             case .artifactAlreadyFinalized:
-                return "This Experiment One artifact is already immutable."
+                return "This Experiment One capture is already sealed."
             }
         }
 
         if let error = error as? PassiveBluetoothPowerCycleObservationSessionError {
             switch error {
             case .invalidMinimumWindowDuration:
-                return "The accepted correlation-window duration is invalid in this build."
+                return "The required OFF / ON observation duration is invalid in this build."
             case .seriesComplete:
-                return "All four correlation windows are already sealed."
+                return "All four OFF / ON windows are already complete."
             case .seriesInvalidated:
-                return "This correlation series was invalidated by a known evidence gap."
+                return "These OFF / ON checks were invalidated by an interruption."
             case .windowAlreadyActive:
-                return "The current correlation window is already active."
+                return "The current OFF / ON window is already active."
             case .windowNotActive:
-                return "No correlation window is currently active."
+                return "No OFF / ON window is currently active."
             case .bluetoothBecameUnavailable:
-                return "Bluetooth became unavailable during the bounded window."
+                return "Bluetooth became unavailable during this window."
             case .scanReadinessPending:
-                return "Scanning was requested, but the authoritative receipt window has not opened yet."
+                return "Scanning is starting but is not ready yet."
             case .scanReadinessTimedOut:
-                return "CoreBluetooth never confirmed scan readiness inside the bounded startup interval."
+                return "Bluetooth scanning did not become ready in time."
             case .scanBecameInactive:
-                return "The exact window's CoreBluetooth scan became inactive."
+                return "Bluetooth scanning stopped during this window."
             case .minimumWindowDurationNotReached:
-                return "The producer's monotonic receipt window has not reached the required minimum yet."
+                return "This OFF / ON window has not reached its required minimum time yet."
             case .nonMonotonicWindowClock:
-                return "The producer could not establish a monotonic observation window."
+                return "Nembra could not establish valid timing for this observation window."
             case .windowSequenceExhausted:
                 return "The local observation-window sequence was exhausted."
             }
@@ -1370,15 +1370,15 @@ struct ES80CaptureShellView: View {
 
     private func bluetoothUnavailableMessage(_ state: CBManagerState?) -> String {
         guard let state else {
-            return "The package-owned Bluetooth controller has not been instantiated for this build."
+            return "Bluetooth capture is not available in this build."
         }
         switch state {
         case .unknown:
-            return "Waiting for CoreBluetooth to report its state."
+            return "Waiting for Bluetooth to report its state."
         case .resetting:
             return "Bluetooth is resetting. Keep Nembra open until the radio becomes ready."
         case .unsupported:
-            return "This device does not expose the Bluetooth capability required for passive capture."
+            return "This device does not provide the Bluetooth capability required for passive capture."
         case .unauthorized:
             return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting correlation."
         case .poweredOff:
@@ -1386,7 +1386,7 @@ struct ES80CaptureShellView: View {
         case .poweredOn:
             return "Bluetooth is ready."
         @unknown default:
-            return "CoreBluetooth reported an unknown future state. Capture remains unavailable."
+            return "Bluetooth reported an unknown future state. Capture remains unavailable."
         }
     }
 
@@ -1543,11 +1543,11 @@ struct ES80CaptureShellView: View {
         completedWindows: Int
     ) -> String {
         if presentationArtifactFinalized(status: status) { return "SEALED" }
-        if presentationCanFinalizeObservationHorizon(status: status) { return "H READY" }
+        if presentationCanFinalizeObservationHorizon(status: status) { return "SEAL" }
         if presentationObservationReady(status: status) { return "OBSERVE" }
-        if presentationConnection(status: status) == .connected { return "ACQUIRE" }
+        if presentationConnection(status: status) == .connected { return "READ" }
         if presentationConnection(status: status) == .connecting { return "CONNECT" }
-        if presentationHasPreparedCaptureAdmission(status: status) { return "REACQUIRE" }
+        if presentationHasPreparedCaptureAdmission(status: status) { return "FIND" }
         return "\(min(completedWindows, 4)) / 4"
     }
 
@@ -1562,7 +1562,7 @@ struct ES80CaptureShellView: View {
                 : "Experiment One progress, capture sealed; final artifact integrity not yet verified"
         }
         if presentationCanFinalizeObservationHorizon(status: status) {
-            return "Experiment One progress, observation Horizon ready to seal"
+            return "Experiment One progress, observation ready to seal"
         }
         if presentationObservationReady(status: status) {
             return "Experiment One progress, four correlation windows complete and passive observation ready"
@@ -1599,9 +1599,9 @@ struct ES80CaptureShellView: View {
 
     private func heroTitle(for phase: Phase) -> String {
         switch phase {
-        case .complete: return "Evidence, sealed."
-        case .readyToSeal, .observing: return "Hold the evidence line."
-        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."
+        case .complete: return "Capture complete."
+        case .readyToSeal, .observing: return "Keep it steady."
+        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Confirm the scooter signal."
         default: return "Find the real scooter signal."
         }
     }
@@ -1613,17 +1613,17 @@ struct ES80CaptureShellView: View {
         case let .correlationReady(window): return "Ready for \(phaseShortName(window))"
         case let .correlationStarting(window): return "Starting \(phaseShortName(window))"
         case let .correlationObserving(window): return "Observing \(phaseShortName(window))"
-        case .correlationFailed, .failed: return "Evidence stopped"
+        case .correlationFailed, .failed: return "Capture stopped"
         case .noRepeatableTarget: return "No unique target"
         case .ambiguousTargets: return "Correlation ambiguous"
         case .correlatedTarget: return "Correlated target found"
-        case .rediscoveringTarget: return "Fresh rediscovery"
-        case .targetReacquired: return "Target reacquired"
+        case .rediscoveringTarget: return "Finding confirmed signal"
+        case .targetReacquired: return "Target found again"
         case .connecting: return "Connecting passively"
-        case .acquiring: return "Finite acquisition"
+        case .acquiring: return "Reading scooter"
         case .observing: return "Observation running"
-        case .readyToSeal: return "Horizon ready"
-        case .finalizing: return "Sealing artifact"
+        case .readyToSeal: return "Ready to seal"
+        case .finalizing: return "Sealing capture"
         case .complete: return presentationAnalysisReady ? "Capture complete" : "Capture sealed"
         }
     }
