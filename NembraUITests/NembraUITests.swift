@@ -73,6 +73,72 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testPrimaryES80HeroRendersOnTruthfulUnverifiedLaunch() {
+        let app = launchOrdinary(orientation: .portrait)
+
+        XCTAssertTrue(
+            app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3),
+            "Ordinary launch must keep the primary ES80 identity instead of borrowing a synthetic QA profile."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3),
+            "The ES80 visual fixture must remain in the truthful unsupported/unverified production state."
+        )
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified")
+    }
+
+    @MainActor
+    func testPrimaryES80HomeRecomposesAtAccessibilityDynamicType() {
+        let app = launchOrdinary(
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(
+            app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3),
+            "Accessibility-size ordinary launch must preserve the primary ES80 identity."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3),
+            "Accessibility-size Home must keep the unsupported/unverified truth surface visible."
+        )
+        XCTAssertTrue(app.buttons["Vehicle controls"].exists)
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+
+        let battery = app.descendants(matching: .any)["home.metric.battery"]
+        let trip = app.descendants(matching: .any)["home.metric.trip"]
+        let mode = app.descendants(matching: .any)["home.metric.mode"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 2))
+        XCTAssertTrue(trip.waitForExistence(timeout: 2))
+        XCTAssertTrue(mode.waitForExistence(timeout: 2))
+        XCTAssertGreaterThan(
+            trip.frame.minY,
+            battery.frame.maxY,
+            "Accessibility Dynamic Type must recompose Home metrics vertically rather than leaving the compact horizontal row."
+        )
+        XCTAssertGreaterThan(
+            mode.frame.minY,
+            trip.frame.maxY,
+            "Accessibility Dynamic Type must keep the final metric below the trip metric."
+        )
+
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified Accessibility XXXL")
+    }
+
+    @MainActor
+    func testPrimaryES80HomeUsesAdaptiveNeutralArtworkInDarkMode() {
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launchOrdinary(orientation: .portrait)
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified Dark")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
@@ -200,6 +266,26 @@ final class NembraUITests: XCTestCase {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func launchOrdinary(
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
+    ) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
+        let app = XCUIApplication()
+        if let contentSizeCategory {
+            // Validation-only Simulator override used to exercise the SwiftUI
+            // Dynamic Type branch. It changes presentation only and is never a
+            // vehicle/simulation truth input.
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName",
+                contentSizeCategory
+            ]
+        }
         app.launch()
         return app
     }
