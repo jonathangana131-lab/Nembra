@@ -1,0 +1,62 @@
+name: Agent close Capture rider language
+
+on:
+  push:
+    branches:
+      - product/es80-v14-rider-language-closure-gpt56b
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/es80-v14-rider-language-closure-gpt56b
+          fetch-depth: 0
+
+      - name: Apply final rider-language cleanup
+        shell: bash
+        run: |
+          python3 -m py_compile .github/scripts/agent_close_capture_rider_language.py
+          python3 .github/scripts/agent_close_capture_rider_language.py
+          git diff --check
+
+      - name: Verify product and truth boundaries
+        shell: bash
+        run: |
+          file=NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'PASSIVE / READ ONLY' "$file"
+          grep -F 'eyebrow: "CAPTURE LOCKED"' "$file"
+          grep -F 'healthItem("DISCOVERY"' "$file"
+          grep -F 'healthItem("SEAL"' "$file"
+          grep -F 'eyebrow: "READY TO SEAL"' "$file"
+          grep -F 'Share Capture' "$file"
+          grep -F 'View Details' "$file"
+          grep -F 'guard status.physicalProcedurePermitted else' "$file"
+          grep -F 'PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)' "$file"
+          ! grep -F 'selectable full Bluetooth identifier' "$file"
+          ! grep -F 'application characteristic-value writes' "$file"
+          if command -v swiftc >/dev/null 2>&1; then
+            swiftc -frontend -parse "$file"
+          fi
+
+      - name: Self-delete helper and checkpoint product delta
+        shell: bash
+        run: |
+          rm .github/workflows/agent-close-capture-rider-language.yml
+          rm .github/scripts/agent_close_capture_rider_language.py
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  .github/workflows/agent-close-capture-rider-language.yml \
+                  .github/scripts/agent_close_capture_rider_language.py
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No product delta to checkpoint' >&2
+            exit 1
+          fi
+          git commit -m 'polish(capture): close rider-first primary language'
+          git push origin HEAD:product/es80-v14-rider-language-closure-gpt56b
