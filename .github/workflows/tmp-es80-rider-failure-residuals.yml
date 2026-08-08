@@ -70,82 +70,76 @@ jobs:
           test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRenderedFailureLanguageAcceptanceTests.swift")
           if test_path.exists():
               raise SystemExit("rendered-failure rider-language contract already exists")
-          test_path.write_text('''import Foundation
-import Testing
-
-@Suite("ES80 Capture rendered failure-language acceptance")
-struct ES80CaptureRenderedFailureLanguageAcceptanceTests {
-    private static func shellSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-
-        return try String(
-            contentsOf: repositoryRoot
-                .appendingPathComponent("NembraApp")
-                .appendingPathComponent("Features")
-                .appendingPathComponent("Research")
-                .appendingPathComponent("ES80CaptureShellView.swift"),
-            encoding: .utf8
-        )
-    }
-
-    @Test("rendered recovery and failure helpers stay human-first across the full shell")
-    func renderedFailuresStayHumanFirst() throws {
-        let source = try Self.shellSource()
-        let forbidden = [
-            "replaying consumed authority",
-            "foreground-invalidated evidence life",
-            "String(describing: error)",
-            "correlated target",
-            "current rediscovery",
-            "four-window evidence",
-            "non-connectable",
-            "minimum observation period",
-            "observation-window duration",
-            "correlation window",
-            "evidence gap",
-            "radio becomes ready",
-            "required for passive capture",
-            "starting correlation",
-            "operator setup declaration",
-            "inventing setup provenance",
-            "temporary Share file could not be staged",
-            "exact final Share artifact did not earn analysis readiness"
-        ]
-
-        for phrase in forbidden {
-            #expect(
-                !source.localizedCaseInsensitiveContains(phrase),
-                "Rendered Capture failure path still exposes implementation vocabulary: \\(phrase)"
-            )
-        }
-
-        #expect(source.contains("Start again from OFF 1."))
-        #expect(source.contains("Start a fresh capture."))
-        #expect(source.contains("Keep the scooter ON and keep scanning."))
-        #expect(source.contains("required observation time"))
-        #expect(source.contains("before starting OFF 1"))
-        #expect(source.contains("Share file could not be prepared"))
-        #expect(source.contains("final integrity check did not pass"))
-    }
-
-    @Test("copy cleanup keeps truth, lifecycle, and physical gates intact")
-    func truthGuardsRemain() throws {
-        let source = try Self.shellSource()
-        #expect(source.contains("guard status.physicalProcedurePermitted else"))
-        #expect(source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
-        #expect(source.contains("coordinator.invalidateForForegroundLoss()"))
-        #expect(source.contains("coordinator.abandonExperiment()"))
-        #expect(source.contains("finalShareIntegrityReport != nil"))
-        #expect(source.contains("declaredStationarySetup = nil"))
-    }
-}
-''', encoding="utf-8")
+          test_lines = [
+              "import Foundation",
+              "import Testing",
+              "",
+              "@Suite(\"ES80 Capture rendered failure-language acceptance\")",
+              "struct ES80CaptureRenderedFailureLanguageAcceptanceTests {",
+              "    private static func shellSource() throws -> String {",
+              "        let testFile = URL(fileURLWithPath: #filePath)",
+              "        let repositoryRoot = testFile",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "        return try String(",
+              "            contentsOf: repositoryRoot",
+              "                .appendingPathComponent(\"NembraApp\")",
+              "                .appendingPathComponent(\"Features\")",
+              "                .appendingPathComponent(\"Research\")",
+              "                .appendingPathComponent(\"ES80CaptureShellView.swift\"),",
+              "            encoding: .utf8",
+              "        )",
+              "    }",
+              "",
+              "    private static func slice(_ source: String, from start: String, to end: String) throws -> Substring {",
+              "        let lower = try #require(source.range(of: start))",
+              "        let upper = try #require(source.range(of: end, range: lower.lowerBound..<source.endIndex))",
+              "        return source[lower.lowerBound..<upper.lowerBound]",
+              "    }",
+              "",
+              "    @Test(\"phase, restart, Share, and failure guidance stay rider-first\")",
+              "    func renderedFailuresStayHumanFirst() throws {",
+              "        let source = try Self.shellSource()",
+              "        let phase = try Self.slice(source, from: \"private func phase(\", to: \"private var presentationAnalysisReady\")",
+              "        let restartAndShare = try Self.slice(source, from: \"private func prepareFinalShareForAnalysisAndSharing\", to: \"private func handleScenePhaseChange\")",
+              "        let failures = try Self.slice(source, from: \"private func experimentErrorMessage\", to: \"private func statePanel\")",
+              "",
+              "        for phrase in [\"replaying consumed authority\", \"foreground-invalidated evidence life\", \"scan-liveness\", \"four-window observation series\"] {",
+              "            #expect(!phase.localizedCaseInsensitiveContains(phrase))",
+              "        }",
+              "        for phrase in [\"String(describing: error)\", \"operator setup declaration\", \"inventing setup provenance\", \"temporary Share file could not be staged\", \"exact final Share artifact did not earn analysis readiness\"] {",
+              "            #expect(!restartAndShare.localizedCaseInsensitiveContains(phrase))",
+              "        }",
+              "        for phrase in [\"correlated target\", \"current rediscovery\", \"four-window evidence\", \"non-connectable\", \"minimum observation period\", \"observation-window duration\", \"correlation window\", \"evidence gap\", \"radio becomes ready\", \"required for passive capture\", \"starting correlation\"] {",
+              "            #expect(!failures.localizedCaseInsensitiveContains(phrase))",
+              "        }",
+              "",
+              "        #expect(source.contains(\"Start again from OFF 1.\"))",
+              "        #expect(source.contains(\"Start a fresh capture.\"))",
+              "        #expect(source.contains(\"Keep the scooter ON and keep scanning.\"))",
+              "        #expect(source.contains(\"required observation time\"))",
+              "        #expect(source.contains(\"before starting OFF 1\"))",
+              "        #expect(source.contains(\"Share file could not be prepared\"))",
+              "        #expect(source.contains(\"final integrity check did not pass\"))",
+              "    }",
+              "",
+              "    @Test(\"copy cleanup keeps truth, lifecycle, and physical gates intact\")",
+              "    func truthGuardsRemain() throws {",
+              "        let source = try Self.shellSource()",
+              "        #expect(source.contains(\"guard status.physicalProcedurePermitted else\"))",
+              "        #expect(source.contains(\"PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)\"))",
+              "        #expect(source.contains(\"coordinator.invalidateForForegroundLoss()\"))",
+              "        #expect(source.contains(\"coordinator.abandonExperiment()\"))",
+              "        #expect(source.contains(\"finalShareIntegrityReport != nil\"))",
+              "        #expect(source.contains(\"declaredStationarySetup = nil\"))",
+              "    }",
+              "}",
+              "",
+          ]
+          test_path.write_text("\n".join(test_lines), encoding="utf-8")
 
           source = shell_path.read_text(encoding="utf-8")
           forbidden_runtime = [
