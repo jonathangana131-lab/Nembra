@@ -51,6 +51,18 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('--output-dir "$ARTIFACTS_DIR"', self.source)
         self.assertIn('EXPORT_OPTIONS_PLIST=', self.source)
 
+    def test_publishes_each_candidate_to_one_immutable_unique_directory(self):
+        self.assertIn(
+            'ARTIFACTS_DIR="$ARTIFACTS_ROOT/${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID"',
+            self.source,
+        )
+        self.assertIn('if ! mkdir "$ARTIFACTS_DIR"; then', self.source)
+        self.assertIn('Refusing to reuse an existing field-candidate evidence directory', self.source)
+        self.assertNotIn(
+            'ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"',
+            self.source,
+        )
+
     def test_never_mutates_physical_authorization(self):
         self.assertIn('Independent acceptance has NOT occurred.', self.source)
         self.assertIn('PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN.', self.source)

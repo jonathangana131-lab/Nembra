@@ -54,20 +54,31 @@ WORK_ROOT="${RUNNER_TEMP:-/tmp}/NembraES80FieldCandidate-${SOURCE_SHA:0:12}-${BU
 SOURCE_ROOT="$WORK_ROOT/source"
 ARCHIVE_PATH="$WORK_ROOT/Nembra.xcarchive"
 EXPORT_DIR="$WORK_ROOT/export"
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
-if [[ "$ARTIFACTS_DIR" != /* ]]; then
-  ARTIFACTS_DIR="$ROOT/$ARTIFACTS_DIR"
+ARTIFACTS_ROOT="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"
+if [[ "$ARTIFACTS_ROOT" != /* ]]; then
+  ARTIFACTS_ROOT="$ROOT/$ARTIFACTS_ROOT"
 fi
 
 # Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a
 # successful producer run would silently dirty the operator checkout after admission.
-if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
-  RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_DIR#"$ROOT"/}"
+if [[ "$ARTIFACTS_ROOT" == "$ROOT"/* ]]; then
+  RELATIVE_ARTIFACTS_DIR="${ARTIFACTS_ROOT#"$ROOT"/}"
   if ! git check-ignore -q -- "$RELATIVE_ARTIFACTS_DIR"; then
     echo "ARTIFACTS_DIR inside the repository must already be ignored by Git: $RELATIVE_ARTIFACTS_DIR" >&2
     exit 8
   fi
 fi
+
+# Treat ARTIFACTS_DIR as a durable root, never as one shared mutable evidence directory. Every
+# build instance publishes into a unique child created atomically before Xcode starts. This keeps
+# concurrent candidates and retained exact-byte subjects from racing or overwriting one another.
+mkdir -p "$ARTIFACTS_ROOT"
+ARTIFACTS_ROOT="$(cd "$ARTIFACTS_ROOT" && pwd -P)"
+if [[ "$ARTIFACTS_ROOT" == "/" || "$ARTIFACTS_ROOT" == "$ROOT" ]]; then
+  echo "ARTIFACTS_DIR must name a dedicated evidence root, not / or the repository root." >&2
+  exit 9
+fi
+ARTIFACTS_DIR="$ARTIFACTS_ROOT/${SOURCE_SHA:0:12}-$BUILD_INSTANCE_ID"
 
 rm -rf "$WORK_ROOT"
 mkdir -p "$WORK_ROOT"
@@ -85,7 +96,7 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 9
+  exit 11
 fi
 mkdir -p "$EXPORT_DIR"
 
@@ -122,7 +133,7 @@ POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 10
+  exit 12
 fi
 
 shopt -s nullglob
@@ -131,9 +142,16 @@ shopt -u nullglob
 if [[ "${#IPA_FILES[@]}" -ne 1 ]]; then
   echo "Expected exactly one exported .ipa; found ${#IPA_FILES[@]}." >&2
   printf '%s\n' "${IPA_FILES[@]:-}" >&2
-  exit 11
+  exit 13
 fi
 IPA_PATH="${IPA_FILES[0]}"
+
+# Publish only after one final IPA exists. mkdir without -p is the atomic claim: even an improbable
+# UUID collision or a pre-created target fails closed instead of mixing exact evidence subjects.
+if ! mkdir "$ARTIFACTS_DIR"; then
+  echo "Refusing to reuse an existing field-candidate evidence directory: $ARTIFACTS_DIR" >&2
+  exit 14
+fi
 
 # Reuse the exact canonical post-build evidence implementation from the same immutable source
 # snapshot that produced the archive. It reopens the final IPA, verifies iphoneos/codesign, hashes
