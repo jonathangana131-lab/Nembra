@@ -1,0 +1,29 @@
+name: V14 refresh terminal handoff on current 629
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge exact current flagship head
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git merge --no-edit 50732571e01929ef22c79bd7f99178cf4f78a6bf
+          rm .github/workflows/v14-refresh-terminal-handoff-on-current-629.yml
+          git add -A
+          git commit --amend --no-edit
+          git diff --check
+          git push origin HEAD:integration/es80-v14-terminal-controller-fresh-handoff/gpt56-go
