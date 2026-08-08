@@ -1,0 +1,89 @@
+name: Temp ES80 Apple Tool Custody Transform
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-apple-tool-custody-current-gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Pin trusted Apple tool paths and exact-head regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          inspector_path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = inspector_path.read_text(encoding="utf-8")
+
+          if "def _trusted_system_apple_tool(" in text:
+              raise SystemExit("trusted Apple tool helper already exists; refuse duplicate transform")
+
+          anchor = "def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:\n"
+          if text.count(anchor) != 1:
+              raise SystemExit("could not uniquely locate _run_text insertion anchor")
+
+          helper = '''def _trusted_system_apple_tool(path: Path, label: str) -> str:\n    \"\"\"Return one explicit root-custodied Apple tool or fail closed.\"\"\"\n    if not path.is_absolute():\n        raise EvidenceError(f\"trusted {label} path must be absolute\")\n    try:\n        metadata = path.lstat()\n        parent_metadata = path.parent.lstat()\n    except OSError as exc:\n        raise EvidenceError(f\"trusted {label} system tool is unavailable: {path}\") from exc\n\n    if not stat.S_ISREG(metadata.st_mode):\n        raise EvidenceError(f\"trusted {label} system tool is not a regular file: {path}\")\n    if metadata.st_uid != 0:\n        raise EvidenceError(f\"trusted {label} system tool is not root-owned: {path}\")\n    if stat.S_IMODE(metadata.st_mode) & 0o022:\n        raise EvidenceError(f\"trusted {label} system tool is group/world writable: {path}\")\n    if stat.S_IMODE(metadata.st_mode) & 0o111 == 0:\n        raise EvidenceError(f\"trusted {label} system tool is not executable: {path}\")\n\n    if not stat.S_ISDIR(parent_metadata.st_mode):\n        raise EvidenceError(f\"trusted {label} system-tool parent is not a directory: {path.parent}\")\n    if parent_metadata.st_uid != 0 or stat.S_IMODE(parent_metadata.st_mode) & 0o022:\n        raise EvidenceError(f\"trusted {label} system-tool parent lacks root custody: {path.parent}\")\n\n    return str(path)\n\n\n'''
+          text = text.replace(anchor, helper + anchor)
+
+          codesign_discovery = '''    codesign = shutil.which("codesign")\n    if not codesign:\n        raise EvidenceError("codesign is not available")\n'''
+          if text.count(codesign_discovery) != 2:
+              raise SystemExit(f"expected two ambient codesign discovery blocks, got {text.count(codesign_discovery)}")
+          text = text.replace(
+              codesign_discovery,
+              '    codesign = _trusted_system_apple_tool(Path("/usr/bin/codesign"), "codesign")\n',
+          )
+
+          security_discovery = '''    security = shutil.which("security")\n    if not security:\n        raise EvidenceError("security is not available for provisioning-profile verification")\n'''
+          if text.count(security_discovery) != 1:
+              raise SystemExit(f"expected one ambient security discovery block, got {text.count(security_discovery)}")
+          text = text.replace(
+              security_discovery,
+              '    security = _trusted_system_apple_tool(Path("/usr/bin/security"), "security")\n',
+          )
+
+          for forbidden in ('shutil.which("codesign")', 'shutil.which("security")'):
+              if forbidden in text:
+                  raise SystemExit(f"ambient PATH lookup remains: {forbidden}")
+          for required in ('/usr/bin/codesign', '/usr/bin/security', 'stat.S_ISREG', 'metadata.st_uid != 0', '0o022'):
+              if required not in text:
+                  raise SystemExit(f"trusted-tool custody primitive missing: {required}")
+          inspector_path.write_text(text, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/xcode27-pr-command.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          marker = '''          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n'''
+          addition = marker + '''          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py\n          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py\n'''
+          if "test_es80_signed_field_artifact_apple_tool_custody_source.py" in workflow:
+              raise SystemExit("Apple-tool custody regression already wired; refuse duplicate transform")
+          if workflow.count(marker) != 1:
+              raise SystemExit("could not uniquely locate signed-field tooling test anchor")
+          workflow_path.write_text(workflow.replace(marker, addition), encoding="utf-8")
+          PY
+
+      - name: Run portable custody regression
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py
+          git diff --check
+
+      - name: Commit product hardening and remove temporary workflow
+        run: |
+          rm .github/workflows/_temp_es80_apple_tool_custody_transform.yml
+          git config user.name "nembra-v14-bot"
+          git config user.email "nembra-v14-bot@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_evidence.py \
+                  scripts/ci/tests/test_es80_signed_field_artifact_apple_tool_custody_source.py \
+                  .github/workflows/xcode27-pr-command.yml \
+                  .github/workflows/_temp_es80_apple_tool_custody_transform.yml
+          git commit -m "[Capture red-team v14] Pin signed-field Apple tool custody"
+          git push origin HEAD:integration/es80-v14-apple-tool-custody-current-gpt56-go
