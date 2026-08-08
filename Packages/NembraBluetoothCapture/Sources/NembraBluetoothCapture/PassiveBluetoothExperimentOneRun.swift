@@ -83,6 +83,21 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
+    /// Read-only producer-owned staging view. It deliberately exposes no recorder or
+    /// mutable evidence, so recoverable controller rediscovery checks can occur before
+    /// the one-shot ownership handoff is consumed.
+    struct TargetPreview: Equatable, Sendable {
+        let admissionIdentity: UUID
+        let peripheralIdentifier: UUID
+        let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(payload: Payload) {
+            admissionIdentity = payload.admissionIdentity
+            peripheralIdentifier = payload.peripheralIdentifier
+            issuedAtUptimeNanoseconds = payload.issuedAtUptimeNanoseconds
+        }
+    }
+
     struct Payload {
         let admissionIdentity: UUID
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
@@ -121,6 +136,10 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
             recorder: recorder,
             issuedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
+    }
+
+    var targetPreview: TargetPreview {
+        TargetPreview(payload: payload)
     }
 
     func consume() throws -> Payload {
