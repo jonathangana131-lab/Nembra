@@ -38,6 +38,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
             "The installed versioned procedure must be identified without becoming executable."
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-identity"].waitForExistence(timeout: 3),
+            "The locked surface must expose this running build's identity or a fail-closed unavailable state."
+        )
 
         XCTAssertFalse(
             app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
@@ -107,10 +111,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
@@ -127,6 +133,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             recipe,
             windowFrame: windowFrame,
             context: "recipe identity at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            buildIdentity,
+            windowFrame: windowFrame,
+            context: "running build identity at Accessibility XXXL"
         )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
@@ -156,9 +167,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
         XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
@@ -175,6 +188,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             recipe,
             windowFrame: windowFrame,
             context: "recipe identity in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            buildIdentity,
+            windowFrame: windowFrame,
+            context: "running build identity in landscape"
         )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
@@ -221,6 +239,19 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             source.contains("softwareExportData"),
             "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
         )
+    }
+
+    func testNoGoSourceUsesPackageRuntimeBuildIdentityReader() throws {
+        let source = try nembraAppSource()
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"),
+            "The locked field surface must use the package-owned fail-closed runtime identity reader rather than rebuild provenance in SwiftUI."
+        )
+        XCTAssertTrue(source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"))
+        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildIdentifier"))
+        XCTAssertTrue(source.contains("runtimeBuildIdentity.sourceCommitSHA"))
+        XCTAssertTrue(source.contains("runtimeBuildIdentity.buildInstanceID"))
+        XCTAssertTrue(source.contains("Build identity unavailable"))
     }
 
     private func assertVisibleInScreenshotViewport(
@@ -282,6 +313,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repositoryRoot
             .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func nembraAppSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/App/NembraApp.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
