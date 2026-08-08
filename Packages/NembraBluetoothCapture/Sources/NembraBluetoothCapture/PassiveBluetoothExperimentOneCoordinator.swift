@@ -63,7 +63,9 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         public let captureJSON: Data
         public let powerCycleResult: PassiveBluetoothPowerCycleObservationResult
 
-        fileprivate init(captureJSON: Data, powerCycleResult: PassiveBluetoothPowerCycleObservationResult) {
+        /// Package-only construction exists for same-package adversarial fixtures. App/UI consumers
+        /// still cannot pair arbitrary capture and correlation evidence into a finalized artifact.
+        package init(captureJSON: Data, powerCycleResult: PassiveBluetoothPowerCycleObservationResult) {
             self.captureJSON = captureJSON
             self.powerCycleResult = powerCycleResult
         }
