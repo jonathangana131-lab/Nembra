@@ -1,0 +1,38 @@
+name: Ride Power Presentation Package Smoke fca8832
+
+on:
+  push:
+    branches:
+      - qa/ride-power-presentation-package-smoke/chat-h4n7q-fca8832
+
+permissions:
+  contents: read
+
+jobs:
+  nembra-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout QA mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable product parent and workflow-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_sha="fca8832c1248fc9d118fa1ca59f219d8aebfa616"
+          test "$(git rev-parse HEAD^)" = "$product_sha"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = ".github/workflows/ride-power-presentation-package-smoke-fca8832.yml"
+
+      - name: Run full NembraCore suite with Swift 6.2 warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace/Packages/NembraCore \
+            swift:6.2 \
+            bash -lc 'swift --version && swift test -Xswiftc -warnings-as-errors'
