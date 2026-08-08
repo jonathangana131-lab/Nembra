@@ -25,7 +25,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(source.contains("private var pendingTerminalQueueResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt?"))
         #expect(source.contains("let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()"))
         #expect(source.contains("pendingTerminalQueueResolution = terminalResolution"))
-        #expect(!source.contains("_ = try resolveQueuedEvidenceAfterTerminalHorizon()"))
+        #expect(source.range(of: "_ = try resolveQueuedEvidenceAfterTerminalHorizon()") == nil)
 
         let start = try #require(
             source.range(of: "    public func encodedFinalizedObservationHorizonJSON(")?.lowerBound
@@ -34,7 +34,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
             source.range(of: "    private func completeTerminalFreshTargetSessionIfReady(", range: start..<source.endIndex)?.lowerBound
         )
         let finalization = source[start..<end]
-        #expect(!finalization.contains("reopenAfterTerminalFreshTargetSession"))
+        #expect(finalization.range(of: "reopenAfterTerminalFreshTargetSession") == nil)
         #expect(finalization.contains("lastFinalizedArtifactAuthority = committedHorizon.authority"))
     }
 
@@ -59,7 +59,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(recovery.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(recovery.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(recovery.contains("pendingTerminalQueueResolution = nil"))
-        #expect(!recovery.contains("await "))
+        #expect(recovery.range(of: "await ") == nil)
     }
 
     @Test("recovery is downstream of finalized teardown and real terminal callback")
