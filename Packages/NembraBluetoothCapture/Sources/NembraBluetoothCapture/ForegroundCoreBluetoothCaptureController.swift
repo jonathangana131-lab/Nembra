@@ -1838,6 +1838,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
         clearAcquisitionObjects()
         connectionPhase = .idle
+        // Abort quarantine may be entered by the terminal callback itself.
+        // Schedule here so recovery does not depend on a second callback that
+        // CoreBluetooth is not required to deliver. The scheduler still refuses
+        // to run while any retired same-target attempt awaits its real terminal.
+        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()
     }
 
     private func ensureCaptureHealthy() throws {
