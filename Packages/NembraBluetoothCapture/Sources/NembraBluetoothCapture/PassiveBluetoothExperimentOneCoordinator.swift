@@ -2,6 +2,21 @@
 import Foundation
 import NembraCore
 
+/// Pure construction-policy composition for Experiment One coordinator authority.
+///
+/// A permissive field gate is necessary but not sufficient: the coordinator instance must also
+/// own the package-constructed canonical live controller. Keeping this composition independent of
+/// the current repository gate lets tests prove that a future GO cannot accidentally turn the
+/// ordinary public status-only initializer into a second live Bluetooth authority path.
+enum PassiveBluetoothExperimentOneCoordinatorConstructionPolicy {
+    static func permitsPhysicalProcedure(
+        hasCanonicalLiveController: Bool,
+        fieldGatePermitsPhysicalProcedure: Bool
+    ) -> Bool {
+        hasCanonicalLiveController && fieldGatePermitsPhysicalProcedure
+    }
+}
+
 /// The single app-facing owner for one ES80 Experiment One provenance life.
 ///
 /// App/UI code never receives the mutable recorder, sealed admission, authoritative target UUID,
@@ -9,9 +24,10 @@ import NembraCore
 /// run spans OFF1 -> ON1 -> OFF2 -> ON2 into the same foreground controller that later owns passive
 /// GATT acquisition, Ready, Horizon, and immutable finalization.
 ///
-/// Physical execution is subordinate to `PassiveBluetoothExperimentOneFieldExecutionGate`.
-/// While the repository gate is NO-GO this type does not instantiate a live CoreBluetooth capture
-/// controller and every procedure-advancing API fails before Bluetooth work begins.
+/// Physical execution is subordinate to both the package-owned canonical-controller construction
+/// path and `PassiveBluetoothExperimentOneFieldExecutionGate`. The ordinary public initializer is
+/// permanently status-only/non-live, even after a future field gate becomes permissive. Live
+/// CoreBluetooth authority can enter only through the mechanically gated canonical ES80 factory.
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
@@ -88,15 +104,15 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private var finalizationCleanupStatusStorage: FinalizationCleanupStatus = .notAttempted
     private var experimentHasBegun = false
 
-    /// Canonical ES80 only. No caller-selected vehicle/controller can enter the field authority path.
+    /// Canonical ES80 status-only construction.
+    ///
+    /// This initializer intentionally never creates live CoreBluetooth authority. It stays inert
+    /// even when a future accepted field gate becomes permissive, so app code cannot bypass the
+    /// canonical `makeAuthorizedES80()` factory merely by constructing the coordinator directly.
     public init() throws {
         let identity = VehicleProfile.aovoproES80.identity
         run = try PassiveBluetoothExperimentOneRun(vehicleIdentity: identity)
-        if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-            controller = try ForegroundCoreBluetoothCaptureController(vehicleIdentity: identity)
-        } else {
-            controller = nil
-        }
+        controller = nil
     }
 
     /// Package-only composition seam used by the mechanically gated canonical ES80 factory.
@@ -112,7 +128,7 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     public var status: Status {
         Status(
             fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.status,
-            physicalProcedurePermitted: PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure,
+            physicalProcedurePermitted: physicalProcedurePermittedForThisCoordinator,
             powerCycleProgress: run.powerCycleObservationSession.progress,
             correlation: correlationStatus,
             hasPreparedCaptureAdmission: pendingCaptureAdmission != nil,
@@ -307,8 +323,15 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         }
     }
 
+    private var physicalProcedurePermittedForThisCoordinator: Bool {
+        PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.permitsPhysicalProcedure(
+            hasCanonicalLiveController: controller != nil,
+            fieldGatePermitsPhysicalProcedure: PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
+        )
+    }
+
     private func requireExecutionAuthority() throws {
-        guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
+        guard physicalProcedurePermittedForThisCoordinator else {
             throw CoordinatorError.physicalProcedureLocked
         }
         guard !foregroundIntegrityWasLost else { throw CoordinatorError.foregroundIntegrityLost }
