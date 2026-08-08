@@ -1,0 +1,732 @@
+name: Temporary ES80 Simulator QA seam patch
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-simulator-qa-seam/chatgpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded Simulator-only QA composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          coordinator_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift')
+          app_path = Path('NembraApp/App/NembraApp.swift')
+          shell_path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          ui_path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          workflow_path = Path('.github/workflows/_temporary_es80_simulator_qa_seam_patch.yml')
+
+          coordinator = coordinator_path.read_text()
+          app = app_path.read_text()
+          shell = shell_path.read_text()
+          ui = ui_path.read_text()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} anchor count = {count}')
+              return text.replace(old, new, 1)
+
+          # --- Package coordinator: compile-time Simulator fixture storage/factory/status ---
+          coordinator = replace_once(
+              coordinator,
+              '''    private var finalizationCleanupStatusStorage: FinalizationCleanupStatus = .notAttempted
+              private var experimentHasBegun = false
+          ''',
+              '''    private var finalizationCleanupStatusStorage: FinalizationCleanupStatus = .notAttempted
+              private var experimentHasBegun = false
+
+          #if targetEnvironment(simulator)
+              private var simulatorQAFixture: PassiveBluetoothExperimentOneSimulatorQAFixture?
+          #endif
+          ''',
+              'coordinator fixture storage'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public var status: Status {
+                  Status(
+          ''',
+              '''    /// Constructs a package-owned synthetic coordinator only in iOS Simulator builds.
+              /// The real physical field gate remains NO-GO and no CoreBluetooth controller is created.
+          #if targetEnvironment(simulator)
+              public static func simulatorQA(
+                  scenario: PassiveBluetoothExperimentOneSimulatorQAScenario = .defaultScenario
+              ) throws -> PassiveBluetoothExperimentOneCoordinator {
+                  let coordinator = try PassiveBluetoothExperimentOneCoordinator()
+                  let fixture = PassiveBluetoothExperimentOneSimulatorQAFixture(scenario: scenario)
+                  coordinator.simulatorQAFixture = fixture
+
+                  if scenario == .complete,
+                     let result = fixture.powerCycleResultForPresentation {
+                      coordinator.finalizedArtifactStorage = FinalizedArtifact(
+                          captureJSON: Data(#"{\"schemaVersion\":0,\"simulatorQA\":true}"#.utf8),
+                          powerCycleResult: result
+                      )
+                      coordinator.finalizationCleanupStatusStorage = .complete
+                  }
+                  return coordinator
+              }
+          #endif
+
+              /// Read-only marker consumed by the app to render unmistakable synthetic QA states.
+              /// It never implies or changes physical field permission.
+              public var isSimulatorQAFixture: Bool {
+          #if targetEnvironment(simulator)
+                  simulatorQAFixture != nil
+          #else
+                  false
+          #endif
+              }
+
+              public var simulatorQAPresentationLabel: String? {
+          #if targetEnvironment(simulator)
+                  simulatorQAFixture?.presentationLabel
+          #else
+                  nil
+          #endif
+              }
+
+              public var status: Status {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      return simulatorQAFixture.status
+                  }
+          #endif
+                  return Status(
+          ''',
+              'coordinator status entry'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''            foregroundIntegrityLost: foregroundIntegrityWasLost
+                  )
+              }
+          ''',
+              '''            foregroundIntegrityLost: foregroundIntegrityWasLost
+                  )
+              }
+          ''',
+              'coordinator status close'
+          )
+          # The close anchor is intentionally shape-preserving; it verifies the status expression remains balanced.
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public var powerCycleResult: PassiveBluetoothPowerCycleObservationResult? {
+                  run.powerCycleObservationSession.result
+              }
+          ''',
+              '''    public var powerCycleResult: PassiveBluetoothPowerCycleObservationResult? {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture,
+                     let synthetic = simulatorQAFixture.powerCycleResultForPresentation {
+                      return synthetic
+                  }
+          #endif
+                  return run.powerCycleObservationSession.result
+              }
+          ''',
+              'coordinator powerCycleResult'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func startCurrentPowerCycleWindow() throws {
+                  try requireExecutionAuthority()
+          ''',
+              '''    public func startCurrentPowerCycleWindow() throws {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      try simulatorQAFixture.startCurrentPowerCycleWindow()
+                      experimentHasBegun = true
+                      return
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator start fixture path'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func finishCurrentPowerCycleWindow() throws -> CorrelationStatus {
+                  try requireExecutionAuthority()
+          ''',
+              '''    public func finishCurrentPowerCycleWindow() throws -> CorrelationStatus {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      return try simulatorQAFixture.finishCurrentPowerCycleWindow()
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator finish fixture path'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func confirmCorrelatedTargetAndBeginRediscovery() throws {
+                  try requireExecutionAuthority()
+          ''',
+              '''    public func confirmCorrelatedTargetAndBeginRediscovery() throws {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      try simulatorQAFixture.confirmCorrelatedTargetAndBeginRediscovery()
+                      return
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator confirm fixture path'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func restartPreparedRediscovery() throws {
+                  try requireExecutionAuthority()
+          ''',
+              '''    public func restartPreparedRediscovery() throws {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      try simulatorQAFixture.restartPreparedRediscovery()
+                      return
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator rediscovery fixture path'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func connectPreparedCapture() throws {
+                  try requireExecutionAuthority()
+          ''',
+              '''    public func connectPreparedCapture() throws {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      try simulatorQAFixture.connectPreparedCapture()
+                      captureConnectionAttemptedForSimulatorQA()
+                      return
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator connect fixture path'
+          )
+
+          # Avoid inventing a new evidence flag: this helper merely keeps the package coordinator's
+          # own `experimentHasBegun` lifecycle coherent for foreground-loss QA.
+          coordinator = replace_once(
+              coordinator,
+              '''    @discardableResult
+              public func finalizeObservationHorizon() async throws -> FinalizedArtifact {
+                  try requireExecutionAuthority()
+          ''',
+              '''    @discardableResult
+              public func finalizeObservationHorizon() async throws -> FinalizedArtifact {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      let result = try simulatorQAFixture.markFinalized()
+                      let artifact = FinalizedArtifact(
+                          captureJSON: Data(#"{\"schemaVersion\":0,\"simulatorQA\":true}"#.utf8),
+                          powerCycleResult: result
+                      )
+                      finalizedArtifactStorage = artifact
+                      finalizationCleanupStatusStorage = .complete
+                      return artifact
+                  }
+          #endif
+                  try requireExecutionAuthority()
+          ''',
+              'coordinator finalize fixture path'
+          )
+
+          coordinator = replace_once(
+              coordinator,
+              '''    public func invalidateForForegroundLoss() {
+                  guard finalizedArtifactStorage == nil, experimentHasBegun else { return }
+          ''',
+              '''    public func invalidateForForegroundLoss() {
+          #if targetEnvironment(simulator)
+                  if let simulatorQAFixture {
+                      simulatorQAFixture.invalidateForForegroundLoss()
+                      return
+                  }
+          #endif
+                  guard finalizedArtifactStorage == nil, experimentHasBegun else { return }
+          ''',
+              'coordinator foreground fixture path'
+          )
+
+          # The connect fixture branch does not touch transport; keep only the existing lifecycle bit.
+          coordinator = replace_once(
+              coordinator,
+              '''    private var correlationStatus: CorrelationStatus {
+          ''',
+              '''#if targetEnvironment(simulator)
+              private func captureConnectionAttemptedForSimulatorQA() {
+                  experimentHasBegun = true
+              }
+          #endif
+
+              private var correlationStatus: CorrelationStatus {
+          ''',
+              'coordinator simulator lifecycle helper'
+          )
+
+          # --- App bootstrap: dedicated Simulator-only launch route, never the real research route ---
+          app = replace_once(
+              app,
+              '''    private enum LaunchMode: Equatable {
+                  case standard
+                  case es80PassiveCapture
+              }
+          ''',
+              '''    private enum LaunchMode: Equatable {
+                  case standard
+                  case es80PassiveCapture
+          #if targetEnvironment(simulator)
+                  case es80PassiveCaptureSimulatorQA(PassiveBluetoothExperimentOneSimulatorQAScenario)
+          #endif
+              }
+          ''',
+              'app launch mode'
+          )
+
+          app = replace_once(
+              app,
+              '''    init() {
+                  let launchMode = Self.resolveLaunchMode()
+                  self.launchMode = launchMode
+                  _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
+                  _researchCoordinator = State(
+                      initialValue: launchMode == .es80PassiveCapture
+                          ? try? PassiveBluetoothExperimentOneCoordinator()
+                          : nil
+                  )
+              }
+          ''',
+              '''    init() {
+                  let launchMode = Self.resolveLaunchMode()
+                  self.launchMode = launchMode
+                  _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
+
+                  let initialResearchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+                  switch launchMode {
+                  case .standard:
+                      initialResearchCoordinator = nil
+                  case .es80PassiveCapture:
+                      initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator()
+          #if targetEnvironment(simulator)
+                  case let .es80PassiveCaptureSimulatorQA(scenario):
+                      initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.simulatorQA(
+                          scenario: scenario
+                      )
+          #endif
+                  }
+                  _researchCoordinator = State(initialValue: initialResearchCoordinator)
+              }
+          ''',
+              'app init'
+          )
+
+          app = replace_once(
+              app,
+              '''            case .es80PassiveCapture:
+                  NavigationStack {
+                      if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+                          if let researchCoordinator {
+                              ES80ExperimentOneStationaryPreflightView(
+                                  coordinator: researchCoordinator
+                              )
+                          } else {
+                              ContentUnavailableView(
+                                  "Capture unavailable",
+                                  systemImage: "antenna.radiowaves.left.and.right.slash",
+                                  description: Text("The package-owned Experiment One workflow could not be created.")
+                              )
+                              .navigationTitle("Nembra Capture")
+                              .accessibilityIdentifier("es80.research-capture-unavailable")
+                          }
+                      } else {
+                          ES80ExperimentOneFieldNoGoView()
+                      }
+                  }
+                  .preferredColorScheme(.dark)
+          ''',
+              '''            case .es80PassiveCapture:
+                  NavigationStack {
+                      if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+                          if let researchCoordinator {
+                              ES80ExperimentOneStationaryPreflightView(
+                                  coordinator: researchCoordinator
+                              )
+                          } else {
+                              ContentUnavailableView(
+                                  "Capture unavailable",
+                                  systemImage: "antenna.radiowaves.left.and.right.slash",
+                                  description: Text("The package-owned Experiment One workflow could not be created.")
+                              )
+                              .navigationTitle("Nembra Capture")
+                              .accessibilityIdentifier("es80.research-capture-unavailable")
+                          }
+                      } else {
+                          ES80ExperimentOneFieldNoGoView()
+                      }
+                  }
+                  .preferredColorScheme(.dark)
+
+          #if targetEnvironment(simulator)
+              case let .es80PassiveCaptureSimulatorQA(scenario):
+                  NavigationStack {
+                      if let researchCoordinator {
+                          if scenario == .stationaryPreflight {
+                              ES80ExperimentOneStationaryPreflightView(
+                                  coordinator: researchCoordinator,
+                                  coordinatorFactory: {
+                                      try PassiveBluetoothExperimentOneCoordinator.simulatorQA(
+                                          scenario: .correlationReady
+                                      )
+                                  }
+                              )
+                          } else {
+                              ES80CaptureShellView(
+                                  coordinator: researchCoordinator,
+                                  onFreshExperimentRequested: {
+                                      try PassiveBluetoothExperimentOneCoordinator.simulatorQA(
+                                          scenario: .correlationReady
+                                      )
+                                  }
+                              )
+                          }
+                      } else {
+                          ContentUnavailableView(
+                              "Simulator QA unavailable",
+                              systemImage: "exclamationmark.triangle",
+                              description: Text("The package-owned synthetic Capture fixture could not be created.")
+                          )
+                          .navigationTitle("Nembra Capture")
+                          .accessibilityIdentifier("es80.capture.simulator-qa-unavailable")
+                      }
+                  }
+                  .preferredColorScheme(.dark)
+          #endif
+          ''',
+              'app body research case'
+          )
+
+          app = replace_once(
+              app,
+              '''    private static func resolveLaunchMode(
+                  arguments: [String] = ProcessInfo.processInfo.arguments,
+                  environment: [String: String] = ProcessInfo.processInfo.environment
+              ) -> LaunchMode {
+          #if DEBUG
+                  if arguments.contains("--es80-passive-capture")
+          ''',
+              '''    private static func resolveLaunchMode(
+                  arguments: [String] = ProcessInfo.processInfo.arguments,
+                  environment: [String: String] = ProcessInfo.processInfo.environment
+              ) -> LaunchMode {
+          #if DEBUG && targetEnvironment(simulator)
+                  if arguments.contains("--es80-passive-capture-simulator-qa") {
+                      let prefix = "--es80-capture-qa-scenario="
+                      let rawScenario = arguments.first(where: { $0.hasPrefix(prefix) })
+                          .map { String($0.dropFirst(prefix.count)) }
+                      let scenario = rawScenario
+                          .flatMap(PassiveBluetoothExperimentOneSimulatorQAScenario.init(rawValue:))
+                          ?? .defaultScenario
+                      return .es80PassiveCaptureSimulatorQA(scenario)
+                  }
+          #endif
+          #if DEBUG
+                  if arguments.contains("--es80-passive-capture")
+          ''',
+              'app simulator launch resolver'
+          )
+
+          app = replace_once(
+              app,
+              '''private struct ES80ExperimentOneStationaryPreflightView: View {
+              @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+              @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
+              @State private var disconnectedDeclarationAccepted = false
+
+              init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+                  _coordinator = State(initialValue: coordinator)
+              }
+          ''',
+              '''private struct ES80ExperimentOneStationaryPreflightView: View {
+              @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+              @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
+              @State private var disconnectedDeclarationAccepted = false
+              private let coordinatorFactory: () throws -> PassiveBluetoothExperimentOneCoordinator
+
+              init(
+                  coordinator: PassiveBluetoothExperimentOneCoordinator,
+                  coordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
+                      try PassiveBluetoothExperimentOneCoordinator()
+                  }
+              ) {
+                  _coordinator = State(initialValue: coordinator)
+                  self.coordinatorFactory = coordinatorFactory
+              }
+          ''',
+              'preflight factory'
+          )
+
+          app = replace_once(
+              app,
+              '''                VStack(alignment: .leading, spacing: 24) {
+                      VStack(alignment: .leading, spacing: 8) {
+          ''',
+              '''                VStack(alignment: .leading, spacing: 24) {
+                      if let simulatorQALabel = coordinator.simulatorQAPresentationLabel {
+                          Text(simulatorQALabel)
+                              .font(.caption.monospaced().weight(.bold))
+                              .foregroundStyle(.orange)
+                              .padding(.horizontal, 12)
+                              .padding(.vertical, 8)
+                              .background(.orange.opacity(0.10), in: Capsule())
+                              .accessibilityLabel("Simulator QA. Synthetic software state. No physical Bluetooth authorization.")
+                              .accessibilityIdentifier("es80.capture.simulator-qa")
+                      }
+
+                      VStack(alignment: .leading, spacing: 8) {
+          ''',
+              'preflight simulator QA badge'
+          )
+
+          app = replace_once(
+              app,
+              '''    private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
+                  let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator()
+          ''',
+              '''    private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
+                  let freshCoordinator = try coordinatorFactory()
+          ''',
+              'preflight fresh coordinator factory'
+          )
+
+          # --- Product shell: package marker unlocks presentation only; field permission stays false ---
+          shell = replace_once(
+              shell,
+              '''                VStack(alignment: .leading, spacing: 24) {
+                      hero(for: currentPhase)
+                      passiveSafetyPanel
+          ''',
+              '''                VStack(alignment: .leading, spacing: 24) {
+                      hero(for: currentPhase)
+                      if let simulatorQALabel = coordinator.simulatorQAPresentationLabel {
+                          Text(simulatorQALabel)
+                              .font(.caption.monospaced().weight(.bold))
+                              .foregroundStyle(.orange)
+                              .padding(.horizontal, 12)
+                              .padding(.vertical, 8)
+                              .background(.orange.opacity(0.10), in: Capsule())
+                              .accessibilityLabel("Simulator QA. Synthetic software state. No physical Bluetooth authorization.")
+                              .accessibilityIdentifier("es80.capture.simulator-qa")
+                      }
+                      passiveSafetyPanel
+          ''',
+              'shell simulator QA badge'
+          )
+
+          shell = replace_once(
+              shell,
+              '''        guard status.physicalProcedurePermitted else {
+                  return .physicalProcedureLocked
+              }
+          ''',
+              '''        if !coordinator.isSimulatorQAFixture {
+                  guard status.physicalProcedurePermitted else {
+                      return .physicalProcedureLocked
+                  }
+              }
+          ''',
+              'shell physical gate presentation guard'
+          )
+
+          # --- UI acceptance: preserve real NO-GO, add positive synthetic state coverage ---
+          insertion = '''
+              @MainActor
+              func testV14SimulatorQAFixtureReachesStationaryPreflightWithoutPromotingPhysicalGo() {
+                  let app = XCUIApplication()
+                  app.launchArguments = ["--es80-passive-capture-simulator-qa"]
+                  app.launch()
+
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.stationary-preflight"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.buttons["Charger Disconnected"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — Simulator QA — Stationary Preflight"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
+
+              @MainActor
+              func testV14SimulatorQAFixtureRendersReadyToSealStateWhileFieldGateStaysSeparate() {
+                  let app = XCUIApplication()
+                  app.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=ready-to-seal"
+                  ]
+                  app.launch()
+
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(app.staticTexts["Capture can be sealed"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.finish"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — Simulator QA — Ready to Seal"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
+
+              @MainActor
+              func testV14SimulatorQAFixtureRendersSealedShareRetryAndDetailsState() {
+                  let app = XCUIApplication()
+                  app.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=complete"
+                  ]
+                  app.launch()
+
+                  XCTAssertTrue(app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 5))
+                  XCTAssertTrue(app.staticTexts["CAPTURE SEALED"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.staticTexts["Integrity check required"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.buttons["Verify final artifact"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.buttons["View Details"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — Simulator QA — Sealed Share Retry"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
+
+              func testSimulatorQASeamIsCompileTimeOnlyAndNeverPromotesPhysicalPermission() throws {
+                  let fixture = try repositorySource(
+                      at: "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift"
+                  )
+                  let coordinator = try repositorySource(
+                      at: "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift"
+                  )
+                  let app = try repositorySource(at: "NembraApp/App/NembraApp.swift")
+                  let shell = try captureShellSource()
+
+                  XCTAssertTrue(fixture.contains("#if targetEnvironment(simulator)"))
+                  XCTAssertTrue(fixture.contains("physicalProcedurePermitted: false"))
+                  XCTAssertTrue(fixture.contains("never mutate `PassiveBluetoothExperimentOneFieldExecutionGate`"))
+                  XCTAssertTrue(coordinator.contains("public static func simulatorQA("))
+                  XCTAssertTrue(coordinator.contains("if let simulatorQAFixture"))
+                  XCTAssertTrue(app.contains("--es80-passive-capture-simulator-qa"))
+                  XCTAssertTrue(app.contains("case es80PassiveCaptureSimulatorQA"))
+                  XCTAssertTrue(shell.contains("if !coordinator.isSimulatorQAFixture"))
+                  XCTAssertTrue(shell.contains("SIMULATOR QA / SYNTHETIC SOFTWARE STATE") == false)
+                  XCTAssertFalse(
+                      fixture.contains("permitsPhysicalProcedure = true"),
+                      "The fixture must never mutate or shadow the package physical gate."
+                  )
+              }
+
+          '''
+          anchor = '''    func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
+          '''
+          if ui.count(anchor) != 1:
+              raise SystemExit(f'UI test insertion anchor count = {ui.count(anchor)}')
+          ui = ui.replace(anchor, insertion + anchor, 1)
+
+          ui = replace_once(
+              ui,
+              '''    private func captureShellSource() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let repositoryRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = repositoryRoot
+                      .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+                  return try String(contentsOf: sourceURL, encoding: .utf8)
+              }
+          ''',
+              '''    private func captureShellSource() throws -> String {
+                  try repositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+              }
+
+              private func repositorySource(at path: String) throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let repositoryRoot = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = repositoryRoot.appendingPathComponent(path)
+                  return try String(contentsOf: sourceURL, encoding: .utf8)
+              }
+          ''',
+              'UI source helper'
+          )
+
+          # Correct one source-test assertion: the label lives in the package fixture, while the shell
+          # consumes only the package-provided property.
+          ui = ui.replace(
+              'XCTAssertTrue(shell.contains("SIMULATOR QA / SYNTHETIC SOFTWARE STATE") == false)',
+              'XCTAssertFalse(shell.contains("SIMULATOR QA / SYNTHETIC SOFTWARE STATE"))'
+          )
+
+          # Strong mechanical guards before committing.
+          if 'physicalProcedurePermitted: true' in Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift').read_text():
+              raise SystemExit('fixture illegally claims physical procedure permission')
+          if 'PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure = ' in coordinator:
+              raise SystemExit('coordinator mutates physical execution gate')
+          if '--es80-passive-capture-simulator-qa' not in app:
+              raise SystemExit('Simulator QA route missing')
+          if 'if !coordinator.isSimulatorQAFixture' not in shell:
+              raise SystemExit('shell package-owned fixture admission missing')
+
+          coordinator_path.write_text(coordinator)
+          app_path.write_text(app)
+          shell_path.write_text(shell)
+          ui_path.write_text(ui)
+          workflow_path.unlink()
+          PY
+
+          git diff --check
+          test ! -e .github/workflows/_temporary_es80_simulator_qa_seam_patch.yml
+          git grep -n "permitsPhysicalProcedure = true" -- Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture && exit 1 || true
+          git grep -n "--es80-passive-capture-simulator-qa" -- NembraApp/App/NembraApp.swift NembraUITests/ES80ResearchCaptureUITests.swift
+
+      - name: Commit durable Simulator QA seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift \
+                  NembraApp/App/NembraApp.swift \
+                  NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  NembraUITests/ES80ResearchCaptureUITests.swift \
+                  .github/workflows/_temporary_es80_simulator_qa_seam_patch.yml
+          git commit -m "[Capture Simulator QA v14] Drive real shell without physical GO"
+          git push origin HEAD:integration/es80-v14-simulator-qa-seam/chatgpt56-thinking-go
