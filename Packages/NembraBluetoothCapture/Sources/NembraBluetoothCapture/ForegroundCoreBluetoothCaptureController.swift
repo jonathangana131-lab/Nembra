@@ -289,8 +289,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               !artifactReadBarrier.isActive,
               observationBoundaryTask == nil,
               case .observing = observationBoundaryQueueGate.phase,
-              let observationReadyAuthority else { return false }
-        return observationReadyAuthority == currentArtifactAuthorityContext()
+              let committedReadyEpoch else { return false }
+        return committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority
     }
 
     private let vehicleIdentity: VehicleIdentity
@@ -301,6 +301,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var recorder: PassiveCoreBluetoothCaptureRecorder?
     private var targetSessionGeneration: UInt64 = 0
     private var artifactAuthorityGeneration: UInt64 = 0
+    private let artifactAuthorityFence = PassiveCoreBluetoothArtifactAuthorityFence(
+        authority: PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: 0,
+            authorityGeneration: 0
+        )
+    )
     private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?
     private var targetState = PassiveCoreBluetoothTargetState()
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
@@ -341,7 +347,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var artifactReadBarrier = PassiveCoreBluetoothArtifactReadBarrier()
     private var observationBoundaryQueueGate = PassiveCoreBluetoothObservationBoundaryQueueGate()
     private var observationBoundaryTask: Task<Void, Never>?
-    private var observationReadyAuthority: PassiveCoreBluetoothArtifactAuthorityContext?
+    private var committedReadyEpoch: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedReadyEpoch?
 
     public init(
         vehicleIdentity: VehicleIdentity,
@@ -379,6 +385,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// previous stopped scan are not left selectable as if freshly rediscovered.
     public func startScanning(captureAdvertisementCadence: Bool = false) throws {
         try ensureCaptureHealthy()
+        guard !observationBoundaryQueueGate.isTerminal else {
+            throw ControllerError.captureFinalized
+        }
         guard centralManager.state == .poweredOn else {
             throw ControllerError.bluetoothNotPoweredOn
         }
@@ -501,6 +510,20 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             lastDiagnostic = diagnosticMessage
         }
 
+        // Once Horizon admission has frozen the accepted queue cutoff, transport
+        // teardown is outside the artifact interval. It may retire live transport
+        // state but must not revoke the artifact authority or append interruption
+        // evidence to the closing/finalized recorder.
+        if observationBoundaryBlocksArtifactMutation {
+            _ = targetState.retireActiveAttempt()
+            peripheral.delegate = nil
+            activePeripheral = nil
+            clearAcquisitionObjects()
+            connectionPhase = .idle
+            centralManager.cancelPeripheralConnection(peripheral)
+            return
+        }
+
         if targetState.selectedTargetIdentifier == peripheral.identifier {
             if let interruptionReason = cause.interruptionReason {
                 enqueueInterruption(interruptionReason)
@@ -591,45 +614,36 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               case .observing = observationBoundaryQueueGate.phase,
               hasCompleteTargetEvidence,
               let recorder,
-              let observationReadyAuthority,
-              observationReadyAuthority == currentArtifactAuthorityContext() else {
+              let committedReadyEpoch,
+              committedReadyEpoch.authority == artifactAuthorityFence.currentAuthority else {
             throw ControllerError.captureIncomplete
         }
 
-        let authority = currentArtifactAuthorityContext()
-        let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(
-            kind: .observationHorizon,
+        let horizonAdmission = try committedReadyEpoch.beginHorizon(
             queueCutoff: lastEnqueuedEventSequence,
             processedThrough: lastProcessedEventSequence,
-            authority: authority
-        )
-        let transaction = try observationBoundaryQueueGate.begin(
-            decision.queueKind,
-            through: decision.queueCutoff,
-            processedThrough: decision.processedThrough,
-            authority: decision.authority
+            gate: &observationBoundaryQueueGate
         )
 
         do {
-            await flushPendingEvents(through: decision.queueCutoff)
+            await flushPendingEvents(through: horizonAdmission.queueCutoff)
             try ensureCaptureHealthy()
-            try validateBoundaryAuthority(decision.authority)
-            try await decision.recordBoundary(on: recorder)
-            try validateBoundaryAuthority(decision.authority)
-            try observationBoundaryQueueGate.markBoundaryRecorded(
-                transaction,
-                lastProcessedQueueSequence: lastProcessedEventSequence,
-                currentAuthority: currentArtifactAuthorityContext()
+            try validateBoundaryAuthority(horizonAdmission.authority)
+
+            let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)
+            // No actor suspension may occur between the authority-fenced recorder
+            // return and typed queue commit. A callback cannot interleave here on
+            // MainActor and relabel this exact Horizon epoch.
+            let committedHorizon = try recordedHorizon.markBoundaryRecorded(
+                on: &observationBoundaryQueueGate,
+                lastProcessedQueueSequence: lastProcessedEventSequence
             )
 
             let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
-            try validateBoundaryAuthority(decision.authority)
-            try observationBoundaryQueueGate.completeHorizonArtifactFreeze(
-                transaction,
-                currentAuthority: currentArtifactAuthorityContext()
-            )
+            try validateBoundaryAuthority(committedHorizon.authority)
+            try committedHorizon.completeHorizonArtifactFreeze(on: &observationBoundaryQueueGate)
             retireQueuedEvidenceAfterTerminalHorizon()
-            lastFinalizedArtifactAuthority = decision.authority
+            lastFinalizedArtifactAuthority = committedHorizon.authority
             return data
         } catch {
             failCapture(error)
@@ -660,18 +674,35 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
-        observationReadyAuthority = nil
+        committedReadyEpoch = nil
+
+        let previousAuthority = currentArtifactAuthorityContext()
+        let nextTargetSessionGeneration = targetSessionGeneration + 1
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: nextTargetSessionGeneration,
+            authorityGeneration: 1
+        )
+        do {
+            // Transition the canonical fence first, then publish the complete
+            // durable-session authority pair synchronously with no actor hop.
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+        } catch {
+            failCapture(error)
+            throw ControllerError.captureFailed
+        }
+        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        lastFinalizedArtifactAuthority = nil
 
         targetState.selectTarget(identifier)
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
         hasUsedInitialSessionIdentity = true
-        targetSessionGeneration += 1
         recorder = newRecorder
-        guard advanceArtifactAuthority() else {
-            throw ControllerError.captureFailed
-        }
 
         // Preserve at most the selected candidate's latest already-observed
         // advertisement, with the exact callback clocks from when it was actually
@@ -699,7 +730,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 throw ControllerError.captureIncomplete
             }
             eventWatermark = terminalQueueCutoff
-        case .awaitingReady, .drainingReady, .drainingHorizon, .horizonBoundaryRecorded:
+        case .awaitingReady, .drainingReady, .abortQuarantined, .drainingHorizon, .horizonBoundaryRecorded:
             throw ControllerError.captureIncomplete
         }
 
@@ -743,8 +774,41 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             failCapture(AcquisitionError.artifactAuthorityGenerationExhausted)
             return false
         }
+
+        let previousAuthority = currentArtifactAuthorityContext()
+        let nextAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: previousAuthority.targetSessionGeneration,
+            authorityGeneration: previousAuthority.authorityGeneration + 1
+        )
+        do {
+            // The fence transition is the mutation-point authority. Publish the
+            // mirrored MainActor value immediately afterward with no suspension.
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: nextAuthority
+            )
+        } catch {
+            failCapture(error)
+            return false
+        }
+        artifactAuthorityGeneration = nextAuthority.authorityGeneration
         lastFinalizedArtifactAuthority = nil
-        artifactAuthorityGeneration += 1
+
+        // #455 deliberately keeps an invalidated committed Ready epoch quarantined
+        // until resolved-frontier recovery is composed. Do not silently return the
+        // same recorder to awaitingReady or reacquire GATT under a newer authority.
+        if case .observing = observationBoundaryQueueGate.phase,
+           let committedReadyEpoch {
+            do {
+                try observationBoundaryQueueGate.abortObservationEpoch(committedReadyEpoch)
+                self.committedReadyEpoch = nil
+            } catch {
+                failCapture(error)
+                return false
+            }
+            failCapture(ControllerError.targetSessionChanged)
+            return false
+        }
         return true
     }
 
@@ -753,6 +817,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             targetSessionGeneration: targetSessionGeneration,
             authorityGeneration: artifactAuthorityGeneration
         )
+    }
+
+    /// Horizon admission is the immutable observation cutoff. From the instant the
+    /// gate enters drainingHorizon, later transport callbacks are outside the
+    /// accepted artifact interval and must not replace artifact authority.
+    private var observationBoundaryBlocksArtifactMutation: Bool {
+        switch observationBoundaryQueueGate.phase {
+        case .drainingHorizon, .horizonBoundaryRecorded, .terminal:
+            true
+        case .awaitingReady, .drainingReady, .observing, .abortQuarantined:
+            false
+        }
     }
 
     /// Starts the Ready transaction synchronously on MainActor as soon as
@@ -769,34 +845,42 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
               let recorder else { return }
 
         do {
-            let authority = currentArtifactAuthorityContext()
-            let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(
-                kind: .finiteAcquisitionReady,
+            let admission = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.beginReady(
                 queueCutoff: lastEnqueuedEventSequence,
                 processedThrough: lastProcessedEventSequence,
-                authority: authority
-            )
-            let transaction = try observationBoundaryQueueGate.begin(
-                decision.queueKind,
-                through: decision.queueCutoff,
-                authority: decision.authority
+                authorityFence: artifactAuthorityFence,
+                gate: &observationBoundaryQueueGate
             )
 
             observationBoundaryTask = Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.flushPendingEvents(through: decision.queueCutoff)
+                await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
                     try self.ensureCaptureHealthy()
-                    try self.validateBoundaryAuthority(decision.authority)
-                    try await decision.recordBoundary(on: recorder)
-                    try self.validateBoundaryAuthority(decision.authority)
-                    try self.observationBoundaryQueueGate.markBoundaryRecorded(
-                        transaction,
-                        lastProcessedQueueSequence: self.lastProcessedEventSequence,
-                        currentAuthority: self.currentArtifactAuthorityContext()
-                    )
-                    self.observationReadyAuthority = decision.authority
+                    let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
+                    switch outcome {
+                    case let .rejectedBeforeMutation(rejection):
+                        try self.observationBoundaryQueueGate.abortUncommittedReady(after: rejection)
+                        self.failCapture(ControllerError.targetSessionChanged)
+
+                    case let .recorded(recordedReady):
+                        do {
+                            // This typed queue commit is intentionally the immediate
+                            // MainActor statement after the recorder actor returns.
+                            // No await is permitted in this interlock.
+                            self.committedReadyEpoch = try recordedReady.markBoundaryRecorded(
+                                on: &self.observationBoundaryQueueGate,
+                                lastProcessedQueueSequence: self.lastProcessedEventSequence
+                            )
+                        } catch {
+                            // Recorder mutation already happened, so quarantine with
+                            // the distinct recorded-before-commit origin. Never label
+                            // this a zero-mutation rejection.
+                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
+                            throw error
+                        }
+                    }
                 } catch {
                     self.failCapture(error)
                 }
@@ -814,10 +898,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private func validateBoundaryAuthority(
         _ authority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws {
-        guard authority.matches(
-            targetSessionGeneration: targetSessionGeneration,
-            authorityGeneration: artifactAuthorityGeneration
-        ) else {
+        guard authority == currentArtifactAuthorityContext(),
+              authority == artifactAuthorityFence.currentAuthority else {
             throw ControllerError.targetSessionChanged
         }
     }
@@ -1159,6 +1241,8 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         centralManager.stopScan()
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
+        observationBoundaryTask?.cancel()
+        observationBoundaryTask = nil
         if let activePeripheral {
             _ = targetState.retireActiveAttempt()
             activePeripheral.delegate = nil
@@ -1238,12 +1322,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         let disposition = targetState.completeDisconnect(from: identifier)
         guard disposition != .ignored else { return }
 
-        // Once Horizon is terminal, transport teardown may release CoreBluetooth
-        // state but must not revoke or mutate the already-finalized artifact authority.
-        if observationBoundaryQueueGate.isTerminal {
-            if targetState.selectedTargetIdentifier == identifier {
-                selectedTargetCancellationPending = false
-            }
+        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup
+        // only. The finalized/closing artifact authority is immutable.
+        if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
+            selectedTargetCancellationPending = false
             if case .active = disposition {
                 clearActiveConnectionState(for: identifier)
             }
@@ -1292,32 +1374,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         let previous = bluetoothState
         bluetoothState = central.state
 
-        // A terminal Horizon freezes capture authority. Central-state callbacks may
-        // still clean up transport state, but they cannot create a new evidence epoch
-        // or invalidate the sealed artifact.
-        if observationBoundaryQueueGate.isTerminal {
-            hasObservedInitialCentralState = true
-            guard central.state != .poweredOn else { return }
-
-            scanRequested = false
-            if central.isScanning {
-                central.stopScan()
-            }
-            if activePeripheral != nil {
-                activePeripheral?.delegate = nil
-                activePeripheral = nil
-                connectionTimeoutTask?.cancel()
-                connectionTimeoutTask = nil
-                connectionPhase = .idle
-                clearAcquisitionObjects()
-            }
-            selectedTargetCancellationPending = false
-            targetState.resetForCentralInvalidation()
-            clearCandidateCatalog()
-            return
-        }
-
-        if hasObservedInitialCentralState, previous != central.state {
+        if hasObservedInitialCentralState, previous != central.state,
+           !observationBoundaryQueueGate.isTerminal,
+           !observationBoundaryBlocksArtifactMutation {
             if hasTargetSession, !advanceArtifactAuthority() { return }
             enqueueInterruption(
                 "Bluetooth central state changed \(Self.stateDescription(previous)) -> \(Self.stateDescription(central.state))",
@@ -1854,11 +1913,9 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBPeripheral
     public func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         let receipt = callbackReceipt()
         guard targetState.acceptsActiveCallback(from: peripheral.identifier) else { return }
-
-        // Service invalidation after terminal Horizon is outside the accepted
-        // observation interval. Do not advance artifact authority or restart a
-        // finite acquisition inside the sealed recorder lifecycle.
-        guard !observationBoundaryQueueGate.isTerminal else { return }
+        if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
+            return
+        }
 
         let uuids = invalidatedServices
             .map { CoreBluetoothCaptureMapping.normalizedUUID($0.uuid) }
