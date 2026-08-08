@@ -386,11 +386,13 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launch()
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
         let completeState = app.staticTexts["CAPTURE COMPLETE"]
         let shareCapture = app.buttons["Share Capture"]
         let viewDetails = app.buttons["View Details"]
 
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
         XCTAssertTrue(completeState.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
         XCTAssertTrue(shareCapture.waitForExistence(timeout: 3))
@@ -408,6 +410,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             qaDisclosure,
             windowFrame: windowFrame,
             context: "synthetic Simulator QA disclosure at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: windowFrame,
+            context: "positive Capture progress rail at Accessibility XXXL"
         )
         assertVisibleInScreenshotViewport(
             completeState,
@@ -443,9 +450,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
         let readyState = app.staticTexts["Capture can be sealed"]
         let finish = app.descendants(matching: .any)["es80.capture.finish"]
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
         XCTAssertTrue(readyState.waitForExistence(timeout: 3))
         XCTAssertTrue(finish.waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
@@ -466,6 +475,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             qaDisclosure,
             windowFrame: windowFrame,
             context: "synthetic Simulator QA disclosure in positive-state landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: windowFrame,
+            context: "positive Capture progress rail in landscape"
         )
         assertVisibleInScreenshotViewport(
             readyState,

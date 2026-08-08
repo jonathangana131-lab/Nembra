@@ -52,6 +52,7 @@ struct ES80CaptureShellView: View {
     private static let requiredObservationGuidanceNanoseconds: UInt64 = 60_000_000_000
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
@@ -286,18 +287,36 @@ struct ES80CaptureShellView: View {
                 }
             }
 
-            HStack {
-                Text("OFF 1")
-                Spacer()
-                Text("ON 1")
-                Spacer()
-                Text("OFF 2")
-                Spacer()
-                Text("ON 2")
-                Spacer()
-                Text("READY")
-                Spacer()
-                Text("SEAL")
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    Grid(horizontalSpacing: 20, verticalSpacing: 8) {
+                        GridRow {
+                            Text("OFF 1")
+                            Text("ON 1")
+                            Text("OFF 2")
+                        }
+                        GridRow {
+                            Text("ON 2")
+                            Text("READY")
+                            Text("SEAL")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    HStack {
+                        Text("OFF 1")
+                        Spacer()
+                        Text("ON 1")
+                        Spacer()
+                        Text("OFF 2")
+                        Spacer()
+                        Text("ON 2")
+                        Spacer()
+                        Text("READY")
+                        Spacer()
+                        Text("SEAL")
+                    }
+                }
             }
             .font(.caption2.monospaced().weight(.semibold))
             .foregroundStyle(.secondary)
@@ -1227,7 +1246,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh Experiment One run: \(String(describing: error))"
+            localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."
         }
     }
 

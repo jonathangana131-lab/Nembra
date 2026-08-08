@@ -146,6 +146,24 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         }
     }
 
+    @Test("fresh-run construction failures stay bounded and rider-readable")
+    func freshRunConstructionFailureCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let beginning = try #require(source.range(of: "private func restartExperiment()"))
+        let end = try #require(
+            source.range(
+                of: "private func handleScenePhaseChange",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        let restart = source[beginning.lowerBound..<end.lowerBound]
+
+        #expect(!restart.contains("Experiment One"))
+        #expect(!restart.contains("String(describing: error)"))
+        #expect(restart.contains("Nembra could not start a fresh capture."))
+        #expect(restart.contains("Close and reopen Nembra"))
+    }
+
     @Test("engineering truth remains available in Details instead of being deleted")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
