@@ -1,0 +1,85 @@
+name: Strengthen ES80 marker-fence contract
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-passive-lifecycle-marker-fence/chat-c7r4m
+
+permissions:
+  contents: write
+
+jobs:
+  apply-contract-strengthening:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 6
+      - name: Verify exact product ancestry
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=86f814e9326499a5d56ac7db400cc43386156b87
+          WORKFLOW=.github/workflows/recover-es80-marker-fence-contract-chat-c7r4m.yml
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test "$(git diff --name-only "$PRODUCT_PARENT" HEAD)" = "$WORKFLOW"
+      - name: Strengthen authoritative ordering regression
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift")
+          source = path.read_text()
+          old = '''    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
+              let source = try Self.controllerSource()
+              let cancellation = try Self.section(
+          '''
+          new = '''    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
+              let source = try Self.controllerSource()
+
+              let artifactReads = try Self.section(
+                  in: source,
+                  from: "    public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {",
+                  to: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {"
+              )
+              #expect(artifactReads.contains("lastFinalizedArtifactAuthority = context.authority"))
+
+              let teardown = try Self.section(
+                  in: source,
+                  from: "    public func teardownActiveConnectionAfterFinalization() throws {",
+                  to: "    private func cancelActiveConnection(cause:"
+              )
+              let finalizationAuthorizationOffset = try Self.offset(
+                  of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+                  in: teardown
+              )
+              let finalizedTeardownOffset = try Self.offset(
+                  of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
+                  in: teardown
+              )
+              #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)
+
+              let cancellation = try Self.section(
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one finalized-teardown regression seam, found {source.count(old)}")
+          if "let finalizationAuthorizationOffset" in source:
+              raise SystemExit("authoritative ordering assertions already present")
+          source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+          grep -Fq 'let finalizationAuthorizationOffset' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
+          grep -Fq 'cancelActiveConnection(cause: .finalizedArtifactTeardown)' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
+      - name: Commit product-only test delta and remove workflow
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=86f814e9326499a5d56ac7db400cc43386156b87
+          WORKFLOW=.github/workflows/recover-es80-marker-fence-contract-chat-c7r4m.yml
+          TESTS=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
+          git rm "$WORKFLOW"
+          test "$(git diff --name-only "$PRODUCT_PARENT")" = "$TESTS"
+          git add "$TESTS"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "[recover es80 passive lifecycle] Model finalized marker boundary"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
