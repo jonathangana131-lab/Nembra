@@ -11,6 +11,11 @@ struct VehicleHeroView: View {
 
     var body: some View {
         vehicleArtwork
+            // The art is designed around the iPhone portrait proportions. Cap
+            // its canvas on wider layouts so landscape/iPad width cannot stretch
+            // the wheelbase while wheel diameter remains height-limited.
+            .frame(maxWidth: 420)
+            .frame(maxWidth: .infinity, alignment: .center)
             .accessibilityHidden(true)
             .allowsHitTesting(false)
     }
