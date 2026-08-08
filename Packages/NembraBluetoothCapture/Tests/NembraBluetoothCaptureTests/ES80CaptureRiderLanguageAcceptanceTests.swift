@@ -134,7 +134,10 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "package-owned CoreBluetooth controller",
             "package-issued observation authority",
             "package-owned Experiment One workflow",
-            "fresh package-owned Experiment One workflow"
+            "fresh package-owned Experiment One workflow",
+            "replaying consumed authority",
+            "coordinator.lastDiagnostic ??",
+            "Nembra could not create a fresh Experiment One run:"
         ]
 
         for phrase in implementationPhrasesThatMustStayOutOfHelpers {
@@ -143,6 +146,9 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
                 "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
             )
         }
+
+        #expect(helperSurface.contains("The scooter connection ended before this capture could be sealed."))
+        #expect(helperSurface.contains("Nembra could not start a fresh Experiment One. Close and reopen Nembra, then try again."))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")

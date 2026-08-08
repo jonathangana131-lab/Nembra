@@ -920,7 +920,7 @@ struct ES80CaptureShellView: View {
             return .acquiring
         case .idle:
             if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
-                return .failed(coordinator.lastDiagnostic ?? "The passive target connection ended before an accepted observation could be sealed. Start a fresh Experiment One rather than replaying consumed authority.")
+                return .failed("The scooter connection ended before this capture could be sealed. Start a fresh Experiment One.")
             }
         case .unavailable:
             return .bluetoothUnavailable("Bluetooth capture is unavailable for this run.")
@@ -1227,7 +1227,7 @@ struct ES80CaptureShellView: View {
         do {
             coordinator = try onFreshExperimentRequested()
         } catch {
-            localFailureMessage = "Nembra could not create a fresh Experiment One run: \(String(describing: error))"
+            localFailureMessage = "Nembra could not start a fresh Experiment One. Close and reopen Nembra, then try again."
         }
     }
 
