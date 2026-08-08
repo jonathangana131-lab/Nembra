@@ -89,9 +89,12 @@ final class NembraUITests: XCTestCase {
             ]
             app.launch()
 
+            let expectedRootIdentifier = scenario == "stationaryPreflight"
+                ? "es80.capture.stationary-preflight"
+                : "es80.capture-shell"
             XCTAssertTrue(
-                app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
-                "Capture accessibility audit scenario \(scenario) must render the real Capture shell."
+                app.descendants(matching: .any)[expectedRootIdentifier].waitForExistence(timeout: 5),
+                "Capture accessibility audit scenario \(scenario) must render its real Capture root."
             )
             XCTAssertTrue(
                 app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
