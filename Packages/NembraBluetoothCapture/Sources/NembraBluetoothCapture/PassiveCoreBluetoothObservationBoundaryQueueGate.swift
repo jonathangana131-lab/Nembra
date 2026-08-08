@@ -1,5 +1,3 @@
-import NembraCore
-
 /// MainActor-facing ordering state for recording lifecycle boundaries against the
 /// controller's existing raw-event FIFO.
 ///
@@ -12,7 +10,15 @@ import NembraCore
 ///
 /// Queue sequence is software callback-order evidence only. It is not BLE/RF
 /// emission time, a CoreBluetooth scan generation, or physical scooter proof.
+/// `BoundaryKind` is deliberately queue-local: the accepted #379 capture-schema
+/// boundary type is downstream of this PR's #383 base and is mapped only after
+/// those lineages are intentionally composed.
 struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
+    enum BoundaryKind: Equatable, Sendable {
+        case finiteAcquisitionReady
+        case observationHorizon
+    }
+
     enum StateError: Error, Equatable, Sendable {
         case invalidTransition
         case transactionRevisionExhausted
@@ -23,7 +29,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     }
 
     struct Transaction: Equatable, Sendable {
-        let boundaryKind: PassiveBluetoothObservationBoundaryKind
+        let boundaryKind: BoundaryKind
         let queueCutoff: UInt64
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
         let revision: UInt64
@@ -65,7 +71,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// Starts the one legal next boundary transaction for this capture session.
     /// Ready may occur once. Horizon may occur once and only after ready.
     mutating func begin(
-        _ boundaryKind: PassiveBluetoothObservationBoundaryKind,
+        _ boundaryKind: BoundaryKind,
         through queueCutoff: UInt64,
         authority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws -> Transaction {
