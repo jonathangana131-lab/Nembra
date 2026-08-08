@@ -26,10 +26,11 @@ The current passive-foundation recovery does not by itself close the full V14 Ca
 - required visual, accessibility, performance, and recovery-state review for the app-visible Capture surface;
 - a final **signed physical-device/installable artifact** produced from that exact accepted composition, with the exact bytes/identity needed for independent acceptance retained rather than substituting Simulator build evidence;
 - independent external acceptance/attestation of that exact signed-device field artifact, correlated to its exact build-instance/build tuple and retained artifact evidence without treating arbitrary parsed JSON, a caller-supplied digest, a skipped/queued workflow, or the artifact's own self-description as authority;
+- an exact externally signed schema-v2 field-authorization envelope accepted as immutable bytes, with independently recomputed `envelopeSHA256`, `authorizationPayloadSHA256`, `externalBuildRecordSHA256`, and `fieldBuildEvidenceRecordSHA256`, plus the reviewed authority `authorityPublicKeyX963SHA256`; the package-pinned trust anchor on the final build must be that exact reviewed public key;
 - a deliberate package-owned `PassiveBluetoothExperimentOneFieldExecutionGate` GO state that is mechanically tied to the independently accepted exact field-build authority and cannot be unlocked by a UI Boolean, launch argument, local preference, or caller-constructible token;
-- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
+- an explicit final runbook edit that names the accepted exact build/commit, signed-device/installable artifact authority, exact field-authorization envelope/trust-root bundle, procedure version, expected capture artifact, stop conditions, and package field-GO state and changes this status to `GO`.
 
-Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform it.
+Until those conditions are closed, all procedures below are **supporting experiment recipes only**. They describe the intended safe physical sequence but are not authorization to perform them.
 
 ## Safety and truth rules
 
@@ -49,6 +50,7 @@ Until those conditions are closed, all procedures below are **supporting experim
 14. If acquisition, foreground integrity, chronology, horizon duration, seal, integrity, or export readiness fails, treat the session as incomplete. Never interpret missing evidence as proof that a field/service/event does not exist.
 15. Never promote Simulator, public research, display interpolation, or derived UI motion into physical telemetry evidence.
 16. Never treat a parsed external build record, digest equality, artifact self-report, or unsigned/unaccepted device build as field authorization. Build rendezvous and independent acceptance are separate authority layers.
+17. Never treat “signature valid” or a signer-generated summary alone as the final field handoff. Final GO must bind the exact retained authorization-envelope bytes and the exact reviewed package trust root by independently recomputed digests, and those identities must agree with the exact subjects accepted for the signed device build.
 
 ## Final GO record — intentionally blank while NO-GO
 
@@ -57,6 +59,11 @@ When the software is actually ready, replace this section in the same acceptance
 - Accepted exact build/commit: **NOT YET AUTHORIZED**
 - Accepted signed-device/installable artifact identity/digest: **NOT YET AUTHORIZED**
 - Independent field-build acceptance / attestation subject: **NOT YET AUTHORIZED**
+- Accepted field-authorization envelope SHA-256 (`envelopeSHA256`): **NOT YET AUTHORIZED**
+- Accepted authorization payload SHA-256 (`authorizationPayloadSHA256`): **NOT YET AUTHORIZED**
+- Accepted external build record SHA-256 (`externalBuildRecordSHA256`): **NOT YET AUTHORIZED**
+- Accepted field-build evidence record SHA-256 (`fieldBuildEvidenceRecordSHA256`): **NOT YET AUTHORIZED**
+- Accepted authority public-key X9.63 SHA-256 (`authorityPublicKeyX963SHA256`): **NOT YET AUTHORIZED**
 - Package field-execution gate state: **NO-GO / NOT YET AUTHORIZED**
 - Procedure version: **V14 / NOT YET AUTHORIZED**
 - Baseline device: iPhone 12 / iOS 27
@@ -64,7 +71,9 @@ When the software is actually ready, replace this section in the same acceptance
 - Expected artifact: **NOT YET AUTHORIZED**
 - Physical result collected: **NO**
 
-No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, or stale acceptance may be filled into this section as the final physical build authority.
+The five authorization-bundle digests above are identities for exact retained bytes, not values to trust merely because the signer printed them. Final acceptance must independently recompute them and confirm that the authority public-key digest matches the exact X9.63 key pinned in `PassiveBluetoothCaptureFieldAuthorizationTrustAnchor` on the accepted final build.
+
+No ancestor SHA, package-only green, child PR, Simulator run, self-carried build metadata, arbitrary external JSON, signer stdout by itself, or stale acceptance may be filled into this section as the final physical build authority.
 
 ## Intended preflight once GO is authorized
 
@@ -75,6 +84,8 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - exact runtime build identity and capture schema compatibility;
 - package-owned physical field-execution authority is `GO` for the exact accepted field build and recipe, rather than merely a launch-mode/UI request;
 - the independently accepted signed-device/installable build authority matches the exact runtime/build-instance rendezvous required by the final accepted contract;
+- the field-authorization envelope being consumed is the exact accepted envelope bound by the final GO record, and its signed subject digests resolve to the exact accepted external-build and field-evidence bytes;
+- the package-owned P-256 trust anchor compiled into the accepted build is the exact reviewed public key whose X9.63 SHA-256 is recorded in the final GO record;
 - storage/export readiness;
 - the exact versioned experiment recipe;
 - any required stock-app/reference-marker setup;
@@ -241,10 +252,12 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - Horizon/queue commit/immutable freeze cannot complete exactly;
 - artifact integrity or export readiness fails;
 - runtime build identity no longer matches the package-owned accepted field-build authority;
+- the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
+- the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
 
 ## Current physical conclusion
 
-**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, and procedure.
+**NO-GO.** The passive foundation is valuable software evidence, but it is not the final independently accepted signed-device/app-visible Capture instrument and it cannot authorize physical Experiment One. The first physical session should occur only after this same runbook is deliberately flipped to `GO` with one exact accepted final signed-device build, matching package field-GO authority, exact authorization-envelope/trust-root identities, and procedure.
