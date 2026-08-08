@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Independently verify the byte/provenance layer of one V14 signed Capture candidate.
+"""Check the byte/provenance self-consistency of one V14 signed Capture candidate.
 
-This verifier is intentionally portable and does not treat byte equality as Apple code-signature
-verification or physical field authorization. The producer's macOS codesign evidence and a later
-independent product acceptance decision remain separate gates.
+This verifier is intentionally portable and does not establish artifact authenticity, Apple
+code-signature validity, product acceptance, or physical field authorization. The producer's macOS
+codesign evidence plus a later independent trust/acceptance decision remain separate gates.
 """
 
 from __future__ import annotations
@@ -293,7 +293,8 @@ def verify_candidate(artifact_dir: Path) -> dict[str, Any]:
         fail(f"Signed app transfer archive is malformed: {exc}")
 
     return {
-        "verification": "accepted-byte-provenance",
+        "verification": "self-consistent-byte-provenance",
+        "authenticity": "not-established-by-portable-verifier",
         "fieldAuthorization": "NO-GO",
         "codeSignatureVerification": "not-reperformed-by-portable-verifier",
         "buildIdentifier": field["buildIdentifier"],
