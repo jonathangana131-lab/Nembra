@@ -491,17 +491,63 @@ def _trusted_system_apple_tool(path: Path, label: str) -> str:
     return str(path)
 
 
+APPLE_TOOL_TIMEOUT_SECONDS = 30
+APPLE_TOOL_ENVIRONMENT = {
+    "PATH": "/usr/bin:/bin",
+    "LANG": "C",
+    "LC_ALL": "C",
+}
+
+
+def _apple_tool_process_kwargs() -> dict[str, object]:
+    """Return one closed process boundary for security-sensitive Apple verification tools."""
+    return {
+        "env": dict(APPLE_TOOL_ENVIRONMENT),
+        "cwd": "/",
+        "stdin": subprocess.DEVNULL,
+        "timeout": APPLE_TOOL_TIMEOUT_SECONDS,
+        "check": False,
+    }
+
+
 def _run_text(command: list[str]) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            **_apple_tool_process_kwargs(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EvidenceError(
+            f"Apple verification command timed out: {command[0]}"
+        ) from exc
+    except OSError as exc:
+        raise EvidenceError(
+            f"could not execute Apple verification command: {command[0]}"
+        ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise EvidenceError(f"command failed ({' '.join(command)}): {detail}")
     return result
+
+
+def _run_binary(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **_apple_tool_process_kwargs(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EvidenceError(
+            f"Apple verification command timed out: {command[0]}"
+        ) from exc
+    except OSError as exc:
+        raise EvidenceError(
+            f"could not execute Apple verification command: {command[0]}"
+        ) from exc
 
 
 def run_codesign(app_path: Path) -> tuple[str, list[str], str]:
@@ -740,11 +786,8 @@ def verify_provisioning_profile(
         raise EvidenceError("signed field IPA is missing embedded.mobileprovision")
     profile_sha256 = sha256_file(profile_path)
 
-    result = subprocess.run(
-        [security, "cms", "-D", "-i", str(profile_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    result = _run_binary(
+        [security, "cms", "-D", "-i", str(profile_path)]
     )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()

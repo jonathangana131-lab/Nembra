@@ -1,0 +1,24 @@
+name: Capture Apple Process Custody Source
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_signed_field_artifact_evidence.py
+      - scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+      - .github/workflows/capture-apple-process-custody-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate inspector and closed Apple process boundary
+        run: |
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_apple_process_custody.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
