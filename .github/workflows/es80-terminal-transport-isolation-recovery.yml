@@ -6,6 +6,12 @@ on:
       - parallel/recover-es80-terminal-transport-isolation/chat-gpt56
     paths:
       - .github/workflows/es80-terminal-transport-isolation-recovery.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - parallel/es80-live-boundary-controller/chat-k4m7v
+    paths:
+      - .github/workflows/es80-terminal-transport-isolation-recovery.yml
 
 permissions:
   contents: write
@@ -17,6 +23,7 @@ jobs:
       - name: Checkout exact recovery branch
         uses: actions/checkout@v4
         with:
+          ref: parallel/recover-es80-terminal-transport-isolation/chat-gpt56
           fetch-depth: 0
 
       - name: Patch terminal transport isolation and import diagnostic regression
