@@ -5,9 +5,11 @@ import hashlib
 import importlib.util
 import json
 import plistlib
+import sys
 import tempfile
 import unittest
 import uuid
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -15,6 +17,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_
 spec = importlib.util.spec_from_file_location("signed_field_evidence", MODULE_PATH)
 assert spec and spec.loader
 signed_field_evidence = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = signed_field_evidence
 spec.loader.exec_module(signed_field_evidence)
 
 HEAD = "1" * 40
@@ -47,12 +50,14 @@ def make_ipa(path: Path, *, source_sha: str = HEAD, instance: str = INSTANCE, ex
     }
     if extra_plist:
         plist.update(extra_plist)
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("Payload/Nembra.app/Info.plist", plistlib.dumps(plist))
-        archive.writestr("Payload/Nembra.app/Nembra", b"signed executable bytes")
-        archive.writestr("Payload/Nembra.app/embedded.mobileprovision", b"profile")
-        for name, data in extra_members or []:
-            archive.writestr(name, data)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Payload/Nembra.app/Info.plist", plistlib.dumps(plist))
+            archive.writestr("Payload/Nembra.app/Nembra", b"signed executable bytes")
+            archive.writestr("Payload/Nembra.app/embedded.mobileprovision", b"profile")
+            for name, data in extra_members or []:
+                archive.writestr(name, data)
 
 
 class SignedFieldArtifactEvidenceTests(unittest.TestCase):
@@ -115,6 +120,16 @@ class SignedFieldArtifactEvidenceTests(unittest.TestCase):
             ipa = Path(temp) / "Nembra.ipa"
             make_ipa(ipa, extra_members=[("../escape", b"nope")])
             with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "unsafe ZIP"):
+                signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
+    def test_duplicate_archive_member_path_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            ipa = Path(temp) / "Nembra.ipa"
+            make_ipa(
+                ipa,
+                extra_members=[("Payload/Nembra.app/Info.plist", plistlib.dumps({"duplicate": True}))],
+            )
+            with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "duplicate ZIP member"):
                 signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
 
     def test_duplicate_app_payload_fails_closed(self):
