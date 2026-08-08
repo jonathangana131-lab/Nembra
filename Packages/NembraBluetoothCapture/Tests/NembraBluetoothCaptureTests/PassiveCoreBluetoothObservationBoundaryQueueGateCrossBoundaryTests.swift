@@ -30,11 +30,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
                 processedThrough: 8,
                 authority: authority
             )
-            Issue.record(
-                "A horizon cutoff older than the committed ready cutoff must fail closed. " +
-                "Otherwise callbacks accepted after ready can be withheld and later discarded " +
-                "even though they predate horizon initiation."
-            )
+            Issue.record("A horizon cutoff older than the committed ready cutoff must fail closed. Otherwise callbacks accepted after ready can be withheld and later discarded even though they predate horizon initiation.")
         } catch {
             // Any fail-closed state error is acceptable here; this regression owns
             // the invariant rather than prescribing the production error taxonomy.
@@ -80,11 +76,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
                 processedThrough: 8,
                 authority: changedAuthority
             )
-            Issue.record(
-                "The observation horizon must remain bound to the exact artifact authority " +
-                "that committed finite acquisition ready. A new authority cannot inherit " +
-                "the old ready boundary merely because the gate is in observing phase."
-            )
+            Issue.record("The observation horizon must remain bound to the exact artifact authority that committed finite acquisition ready. A new authority cannot inherit the old ready boundary merely because the gate is in observing phase.")
         } catch {
             // Any fail-closed state error is acceptable here; this regression owns
             // the invariant rather than prescribing the production error taxonomy.
