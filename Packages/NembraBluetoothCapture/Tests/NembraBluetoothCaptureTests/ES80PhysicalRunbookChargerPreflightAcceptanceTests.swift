@@ -9,9 +9,9 @@ struct ES80PhysicalRunbookChargerPreflightAcceptanceTests {
         let runbook = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
 
         // The real product already makes this a fresh-run operator declaration: connected is
-        // explicitly blocked, Disconnected is required for ES80-FINGERPRINT-v1, and the UI states
+        // explicitly blocked, disconnected is required for the whole capture, and the UI states
         // that Nembra cannot sense the charger directly. The field procedure must not be weaker.
-        #expect(app.contains("Required for ES80-FINGERPRINT-v1"))
+        #expect(app.contains("Keep charger unplugged for the whole capture"))
         #expect(app.contains("Unplug charger to continue"))
         #expect(app.contains("Nembra cannot sense the charger directly"))
         #expect(app.contains("selectedChargerState = nil"))
