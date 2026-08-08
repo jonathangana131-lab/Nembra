@@ -1,0 +1,143 @@
+name: ES80 V14 Human-First Rider Copy Transform
+
+on:
+  push:
+    branches:
+      - "polish/es80-v14-human-first-rider-copy/chatgpt56-thinking-go"
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "polish/es80-v14-human-first-rider-copy/chatgpt56-thinking-go"
+
+      - name: Apply guarded rider-language cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          workflow = Path(".github/workflows/es80-v14-human-first-rider-copy-transform.yml")
+          source = path.read_text(encoding="utf-8")
+          marker = "    private var captureDetailsSheet: some View {"
+          if source.count(marker) != 1:
+              raise SystemExit("captureDetailsSheet boundary moved; refusing transformation")
+          rider, details = source.split(marker, 1)
+
+          replacements = {
+              "One sealed evidence life": "One continuous capture",
+              "Nembra carries the same package-owned Experiment One authority from repeated Bluetooth correlation into passive capture and immutable Horizon sealing. It performs no application characteristic-value writes and never turns a display name, RSSI, or service hint into target authority.": "Nembra keeps one continuous read-only session from scooter matching through final sealing. It never sends scooter commands and never chooses a target from its name, signal strength, or service hints.",
+              "The package-owned physical execution gate is closed. No OFF / ON window, connection, capture, or seal action can advance through this coordinator.": "This build is locked for field use. OFF / ON matching, connection, capture, and sealing stay unavailable.",
+              "Nembra is waiting for this exact window to report Bluetooth powered-on and active scanning. The producer's evidence clock has not started yet.": "Nembra is waiting for Bluetooth to become ready and start scanning. This window has not started recording yet.",
+              "The package producer, not this timer, decides whether the window has enough evidence.": "This timer is guidance only; Nembra decides when enough capture evidence exists.",
+              "This countdown is display guidance only. The package producer accepts the window only from its own monotonic receipt boundary; tapping early cannot create evidence.": "This countdown is guidance only. Nembra records the window from its own capture timing; tapping early cannot create evidence.",
+              "No selectable full Bluetooth identifier was absent in both OFF windows and repeated in both ON windows. Nembra will not guess from name, signal strength, service hints, or short IDs.": "No signal stayed absent in both OFF windows and appeared in both ON windows. Nembra will not guess from name, signal strength, service hints, or a shortened identifier.",
+              "More than one selectable full Bluetooth identifier repeated the OFF / ON pattern. Nembra refuses to break the tie with display name, RSSI, services, or a short identifier.": "More than one signal followed the same OFF / ON pattern. Nembra refuses to break the tie using its name, signal strength, services, or a shortened identifier.",
+              "One full CoreBluetooth identifier was selectable in both ON windows and absent from both OFF catalogs under this exact package-owned observation series. Treat it only as a correlated Bluetooth target.": "One Bluetooth signal appeared in both ON windows and stayed absent from both OFF windows. Treat it only as a correlated target for this capture.",
+              "A fresh post-admission scan is looking for the exact full identifier that passed both OFF / ON cycles. Keep the scooter in the ON state from the final window.": "Nembra is looking again for the exact signal matched by both OFF / ON cycles. Keep the scooter ON from the final window.",
+              "The same full CoreBluetooth identifier reappeared in the fresh scan epoch created after the sealed admission. This remains local correlation evidence, not permanent hardware authentication.": "The same Bluetooth signal reappeared in a fresh scan after confirmation. This is still local correlation evidence, not permanent hardware authentication.",
+              "Nembra is connecting only to the package-owned correlated target. No application characteristic-value writes are permitted by this workflow.": "Nembra is connecting only to the signal you just confirmed. This workflow remains read-only and sends no scooter commands.",
+              "Nembra is passively discovering services, characteristics, descriptors, reads, and notifications for the exact run-owned target session. Ready is not shown until finite acquisition is mechanically complete.": "Nembra is mapping the scooter's readable Bluetooth surface without sending commands. Ready appears only after this discovery stage is complete.",
+              "Waiting for accepted Horizon authority": "Waiting for capture timing",
+              "Finite acquisition is Ready. Keep Nembra foregrounded and the scooter stationary while the accepted monotonic observation interval matures. The displayed timer is guidance only.": "Bluetooth discovery is complete. Keep Nembra open and the scooter stationary while the required observation time completes. The displayed timer is guidance only.",
+              "Unavailable; waiting for accepted Horizon authority": "Unavailable; required observation time is still being verified",
+              "Available only after the package accepts the required monotonic observation duration.": "Available only after Nembra verifies the required observation duration.",
+              "The package-owned Ready epoch and required monotonic observation duration are both accepted. Finishing now requests one immutable Horizon from this same authority life.": "The required observation time is complete. Sealing now freezes this capture into one final read-only artifact.",
+              "Nembra is draining the accepted cutoff, committing Horizon, checking final authority, and materializing the immutable JSON artifact. Do not leave the app while this finishes.": "Nembra is finishing queued capture events, checking integrity, and creating the final shareable capture. Keep the app open until sealing completes.",
+              "Evidence failed closed": "Capture stopped safely",
+              "Nembra is recording the bounded CoreBluetooth advertisement catalog for this exact window. Keep the phone nearby and the app foregrounded; do not open the stock scooter app during this series.": "Nembra is recording nearby Bluetooth signals for this window. Keep the phone nearby and Nembra open; do not open the stock scooter app during this series.",
+              "Finite acquisition \\(observationReady ? \"ready\" : \"waiting\"). Horizon \\(horizonReady ? \"ready\" : \"waiting\").": "Discovery \\(observationReady ? \"ready\" : \"waiting\"). Observation time \\(horizonReady ? \"ready\" : \"waiting\").",
+              "The exact \\(report.finalShareByteCount.formatted())-byte final Share artifact passed the package-owned outer, SoftwareExport, and immutable Capture integrity checks. No protocol field meaning is claimed yet.": "The exact \\(report.finalShareByteCount.formatted())-byte Share Capture file passed every required integrity check. No protocol field meaning is claimed yet.",
+              "\\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Analysis readiness is not earned until the package verifies the exact final Share bytes and their nested evidence.": "\\(artifact.captureJSON.count.formatted()) capture bytes are sealed. Ready for analysis appears only after Nembra verifies the exact final Share file and its nested evidence."
+          }
+
+          for old, new in replacements.items():
+              count = rider.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one rider-copy match, got {count}: {old}")
+              rider = rider.replace(old, new, 1)
+
+          banned = [
+              "One sealed evidence life",
+              "package-owned Experiment One authority",
+              "package-owned physical execution gate",
+              "producer's evidence clock",
+              "producer accepts the window only from its own monotonic receipt boundary",
+              "full CoreBluetooth identifier",
+              "post-admission scan",
+              "fresh scan epoch created after the sealed admission",
+              "package-owned correlated target",
+              "finite acquisition",
+              "accepted Horizon authority",
+              "accepted monotonic observation interval",
+              "package-owned Ready epoch",
+              "committing Horizon",
+              "immutable JSON artifact",
+              "Evidence failed closed",
+              "bounded CoreBluetooth advertisement catalog",
+              "package-owned outer, SoftwareExport, and immutable Capture integrity checks",
+          ]
+          for phrase in banned:
+              if phrase in rider:
+                  raise SystemExit(f"engineering phrase remains in rider surface: {phrase}")
+
+          for required in [
+              "PASSIVE / READ ONLY",
+              "Scooter OFF",
+              "Scooter ON",
+              "Share Capture",
+              "View Details",
+              "es80.capture.begin-window",
+              "es80.capture.confirm-setup",
+              "es80.capture.complete-window",
+              "es80.capture.restart-correlation",
+              "es80.capture.confirm-correlated-target",
+              "es80.capture.restart-rediscovery",
+              "es80.capture.connect-prepared-target",
+              "es80.capture.finish",
+              "es80.capture.share",
+              "es80.capture.view-details",
+              "es80.capture.restart-experiment",
+              "es80.capture.experiment-progress",
+              "es80.capture.single-authority",
+              "es80.capture.complete",
+          ]:
+              if required not in rider:
+                  raise SystemExit(f"required rider contract missing: {required}")
+
+          details = marker + details
+          for required in [
+              "Truth boundary",
+              "CoreBluetooth",
+              "Software Export SHA-256",
+              "Runtime executable SHA-256",
+              "does not authenticate the physical ES80",
+          ]:
+              if required not in details:
+                  raise SystemExit(f"required engineering detail missing: {required}")
+
+          path.write_text(rider + details, encoding="utf-8")
+          workflow.unlink()
+          PY
+
+          git diff --check
+          test ! -e .github/workflows/es80-v14-human-first-rider-copy-transform.yml
+          git diff -- NembraApp/Features/Research/ES80CaptureShellView.swift
+
+      - name: Commit product-only result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift .github/workflows/es80-v14-human-first-rider-copy-transform.yml
+          git commit -m "[Capture product v14] Make primary field flow human-first"
+          git push origin HEAD:"polish/es80-v14-human-first-rider-copy/chatgpt56-thinking-go"
