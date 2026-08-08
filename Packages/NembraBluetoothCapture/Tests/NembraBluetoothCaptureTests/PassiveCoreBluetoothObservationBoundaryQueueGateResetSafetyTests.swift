@@ -51,6 +51,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
             _ = try gate.begin(
                 .observationHorizon,
                 through: 5,
+                processedThrough: 4,
                 authority: changedAuthority
             )
             Issue.record("Reset while observing must not detach the committed ready authority.")
@@ -61,6 +62,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 5,
+            processedThrough: 4,
             authority: authority
         )
         #expect(horizon.revision == ready.revision + 1)
@@ -82,6 +84,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 6,
+            processedThrough: 2,
             authority: authority
         )
 
@@ -108,6 +111,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         let horizon = try gate.begin(
             .observationHorizon,
             through: 6,
+            processedThrough: 2,
             authority: authority
         )
         try gate.markBoundaryRecorded(
