@@ -34,10 +34,11 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', self.source)
         self.assertNotIn('--intended-device-udid "$', self.source)
         self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
         self.assertEqual(
             re.findall(r'\bNEMBRA_INTENDED_FIELD_DEVICE_UDID\b', self.source),
-            [],
-            "The raw intended-device identifier must not return as a shell environment variable.",
+            ["NEMBRA_INTENDED_FIELD_DEVICE_UDID"],
+            "The legacy raw identifier name may appear only in an immediate unset, never as an input seam.",
         )
         self.assertNotIn('intended_device_udid=', self.source)
         self.assertNotIn('field_device_udid=', self.source)
