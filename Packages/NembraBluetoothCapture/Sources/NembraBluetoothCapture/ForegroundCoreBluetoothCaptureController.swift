@@ -653,9 +653,31 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
-            await flushPendingEvents(through: horizonAdmission.queueCutoff)
-            try ensureCaptureHealthy()
-            try validateBoundaryAuthority(horizonAdmission.authority)
+            // H allocation has already moved the queue gate into its exact draining
+            // transaction. If FIFO drain, foreground health, or authority validation
+            // fails before the first recorder attempt, consume the producer-owned
+            // unused-admission permit and quarantine that exact zero-mutation H.
+            // This state is deliberately distinct from mutation-point authority
+            // rejection, which is handled by recordBoundaryWithMutationOutcome below.
+            do {
+                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try ensureCaptureHealthy()
+                try validateBoundaryAuthority(horizonAdmission.authority)
+            } catch {
+                let preAttemptFailure = error
+                do {
+                    let abandonment = try horizonAdmission.abandonBeforeRecorderMutation()
+                    try observationBoundaryQueueGate.abortUncommittedHorizon(
+                        after: abandonment
+                    )
+                } catch {
+                    // Failure to prove/quarantine the exact unused H is stronger than
+                    // the triggering transport/health error. Keep the outer capture
+                    // failure path closed and surface the lifecycle failure.
+                    throw error
+                }
+                throw preAttemptFailure
+            }
 
             let horizonMutationOutcome = try await horizonAdmission
                 .recordBoundaryWithMutationOutcome(on: recorder)
@@ -949,7 +971,27 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
-                    try self.ensureCaptureHealthy()
+                    // Ready allocation has already moved the queue gate into its exact
+                    // draining transaction. If the drained prefix reveals capture failure
+                    // before the first recorder attempt, consume the producer-owned unused
+                    // admission and quarantine that exact zero-Ready-mutation transaction.
+                    do {
+                        try self.ensureCaptureHealthy()
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderAttempt()
+                            try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(
+                                after: abandonment
+                            )
+                        } catch {
+                            // Failure to prove/quarantine the exact unused Ready is stronger
+                            // than the triggering health failure. Keep capture fail-closed.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):
