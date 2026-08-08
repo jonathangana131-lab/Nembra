@@ -12,12 +12,14 @@ jobs:
   transform:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Harden exact IPA snapshot and permanent acceptance gate
+      - name: Harden exact IPA snapshot and its incumbent self-test
         shell: bash
         run: |
           set -euo pipefail
@@ -113,62 +115,52 @@ jobs:
 
           '''
           text = text[:start] + replacement + text[end + 1:]
-          source_path.write_text(text, encoding="utf-8")
 
-          test_path = Path("scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py")
-          tests = test_path.read_text(encoding="utf-8")
-          if "import os\n" not in tests:
-              tests = tests.replace("import importlib.util\n", "import importlib.util\nimport os\n", 1)
-          marker = "\n\nif __name__ == \"__main__\":\n"
-          if marker not in tests:
-              raise SystemExit("exact-subject test insertion marker not found")
-          regression = '''
-              def test_snapshot_rejects_same_length_mutation_between_full_descriptor_passes(self) -> None:
-                  inspector = load_inspector()
-                  original_ipa = b"A" * 4096
-                  changed_ipa = b"B" * 4096
+          marker = "\n\ndef parse_args(argv: list[str]) -> argparse.Namespace:\n"
+          if marker not in text:
+              raise SystemExit("inspector self-test insertion marker not found")
+          self_test_regression = '''
+              # Exact-subject admission must prove two complete reads of the same open descriptor agree.
+              # Mutate the same inode to different same-length bytes immediately before pass two and
+              # require the would-be private snapshot to be destroyed rather than admitted.
+              from unittest.mock import patch as mock_patch
 
-                  with tempfile.TemporaryDirectory(prefix="nembra-double-pass-test-") as temporary:
-                      root = Path(temporary)
-                      ipa_path = root / "candidate.ipa"
-                      snapshot_path = root / "snapshot.ipa"
-                      ipa_path.write_bytes(original_ipa)
-                      real_second_pass = inspector._sha256_descriptor
+              with tempfile.TemporaryDirectory(prefix="nembra-field-double-pass-self-test-") as temporary:
+                  root = Path(temporary)
+                  source = root / "candidate.ipa"
+                  source.write_bytes(b"A" * 4096)
+                  accepted_snapshot = root / "accepted.ipa"
+                  snapshot_ipa_exact(source, accepted_snapshot)
+                  assert accepted_snapshot.read_bytes() == b"A" * 4096
+                  assert stat.S_IMODE(accepted_snapshot.stat().st_mode) == 0o400
 
-                      def mutate_then_hash(descriptor: int) -> tuple[str, int]:
-                          with ipa_path.open("r+b") as handle:
-                              handle.seek(0)
-                              handle.write(changed_ipa)
-                              handle.flush()
-                              os.fsync(handle.fileno())
-                          return real_second_pass(descriptor)
+                  source.write_bytes(b"A" * 4096)
+                  rejected_snapshot = root / "rejected.ipa"
+                  real_second_pass = _sha256_descriptor
 
-                      with patch.object(inspector, "_sha256_descriptor", side_effect=mutate_then_hash):
-                          with self.assertRaises(inspector.EvidenceError):
-                              inspector.snapshot_ipa_exact(ipa_path, snapshot_path)
+                  def mutate_before_second_pass(descriptor: int) -> tuple[str, int]:
+                      with source.open("r+b") as handle:
+                          handle.seek(0)
+                          handle.write(b"B" * 4096)
+                          handle.flush()
+                          os.fsync(handle.fileno())
+                      return real_second_pass(descriptor)
 
-                      self.assertFalse(
-                          snapshot_path.exists(),
-                          "A snapshot whose two complete source reads disagree must never survive as evidence input.",
-                      )
+                  with mock_patch(
+                      f"{__name__}._sha256_descriptor",
+                      side_effect=mutate_before_second_pass,
+                  ):
+                      try:
+                          snapshot_ipa_exact(source, rejected_snapshot)
+                      except EvidenceError:
+                          pass
+                      else:
+                          raise AssertionError("same-length mutation between exact IPA reads was accepted")
+                  assert not rejected_snapshot.exists()
           '''
-          if "test_snapshot_rejects_same_length_mutation_between_full_descriptor_passes" not in tests:
-              tests = tests.replace(marker, "\n" + regression + marker, 1)
-          test_path.write_text(tests, encoding="utf-8")
-
-          workflow_path = Path(".github/workflows/xcode27-pr-command.yml")
-          workflow = workflow_path.read_text(encoding="utf-8")
-          needle = "          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test\n"
-          addition = (
-              needle
-              + "          python3 -m py_compile scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n"
-              + "          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py\n"
-          )
-          if workflow.count(needle) != 1:
-              raise SystemExit("expected exactly one canonical signed-field self-test gate")
-          if "test_es80_signed_field_artifact_exact_subject.py" not in workflow:
-              workflow = workflow.replace(needle, addition, 1)
-          workflow_path.write_text(workflow, encoding="utf-8")
+          if "same-length mutation between exact IPA reads was accepted" not in text:
+              text = text.replace(marker, "\n" + self_test_regression + marker, 1)
+          source_path.write_text(text, encoding="utf-8")
           PY
 
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
@@ -177,6 +169,7 @@ jobs:
           python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
           git diff --check
 
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
           rm .github/workflows/tmp-es80-exact-subject-double-pass.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
