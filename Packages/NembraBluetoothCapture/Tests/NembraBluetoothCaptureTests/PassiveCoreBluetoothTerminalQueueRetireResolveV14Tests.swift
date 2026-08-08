@@ -161,14 +161,19 @@ struct PassiveCoreBluetoothTerminalQueueRetireResolveV14Tests {
         var events = [Event(queueSequence: 14, authority: authority, label: "gap")]
         let before = events
 
+        let error: Retirement.StateError?
+        do {
+            _ = try retire(&events, tail: 14, gate: gate)
+            error = nil
+        } catch let stateError as Retirement.StateError {
+            error = stateError
+        }
         #expect(
-            throws: Retirement.StateError.nonContiguousPendingQueueSequence(
+            error == .nonContiguousPendingQueueSequence(
                 expected: 13,
                 actual: 14
             )
-        ) {
-            _ = try retire(&events, tail: 14, gate: gate)
-        }
+        )
         #expect(events == before)
     }
 
