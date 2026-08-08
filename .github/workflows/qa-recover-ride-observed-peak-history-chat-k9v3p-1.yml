@@ -1,0 +1,40 @@
+name: Recovered observed-peak history exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/recover-ride-observed-peak-history-evidence/ci/chat-k9v3p-1
+
+permissions:
+  contents: read
+
+jobs:
+  observed-peak-history-recovery-qa:
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact recovery parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 1bbe7901759c6796e7d990eeebbf5796198fc179
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-recover-ride-observed-peak-history-chat-k9v3p-1.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Run NembraCore tests with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
