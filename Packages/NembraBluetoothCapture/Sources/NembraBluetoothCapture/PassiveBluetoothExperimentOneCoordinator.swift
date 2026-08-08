@@ -14,6 +14,7 @@ import Foundation
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
+        case fieldExecutionNotAuthorized
         case captureAdmissionAlreadyPrepared
         case captureAdmissionNotPrepared
         case correlatedTargetUnavailable
@@ -23,14 +24,10 @@ public final class PassiveBluetoothExperimentOneCoordinator {
 
     public let controller: ForegroundCoreBluetoothCaptureController
 
-    /// The only public correlation producer for this Experiment One life. The underlying run owns
-    /// this exact instance; app code must not create a second producer and splice its result in.
     public var powerCycleObservationSession: PassiveBluetoothPowerCycleObservationSession {
         run.powerCycleObservationSession
     }
 
-    /// Descriptive target identity for the currently prepared handoff. This UUID is not mutation
-    /// authority; the retained package-internal admission remains the sole capture ownership permit.
     public private(set) var preparedCorrelatedTargetIdentifier: UUID?
 
     public var hasPreparedCaptureAdmission: Bool {
@@ -40,22 +37,16 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,
-    /// never injected by app/UI code merely to make a run eligible.
-    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
+    /// Package-only deterministic composition seam. Product UI cannot inject a generic controller
+    /// and call that a field-authorized Experiment One. Public production construction is owned by
+    /// `makeAuthorizedES80()` in the canonical-ES80 extension and is mechanically gated there.
+    package init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
     }
 
-    /// Seals completed four-window correlation into this run's exact one-shot capture admission,
-    /// then opens a new controller scan epoch. `startScanning` clears the controller's candidate
-    /// catalog synchronously, so any target later accepted by `connectPreparedCapture` was received
-    /// after this admission was issued rather than replayed from pre-admission catalog state.
-    ///
-    /// If scan startup is temporarily unavailable, the already-issued admission remains retained and
-    /// `restartPreparedRediscovery()` may be called later. No second recorder/admission is minted.
     public func prepareCaptureRediscovery(
         startedAt: Date = Date()
     ) throws {
@@ -74,8 +65,6 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         try restartPreparedRediscovery()
     }
 
-    /// Starts another fresh controller scan epoch for the same already-issued admission. This does
-    /// not mint a new recorder or alter the four-window evidence authority.
     public func restartPreparedRediscovery() throws {
         guard pendingCaptureAdmission != nil,
               preparedCorrelatedTargetIdentifier != nil else {
@@ -84,15 +73,6 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         try controller.startScanning(captureAdvertisementCadence: true)
     }
 
-    /// Consumes the retained admission only after the exact correlated UUID has reappeared in the
-    /// controller catalog created after admission issuance. Calling this too early therefore fails
-    /// without consuming the one-shot handoff.
-    ///
-    /// Controller-side staging may still fail after this coordinator's descriptive catalog check
-    /// (for example because the exact post-admission advertisement has not reached the controller's
-    /// accepted freshness boundary yet). Those failures remain retryable only while the producer-owned
-    /// admission itself is still unconsumed. Once the controller consumes the admission, the local
-    /// handoff is cleared fail-closed even if a later irreversible step throws.
     public func connectPreparedCapture(
         timeout: TimeInterval = 12
     ) throws {
@@ -112,9 +92,6 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             pendingCaptureAdmission = nil
             preparedCorrelatedTargetIdentifier = nil
         } catch {
-            // `stagingPreview()` is producer-owned and read-only. It succeeds only while this exact
-            // one-shot admission remains unconsumed. Preserve the handoff for a legitimate retry in
-            // that case; otherwise clear it because downstream ownership may already have changed.
             if (try? admission.stagingPreview()) == nil {
                 pendingCaptureAdmission = nil
                 preparedCorrelatedTargetIdentifier = nil
