@@ -24,6 +24,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffOverrun
         case horizonArtifactNotReady
         case freshTargetSessionRequired
+        case resolvedFrontierDoesNotMatchResolution(expected: UInt64, actual: UInt64)
         case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
@@ -467,13 +468,15 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
     /// Reopens boundary admission after a successful terminal Horizon only when the
     /// producer-issued retired-FIFO resolution receipt still matches this exact gate
-    /// transaction, including its process-local UUID, and the controller has already
-    /// created one strictly newer durable target session. The exact fresh generation
+    /// transaction, including its process-local UUID. The controller must also have
+    /// applied the receipt's resolved-through frontier before admission can reopen, and
+    /// must already have created one strictly newer durable target session. The exact fresh generation
     /// remains bound until its first Ready begins; a different later generation cannot
     /// steal the reopened lifecycle.
     @MainActor
     mutating func reopenAfterTerminalQueueResolution(
         _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
+        currentResolvedThroughQueueSequence: UInt64,
         currentLastEnqueuedEventSequence: UInt64,
         freshTargetSessionGeneration: UInt64
     ) throws {
@@ -488,6 +491,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         }
         guard resolution.terminalAuthority == transaction.authority else {
             throw StateError.authorityChanged
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.resolvedFrontierDoesNotMatchResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
         }
         guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
             throw StateError.terminalQueueChangedAfterResolution(

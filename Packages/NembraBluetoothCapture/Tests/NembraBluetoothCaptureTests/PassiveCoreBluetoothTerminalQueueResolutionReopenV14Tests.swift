@@ -35,6 +35,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
 
         try gate.reopenAfterTerminalQueueResolution(
             resolution,
+            currentResolvedThroughQueueSequence: resolution.resolvedThroughQueueSequence,
             currentLastEnqueuedEventSequence: 14,
             freshTargetSessionGeneration: 8
         )
@@ -93,6 +94,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         #expect(throws: Gate.StateError.staleTransaction) {
             try gateB.reopenAfterTerminalQueueResolution(
                 resolutionA,
+                currentResolvedThroughQueueSequence: resolutionA.resolvedThroughQueueSequence,
                 currentLastEnqueuedEventSequence: 13,
                 freshTargetSessionGeneration: 8
             )
@@ -115,6 +117,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         ) {
             try gate.reopenAfterTerminalQueueResolution(
                 resolution,
+                currentResolvedThroughQueueSequence: resolution.resolvedThroughQueueSequence,
                 currentLastEnqueuedEventSequence: 14,
                 freshTargetSessionGeneration: 8
             )
@@ -129,6 +132,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         let resolution = try resolveTerminalQueue(gate: gate, tail: 12)
         try gate.reopenAfterTerminalQueueResolution(
             resolution,
+            currentResolvedThroughQueueSequence: resolution.resolvedThroughQueueSequence,
             currentLastEnqueuedEventSequence: 12,
             freshTargetSessionGeneration: 8
         )
