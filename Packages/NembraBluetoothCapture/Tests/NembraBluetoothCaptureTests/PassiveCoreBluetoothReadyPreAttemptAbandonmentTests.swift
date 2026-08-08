@@ -49,7 +49,8 @@ struct PassiveCoreBluetoothReadyPreAttemptAbandonmentTests {
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(!gate.isTerminal)
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 3) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAfterAbandonment = gate.resetForNewCaptureSession()
+        #expect(!resetAfterAbandonment)
         #expect((await recorder.snapshot()).observationBoundaries.isEmpty)
 
         #expect(throws: PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted) {
