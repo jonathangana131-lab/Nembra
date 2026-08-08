@@ -63,7 +63,8 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         #expect(abort.abandonedReadyTransactionIdentity == fixture.epoch.transactionIdentity)
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 3) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetWhileQuarantined = gate.resetForNewCaptureSession()
+        #expect(!resetWhileQuarantined)
 
         var pending = [
             PendingEvent(
