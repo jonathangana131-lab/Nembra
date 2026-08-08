@@ -1,0 +1,164 @@
+name: Temporary ES80 schema-v2 namespace and platform hardening
+
+on:
+  push:
+    branches:
+      - recovery/es80-v14-field-evidence-v2-closure-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/es80-v14-field-evidence-v2-closure-gpt56
+
+      - name: Align archive namespace and platform contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          p = Path('scripts/ci/es80_signed_field_artifact_evidence.py')
+          text = p.read_text()
+          if 'import unicodedata\n' not in text:
+              text = text.replace('import tempfile\n', 'import tempfile\nimport unicodedata\n', 1)
+
+          old = textwrap.dedent('''
+          def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
+              if member in seen_members:
+                  raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
+              seen_members.add(member)
+          ''').strip()
+          new = textwrap.dedent('''
+          def _filesystem_alias_key(parts: tuple[str, ...]) -> tuple[str, ...]:
+              return tuple(unicodedata.normalize("NFC", part).casefold() for part in parts)
+
+
+          def _require_unique_member_path(
+              member: PurePosixPath,
+              seen_members: set[PurePosixPath],
+              seen_aliases: dict[tuple[str, ...], PurePosixPath],
+          ) -> None:
+              if member in seen_members:
+                  raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
+
+              parts = member.parts
+              for depth in range(1, len(parts) + 1):
+                  prefix = PurePosixPath(*parts[:depth])
+                  key = _filesystem_alias_key(parts[:depth])
+                  previous = seen_aliases.get(key)
+                  if previous is not None and previous != prefix:
+                      raise EvidenceError(
+                          "IPA contains filesystem-aliasing ZIP member path: "
+                          f"{str(prefix)!r} aliases {str(previous)!r}"
+                      )
+                  seen_aliases[key] = prefix
+              seen_members.add(member)
+          ''').strip()
+          if old not in text:
+              raise SystemExit('unique-member helper shape changed')
+          text = text.replace(old, new, 1)
+
+          old = '    seen_members: set[PurePosixPath] = set()\n    with archive:\n'
+          new = '    seen_members: set[PurePosixPath] = set()\n    seen_aliases: dict[tuple[str, ...], PurePosixPath] = {}\n    with archive:\n'
+          if old not in text:
+              raise SystemExit('seen-member setup changed')
+          text = text.replace(old, new, 1)
+          old = '            _require_unique_member_path(member, seen_members)\n'
+          new = '            _require_unique_member_path(member, seen_members, seen_aliases)\n'
+          if old not in text:
+              raise SystemExit('unique-member call changed')
+          text = text.replace(old, new, 1)
+
+          start = text.index('def verify_device_platform(info: dict) -> tuple[str, list[str]]:')
+          end = text.index('\n\ndef _run(command: list[str])', start)
+          platform = textwrap.dedent('''
+          def verify_device_platform(info: dict) -> tuple[str, list[str]]:
+              platform = info.get("DTPlatformName")
+              supported = info.get("CFBundleSupportedPlatforms")
+              if not isinstance(supported, list) or not supported or not all(isinstance(item, str) for item in supported):
+                  raise EvidenceError("field IPA must carry a non-empty string CFBundleSupportedPlatforms array")
+              if len(set(supported)) != len(supported):
+                  raise EvidenceError("field IPA CFBundleSupportedPlatforms must not contain duplicate values")
+              for item in supported:
+                  if (
+                      not item
+                      or len(item.encode("utf-8")) > 256
+                      or item != item.strip()
+                      or any(ord(character) < 32 or ord(character) == 127 for character in item)
+                  ):
+                      raise EvidenceError("field IPA CFBundleSupportedPlatforms contains a malformed value")
+              if platform != "iphoneos":
+                  raise EvidenceError(f"field IPA must declare DTPlatformName=iphoneos; got {platform!r}")
+              if "iPhoneOS" not in supported:
+                  raise EvidenceError(f"field IPA must declare iPhoneOS in CFBundleSupportedPlatforms; got {supported!r}")
+              if any("simulator" in item.casefold() for item in supported):
+                  raise EvidenceError("Simulator platform declaration is forbidden in field IPA evidence")
+              return platform, supported
+          ''').lstrip()
+          text = text[:start] + platform + text[end:]
+          p.write_text(text)
+
+          t = Path('scripts/ci/tests/test_es80_signed_field_artifact_evidence.py')
+          tests = t.read_text()
+          anchor = '    def test_duplicate_app_payload_fails_closed(self):\n'
+          methods = textwrap.dedent('''
+              def test_case_or_unicode_aliasing_archive_namespace_fails_closed(self):
+                  cases = [
+                      [("Payload/nembra.app/Other", b"alias")],
+                      [
+                          ("Payload/Nembra.app/Café", b"first"),
+                          ("Payload/Nembra.app/Café", b"second"),
+                      ],
+                  ]
+                  for members in cases:
+                      with self.subTest(members=members), tempfile.TemporaryDirectory() as temp:
+                          ipa = Path(temp) / "Nembra.ipa"
+                          make_ipa(ipa, extra_members=members)
+                          with self.assertRaisesRegex(signed_field_evidence.EvidenceError, "filesystem-aliasing"):
+                              signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+
+              def test_platform_array_matches_closed_world_consumer_rules(self):
+                  cases = [
+                      (["iPhoneOS", "iPhoneOS"], "duplicate"),
+                      (["iPhoneOS", "iphonesimulator"], "Simulator"),
+                      (["iPhoneOS", " WatchOS"], "malformed"),
+                  ]
+                  for supported, message in cases:
+                      with self.subTest(supported=supported), tempfile.TemporaryDirectory() as temp:
+                          ipa = Path(temp) / "Nembra.ipa"
+                          make_ipa(ipa, extra_plist={"CFBundleSupportedPlatforms": supported})
+                          with self.assertRaisesRegex(signed_field_evidence.EvidenceError, message):
+                              signed_field_evidence.inspect_ipa(ipa, HEAD, signing_probe=fake_signing_probe)
+          ''')
+          methods = textwrap.indent(methods.strip() + '\n\n', '    ')
+          if anchor not in tests:
+              raise SystemExit('test insertion anchor changed')
+          tests = tests.replace(anchor, methods + anchor, 1)
+          t.write_text(tests)
+          PY
+
+      - name: Run focused producer regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_evidence.py
+          python3 -m unittest discover -s scripts/ci/tests -p 'test_es80_signed_field_artifact_evidence.py' -v
+
+      - name: Commit tested delta and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-es80-v2-namespace-platform.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_evidence.py .github/workflows/tmp-es80-v2-namespace-platform.yml
+          git diff --cached --check
+          git commit -m '[Capture field provenance v14] Reject IPA namespace aliases and platform drift'
+          git push origin HEAD:recovery/es80-v14-field-evidence-v2-closure-gpt56
