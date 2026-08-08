@@ -697,10 +697,17 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                     lastProcessedQueueSequence: lastProcessedEventSequence
                 )
             } catch {
-                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
-                    recordedHorizon
-                )
-                throw error
+                let recordedHorizonFailure = error
+                do {
+                    try observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                        recordedHorizon
+                    )
+                } catch {
+                    // Durable H exists but exact quarantine could not be proven.
+                    // That lifecycle-authority failure outranks the queue-commit error.
+                    throw error
+                }
+                throw recordedHorizonFailure
             }
 
             let data: Data
@@ -980,11 +987,18 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                                 lastProcessedQueueSequence: self.lastProcessedEventSequence
                             )
                         } catch {
+                            let recordedReadyFailure = error
                             // Recorder mutation already happened, so quarantine with
                             // the distinct recorded-before-commit origin. Never label
                             // this a zero-mutation rejection.
-                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
-                            throw error
+                            do {
+                                try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
+                            } catch {
+                                // Durable Ready exists but exact quarantine could not
+                                // be proven. Surface the stronger lifecycle failure.
+                                throw error
+                            }
+                            throw recordedReadyFailure
                         }
                     }
                 } catch {
