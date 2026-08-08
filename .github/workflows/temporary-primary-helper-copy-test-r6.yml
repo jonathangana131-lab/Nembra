@@ -1,0 +1,32 @@
+name: Temporary Capture primary-helper copy focused test r6
+
+on:
+  push:
+    branches:
+      - agent/capture-primary-helper-copy-v14-r6
+
+permissions:
+  contents: write
+
+jobs:
+  focused-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-primary-helper-copy-v14-r6
+          fetch-depth: 0
+
+      - name: Run current helper/preflight acceptance test
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter ES80CapturePrimaryHelperCopyTests
+
+      - name: Remove temporary workflow after green focused test
+        if: success()
+        run: |
+          git config user.name "nembra-v14-primary-helper-copy"
+          git config user.email "noreply@github.com"
+          git rm .github/workflows/temporary-primary-helper-copy-test-r6.yml
+          git diff --cached --check
+          git commit -m "ci: remove temporary helper-copy focused test"
+          git push origin HEAD:agent/capture-primary-helper-copy-v14-r6
