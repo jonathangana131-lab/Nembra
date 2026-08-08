@@ -1,0 +1,93 @@
+name: Stack ES80 Atomic Publication On Hermetic Signer
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-auth-envelope-stack1062-work/gpt56-thinking
+
+permissions:
+  contents: write
+
+concurrency:
+  group: es80-stack-atomic-on-hermetic
+  cancel-in-progress: true
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact scratch head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify expected hermetic parent
+        env:
+          EXPECTED_HERMETIC_HEAD: 7054aef1922f3584a1822cd592d8cb1968ba55fe
+        run: |
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_HERMETIC_HEAD"
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/es80-stack-atomic-on-hermetic.yml"
+
+      - name: Three-way compose validated atomic publication commit
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Capture Worker"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git fetch --no-tags origin cb6a3b9c7376dbdf0f7821e9acd8ba51c2b27cd6
+          git cherry-pick cb6a3b9c7376dbdf0f7821e9acd8ba51c2b27cd6
+          test -f scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          grep -q 'def publish_file_no_replace' scripts/ci/es80_field_authorization_envelope.py
+          grep -q 'OPENSSL_COMMAND_TIMEOUT_SECONDS = 30' scripts/ci/es80_field_authorization_envelope.py
+          grep -q 'DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")' scripts/ci/es80_field_authorization_envelope.py
+
+      - name: Add atomic regression to fast exact-head authority gate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/xcode27-pr-command.yml")
+          source = path.read_text(encoding="utf-8")
+          start = source.index("  authority-tooling-qa:\n")
+          end = source.index("\n  simulator-qa:\n", start)
+          block = source[start:end]
+          marker = "          python3 scripts/ci/es80_field_authorization_envelope.py --self-test\n"
+          atomic_compile = "          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n"
+          atomic_run = "          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py\n"
+          if block.count(marker) != 1:
+              raise SystemExit("unexpected fast authority signer marker count")
+          if "test_es80_field_authorization_atomic_publication.py" in block:
+              raise SystemExit("atomic regression unexpectedly already present in fast authority gate")
+          block = block.replace(marker, marker + atomic_compile + atomic_run, 1)
+          source = source[:start] + block + source[end:]
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Validate combined signer authority contract
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/xcode27-pr-command.yml').read_text(encoding='utf-8')
+          if workflow.count('python3 scripts/ci/tests/test_es80_field_authorization_atomic_publication.py') != 2:
+              raise SystemExit('atomic regression must be present in both fast authority and Mac signer gates')
+          PY
+          git diff --check
+
+      - name: Publish product-only stacked checkpoint
+        run: |
+          set -euo pipefail
+          rm .github/workflows/es80-stack-atomic-on-hermetic.yml
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add -A
+          git diff --cached --check
+          git commit -m "Stack atomic publication on hermetic authorization signer" \
+            -m "Preserve explicit root-custodied OpenSSL and closed subprocess execution while making final envelope publication failure-atomic. Run the atomic regression in both fast exact-head authority tooling and final Mac product QA. Physical Experiment One remains NO-GO."
+          git push origin HEAD:${GITHUB_REF_NAME}
