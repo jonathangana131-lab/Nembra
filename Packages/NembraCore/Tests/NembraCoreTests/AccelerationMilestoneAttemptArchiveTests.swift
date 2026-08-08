@@ -59,6 +59,16 @@ struct AccelerationMilestoneAttemptArchiveTests {
         return suite
     }
 
+    private func completeArchiveData() throws -> Data {
+        try JSONEncoder().encode(
+            AccelerationMilestoneAttemptArchive(
+                snapshot: completeSuite().snapshot,
+                attemptID: attemptID,
+                archivedAt: epoch
+            )
+        )
+    }
+
     @Test("qualified milestones round-trip with their exact qualification policy")
     func qualifiedRoundTrip() throws {
         let suite = try completeSuite()
@@ -137,12 +147,7 @@ struct AccelerationMilestoneAttemptArchiveTests {
 
     @Test("archive encoding contains no raw uptime anchors that could be resumed")
     func encodedArchiveDoesNotPersistProcessUptimeAnchors() throws {
-        let archive = try AccelerationMilestoneAttemptArchive(
-            snapshot: completeSuite().snapshot,
-            attemptID: attemptID,
-            archivedAt: epoch
-        )
-        let data = try JSONEncoder().encode(archive)
+        let data = try completeArchiveData()
         let json = try #require(String(data: data, encoding: .utf8))
 
         #expect(!json.contains("earliestUptimeNanoseconds"))
@@ -154,13 +159,7 @@ struct AccelerationMilestoneAttemptArchiveTests {
 
     @Test("decoder rejects a forged qualified target outside the requested attempt")
     func decodeRejectsUnrequestedQualifiedTarget() throws {
-        let data = try JSONEncoder().encode(
-            AccelerationMilestoneAttemptArchive(
-                snapshot: completeSuite().snapshot,
-                attemptID: attemptID,
-                archivedAt: epoch
-            )
-        )
+        let data = try completeArchiveData()
         var object = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
@@ -179,15 +178,33 @@ struct AccelerationMilestoneAttemptArchiveTests {
         }
     }
 
+    @Test("decoder reapplies archived quality thresholds instead of trusting the qualified label")
+    func decodeRejectsQualityThatNoLongerMeetsArchivedPolicy() throws {
+        let data = try completeArchiveData()
+        var object = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var milestones = try #require(
+            object["qualifiedMilestones"] as? [[String: Any]]
+        )
+        var quality = try #require(milestones[0]["quality"] as? [String: Any])
+        quality["intervalJitterStandardDeviationMilliseconds"] = 400.0
+        milestones[0]["quality"] = quality
+        object["qualifiedMilestones"] = milestones
+        let forged = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: AccelerationMilestoneAttemptArchiveError
+            .archivedQualityNotQualified(targetMetersPerSecond: 2)) {
+            _ = try JSONDecoder().decode(
+                AccelerationMilestoneAttemptArchive.self,
+                from: forged
+            )
+        }
+    }
+
     @Test("decoder rejects impossible motion-assist authority")
     func decodeRejectsMotionAssistAuthority() throws {
-        let data = try JSONEncoder().encode(
-            AccelerationMilestoneAttemptArchive(
-                snapshot: completeSuite().snapshot,
-                attemptID: attemptID,
-                archivedAt: epoch
-            )
-        )
+        let data = try completeArchiveData()
         var object = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
@@ -208,13 +225,7 @@ struct AccelerationMilestoneAttemptArchiveTests {
 
     @Test("decoder rejects negative elapsed evidence and unknown schema")
     func decodeRejectsCorruptEvidenceAndSchema() throws {
-        let data = try JSONEncoder().encode(
-            AccelerationMilestoneAttemptArchive(
-                snapshot: completeSuite().snapshot,
-                attemptID: attemptID,
-                archivedAt: epoch
-            )
-        )
+        let data = try completeArchiveData()
 
         var corruptObject = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
