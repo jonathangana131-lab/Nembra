@@ -55,6 +55,37 @@ jobs:
             core.setOutput('pr_number', String(pr.number))
             core.setOutput('same_repo', String(pr.head.repo.full_name === repository))
 
+  authority-tooling-qa:
+    name: Validate exact-head field authority tooling
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    concurrency:
+      group: nembra-field-authority-${{ needs.resolve.outputs.pr_number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          actual_head="$(git rev-parse HEAD)"
+          printf 'Expected exact PR head: %s\nActual checkout head: %s\n' "$EXPECTED_HEAD_SHA" "$actual_head"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
   simulator-qa:
     name: Build, test, and capture exact PR head
     needs: resolve
