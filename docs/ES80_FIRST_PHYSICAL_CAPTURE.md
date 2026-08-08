@@ -8,6 +8,14 @@ This procedure defines **one** minimal physical experiment. Its purpose is to mo
 
 It is intentionally stationary and foreground-only. It is not a riding test, battery-decoding test, stock-app correlation test, command test, or proof of any Tuya DP semantic.
 
+## V13 supersession boundary
+
+This file is the current V13 procedure for Nembra's **first** physical ES80 action.
+
+If `docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md` is also present, treat that file's V11 multi-session matrix as historical research planning. Its Session A / “smallest first physical action” is superseded by this procedure. Do not proceed automatically into its reconnect, charging, post-ride, or controlled-riding sessions after the first capture.
+
+After this first artifact is analyzed, the next experiment must be selected from the actual physical evidence and revalidated against the then-accepted V13 capture/provenance/tooling contracts. Historical V11 session ordering is not authority for the next physical action.
+
 ## Run gate
 
 Do not run this experiment until all of the following are true:
