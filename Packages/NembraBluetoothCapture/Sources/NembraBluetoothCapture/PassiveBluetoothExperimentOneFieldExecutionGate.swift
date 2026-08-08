@@ -1,29 +1,114 @@
+import Foundation
+
 /// Package-owned field-execution lock for the first physical ES80 experiment.
 ///
-/// The default V14 product state remains mechanically NO-GO. The zero-argument status and Boolean
-/// intentionally cannot be changed by app preferences, launch markers, Info.plist values, typed
-/// identifiers, or caller-supplied flags.
+/// The release-grade V14 product state remains mechanically NO-GO. The zero-argument production
+/// status and Boolean intentionally cannot be changed by app preferences, launch arguments, typed
+/// identifiers, caller-supplied flags, Settings, or imported JSON.
 ///
-/// A future accepted field build may present a `PassiveBluetoothCaptureVerifiedFieldAuthorization`
-/// minted by the package's independent-signature verifier. `admit(verifiedAuthorization:)` turns
-/// only that non-forgeable verifier output into a package-owned `VerifiedAdmission` capability.
-/// The capability has no public initializer and is the only value a future live-controller factory
-/// may accept. Production cannot mint one today because the package trust root is deliberately
-/// unconfigured.
+/// TODAY's private Research Field Build is a deliberately separate, narrower authority lane. The
+/// package may mint `ResearchBuildAdmission` only from the current installed application's signed
+/// Info.plist when all exact producer metadata is present and the build-time recipe is exactly
+/// `ES80-FINGERPRINT-v1`. There is no public initializer and no API that accepts caller-provided
+/// metadata, so app code cannot turn a preference or arbitrary JSON object into this capability.
 ///
-/// This is build/procedure authority only. Possession of a valid admission does not authenticate an
+/// The existing release-grade `VerifiedAdmission` path remains independently signature-bound and
+/// fail-closed while its trust root/policy is not configured. Research admission does not weaken or
+/// substitute for that future release path.
+///
+/// Both forms are build/procedure authority only. Possession of an admission does not authenticate an
 /// AOVOPRO ES80, prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write
-/// callback into physical acknowledgement.
+/// callback into physical acknowledgement. Stationary + charger-disconnected preflight, deterministic
+/// target correlation, explicit operator action, and the no-application-write invariant remain owned
+/// by the downstream Experiment One workflow.
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
     public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
 
-    /// Current product state. This deliberately remains false until the app is explicitly wired to
-    /// consume a separately verified field-authorization capability in a later accepted change.
+    private static let fieldRecipeInfoPlistKey = "NembraCaptureFieldRecipe"
+    private static let buildIdentifierInfoPlistKey = "NembraCaptureBuildIdentifier"
+    private static let buildInstanceIDInfoPlistKey = "NembraCaptureBuildInstanceID"
+    private static let sourceCommitSHAInfoPlistKey = "NembraCaptureBuildCommitSHA"
+    private static let expectedBuildIdentifierPrefix = "Capture Build V14-"
+
+    /// Release-grade production policy remains NO-GO. A research build must use the separate
+    /// current-application admission path below rather than silently broadening this authority.
     public static var permitsPhysicalProcedure: Bool {
         switch status {
         case .noGo:
             return false
+        }
+    }
+
+    /// Whether this exact running application can mint TODAY's narrow private-research capability.
+    ///
+    /// This reads only `Bundle.main`; callers cannot supply an alternate dictionary or Settings value.
+    public static var permitsCurrentApplicationResearchProcedure: Bool {
+        admitCurrentApplicationResearchBuild() != nil
+    }
+
+    /// Non-forgeable package capability for TODAY's exact-source private Research Field Build.
+    ///
+    /// The capability is intentionally smaller than release-grade signed-field authority: it binds
+    /// the recipe and exact producer build identity carried by the installed app's signed Info.plist.
+    /// It is sufficient only for the first private stationary passive capture under the active TODAY
+    /// freeze directive; it must not be promoted to general/public release authorization.
+    public struct ResearchBuildAdmission: Equatable, Sendable {
+        public let recipeID: PassiveBluetoothExperimentRecipeID
+        public let buildIdentifier: String
+        public let buildInstanceID: String
+        public let sourceCommitSHA: String
+
+        fileprivate init(
+            recipeID: PassiveBluetoothExperimentRecipeID,
+            buildIdentifier: String,
+            buildInstanceID: String,
+            sourceCommitSHA: String
+        ) {
+            self.recipeID = recipeID
+            self.buildIdentifier = buildIdentifier
+            self.buildInstanceID = buildInstanceID
+            self.sourceCommitSHA = sourceCommitSHA
+        }
+    }
+
+    /// Mint TODAY's narrow research capability only from the current installed app's build metadata.
+    ///
+    /// The canonical signed-field producer already stamps all four required values into the archive's
+    /// Info.plist at build time. Code signing covers the installed app bundle; the normal app has no
+    /// runtime Settings/import path that can add these members. Exact retained IPA/signing acceptance
+    /// remains a separate final field-run prerequisite rather than being claimed by this runtime gate.
+    public static func admitCurrentApplicationResearchBuild() -> ResearchBuildAdmission? {
+        researchBuildAdmission(infoDictionary: Bundle.main.infoDictionary ?? [:])
+    }
+
+    /// Pure parser used only by package tests. It is internal so app clients cannot feed arbitrary
+    /// dictionaries into the authority minting path.
+    static func researchBuildAdmission(
+        infoDictionary: [String: Any]
+    ) -> ResearchBuildAdmission? {
+        guard let rawRecipe = infoDictionary[fieldRecipeInfoPlistKey] as? String,
+              rawRecipe == recipeID.rawValue,
+              let buildIdentifier = infoDictionary[buildIdentifierInfoPlistKey] as? String,
+              let buildInstanceID = infoDictionary[buildInstanceIDInfoPlistKey] as? String,
+              UUID(uuidString: buildInstanceID) != nil,
+              let sourceCommitSHA = infoDictionary[sourceCommitSHAInfoPlistKey] as? String,
+              isExactGitCommitSHA(sourceCommitSHA),
+              buildIdentifier == expectedBuildIdentifierPrefix + sourceCommitSHA.prefix(12) else {
+            return nil
+        }
+
+        return ResearchBuildAdmission(
+            recipeID: recipeID,
+            buildIdentifier: buildIdentifier,
+            buildInstanceID: buildInstanceID,
+            sourceCommitSHA: sourceCommitSHA
+        )
+    }
+
+    private static func isExactGitCommitSHA(_ value: String) -> Bool {
+        value.count == 40 && value.allSatisfy { character in
+            ("0"..."9").contains(character) || ("a"..."f").contains(character)
         }
     }
 
@@ -84,7 +169,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     }
 
     public enum NoGoBlocker: Equatable, Sendable {
-        /// The final app-visible Capture composition has not yet earned the V14 physical GO record.
+        /// The release-grade final app-visible Capture composition has not yet earned V14 physical GO.
         case finalComposedBuildNotAuthorized
     }
 }
