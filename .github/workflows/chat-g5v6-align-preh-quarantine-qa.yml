@@ -11,7 +11,7 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: parallel/es80-preh-quarantine-qa-repair/chat-g5v6
           fetch-depth: 0
@@ -24,68 +24,24 @@ jobs:
           p = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothPreHObservationRecoveryTests.swift')
           s = p.read_text()
 
-          def replace_one(old: str, new: str) -> None:
-              global s
-              count = s.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one match, got {count}: {old[:100]!r}')
+          title_old = '@Test("committed Ready abort preserves exact identity and reopens only for bound fresh session")'
+          title_new = '@Test("committed Ready abort preserves exact identity and raw retirement stays quarantined")'
+          fn_old = 'func committedReadyAbortRequiresRetirementAndExactFreshSession() async throws {'
+          fn_new = 'func committedReadyAbortRetirementKeepsQuarantineClosed() async throws {'
+          for old, new in ((title_old, title_new), (fn_old, fn_new)):
+              if s.count(old) != 1:
+                  raise SystemExit(f'expected one match for {old!r}, got {s.count(old)}')
               s = s.replace(old, new, 1)
 
-          replace_one(
-              '@Test("committed Ready abort preserves exact identity and reopens only for bound fresh session")',
-              '@Test("committed Ready abort preserves exact identity and raw retirement stays quarantined")'
-          )
-          replace_one(
-              'func committedReadyAbortRequiresRetirementAndExactFreshSession() async throws {',
-              'func committedReadyAbortRetirementKeepsQuarantineClosed() async throws {'
-          )
-          replace_one(
-          '''        try gate.completeAbortedObservationRecovery(
-              retirement,
-              currentLastEnqueuedEventSequence: 3,
-              freshTargetSessionGeneration: 8
-          )
-          #expect(gate.phase == .awaitingReady)
+          start_token = '        try gate.completeAbortedObservationRecovery('
+          next_test_token = '    @Test("canonical fence rejection proves zero Ready mutation and consumes one-shot admission")'
+          start = s.find(start_token)
+          next_test = s.find(next_test_token, start)
+          if start < 0 or next_test < 0 or next_test <= start:
+              raise SystemExit(f'could not locate stale reopen region: start={start} next_test={next_test}')
 
-          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
-              _ = try gate.begin(
-                  .finiteAcquisitionReady,
-                  through: 4,
-                  authority: .init(targetSessionGeneration: 7, authorityGeneration: 99)
-              )
-          }
-          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
-              _ = try gate.begin(
-                  .finiteAcquisitionReady,
-                  through: 4,
-                  authority: .init(targetSessionGeneration: 9, authorityGeneration: 1)
-              )
-          }
-          _ = try gate.begin(
-              .finiteAcquisitionReady,
-              through: 4,
-              authority: .init(targetSessionGeneration: 8, authorityGeneration: 1)
-          )
-          ''',
-          '''        #expect(retirement.retainedPendingEvidenceCount == 0)
-          #expect(gate.phase == .abortQuarantined(abort))
-          #expect(!gate.resetForNewCaptureSession())
-          #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)
-
-          let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
-              targetSessionGeneration: authority.targetSessionGeneration + 1,
-              authorityGeneration: 1
-          )
-          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
-              _ = try gate.begin(
-                  .finiteAcquisitionReady,
-                  through: 4,
-                  authority: freshAuthority
-              )
-          }
-          #expect(gate.phase == .abortQuarantined(abort))
-          ''')
-
+          replacement = '''        #expect(retirement.retainedPendingEvidenceCount == 0)\n        #expect(gate.phase == .abortQuarantined(abort))\n        #expect(!gate.resetForNewCaptureSession())\n        #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)\n\n        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(\n            targetSessionGeneration: authority.targetSessionGeneration + 1,\n            authorityGeneration: 1\n        )\n        #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {\n            _ = try gate.begin(\n                .finiteAcquisitionReady,\n                through: 4,\n                authority: freshAuthority\n            )\n        }\n        #expect(gate.phase == .abortQuarantined(abort))\n    }\n\n'''
+          s = s[:start] + replacement + s[next_test:]
           p.write_text(s)
           PY
 
