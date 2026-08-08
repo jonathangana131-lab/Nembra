@@ -69,13 +69,17 @@ enum PassiveBluetoothCaptureFieldAuthorizationTrustAnchor {
 /// its retained signed-field-artifact evidence, and the schema-v3 external build record are known and
 /// independently accepted.
 ///
+/// Authorization payload schema v2 is intentionally incompatible with the earlier build-record-only
+/// v1 shape: v2 requires the exact retained signed-field-evidence and retained-IPA digests as signed
+/// subjects. A legacy v1 GO therefore cannot silently acquire the stronger v2 meaning.
+///
 /// The exact field-evidence and IPA digests are deliberately part of the signed payload rather than
 /// inferred from a matching build tuple. This prevents a future GO issuer from accidentally blessing
 /// only build-label/runtime self-consistency while omitting the exact signed-installable evidence that
 /// V14 requires before physical execution can be considered.
 public enum PassiveBluetoothCaptureFieldAuthorizationVerifier {
     public static let envelopeSchemaVersion = 1
-    public static let authorizationPayloadSchemaVersion = 1
+    public static let authorizationPayloadSchemaVersion = 2
 
     private struct EnvelopeWire: Decodable {
         let schemaVersion: Int
