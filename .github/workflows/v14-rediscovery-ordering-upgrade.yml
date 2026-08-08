@@ -1,0 +1,56 @@
+name: V14 rediscovery ordering upgrade
+
+on:
+  push:
+    branches:
+      - feature/es80-v14-rediscovery-ordering-upgrade/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install stricter validated product blobs
+        run: |
+          set -euo pipefail
+          git checkout ab4c41fec39d42b52c5009f98e3cfc25ab37d243 -- \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          c = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift').read_text()
+          a = c.index('func connectUsingExperimentOneAdmission(')
+          b = c.index('public func cancelActiveConnection()', a)
+          m = c[a:b]
+          assert 'previewForControllerStaging()' in m
+          assert 'receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds' in m
+          assert 'receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds' not in m
+          assert m.index('latestAdvertisementByIdentifier[') < m.index('admission.consume()') < m.index('recorder = payload.recorder')
+          assert m.count('admission.consume()') == 1
+          r = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift').read_text()
+          assert 'struct StagingPreview: Equatable, Sendable' in r
+          p = r[r.index('struct StagingPreview: Equatable, Sendable'):r.index('struct Payload', r.index('struct StagingPreview: Equatable, Sendable'))]
+          assert 'fileprivate init(' in p
+          assert 'recorder' not in p
+          assert 'powerCycleEvidence' not in p
+          assert Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift').exists()
+          # Successful-terminal recovery landed on the parent; preserve its controller seam.
+          assert 'completeTerminalFreshTargetSessionIfReady' in c
+          PY
+          git diff --check
+      - name: Publish clean upgrade
+        run: |
+          set -euo pipefail
+          rm .github/workflows/v14-rediscovery-ordering-upgrade.yml
+          git add -A
+          git diff --cached --check
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git commit -m "Capture: require strictly fresh rediscovery before admission handoff"
+          git push origin HEAD:feature/es80-v14-rediscovery-ordering-upgrade/gpt56-thinking
