@@ -226,6 +226,15 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         let eventWatermark: UInt64
     }
 
+    /// Sealed software provenance retained only for a target session that entered
+    /// through the package-owned Experiment One admission. Generic research
+    /// `connect(to:)` sessions never receive this authority.
+    private struct ExperimentOneCaptureAuthority {
+        let admissionIdentity: UUID
+        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
+        let peripheralIdentifier: UUID
+    }
+
     public private(set) var bluetoothState: CBManagerState = .unknown
 
     /// True while Nembra still owns an explicit foreground scan request. This is
@@ -328,6 +337,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// Once the app leaves foreground, that capture cannot regain export/finalization
     /// authority merely by reconnecting transport.
     private var foregroundEvidenceIntegrityValid = true
+    private var experimentOneCaptureAuthority: ExperimentOneCaptureAuthority?
     private var scanRequested = false
 
     private var centralManager: CBCentralManager!
@@ -436,6 +446,58 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         to peripheralIdentifier: UUID,
         timeout: TimeInterval = 12
     ) throws {
+        let candidate = try connectionCandidate(
+            for: peripheralIdentifier,
+            timeout: timeout
+        )
+        try beginTargetSessionIfNeeded(for: peripheralIdentifier)
+        try beginConnectionAttempt(
+            on: candidate.peripheral,
+            timeoutNanoseconds: candidate.timeoutNanoseconds
+        )
+    }
+
+    /// Consumes one producer-owned Experiment One admission and starts capture on
+    /// the exact correlated peripheral/recorder pair it carries. This method is
+    /// intentionally package-internal: app/UI code cannot supply a UUID or recorder
+    /// directly and cannot construct the admission type.
+    func connect(
+        using admission: PassiveBluetoothExperimentOneCaptureAdmission,
+        timeout: TimeInterval = 12
+    ) throws {
+        try ensureCaptureHealthy()
+        guard recorder == nil,
+              targetState.selectedTargetIdentifier == nil,
+              experimentOneCaptureAuthority == nil,
+              vehicleIdentity == VehicleProfile.aovoproES80.identity else {
+            throw ControllerError.captureIncomplete
+        }
+
+        // Consumption is the provenance mutation point. If the current controller
+        // catalog no longer contains this exact UUID, the one-shot is burned rather
+        // than being replayed after another scan epoch.
+        let payload = try admission.consume()
+        guard case let .singleRepeatableCandidate(correlatedIdentifier) =
+                payload.powerCycleEvidence.result.correlation.disposition,
+              correlatedIdentifier == payload.peripheralIdentifier else {
+            throw ControllerError.captureIncomplete
+        }
+
+        let candidate = try connectionCandidate(
+            for: payload.peripheralIdentifier,
+            timeout: timeout
+        )
+        try beginExperimentOneTargetSession(using: payload)
+        try beginConnectionAttempt(
+            on: candidate.peripheral,
+            timeoutNanoseconds: candidate.timeoutNanoseconds
+        )
+    }
+
+    private func connectionCandidate(
+        for peripheralIdentifier: UUID,
+        timeout: TimeInterval
+    ) throws -> (peripheral: CBPeripheral, timeoutNanoseconds: UInt64) {
         try ensureCaptureHealthy()
         guard !observationBoundaryQueueGate.isTerminal else {
             throw ControllerError.captureFinalized
@@ -454,7 +516,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard connectionPhase == .idle else {
             throw ControllerError.connectionAlreadyActive
         }
-        guard let peripheral = peripheralByIdentifier[peripheralIdentifier] else {
+        // Both maps are reset together at every explicit scan start. Requiring the
+        // live object and discovery projection prevents an admission from reviving a
+        // CoreBluetooth object retained outside the current candidate epoch.
+        guard let peripheral = peripheralByIdentifier[peripheralIdentifier],
+              latestDiscoveryByIdentifier[peripheralIdentifier] != nil else {
             throw ControllerError.unknownPeripheral(peripheralIdentifier)
         }
         if latestDiscoveryByIdentifier[peripheralIdentifier]?.isConnectable == false {
@@ -471,7 +537,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        try beginTargetSessionIfNeeded(for: peripheralIdentifier)
+        return (peripheral, timeoutNanoseconds)
+    }
+
+    private func beginConnectionAttempt(
+        on peripheral: CBPeripheral,
+        timeoutNanoseconds: UInt64
+    ) throws {
+        let peripheralIdentifier = peripheral.identifier
         do {
             _ = try targetState.beginAttempt(for: peripheralIdentifier)
         } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
@@ -783,10 +856,6 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             return
         }
 
-        guard targetSessionGeneration != UInt64.max else {
-            throw ControllerError.captureFailed
-        }
-
         let latestAdvertisement = latestAdvertisementByIdentifier[identifier]
         let startedAt = latestAdvertisement?.receivedAtDate
             ?? (!hasUsedInitialSessionIdentity ? firstSessionStartedAtOverride : nil)
@@ -798,6 +867,44 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             startedAt: startedAt
         )
 
+        try publishTargetSession(
+            for: identifier,
+            recorder: newRecorder,
+            latestAdvertisement: latestAdvertisement,
+            experimentOneAuthority: nil
+        )
+    }
+
+    private func beginExperimentOneTargetSession(
+        using payload: PassiveBluetoothExperimentOneCaptureAdmission.Payload
+    ) throws {
+        guard recorder == nil,
+              targetState.selectedTargetIdentifier == nil else {
+            throw ControllerError.captureIncomplete
+        }
+
+        let authority = ExperimentOneCaptureAuthority(
+            admissionIdentity: payload.admissionIdentity,
+            powerCycleEvidence: payload.powerCycleEvidence,
+            peripheralIdentifier: payload.peripheralIdentifier
+        )
+        try publishTargetSession(
+            for: payload.peripheralIdentifier,
+            recorder: payload.recorder,
+            latestAdvertisement: latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+            experimentOneAuthority: authority
+        )
+    }
+
+    private func publishTargetSession(
+        for identifier: UUID,
+        recorder newRecorder: PassiveCoreBluetoothCaptureRecorder,
+        latestAdvertisement: CandidateAdvertisement?,
+        experimentOneAuthority: ExperimentOneCaptureAuthority?
+    ) throws {
+        guard targetSessionGeneration != UInt64.max else {
+            throw ControllerError.captureFailed
+        }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
@@ -828,11 +935,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
-        // Only publication of a genuinely fresh durable recorder/session may
-        // restore foreground-only evidence validity after a prior scene loss.
         foregroundEvidenceIntegrityValid = true
+        experimentOneCaptureAuthority = experimentOneAuthority
         hasUsedInitialSessionIdentity = true
-        recorder = newRecorder
+        self.recorder = newRecorder
 
         // Preserve at most the selected candidate's latest already-observed
         // advertisement, with the exact callback clocks from when it was actually
