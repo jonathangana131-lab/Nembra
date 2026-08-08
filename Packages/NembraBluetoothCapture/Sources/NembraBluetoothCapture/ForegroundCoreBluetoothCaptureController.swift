@@ -427,12 +427,19 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// A different selected target may start immediately and late callbacks from
     /// the cancelled target are ignored for that new session.
     public func cancelActiveConnection() {
+        cancelActiveConnection(boundary: .recordCancellationRequest)
+    }
+
+    private func cancelActiveConnection(boundary: PassiveCoreBluetoothCancellationBoundary) {
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
         guard let peripheral = activePeripheral else { return }
         lastDiagnostic = "Connection cancellation requested."
 
         if targetState.selectedTargetIdentifier == peripheral.identifier {
+            if boundary.shouldRecordCancellationRequest {
+                enqueueInterruption("connection cancellation requested")
+            }
             selectedTargetCancellationPending = true
             if !acquisitionLedger.isReady {
                 acquisitionLedger.finishWithoutGattAcquisition()
@@ -651,7 +658,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             let pendingOperationCount = self.acquisitionLedger.pendingOperationCount
             let timeoutDiagnostic = "Finite GATT acquisition timed out after no progress; \(pendingOperationCount) finite operation(s) remain pending."
             self.enqueueInterruption("finite GATT acquisition progress timed out")
-            self.cancelActiveConnection()
+            self.cancelActiveConnection(boundary: .interruptionAlreadyRecorded)
             self.lastDiagnostic = timeoutDiagnostic
         }
     }
@@ -1058,6 +1065,12 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        guard PassiveCoreBluetoothDiscoveryAdmissionPolicy.accepts(
+            callbackIsFromActiveManager: central === centralManager,
+            isPoweredOn: central.state == .poweredOn,
+            isScanning: isScanning
+        ) else { return }
+
         let receipt = callbackReceipt()
         let normalizedRSSI = DiscoveredPeripheral.normalizedRSSI(RSSI.intValue)
 
