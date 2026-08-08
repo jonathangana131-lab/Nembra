@@ -971,7 +971,27 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
-                    try self.ensureCaptureHealthy()
+                    // Ready allocation has already moved the queue gate into its exact
+                    // draining transaction. If the drained prefix reveals capture failure
+                    // before the first recorder attempt, consume the producer-owned unused
+                    // admission and quarantine that exact zero-Ready-mutation transaction.
+                    do {
+                        try self.ensureCaptureHealthy()
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderAttempt()
+                            try self.observationBoundaryQueueGate.abortReadyBeforeRecorderAttempt(
+                                after: abandonment
+                            )
+                        } catch {
+                            // Failure to prove/quarantine the exact unused Ready is stronger
+                            // than the triggering health failure. Keep capture fail-closed.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):

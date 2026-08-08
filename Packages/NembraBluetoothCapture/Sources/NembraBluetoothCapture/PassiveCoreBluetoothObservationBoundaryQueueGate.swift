@@ -56,6 +56,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// remains incomplete evidence; this receipt never upgrades it into a terminal artifact.
     struct ObservationEpochAbortReceipt: Equatable, Sendable {
         enum Origin: Equatable, Sendable {
+            case uncommittedReadyAbandonedBeforeRecorderAttempt
             case uncommittedReadyRejectedBeforeRecorderMutation
             case recordedReadyInvalidatedBeforeGateCommit
             case committedReadyInvalidated
@@ -84,9 +85,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let abandonedHorizonTransactionIdentity: UUID?
         let origin: Origin
 
-        /// Furthest queue prefix already represented by durable lifecycle evidence in
-        /// this abandoned epoch. Recorded/committed Horizon extends it through H; a
-        /// zero-mutation Horizon abandonment/rejection leaves Ready as the boundary.
+        /// Furthest queue prefix already settled before quarantine and therefore no longer
+        /// allowed to re-enter the pending FIFO. For pre-attempt Ready abandonment this
+        /// is drained raw-event chronology only and MUST NOT be read as a durable
+        /// `finiteAcquisitionReady` marker. Recorded/committed Horizon extends the
+        /// settled prefix through H; zero-H abandonment/rejection leaves it at Ready.
         var abandonedEvidenceQueueCutoff: UInt64 {
             abandonedHorizonQueueCutoff ?? abandonedReadyQueueCutoff
         }
@@ -320,6 +323,31 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
             origin: .committedReadyInvalidated
         )
         committedReadyTransaction = nil
+        phase = .abortQuarantined(receipt)
+        return receipt
+    }
+
+    /// Abandons an exact Ready admission before any recorder attempt only when the
+    /// admission itself proves its shared one-shot mutation permit was still unused and
+    /// is now permanently consumed. The Ready cutoff may already be FIFO-settled, but
+    /// this receipt never fabricates a durable finiteAcquisitionReady lifecycle marker.
+    @discardableResult
+    mutating func abortReadyBeforeRecorderAttempt(
+        after abandonment: PassiveCoreBluetoothObservationBoundaryTransactionDecision.ReadyPreAttemptAbandonmentReceipt
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case let .drainingReady(current) = phase else {
+            throw StateError.invalidTransition
+        }
+        guard current.authority == abandonment.authority,
+              current.queueCutoff == abandonment.queueCutoff,
+              current.revision == abandonment.transactionRevision,
+              current.identity == abandonment.transactionIdentity else {
+            throw StateError.staleTransaction
+        }
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: current,
+            origin: .uncommittedReadyAbandonedBeforeRecorderAttempt
+        )
         phase = .abortQuarantined(receipt)
         return receipt
     }
