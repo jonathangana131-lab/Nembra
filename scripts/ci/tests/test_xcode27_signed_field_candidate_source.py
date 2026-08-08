@@ -17,6 +17,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildIdentifier', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildInstanceID', self.source)
         self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)
+        self.assertIn('FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"', self.source)
+        self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
