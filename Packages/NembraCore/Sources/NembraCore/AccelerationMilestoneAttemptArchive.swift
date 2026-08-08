@@ -13,6 +13,7 @@ public enum AccelerationMilestoneAttemptArchiveError: Error, Equatable, Sendable
     case qualifiedTargetsOutOfOrder(previous: Double, current: Double)
     case invalidQualifiedMilestone(targetMetersPerSecond: Double)
     case sourceMismatch(expected: SpeedTelemetrySource, actual: SpeedTelemetrySource)
+    case archivedQualityNotQualified(targetMetersPerSecond: Double)
     case timingEvidenceCountMismatch(targetMetersPerSecond: Double, result: Int, quality: Int)
     case timingDurationMismatch(targetMetersPerSecond: Double, resultSeconds: Double, qualitySeconds: Double)
 }
@@ -124,6 +125,20 @@ public struct AccelerationMilestoneEvidencePolicyArchive: Codable, Equatable, Se
             return false
         }
         return candidate == self
+    }
+
+    fileprivate func telemetryQualityPolicy() -> SpeedTelemetryQualityPolicy? {
+        try? SpeedTelemetryQualityPolicy(
+            requiredSource: source,
+            minimumAcceptedSampleCount: minimumAcceptedSampleCount,
+            maximumRejectedSampleFraction: maximumRejectedSampleFraction,
+            maximumMeanIntervalMilliseconds: maximumMeanIntervalMilliseconds,
+            maximumObservedIntervalMilliseconds: maximumObservedIntervalMilliseconds,
+            maximumJitterStandardDeviationMilliseconds: maximumJitterStandardDeviationMilliseconds,
+            minimumDeliveryLatencySampleFraction: minimumDeliveryLatencySampleFraction,
+            maximumMeanDeliveryLatencyMilliseconds: maximumMeanDeliveryLatencyMilliseconds,
+            maximumEmpiricalSpeedStepKilometersPerHour: maximumEmpiricalSpeedStepKilometersPerHour
+        )
     }
 }
 
@@ -237,6 +252,38 @@ public struct AccelerationMilestoneQualityArchive: Codable, Equatable, Sendable 
         }
 
         return true
+    }
+
+    fileprivate func isQualified(
+        using evidencePolicy: AccelerationMilestoneEvidencePolicyArchive
+    ) -> Bool {
+        guard isValidQualifiedTrace,
+              let qualityPolicy = evidencePolicy.telemetryQualityPolicy() else {
+            return false
+        }
+
+        let summary = TelemetryBenchmarkSummary(
+            source: evidencePolicy.source,
+            acceptedSampleCount: acceptedSampleCount,
+            rejectedSampleCount: rejectedSampleCount,
+            observationSegmentCount: observationSegmentCount,
+            knownObservationInterruptionCount: knownObservationInterruptionCount,
+            intervalCount: intervalCount,
+            observedDurationSeconds: observedDurationSeconds,
+            effectiveSampleRateHertz: effectiveSampleRateHertz,
+            meanIntervalMilliseconds: meanIntervalMilliseconds,
+            minimumIntervalMilliseconds: minimumIntervalMilliseconds,
+            maximumIntervalMilliseconds: maximumIntervalMilliseconds,
+            intervalJitterStandardDeviationMilliseconds: intervalJitterStandardDeviationMilliseconds,
+            duplicateSpeedValueCount: duplicateSpeedValueCount,
+            empiricalMinimumNonzeroSpeedStepKilometersPerHour: empiricalMinimumNonzeroSpeedStepKilometersPerHour,
+            deliveryLatencySampleCount: deliveryLatencySampleCount,
+            meanDeliveryLatencyMilliseconds: meanDeliveryLatencyMilliseconds,
+            minimumDeliveryLatencyMilliseconds: minimumDeliveryLatencyMilliseconds,
+            maximumDeliveryLatencyMilliseconds: maximumDeliveryLatencyMilliseconds,
+            deliveryLatencyStandardDeviationMilliseconds: deliveryLatencyStandardDeviationMilliseconds
+        )
+        return summary.qualityAssessment(using: qualityPolicy).isQualified
     }
 
     private func optionalNonnegativeFinite(_ value: Double?) -> Bool {
@@ -448,6 +495,11 @@ public struct AccelerationMilestoneAttemptArchive: Codable, Equatable, Sendable 
                 throw AccelerationMilestoneAttemptArchiveError.sourceMismatch(
                     expected: evidencePolicy.source,
                     actual: milestone.source
+                )
+            }
+            guard milestone.quality.isQualified(using: evidencePolicy) else {
+                throw AccelerationMilestoneAttemptArchiveError.archivedQualityNotQualified(
+                    targetMetersPerSecond: milestone.targetMetersPerSecond
                 )
             }
             guard requestedTargetsMetersPerSecond.contains(milestone.targetMetersPerSecond) else {
