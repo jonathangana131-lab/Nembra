@@ -322,8 +322,8 @@ struct ES80CaptureShellView: View {
         switch phase {
         case .physicalProcedureLocked:
             statePanel(
-                eyebrow: "FIELD AUTHORITY",
-                title: "This build is not authorized",
+                eyebrow: "CAPTURE LOCKED",
+                title: "This build is not ready for a field capture",
                 message: "Field capture is locked for this build. OFF / ON windows, connection, capture, and sealing stay unavailable until this exact build is authorized.",
                 symbol: "lock.shield.fill"
             )
