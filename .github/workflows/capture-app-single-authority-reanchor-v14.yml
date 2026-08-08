@@ -1,0 +1,42 @@
+name: Capture app single-authority reanchor
+
+on:
+  push:
+    branches:
+      - feature/capture-app-single-authority-wiring-v14
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/capture-app-single-authority-wiring-v14
+          fetch-depth: 0
+      - name: Replay reviewed two-file app delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff 9f87f11b38751e4923c36aca6dc5ba9b20dd2080 82a3d36f8d6cf13bc876621f963fc4a27f043c06 -- \
+            NembraApp/App/NembraApp.swift \
+            NembraApp/Features/Research/ES80CaptureShellView.swift > /tmp/app.patch
+          test -s /tmp/app.patch
+          git apply --3way /tmp/app.patch
+          git diff --check
+          ! grep -F 'PassiveBluetoothPowerCycleObservationSession(' NembraApp/Features/Research/ES80CaptureShellView.swift
+          ! grep -F 'ForegroundCoreBluetoothCaptureController(' NembraApp/App/NembraApp.swift
+          grep -F 'PassiveBluetoothExperimentOneCoordinator()' NembraApp/App/NembraApp.swift
+          grep -F 'coordinator.prepareCaptureRediscovery()' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'coordinator.restartPreparedRediscovery()' NembraApp/Features/Research/ES80CaptureShellView.swift
+          rm .github/workflows/capture-app-single-authority-reanchor-v14.yml
+      - name: Commit current-spine app wiring
+        shell: bash
+        run: |
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture app] Reanchor single Experiment One authority"
+          git push origin HEAD:feature/capture-app-single-authority-wiring-v14
