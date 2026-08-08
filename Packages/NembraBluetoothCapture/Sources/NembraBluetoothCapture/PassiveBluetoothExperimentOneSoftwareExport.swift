@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 
 /// Package-owned software evidence for one sealed ES80 Experiment One run.
 ///
