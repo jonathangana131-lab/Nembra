@@ -38,21 +38,10 @@ struct NembraGlassButtonStyle: ViewModifier {
         strongExplicitBoundaryRequested ? 1.5 : 1
     }
 
-    /// `.buttonStyle(.plain)` does not provide Nembra's custom glass surface with a
-    /// reliable disabled visual treatment. Keep the label readable while making the
-    /// loss of interactivity visible in every material/transparency mode. This is
-    /// presentation only; SwiftUI's `isEnabled` environment remains the interaction
-    /// and accessibility authority.
-    private var contentOpacity: Double {
-        guard !isEnabled else { return 1 }
-        return colorSchemeContrast == .increased ? 0.72 : 0.58
-    }
-
     func body(content: Content) -> some View {
         Group {
             if reduceTransparency {
                 content
-                    .opacity(contentOpacity)
                     .background(
                         Color(uiColor: .secondarySystemBackground),
                         in: RoundedRectangle(
@@ -62,14 +51,12 @@ struct NembraGlassButtonStyle: ViewModifier {
                     )
             } else if #available(iOS 26.0, *) {
                 content
-                    .opacity(contentOpacity)
                     .glassEffect(
                         .regular.interactive(isEnabled),
                         in: .rect(cornerRadius: NembraMetrics.controlRadius)
                     )
             } else {
                 content
-                    .opacity(contentOpacity)
                     .background(
                         .thinMaterial,
                         in: RoundedRectangle(
