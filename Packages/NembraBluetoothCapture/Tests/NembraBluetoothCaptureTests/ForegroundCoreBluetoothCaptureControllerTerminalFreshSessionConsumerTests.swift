@@ -59,7 +59,7 @@ struct ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionConsumerTests
         #expect(recovery.contains("currentResolvedThroughQueueSequence: lastResolvedEventSequence"))
         #expect(recovery.contains("currentLastEnqueuedEventSequence: lastEnqueuedEventSequence"))
         #expect(recovery.contains("pendingTerminalQueueResolution = nil"))
-        #expect(!recovery.contains("await "))
+        #expect(recovery.range(of: "await ") == nil)
     }
 
     @Test("recovery is downstream of finalized teardown and real terminal callback")
