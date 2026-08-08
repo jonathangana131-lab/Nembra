@@ -1,16 +1,23 @@
 import Foundation
 
-public struct RideObservedPeakHistoryAssessment: Equatable, Sendable {
-    public let telemetryQuality: SpeedTelemetryQualityAssessment
-    public let failures: [RideObservedPeakReadinessFailure]
-    public let isObservedMaximumEligible: Bool
+/// Qualification result is deliberately module-owned. Publicly decodable durable
+/// evidence is descriptive input, not an authorization token for max wording.
+struct RideObservedPeakHistoryAssessment: Equatable, Sendable {
+    let telemetryQuality: SpeedTelemetryQualityAssessment
+    let failures: [RideObservedPeakReadinessFailure]
+    let isObservedMaximumEligible: Bool
 
-    public var isReadinessReady: Bool { failures.isEmpty }
+    var isReadinessReady: Bool { failures.isEmpty }
 }
 
 /// Relaunch-safe evidence required to re-evaluate one completed ride's observed
 /// peak quality. There is deliberately no persisted `qualified`, `isReady`, or
 /// final-statistics bit: qualification is recomputed from these raw durable inputs.
+///
+/// This value is public/Codable so a future app persistence adapter can retain the
+/// descriptive evidence. Decoding it does not grant authority to promote a peak:
+/// the eligibility-bearing assessment is module-owned until persistence and
+/// provenance are mechanically sealed inside NembraCore.
 public struct RideObservedPeakHistoryEvidence: Codable, Equatable, Sendable {
     public let sessionID: UUID
     public let rideContinuity: RideSessionContinuity
@@ -159,7 +166,8 @@ public struct RideObservedPeakHistoryEvidence: Codable, Equatable, Sendable {
 
     /// Recomputes the exact readiness dimensions from durable evidence and then
     /// applies the stronger statistics gate that forbids any selected-source gap.
-    public func assessment() throws -> RideObservedPeakHistoryAssessment {
+    /// Module-only by design: public Codable snapshots are not provenance authority.
+    func assessment() throws -> RideObservedPeakHistoryAssessment {
         let runtimePolicy = try policy.runtimePolicy()
         let benchmark = telemetryBenchmark.runtimeSummary
         let telemetryQuality = benchmark.qualityAssessment(using: runtimePolicy.telemetry)
