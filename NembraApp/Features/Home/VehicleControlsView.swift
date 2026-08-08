@@ -87,6 +87,13 @@ struct VehicleControlsView: View {
 
                     connectionAction
                 }
+
+                if vehicle.state.dataAvailability == .retained {
+                    Label("Last confirmed settings shown below", systemImage: "clock.arrow.circlepath")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("vehicle-controls.retained-state")
+                }
             }
         }
         .padding(16)
@@ -257,12 +264,12 @@ struct VehicleControlsView: View {
 
     private var confirmationNote: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.shield")
+            Image(systemName: vehicle.state.dataAvailability == .retained ? "clock.arrow.circlepath" : "checkmark.shield")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
 
-            Text("Nembra shows a new control state only after the scooter service confirms the command.")
+            Text(confirmationNoteText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -352,8 +359,8 @@ struct VehicleControlsView: View {
         .buttonStyle(.plain)
         .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected)
         .accessibilityLabel(title)
-        .accessibilityValue(pending ? "Confirming" : selected ? "Selected" : "Not selected")
-        .accessibilityHint("The displayed state changes only after vehicle confirmation.")
+        .accessibilityValue(controlAccessibilityValue(selected: selected, pending: pending))
+        .accessibilityHint(controlAccessibilityHint)
     }
 
     private var supportedModes: [RideMode] {
@@ -362,6 +369,26 @@ struct VehicleControlsView: View {
 
     private var commandsAvailable: Bool {
         vehicle.state.connection == .connected
+    }
+
+    private var confirmationNoteText: String {
+        if vehicle.state.dataAvailability == .retained {
+            return "Selected settings are retained from the last confirmed vehicle session. Reconnect for fresh state or changes."
+        }
+        return "Nembra shows a new control state only after the scooter service confirms the command."
+    }
+
+    private func controlAccessibilityValue(selected: Bool, pending: Bool) -> String {
+        if pending { return "Confirming" }
+        guard selected else { return "Not selected" }
+        return vehicle.state.dataAvailability == .retained ? "Last confirmed selection" : "Selected"
+    }
+
+    private var controlAccessibilityHint: String {
+        if vehicle.state.dataAvailability == .retained {
+            return "This value is retained from the last confirmed vehicle session. Reconnect for a current state or to make changes."
+        }
+        return "The displayed state changes only after vehicle confirmation."
     }
 
     private var connectionText: String {
