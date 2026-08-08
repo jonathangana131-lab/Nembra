@@ -4,7 +4,6 @@ public enum VehicleCommandUserFeedbackCorrelationError: Error, Equatable, Sendab
     case requestAlreadyPending
     case noPendingRequest
     case requestDoesNotMatch
-    case requestSequenceExhausted
 }
 
 /// Opaque identity for one app-local, user-initiated vehicle-command request.
@@ -12,12 +11,10 @@ public enum VehicleCommandUserFeedbackCorrelationError: Error, Equatable, Sendab
 /// This identity is presentation causality only. It is not transport authority,
 /// a scooter acknowledgement, Bluetooth evidence, or proof that vehicle state changed.
 public struct VehicleCommandUserFeedbackRequestID: Hashable, Sendable {
-    public let sequence: UInt64
-    fileprivate let ownerID: UUID
+    fileprivate let rawValue: UUID
 
-    fileprivate init(sequence: UInt64, ownerID: UUID) {
-        self.sequence = sequence
-        self.ownerID = ownerID
+    fileprivate init(rawValue: UUID) {
+        self.rawValue = rawValue
     }
 }
 
@@ -44,8 +41,6 @@ public enum VehicleCommandUserFeedbackOutcome: Equatable, Sendable {
 /// keep request admission and outcome consumption serialized with UI interaction.
 @MainActor
 public final class VehicleCommandUserFeedbackCorrelation {
-    private let ownerID = UUID()
-    private var nextSequence: UInt64 = 1
     private var pendingRequest: VehicleCommandUserFeedbackRequestID?
 
     public init() {}
@@ -60,15 +55,8 @@ public final class VehicleCommandUserFeedbackCorrelation {
         guard pendingRequest == nil else {
             throw VehicleCommandUserFeedbackCorrelationError.requestAlreadyPending
         }
-        guard nextSequence < UInt64.max else {
-            throw VehicleCommandUserFeedbackCorrelationError.requestSequenceExhausted
-        }
 
-        let request = VehicleCommandUserFeedbackRequestID(
-            sequence: nextSequence,
-            ownerID: ownerID
-        )
-        nextSequence += 1
+        let request = VehicleCommandUserFeedbackRequestID(rawValue: UUID())
         pendingRequest = request
         return request
     }
