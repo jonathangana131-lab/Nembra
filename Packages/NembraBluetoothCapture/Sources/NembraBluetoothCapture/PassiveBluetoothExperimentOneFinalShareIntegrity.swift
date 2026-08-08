@@ -6,9 +6,6 @@ import Foundation
 /// rendezvous, the exact nested SoftwareExport bytes passed their own closed-world verification,
 /// and the exact nested immutable Capture bytes decoded under the current Capture schema. This is
 /// software readability/integrity evidence only; it is not physical ES80 authentication or GO.
-///
-/// Construction is package-scoped so application/UI code can retain and inspect an issued report
-/// but cannot manufacture the token that product presentation uses to unlock `Ready for analysis`.
 public struct PassiveBluetoothExperimentOneFinalShareIntegrityReport: Equatable, Sendable {
     public let finalShareSHA256: String
     public let finalShareByteCount: Int
@@ -18,7 +15,10 @@ public struct PassiveBluetoothExperimentOneFinalShareIntegrityReport: Equatable,
     public let buildInstanceID: String
     public let softwareExport: PassiveBluetoothExperimentOneSoftwareExportIntegrityReport
 
-    package init(
+    // Package-owned construction is deliberate: product code treats possession of this value as
+    // evidence that inspect(_:) accepted the exact final Share bytes. Public clients may read the
+    // facts but cannot manufacture an analysis-ready report from caller-selected fields.
+    init(
         finalShareSHA256: String,
         finalShareByteCount: Int,
         experimentID: UUID,
