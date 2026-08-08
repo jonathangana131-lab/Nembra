@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -77,7 +78,7 @@ struct PassiveBluetoothExperimentOneFinalShareIntegrityTests {
                     commit,
             ],
             executableData: Data("final-share-integrity-test-executable".utf8),
-            infoPlistData: Data("final-share-integrity-test-Info.plist".utf8)
+            infoPlistData: Data("fixture Info.plist".utf8)
         )
     }
 
