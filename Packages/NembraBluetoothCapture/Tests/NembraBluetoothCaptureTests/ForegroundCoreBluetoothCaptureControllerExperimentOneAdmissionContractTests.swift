@@ -40,12 +40,15 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
         #expect(source.contains("let payload = try admission.consume()"))
     }
 
-    @Test("Experiment One target comes from consumed full UUID and must exist in the current controller catalog")
+    @Test("Experiment One target comes from sealed staging authority and must exist in the current controller catalog")
     func consumedTargetMustBeFreshlyDiscoveredByThisController() throws {
         let source = Self.codeOnly(try Self.controllerSource())
 
-        #expect(source.contains("peripheralByIdentifier[payload.peripheralIdentifier]"))
-        #expect(source.contains("latestDiscoveryByIdentifier[payload.peripheralIdentifier]"))
+        #expect(source.contains("let preview = try admission.previewForControllerStaging()"))
+        #expect(source.contains("peripheralByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("latestDiscoveryByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("latestAdvertisementByIdentifier[preview.peripheralIdentifier]"))
+        #expect(source.contains("let payload = try admission.consume()"))
         #expect(source.contains("targetState.selectTarget(payload.peripheralIdentifier)"))
     }
 
