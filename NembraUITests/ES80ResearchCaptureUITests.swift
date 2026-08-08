@@ -387,43 +387,87 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
         let completeState = app.staticTexts["CAPTURE COMPLETE"]
+        let analysisState = app.staticTexts["Ready for analysis"]
         let shareCapture = app.buttons["Share Capture"]
         let viewDetails = app.buttons["View Details"]
 
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
         XCTAssertTrue(completeState.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
+        XCTAssertTrue(analysisState.waitForExistence(timeout: 3))
         XCTAssertTrue(shareCapture.waitForExistence(timeout: 3))
         XCTAssertTrue(viewDetails.waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
         XCTAssertFalse(app.buttons["Vehicle controls"].exists)
 
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
             qaDisclosure,
-            windowFrame: windowFrame,
+            windowFrame: app.windows.firstMatch.frame,
             context: "synthetic Simulator QA disclosure at Accessibility XXXL"
         )
-        assertVisibleInScreenshotViewport(
+        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
             completeState,
-            windowFrame: windowFrame,
+            in: app,
             context: "Capture Complete state at Accessibility XXXL"
         )
         assertVisibleInScreenshotViewport(
+            completeState,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Capture Complete state at Accessibility XXXL"
+        )
+        let completeAttachment = XCTAttachment(screenshot: app.screenshot())
+        completeAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Complete"
+        completeAttachment.lifetime = .keepAlways
+        add(completeAttachment)
+
+        bringIntoScreenshotViewport(
+            analysisState,
+            in: app,
+            context: "Ready for analysis state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            analysisState,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Ready for analysis state at Accessibility XXXL"
+        )
+        let analysisAttachment = XCTAttachment(screenshot: app.screenshot())
+        analysisAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Analysis Ready"
+        analysisAttachment.lifetime = .keepAlways
+        add(analysisAttachment)
+
+        bringIntoScreenshotViewport(
             shareCapture,
-            windowFrame: windowFrame,
+            in: app,
             context: "Share Capture action at Accessibility XXXL"
         )
         assertVisibleInScreenshotViewport(
+            shareCapture,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Share Capture action at Accessibility XXXL"
+        )
+        let shareAttachment = XCTAttachment(screenshot: app.screenshot())
+        shareAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Share"
+        shareAttachment.lifetime = .keepAlways
+        add(shareAttachment)
+
+        bringIntoScreenshotViewport(
             viewDetails,
-            windowFrame: windowFrame,
+            in: app,
             context: "View Details action at Accessibility XXXL"
         )
+        assertVisibleInScreenshotViewport(
+            viewDetails,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "View Details action at Accessibility XXXL"
+        )
+        let detailsAttachment = XCTAttachment(screenshot: app.screenshot())
+        detailsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — View Details"
+        detailsAttachment.lifetime = .keepAlways
+        add(detailsAttachment)
     }
 
     @MainActor
@@ -451,32 +495,51 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
         XCTAssertFalse(app.buttons["Vehicle controls"].exists)
 
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        let windowFrame = app.windows.firstMatch.frame
+        let landscapeFrame = app.windows.firstMatch.frame
         XCTAssertGreaterThan(
-            windowFrame.width,
-            windowFrame.height,
+            landscapeFrame.width,
+            landscapeFrame.height,
             "The positive-state visual gate must actually run in landscape."
         )
         assertVisibleInScreenshotViewport(
             qaDisclosure,
-            windowFrame: windowFrame,
+            windowFrame: landscapeFrame,
             context: "synthetic Simulator QA disclosure in positive-state landscape"
         )
-        assertVisibleInScreenshotViewport(
+        let disclosureAttachment = XCTAttachment(screenshot: app.screenshot())
+        disclosureAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Disclosure"
+        disclosureAttachment.lifetime = .keepAlways
+        add(disclosureAttachment)
+
+        bringIntoScreenshotViewport(
             readyState,
-            windowFrame: windowFrame,
+            in: app,
             context: "Horizon-ready state in landscape"
         )
         assertVisibleInScreenshotViewport(
-            finish,
-            windowFrame: windowFrame,
-            context: "Finish Capture action in landscape"
+            readyState,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Horizon-ready state in landscape"
         )
+        let readyAttachment = XCTAttachment(screenshot: app.screenshot())
+        readyAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
+        readyAttachment.lifetime = .keepAlways
+        add(readyAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+            in: app,
+            context: "Seal Capture action in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "Seal Capture action in landscape"
+        )
+        let finishAttachment = XCTAttachment(screenshot: app.screenshot())
+        finishAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Seal"
+        finishAttachment.lifetime = .keepAlways
+        add(finishAttachment)
     }
 
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
@@ -544,6 +607,47 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             source.contains("softwareExportData"),
             "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
+    }
+
+    @MainActor
+    private func bringIntoScreenshotViewport(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        context: String,
+        maxSwipes: Int = 6,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "Required \(context) must exist before viewport navigation.",
+            file: file,
+            line: line
+        )
+
+        var remaining = maxSwipes
+        while remaining > 0 {
+            let windowFrame = app.windows.firstMatch.frame
+            let frame = element.frame
+            if frame.width > 0,
+               frame.height > 0,
+               frame.minX >= windowFrame.minX - 1,
+               frame.maxX <= windowFrame.maxX + 1,
+               frame.minY >= windowFrame.minY - 1,
+               frame.maxY <= windowFrame.maxY + 1 {
+                return
+            }
+            app.swipeUp()
+            remaining -= 1
+        }
+
+        assertVisibleInScreenshotViewport(
+            element,
+            windowFrame: app.windows.firstMatch.frame,
+            context: context,
+            file: file,
+            line: line
         )
     }
 
