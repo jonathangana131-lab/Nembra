@@ -57,6 +57,8 @@ struct ES80CaptureShellView: View {
     @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
     @State private var sharePreparationWarning: String?
     @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
+    @State private var freshRestartRequiresChargerRedeclaration = false
+    @State private var freshRestartChargerDisconnectedDeclaration: Bool?
     @State private var showingDetails = false
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
@@ -284,20 +286,55 @@ struct ES80CaptureShellView: View {
             if window == .firstPoweredOff, declaredStationarySetup == nil {
                 statePanel(
                     eyebrow: "PREFLIGHT / DECLARATION",
-                    title: "Confirm stationary setup",
-                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
+                    title: freshRestartRequiresChargerRedeclaration
+                        ? "Declare charger state again"
+                        : "Confirm stationary setup",
+                    message: freshRestartRequiresChargerRedeclaration
+                        ? "This is a fresh Experiment One. Re-check the scooter now: choose its current charger state before Nembra can accept a new disconnected setup declaration."
+                        : "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
                     symbol: "checkmark.shield"
                 )
+
+                if freshRestartRequiresChargerRedeclaration {
+                    secondaryButton(
+                        freshRestartChargerDisconnectedDeclaration == true
+                            ? "Charger disconnected — selected"
+                            : "Charger disconnected",
+                        systemImage: "bolt.slash.fill",
+                        identifier: "es80.capture.restart-charger-disconnected"
+                    ) {
+                        freshRestartChargerDisconnectedDeclaration = true
+                    }
+                    secondaryButton(
+                        freshRestartChargerDisconnectedDeclaration == false
+                            ? "Charger connected — blocked"
+                            : "Charger connected",
+                        systemImage: "bolt.fill",
+                        identifier: "es80.capture.restart-charger-connected"
+                    ) {
+                        freshRestartChargerDisconnectedDeclaration = false
+                    }
+                    if freshRestartChargerDisconnectedDeclaration == false {
+                        diagnosticBanner("Disconnect the charger, then select Charger disconnected. A fresh experiment cannot inherit the previous run's charger declaration.")
+                    }
+                }
+
+                let freshRestartCanConfirm = !freshRestartRequiresChargerRedeclaration
+                    || freshRestartChargerDisconnectedDeclaration == true
                 primaryButton(
-                    "Confirm setup",
+                    freshRestartRequiresChargerRedeclaration ? "Confirm fresh setup" : "Confirm setup",
                     systemImage: "checkmark.circle.fill",
+                    disabled: !freshRestartCanConfirm,
                     identifier: "es80.capture.confirm-setup"
                 ) {
+                    guard freshRestartCanConfirm else { return }
                     declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
                         chargerState: .disconnected,
                         executionContext: .foregroundUnlockedScreenOn,
                         stockAppReferenceSetup: .none
                     )
+                    freshRestartRequiresChargerRedeclaration = false
+                    freshRestartChargerDisconnectedDeclaration = nil
                 }
                 guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")
             } else {
@@ -941,6 +978,8 @@ struct ES80CaptureShellView: View {
         finalShareIntegrityReport = nil
         sharePreparationWarning = nil
         declaredStationarySetup = nil
+        freshRestartRequiresChargerRedeclaration = true
+        freshRestartChargerDisconnectedDeclaration = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
