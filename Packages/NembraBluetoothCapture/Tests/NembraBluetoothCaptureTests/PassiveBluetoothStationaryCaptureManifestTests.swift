@@ -25,7 +25,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         let manifest = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
             captureJSON: captureJSON,
             experimentID: UUID(uuidString: "99999999-8888-7777-6666-555555555555")!,
-            experimentRecipeID: .es80FingerprintV1,
+            experimentRecipe: .es80FingerprintV1,
             preparedAt: preparedAt,
             nembraBuildIdentifier: "  \(buildIdentifier)  ",
             nembraBuildCommitSHA: commit,
@@ -166,7 +166,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         ) {
             _ = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
                 captureJSON: captureJSON,
-                experimentRecipeID: .es80FingerprintV1,
+                experimentRecipe: .es80FingerprintV1,
                 preparedAt: preparedAt,
                 nembraBuildIdentifier: "   ",
                 nembraBuildCommitSHA: commit,
@@ -267,6 +267,31 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
     }
 
     @Test
+    func declaredStockAppReferenceRequiresImmutableMarkers() throws {
+        let captureJSON = try makeCapture()
+        let setup = PassiveBluetoothStationaryCaptureSetup(
+            chargerState: .disconnected,
+            executionContext: .foregroundUnlockedScreenOn,
+            stockAppReferenceSetup: .sameDeviceBeforeCapture
+        )
+
+        #expect(
+            throws: PassiveBluetoothStationaryCaptureManifestError
+                .stockAppReferenceDeclaredWithoutMarkers
+        ) {
+            _ = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
+                captureJSON: captureJSON,
+                experimentRecipe: .es80FingerprintV1,
+                preparedAt: preparedAt,
+                nembraBuildIdentifier: buildIdentifier,
+                nembraBuildCommitSHA: commit,
+                selectedPeripheralIdentifier: target,
+                setup: setup
+            )
+        }
+    }
+
+    @Test
     func importedDerivedSummaryTamperingIsRejected() throws {
         let captureJSON = try makeCapture()
         let manifestJSON = try PassiveBluetoothStationaryCaptureManifestJSON.encode(
@@ -294,7 +319,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         ) {
             _ = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
                 captureJSON: captureJSON,
-                experimentRecipeID: .es80FingerprintV1,
+                experimentRecipe: .es80FingerprintV1,
                 preparedAt: preparedAt,
                 nembraBuildIdentifier: buildIdentifier,
                 nembraBuildCommitSHA: "main",
@@ -356,7 +381,7 @@ struct PassiveBluetoothStationaryCaptureManifestTests {
         try PassiveBluetoothStationaryCaptureManifestBuilder.make(
             captureJSON: captureJSON,
             experimentID: UUID(uuidString: "99999999-8888-7777-6666-555555555555")!,
-            experimentRecipeID: .es80FingerprintV1,
+            experimentRecipe: .es80FingerprintV1,
             preparedAt: preparedAt,
             nembraBuildIdentifier: buildIdentifier,
             nembraBuildCommitSHA: commit,
