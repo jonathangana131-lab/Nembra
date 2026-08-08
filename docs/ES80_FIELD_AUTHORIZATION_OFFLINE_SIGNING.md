@@ -28,6 +28,26 @@ The signer therefore refuses a private-key path that resolves inside the Nembra 
 
 The signer does **not** generate the production private key. Key creation, custody, backup, rotation, operator access, and independent approval belong to the external release-authority process.
 
+## Private-key custody and one-snapshot signing
+
+The current signer treats the external private-key file as a security boundary, not merely a pathname passed repeatedly to OpenSSL.
+
+Before any signing operation it requires the source key to:
+
+- resolve outside the Nembra repository;
+- be one regular non-symlink file;
+- be between 1 byte and 64 KiB;
+- have no group or other permission bits (for example, owner-only mode `0600` is acceptable);
+- be openable with `O_NOFOLLOW` on the signing platform.
+
+The source pathname is then opened **once**. The signer records the open descriptor's device, inode, mode, size, nanosecond modification time, and nanosecond change time. OpenSSL receives that exact inherited descriptor through `/dev/fd/<fd>` and canonicalizes the key once into an operation-local `authorization-private-key.pem` inside a mode-`0700` temporary directory. The snapshot itself must remain a regular, non-empty, owner-only file.
+
+After the snapshot is created, the external key pathname is not reopened for public-key derivation, signing, or self-verification. Those operations use only the private temporary snapshot. The source descriptor is `fstat`ed again and the operation fails closed if its recorded identity changed while the snapshot was being created.
+
+This prevents a mutable external pathname from silently switching signing authority between “derive reviewed public key,” “sign,” and “verify.” Replacing the external path after the descriptor-backed snapshot has been created cannot change the key used by the in-flight signing operation.
+
+The temporary snapshot is operation-scoped and is destroyed with its temporary directory. Python never loads the private-key bytes into a Python `bytes` value.
+
 ## One semantic parser
 
 The offline signer intentionally does **not** decode or reinterpret either evidence record.
@@ -63,9 +83,11 @@ The base64 fields preserve the exact signed subject/payload bytes. The package v
 
 ## Offline invocation
 
-Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository.
+Use only after the exact signed IPA and its canonical evidence have been produced and independently reviewed. The private key and output envelope paths must be outside the repository. Keep the private key owner-only before invoking the signer.
 
 ```sh
+chmod 600 /external/authority/nembra-field-authority-private.pem
+
 python3 scripts/ci/es80_field_authorization_envelope.py \
   --external-record /external/review/NembraCaptureExternalBuildRecord.json \
   --field-evidence /external/review/NembraCaptureFieldBuildEvidenceRecord.json \
@@ -77,9 +99,12 @@ The tool:
 
 - requires OpenSSL;
 - requires a P-256 / `prime256v1` private key;
+- requires an owner-only external private-key file and fails closed on group/other access;
+- opens the authority key once with no-follow semantics and snapshots that exact descriptor into a private operation-local key file;
+- requires the source key identity to remain stable while the snapshot is created;
 - never reads the private-key bytes into Python;
 - derives only the public uncompressed X9.63 point for review/pinning output;
-- signs with OpenSSL ECDSA/SHA-256;
+- signs and self-verifies using the same private temporary key snapshot;
 - immediately verifies its own signature using the derived public key;
 - publishes the envelope with no-replace file creation;
 - refuses input evidence files that are symlinks or change while being read;
@@ -103,9 +128,9 @@ Do **not** auto-edit or auto-pin the key from this script. The production trust 
 python3 scripts/ci/es80_field_authorization_envelope.py --self-test
 ```
 
-The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, and verifies repository-contained authority paths fail closed. The temporary key is destroyed with its temporary directory.
+The self-test generates an **ephemeral temporary** P-256 fixture key outside the repository, signs synthetic opaque subjects, verifies the signature, checks exact-byte/base64 preservation, checks the schema-v2 payload, checks no-replace output, rejects an authority key with group/other access, proves an operation-local snapshot remains bound to the originally opened key when the external source pathname is replaced, and verifies repository-contained authority paths fail closed. The temporary keys and snapshots are destroyed with their temporary directories.
 
-Self-test success is development evidence only. It does not create or accept a production authority.
+The trusted exact-head Xcode 27 workflow compiles this signer and executes the self-test. A passing self-test is still software acceptance evidence only; it does not create or accept a production authority.
 
 ## What a cryptographically valid envelope still does not prove
 
