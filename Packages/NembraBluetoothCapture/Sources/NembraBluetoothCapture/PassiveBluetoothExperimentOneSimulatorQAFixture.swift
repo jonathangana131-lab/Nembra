@@ -24,6 +24,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         case passiveDiscovery
         case observationReady
         case captureInProgress
+        case observationHorizonReady
         case horizonSealed
         case captureComplete
         case shareRetry
@@ -42,6 +43,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         .passiveDiscovery,
         .observationReady,
         .captureInProgress,
+        .observationHorizonReady,
         .horizonSealed,
         .captureComplete,
         .shareRetry,
@@ -122,7 +124,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
             hasPreparedCaptureAdmission: hasPreparedCaptureAdmission(for: scenario),
             isCorrelatedTargetRediscovered: isCorrelatedTargetRediscovered(for: scenario),
             observationReady: observationReady(for: scenario),
-            canFinalizeObservationHorizon: scenario == .captureInProgress,
+            canFinalizeObservationHorizon: scenario == .observationHorizonReady,
             artifactState: artifactState(for: scenario),
             title: title(for: scenario),
             accessibilitySummary: accessibilitySummary(for: scenario)
@@ -143,6 +145,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
              .passiveDiscovery,
              .observationReady,
              .captureInProgress,
+             .observationHorizonReady,
              .horizonSealed,
              .captureComplete,
              .shareRetry:
@@ -158,7 +161,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         switch scenario {
         case .passiveDiscovery:
             return .connecting
-        case .observationReady, .captureInProgress:
+        case .observationReady, .captureInProgress, .observationHorizonReady:
             return .connected
         case .foregroundInterrupted:
             return .unavailable
@@ -189,6 +192,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         switch scenario {
         case .observationReady,
              .captureInProgress,
+             .observationHorizonReady,
              .horizonSealed,
              .captureComplete,
              .shareRetry:
@@ -224,6 +228,7 @@ public final class PassiveBluetoothExperimentOneSimulatorQAFixture {
         case .passiveDiscovery: return "Reading passive Bluetooth evidence"
         case .observationReady: return "Observation ready"
         case .captureInProgress: return "Capturing observation window"
+        case .observationHorizonReady: return "Observation window complete"
         case .horizonSealed: return "Capture sealed"
         case .captureComplete: return "Capture complete"
         case .shareRetry: return "Share capture again"
