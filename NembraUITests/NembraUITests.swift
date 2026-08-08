@@ -109,6 +109,18 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testPrimaryES80HomeUsesAdaptiveNeutralArtworkInDarkMode() {
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+
+        let app = launchOrdinary(orientation: .portrait)
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified Dark")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
