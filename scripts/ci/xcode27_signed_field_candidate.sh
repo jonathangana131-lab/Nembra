@@ -27,13 +27,11 @@ fi
 /usr/bin/plutil -lint "$NEMBRA_EXPORT_OPTIONS_PLIST" >/dev/null
 EXPORT_OPTIONS_PLIST="$(cd "$(dirname "$NEMBRA_EXPORT_OPTIONS_PLIST")" && pwd -P)/$(basename "$NEMBRA_EXPORT_OPTIONS_PLIST")"
 
-# The device identifier is verification-only input to the signed-IPA inspector. Keep its accepted
-# spelling intentionally narrow and never write or echo the value into producer metadata/log lines.
+# Verification-only input. Keep the accepted spelling narrow and never persist or echo the value.
 python3 - "$NEMBRA_FIELD_DEVICE_UDID" <<'PY'
 import re
 import sys
-value = sys.argv[1]
-if not re.fullmatch(r"[A-Za-z0-9-]{8,128}", value):
+if not re.fullmatch(r"[A-Za-z0-9-]{8,128}", sys.argv[1]):
     raise SystemExit("NEMBRA_FIELD_DEVICE_UDID must be 8-128 ASCII letters, digits, or hyphens")
 PY
 
@@ -46,7 +44,7 @@ case "$ALLOW_PROVISIONING_UPDATES" in
     ;;
 esac
 
-# macOS still ships Bash 3.2. Avoid optional empty arrays under nounset.
+# macOS still ships Bash 3.2. Avoid optionally empty arrays under nounset.
 run_xcodebuild() {
   if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
     xcodebuild -allowProvisioningUpdates "$@"
@@ -55,6 +53,8 @@ run_xcodebuild() {
   fi
 }
 
+# A dirty invocation checkout is never accepted. The actual build is from a fresh detached worktree
+# at SOURCE_SHA so ignored/generated state cannot silently become bytes stamped as this commit.
 REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
@@ -69,8 +69,8 @@ if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
-BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
+BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
   exit 8
@@ -95,7 +95,8 @@ if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$RO
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
   exit 9
 fi
-if [[ -e "$ARTIFACTS_DIR" ]]; then
+# The canonical inspector owns no-replace, failure-atomic publication. Do not pre-create this path.
+if [[ -e "$ARTIFACTS_DIR" || -L "$ARTIFACTS_DIR" ]]; then
   echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2
   exit 10
 fi
@@ -107,38 +108,10 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   fi
 fi
 
-mkdir -p "$ARTIFACTS_DIR/logs"
-EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
-cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
-/usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
-EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
-import hashlib
-import plistlib
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-expected_team = sys.argv[2]
-raw = path.read_bytes()
-options = plistlib.loads(raw)
-if not isinstance(options, dict):
-    raise SystemExit("Export options plist root must be a dictionary")
-team = options.get("teamID")
-if team is not None and team != expected_team:
-    raise SystemExit("Export options teamID does not match NEMBRA_DEVELOPMENT_TEAM")
-method = options.get("method")
-if method is not None and (not isinstance(method, str) or not method.strip()):
-    raise SystemExit("Export options method, when present, must be a non-empty string")
-print(hashlib.sha256(raw).hexdigest())
-PY
-)"
-if [[ ! "$EXPORT_OPTIONS_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "Could not derive one canonical SHA-256 for retained ExportOptions.plist." >&2
-  exit 12
-fi
-
 rm -rf "$WORK_ROOT"
 mkdir -p "$WORK_ROOT"
 git worktree add --detach "$SOURCE_ROOT" "$SOURCE_SHA"
+
 cleanup() {
   cd "$ROOT" >/dev/null 2>&1 || true
   git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
@@ -151,12 +124,10 @@ IMMUTABLE_HEAD="$(git rev-parse --verify HEAD^{commit})"
 IMMUTABLE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ "$IMMUTABLE_HEAD" != "$SOURCE_SHA" || -n "$IMMUTABLE_STATUS" ]]; then
   echo "Detached source worktree is not an exact clean checkout of SOURCE_SHA." >&2
-  exit 13
+  exit 12
 fi
 mkdir -p "$EXPORT_DIR"
 
-set +e
-set -o pipefail
 run_xcodebuild \
   -project Nembra.xcodeproj \
   -scheme Nembra \
@@ -168,52 +139,23 @@ run_xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \
   "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \
-  archive \
-  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-archive.log"
-ARCHIVE_XCODE_STATUS="${PIPESTATUS[0]}"
-ARCHIVE_TEE_STATUS="${PIPESTATUS[1]}"
-set -e
-if [[ "$ARCHIVE_XCODE_STATUS" -ne 0 || "$ARCHIVE_TEE_STATUS" -ne 0 ]]; then
-  echo "Signed field-candidate archive/log capture failed: xcodebuild=$ARCHIVE_XCODE_STATUS tee=$ARCHIVE_TEE_STATUS." >&2
-  exit 14
-fi
+  archive
 
-set +e
-set -o pipefail
 run_xcodebuild \
   -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
-  -exportOptionsPlist "$EXPORT_OPTIONS_SNAPSHOT" \
-  2>&1 | tee "$ARTIFACTS_DIR/logs/xcodebuild-export.log"
-EXPORT_XCODE_STATUS="${PIPESTATUS[0]}"
-EXPORT_TEE_STATUS="${PIPESTATUS[1]}"
-set -e
-if [[ "$EXPORT_XCODE_STATUS" -ne 0 || "$EXPORT_TEE_STATUS" -ne 0 ]]; then
-  echo "Signed field-candidate export/log capture failed: xcodebuild=$EXPORT_XCODE_STATUS tee=$EXPORT_TEE_STATUS." >&2
-  exit 15
-fi
-
-POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
-import hashlib
-import sys
-from pathlib import Path
-print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
-PY
-)"
-if [[ "$POST_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
-  echo "Retained ExportOptions.plist changed during archive/export; refusing candidate evidence." >&2
-  exit 16
-fi
+  -exportOptionsPlist "$EXPORT_OPTIONS_PLIST"
 
 POST_BUILD_SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 POST_BUILD_HEAD="$(git rev-parse --verify HEAD^{commit})"
 if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; then
   echo "Archive/export changed immutable source state; refusing exact-HEAD candidate evidence." >&2
   printf '%s\n' "$POST_BUILD_SOURCE_STATUS" >&2
-  exit 17
+  exit 13
 fi
 
+# Bash 3.2-safe exact subject selection; no optional empty arrays under nounset.
 IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
 import sys
 from pathlib import Path
@@ -226,8 +168,8 @@ print(candidates[0])
 PY
 )"
 
-# The intended device is passed only to the canonical verifier. It is not retained in the produced
-# metadata; the signed profile inside the IPA necessarily remains the source of device provisioning.
+# The inspector verifies actual signing certificate/profile/entitlements, exact launch recipe and the
+# intended device. The UDID is verification-only: the inspector neither prints nor persists it.
 python3 scripts/ci/es80_signed_field_artifact_evidence.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
@@ -303,15 +245,11 @@ PY
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
   echo "build_instance_id=$BUILD_INSTANCE_ID"
+  echo "field_recipe_id=$FIELD_RECIPE_ID"
   echo "development_team=$NEMBRA_DEVELOPMENT_TEAM"
   echo "allow_provisioning_updates=$ALLOW_PROVISIONING_UPDATES"
-  echo "field_launch_recipe_id=$FIELD_RECIPE_ID"
-  echo "experiment_recipe_id=$FIELD_RECIPE_ID"
-  echo "export_options_file=ExportOptions.plist"
-  echo "export_options_sha256=$EXPORT_OPTIONS_SHA256"
-  echo "archive_log=logs/xcodebuild-archive.log"
-  echo "export_log=logs/xcodebuild-export.log"
   echo "intended_device_verification=required-passed"
+  echo "experiment_recipe_id=$FIELD_RECIPE_ID"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
@@ -319,7 +257,6 @@ PY
 } > "$ARTIFACTS_DIR/field-candidate-environment.txt"
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"
-echo "Exact ExportOptions.plist and archive/export logs were retained with the candidate."
 echo "Intended field-device provisioning was verified without retaining or printing its UDID."
 echo "Independent acceptance has NOT occurred."
 echo "PHYSICAL EXPERIMENT ONE REMAINS NO-GO / DO NOT RUN."
