@@ -143,29 +143,22 @@ struct PassiveCoreBluetoothObservationBoundaryRecorderMutationOutcomeTests {
         let secondFence = PassiveCoreBluetoothArtifactAuthorityMutationFence(
             initialAuthority: authority
         )
-        let secondReady = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
+        _ = try PassiveCoreBluetoothObservationBoundaryTransactionDecision.captureAndBegin(
             kind: .finiteAcquisitionReady,
             queueCutoff: 1,
             processedThrough: 1,
             authorityFence: secondFence,
             gate: &secondGate
         )
+        let activeBefore = try #require(secondGate.activeTransaction)
 
         #expect(
             capturedMutationAbortStateError {
                 try secondGate.abortUncommittedReady(after: rejection)
             } == .staleTransaction
         )
-        #expect(secondGate.phase == .drainingReady(
-            .init(
-                boundaryKind: .finiteAcquisitionReady,
-                queueCutoff: secondReady.queueCutoff,
-                authority: secondReady.authority,
-                revision: secondGate.activeTransaction?.revision ?? 0
-            )
-        ))
-        #expect(secondGate.activeTransaction?.queueCutoff == 1)
-        #expect(secondGate.activeTransaction?.authority == authority)
+        #expect(secondGate.phase == .drainingReady(activeBefore))
+        #expect(secondGate.activeTransaction == activeBefore)
     }
 }
 
