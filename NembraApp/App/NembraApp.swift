@@ -5,10 +5,12 @@ import SwiftUI
 @main
 @MainActor
 struct NembraApp: App {
-    private enum LaunchMode: Equatable {
+    enum LaunchMode: Equatable {
         case standard
         case es80PassiveCapture
     }
+
+    static let captureFieldRecipeInfoPlistKey = "NembraCaptureFieldRecipe"
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
@@ -69,10 +71,21 @@ struct NembraApp: App {
         }
     }
 
-    private static func resolveLaunchMode(
+    /// Routes one deliberately produced field-build recipe into the Capture shell even in Release.
+    ///
+    /// This is launch routing only. The Info.plist marker is caller/build-pipeline constructible and
+    /// therefore cannot grant physical authority. Every procedure-advancing path remains subordinate
+    /// to `PassiveBluetoothExperimentOneFieldExecutionGate`, which stays package-owned and NO-GO
+    /// until an independently accepted exact signed-device build earns explicit authorization.
+    static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]
     ) -> LaunchMode {
+        if let fieldRecipe = infoDictionary[captureFieldRecipeInfoPlistKey] as? String,
+           fieldRecipe == PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue {
+            return .es80PassiveCapture
+        }
 #if DEBUG
         if arguments.contains("--es80-passive-capture")
             || environment["NEMBRA_ES80_PASSIVE_CAPTURE"] == "1" {
