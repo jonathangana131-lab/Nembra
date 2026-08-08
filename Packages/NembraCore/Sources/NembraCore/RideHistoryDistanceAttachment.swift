@@ -19,13 +19,8 @@ public enum RideHistoryDistanceAttachmentError: Error, Equatable, Sendable {
     case durableVerificationFailed(UUID)
 }
 
-/// Durable copy of the exact reconciliation policy used for one completed-ride
-/// distance attachment.
-///
-/// This is persisted configuration, not distance authority. Decoding always
-/// crosses the production policy initializer again so malformed priorities or
-/// tolerances fail closed before a checkpoint can be restored by trusted package
-/// code.
+/// Durable configuration only. Decoding re-enters the validated production
+/// reconciliation policy initializer so malformed priorities/tolerances fail closed.
 public struct RideHistoryDistancePolicySnapshot: Codable, Equatable, Sendable {
     public let sourcePriority: [RideDistanceSource]
     public let absoluteAgreementToleranceMeters: Double
@@ -96,12 +91,8 @@ public struct RideHistoryDistancePolicySnapshot: Codable, Equatable, Sendable {
     }
 }
 
-/// Durable serialized representation of the measured-speed segments needed to
-/// reproduce one ride's live-distance aggregate after relaunch.
-///
-/// A decoded value is not trusted distance evidence. It is only checkpoint data.
-/// `RideHistoryDistanceRecord` can consume it only through package-sealed restore
-/// after exact completed-ride binding and authoritative reaggregation succeed.
+/// Serialized measured-speed evidence. A decoded value is checkpoint data, not
+/// trusted distance authority. Trusted restore always reruns the aggregator.
 public struct RideHistoryLiveDistanceCheckpoint: Codable, Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let method: LiveDistanceIntegrationMethod
@@ -187,17 +178,11 @@ public struct RideHistoryLiveDistanceCheckpoint: Codable, Equatable, Sendable {
     }
 }
 
-/// Durable serialized inputs for one completed-ride distance reconciliation.
+/// Durable reconciliation inputs for one immutable completed ride.
 ///
-/// This value is intentionally only a checkpoint. Public decoding cannot mint a
-/// trusted history attachment. The checkpoint stores the exact immutable
-/// completed-ride snapshot it was created from, coverage classifications, durable
-/// live-speed segment records, transport-gap fact, and exact reconciliation
-/// policy. It deliberately never stores a caller-supplied final distance,
-/// confidence, comparison result, or completion status.
-///
-/// Restoring trusted distance authority from these bytes is package-sealed and
-/// requires an independently trusted exact `RideHistoryRecord`.
+/// No final distance, confidence, comparison result, or completion status is
+/// persisted here. Those outputs are recomputed whenever trusted authority is
+/// restored from the checkpoint.
 public struct RideHistoryDistanceCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -264,8 +249,10 @@ public struct RideHistoryDistanceCheckpoint: Codable, Equatable, Sendable {
             throw RideHistoryDistanceAttachmentError.invalidDistanceEvidence
         }
 
-        let policy = try reconciliationPolicy.policy()
-        return RideDistanceReconciler.reconcile(evidence: evidence, policy: policy)
+        return RideDistanceReconciler.reconcile(
+            evidence: evidence,
+            policy: try reconciliationPolicy.policy()
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -310,14 +297,9 @@ public struct RideHistoryDistanceCheckpoint: Codable, Equatable, Sendable {
     }
 }
 
-/// Trusted distance attachment bound to one immutable completed-history row.
-///
-/// This value is intentionally **not Decodable**. Arbitrary durable bytes must
-/// first decode into `RideHistoryDistanceCheckpoint`, which remains only an
-/// untrusted persisted representation. Package-owned construction/restoration
-/// then requires exact base-history equality and deterministically re-runs both
-/// live-distance aggregation and distance reconciliation before this trusted
-/// runtime capability can exist.
+/// Trusted runtime attachment. This is intentionally not Decodable: checkpoint
+/// bytes must be rebound to independently loaded immutable history and reconciled
+/// again before this capability can exist.
 public struct RideHistoryDistanceRecord: Equatable, Sendable {
     private let checkpointStorage: RideHistoryDistanceCheckpoint
 
@@ -389,11 +371,8 @@ public struct RideHistoryDistanceRecord: Equatable, Sendable {
     }
 }
 
-/// Persistence owns only serialized checkpoint inputs. It never returns a
-/// trusted `RideHistoryDistanceRecord` directly. On every read the coordinator
-/// independently loads immutable base history, restores the checkpoint through
-/// the sealed constructor, and re-runs live aggregation + reconciliation before a
-/// joined trusted capability can exist.
+/// Persistence owns only checkpoint inputs. It never returns a pre-trusted runtime
+/// distance record after relaunch.
 public protocol RideHistoryDistanceStore: Sendable {
     func commit(
         _ checkpoint: RideHistoryDistanceCheckpoint
@@ -402,8 +381,8 @@ public protocol RideHistoryDistanceStore: Sendable {
     func checkpoint(sessionID: UUID) async throws -> RideHistoryDistanceCheckpoint?
 }
 
-/// Freshly revalidated join between immutable base history and its trusted
-/// distance attachment. This runtime capability is also intentionally non-Codable.
+/// Runtime-only exact join between immutable base history and reminted distance
+/// authority.
 public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public let historyRecord: RideHistoryRecord
     public let distanceRecord: RideHistoryDistanceRecord
@@ -438,24 +417,52 @@ public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public var sessionID: UUID { historyRecord.sessionID }
 }
 
-/// Idempotently attaches a trusted deterministic distance record to an
-/// already-durable completed ride by persisting only its checkpoint inputs.
+/// Capability required to construct the public coordinator restore surface.
 ///
-/// Durable read-back is verified at the checkpoint layer. Trusted runtime
-/// authority is never loaded from storage directly; `joinedRecord` reconstructs
-/// it only after an independently loaded exact `RideHistoryRecord` matches and
-/// reconciliation succeeds again.
+/// The type is public so it can appear in the initializer signature, but its
+/// initializer is intentionally package-owned in SwiftPM and file-owned when this
+/// source is compiled directly into Nembra.app. Decoded checkpoint bytes alone
+/// therefore cannot be turned back into trusted runtime authority by an arbitrary
+/// package client or same-module app caller.
+public struct RideHistoryDistanceRestoreAuthority: Sendable {
+#if SWIFT_PACKAGE
+    package init() {}
+#else
+    fileprivate init() {}
+#endif
+}
+
+/// Persists only checkpoint inputs and remints trusted distance authority by
+/// independently loading immutable base history on every read.
 public actor RideHistoryDistanceCommitCoordinator {
     private let historyStore: any RideHistoryStore
     private let distanceStore: any RideHistoryDistanceStore
 
+    /// Public shape, sealed construction: callers must possess package/file-owned
+    /// restore authority rather than merely decoded checkpoint bytes.
     public init(
         historyStore: any RideHistoryStore,
-        distanceStore: any RideHistoryDistanceStore
+        distanceStore: any RideHistoryDistanceStore,
+        restoreAuthority: RideHistoryDistanceRestoreAuthority
     ) {
+        _ = restoreAuthority
         self.historyStore = historyStore
         self.distanceStore = distanceStore
     }
+
+#if SWIFT_PACKAGE
+    /// Package-owned convenience used by trusted NembraCore adapters/tests.
+    package init(
+        historyStore: any RideHistoryStore,
+        distanceStore: any RideHistoryDistanceStore
+    ) {
+        self.init(
+            historyStore: historyStore,
+            distanceStore: distanceStore,
+            restoreAuthority: RideHistoryDistanceRestoreAuthority()
+        )
+    }
+#endif
 
     @discardableResult
     public func commit(
@@ -475,9 +482,9 @@ public actor RideHistoryDistanceCommitCoordinator {
         return result
     }
 
-    /// A base history row with no distance checkpoint is ordinary unavailability.
-    /// An orphaned checkpoint or a checkpoint bound to different immutable base
-    /// evidence fails closed. The durable store never mints the trusted record.
+    /// Base history with no checkpoint is ordinary distance unavailability.
+    /// Orphaned/mismatched checkpoints fail closed, and storage itself never mints
+    /// the trusted record.
     public func joinedRecord(
         sessionID: UUID
     ) async throws -> RideHistoryDistanceJoinedRecord? {
@@ -504,10 +511,8 @@ public actor RideHistoryDistanceCommitCoordinator {
 
 #if SWIFT_PACKAGE
 extension RideStatisticsRide {
-    /// Package-sealed production adapter from the immutable-history distance join.
-    /// Delegating to the canonical reconciliation bridge keeps one authoritative
-    /// status/confidence -> statistics-disposition policy instead of duplicating
-    /// that truth switch in a second file.
+    /// Delegates to the canonical reconciliation->statistics truth switch so the
+    /// history adapter cannot drift from selected-source coverage semantics.
     package init(
         historyDistanceRecord record: RideHistoryDistanceJoinedRecord,
         calendarAttribution: RideStatisticsCalendarAttribution
