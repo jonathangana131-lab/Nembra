@@ -24,7 +24,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts["Capture locked"].waitForExistence(timeout: 3),
-            "The current package-owned lock must remain the primary rider-facing product state."
+            "The current package-owned NO-GO must be the primary product state."
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["es80.capture.field-no-go"].waitForExistence(timeout: 3),
@@ -111,23 +111,23 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertTrue(lockedState.isHittable || lockedState.frame.height > 0)
-        XCTAssertTrue(physicalBoundary.frame.height > 0)
-        XCTAssertTrue(recipe.frame.height > 0)
 
         let windowFrame = app.windows.firstMatch.frame
-        for element in [lockedState, physicalBoundary, recipe] {
-            XCTAssertGreaterThanOrEqual(
-                element.frame.minX,
-                windowFrame.minX - 1,
-                "Required NO-GO content must not clip off the leading edge at accessibility sizes."
-            )
-            XCTAssertLessThanOrEqual(
-                element.frame.maxX,
-                windowFrame.maxX + 1,
-                "Required NO-GO content must not clip off the trailing edge at accessibility sizes."
-            )
-        }
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary NO-GO state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-run boundary at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity at Accessibility XXXL"
+        )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
@@ -153,12 +153,30 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
 
+        let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertGreaterThan(physicalBoundary.frame.height, 0)
-        XCTAssertGreaterThan(recipe.frame.height, 0)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary NO-GO state in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-run boundary in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity in landscape"
+        )
+
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
@@ -202,6 +220,58 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             source.contains("softwareExportData"),
             "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
+    }
+
+    private func assertVisibleInScreenshotViewport(
+        _ element: XCUIElement,
+        windowFrame: CGRect,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let frame = element.frame
+        XCTAssertGreaterThan(
+            frame.width,
+            0,
+            "Required \(context) must have positive width.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            frame.height,
+            0,
+            "Required \(context) must have positive height.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.minX,
+            windowFrame.minX - 1,
+            "Required \(context) must not clip off the leading screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxX,
+            windowFrame.maxX + 1,
+            "Required \(context) must not clip off the trailing screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.minY,
+            windowFrame.minY - 1,
+            "Required \(context) must not clip above the screenshot viewport.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxY,
+            windowFrame.maxY + 1,
+            "Required \(context) must not clip below the screenshot viewport.",
+            file: file,
+            line: line
         )
     }
 
