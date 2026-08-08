@@ -122,13 +122,21 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
     func phaseAndRestartHelpersStayHumanFirst() throws {
         let source = try Self.shellSource()
         let phaseStart = try #require(source.range(of: "private func phase("))
-        let errorStart = try #require(
+        let phaseEnd = try #require(
             source.range(
-                of: "private func experimentErrorMessage",
+                of: "#if DEBUG && targetEnvironment(simulator)",
                 range: phaseStart.lowerBound..<source.endIndex
             )
         )
-        let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
+        let restartStart = try #require(source.range(of: "private func restartExperiment()"))
+        let restartEnd = try #require(
+            source.range(
+                of: "private func handleScenePhaseChange",
+                range: restartStart.lowerBound..<source.endIndex
+            )
+        )
+        let helperSurface = String(source[phaseStart.lowerBound..<phaseEnd.lowerBound])
+            + String(source[restartStart.lowerBound..<restartEnd.lowerBound])
 
         let implementationPhrasesThatMustStayOutOfHelpers = [
             "Experiment One",
