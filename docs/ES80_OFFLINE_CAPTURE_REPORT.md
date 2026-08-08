@@ -67,12 +67,16 @@ These protections are about preserving research evidence and prior derived artif
 
 ## Exact source-artifact binding
 
-The command reads the source artifact under the configured artifact-byte ceiling, then hashes and decodes the **exact bytes returned by that bounded read**. The report wraps the framing analysis with:
+The command opens the source artifact once, reads it under the configured artifact-byte ceiling, rewinds the **same open file handle**, and requires a second complete pass to match the first byte-for-byte and terminate at the same offset. If the open file changes in place between or across those verification passes, admission fails closed before JSON decode.
+
+The exact bytes from the first verified pass are then both hashed and decoded. The report wraps the framing analysis with:
 
 - the input artifact byte count; and
-- a lowercase SHA-256 digest of those exact bytes.
+- a lowercase SHA-256 digest of those exact admitted bytes.
 
 The bounded reader does not normalize, re-encode, trim, or otherwise transform accepted input. This means a later worker can verify which physical-capture artifact produced a report even when two files decode to the same session content but differ byte-for-byte, for example because one was re-encoded or reformatted.
+
+A later replacement of the filesystem path cannot retarget the already-open subject used by the two verification passes. The stable-read check is an offline artifact-integrity boundary; it does not authenticate who created the file or establish physical chain of custody by itself.
 
 The SHA-256 is an artifact-integrity/provenance identifier only. It does **not** authenticate the scooter, prove who recorded the capture, establish chain-of-custody by itself, or verify any ES80 protocol meaning.
 
@@ -88,7 +92,7 @@ The command defaults to:
 
 All three values are **offline process/resource ceilings only**. They are not measured ES80 limits, expected packet sizes, protocol claims, learned device behavior, or physical capture maxima. They can be changed explicitly for a specific offline run.
 
-The artifact ceiling is enforced before JSON decode. The file reader consumes bounded chunks and reads at most one byte beyond the configured ceiling to prove that the source is oversized; an oversized source fails closed instead of first materializing the complete file and decoded capture object graph. The artifact-report builder independently validates already-materialized `Data` against the same ceiling before it invokes `PassiveBluetoothCaptureJSON.decode`.
+The artifact ceiling is enforced before JSON decode. Each verification pass consumes bounded chunks and reads at most one byte beyond the configured ceiling to prove that the source is oversized. An oversized source fails closed instead of first materializing the complete file and decoded capture object graph. The second verification pass is compared incrementally against the retained first pass, so the tool does not materialize a second full artifact merely to prove stability. The artifact-report builder independently validates already-materialized `Data` against the same ceiling before it invokes `PassiveBluetoothCaptureJSON.decode`.
 
 For example, to intentionally analyze a retained artifact under a different operator-tool ceiling:
 
@@ -148,11 +152,13 @@ After the product-facing Nembra Capture flow produces a versioned JSON artifact 
 
 A failed candidate is useful falsifying evidence. Do not edit the capture to manufacture a parse.
 
-## Dependency evolution
+## Dependency contract
 
-This report layer is intentionally downstream of the passive-capture bridge and candidate analyzer. When those accepted parents gain stronger provenance, this layer must preserve it rather than flatten it.
+This report layer is intentionally downstream of the accepted passive-capture bridge and candidate analyzer. It must preserve their stronger provenance rather than flatten it.
 
-In particular, active analyzer work may add explicit candidate restart boundaries and scoped receipt-sequence chronology. On reconciliation, those semantics must remain visible in the report and source mappings before this lane can be accepted against the newer dependency head.
+The current bridge preserves capture record/sequence provenance, stream-local source mapping, scoped receipt-sequence chronology, and explicit continuity-generation advances before target filtering. The report consumes that bridge directly; it must not reconstruct a second byte timeline, drop continuity boundaries, or renumber observations in a way that could make separated raw callbacks appear contiguous.
+
+Any future bridge/analyzer provenance strengthening must remain visible in this report and its source mappings before the report layer can be considered accepted on that newer dependency head.
 
 ## Safety / truth boundary
 
