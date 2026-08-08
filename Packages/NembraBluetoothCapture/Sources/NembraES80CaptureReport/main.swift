@@ -31,7 +31,7 @@ struct NembraES80CaptureReportCommand {
         case unexpectedArgument(String)
         case missingOptionValue(String)
         case invalidPositiveInteger(option: String, value: String)
-        case emptyPeripheralIdentifier
+        case invalidPeripheralIdentifier
         case forceOutputRequiresOutput
 
         var description: String {
@@ -44,8 +44,8 @@ struct NembraES80CaptureReportCommand {
                 "missing value for \(option)"
             case let .invalidPositiveInteger(option, value):
                 "\(option) requires a positive integer, got: \(value)"
-            case .emptyPeripheralIdentifier:
-                "--peripheral requires a non-empty exact peripheral identifier"
+            case .invalidPeripheralIdentifier:
+                "--peripheral requires one exact nonblank captured identifier without surrounding whitespace"
             case .forceOutputRequiresOutput:
                 "--force-output is valid only together with --output or -o"
             }
@@ -139,10 +139,10 @@ struct NembraES80CaptureReportCommand {
             case "--peripheral":
                 let value = try nextValue(arguments, index: &index, option: argument)
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else {
-                    throw CommandError.emptyPeripheralIdentifier
+                guard !value.isEmpty, value == trimmed else {
+                    throw CommandError.invalidPeripheralIdentifier
                 }
-                peripheralIdentifier = trimmed
+                peripheralIdentifier = value
 
             case "--max-artifact-bytes":
                 let value = try nextValue(arguments, index: &index, option: argument)
@@ -226,8 +226,9 @@ struct NembraES80CaptureReportCommand {
       nembra-es80-capture-report <capture.json> [options]
 
     Options:
-      --peripheral <id>          Exact captured peripheral identifier. Omit only
-                                 when target-attributable evidence names one unique peripheral.
+      --peripheral <id>          Exact captured peripheral identifier with no
+                                 whitespace repair. Omit only when target-attributable
+                                 evidence names one unique peripheral.
       --output, -o <report.json> Write report to a file. Existing files are protected
                                  by default; publication is non-replacing. File-output
                                  runs also print candidate outcome counts to stderr.
@@ -243,8 +244,9 @@ struct NembraES80CaptureReportCommand {
     Provenance:
       Every report includes the exact source capture artifact byte count and
       lowercase SHA-256 digest so analysis can be traced back to the precise JSON
-      bytes that were decoded. The digest identifies the artifact; it does not
-      authenticate the scooter, recorder, or person who produced the capture.
+      bytes that were decoded. The nested report also carries the bridge authority
+      class validated-software-session-only. Neither property authenticates the
+      scooter, recorder, or person who produced the capture.
 
     Resource safety:
       Source bytes are read under --max-artifact-bytes before JSON decode. The
