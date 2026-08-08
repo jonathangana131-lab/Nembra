@@ -17,7 +17,6 @@
 /// authentication, RF provenance, or physical AOVOPRO ES80 evidence.
 final class PassiveCoreBluetoothObservationBoundaryQueueProducerIdentity:
     Equatable,
-    Hashable,
     Sendable
 {
     private init() {}
@@ -35,9 +34,5 @@ final class PassiveCoreBluetoothObservationBoundaryQueueProducerIdentity:
         rhs: PassiveCoreBluetoothObservationBoundaryQueueProducerIdentity
     ) -> Bool {
         lhs === rhs
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(ObjectIdentifier(self))
     }
 }
