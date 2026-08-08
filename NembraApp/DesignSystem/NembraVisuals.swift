@@ -12,20 +12,22 @@ enum NembraMetrics {
 
 struct NembraGlassButtonStyle: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityShowBorders) private var showBorders
     @Environment(\.isEnabled) private var isEnabled
 
     /// Normal Liquid Glass already adapts to Increased Contrast at the material layer.
-    /// Nembra adds a strong explicit boundary only when Show Borders asks custom
-    /// controls to expose their edges, or when Reduce Transparency replaces glass
-    /// with our opaque fallback and therefore removes that native glass adaptation.
+    /// Nembra adds a strong explicit boundary when accessibility asks controls to be
+    /// distinguishable without color or to expose their edges, or when Reduce
+    /// Transparency replaces glass with our opaque fallback and therefore removes
+    /// that native glass adaptation.
     private var strongExplicitBoundaryRequested: Bool {
-        showBorders || (reduceTransparency && colorSchemeContrast == .increased)
+        showBorders || differentiateWithoutColor || (reduceTransparency && colorSchemeContrast == .increased)
     }
 
     private var shouldShowExplicitBoundary: Bool {
-        reduceTransparency || showBorders
+        reduceTransparency || showBorders || differentiateWithoutColor
     }
 
     private var boundaryOpacity: Double {
