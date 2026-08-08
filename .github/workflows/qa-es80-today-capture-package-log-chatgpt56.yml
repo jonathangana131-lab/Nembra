@@ -1,0 +1,53 @@
+name: ES80 TODAY Capture Package Diagnostic
+
+on:
+  push:
+    branches:
+      - validation/es80-today-bcb-capture-log/chatgpt56-go
+
+permissions:
+  contents: read
+
+jobs:
+  capture-package-diagnostic:
+    name: Retain exact bcb Capture package diagnostics
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        run: |
+          expected_parent="bcb9bf250b9ffa9c6301ffcfc36c75634b55e525"
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent: %s\n' "$expected_parent" "$actual_parent"
+          test "$actual_parent" = "$expected_parent"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Diagnostic delta:\n%s\n' "$changed"
+          test "$changed" = ".github/workflows/qa-es80-today-capture-package-log-chatgpt56.yml"
+
+      - name: Run Capture package and retain complete output
+        id: capture_test
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/Artifacts/CapturePackageDiagnostic"
+          set +e
+          swift test 2>&1 | tee "$GITHUB_WORKSPACE/Artifacts/CapturePackageDiagnostic/swift-test.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$GITHUB_WORKSPACE/Artifacts/CapturePackageDiagnostic/exit-code.txt"
+          exit "$status"
+
+      - name: Upload Capture package diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: es80-today-bcb-capture-package-diagnostic-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/CapturePackageDiagnostic
+          if-no-files-found: error
+          retention-days: 7
