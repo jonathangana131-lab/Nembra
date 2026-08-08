@@ -1240,7 +1240,7 @@ struct ES80CaptureShellView: View {
                 sharePreparationWarning = nil
             } catch {
                 shareURL = nil
-                sharePreparationWarning = "Capture remains sealed and ready for analysis, but the temporary Share file could not be staged: \(experimentErrorMessage(error))"
+                sharePreparationWarning = "Capture remains sealed and ready for analysis, but Nembra could not prepare the Share file: \(experimentErrorMessage(error))"
             }
             return
         }
@@ -1255,7 +1255,7 @@ struct ES80CaptureShellView: View {
             finalShareFilename = nil
             finalShareIntegrityReport = nil
             shareURL = nil
-            sharePreparationWarning = "Capture remains sealed, but the exact final Share artifact did not earn analysis readiness: \(experimentErrorMessage(error))"
+            sharePreparationWarning = "Capture remains sealed, but Nembra could not verify the Share file for analysis: \(experimentErrorMessage(error))"
             return
         }
 
@@ -1271,7 +1271,7 @@ struct ES80CaptureShellView: View {
             sharePreparationWarning = nil
         } catch {
             shareURL = nil
-            sharePreparationWarning = "Capture remains sealed and ready for analysis, but the temporary Share file could not be staged: \(experimentErrorMessage(error))"
+            sharePreparationWarning = "Capture remains sealed and ready for analysis, but Nembra could not prepare the Share file: \(experimentErrorMessage(error))"
         }
     }
 
