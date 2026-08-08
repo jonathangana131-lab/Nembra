@@ -23,22 +23,23 @@ The producer-owned export-policy snapshot, logs, and environment provenance rema
 
 `NEMBRA_EXPORT_OPTIONS_PLIST` is an external release input. The producer deliberately does not guess or synthesize an Xcode export method.
 
-Before archive/export it now:
+Before the public candidate is published it now:
 
-1. resolves a unique evidence directory for the exact source/build-instance;
+1. resolves a unique final evidence directory for the exact source/build-instance;
 2. physically canonicalizes that path before safety decisions so lexical `..` or existing symlink ancestors cannot bypass root checks;
-3. refuses `/`, the repository root, or any already-existing candidate directory;
-4. requires an in-repository candidate directory to already be Git-ignored;
-5. creates only the candidate parent recursively, then atomically claims the final candidate root with a non-`-p` `mkdir`, failing closed if another process created it first;
-6. creates producer-owned `logs/` only after the final root has been claimed, while leaving inspector-owned `inspection/` absent until failure-atomic publication;
-7. copies the supplied export-options plist into the candidate directory as `ExportOptions.plist`;
-8. validates that retained snapshot as a plist;
-9. rejects a snapshot `teamID` that disagrees with `NEMBRA_DEVELOPMENT_TEAM`;
-10. hashes the exact retained snapshot;
-11. passes that exact snapshot — not the caller's mutable original path — to `xcodebuild -exportArchive`;
-12. re-hashes it after export and fails closed if its bytes changed.
+3. refuses `/`, the repository root, or any already-existing final candidate directory;
+4. requires an in-repository final candidate directory to already be Git-ignored;
+5. creates only the candidate parent recursively and keeps the public final candidate path absent throughout archive, export, private intended-device inspection, and exact-byte crosschecks;
+6. copies the supplied export-options plist into producer-owned temporary `WORK_ROOT`, validates that exact snapshot as a plist, rejects a snapshot `teamID` that disagrees with `NEMBRA_DEVELOPMENT_TEAM`, hashes it, and passes that exact snapshot — not the caller's mutable original path — to `xcodebuild -exportArchive`;
+7. retains archive/export logs and canonical inspector output in temporary producer-owned storage until every build, inspection, source-integrity, and exact-byte check has succeeded;
+8. re-hashes the export-policy snapshot after export and fails closed if its bytes changed;
+9. only after all prepublication phases succeed, attempts to create the hidden sibling staging directory on the destination filesystem; process-local staging ownership starts false and becomes true only after this invocation's `mkdir` succeeds, so an invocation that loses the staging-path race refuses reuse and its cleanup cannot delete staging it never created;
+10. assembles the complete final layout only in that owned staging directory: exact `ExportOptions.plist`, archive/export logs, canonical `inspection/`, and environment provenance;
+11. recursively re-hashes the staged inspector tree and re-hashes the staged ExportOptions bytes to prove the final staging copy still matches the already-verified source evidence;
+12. publishes that complete staging directory as the public candidate in one exclusive macOS `renamex_np(..., RENAME_EXCL)` operation, which refuses replacement if another candidate appeared concurrently;
+13. clears process-local staging ownership immediately after the exclusive rename succeeds, before clearing the staging pathname, so later cleanup cannot target the published candidate.
 
-This makes both the candidate-root no-mix boundary and the actual export policy used for the retained IPA mechanical and reviewable rather than dependent on operator recollection, race-free naming assumptions, or a mutable external path.
+This makes the candidate-root no-mix boundary, staging cleanup authority, and the actual export policy used for the retained IPA mechanical and reviewable. A producer failure before the final exclusive rename leaves the public candidate path absent rather than exposing a partial final directory. A process that never successfully created the hidden staging directory has no cleanup authority over it, and a concurrent final publisher cannot be silently replaced.
 
 ## macOS field-machine portability
 
