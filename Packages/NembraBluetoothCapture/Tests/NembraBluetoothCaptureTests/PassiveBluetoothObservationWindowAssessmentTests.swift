@@ -42,8 +42,13 @@ struct PassiveBluetoothObservationWindowAssessmentTests {
 
     @Test("exact quiet 60-second window meets an explicit 60-second policy")
     func exactQuietMinuteMeetsPolicy() throws {
+        let sessionID = UUID(uuidString: "00000000-0000-0000-0000-000000000365")!
         let readyUptime: UInt64 = 10_000_000_000
-        var session = try PassiveBluetoothCaptureSession(vehicleIdentity: es80, startedAt: .now)
+        var session = try PassiveBluetoothCaptureSession(
+            id: sessionID,
+            vehicleIdentity: es80,
+            startedAt: .now
+        )
         try session.append(interruptionRecord(sequenceNumber: 10, uptime: readyUptime - 1))
         try session.appendObservationBoundary(
             boundary(
@@ -67,6 +72,8 @@ struct PassiveBluetoothObservationWindowAssessmentTests {
             minimumObservedDurationNanoseconds: 60_000_000_000
         )
 
+        #expect(report.captureSessionID == sessionID)
+        #expect(report.vehicleIdentity == es80)
         #expect(report.disposition == .meetsMinimumObservedDuration)
         #expect(report.meetsMinimumObservedDuration)
         #expect(report.observedDurationNanoseconds == 60_000_000_000)
@@ -114,6 +121,8 @@ struct PassiveBluetoothObservationWindowAssessmentTests {
             minimumObservedDurationNanoseconds: 60_000_000_000
         )
 
+        #expect(report.captureSessionID == session.id)
+        #expect(report.vehicleIdentity == session.vehicleIdentity)
         #expect(report.disposition == .missingFiniteAcquisitionReadyBoundary)
         #expect(report.observedDurationNanoseconds == nil)
         #expect(report.finiteAcquisitionReadyBoundary == nil)
