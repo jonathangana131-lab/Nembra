@@ -1,0 +1,88 @@
+name: ES80 V14 pre-attempt Horizon integration exact-product QA
+
+on:
+  push:
+    branches:
+      - cell/es80-v14-pre-attempt-integration/ci/chat-g5t8m-1
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  app-visible-qa:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact product parent and workflow-only delta
+        env:
+          EXPECTED_PRODUCT_SHA: 863f40e8f020007f3f600a6bfc3afda426803c7b
+          EXPECTED_WORKFLOW_PATH: .github/workflows/qa-es80-v14-pre-attempt-integration-chat-g5t8m-1.yml
+        run: |
+          set -euo pipefail
+          actual_parent="$(git rev-parse HEAD^)"
+          printf 'Expected product parent: %s\nActual product parent:   %s\n' "$EXPECTED_PRODUCT_SHA" "$actual_parent"
+          test "$actual_parent" = "$EXPECTED_PRODUCT_SHA"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Validation-only delta:\n%s\n' "$changed"
+          test "$changed" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Report Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Verify pre-attempt Horizon source contract
+        run: |
+          set -euo pipefail
+          transaction='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryTransactionDecision.swift'
+          gate='Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift'
+          tests='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothUncommittedHorizonRecoveryTests.swift'
+          grep -Fq 'struct HorizonRecorderMutationAbandonmentReceipt' "$transaction"
+          grep -Fq 'func abandonBeforeRecorderMutation()' "$transaction"
+          grep -Fq 'case uncommittedHorizonAbandonedBeforeRecorderMutation' "$gate"
+          grep -Fq 'after abandonment:' "$gate"
+          grep -Fq 'foreignPreAttemptAbandonmentFailsExactIdentity' "$tests"
+
+      - name: Reject application characteristic writes
+        run: |
+          set -euo pipefail
+          if grep -R --include='*.swift' -nE '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Application characteristic-value write path detected in Capture Sources.' >&2
+            exit 1
+          fi
+          echo 'No application .writeValue(...) call found in Capture Sources.'
+
+      - name: Validate project structure
+        run: |
+          set -euo pipefail
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Validate core package
+        working-directory: Packages/NembraCore
+        run: swift test
+
+      - name: Run full Capture package tests with warnings as errors
+        run: swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build, test, and capture Simulator states
+        run: scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-v14-pre-attempt-integration-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
