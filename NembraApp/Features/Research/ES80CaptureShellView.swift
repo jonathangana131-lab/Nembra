@@ -100,18 +100,6 @@ struct ES80CaptureShellView: View {
         }
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if canShowAdvancedConsole {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        ES80PassiveCaptureResearchView(controller: controller)
-                    } label: {
-                        Label("Advanced details", systemImage: "waveform.path.ecg")
-                    }
-                    .accessibilityIdentifier("es80.capture.advanced")
-                }
-            }
-        }
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
@@ -663,15 +651,6 @@ struct ES80CaptureShellView: View {
     private var selectedCandidate: ForegroundCoreBluetoothCaptureController.DiscoveredPeripheral? {
         guard let selectedCandidateIdentifier else { return nil }
         return controller.discoveredPeripherals.first { $0.id == selectedCandidateIdentifier }
-    }
-
-    private var canShowAdvancedConsole: Bool {
-        guard exportDocument == nil,
-              lifecycleFailureMessage == nil,
-              !controller.isScanning,
-              !controller.hasCompleteTargetEvidence else { return false }
-        if case .idle = controller.connectionPhase { return true }
-        return false
     }
 
     private var liveCaptureRequiresForeground: Bool {
