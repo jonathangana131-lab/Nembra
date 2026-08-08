@@ -93,6 +93,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import textwrap
 
           path = Path("NembraUITests/ES80ResearchCaptureUITests.swift")
           source = path.read_text(encoding="utf-8")
@@ -100,48 +101,49 @@ jobs:
           if source.count(marker) != 1:
               raise SystemExit("UI helper insertion boundary is not unique")
 
-          test = r'''
-    @MainActor
-    func testV14SimulatorQARendersForegroundInterruptionAsRecoverableRiderState() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--es80-passive-capture-simulator-qa",
-            "--es80-capture-qa-scenario=foregroundInterrupted"
-        ]
-        app.launch()
+          test = textwrap.dedent("""
+              @MainActor
+              func testV14SimulatorQARendersForegroundInterruptionAsRecoverableRiderState() {
+                  let app = XCUIApplication()
+                  app.launchArguments = [
+                      "--es80-passive-capture-simulator-qa",
+                      "--es80-capture-qa-scenario=foregroundInterrupted"
+                  ]
+                  app.launch()
 
-        XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
-            "The real Capture shell must render the synthetic interruption state."
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
-            "Synthetic interruption QA must remain visibly disclosed as Simulator-only."
-        )
-        XCTAssertTrue(
-            app.staticTexts["Capture stopped safely"].waitForExistence(timeout: 3),
-            "Foreground loss must present a calm, explicit stopped state."
-        )
-        XCTAssertTrue(
-            app.staticTexts["Capture was interrupted when Nembra left the foreground. This synthetic run is no longer valid. Start a fresh Capture."].waitForExistence(timeout: 3),
-            "The recovery explanation must be rider-readable and must not expose evidence-lifecycle jargon."
-        )
+                  XCTAssertTrue(
+                      app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5),
+                      "The real Capture shell must render the synthetic interruption state."
+                  )
+                  XCTAssertTrue(
+                      app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                      "Synthetic interruption QA must remain visibly disclosed as Simulator-only."
+                  )
+                  XCTAssertTrue(
+                      app.staticTexts["Capture stopped safely"].waitForExistence(timeout: 3),
+                      "Foreground loss must present a calm, explicit stopped state."
+                  )
+                  XCTAssertTrue(
+                      app.staticTexts["Capture was interrupted when Nembra left the foreground. This synthetic run is no longer valid. Start a fresh Capture."].waitForExistence(timeout: 3),
+                      "The recovery explanation must be rider-readable and must not expose evidence-lifecycle jargon."
+                  )
 
-        let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
-        XCTAssertTrue(restart.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Start a fresh Capture"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.finish"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.share"].exists)
-        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+                  let restart = app.descendants(matching: .any)["es80.capture.restart-experiment"]
+                  XCTAssertTrue(restart.waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.buttons["Start a fresh Capture"].exists)
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.finish"].exists)
+                  XCTAssertFalse(app.descendants(matching: .any)["es80.capture.share"].exists)
+                  XCTAssertFalse(app.buttons["Vehicle controls"].exists)
 
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interruption Recovery"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
+                  let attachment = XCTAttachment(screenshot: app.screenshot())
+                  attachment.name = "Nembra Capture V14 — SIMULATOR QA — Foreground Interruption Recovery"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+              }
 
-'''
+          """)
+          test = "\n" + textwrap.indent(test, "    ") + "\n"
           source = source.replace(marker, test + marker, 1)
           path.write_text(source, encoding="utf-8")
           PY
@@ -152,7 +154,6 @@ jobs:
           git diff --check
           grep -F 'foregroundInterrupted' NembraUITests/ES80ResearchCaptureUITests.swift >/dev/null
           grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
-          grep -F 'String(describing: error)' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null || true
 
       - name: Commit product recovery repair and self-delete transformer
         shell: bash
