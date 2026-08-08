@@ -1,0 +1,55 @@
+name: Recover ES80 stationary manifest onto current runtime
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-stationary-manifest-current-runtime/chat-r6v9m
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 64
+
+      - name: Replay exact stationary-manifest product blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=ebdb543bdd3885f4359fd6965644a7d2d65a48b3
+          SOURCE=12e7ee372b21fff10a6ff2cfbfb198bce9822299
+          WORKFLOW=.github/workflows/recover-es80-stationary-manifest-current-runtime-chat-r6v9m.yml
+          SOURCE_FILE=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothStationaryCaptureManifest.swift
+          TEST_FILE=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothStationaryCaptureManifestTests.swift
+          DOC_FILE=docs/ES80_STATIONARY_CAPTURE_MANIFEST.md
+
+          test "$(git rev-parse HEAD^)" = "$BASE"
+          test "$(git diff --name-only "$BASE" HEAD)" = "$WORKFLOW"
+
+          git fetch --no-tags origin "$SOURCE"
+          git checkout "$SOURCE" -- "$SOURCE_FILE" "$TEST_FILE" "$DOC_FILE"
+
+          test "$(git hash-object "$SOURCE_FILE")" = 3c9ba3bda803ab7fef29370c0da3d2247ba336d0
+          test "$(git hash-object "$TEST_FILE")" = 25f35721e0654cf0e98abc522b308cecd8ec2963
+          test "$(git hash-object "$DOC_FILE")" = 30d2dbc11767c7a65716886d8c9a3dd5077344e4
+
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' "$SOURCE_FILE"; then
+            echo 'Stationary manifest recovery must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+          git config user.name "nembra-integration-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm "$WORKFLOW"
+
+          test "$(git diff --cached --name-only "$BASE" | wc -l | tr -d ' ')" = 3
+          test "$(git diff --cached --name-status "$BASE" | grep -c '^A')" = 3
+          git diff --cached --check
+
+          git commit -m "[es80 stationary manifest] Re-anchor capture binding onto current runtime"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
