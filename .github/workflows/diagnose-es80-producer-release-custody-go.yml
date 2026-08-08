@@ -6,7 +6,7 @@ on:
       - fix/es80-v14-producer-git-xcode-source-custody-go
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnose:
@@ -17,9 +17,9 @@ jobs:
           fetch-depth: 0
           ref: fix/es80-v14-producer-git-xcode-source-custody-go
 
-      - name: Verify diagnostic parent
+      - name: Verify repair parent
         run: |
-          test "$(git rev-parse HEAD^)" = "84848aeb7b21c5fcf4573c753e8faeca4a8e5705"
+          test "$(git rev-parse HEAD^)" = "ae50629cc0cc5d1c3d3f7011a61fca223a0c66b8"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/diagnose-es80-producer-release-custody-go.yml"
 
       - name: Reuse exact guarded construction transform
@@ -45,22 +45,54 @@ jobs:
           PYEXTRACT
           python3 /tmp/nembra-producer-constructor.py
 
-      - name: Selected Xcode derives from system selector
-        run: >-
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_developer_dir_custody_source.py
-          SignedFieldCandidateDeveloperDirectoryCustodySourceTests.test_developer_directory_is_selected_by_system_tool_not_caller_environment
+      - name: Seal selected Xcode authority into producer-owned state
+        run: |
+          python3 - <<'PYFIX'
+          from pathlib import Path
 
-      - name: Selected Xcode has root nonwritable ancestry
-        run: >-
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_developer_dir_custody_source.py
-          SignedFieldCandidateDeveloperDirectoryCustodySourceTests.test_selected_developer_directory_has_root_nonwritable_ancestry_custody
+          path = Path('scripts/ci/xcode27_signed_field_candidate.sh')
+          source = path.read_text(encoding='utf-8')
+          marker = '\n: "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"\n'
+          replacement = '''
+          SELECTED_XCODE_DEVELOPER_DIR="$DEVELOPER_DIR"
+          unset DEVELOPER_DIR
 
-      - name: Version probe and archive share closed wrapper
-        run: >-
-          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_developer_dir_custody_source.py
-          SignedFieldCandidateDeveloperDirectoryCustodySourceTests.test_xcode_version_probe_and_archive_share_same_closed_wrapper
+          : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
+          '''
+          if source.count(marker) != 1:
+              raise SystemExit('expected exactly one post-Xcode-selection input marker')
+          source = source.replace(marker, replacement, 1)
 
-      - name: Closed Xcode child rejects override environment
-        run: >-
+          inherited = 'DEVELOPER_DIR="$DEVELOPER_DIR"'
+          if source.count(inherited) != 2:
+              raise SystemExit(f'expected two closed-child developer-dir assignments, found {source.count(inherited)}')
+          source = source.replace(
+              inherited,
+              'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"',
+          )
+          path.write_text(source, encoding='utf-8')
+          PYFIX
+
+      - name: Validate full portable producer custody contract
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_startup_custody.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_git_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_xcode_environment_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source_tree_blob_custody_source.py
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_developer_dir_custody_source.py
-          SignedFieldCandidateDeveloperDirectoryCustodySourceTests.test_closed_xcode_child_does_not_reimport_toolchain_override_environment
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          git diff --check
+
+      - name: Publish validated product repair and remove construction scaffolding
+        run: |
+          rm .github/workflows/construct-es80-producer-release-custody-go.yml
+          rm .github/workflows/diagnose-es80-producer-release-custody-go.yml
+          git config user.name "nembra-go-constructor"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): isolate signed-field release authority"
+          git push origin HEAD:fix/es80-v14-producer-git-xcode-source-custody-go
