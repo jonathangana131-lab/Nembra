@@ -49,17 +49,20 @@ final class PassiveCoreBluetoothArtifactAuthorityFence: @unchecked Sendable {
         storedAuthority = authority
     }
 
-    /// Thread-safe read-only projection for a synchronous MainActor admission that
-    /// needs to capture the exact fence authority before its first `await`.
-    /// Authority mutation remains MainActor-only through `transition(from:to:)`.
+    /// Read-only authority projection for synchronous MainActor admissions. Keeping
+    /// sampling on the same actor as `transition(from:to:)` means a decision can
+    /// capture this value and begin its queue transaction without an authority
+    /// replacement interleaving that synchronous admission.
+    @MainActor
     var currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext {
         synchronized { storedAuthority }
     }
 
     /// Executes `mutation` only if `expectedAuthority` is still exactly current.
     ///
-    /// The equality check and the complete synchronous mutation body share the same
-    /// lock hold. An authority transition cannot interleave between them.
+    /// This method intentionally remains callable from the recorder actor. The
+    /// equality check and the complete synchronous mutation body share the same lock
+    /// hold, so the MainActor authority transition cannot interleave between them.
     func withCurrentAuthority<Result>(
         _ expectedAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
         _ mutation: () throws -> Result
