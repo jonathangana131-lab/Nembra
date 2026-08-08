@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-/// Expected-red source contract for the first controller consumer of the sealed
-/// Experiment One admission. Software ownership/provenance only; no physical claim.
+/// Source contract for the first controller consumer of the sealed Experiment One admission.
+/// Software ownership/provenance only; no physical claim.
 struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTests {
     private static func controllerSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
@@ -30,23 +30,40 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
             .joined(separator: "\n")
     }
 
-    @Test("controller consumes the sealed admission exactly once and does not expose it publicly")
+    @Test("controller previews sealed admission, then consumes it exactly once without public exposure")
     func admissionIsPackageOwnedOneShotAuthority() throws {
         let source = Self.codeOnly(try Self.controllerSource())
 
         #expect(source.contains("func connectUsingExperimentOneAdmission("))
-        #expect(!source.contains("public func connectUsingExperimentOneAdmission("))
+        #expect(source.range(of: "public func connectUsingExperimentOneAdmission(") == nil)
+        #expect(source.components(separatedBy: "admission.previewForControllerStaging()").count - 1 == 1)
         #expect(source.components(separatedBy: "admission.consume()").count - 1 == 1)
+        #expect(source.contains("let preview = try admission.previewForControllerStaging()"))
         #expect(source.contains("let payload = try admission.consume()"))
     }
 
-    @Test("Experiment One target comes from consumed full UUID and must exist in the current controller catalog")
+    @Test("Experiment One staging target comes from previewed full UUID, then consumed payload must match exactly")
     func consumedTargetMustBeFreshlyDiscoveredByThisController() throws {
         let source = Self.codeOnly(try Self.controllerSource())
+        let start = try #require(source.range(of: "func connectUsingExperimentOneAdmission("))
+        let end = try #require(
+            source.range(
+                of: "public func cancelActiveConnection()",
+                range: start.upperBound..<source.endIndex
+            )
+        )
+        let body = source[start.lowerBound..<end.lowerBound]
 
-        #expect(source.contains("peripheralByIdentifier[payload.peripheralIdentifier]"))
-        #expect(source.contains("latestDiscoveryByIdentifier[payload.peripheralIdentifier]"))
-        #expect(source.contains("targetState.selectTarget(payload.peripheralIdentifier)"))
+        let peripheralLookup = try #require(body.range(of: "peripheralByIdentifier[preview.peripheralIdentifier]"))
+        let discoveryLookup = try #require(body.range(of: "latestDiscoveryByIdentifier[preview.peripheralIdentifier]"))
+        let consume = try #require(body.range(of: "let payload = try admission.consume()"))
+        let identityMatch = try #require(body.range(of: "payload.peripheralIdentifier == preview.peripheralIdentifier"))
+        let selectTarget = try #require(body.range(of: "targetState.selectTarget(payload.peripheralIdentifier)"))
+
+        #expect(peripheralLookup.lowerBound < consume.lowerBound)
+        #expect(discoveryLookup.lowerBound < consume.lowerBound)
+        #expect(consume.lowerBound < identityMatch.lowerBound)
+        #expect(identityMatch.lowerBound < selectTarget.lowerBound)
     }
 
     @Test("Experiment One installs the exact run-owned recorder instead of invoking generic target-session recorder creation")
@@ -54,8 +71,8 @@ struct ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTes
         let source = Self.codeOnly(try Self.controllerSource())
 
         #expect(source.contains("recorder = payload.recorder"))
-        #expect(!source.contains("beginTargetSessionIfNeeded(for: payload.peripheralIdentifier)"))
-        #expect(!source.contains("connect(to: payload.peripheralIdentifier"))
+        #expect(source.range(of: "beginTargetSessionIfNeeded(for: payload.peripheralIdentifier)") == nil)
+        #expect(source.range(of: "connect(to: payload.peripheralIdentifier") == nil)
 
         // The generic research path already owns one recorder constructor. The
         // Experiment One consumer must not add a second constructor to this file.
