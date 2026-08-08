@@ -12,6 +12,8 @@ public enum RideHistoryDistanceStoreError: Error, Equatable, Sendable {
 public enum RideHistoryDistanceAttachmentError: Error, Equatable, Sendable {
     case invalidPolicy
     case invalidLiveDistanceEvidence
+    case invalidDistanceEvidence
+    case unsupportedCheckpointSchema(Int)
     case completedRideMismatch(UUID)
     case missingCompletedRide(UUID)
     case durableVerificationFailed(UUID)
@@ -20,10 +22,10 @@ public enum RideHistoryDistanceAttachmentError: Error, Equatable, Sendable {
 /// Durable copy of the exact reconciliation policy used for one completed-ride
 /// distance attachment.
 ///
-/// Persisting the inputs rather than a caller-supplied "final distance" lets a
-/// later read re-run `RideDistanceReconciler` under the exact policy that owned
-/// the original decision. Decoding always crosses the production policy
-/// initializer again, so malformed priorities/tolerances fail closed.
+/// This is persisted configuration, not distance authority. Decoding always
+/// crosses the production policy initializer again so malformed priorities or
+/// tolerances fail closed before a checkpoint can be restored by trusted package
+/// code.
 public struct RideHistoryDistancePolicySnapshot: Codable, Equatable, Sendable {
     public let sourcePriority: [RideDistanceSource]
     public let absoluteAgreementToleranceMeters: Double
@@ -94,14 +96,13 @@ public struct RideHistoryDistancePolicySnapshot: Codable, Equatable, Sendable {
     }
 }
 
-/// Durable measured-speed segments needed to reproduce one ride's live-distance
-/// aggregate after relaunch.
+/// Durable serialized representation of the measured-speed segments needed to
+/// reproduce one ride's live-distance aggregate after relaunch.
 ///
-/// The aggregate itself is intentionally sealed/non-Codable in NembraCore. This
-/// record therefore persists its already-validated segment evidence and re-runs
-/// the authoritative aggregator on every read. Empty evidence is represented by
-/// the absence of this bundle, never by a fake zero-distance aggregate.
-public struct RideHistoryLiveDistanceEvidence: Codable, Equatable, Sendable {
+/// A decoded value is not trusted distance evidence. It is only checkpoint data.
+/// `RideHistoryDistanceRecord` can consume it only through package-sealed restore
+/// after exact completed-ride binding and authoritative reaggregation succeed.
+public struct RideHistoryLiveDistanceCheckpoint: Codable, Equatable, Sendable {
     public let source: SpeedTelemetrySource
     public let method: LiveDistanceIntegrationMethod
     public let segmentRecords: [RideLiveDistanceSegmentEvidence]
@@ -145,7 +146,7 @@ public struct RideHistoryLiveDistanceEvidence: Codable, Equatable, Sendable {
         self.segmentRecords = segmentRecords
     }
 
-    func aggregate(rideSessionID: UUID) throws -> RideLiveDistanceAggregate {
+    fileprivate func aggregate(rideSessionID: UUID) throws -> RideLiveDistanceAggregate {
         do {
             return try RideLiveDistanceAggregator.aggregate(
                 rideSessionID: rideSessionID,
@@ -175,106 +176,65 @@ public struct RideHistoryLiveDistanceEvidence: Codable, Equatable, Sendable {
                     forKey: .segmentRecords
                 )
             )
-        } catch let error as RideHistoryDistanceAttachmentError {
+        } catch {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "Ride-history live-distance evidence is invalid: \(error)."
+                    debugDescription: "Ride-history live-distance checkpoint is invalid."
                 )
             )
         }
     }
 }
 
-/// Immutable supplemental distance-reconciliation inputs for one completed
-/// history entry.
+/// Durable serialized inputs for one completed-ride distance reconciliation.
 ///
-/// This deliberately stores the *exact completed-ride evidence* it was bound to,
-/// source coverage, durable live-distance segments, transport-gap fact, and the
-/// exact reconciliation policy. It does not persist a free-form final mileage.
-/// A trusted read must first prove that `completedRideEvidence` still equals the
-/// base `RideHistoryRecord`, then deterministically rebuild and reconcile the
-/// distance evidence.
-public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
+/// This value is intentionally only a checkpoint. Public decoding cannot mint a
+/// trusted history attachment. The checkpoint stores the exact immutable
+/// completed-ride snapshot it was created from, coverage classifications, durable
+/// live-speed segment records, transport-gap fact, and exact reconciliation
+/// policy. It deliberately never stores a caller-supplied final distance,
+/// confidence, comparison result, or completion status.
+///
+/// Restoring trusted distance authority from these bytes is package-sealed and
+/// requires an independently trusted exact `RideHistoryRecord`.
+public struct RideHistoryDistanceCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
     public let schemaVersion: Int
     public let completedRideEvidence: CompletedRideEvidence
     public let odometerCoverage: RideDistanceCoverage
     public let gpsRouteCoverage: RideDistanceCoverage
-    public let liveDistanceEvidence: RideHistoryLiveDistanceEvidence?
+    public let liveDistanceCheckpoint: RideHistoryLiveDistanceCheckpoint?
     public let transportGapOccurred: Bool
     public let reconciliationPolicy: RideHistoryDistancePolicySnapshot
 
     public var sessionID: UUID { completedRideEvidence.sessionID }
-
-#if SWIFT_PACKAGE
-    package init(
-        historyRecord: RideHistoryRecord,
-        odometerCoverage: RideDistanceCoverage,
-        gpsRouteCoverage: RideDistanceCoverage,
-        liveDistanceEvidence: RideHistoryLiveDistanceEvidence?,
-        transportGapOccurred: Bool,
-        reconciliationPolicy: RideDistanceReconciliationPolicy
-    ) throws {
-        try self.init(
-            schemaVersion: Self.currentSchemaVersion,
-            completedRideEvidence: historyRecord.evidence,
-            odometerCoverage: odometerCoverage,
-            gpsRouteCoverage: gpsRouteCoverage,
-            liveDistanceEvidence: liveDistanceEvidence,
-            transportGapOccurred: transportGapOccurred,
-            reconciliationPolicy: RideHistoryDistancePolicySnapshot(policy: reconciliationPolicy)
-        )
-    }
-#else
-    fileprivate init(
-        historyRecord: RideHistoryRecord,
-        odometerCoverage: RideDistanceCoverage,
-        gpsRouteCoverage: RideDistanceCoverage,
-        liveDistanceEvidence: RideHistoryLiveDistanceEvidence?,
-        transportGapOccurred: Bool,
-        reconciliationPolicy: RideDistanceReconciliationPolicy
-    ) throws {
-        try self.init(
-            schemaVersion: Self.currentSchemaVersion,
-            completedRideEvidence: historyRecord.evidence,
-            odometerCoverage: odometerCoverage,
-            gpsRouteCoverage: gpsRouteCoverage,
-            liveDistanceEvidence: liveDistanceEvidence,
-            transportGapOccurred: transportGapOccurred,
-            reconciliationPolicy: RideHistoryDistancePolicySnapshot(policy: reconciliationPolicy)
-        )
-    }
-#endif
 
     private init(
         schemaVersion: Int,
         completedRideEvidence: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
         gpsRouteCoverage: RideDistanceCoverage,
-        liveDistanceEvidence: RideHistoryLiveDistanceEvidence?,
+        liveDistanceCheckpoint: RideHistoryLiveDistanceCheckpoint?,
         transportGapOccurred: Bool,
         reconciliationPolicy: RideHistoryDistancePolicySnapshot
     ) throws {
         guard schemaVersion == Self.currentSchemaVersion else {
-            throw RideHistoryDistanceAttachmentError.invalidPolicy
+            throw RideHistoryDistanceAttachmentError.unsupportedCheckpointSchema(schemaVersion)
         }
 
         self.schemaVersion = schemaVersion
         self.completedRideEvidence = completedRideEvidence
         self.odometerCoverage = odometerCoverage
         self.gpsRouteCoverage = gpsRouteCoverage
-        self.liveDistanceEvidence = liveDistanceEvidence
+        self.liveDistanceCheckpoint = liveDistanceCheckpoint
         self.transportGapOccurred = transportGapOccurred
         self.reconciliationPolicy = reconciliationPolicy
 
         _ = try reconciledDistance(validatingAgainst: completedRideEvidence)
     }
 
-    /// Rebuilds source evidence directly from the exact bound completed ride and
-    /// durable live-distance segments. No UUID-only convenience bridge and no
-    /// persisted final-distance output participates in this calculation.
     fileprivate func reconciledDistance(
         validatingAgainst completedRide: CompletedRideEvidence
     ) throws -> ReconciledRideDistance {
@@ -284,7 +244,7 @@ public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
             )
         }
 
-        let liveAggregate = try liveDistanceEvidence?.aggregate(
+        let liveAggregate = try liveDistanceCheckpoint?.aggregate(
             rideSessionID: completedRide.sessionID
         )
 
@@ -301,9 +261,7 @@ public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
                 transportGapOccurred: transportGapOccurred
             )
         } catch {
-            throw RideHistoryDistanceAttachmentError.completedRideMismatch(
-                completedRide.sessionID
-            )
+            throw RideHistoryDistanceAttachmentError.invalidDistanceEvidence
         }
 
         let policy = try reconciliationPolicy.policy()
@@ -315,7 +273,7 @@ public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
         case completedRideEvidence
         case odometerCoverage
         case gpsRouteCoverage
-        case liveDistanceEvidence
+        case liveDistanceCheckpoint
         case transportGapOccurred
         case reconciliationPolicy
     }
@@ -331,9 +289,9 @@ public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
                 ),
                 odometerCoverage: container.decode(RideDistanceCoverage.self, forKey: .odometerCoverage),
                 gpsRouteCoverage: container.decode(RideDistanceCoverage.self, forKey: .gpsRouteCoverage),
-                liveDistanceEvidence: container.decodeIfPresent(
-                    RideHistoryLiveDistanceEvidence.self,
-                    forKey: .liveDistanceEvidence
+                liveDistanceCheckpoint: container.decodeIfPresent(
+                    RideHistoryLiveDistanceCheckpoint.self,
+                    forKey: .liveDistanceCheckpoint
                 ),
                 transportGapOccurred: container.decode(Bool.self, forKey: .transportGapOccurred),
                 reconciliationPolicy: container.decode(
@@ -341,14 +299,93 @@ public struct RideHistoryDistanceRecord: Codable, Equatable, Sendable {
                     forKey: .reconciliationPolicy
                 )
             )
-        } catch let error as RideHistoryDistanceAttachmentError {
+        } catch {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "Ride-history distance attachment is invalid: \(error)."
+                    debugDescription: "Ride-history distance checkpoint is invalid."
                 )
             )
         }
+    }
+}
+
+/// Trusted distance attachment bound to one immutable completed-history row.
+///
+/// This value is intentionally **not Decodable**. Arbitrary durable bytes must
+/// first decode into `RideHistoryDistanceCheckpoint`, which remains only an
+/// untrusted persisted representation. Package-owned construction/restoration
+/// then requires exact base-history equality and deterministically re-runs both
+/// live-distance aggregation and distance reconciliation before this trusted
+/// runtime capability can exist.
+public struct RideHistoryDistanceRecord: Equatable, Sendable {
+    private let checkpointStorage: RideHistoryDistanceCheckpoint
+
+    public var sessionID: UUID { checkpointStorage.sessionID }
+    public var checkpoint: RideHistoryDistanceCheckpoint { checkpointStorage }
+
+#if SWIFT_PACKAGE
+    package init(
+        historyRecord: RideHistoryRecord,
+        odometerCoverage: RideDistanceCoverage,
+        gpsRouteCoverage: RideDistanceCoverage,
+        liveDistanceCheckpoint: RideHistoryLiveDistanceCheckpoint?,
+        transportGapOccurred: Bool,
+        reconciliationPolicy: RideDistanceReconciliationPolicy
+    ) throws {
+        let checkpoint = try RideHistoryDistanceCheckpoint(
+            schemaVersion: RideHistoryDistanceCheckpoint.currentSchemaVersion,
+            completedRideEvidence: historyRecord.evidence,
+            odometerCoverage: odometerCoverage,
+            gpsRouteCoverage: gpsRouteCoverage,
+            liveDistanceCheckpoint: liveDistanceCheckpoint,
+            transportGapOccurred: transportGapOccurred,
+            reconciliationPolicy: RideHistoryDistancePolicySnapshot(policy: reconciliationPolicy)
+        )
+        try self.init(checkpoint: checkpoint, historyRecord: historyRecord)
+    }
+
+    package init(
+        checkpoint: RideHistoryDistanceCheckpoint,
+        historyRecord: RideHistoryRecord
+    ) throws {
+        _ = try checkpoint.reconciledDistance(validatingAgainst: historyRecord.evidence)
+        checkpointStorage = checkpoint
+    }
+#else
+    fileprivate init(
+        historyRecord: RideHistoryRecord,
+        odometerCoverage: RideDistanceCoverage,
+        gpsRouteCoverage: RideDistanceCoverage,
+        liveDistanceCheckpoint: RideHistoryLiveDistanceCheckpoint?,
+        transportGapOccurred: Bool,
+        reconciliationPolicy: RideDistanceReconciliationPolicy
+    ) throws {
+        let checkpoint = try RideHistoryDistanceCheckpoint(
+            schemaVersion: RideHistoryDistanceCheckpoint.currentSchemaVersion,
+            completedRideEvidence: historyRecord.evidence,
+            odometerCoverage: odometerCoverage,
+            gpsRouteCoverage: gpsRouteCoverage,
+            liveDistanceCheckpoint: liveDistanceCheckpoint,
+            transportGapOccurred: transportGapOccurred,
+            reconciliationPolicy: RideHistoryDistancePolicySnapshot(policy: reconciliationPolicy)
+        )
+        try self.init(checkpoint: checkpoint, historyRecord: historyRecord)
+    }
+
+    fileprivate init(
+        checkpoint: RideHistoryDistanceCheckpoint,
+        historyRecord: RideHistoryRecord
+    ) throws {
+        _ = try checkpoint.reconciledDistance(validatingAgainst: historyRecord.evidence)
+        checkpointStorage = checkpoint
+    }
+#endif
+
+    fileprivate func reconciledDistance(
+        validatingAgainst completedRide: CompletedRideEvidence
+    ) throws -> ReconciledRideDistance {
+        try checkpointStorage.reconciledDistance(validatingAgainst: completedRide)
     }
 }
 
@@ -357,9 +394,8 @@ public protocol RideHistoryDistanceStore: Sendable {
     func record(sessionID: UUID) async throws -> RideHistoryDistanceRecord?
 }
 
-/// Freshly revalidated join between immutable base history and its distance
-/// attachment. This runtime capability is intentionally not Codable; persistence
-/// remains the two records plus their exact evidence equality check.
+/// Freshly revalidated join between immutable base history and its trusted
+/// distance attachment. This runtime capability is also intentionally non-Codable.
 public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public let historyRecord: RideHistoryRecord
     public let distanceRecord: RideHistoryDistanceRecord
@@ -394,8 +430,12 @@ public struct RideHistoryDistanceJoinedRecord: Equatable, Sendable {
     public var sessionID: UUID { historyRecord.sessionID }
 }
 
-/// Idempotently attaches deterministic distance-reconciliation inputs to an
-/// already-durable completed ride, then verifies exact durable read-back.
+/// Idempotently attaches trusted deterministic reconciliation inputs to an
+/// already-durable completed ride, then requires exact durable read-back.
+///
+/// Because `RideHistoryDistanceRecord` itself is not Decodable, ordinary public
+/// clients cannot manufacture a trusted attachment by deserializing arbitrary
+/// checkpoint bytes and passing them here.
 public actor RideHistoryDistanceCommitCoordinator {
     private let historyStore: any RideHistoryStore
     private let distanceStore: any RideHistoryDistanceStore
@@ -426,7 +466,7 @@ public actor RideHistoryDistanceCommitCoordinator {
     }
 
     /// A base history row with no distance attachment is ordinary unavailability.
-    /// An orphaned attachment or a mismatched immutable base fails closed.
+    /// An orphaned attachment or mismatched immutable base fails closed.
     public func joinedRecord(
         sessionID: UUID
     ) async throws -> RideHistoryDistanceJoinedRecord? {
@@ -447,52 +487,21 @@ public actor RideHistoryDistanceCommitCoordinator {
     }
 }
 
-public extension RideStatisticsRide {
-    /// Production-safe statistics bridge from a revalidated immutable-history
-    /// distance join. Unlike the package fixture bridge, callers cannot pair an
-    /// arbitrary completed ride with an unrelated `ReconciledRideDistance`.
-    init(
+#if SWIFT_PACKAGE
+extension RideStatisticsRide {
+    /// Package-sealed production adapter from the immutable-history distance join.
+    /// Delegating to the canonical reconciliation bridge keeps one authoritative
+    /// status/confidence -> statistics-disposition policy instead of duplicating
+    /// that truth switch in a second file.
+    package init(
         historyDistanceRecord record: RideHistoryDistanceJoinedRecord,
         calendarAttribution: RideStatisticsCalendarAttribution
     ) throws {
-        let reconciledDistance = record.reconciledDistance
-        let disposition: RideStatisticsDistanceDisposition
-        switch reconciledDistance.status {
-        case .complete, .vehicleDistanceRecoveredAcrossCoverageGap:
-            switch reconciledDistance.confidence {
-            case .unavailable:
-                disposition = .excludedInsufficientEvidence
-            case .conflicting:
-                disposition = .excludedConflict
-            case .singleSource, .corroborated, .recoverySupported:
-                disposition = reconciledDistance.finalDistanceMeters == nil
-                    ? .excludedInsufficientEvidence
-                    : .included
-            }
-        case .coverageIncomplete:
-            disposition = .excludedIncompleteCoverage
-        case .disagreementRequiresReview:
-            disposition = .excludedConflict
-        case .insufficientEvidence:
-            disposition = .excludedInsufficientEvidence
-        }
-
-        let completedRide = record.historyRecord.evidence
-        let attributedDate: Date
-        switch calendarAttribution {
-        case .rideBegan:
-            attributedDate = completedRide.beganAtDate
-        case .rideEnded:
-            attributedDate = completedRide.endedAtDate
-        }
-
-        guard attributedDate.timeIntervalSinceReferenceDate.isFinite else {
-            throw RideStatisticsError.invalidRide
-        }
-
-        sessionID = completedRide.sessionID
-        self.attributedDate = attributedDate
-        distanceMeters = reconciledDistance.finalDistanceMeters
-        distanceDisposition = disposition
+        try self.init(
+            completedRide: record.historyRecord.evidence,
+            reconciledDistance: record.reconciledDistance,
+            calendarAttribution: calendarAttribution
+        )
     }
 }
+#endif
