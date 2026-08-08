@@ -1,0 +1,159 @@
+name: Agent ES80 signed IPA exact-subject repair
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-signed-ipa-exact-subject-r2/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Snapshot one exact signed IPA subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/es80_signed_field_artifact_evidence.py")
+          text = path.read_text()
+
+          canonical_marker = "\n\ndef canonical_sha40(value: str) -> str:\n"
+          if text.count(canonical_marker) != 1:
+              raise SystemExit("canonical SHA insertion anchor drifted")
+
+          helper_lines = [
+              "",
+              "",
+              "def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:",
+              "    return (",
+              "        metadata.st_dev,",
+              "        metadata.st_ino,",
+              "        metadata.st_size,",
+              "        metadata.st_mtime_ns,",
+              "        metadata.st_ctime_ns,",
+              "        stat.S_IFMT(metadata.st_mode),",
+              "    )",
+              "",
+              "",
+              "def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:",
+              "    \"\"\"Copy one stable exact IPA subject through one open file descriptor.\"\"\"",
+              "    flags = os.O_RDONLY",
+              "    if hasattr(os, \"O_NOFOLLOW\"):",
+              "        flags |= os.O_NOFOLLOW",
+              "    try:",
+              "        descriptor = os.open(ipa_path, flags)",
+              "    except OSError as exc:",
+              "        raise EvidenceError(f\"could not open exact IPA subject: {ipa_path}\") from exc",
+              "",
+              "    try:",
+              "        before = os.fstat(descriptor)",
+              "        if not stat.S_ISREG(before.st_mode):",
+              "            raise EvidenceError(\"IPA input must be one regular file\")",
+              "        destination.parent.mkdir(parents=True, exist_ok=True)",
+              "        try:",
+              "            with os.fdopen(os.dup(descriptor), \"rb\") as source, destination.open(\"xb\") as sink:",
+              "                shutil.copyfileobj(source, sink, length=1024 * 1024)",
+              "                sink.flush()",
+              "                os.fsync(sink.fileno())",
+              "        except OSError as exc:",
+              "            destination.unlink(missing_ok=True)",
+              "            raise EvidenceError(\"could not snapshot exact IPA subject\") from exc",
+              "",
+              "        after = os.fstat(descriptor)",
+              "        if _stable_file_identity(before) != _stable_file_identity(after):",
+              "            destination.unlink(missing_ok=True)",
+              "            raise EvidenceError(\"IPA input changed while exact inspection subject was snapshotted\")",
+              "        try:",
+              "            snapshot_stat = destination.stat()",
+              "        except OSError as exc:",
+              "            destination.unlink(missing_ok=True)",
+              "            raise EvidenceError(\"could not stat exact IPA inspection subject\") from exc",
+              "        if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size != before.st_size:",
+              "            destination.unlink(missing_ok=True)",
+              "            raise EvidenceError(\"exact IPA inspection subject does not match source byte count\")",
+              "        destination.chmod(0o600)",
+              "        return destination",
+              "    finally:",
+              "        os.close(descriptor)",
+          ]
+          helper = "\n".join(helper_lines)
+          text = text.replace(canonical_marker, helper + canonical_marker, 1)
+
+          signature = "def inspect_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:\n"
+          if text.count(signature) != 1:
+              raise SystemExit("inspect_ipa signature anchor drifted")
+          internal_signature = signature.replace("def inspect_ipa", "def _inspect_snapshotted_ipa")
+          wrapper_lines = [
+              "def inspect_ipa(ipa_path: Path, expected_source_sha: str, *, intended_device_udid: str) -> dict:",
+              "    \"\"\"Inspect one private exact snapshot so digest and signing facts share one subject.\"\"\"",
+              "    with tempfile.TemporaryDirectory(prefix=\"nembra-field-ipa-subject-\") as temporary:",
+              "        exact_subject = Path(temporary) / \"NembraField.ipa\"",
+              "        snapshot_ipa_exact(ipa_path, exact_subject)",
+              "        return _inspect_snapshotted_ipa(",
+              "            exact_subject,",
+              "            expected_source_sha,",
+              "            intended_device_udid=intended_device_udid,",
+              "        )",
+              "",
+              "",
+          ]
+          wrapper = "\n".join(wrapper_lines)
+          text = text.replace(signature, wrapper + internal_signature, 1)
+
+          start_marker = "    inspection = inspect_ipa(\n"
+          end_marker = "    summary = {\n"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit("main inspection/publication anchor drifted")
+          old_main = text[start:end]
+          if old_main.count("write_outputs(") != 1:
+              raise SystemExit("main publication topology drifted")
+          new_main_lines = [
+              "    ipa_input = args.ipa.expanduser().absolute()",
+              "    with tempfile.TemporaryDirectory(prefix=\"nembra-field-ipa-subject-\") as temporary:",
+              "        exact_subject = Path(temporary) / \"NembraField.ipa\"",
+              "        snapshot_ipa_exact(ipa_input, exact_subject)",
+              "        inspection = _inspect_snapshotted_ipa(",
+              "            exact_subject,",
+              "            args.expected_source_sha,",
+              "            intended_device_udid=args.intended_device_udid,",
+              "        )",
+              "        paths = write_outputs(exact_subject, args.output_dir.resolve(), inspection)",
+              "",
+          ]
+          text = text[:start] + "\n".join(new_main_lines) + text[end:]
+
+          path.write_text(text)
+          PY
+
+      - name: Validate exact-subject hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git diff --check
+
+      - name: Commit product delta and remove transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/ci/es80_signed_field_artifact_evidence.py
+          git rm .github/workflows/agent-es80-signed-ipa-exact-subject.yml
+          git diff --cached --check
+          git diff --cached --quiet && { echo "No product delta produced" >&2; exit 1; }
+          git commit -m "Bind signed IPA inspection to one exact subject"
+          git push origin HEAD:${GITHUB_REF_NAME}
