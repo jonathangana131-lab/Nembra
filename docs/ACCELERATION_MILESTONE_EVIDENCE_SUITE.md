@@ -14,6 +14,7 @@ Nembra already has a deliberately conservative `AccelerationEvidenceSession` for
 - Targets are explicit SI speeds and must be nonempty and strictly increasing.
 - Every target uses the same authoritative speed source, stationary threshold, sample-gap ceiling, accuracy requirement, and telemetry-quality policy.
 - Every target sees the exact same measurement callbacks in the exact same order.
+- Motion-assisted/display-estimated speed is rejected by the delegated acceleration run policy and cannot become milestone evidence.
 - Display-interpolated speed never becomes acceleration evidence because the delegated evaluator still requires authoritative absolute speed measurements.
 - A completed lower milestone is immutable. If a later gap or continuity interruption occurs, already-sealed lower-target evidence may remain reportable while unfinished higher targets fail closed.
 - Missing evidence is never bridged to finish a higher target.
@@ -34,6 +35,7 @@ Examples:
 - `0 → 2 m/s` completes, then vehicle connection continuity is lost: the completed result remains sealed; unfinished milestones invalidate for the interruption and retain the interruption evidence in readiness.
 - A caller supplies duplicate or descending targets: policy construction fails instead of producing ambiguous milestone identity/order.
 - The telemetry-quality source disagrees with the run source: policy construction fails through the existing `AccelerationEvidenceSessionPolicy` source gate.
+- A caller attempts to use `.motionAssist` as the required run source: construction fails through the existing acceleration run authority gate.
 
 ## Product boundary
 
