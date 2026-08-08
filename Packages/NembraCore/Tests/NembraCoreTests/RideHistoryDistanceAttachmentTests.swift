@@ -31,7 +31,7 @@ struct RideHistoryDistanceAttachmentTests {
     }
 
     private actor InMemoryDistanceStore: RideHistoryDistanceStore {
-        private var records: [UUID: RideHistoryDistanceRecord] = [:]
+        private var checkpoints: [UUID: RideHistoryDistanceCheckpoint] = [:]
         private let suppressReads: Bool
 
         init(suppressReads: Bool = false) {
@@ -39,21 +39,21 @@ struct RideHistoryDistanceAttachmentTests {
         }
 
         func commit(
-            _ record: RideHistoryDistanceRecord
+            _ checkpoint: RideHistoryDistanceCheckpoint
         ) async throws -> RideHistoryDistanceCommitResult {
-            if let existing = records[record.sessionID] {
-                guard existing == record else {
-                    throw RideHistoryDistanceStoreError.sessionConflict(record.sessionID)
+            if let existing = checkpoints[checkpoint.sessionID] {
+                guard existing == checkpoint else {
+                    throw RideHistoryDistanceStoreError.sessionConflict(checkpoint.sessionID)
                 }
                 return .alreadyPresent
             }
-            records[record.sessionID] = record
+            checkpoints[checkpoint.sessionID] = checkpoint
             return .inserted
         }
 
-        func record(sessionID: UUID) async throws -> RideHistoryDistanceRecord? {
+        func checkpoint(sessionID: UUID) async throws -> RideHistoryDistanceCheckpoint? {
             guard !suppressReads else { return nil }
-            return records[sessionID]
+            return checkpoints[sessionID]
         }
     }
 
@@ -132,17 +132,19 @@ struct RideHistoryDistanceAttachmentTests {
         )
     }
 
-    @Test("distance attachment commits idempotently only after immutable base history exists")
+    @Test("distance attachment commits checkpoint idempotently only after immutable base history exists")
     func commitAndJoin() async throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let record = try attachment(history: history)
+        let distanceStore = InMemoryDistanceStore()
         let coordinator = RideHistoryDistanceCommitCoordinator(
             historyStore: InMemoryHistoryStore(records: [history]),
-            distanceStore: InMemoryDistanceStore()
+            distanceStore: distanceStore
         )
 
         #expect(try await coordinator.commit(record) == .inserted)
         #expect(try await coordinator.commit(record) == .alreadyPresent)
+        #expect(try await distanceStore.checkpoint(sessionID: sessionID) == record.checkpoint)
 
         let joined = try await coordinator.joinedRecord(sessionID: sessionID)
         #expect(joined?.historyRecord == history)
@@ -248,6 +250,29 @@ struct RideHistoryDistanceAttachmentTests {
         }
     }
 
+    @Test("durable store returns checkpoint only; coordinator remints trusted record on each read")
+    func durableReadRequiresHistoryBackedRestore() async throws {
+        let history = RideHistoryRecord(evidence: try completedRide())
+        let record = try attachment(history: history)
+        let checkpointData = try JSONEncoder().encode(record.checkpoint)
+        let decodedCheckpoint = try JSONDecoder().decode(
+            RideHistoryDistanceCheckpoint.self,
+            from: checkpointData
+        )
+        let distanceStore = InMemoryDistanceStore()
+        _ = try await distanceStore.commit(decodedCheckpoint)
+        let coordinator = RideHistoryDistanceCommitCoordinator(
+            historyStore: InMemoryHistoryStore(records: [history]),
+            distanceStore: distanceStore
+        )
+
+        let first = try #require(await coordinator.joinedRecord(sessionID: sessionID))
+        let second = try #require(await coordinator.joinedRecord(sessionID: sessionID))
+        #expect(first.distanceRecord == record)
+        #expect(second.distanceRecord == record)
+        #expect(first.reconciledDistance == second.reconciledDistance)
+    }
+
     @Test("live-distance aggregate is rebuilt from durable segment checkpoint evidence")
     func durableLiveSegmentsAreReaggregated() throws {
         let history = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 0))
@@ -310,11 +335,11 @@ struct RideHistoryDistanceAttachmentTests {
         }
     }
 
-    @Test("orphaned attachment without base history fails closed")
+    @Test("orphaned checkpoint without base history fails closed")
     func orphanedAttachmentRejected() async throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let distanceStore = InMemoryDistanceStore()
-        _ = try await distanceStore.commit(attachment(history: history))
+        _ = try await distanceStore.commit(attachment(history: history).checkpoint)
         let coordinator = RideHistoryDistanceCommitCoordinator(
             historyStore: InMemoryHistoryStore(),
             distanceStore: distanceStore
@@ -327,7 +352,7 @@ struct RideHistoryDistanceAttachmentTests {
         }
     }
 
-    @Test("base history without a distance attachment remains ordinary unavailability")
+    @Test("base history without a distance checkpoint remains ordinary unavailability")
     func missingAttachmentIsUnavailable() async throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let coordinator = RideHistoryDistanceCommitCoordinator(
@@ -338,7 +363,7 @@ struct RideHistoryDistanceAttachmentTests {
         #expect(try await coordinator.joinedRecord(sessionID: sessionID) == nil)
     }
 
-    @Test("commit requires exact durable read-back")
+    @Test("commit requires exact durable checkpoint read-back")
     func missingReadBackFails() async throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let coordinator = RideHistoryDistanceCommitCoordinator(
@@ -351,6 +376,22 @@ struct RideHistoryDistanceAttachmentTests {
         ) {
             _ = try await coordinator.commit(attachment(history: history))
         }
+    }
+
+    @Test("distance checkpoint store is immutable per session")
+    func conflictingCheckpointCannotReplaceExistingSession() async throws {
+        let history = RideHistoryRecord(evidence: try completedRide())
+        let distanceStore = InMemoryDistanceStore()
+        let first = try attachment(history: history, gpsCoverage: .complete)
+        let conflicting = try attachment(history: history, gpsCoverage: .partial)
+
+        #expect(try await distanceStore.commit(first.checkpoint) == .inserted)
+        await #expect(
+            throws: RideHistoryDistanceStoreError.sessionConflict(sessionID)
+        ) {
+            _ = try await distanceStore.commit(conflicting.checkpoint)
+        }
+        #expect(try await distanceStore.checkpoint(sessionID: sessionID) == first.checkpoint)
     }
 
     @Test("decoded invalid reconciliation policy fails at checkpoint boundary")
