@@ -5,6 +5,15 @@ set -euo pipefail
 # only the private-file path below; a stale caller export must not propagate the raw device identifier.
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
 
+# Python participates directly in private-input validation and evidence admission. Never discover it
+# through caller PATH, and always use isolated mode so PYTHON* startup/import state cannot gain
+# authority before descriptor-bound source executes.
+PYTHON3="/usr/bin/python3"
+if [[ ! -x "$PYTHON3" ]]; then
+  echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
+  exit 2
+fi
+
 # Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
 # This script cannot authorize physical ES80 Experiment One.
 
@@ -72,7 +81,7 @@ fi
 
 BUILD_IDENTIFIER="Capture Build V14-${SOURCE_SHA:0:12}"
 FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"
-BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
+BUILD_INSTANCE_ID="$("$PYTHON3" -I -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Generated build-instance ID is not canonical lowercase UUID text." >&2
   exit 9
@@ -94,7 +103,7 @@ RAW_ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate-${SOUR
 if [[ "$RAW_ARTIFACTS_DIR" != /* ]]; then
   RAW_ARTIFACTS_DIR="$ROOT/$RAW_ARTIFACTS_DIR"
 fi
-ARTIFACTS_DIR="$(python3 - "$RAW_ARTIFACTS_DIR" <<'PY'
+ARTIFACTS_DIR="$("$PYTHON3" -I - "$RAW_ARTIFACTS_DIR" <<'PY'
 import sys
 from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
@@ -153,7 +162,7 @@ exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
 rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
 rmdir "$INSPECTION_TOOL_ROOT"
 
-if ! python3 /dev/fd/7 \
+if ! "$PYTHON3" -I /dev/fd/7 \
   --validate-intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"
 then
   echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE failed private content/mode validation." >&2
@@ -163,7 +172,7 @@ exec 7<&-
 
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
 /usr/bin/plutil -lint "$EXPORT_OPTIONS_SNAPSHOT" >/dev/null
-EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
+EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" "$NEMBRA_DEVELOPMENT_TEAM" <<'PY'
 import hashlib
 import plistlib
 import sys
@@ -239,7 +248,7 @@ then
   exit 17
 fi
 
-POST_EXPORT_OPTIONS_SHA256="$(python3 - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
+POST_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$EXPORT_OPTIONS_SNAPSHOT" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -260,7 +269,7 @@ if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; 
 fi
 
 # Closed-world top-level IPA selection without nullglob/empty arrays under Bash 3.2 + nounset.
-IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
+IPA_PATH="$("$PYTHON3" -I - "$EXPORT_DIR" <<'PY'
 import sys
 from pathlib import Path
 export_dir = Path(sys.argv[1])
@@ -277,8 +286,9 @@ PY
 
 # The intended-device UDID remains behind the private mode-0600 file boundary. Both executable
 # Python subjects are exact SOURCE_SHA Git blobs held by descriptors whose path names were removed
-# before build work; no mutable checkout path can swap the evidence implementation.
-python3 /dev/fd/9 \
+# before build work; no mutable checkout path can swap the evidence implementation. The interpreter
+# is fixed to the sealed system path and isolated mode prevents caller Python startup/import state.
+"$PYTHON3" -I /dev/fd/9 \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
   --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
@@ -292,7 +302,7 @@ FIELD_BUILD_RECORD="$INSPECTION_DIR/NembraCaptureFieldBuildEvidenceRecord.json"
 SIGNING_INSPECTION="$INSPECTION_DIR/NembraCaptureSignedFieldArtifactInspection.json"
 RETAINED_IPA="$INSPECTION_DIR/build-evidence/NembraField.ipa"
 
-python3 - \
+"$PYTHON3" -I - \
   "$EXTERNAL_RECORD" \
   "$FIELD_BUILD_RECORD" \
   "$SIGNING_INSPECTION" \
@@ -468,11 +478,12 @@ cp -R "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection"
   echo "procedure_version=V14"
   echo "signing_inspection_authority=signed-field-artifact-inspection-not-field-authorization"
   echo "physical_authorization=not-granted"
+  "$PYTHON3" -I --version
   xcodebuild -version
 } > "$FINAL_STAGING_DIR/field-candidate-environment.txt"
 
 # Re-prove that final staging preserved exact inspector evidence bytes and exact export policy bytes.
-python3 - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
+"$PYTHON3" -I - "$INSPECTION_DIR" "$FINAL_STAGING_DIR/inspection" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -490,7 +501,7 @@ if manifest(source) != manifest(destination):
     raise SystemExit("Final candidate staging did not preserve exact canonical inspector bytes")
 PY
 
-FINAL_EXPORT_OPTIONS_SHA256="$(python3 - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
+FINAL_EXPORT_OPTIONS_SHA256="$("$PYTHON3" -I - "$FINAL_STAGING_DIR/ExportOptions.plist" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -503,7 +514,7 @@ if [[ "$FINAL_EXPORT_OPTIONS_SHA256" != "$EXPORT_OPTIONS_SHA256" ]]; then
 fi
 
 # macOS renamex_np(RENAME_EXCL) publishes the complete directory atomically without replacement.
-python3 - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
+"$PYTHON3" -I - "$FINAL_STAGING_DIR" "$ARTIFACTS_DIR" <<'PY'
 import ctypes
 import errno
 import os
