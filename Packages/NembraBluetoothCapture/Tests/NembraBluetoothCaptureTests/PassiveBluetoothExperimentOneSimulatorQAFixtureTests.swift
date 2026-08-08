@@ -143,6 +143,17 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
                     admissionPrepared: false,
                     targetRediscovered: false,
                     observationReady: true,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .observationHorizonReady:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
                     canFinalize: true,
                     artifactState: .unavailable
                 )
