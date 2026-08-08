@@ -35,6 +35,20 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
 
+        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
+        XCTAssertTrue(
+            buildIdentity.waitForExistence(timeout: 3),
+            "The rider-facing lock must expose the running build's human-readable identity without exposing raw provenance by default."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.build-source-sha"].exists,
+            "The exact source SHA must remain secondary while Engineering Details is collapsed."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.build-instance-id"].exists,
+            "The exact build-instance rendezvous must remain secondary while Engineering Details is collapsed."
+        )
+
         let engineeringDetails = app.descendants(matching: .any)["es80.capture.engineering-details"]
         XCTAssertTrue(
             engineeringDetails.waitForExistence(timeout: 3),
@@ -58,6 +72,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             app.staticTexts["NO-GO"].waitForExistence(timeout: 3),
             "Engineering Details must preserve explicit physical NO-GO truth."
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-source-sha"].waitForExistence(timeout: 3),
+            "The QA build injects exact source identity, which must remain inspectable inside Engineering Details."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-instance-id"].waitForExistence(timeout: 3),
+            "The QA build injects the produced-build rendezvous, which must remain inspectable inside Engineering Details."
+        )
         XCTAssertFalse(
             app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists,
             "Expanding information-only details must not instantiate the field preflight."
@@ -71,6 +93,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             app.staticTexts["ES80-FINGERPRINT-v1"].exists,
             "Collapsing Engineering Details must restore the rider-facing hierarchy."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.build-source-sha"].exists,
+            "Collapsing Engineering Details must hide the raw source SHA again."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.build-instance-id"].exists,
+            "Collapsing Engineering Details must hide the raw build-instance rendezvous again."
         )
 
         XCTAssertFalse(
@@ -139,22 +169,31 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         app.launch()
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
+        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let engineeringDetails = app.descendants(matching: .any)["es80.capture.engineering-details"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
+        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
         XCTAssertFalse(
             app.staticTexts["ES80-FINGERPRINT-v1"].exists,
             "Raw engineering identity must remain collapsed at Accessibility XXXL."
         )
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.build-source-sha"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.build-instance-id"].exists)
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
             lockedState,
             windowFrame: windowFrame,
             context: "primary NO-GO state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            buildIdentity,
+            windowFrame: windowFrame,
+            context: "human-readable build identity at Accessibility XXXL"
         )
         assertVisibleInScreenshotViewport(
             physicalBoundary,
@@ -192,18 +231,27 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
+        let buildIdentity = app.descendants(matching: .any)["es80.capture.build-identity"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let engineeringDetails = app.descendants(matching: .any)["es80.capture.engineering-details"]
         XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
+        XCTAssertTrue(buildIdentity.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(engineeringDetails.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["ES80-FINGERPRINT-v1"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.build-source-sha"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.build-instance-id"].exists)
 
         let windowFrame = app.windows.firstMatch.frame
         assertVisibleInScreenshotViewport(
             lockedState,
             windowFrame: windowFrame,
             context: "primary NO-GO state in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            buildIdentity,
+            windowFrame: windowFrame,
+            context: "human-readable build identity in landscape"
         )
         assertVisibleInScreenshotViewport(
             physicalBoundary,
