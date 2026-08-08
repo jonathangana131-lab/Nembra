@@ -191,21 +191,41 @@ struct ES80CaptureShellView: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 10) {
-                Image(systemName: statusSymbol(for: phase))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(statusColor(for: phase))
-                    .accessibilityHidden(true)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Image(systemName: statusSymbol(for: phase))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(statusColor(for: phase))
+                            .accessibilityHidden(true)
 
-                Text(statusTitle(for: phase))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                        Text(statusTitle(for: phase))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                Spacer(minLength: 8)
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
 
-                Text("PASSIVE / READ ONLY")
-                    .font(.caption2.monospaced().weight(.bold))
-                    .foregroundStyle(.secondary)
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer(minLength: 8)
+
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -799,12 +819,27 @@ struct ES80CaptureShellView: View {
         let observationReady = presentationObservationReady(status: status)
         let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
 
-        return HStack(spacing: 12) {
-            healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
-            Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
-            Divider().frame(height: 28).overlay(.white.opacity(0.12))
-            healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    healthItem("TARGET", value: connection == .connected ? "BOUND" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            }
         }
         .padding(14)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -812,6 +847,7 @@ struct ES80CaptureShellView: View {
         .accessibilityLabel(
             "Capture health. Target \(connection == .connected ? "bound" : "waiting"). Passive discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
         )
+        .accessibilityIdentifier("es80.capture.health")
     }
 
     private var completionPanel: some View {

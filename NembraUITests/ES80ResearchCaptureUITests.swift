@@ -903,4 +903,60 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(attachment)
     }
 
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyHeroAndHealthRecomposeAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let passiveMode = app.staticTexts["PASSIVE / READ ONLY"]
+        let health = app.descendants(matching: .any)["es80.capture.health"]
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(passiveMode.waitForExistence(timeout: 3))
+        XCTAssertTrue(health.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        let initialFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: initialFrame,
+            context: "synthetic disclosure beside recomposed Capture hero at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            passiveMode,
+            windowFrame: initialFrame,
+            context: "PASSIVE / READ ONLY hero state at Accessibility XXXL"
+        )
+
+        let heroAttachment = XCTAttachment(screenshot: app.screenshot())
+        heroAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Hero — Accessibility XXXL"
+        heroAttachment.lifetime = .keepAlways
+        add(heroAttachment)
+
+        bringIntoScreenshotViewport(
+            health,
+            in: app,
+            context: "stacked Capture health at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            health,
+            windowFrame: app.windows.firstMatch.frame,
+            context: "stacked Capture health at Accessibility XXXL"
+        )
+
+        let healthAttachment = XCTAttachment(screenshot: app.screenshot())
+        healthAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Health — Accessibility XXXL"
+        healthAttachment.lifetime = .keepAlways
+        add(healthAttachment)
+    }
+
 }
