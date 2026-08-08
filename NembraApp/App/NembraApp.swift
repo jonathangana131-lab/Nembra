@@ -13,7 +13,8 @@ struct NembraApp: App {
 #endif
     }
 
-    static let captureFieldRecipeInfoPlistKey = "NembraCaptureFieldRecipe"
+    static let captureFieldRecipeInfoPlistKey =
+        PassiveBluetoothExperimentOneFieldExecutionGate.fieldRecipeInfoDictionaryKey
 
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
@@ -28,7 +29,8 @@ struct NembraApp: App {
         case .standard:
             initialResearchCoordinator = nil
         case .es80PassiveCapture:
-            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+            initialResearchCoordinator = try? PassiveBluetoothExperimentOneCoordinator
+                .makeResearchAuthorizedES80ForCurrentApplication()
 #if DEBUG && targetEnvironment(simulator)
         case .es80PassiveCaptureSimulatorQA:
             // Synthetic QA uses the inert status-only coordinator: no live CoreBluetooth controller.
@@ -59,20 +61,10 @@ struct NembraApp: App {
 
             case .es80PassiveCapture:
                 NavigationStack {
-                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let researchCoordinator {
-                            ES80ExperimentOneStationaryPreflightView(
-                                coordinator: researchCoordinator
-                            )
-                        } else {
-                            ContentUnavailableView(
-                                "Capture unavailable",
-                                systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The Experiment One capture workflow could not be created.")
-                            )
-                            .navigationTitle("Nembra Capture")
-                            .accessibilityIdentifier("es80.research-capture-unavailable")
-                        }
+                    if let researchCoordinator {
+                        ES80ExperimentOneStationaryPreflightView(
+                            coordinator: researchCoordinator
+                        )
                     } else {
                         ES80ExperimentOneFieldNoGoView()
                     }
@@ -116,7 +108,8 @@ struct NembraApp: App {
     }
 
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    /// The marker is launch routing only; it cannot mint package physical authority.
+    /// The package field gate independently re-verifies the same marker together with exact running
+    /// build identity before any live CoreBluetooth coordinator can be created.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -156,8 +149,8 @@ struct NembraApp: App {
 /// same condition into the package-owned stationary setup object.
 ///
 /// This remains an operator declaration, not electrical sensing or continuous-condition attestation.
-/// It cannot bypass the package-owned physical execution gate because this view is reachable only
-/// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
+/// It cannot bypass package authority because this view is reachable only after the package has
+/// minted a live coordinator for the exact running research build.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
@@ -170,7 +163,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
         coordinator: PassiveBluetoothExperimentOneCoordinator,
         simulatorQAEvidenceLabel: String? = nil,
         freshExperimentCoordinatorFactory: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator = {
-            try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
+            try PassiveBluetoothExperimentOneCoordinator.makeResearchAuthorizedES80ForCurrentApplication()
         }
     ) {
         _coordinator = State(initialValue: coordinator)
