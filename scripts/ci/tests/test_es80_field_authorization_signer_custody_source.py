@@ -47,6 +47,33 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
             "The signer must fail closed on writable executable/custody paths.",
         )
 
+    def test_openssl_subprocess_does_not_inherit_signing_environment_or_stdin(self):
+        self.assertIn(
+            'env=controlled_openssl_environment()',
+            self.source,
+            "OpenSSL must run under a closed environment rather than inheriting provider/config/loader variables.",
+        )
+        self.assertIn(
+            'stdin=subprocess.DEVNULL',
+            self.source,
+            "OpenSSL must not inherit an interactive stdin that can trigger passphrase prompts or hangs.",
+        )
+        self.assertIn(
+            'stderr=subprocess.PIPE',
+            self.source,
+            "OpenSSL diagnostics must remain bounded inside the signer rather than leaking into the operator stream.",
+        )
+        self.assertIn(
+            'timeout=OPENSSL_COMMAND_TIMEOUT_SECONDS',
+            self.source,
+            "Every OpenSSL subprocess must have one bounded execution deadline.",
+        )
+        self.assertNotIn(
+            'stdout=subprocess.PIPE if capture_stdout else None',
+            self.source,
+            "Verification chatter must never contaminate the signer's JSON stdout.",
+        )
+
     def test_private_key_requires_owner_only_posix_access(self):
         self.assertTrue(
             'stat.S_IMODE' in self.source or 'st_mode' in self.source,
