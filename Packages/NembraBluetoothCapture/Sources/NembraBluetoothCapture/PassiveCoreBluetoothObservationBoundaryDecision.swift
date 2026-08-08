@@ -58,6 +58,18 @@ struct PassiveCoreBluetoothObservationBoundaryDecision: Equatable, Sendable {
         )
     }
 
+    /// Records this exact pre-await decision through the recorder's package-owned
+    /// explicit-clock path. Controller wiring should use this helper rather than
+    /// the recorder's public clock-owning overload, which would resample after the
+    /// asynchronous actor hop and sever the decision-time chronology.
+    func recordBoundary(on recorder: PassiveCoreBluetoothCaptureRecorder) async throws {
+        try await recorder.recordObservationBoundary(
+            observationBoundaryKind,
+            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+            observedAtDate: observedAtDate
+        )
+    }
+
     private init(
         queueKind: PassiveCoreBluetoothObservationBoundaryQueueGate.BoundaryKind,
         queueCutoff: UInt64,
