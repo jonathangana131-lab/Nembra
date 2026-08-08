@@ -36,7 +36,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
         XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
-            "The installed versioned procedure must be identified without becoming executable."
+            "The installed versioned recipe must be identified without becoming executable."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-identity"].waitForExistence(timeout: 3),
+            "The locked surface must expose package-derived runtime build identity or an explicit fail-closed unavailable state."
         )
 
         XCTAssertFalse(
@@ -89,7 +93,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — Physical Capture Locked"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -111,29 +115,29 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertTrue(lockedState.isHittable || lockedState.frame.height > 0)
-        XCTAssertTrue(physicalBoundary.frame.height > 0)
-        XCTAssertTrue(recipe.frame.height > 0)
 
         let windowFrame = app.windows.firstMatch.frame
-        for element in [lockedState, physicalBoundary, recipe] {
-            XCTAssertGreaterThanOrEqual(
-                element.frame.minX,
-                windowFrame.minX - 1,
-                "Required NO-GO content must not clip off the leading edge at accessibility sizes."
-            )
-            XCTAssertLessThanOrEqual(
-                element.frame.maxX,
-                windowFrame.maxX + 1,
-                "Required NO-GO content must not clip off the trailing edge at accessibility sizes."
-            )
-        }
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary locked state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-capture boundary at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity at Accessibility XXXL"
+        )
 
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Accessibility XXXL"
+        attachment.name = "Nembra Capture V14 — Locked — Accessibility XXXL"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -153,17 +157,35 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
 
+        let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
         let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        XCTAssertTrue(lockedState.waitForExistence(timeout: 3))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
         XCTAssertTrue(recipe.waitForExistence(timeout: 3))
-        XCTAssertGreaterThan(physicalBoundary.frame.height, 0)
-        XCTAssertGreaterThan(recipe.frame.height, 0)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            lockedState,
+            windowFrame: windowFrame,
+            context: "primary locked state in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            physicalBoundary,
+            windowFrame: windowFrame,
+            context: "physical-capture boundary in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            recipe,
+            windowFrame: windowFrame,
+            context: "recipe identity in landscape"
+        )
+
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — NO-GO — Landscape"
+        attachment.name = "Nembra Capture V14 — Locked — Landscape"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -205,6 +227,79 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    func testNoGoSourceUsesPackageRuntimeBuildIdentityReader() throws {
+        let source = try nembraAppSource()
+
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()"),
+            "The field-lock surface must consume the package-owned fail-closed runtime build identity reader instead of reconstructing build provenance in SwiftUI."
+        )
+        XCTAssertTrue(
+            source.contains("accessibilityIdentifier(\"es80.capture.build-identity\")"),
+            "The app-visible build identity must remain a stable acceptance surface."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildIdentifier"),
+            "The human-readable build identifier must remain visible without rider transcription."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.sourceCommitSHA"),
+            "The exact embedded source commit must remain available in secondary build details."
+        )
+        XCTAssertTrue(
+            source.contains("runtimeBuildIdentity.buildInstanceID"),
+            "The produced-build rendezvous identity must remain available without granting field authority."
+        )
+        XCTAssertTrue(
+            source.contains("DisclosureGroup(\"Build details\")"),
+            "Raw source/build-instance identifiers belong in secondary Build details rather than the rider's primary lock hierarchy."
+        )
+        XCTAssertTrue(
+            source.contains("Build identity unavailable"),
+            "Failure to read exact runtime build identity must remain an explicit fail-closed product state."
+        )
+    }
+
+    private func assertVisibleInScreenshotViewport(
+        _ element: XCUIElement,
+        windowFrame: CGRect,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let frame = element.frame
+        XCTAssertGreaterThan(frame.width, 0, "Required \(context) must have positive width.", file: file, line: line)
+        XCTAssertGreaterThan(frame.height, 0, "Required \(context) must have positive height.", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(
+            frame.minX,
+            windowFrame.minX - 1,
+            "Required \(context) must not clip off the leading screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxX,
+            windowFrame.maxX + 1,
+            "Required \(context) must not clip off the trailing screenshot edge.",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.minY,
+            windowFrame.minY - 1,
+            "Required \(context) must not clip above the screenshot viewport.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxY,
+            windowFrame.maxY + 1,
+            "Required \(context) must not clip below the screenshot viewport.",
+            file: file,
+            line: line
+        )
+    }
+
     private func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
@@ -212,6 +307,16 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repositoryRoot
             .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func nembraAppSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/App/NembraApp.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
