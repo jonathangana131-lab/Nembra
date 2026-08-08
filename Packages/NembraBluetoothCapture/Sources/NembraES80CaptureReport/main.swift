@@ -18,7 +18,6 @@ struct NembraES80CaptureReportCommand {
     private struct Options {
         let inputURL: URL
         let outputURL: URL?
-        let peripheralIdentifier: String?
         let maximumArtifactBytes: Int
         let maximumMessageBytes: Int
         let maximumFragmentCount: Int
@@ -31,21 +30,18 @@ struct NembraES80CaptureReportCommand {
         case unexpectedArgument(String)
         case missingOptionValue(String)
         case invalidPositiveInteger(option: String, value: String)
-        case emptyPeripheralIdentifier
         case forceOutputRequiresOutput
 
         var description: String {
             switch self {
             case .missingInput:
-                "missing capture JSON path"
+                "missing Nembra Capture final Share JSON path"
             case let .unexpectedArgument(argument):
                 "unexpected argument: \(argument)"
             case let .missingOptionValue(option):
                 "missing value for \(option)"
             case let .invalidPositiveInteger(option, value):
                 "\(option) requires a positive integer, got: \(value)"
-            case .emptyPeripheralIdentifier:
-                "--peripheral requires a non-empty exact peripheral identifier"
             case .forceOutputRequiresOutput:
                 "--force-output is valid only together with --output or -o"
             }
@@ -77,7 +73,8 @@ struct NembraES80CaptureReportCommand {
             )
         }
 
-        let artifactData = try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+        // Bound the actual final Share file before whole-file JSON decode.
+        let finalShareData = try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
             at: options.inputURL,
             maximumBytes: options.maximumArtifactBytes
         )
@@ -86,8 +83,7 @@ struct NembraES80CaptureReportCommand {
             maximumFragmentCount: options.maximumFragmentCount
         )
         let artifactReport = try PassiveBluetoothTuyaCaptureArtifactReportBuilder.make(
-            captureJSON: artifactData,
-            peripheralIdentifier: options.peripheralIdentifier,
+            finalShareJSON: finalShareData,
             policy: policy,
             maximumArtifactBytes: options.maximumArtifactBytes
         )
@@ -105,7 +101,7 @@ struct NembraES80CaptureReportCommand {
             writeStderr(
                 "wrote framing-candidate report for " +
                 "\(artifactReport.analysis.capture.peripheralIdentifier) to \(outputURL.path) " +
-                "(source sha256 \(artifactReport.sourceArtifact.sha256))\n" +
+                "(final Share sha256 \(artifactReport.sourceArtifact.finalShareSHA256))\n" +
                 "candidate outcomes: completed=\(summary.completedCandidateCount) " +
                 "rejected=\(summary.rejectedCandidateCount) " +
                 "incomplete=\(summary.incompleteCandidateCount) " +
@@ -121,7 +117,6 @@ struct NembraES80CaptureReportCommand {
     private static func parseOptions(_ arguments: [String]) throws -> Options {
         var inputPath: String?
         var outputPath: String?
-        var peripheralIdentifier: String?
         var maximumArtifactBytes = PassiveBluetoothCaptureArtifactInputPolicy
             .defaultMaximumArtifactBytes
         var maximumMessageBytes = defaultMaximumMessageBytes
@@ -135,14 +130,6 @@ struct NembraES80CaptureReportCommand {
             switch argument {
             case "--output", "-o":
                 outputPath = try nextValue(arguments, index: &index, option: argument)
-
-            case "--peripheral":
-                let value = try nextValue(arguments, index: &index, option: argument)
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else {
-                    throw CommandError.emptyPeripheralIdentifier
-                }
-                peripheralIdentifier = trimmed
 
             case "--max-artifact-bytes":
                 let value = try nextValue(arguments, index: &index, option: argument)
@@ -181,7 +168,6 @@ struct NembraES80CaptureReportCommand {
         return Options(
             inputURL: URL(fileURLWithPath: inputPath),
             outputURL: outputPath.map { URL(fileURLWithPath: $0) },
-            peripheralIdentifier: peripheralIdentifier,
             maximumArtifactBytes: maximumArtifactBytes,
             maximumMessageBytes: maximumMessageBytes,
             maximumFragmentCount: maximumFragmentCount,
@@ -223,43 +209,47 @@ struct NembraES80CaptureReportCommand {
     Nembra ES80 passive-capture framing report
 
     Usage:
-      nembra-es80-capture-report <capture.json> [options]
+      nembra-es80-capture-report <Nembra-ES80-Fingerprint-....json> [options]
+
+    Input:
+      Pass the exact file produced by Nembra Capture's SHARE CAPTURE action.
+      The tool verifies the final Share envelope, its exact nested SoftwareExport,
+      capture/manifest binding, correlation/build/recipe rendezvous, and then uses
+      the manifest's already-verified selected peripheral. Do not extract nested
+      JSON and do not type a Bluetooth UUID manually.
 
     Options:
-      --peripheral <id>          Exact captured peripheral identifier. Omit only
-                                 when target-attributable evidence names one unique peripheral.
       --output, -o <report.json> Write report to a file. Existing files are protected
                                  by default; publication is non-replacing. File-output
                                  runs also print candidate outcome counts to stderr.
       --force-output             Replace an existing derived report. Requires --output
-                                 and never permits replacing the raw capture input path.
-      --max-artifact-bytes <n>   Offline source-file/decode ceiling (default: 67108864).
+                                 and never permits replacing the Nembra Share input path.
+      --max-artifact-bytes <n>   Offline final-Share file/decode ceiling (default: 67108864).
                                  This is process safety, not an ES80 capture/protocol limit.
-      --max-message-bytes <n>    Offline analysis ceiling (default: 65536).
-      --max-fragments <n>        Offline analysis ceiling (default: 256).
+      --max-message-bytes <n>    Offline framing-analysis ceiling (default: 65536).
+      --max-fragments <n>        Offline framing-analysis ceiling (default: 256).
       --compact                  Emit compact sorted-key JSON.
       --help, -h                 Show this help.
 
     Provenance:
-      Every report includes the exact source capture artifact byte count and
-      lowercase SHA-256 digest so analysis can be traced back to the precise JSON
-      bytes that were decoded. The digest identifies the artifact; it does not
-      authenticate the scooter, recorder, or person who produced the capture.
+      Every report binds the exact final Share SHA-256 and byte count to its
+      verified nested SoftwareExport SHA-256, immutable capture SHA-256, experiment,
+      recipe, procedure, build instance, and source commit. These are software
+      provenance facts; they do not authenticate the physical scooter.
 
     Resource safety:
-      Source bytes are read under --max-artifact-bytes before JSON decode. The
-      message/fragment ceilings apply later to framing-candidate analysis. All of
-      these are operator-tool resource limits, never claims about physical ES80
-      packet, session, message, or capture maxima.
+      Final Share bytes are read under --max-artifact-bytes before JSON decode.
+      Message/fragment ceilings apply later to framing-candidate analysis. These
+      are operator-tool resource limits, never claims about physical ES80 packet,
+      session, message, or capture maxima.
 
     Outcome counts:
       completed/rejected/incomplete values describe bounded framing-candidate
       analyzer outcomes only. A completed candidate is not a verified ES80 message.
 
     Evidence preservation:
-      The command refuses to overwrite its source capture even with --force-output.
+      The command refuses to overwrite its source Share even with --force-output.
       Existing derived reports are also protected unless --force-output is explicit.
-      Protected writes publish through a uniquely named sibling and a non-replacing move.
 
     Truth boundary:
       The output is PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY. It does not
