@@ -17,6 +17,7 @@ public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Se
     case selectedPeripheralNotPresent(requested: String, available: [String])
     case ambiguousTargetGATTEvidence([String])
     case stockAppMarkersWithoutDeclaredReference(markerCount: Int)
+    case stockAppReferenceDeclaredWithoutMarkers
     case unsupportedSchemaVersion(Int)
     case manifestDoesNotMatchCapture
 }
@@ -176,9 +177,18 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         )
         let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
         let summary = try summarize(session: session, selectedPeripheral: selectedPeripheral)
-        if setup.stockAppReferenceSetup == .none, summary.stockAppMarkerCount > 0 {
+
+        switch setup.stockAppReferenceSetup {
+        case .none where summary.stockAppMarkerCount > 0:
             throw PassiveBluetoothStationaryCaptureManifestError
                 .stockAppMarkersWithoutDeclaredReference(markerCount: summary.stockAppMarkerCount)
+        case .none:
+            break
+        default where summary.stockAppMarkerCount == 0:
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .stockAppReferenceDeclaredWithoutMarkers
+        default:
+            break
         }
 
         return PassiveBluetoothStationaryCaptureManifest(
