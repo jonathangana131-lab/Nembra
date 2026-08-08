@@ -173,29 +173,30 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
     }
 
     private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
+        let duration = PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
         var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
         _ = try ledger.completeWindow(
             phase: .firstPoweredOff,
-            startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
+            startedAtUptimeNanoseconds: 0,
+            endedAtUptimeNanoseconds: duration,
             candidates: [candidate(neighbor)]
         )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
+            startedAtUptimeNanoseconds: 20_000_000_000,
+            endedAtUptimeNanoseconds: 20_000_000_000 + duration,
             candidates: [candidate(neighbor), candidate(scooter)]
         )
         _ = try ledger.completeWindow(
             phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
+            startedAtUptimeNanoseconds: 40_000_000_000,
+            endedAtUptimeNanoseconds: 40_000_000_000 + duration,
             candidates: [candidate(neighbor)]
         )
         return try #require(ledger.completeWindow(
             phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
+            startedAtUptimeNanoseconds: 60_000_000_000,
+            endedAtUptimeNanoseconds: 60_000_000_000 + duration,
             candidates: [candidate(neighbor), candidate(scooter)]
         ))
     }
@@ -223,7 +224,7 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
                 isPrimary: true
             )),
             sequenceNumber: 1,
-            receivedAtUptimeNanoseconds: 1,
+            receivedAtUptimeNanoseconds: 1_000_000_000,
             receivedAtDate: startedAt
         )
         try session.append(
@@ -234,7 +235,7 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
                 properties: [.notify]
             )),
             sequenceNumber: 2,
-            receivedAtUptimeNanoseconds: 2,
+            receivedAtUptimeNanoseconds: 2_000_000_000,
             receivedAtDate: startedAt.addingTimeInterval(1)
         )
         try session.append(
@@ -246,8 +247,25 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
                 payload: Data([0x01, 0x02])
             )),
             sequenceNumber: 3,
-            receivedAtUptimeNanoseconds: 3,
+            receivedAtUptimeNanoseconds: 3_000_000_000,
             receivedAtDate: startedAt.addingTimeInterval(2)
+        )
+        try session.appendObservationBoundary(
+            .init(
+                kind: .finiteAcquisitionReady,
+                recordSequenceWatermark: 3,
+                observedAtUptimeNanoseconds: 4_000_000_000,
+                observedAtDate: startedAt.addingTimeInterval(3)
+            )
+        )
+        try session.appendObservationBoundary(
+            .init(
+                kind: .observationHorizon,
+                recordSequenceWatermark: 3,
+                observedAtUptimeNanoseconds:
+                    4_000_000_000 + PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds,
+                observedAtDate: startedAt.addingTimeInterval(63)
+            )
         )
         return try PassiveBluetoothCaptureJSON.encode(session)
     }
