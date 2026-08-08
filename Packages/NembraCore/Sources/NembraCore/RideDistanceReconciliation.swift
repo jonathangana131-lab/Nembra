@@ -78,10 +78,12 @@ public struct RideDistanceEvidence: Equatable, Sendable {
         self.transportGapOccurred = transportGapOccurred
     }
 
-    /// Bridges completed ride evidence with durable live-distance evidence only
-    /// when both values belong to the same ride session. A missing aggregate
-    /// remains unavailable rather than becoming fake zero distance.
-    public init(
+#if SWIFT_PACKAGE
+    /// Package-only bridge for deterministic core fixtures and future trusted
+    /// adapters. Matching session UUIDs reject obvious cross-session mixing but
+    /// do not prove that two independently constructible records are the exact
+    /// same immutable ride evidence, so this bridge must not be public API.
+    package init(
         completedRide: CompletedRideEvidence,
         odometerCoverage: RideDistanceCoverage,
         gpsRouteCoverage: RideDistanceCoverage,
@@ -104,6 +106,35 @@ public struct RideDistanceEvidence: Equatable, Sendable {
             transportGapOccurred: transportGapOccurred
         )
     }
+#else
+    /// `RideDistanceReconciliation.swift` is also compiled directly into the
+    /// app target. There is no mechanically bound production adapter yet, so
+    /// keep this convenience composition file-owned rather than exposing a
+    /// same-module path that can pair independently constructed ride records.
+    fileprivate init(
+        completedRide: CompletedRideEvidence,
+        odometerCoverage: RideDistanceCoverage,
+        gpsRouteCoverage: RideDistanceCoverage,
+        liveDistanceAggregate: RideLiveDistanceAggregate?,
+        transportGapOccurred: Bool
+    ) throws {
+        if let liveDistanceAggregate,
+           liveDistanceAggregate.rideSessionID != completedRide.sessionID {
+            throw RideDistanceReconciliationError.invalidEvidence
+        }
+
+        try self.init(
+            startingOdometerKilometers: completedRide.startingOdometerKilometers,
+            endingOdometerKilometers: completedRide.endingOdometerKilometers,
+            odometerCoverage: odometerCoverage,
+            gpsRouteDistanceMeters: completedRide.qualityScreenedGPSDistanceMeters,
+            gpsRouteCoverage: gpsRouteCoverage,
+            liveIntegratedDistanceMeters: liveDistanceAggregate?.distanceMeters,
+            liveIntegratedCoverage: liveDistanceAggregate?.coverage ?? .unknown,
+            transportGapOccurred: transportGapOccurred
+        )
+    }
+#endif
 
     public var scooterOdometerDeltaMeters: Double? {
         guard let start = startingOdometerKilometers,
@@ -221,6 +252,9 @@ public enum RideDistanceConfidence: String, Equatable, Sendable {
 
 public enum RideDistanceReconciliationStatus: String, Equatable, Sendable {
     case insufficientEvidence
+    /// The selected final distance source itself has complete ride coverage.
+    /// Corroboration can raise confidence but cannot repair another source's
+    /// partial or unknown coverage.
     case complete
     case coverageIncomplete
     case vehicleDistanceRecoveredAcrossCoverageGap
@@ -266,7 +300,6 @@ public enum RideDistanceReconciler {
         var hasConflict = false
         var agreementCount = 0
         var recoveryCount = 0
-        var hasCompleteAgreement = finalCoverage == .complete
 
         for source in RideDistanceSource.allCases where source != finalSource {
             guard let distance = evidence.distance(for: source) else { continue }
@@ -288,9 +321,6 @@ public enum RideDistanceReconciler {
                 disposition = .agrees
                 recoveredGap = nil
                 agreementCount += 1
-                if sourceCoverage == .complete {
-                    hasCompleteAgreement = true
-                }
             } else if policy.allowOdometerToRecoverKnownCoverageGaps,
                       finalSource == .scooterOdometer,
                       finalCoverage == .complete,
@@ -331,7 +361,7 @@ public enum RideDistanceReconciler {
             status = .vehicleDistanceRecoveredAcrossCoverageGap
         } else if agreementCount > 0 {
             confidence = .corroborated
-            status = hasCompleteAgreement ? .complete : .coverageIncomplete
+            status = finalCoverage == .complete ? .complete : .coverageIncomplete
         } else {
             confidence = .singleSource
             status = finalCoverage == .complete ? .complete : .coverageIncomplete
