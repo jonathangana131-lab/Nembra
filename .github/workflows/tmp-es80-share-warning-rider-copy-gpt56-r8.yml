@@ -1,0 +1,114 @@
+name: Temporary ES80 share-warning rider-copy transform r8
+
+on:
+  push:
+    branches:
+      - product/es80-v14-share-warning-rider-copy-gpt56-r8
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard, transform, and verify
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          expected_parent = "dbdc82d305244bd045ce428f813aa07b00777e85"
+          workflow = ".github/workflows/tmp-es80-share-warning-rider-copy-gpt56-r8.yml"
+          parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
+          if parent != expected_parent:
+              raise SystemExit(f"transformer parent drifted: {parent} != {expected_parent}")
+          changed = subprocess.check_output(["git", "diff", "--name-only", "HEAD^..HEAD"], text=True).splitlines()
+          if changed != [workflow]:
+              raise SystemExit(f"transformer commit scope drifted: {changed!r}")
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+
+          shell = shell_path.read_text(encoding="utf-8")
+          old_warning = 'sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."'
+          new_warning = 'sharePreparationWarning = "Capture is sealed, but this run is missing the setup confirmation needed to prepare a Share file. Start a fresh capture."'
+          if shell.count(old_warning) != 1:
+              raise SystemExit(f"expected exactly one stale Share warning; found {shell.count(old_warning)}")
+          shell = shell.replace(old_warning, new_warning, 1)
+          shell_path.write_text(shell, encoding="utf-8")
+
+          tests = test_path.read_text(encoding="utf-8")
+          old_list = '''        let implementationPhrasesThatMustStayOutOfHelpers = [
+            "evidence life",
+            "consumed authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow",
+            "fresh package-owned Experiment One workflow",
+            "coordinator.lastDiagnostic ??",
+            "scan-liveness",
+            "String(describing: error)"
+        ]'''
+          new_list = '''        let implementationPhrasesThatMustStayOutOfHelpers = [
+            "Experiment One",
+            "package-owned",
+            "CoreBluetooth",
+            "evidence life",
+            "consumed authority",
+            "package-issued observation authority",
+            "coordinator.lastDiagnostic ??",
+            "scan-liveness",
+            "String(describing: error)"
+        ]'''
+          if tests.count(old_list) != 1:
+              raise SystemExit("current rider-language forbidden-list shape drifted")
+          tests = tests.replace(old_list, new_list, 1)
+          old_assert = '        #expect(helperSurface.contains("Simulator QA interruption fixture"))'
+          new_assert = old_assert + '\n        #expect(helperSurface.contains("missing the setup confirmation needed to prepare a Share file"))'
+          if tests.count(old_assert) != 1:
+              raise SystemExit("current rider-language assertion marker drifted")
+          tests = tests.replace(old_assert, new_assert, 1)
+          test_path.write_text(tests, encoding="utf-8")
+
+          subprocess.run(["git", "diff", "--check"], check=True)
+
+          final_shell = shell_path.read_text(encoding="utf-8")
+          final_tests = test_path.read_text(encoding="utf-8")
+          if "Start a fresh Experiment One" in final_shell:
+              raise SystemExit("stale rider-facing Experiment One restart warning remains")
+          if final_shell.count("missing the setup confirmation needed to prepare a Share file") != 1:
+              raise SystemExit("new Share warning missing or duplicated")
+          for phrase in ["\"Experiment One\"", "\"package-owned\"", "\"CoreBluetooth\""]:
+              if phrase not in final_tests:
+                  raise SystemExit(f"broad helper regression missing {phrase}")
+          PY
+
+      - name: Commit product copy and self-delete transformer
+        run: |
+          set -euo pipefail
+          WORKFLOW=".github/workflows/tmp-es80-share-warning-rider-copy-gpt56-r8.yml"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm "$WORKFLOW"
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+          python3 - <<'PY'
+          import subprocess
+          expected = {
+              ".github/workflows/tmp-es80-share-warning-rider-copy-gpt56-r8.yml",
+              "NembraApp/Features/Research/ES80CaptureShellView.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift",
+          }
+          staged = set(subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines())
+          if staged != expected:
+              raise SystemExit(f"staged scope drifted: {sorted(staged)!r}")
+          PY
+          git commit -m "Capture: keep Share recovery warning rider-first"
+          git push origin HEAD:product/es80-v14-share-warning-rider-copy-gpt56-r8
