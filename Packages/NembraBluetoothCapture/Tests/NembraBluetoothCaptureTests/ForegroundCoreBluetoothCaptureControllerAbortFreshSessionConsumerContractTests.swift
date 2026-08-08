@@ -6,9 +6,9 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
     private static func packageSource(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
-            .deletingLastPathComponent() // NembraBluetoothCaptureTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // package root
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         return try String(
             contentsOf: packageRoot.appendingPathComponent(relativePath),
             encoding: .utf8
@@ -54,9 +54,12 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
         )
 
         #expect(controller.contains("isSelectedTargetAwaitingTerminalCallback"))
-        #expect(controller.contains("eventDrainTask == nil"))
+        #expect(controller.contains("let inFlightDrain = eventDrainTask"))
+        #expect(controller.contains("await inFlightDrain.value"))
         #expect(controller.contains("scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("connectionPhase = .idle\n        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
+        #expect(controller.contains("activePeripheral == nil"))
+        #expect(controller.contains("connectionPhase == .idle"))
+        #expect(controller.contains("eventDrainTask == nil"))
         #expect(controller.contains("captureFailed = false"))
         #expect(controller.contains("case .abortQuarantined"))
     }
