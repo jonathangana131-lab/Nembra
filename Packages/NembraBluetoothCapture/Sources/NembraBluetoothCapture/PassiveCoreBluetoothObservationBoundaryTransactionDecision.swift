@@ -5,12 +5,6 @@ enum PassiveCoreBluetoothObservationBoundaryMutationAttemptError: Error, Equatab
 }
 
 /// Shared across every value copy of one exact Ready/Horizon admission.
-///
-/// Claim is synchronous and occurs before the recorder actor hop. The permit is
-/// never released, even when the first attempt later throws: except for the
-/// canonical authority-revoked-before-mutation proof, an arbitrary recorder error
-/// does not prove that durable mutation did not occur. Retrying the same admission
-/// would therefore risk duplicate/ambiguous lifecycle evidence.
 private final class PassiveCoreBluetoothObservationBoundaryMutationPermit: @unchecked Sendable {
     private let lock = NSLock()
     private var attempted = false
@@ -18,7 +12,6 @@ private final class PassiveCoreBluetoothObservationBoundaryMutationPermit: @unch
     func claim() throws {
         lock.lock()
         defer { lock.unlock() }
-
         guard !attempted else {
             throw PassiveCoreBluetoothObservationBoundaryMutationAttemptError.alreadyAttempted
         }
@@ -26,28 +19,37 @@ private final class PassiveCoreBluetoothObservationBoundaryMutationPermit: @unch
     }
 }
 
-/// Sealed Ready admission for one observation epoch.
-///
-/// Only this Ready entry point accepts the controller's canonical #427 authority
-/// fence. A successful Ready recorder append + exact queue commit mints the sole
-/// `CommittedReadyEpoch`, and Horizon can begin only from that proof. Horizon never
-/// accepts another fence parameter, so an equal-valued second authority store cannot
-/// substitute itself after Ready.
-///
-/// The lifecycle is deliberately typestated:
-/// `ReadyAdmission -> RecordedReadyBoundary -> CommittedReadyEpoch
-///                 -> HorizonAdmission -> RecordedHorizonBoundary
-///                 -> CommittedHorizonBoundary`.
-///
-/// Ready and Horizon admissions each also own one shared mutation permit. Copying
-/// an admission copies the permit reference, not recorder-mutation authority, so
-/// sequential or concurrent replay of the same admission can enter the recorder at
-/// most once.
-///
-/// This remains software FIFO / observation chronology only. It establishes no
-/// BLE/RF emission time, physical scooter state, GATT/Tuya semantics, or hardware
-/// acknowledgement.
+/// Sealed Ready -> Horizon typestate using the canonical artifact-authority fence.
+/// Software FIFO / artifact chronology only; no physical ES80 semantics are implied.
 struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Sendable {
+    /// Issued only when the exact one-shot Ready admission loses canonical authority
+    /// before the recorder mutation body executes. Other recorder failures mint no
+    /// rollback authority because zero durable mutation is not proven.
+    struct ReadyRecorderMutationRejectionReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let transactionIdentity: UUID
+        let currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction,
+            currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
+            self.currentAuthority = currentAuthority
+        }
+    }
+
+    enum ReadyRecorderMutationOutcome: Equatable, Sendable {
+        case recorded(RecordedReadyBoundary)
+        case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)
+    }
+
     struct RecordedReadyBoundary: Equatable, Sendable {
         private let decision: PassiveCoreBluetoothObservationBoundaryDecision
         private let transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
@@ -57,6 +59,8 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         var authority: PassiveCoreBluetoothArtifactAuthorityContext { decision.authority }
         var observedAtUptimeNanoseconds: UInt64 { decision.observedAtUptimeNanoseconds }
         var observedAtDate: Date { decision.observedAtDate }
+        var transactionRevision: UInt64 { transaction.revision }
+        var transactionIdentity: UUID { transaction.identity }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.decision == rhs.decision
@@ -64,9 +68,6 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.authorityFence === rhs.authorityFence
         }
 
-        /// Commits the exact Ready transaction only after its authority-fenced
-        /// recorder mutation returned successfully. Successful commit is the only
-        /// producer of a Horizon-capable `CommittedReadyEpoch`.
         @MainActor
         func markBoundaryRecorded(
             on gate: inout PassiveCoreBluetoothObservationBoundaryQueueGate,
@@ -77,7 +78,6 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 lastProcessedQueueSequence: lastProcessedQueueSequence,
                 currentAuthority: authorityFence.currentAuthority
             )
-
             return CommittedReadyEpoch(
                 readyDecision: decision,
                 readyTransaction: transaction,
@@ -105,6 +105,8 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         var authority: PassiveCoreBluetoothArtifactAuthorityContext { readyDecision.authority }
         var observedAtUptimeNanoseconds: UInt64 { readyDecision.observedAtUptimeNanoseconds }
         var observedAtDate: Date { readyDecision.observedAtDate }
+        var transactionRevision: UInt64 { readyTransaction.revision }
+        var transactionIdentity: UUID { readyTransaction.identity }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.readyDecision == rhs.readyDecision
@@ -112,14 +114,9 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.authorityFence === rhs.authorityFence
         }
 
-        /// Begins Horizon only from the exact Ready epoch that established the
-        /// observation session. No authority-fence parameter is accepted here.
-        ///
-        /// The retained fence must still equal this token's original Ready
-        /// authority before any Horizon clock is captured or queue state mutates.
-        /// A retired Ready token therefore cannot follow the shared mutable fence
-        /// into a later lifecycle. #427's strictly-forward / anti-ABA transition
-        /// contract makes a retired Ready authority permanently stale.
+        /// Horizon admission consumes the exact process-local Ready transaction
+        /// identity committed by this gate. Equal authority/cutoff values from another
+        /// gate are not sufficient.
         @MainActor
         func beginHorizon(
             queueCutoff: UInt64,
@@ -140,14 +137,13 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 processedThrough: processedThrough,
                 authority: readyDecision.authority
             )
-
-            let transaction = try gate.begin(
-                decision.queueKind,
+            let transaction = try gate.beginObservationHorizon(
                 through: decision.queueCutoff,
                 processedThrough: decision.processedThrough,
-                authority: decision.authority
+                authority: decision.authority,
+                establishedByReadyRevision: readyTransaction.revision,
+                establishedByReadyIdentity: readyTransaction.identity
             )
-
             return HorizonAdmission(
                 decision: decision,
                 transaction: transaction,
@@ -186,18 +182,11 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.mutationPermit === rhs.mutationPermit
         }
 
-        /// Performs the mutation-point authority-fenced Horizon append exactly once
-        /// for this admission and returns the only token allowed to commit the
-        /// Horizon queue transaction.
         func recordBoundary(
             on recorder: PassiveCoreBluetoothCaptureRecorder
         ) async throws -> RecordedHorizonBoundary {
             try mutationPermit.claim()
-            try await decision.recordBoundary(
-                on: recorder,
-                authorityFence: authorityFence
-            )
-
+            try await decision.recordBoundary(on: recorder, authorityFence: authorityFence)
             return RecordedHorizonBoundary(
                 decision: decision,
                 transaction: transaction,
@@ -244,7 +233,6 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 lastProcessedQueueSequence: lastProcessedQueueSequence,
                 currentAuthority: authorityFence.currentAuthority
             )
-
             return CommittedHorizonBoundary(
                 decision: decision,
                 transaction: transaction,
@@ -277,9 +265,6 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.authorityFence === rhs.authorityFence
         }
 
-        /// Completes only this committed Horizon transaction after the caller has
-        /// actually frozen the immutable artifact through the exact Horizon cutoff.
-        /// This helper does not perform, imply, or fabricate that artifact read.
         @MainActor
         func completeHorizonArtifactFreeze(
             on gate: inout PassiveCoreBluetoothObservationBoundaryQueueGate
@@ -319,8 +304,6 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             && lhs.mutationPermit === rhs.mutationPermit
     }
 
-    /// Captures the sole Ready admission for one durable observation epoch.
-    /// This is the only API in this composition that accepts an authority fence.
     @MainActor
     static func beginReady(
         queueCutoff: UInt64,
@@ -335,14 +318,11 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             processedThrough: processedThrough,
             authority: authority
         )
-
         let transaction = try gate.begin(
             decision.queueKind,
             through: decision.queueCutoff,
-            processedThrough: decision.processedThrough,
             authority: decision.authority
         )
-
         return Self(
             decision: decision,
             transaction: transaction,
@@ -351,23 +331,48 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         )
     }
 
-    /// Performs the authority-fenced Ready recorder mutation exactly once for this
-    /// admission and returns the only token allowed to commit the Ready queue
-    /// transaction.
     func recordBoundary(
         on recorder: PassiveCoreBluetoothCaptureRecorder
     ) async throws -> RecordedReadyBoundary {
         try mutationPermit.claim()
-        try await decision.recordBoundary(
-            on: recorder,
-            authorityFence: authorityFence
-        )
-
+        try await decision.recordBoundary(on: recorder, authorityFence: authorityFence)
         return RecordedReadyBoundary(
             decision: decision,
             transaction: transaction,
             authorityFence: authorityFence
         )
+    }
+
+    /// Consumes the same one-shot permit as ordinary `recordBoundary`. Only canonical
+    /// authority revocation before mutation produces a recovery receipt.
+    func recordBoundaryWithMutationOutcome(
+        on recorder: PassiveCoreBluetoothCaptureRecorder
+    ) async throws -> ReadyRecorderMutationOutcome {
+        try mutationPermit.claim()
+        do {
+            try await decision.recordBoundary(on: recorder, authorityFence: authorityFence)
+            return .recorded(
+                RecordedReadyBoundary(
+                    decision: decision,
+                    transaction: transaction,
+                    authorityFence: authorityFence
+                )
+            )
+        } catch let error as PassiveCoreBluetoothArtifactAuthorityFence.StateError {
+            switch error {
+            case let .authorityChanged(expected, current):
+                guard expected == decision.authority else { throw error }
+                return .rejectedBeforeMutation(
+                    ReadyRecorderMutationRejectionReceipt(
+                        decision: decision,
+                        transaction: transaction,
+                        currentAuthority: current
+                    )
+                )
+            case .nonAdvancingTransition:
+                throw error
+            }
+        }
     }
 
     private init(
