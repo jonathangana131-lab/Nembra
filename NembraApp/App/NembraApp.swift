@@ -78,13 +78,10 @@ struct NembraApp: App {
     }
 
     private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
+        // This is the declared software context required by the ES80 Experiment One authority.
+        // It is metadata consistency only and must never be presented as physical authentication.
         try? ForegroundCoreBluetoothCaptureController(
-            vehicleIdentity: NembraCore.VehicleIdentity(
-                manufacturer: "Unverified",
-                model: "Bluetooth peripheral",
-                displayName: "Selected Bluetooth candidate",
-                protocolFamily: "unverified-passive-research"
-            )
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
     }
 }
