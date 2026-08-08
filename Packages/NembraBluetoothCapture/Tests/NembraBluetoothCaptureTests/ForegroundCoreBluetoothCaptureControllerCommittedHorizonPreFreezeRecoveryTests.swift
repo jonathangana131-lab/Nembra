@@ -24,7 +24,7 @@ struct ForegroundCoreBluetoothCaptureControllerCommittedHorizonPreFreezeRecovery
     func committedHorizonFailureUsesExactPreFreezeQuarantine() throws {
         let source = try Self.controllerSource()
         let start = try #require(source.range(of: "            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary")?.lowerBound)
-        let end = try #require(source.range(of: "            retireQueuedEvidenceAfterTerminalHorizon()", range: start..<source.endIndex)?.lowerBound)
+        let end = try #require(source.range(of: "resolveQueuedEvidenceAfterTerminalHorizon()", range: start..<source.endIndex)?.lowerBound)
         let section = source[start..<end]
 
         let commit = try #require(section.range(of: "recordedHorizon.markBoundaryRecorded")?.lowerBound)
@@ -38,8 +38,8 @@ struct ForegroundCoreBluetoothCaptureControllerCommittedHorizonPreFreezeRecovery
         #expect(section.contains("try validateBoundaryAuthority(committedHorizon.authority)"))
     }
 
-    @Test("terminal queue retirement remains success-only after freeze")
-    func retirementOccursOnlyAfterSuccessfulFreeze() throws {
+    @Test("terminal queue resolution remains success-only after freeze")
+    func resolutionOccursOnlyAfterSuccessfulFreeze() throws {
         let source = try Self.controllerSource()
         let start = try #require(source.range(of: "            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary")?.lowerBound)
         let end = try #require(source.range(of: "            return data", range: start..<source.endIndex)?.upperBound)
@@ -47,9 +47,9 @@ struct ForegroundCoreBluetoothCaptureControllerCommittedHorizonPreFreezeRecovery
 
         let freeze = try #require(section.range(of: "committedHorizon.completeHorizonArtifactFreeze")?.lowerBound)
         let quarantine = try #require(section.range(of: "abortCommittedHorizonBeforeArtifactFreeze")?.lowerBound)
-        let retirement = try #require(section.range(of: "retireQueuedEvidenceAfterTerminalHorizon()")?.lowerBound)
+        let resolution = try #require(section.range(of: "resolveQueuedEvidenceAfterTerminalHorizon()")?.lowerBound)
 
         #expect(section.distance(from: section.startIndex, to: freeze) < section.distance(from: section.startIndex, to: quarantine))
-        #expect(section.distance(from: section.startIndex, to: quarantine) < section.distance(from: section.startIndex, to: retirement))
+        #expect(section.distance(from: section.startIndex, to: quarantine) < section.distance(from: section.startIndex, to: resolution))
     }
 }
