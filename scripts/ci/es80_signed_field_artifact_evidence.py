@@ -105,11 +105,27 @@ def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int,
     )
 
 
+def _sha256_descriptor(descriptor: int) -> tuple[str, int]:
+    """Hash one complete regular-file pass through the already-open descriptor."""
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    digest = hashlib.sha256()
+    byte_count = 0
+    while True:
+        chunk = os.read(descriptor, 1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+        byte_count += len(chunk)
+    return digest.hexdigest(), byte_count
+
+
 def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
-    """Copy one stable exact IPA subject through one open file descriptor."""
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    """Copy one exact IPA subject and prove two full reads of one descriptor agree."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise EvidenceError("platform cannot enforce no-follow exact IPA snapshot input")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
     try:
         descriptor = os.open(ipa_path, flags)
     except OSError as exc:
@@ -117,22 +133,45 @@ def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
 
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode):
-            raise EvidenceError("IPA input must be one regular file")
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
+            raise EvidenceError("IPA input must be one non-empty regular file")
         destination.parent.mkdir(parents=True, exist_ok=True)
+
+        first_digest = hashlib.sha256()
+        first_count = 0
         try:
-            with os.fdopen(os.dup(descriptor), "rb") as source, destination.open("xb") as sink:
-                shutil.copyfileobj(source, sink, length=1024 * 1024)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            with destination.open("xb") as sink:
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    first_digest.update(chunk)
+                    first_count += len(chunk)
+                    if sink.write(chunk) != len(chunk):
+                        raise EvidenceError("could not write complete exact IPA snapshot")
                 sink.flush()
                 os.fsync(sink.fileno())
-        except OSError as exc:
+        except (OSError, EvidenceError) as exc:
             destination.unlink(missing_ok=True)
+            if isinstance(exc, EvidenceError):
+                raise
             raise EvidenceError("could not snapshot exact IPA subject") from exc
 
+        middle = os.fstat(descriptor)
+        second_sha256, second_count = _sha256_descriptor(descriptor)
         after = os.fstat(descriptor)
-        if _stable_file_identity(before) != _stable_file_identity(after):
+        first_sha256 = first_digest.hexdigest()
+        if (
+            _stable_file_identity(before) != _stable_file_identity(middle)
+            or _stable_file_identity(middle) != _stable_file_identity(after)
+            or first_count != before.st_size
+            or second_count != before.st_size
+            or first_sha256 != second_sha256
+        ):
             destination.unlink(missing_ok=True)
             raise EvidenceError("IPA input changed while exact inspection subject was snapshotted")
+
         try:
             snapshot_stat = destination.stat()
         except OSError as exc:
@@ -141,7 +180,10 @@ def snapshot_ipa_exact(ipa_path: Path, destination: Path) -> Path:
         if not stat.S_ISREG(snapshot_stat.st_mode) or snapshot_stat.st_size != before.st_size:
             destination.unlink(missing_ok=True)
             raise EvidenceError("exact IPA inspection subject does not match source byte count")
-        destination.chmod(0o600)
+        if sha256_file(destination) != second_sha256:
+            destination.unlink(missing_ok=True)
+            raise EvidenceError("exact IPA inspection snapshot digest diverged from source")
+        destination.chmod(0o400)
         return destination
     finally:
         os.close(descriptor)
@@ -1154,6 +1196,45 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("missing effective signed entitlements were accepted")
+
+
+    # Exact-subject admission must prove two complete reads of the same open descriptor agree.
+    # Mutate the same inode to different same-length bytes immediately before pass two and
+    # require the would-be private snapshot to be destroyed rather than admitted.
+    from unittest.mock import patch as mock_patch
+
+    with tempfile.TemporaryDirectory(prefix="nembra-field-double-pass-self-test-") as temporary:
+        root = Path(temporary)
+        source = root / "candidate.ipa"
+        source.write_bytes(b"A" * 4096)
+        accepted_snapshot = root / "accepted.ipa"
+        snapshot_ipa_exact(source, accepted_snapshot)
+        assert accepted_snapshot.read_bytes() == b"A" * 4096
+        assert stat.S_IMODE(accepted_snapshot.stat().st_mode) == 0o400
+
+        source.write_bytes(b"A" * 4096)
+        rejected_snapshot = root / "rejected.ipa"
+        real_second_pass = _sha256_descriptor
+
+        def mutate_before_second_pass(descriptor: int) -> tuple[str, int]:
+            with source.open("r+b") as handle:
+                handle.seek(0)
+                handle.write(b"B" * 4096)
+                handle.flush()
+                os.fsync(handle.fileno())
+            return real_second_pass(descriptor)
+
+        with mock_patch(
+            f"{__name__}._sha256_descriptor",
+            side_effect=mutate_before_second_pass,
+        ):
+            try:
+                snapshot_ipa_exact(source, rejected_snapshot)
+            except EvidenceError:
+                pass
+            else:
+                raise AssertionError("same-length mutation between exact IPA reads was accepted")
+        assert not rejected_snapshot.exists()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
