@@ -13,9 +13,9 @@ public enum PassiveBluetoothExperimentRecipeID: String, Codable, CaseIterable, S
 ///
 /// Power-state names are procedure instructions only. Advancing a recipe never attests that the
 /// scooter was physically off/on or that RF non-observation proves absence. Step cases are
-/// deliberately not Codable or raw-string backed: only the versioned recipe ID is a stable wire
-/// identity, so internal workflow names cannot accidentally become artifact/persistence schema.
-public enum PassiveBluetoothExperimentRecipeStep: CaseIterable, Sendable {
+/// deliberately not Codable, raw-string backed, or CaseIterable: only the versioned recipe ID is a
+/// stable wire identity, and the recipe's explicit `requiredSteps` is the sole sequence authority.
+public enum PassiveBluetoothExperimentRecipeStep: Sendable {
     case preflight
     case findScooter
     case powerOffFirst
@@ -69,7 +69,7 @@ public struct PassiveBluetoothExperimentRecipe: Equatable, Sendable {
         self.requiredSteps = requiredSteps
     }
 
-    public func makeProgress() -> PassiveBluetoothExperimentRecipeProgress {
+    func makeProgress() -> PassiveBluetoothExperimentRecipeProgress {
         PassiveBluetoothExperimentRecipeProgress(recipe: self)
     }
 }
@@ -82,12 +82,13 @@ enum PassiveBluetoothExperimentRecipeProgressError: Error, Equatable, Sendable {
     )
 }
 
-/// Deterministic UI/workflow progression for a sealed experiment recipe.
+/// Deterministic workflow progression for a sealed experiment recipe.
 ///
 /// Progress can mechanically prevent the product from skipping required procedure stages, but it is
 /// deliberately not evidence. Completed steps must never be promoted into target identity, capture
 /// health, physical state, telemetry, or artifact integrity without the accepted evidence producer.
-/// Advancement stays package-internal so app/UI clients cannot self-promote readiness or sealing.
+/// Construction and advancement stay package-internal so app/UI clients cannot mint or self-promote
+/// readiness, sealing, integrity, or completion state.
 public struct PassiveBluetoothExperimentRecipeProgress: Equatable, Sendable {
     public let recipeID: PassiveBluetoothExperimentRecipeID
     public let requiredSteps: [PassiveBluetoothExperimentRecipeStep]
