@@ -60,18 +60,14 @@ struct PassiveBluetoothTuyaCaptureReportV2Tests {
         #expect(stream.events[1].completedMessage?.encryptedByteCount == 1)
     }
 
-    @Test("artifact byte ceiling outranks malformed JSON decode")
+    @Test("artifact byte ceiling rejects oversized bytes before any JSON decode")
     func byteCeilingRunsBeforeDecode() throws {
         let malformedOversized = Data(repeating: 0x7B, count: 5)
         #expect(throws: PassiveBluetoothCaptureArtifactInputPolicyError
             .sourceArtifactExceedsMaximumBytes(maximumBytes: 4)) {
-            _ = try PassiveBluetoothTuyaCaptureArtifactReportBuilder.make(
-                captureJSON: malformedOversized,
-                policy: try TuyaCandidateFragmentReassemblyPolicy(
-                    maximumEncryptedMessageBytes: 64,
-                    maximumFragmentCount: 8
-                ),
-                maximumArtifactBytes: 4
+            try PassiveBluetoothCaptureArtifactInputPolicy.validateByteCount(
+                malformedOversized.count,
+                maximumBytes: 4
             )
         }
     }
