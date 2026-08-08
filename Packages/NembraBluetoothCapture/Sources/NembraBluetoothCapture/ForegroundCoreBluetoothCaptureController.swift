@@ -180,6 +180,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         case invalidConnectionTimeout
         case invalidAcquisitionProgressTimeout
         case experimentOneVehicleContextMismatch
+        case experimentOneRediscoveryRequired(UUID)
         case targetNotSelected
         case peripheralAwaitingTerminalCallback(UUID)
         case attemptGenerationExhausted
@@ -565,7 +566,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             throw ControllerError.targetNotSelected
         }
 
-        let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier]
+        guard let latestAdvertisement = latestAdvertisementByIdentifier[payload.peripheralIdentifier],
+              latestAdvertisement.receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds else {
+            throw ControllerError.experimentOneRediscoveryRequired(payload.peripheralIdentifier)
+        }
         guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
             throw ControllerError.captureIncomplete
         }
@@ -600,13 +604,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         hasUsedInitialSessionIdentity = true
         recorder = payload.recorder
 
-        if let latestAdvertisement {
-            enqueue(
-                .advertisement(latestAdvertisement.observation),
-                receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
-                receivedAtDate: latestAdvertisement.receivedAtDate
-            )
-        }
+        enqueue(
+            .advertisement(latestAdvertisement.observation),
+            receivedAtUptimeNanoseconds: latestAdvertisement.receivedAtUptimeNanoseconds,
+            receivedAtDate: latestAdvertisement.receivedAtDate
+        )
 
         do {
             _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
