@@ -1,0 +1,63 @@
+name: Nembra retry-safe admission terminal transform
+
+"on":
+  push:
+    branches:
+      - integration/es80-v14-retry-safe-admission-terminal/chat-gpt56-go3
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact terminal flagship controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test "$(git hash-object "$file")" = "ceefb0b3e85ff70ad723f53a3538c6e936256d46"
+
+      - name: Apply retry-safe admission reorder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/v14_retry_safe_admission_terminal_patch.py
+
+      - name: Assert field-window ownership ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq 'let preview = try admission.stagingPreview()' "$file"
+          grep -Fq 'experimentOneTargetNotRediscoveredAfterAdmission' "$file"
+          grep -Fq 'receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds' "$file"
+          grep -Fq 'let payload = try admission.consume()' "$file"
+          grep -Fq 'payload.admissionIdentity == preview.admissionIdentity' "$file"
+          grep -Fq 'recorder = payload.recorder' "$file"
+          ! sed -n '/func connectUsingExperimentOneAdmission(/,/public func cancelActiveConnection()/p' "$file" | grep -Fq 'writeValue('
+          grep -Fq 'completeTerminalFreshTargetSessionIfReady()' "$file"
+          grep -Fq 'try self.validateBoundaryAuthority(admission.authority)' "$file"
+          ! grep -Fq 'try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit' "$file"
+          ! grep -Fq 'try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit' "$file"
+          git diff --check
+
+      - name: Remove staging files and commit product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-nembra-retry-safe-admission-terminal.yml
+          rm scripts/ci/v14_retry_safe_admission_terminal_patch.py
+          git config user.name 'nembra-chatgpt56-go3'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  .github/workflows/zz-nembra-retry-safe-admission-terminal.yml \
+                  scripts/ci/v14_retry_safe_admission_terminal_patch.py
+          git diff --cached --check
+          git commit -m 'fix: preserve Experiment One admission across rediscovery delay'
+          git push origin HEAD:integration/es80-v14-retry-safe-admission-terminal/chat-gpt56-go3
