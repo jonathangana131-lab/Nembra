@@ -133,6 +133,36 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
         #expect(root["permitsPhysicalProcedure"] == nil)
     }
 
+    @Test
+    func duplicateFinalShareSemanticKeyFailsBeforeFoundationParserPrecedence() throws {
+        let artifact = try makeArtifact()
+        var duplicated = Data("{\"procedureVersion\":\"V14\",".utf8)
+        duplicated.append(contentsOf: artifact.json.dropFirst())
+
+        #expect(
+            throws: PassiveBluetoothExperimentOneFinalShareArtifactError.malformedWireData
+        ) {
+            _ = try PassiveBluetoothExperimentOneFinalShareArtifactCodec.decodeAndVerify(duplicated)
+        }
+    }
+
+    @Test
+    func duplicateSoftwareExportSemanticKeyFailsBeforeFoundationParserPrecedence() throws {
+        let softwareExport = try makeSoftwareExport()
+        let encoded = try PassiveBluetoothExperimentOneSoftwareExportCodec.encode(
+            softwareExport,
+            prettyPrinted: false
+        )
+        var duplicated = Data("{\"schemaVersion\":1,".utf8)
+        duplicated.append(contentsOf: encoded.dropFirst())
+
+        #expect(
+            throws: PassiveBluetoothExperimentOneSoftwareExportError.malformedWireData
+        ) {
+            _ = try PassiveBluetoothExperimentOneSoftwareExportCodec.decodeAndVerify(duplicated)
+        }
+    }
+
     private func makeArtifact() throws -> PassiveBluetoothExperimentOneFinalShareArtifact {
         try PassiveBluetoothExperimentOneFinalShareArtifactCodec.make(
             softwareExport: makeSoftwareExport()
