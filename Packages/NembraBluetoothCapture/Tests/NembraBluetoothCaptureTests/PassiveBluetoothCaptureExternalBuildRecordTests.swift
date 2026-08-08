@@ -55,6 +55,24 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
     }
 
     @Test
+    func buildIdentifierMustDeriveFromTheExactSourceCommit() throws {
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(
+                    overrides: ["buildIdentifier": "Capture Build V14-111111111111"]
+                )
+            )
+        }
+
+        let differentSource = "123456789abc6789abcdef0123456789abcdef01"
+        #expect(throws: PassiveBluetoothCaptureExternalBuildRecordError.buildIdentifierSourceMismatch) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
+                try makeRecordJSON(overrides: ["sourceCommitSHA": differentSource])
+            )
+        }
+    }
+
+    @Test
     func parsedRecordMechanicallyBindsEveryMeasuredRuntimeBuildFact() throws {
         let runtimeIdentity = try makeRuntimeIdentity()
         let record = try makeRuntimeBoundRecord(runtimeIdentity: runtimeIdentity)
