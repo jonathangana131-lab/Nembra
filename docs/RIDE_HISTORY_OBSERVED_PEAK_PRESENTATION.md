@@ -2,15 +2,17 @@
 
 ## Purpose
 
-This layer turns one trusted `RideHistoryObservedPeakJoinedRecord` into a product-facing semantic projection suitable for a future Ride Details / accessibility integration.
+This layer turns one NembraCore-authorized `RideHistoryObservedPeakJoinedRecord` into a product-facing semantic projection suitable for a future Ride Details / accessibility integration.
 
-It is deliberately downstream of the durable observed-peak history attachment and upstream of SwiftUI. It does not alter persistence, app wiring, telemetry collection, or selected-period statistics.
+It is deliberately downstream of durable observed-peak history and upstream of SwiftUI. It does not alter persistence, app wiring, telemetry collection, or selected-period statistics.
 
 ## Durable truth stays below presentation
 
-`RideObservedPeakHistoryEvidence` retains the raw evidence needed to re-evaluate quality after relaunch. It does not persist `isReady`, `qualified`, `isObservedMaximumEligible`, or this presentation state.
+`RideObservedPeakHistoryEvidence` retains descriptive raw evidence needed to re-evaluate quality after relaunch. It does not persist `isReady`, `qualified`, `isObservedMaximumEligible`, or this presentation state.
 
-`RideHistoryObservedPeakPresenter.present(_:)` therefore calls the joined record's revalidation path each time it projects product state. `RideHistoryObservedPeakPresentation` is intentionally non-`Codable` so a derived presentation verdict does not become durable authority by convenience.
+Structural consistency is not origin authority. Public callers can decode/retain the durable evidence, but the recovery parent keeps `RideObservedPeakHistoryAssessment`, `RideObservedPeakHistoryEvidence.assessment()`, and `RideHistoryObservedPeakJoinedRecord.assessment()` inside NembraCore. This presentation slice preserves that boundary: `RideHistoryObservedPeakPresenter` is also module-owned rather than public.
+
+A future package-owned persistence/provenance adapter must be the public minting boundary. Only that sealed adapter may obtain trusted durable history inside NembraCore, call the presenter, and return the non-Codable `RideHistoryObservedPeakPresentation` value to app UI. Caller-authored Codable history must never be accepted directly by a public presenter.
 
 ## Product states
 
@@ -37,7 +39,7 @@ A consumer must not relabel this value as `Max speed`, `Observed max`, top speed
 
 ### `qualifiedObservedMaximum`
 
-The durable evidence revalidates under its retained caller-supplied policy and also passes the stricter observed-maximum gate:
+The module-owned presenter revalidates the retained caller-supplied policy and also passes the stricter observed-maximum gate:
 
 - no readiness failures;
 - telemetry quality qualified;
@@ -63,6 +65,7 @@ These are evidence/provenance fields, not permission to invent precision in form
 
 This package slice does not establish:
 
+- a mechanically sealed production persistence adapter yet;
 - the production AOVOPRO ES80 speed source;
 - BLE/Tuya/GATT/DP identity or semantics;
 - physical cadence, latency, resolution, or GPS-quality thresholds;
@@ -72,10 +75,10 @@ This package slice does not establish:
 - Ride Details / Stats SwiftUI wiring;
 - Simulator or physical-device visual acceptance.
 
-The stored policy being satisfied means only that the retained software evidence passes that retained policy. It does not prove the policy has been physically validated for the ES80.
+The stored policy being satisfied means only that retained software evidence passes that retained policy after NembraCore has obtained it through an authorized path. It does not prove the policy has been physically validated for the ES80.
 
 ## Integration boundary
 
 The current app `RideHistoryRecord` persistence and `AppRootView` / Ride Details surfaces are intentionally untouched because those are high-contention owned integration surfaces.
 
-Once the durable attachment is accepted and an app persistence owner joins it into completed history, a Ride Details owner can consume this projection without reimplementing quality logic or reading a persisted qualification boolean.
+The next safe product rung is a mechanically sealed package-owned persistence/provenance adapter that can obtain durable history without accepting caller-authored evidence as authority, then return this presentation to app integration. Until that exists, this presenter remains module-owned and #421 must stay stacked/draft.
