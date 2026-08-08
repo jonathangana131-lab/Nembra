@@ -49,7 +49,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let abandonedReadyTransaction: Transaction
         let abandonedTargetSessionGeneration: UInt64
 
-        private init(abandonedReadyTransaction: Transaction) {
+        fileprivate init(abandonedReadyTransaction: Transaction) {
             self.abandonedReadyTransaction = abandonedReadyTransaction
             abandonedTargetSessionGeneration =
                 abandonedReadyTransaction.authority.targetSessionGeneration
