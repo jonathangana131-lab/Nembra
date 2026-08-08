@@ -26,17 +26,18 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let researchFieldRecipeInfoDictionaryKey = "NembraCaptureFieldRecipe"
     private static let acceptedResearchBuildIdentifierPrefix = "Capture Build V14-"
 
-    /// Runtime field status for the exact application that is currently executing.
+    /// Runtime field status for the exact application process that is currently executing.
     ///
     /// Unit-test hosts and ordinary app builds do not carry the complete signed field-candidate
-    /// metadata shape, so they remain NO-GO. The status is intentionally recomputed rather than
-    /// cached so tests and future relaunch/recovery behavior cannot preserve stale authority.
-    public static var status: Status {
+    /// metadata shape, so they remain NO-GO. The expensive executable/Info.plist hashing is performed
+    /// once per process launch; fresh-run charger/setup/correlation safety remains enforced separately
+    /// by the coordinator and app preflight for every Experiment One attempt.
+    public static let status: Status = {
         guard let researchAuthorization = currentResearchFieldAuthorization() else {
             return .noGo(.finalComposedBuildNotAuthorized)
         }
         return .researchBuildAuthorized(researchAuthorization)
-    }
+    }()
 
     public static var permitsPhysicalProcedure: Bool {
         switch status {
