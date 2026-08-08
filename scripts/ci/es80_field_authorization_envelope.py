@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -419,24 +421,98 @@ def build_envelope(
     )
 
 
+def publish_file_no_replace(staging_file: Path, output_file: Path) -> None:
+    """Atomically move one complete staged file without replacing an existing destination."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    source = os.fsencode(staging_file)
+    destination = os.fsencode(output_file)
+
+    if sys.platform == "darwin":
+        rename_exclusive = libc.renamex_np
+        rename_exclusive.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(source, destination, 0x00000004)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename_exclusive = libc.renameat2
+        rename_exclusive.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(-100, source, -100, destination, 0x00000001)  # RENAME_NOREPLACE
+    else:
+        raise AuthorizationEnvelopeError(
+            f"atomic no-replace authorization publication is unsupported on {sys.platform!r}"
+        )
+
+    if result != 0:
+        error_number = ctypes.get_errno()
+        if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+            raise AuthorizationEnvelopeError(
+                f"refusing to overwrite existing signed authorization envelope: {output_file}"
+            )
+        raise OSError(error_number, os.strerror(error_number), str(output_file))
+
+
 def write_envelope_no_replace(output: Path, envelope: bytes) -> Path:
+    """Publish one complete envelope with no partial final-path state on failure."""
     resolved = require_external_path(output, "signed authorization envelope output")
     resolved.parent.mkdir(parents=True, exist_ok=True)
+    staging_path: Path | None = None
+    descriptor = -1
+
     try:
-        with resolved.open("xb") as handle:
-            handle.write(envelope)
+        descriptor, staging_name = tempfile.mkstemp(
+            prefix=f".authorization-envelope-{resolved.name}.staging-",
+            dir=resolved.parent,
+        )
+        staging_path = Path(staging_name)
+        with os.fdopen(descriptor, "w+b", closefd=True) as handle:
+            descriptor = -1
+            if handle.write(envelope) != len(envelope):
+                raise AuthorizationEnvelopeError(
+                    "could not write complete signed authorization envelope"
+                )
             handle.flush()
             os.fsync(handle.fileno())
-    except FileExistsError as exc:
-        raise AuthorizationEnvelopeError(
-            f"refusing to overwrite existing signed authorization envelope: {resolved}"
-        ) from exc
-    except OSError as exc:
-        raise AuthorizationEnvelopeError("could not publish signed authorization envelope") from exc
-    if resolved.read_bytes() != envelope:
-        raise AuthorizationEnvelopeError("published authorization envelope bytes diverged")
-    return resolved
+            handle.seek(0)
+            if handle.read(len(envelope) + 1) != envelope:
+                raise AuthorizationEnvelopeError(
+                    "staged authorization envelope bytes diverged"
+                )
 
+        publish_file_no_replace(staging_path, resolved)
+        staging_path = None  # Exclusive rename consumed the staging pathname.
+        return resolved
+    except Exception as error:
+        cleanup_error: OSError | None = None
+        if staging_path is not None:
+            try:
+                staging_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                cleanup_error = exc
+
+        if cleanup_error is not None:
+            raise AuthorizationEnvelopeError(
+                "authorization envelope publication failed before final-path admission "
+                "and staging cleanup also failed"
+            ) from error
+        if isinstance(error, AuthorizationEnvelopeError):
+            raise
+        raise AuthorizationEnvelopeError(
+            "could not publish signed authorization envelope"
+        ) from error
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 def create_envelope(
     external_record_path: Path,
