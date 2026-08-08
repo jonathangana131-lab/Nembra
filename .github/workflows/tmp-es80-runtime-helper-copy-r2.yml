@@ -1,0 +1,73 @@
+name: Temporary ES80 runtime helper copy repair r2
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-rider-runtime-copy-r2/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact test checkpoint
+        run: test "$(git rev-parse HEAD^)" = "84847cb7a1a470ebb0816ce97cc320296f3ace6f"
+
+      - name: Rewrite only rendered helper copy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = path.read_text(encoding="utf-8")
+          replacements = [
+              ('This evidence life cannot regain capture authority; start a fresh Experiment One.', 'This capture cannot resume safely; start a fresh Experiment One.'),
+              ('The package-owned CoreBluetooth controller is unavailable for this coordinator.', 'Bluetooth capture is unavailable for this run.'),
+              ('The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.', 'The four windows did not preserve one valid OFF 1, ON 1, OFF 2, ON 2 sequence. Start again from OFF 1.'),
+              ('The package-owned Experiment One workflow has no active correlation progress and no final result.', 'This Experiment One run has no active progress and no final result. Start a fresh run.'),
+              ('Nembra could not create a fresh package-owned Experiment One workflow:', 'Nembra could not create a fresh Experiment One run:'),
+              ('The package-owned physical execution gate is closed for this build.', 'Field capture is locked for this build.'),
+              ('The correlated-target admission is already prepared. Continue the current rediscovery.', 'The correlated target is already prepared. Continue the current rediscovery.'),
+              ('No sealed correlated-target admission is ready for this step.', 'No confirmed correlated target is ready for this step.'),
+              ('The four-window evidence authority or ordering is invalid.', 'The four-window evidence or ordering is invalid.'),
+              ('The exact correlated target has not reappeared in the fresh post-admission scan yet.', 'The exact correlated target has not reappeared in the fresh scan yet.'),
+              ('The package-owned passive capture controller is unavailable.', 'Passive Bluetooth capture is unavailable.'),
+              ('The accepted Ready epoch and minimum monotonic observation interval are not complete yet.', 'Passive discovery and the required observation period are not complete yet.'),
+              ("The producer's monotonic receipt window has not reached the required minimum yet.", 'The observation window has not reached the required minimum yet.'),
+              ('The producer could not establish a monotonic observation window.', 'Nembra could not establish a valid observation window.'),
+              ('The package-owned Bluetooth controller has not been instantiated for this build.', 'Bluetooth capture is not available for this build.'),
+              ('Waiting for CoreBluetooth to report its state.', 'Waiting for Bluetooth to report its state.'),
+              ('CoreBluetooth reported an unknown future state. Capture remains unavailable.', 'Bluetooth reported an unknown future state. Capture remains unavailable.'),
+              ('observation Horizon ready to seal', 'observation ready to seal'),
+              ('case .correlationFailed, .failed: return "Evidence stopped"', 'case .correlationFailed, .failed: return "Capture stopped"'),
+              ('case .acquiring: return "Finite acquisition"', 'case .acquiring: return "Passive discovery"'),
+              ('case .readyToSeal: return "Horizon ready"', 'case .readyToSeal: return "Ready to seal"'),
+              ('case .finalizing: return "Sealing artifact"', 'case .finalizing: return "Sealing capture"'),
+          ]
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f"expected current helper copy not found: {old}")
+              source = source.replace(old, new)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Verify exact scope
+        run: |
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "1"
+          test "$(git diff --name-only)" = "NembraApp/Features/Research/ES80CaptureShellView.swift"
+
+      - name: Commit product repair and self-delete
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-runtime-helper-copy-r2.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift
+          git commit -m "Capture: keep rendered failure copy rider-first"
+          git push origin HEAD:fix/es80-v14-rider-runtime-copy-r2/gpt56-thinking
