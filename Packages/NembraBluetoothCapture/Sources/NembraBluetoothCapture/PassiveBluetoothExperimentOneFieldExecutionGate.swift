@@ -35,7 +35,7 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         currentResearchBuildAdmission() != nil
     }
 
-    /// Narrow package-only capability for TODAY's exact-source signed research build.
+    /// Narrow module-only capability for TODAY's exact-source signed research build.
     /// There is no public initializer and no production API accepting caller-supplied metadata.
     struct ResearchBuildAdmission: Equatable, Sendable {
         let buildIdentifier: String
@@ -57,9 +57,9 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
         researchBuildAdmission(infoDictionary: Bundle.main.infoDictionary ?? [:])
     }
 
-    /// Deterministic package seam for validation. The running-app path above always supplies
-    /// `Bundle.main`; normal app code cannot call this package-internal resolver with imported JSON.
-    package static func researchBuildAdmission(
+    /// Deterministic internal seam for validation. The running-app path above always supplies
+    /// `Bundle.main`; normal app code cannot call this resolver with imported JSON.
+    static func researchBuildAdmission(
         infoDictionary: [String: Any]
     ) -> ResearchBuildAdmission? {
         guard let recipe = infoDictionary[fieldRecipeInfoDictionaryKey] as? String,
