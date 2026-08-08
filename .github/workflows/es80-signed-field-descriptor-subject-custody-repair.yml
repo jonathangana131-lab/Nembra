@@ -1,0 +1,172 @@
+name: ES80 Signed-Field Descriptor Subject Custody Repair
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-signed-field-descriptor-subject-custody-gpt56
+
+permissions:
+  contents: write
+
+concurrency:
+  group: es80-signed-field-descriptor-subject-custody-repair
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Verify triggering head
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Bind opened producer tool descriptors to accepted source blobs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
+          source = path.read_text(encoding="utf-8")
+
+          old = dedent('''\
+          exec 7<"$PRIVATE_RUNNER_SNAPSHOT"
+          exec 8<"$INSPECTOR_SNAPSHOT"
+          exec 9<"$PRIVATE_RUNNER_SNAPSHOT"
+          rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+          ''')
+          if source.count(old) != 1:
+              raise SystemExit("live producer descriptor-open block no longer matches guarded source")
+          if "signed-field tool descriptor subject binding failed" in source:
+              raise SystemExit("descriptor subject-custody repair unexpectedly already exists")
+
+          new = dedent('''\
+          exec 7<"$PRIVATE_RUNNER_SNAPSHOT"
+          exec 8<"$INSPECTOR_SNAPSHOT"
+          exec 9<"$PRIVATE_RUNNER_SNAPSHOT"
+
+          # Bind each already-open descriptor to the exact accepted SOURCE_SHA Git blob before the
+          # mutable snapshot pathnames disappear or any private intended-device input is exposed.
+          # os.pread() hashes from explicit offsets, so the descriptors remain positioned at byte 0
+          # for the later /dev/fd executions.
+          if ! python3 - \\
+            /dev/fd/7 "$PRIVATE_RUNNER_BLOB_SHA" \\
+            /dev/fd/8 "$INSPECTOR_BLOB_SHA" \\
+            /dev/fd/9 "$PRIVATE_RUNNER_BLOB_SHA" <<'PYVERIFY'
+          import hashlib
+          import os
+          import stat
+          import sys
+
+          arguments = sys.argv[1:]
+          if len(arguments) != 6:
+              raise SystemExit("expected three descriptor/blob bindings")
+
+          for descriptor_path, expected_blob_sha in zip(arguments[0::2], arguments[1::2]):
+              descriptor_text = descriptor_path.rsplit("/", 1)[-1]
+              if not descriptor_text.isdigit():
+                  raise SystemExit(f"invalid inherited descriptor path: {descriptor_path}")
+              descriptor = int(descriptor_text)
+              metadata = os.fstat(descriptor)
+              if not stat.S_ISREG(metadata.st_mode):
+                  raise SystemExit(f"descriptor {descriptor} is not one regular file subject")
+              if metadata.st_size < 0:
+                  raise SystemExit(f"descriptor {descriptor} has invalid size")
+
+              digest = hashlib.sha1()
+              digest.update(f"blob {metadata.st_size}\\0".encode("ascii"))
+              offset = 0
+              while offset < metadata.st_size:
+                  chunk = os.pread(descriptor, min(1024 * 1024, metadata.st_size - offset), offset)
+                  if not chunk:
+                      raise SystemExit(f"descriptor {descriptor} ended before its recorded size")
+                  digest.update(chunk)
+                  offset += len(chunk)
+
+              actual_blob_sha = digest.hexdigest()
+              if actual_blob_sha != expected_blob_sha:
+                  raise SystemExit(
+                      f"descriptor {descriptor} no longer matches accepted source blob "
+                      f"{expected_blob_sha}; got {actual_blob_sha}"
+                  )
+              if os.lseek(descriptor, 0, os.SEEK_CUR) != 0:
+                  raise SystemExit(f"descriptor {descriptor} offset moved during subject verification")
+          PYVERIFY
+          then
+            echo "signed-field tool descriptor subject binding failed; refusing candidate production." >&2
+            exit 14
+          fi
+
+          rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
+          ''')
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Wire release-custody regressions into exact-head QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/xcode27-pr-command.yml")
+          source = path.read_text(encoding="utf-8")
+
+          producer_marker = (
+              "          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py\n"
+              "          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py\n"
+          )
+          producer_addition = (
+              producer_marker
+              + "          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py\n"
+              + "          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py\n"
+          )
+          if "test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py" not in source:
+              if source.count(producer_marker) != 1:
+                  raise SystemExit("unexpected producer intended-device QA marker count")
+              source = source.replace(producer_marker, producer_addition, 1)
+
+          signer_marker = "          python3 scripts/ci/es80_field_authorization_envelope.py --self-test\n"
+          signer_addition = (
+              signer_marker
+              + "          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_subprocess_environment.py\n"
+              + "          python3 scripts/ci/tests/test_es80_field_authorization_signer_subprocess_environment.py\n"
+          )
+          if "test_es80_field_authorization_signer_subprocess_environment.py" not in source:
+              if source.count(signer_marker) != 1:
+                  raise SystemExit("unexpected signer self-test QA marker count")
+              source = source.replace(signer_marker, signer_addition, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Validate focused release-custody contract
+        run: |
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_descriptor_subject_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_es80_field_authorization_signer_subprocess_environment.py
+          python3 scripts/ci/tests/test_es80_field_authorization_signer_subprocess_environment.py
+          git diff --check
+
+      - name: Commit product-only result
+        run: |
+          rm .github/workflows/es80-signed-field-descriptor-subject-custody-repair.yml
+          git add -A
+          test -n "$(git status --porcelain)"
+          git config user.name "Nembra V14 Capture Worker"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git commit -m "Bind signed-field tool descriptors to accepted source blobs" \
+            -m "After opening FDs 7/8/9, hash each exact inherited regular-file subject with offset-preserving pread and require the Git blob SHA accepted from SOURCE_SHA before unlinking mutable snapshot paths or exposing the private intended-device input. Promote the release-custody expected-red diagnostics into permanent exact-head QA. Physical Experiment One remains NO-GO."
+          git push origin HEAD:${GITHUB_REF_NAME}
