@@ -40,47 +40,69 @@ jobs:
               source = source.replace(old, new)
           shell_path.write_text(source, encoding="utf-8")
 
-          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
-          test_source = test_path.read_text(encoding="utf-8")
-          insertion = r'''
+          test_lines = [
+              "import Foundation",
+              "import Testing",
+              "",
+              "@Suite(\"ES80 Capture rendered-helper rider-language acceptance\")",
+              "struct ES80CaptureRenderedHelperRiderLanguageAcceptanceTests {",
+              "    private static func shellSource() throws -> String {",
+              "        let testFile = URL(fileURLWithPath: #filePath)",
+              "        let repositoryRoot = testFile",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "            .deletingLastPathComponent()",
+              "",
+              "        return try String(",
+              "            contentsOf: repositoryRoot",
+              "                .appendingPathComponent(\"NembraApp\")",
+              "                .appendingPathComponent(\"Features\")",
+              "                .appendingPathComponent(\"Research\")",
+              "                .appendingPathComponent(\"ES80CaptureShellView.swift\"),",
+              "            encoding: .utf8",
+              "        )",
+              "    }",
+              "",
+              "    @Test(\"rendered helper messages stay rider-first outside the primary declaration slice\")",
+              "    func renderedHelpersStayHumanFirst() throws {",
+              "        let source = try Self.shellSource()",
+              "        let forbidden = [",
+              "            \"This evidence life cannot regain capture authority\",",
+              "            \"replaying consumed authority\",",
+              "            \"package-owned CoreBluetooth controller\",",
+              "            \"package-issued observation authority\",",
+              "            \"package-owned Experiment One workflow\",",
+              "            \"foreground-invalidated evidence life\",",
+              "            \"fresh package-owned Experiment One workflow\"",
+              "        ]",
+              "        for phrase in forbidden {",
+              "            #expect(!source.contains(phrase), \"Rendered helper still exposes implementation vocabulary: \\(phrase)\")",
+              "        }",
+              "        #expect(source.contains(\"This capture cannot safely continue; start a fresh Experiment One.\"))",
+              "        #expect(source.contains(\"Bluetooth capture is unavailable for this run.\"))",
+              "        #expect(source.contains(\"Start again from OFF 1.\"))",
+              "        #expect(source.contains(\"Experiment One has no active OFF / ON progress. Start a fresh run.\"))",
+              "        #expect(source.contains(\"Nembra could not start a fresh Experiment One. Close Capture and try again.\"))",
+              "    }",
+              "",
+              "    @Test(\"fallback cleanup keeps lifecycle and physical gates intact\")",
+              "    func truthGuardsRemain() throws {",
+              "        let source = try Self.shellSource()",
+              "        #expect(source.contains(\"guard status.physicalProcedurePermitted else\"))",
+              "        #expect(source.contains(\"PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)\"))",
+              "        #expect(source.contains(\"coordinator.invalidateForForegroundLoss()\"))",
+              "        #expect(source.contains(\"coordinator.abandonExperiment()\"))",
+              "    }",
+              "}",
+              "",
+          ]
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRenderedHelperRiderLanguageAcceptanceTests.swift")
+          if test_path.exists():
+              raise SystemExit("rendered-helper rider-language regression already exists")
+          test_path.write_text("\n".join(test_lines), encoding="utf-8")
 
-    @Test("rendered helper messages stay rider-first even outside the primary declaration slice")
-    func renderedHelpersStayHumanFirst() throws {
-        let source = try Self.shellSource()
-
-        let implementationPhrasesThatMustNotReachRenderedFallbacks = [
-            "This evidence life cannot regain capture authority",
-            "replaying consumed authority",
-            "package-owned CoreBluetooth controller",
-            "package-issued observation authority",
-            "package-owned Experiment One workflow",
-            "foreground-invalidated evidence life",
-            "fresh package-owned Experiment One workflow"
-        ]
-
-        for phrase in implementationPhrasesThatMustNotReachRenderedFallbacks {
-            #expect(
-                !source.contains(phrase),
-                "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
-            )
-        }
-
-        #expect(source.contains("This capture cannot safely continue; start a fresh Experiment One."))
-        #expect(source.contains("Bluetooth capture is unavailable for this run."))
-        #expect(source.contains("Start again from OFF 1."))
-        #expect(source.contains("Experiment One has no active OFF / ON progress. Start a fresh run."))
-        #expect(source.contains("Nembra could not start a fresh Experiment One. Close Capture and try again."))
-    }
-'''
-          final_close = test_source.rfind("\n}")
-          if final_close < 0:
-              raise SystemExit("could not locate rider-language suite closing brace")
-          if "renderedHelpersStayHumanFirst" in test_source:
-              raise SystemExit("rendered helper regression already exists")
-          test_source = test_source[:final_close] + insertion + test_source[final_close:]
-          test_path.write_text(test_source, encoding="utf-8")
-
-          source = shell_path.read_text(encoding="utf-8")
           bad = [
               "This evidence life cannot regain capture authority",
               "replaying consumed authority",
@@ -93,20 +115,12 @@ jobs:
           leaked = [phrase for phrase in bad if phrase in source]
           if leaked:
               raise SystemExit(f"rider-visible helper vocabulary remains: {leaked!r}")
-          for truth_guard in (
-              "guard status.physicalProcedurePermitted else",
-              "PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)",
-              "coordinator.invalidateForForegroundLoss()",
-              "coordinator.abandonExperiment()",
-          ):
-              if truth_guard not in source:
-                  raise SystemExit(f"Capture truth/lifecycle guard disappeared: {truth_guard}")
           PY
           git diff --check
           git status --short
           git config user.name "nembra-go-worker"
           git config user.email "nembra-go-worker@users.noreply.github.com"
-          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRenderedHelperRiderLanguageAcceptanceTests.swift
           git rm .github/workflows/tmp-es80-rendered-helper-rider-copy.yml
           git commit -m "Capture: humanize rendered fallback states"
           git push origin HEAD:agent/es80-v14-rendered-helper-rider-copy
