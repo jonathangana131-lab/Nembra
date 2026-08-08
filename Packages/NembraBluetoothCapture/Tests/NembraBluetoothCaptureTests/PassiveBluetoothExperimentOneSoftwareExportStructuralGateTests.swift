@@ -69,6 +69,30 @@ struct PassiveBluetoothExperimentOneSoftwareExportStructuralGateTests {
         }
     }
 
+    @Test("import independently rejects Horizon-less capture even when manifest is rebound")
+    func reboundHorizonlessCaptureRejectedOnImport() throws {
+        var root = try validJSONObject()
+        let horizonlessCapture = try makeCapture(includeHorizon: false)
+        let reboundManifest = try PassiveBluetoothStationaryCaptureManifestBuilder.make(
+            captureJSON: horizonlessCapture,
+            experimentRecipe: .es80FingerprintV1,
+            nembraBuildIdentifier: "Capture Build V14-abcdef012345",
+            nembraBuildInstanceID: "a1b2c3d4-e5f6-47a8-90bc-def123456789",
+            nembraBuildCommitSHA: "abcdef0123456789abcdef0123456789abcdef01",
+            selectedPeripheralIdentifier: target.uuidString,
+            setup: setup()
+        )
+        root["captureJSONBase64"] = horizonlessCapture.base64EncodedString()
+        root["stationaryManifestJSONBase64"] = try PassiveBluetoothStationaryCaptureManifestJSON
+            .encode(reboundManifest)
+            .base64EncodedString()
+
+        let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        #expect(throws: ExportError.recipeStructuralEvidenceInvalid) {
+            _ = try Codec.decodeAndVerify(tampered)
+        }
+    }
+
     private func validJSONObject() throws -> [String: Any] {
         let export = try Codec.make(
             captureJSON: makeCapture(includeHorizon: true),
