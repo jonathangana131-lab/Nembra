@@ -1968,10 +1968,18 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
 
         if observationBoundaryBlocksArtifactMutation {
             // This terminal transport callback arrived outside H. Consume transport
-            // state only and preserve the authority of the closing artifact.
+            // state only and preserve the authority of the closing artifact. A failed
+            // connect is also a real same-attempt terminal callback, so once target-state
+            // quarantine is released it must drive the same fresh-session completion seam
+            // as disconnect rather than leaving a finalized capture stuck terminal.
             selectedTargetCancellationPending = false
             if case .active = disposition {
                 clearActiveConnectionState(for: identifier)
+            }
+            do {
+                _ = try completeTerminalFreshTargetSessionIfReady()
+            } catch {
+                failCapture(error)
             }
             return
         }
