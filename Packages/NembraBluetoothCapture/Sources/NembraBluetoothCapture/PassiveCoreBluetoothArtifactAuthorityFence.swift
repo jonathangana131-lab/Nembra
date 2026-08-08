@@ -1,4 +1,5 @@
 import Foundation
+import NembraCore
 
 /// Synchronously serializes one mutable capture-artifact authority with mutations
 /// that are only valid while an exact authority remains current.
@@ -10,16 +11,15 @@ import Foundation
 /// mutation and must not begin after the authority that admitted it has been
 /// revoked.
 ///
-/// The caller that owns artifact authority must transition this fence in the same
-/// synchronous operation that advances its own authority. When the caller also
-/// stores/publishes authority separately, it must transition the fence **before**
-/// publishing the new owner value. Otherwise a concurrent recorder executor could
-/// observe the owner at B while this fence still admits stale A for a brief window.
-/// After the fence transition returns, publishing the already-computed B value is
-/// non-failable and no MainActor reentrancy is needed.
+/// The MainActor owner that advances artifact authority must transition this fence
+/// in the same synchronous operation that advances its own mirrored authority. The
+/// fence transition must happen **before** publishing the new owner value. Otherwise
+/// a concurrent recorder executor could observe the owner at B while this fence still
+/// admits stale A for a brief window. After the fence transition returns, publishing
+/// the already-computed B value is non-failable and requires no actor suspension.
 ///
-/// A recorder-side mutation calls `withCurrentAuthority(_:_:)`; the authority
-/// check and supplied mutation execute while this fence holds one non-async critical
+/// A recorder-side mutation calls `withCurrentAuthority(_:_:)`; the authority check
+/// and supplied mutation execute while this fence holds one non-async critical
 /// section. Therefore either the mutation wins before the authority transition, or
 /// the authority transition wins and the stale mutation is rejected before its body
 /// executes.
@@ -36,13 +36,24 @@ final class PassiveCoreBluetoothArtifactAuthorityFence: @unchecked Sendable {
             expected: PassiveCoreBluetoothArtifactAuthorityContext,
             current: PassiveCoreBluetoothArtifactAuthorityContext
         )
+        case nonAdvancingTransition(
+            from: PassiveCoreBluetoothArtifactAuthorityContext,
+            to: PassiveCoreBluetoothArtifactAuthorityContext
+        )
     }
 
     private let lock = NSLock()
-    private var currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
+    private var storedAuthority: PassiveCoreBluetoothArtifactAuthorityContext
 
     init(authority: PassiveCoreBluetoothArtifactAuthorityContext) {
-        currentAuthority = authority
+        storedAuthority = authority
+    }
+
+    /// Thread-safe read-only projection for a synchronous MainActor admission that
+    /// needs to capture the exact fence authority before its first `await`.
+    /// Authority mutation remains MainActor-only through `transition(from:to:)`.
+    var currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext {
+        synchronized { storedAuthority }
     }
 
     /// Executes `mutation` only if `expectedAuthority` is still exactly current.
@@ -54,37 +65,66 @@ final class PassiveCoreBluetoothArtifactAuthorityFence: @unchecked Sendable {
         _ mutation: () throws -> Result
     ) throws -> Result {
         try synchronized {
-            guard currentAuthority == expectedAuthority else {
+            guard storedAuthority == expectedAuthority else {
                 throw StateError.authorityChanged(
                     expected: expectedAuthority,
-                    current: currentAuthority
+                    current: storedAuthority
                 )
             }
             return try mutation()
         }
     }
 
-    /// Atomically replaces the current authority only when the caller still owns
-    /// the exact expected authority. A delayed/stale transition cannot rewind or
-    /// overwrite a newer authority.
+    /// Atomically replaces the current authority only when the MainActor caller
+    /// still owns the exact expected authority and the full authority context moves
+    /// strictly forward.
     ///
-    /// If another owner variable mirrors this authority, call this method before
-    /// assigning that owner variable its new value. This method is synchronous; no
-    /// asynchronous suspension belongs between the fence transition and owner
-    /// publication.
+    /// Ordering is lexicographic by durable target session first, then authority
+    /// generation within that session:
+    /// - a newer target-session generation may begin with its own authority counter;
+    /// - within one target session, authority generation must strictly increase;
+    /// - same, older-session, and same-session backward transitions fail closed.
+    ///
+    /// This prevents a retired full-context token from becoming current again while
+    /// avoiding a false requirement that a fresh durable session inherit the old
+    /// session's authority counter forever.
+    ///
+    /// If another MainActor owner variable mirrors this authority, call this method
+    /// before assigning that variable its new value. No asynchronous suspension
+    /// belongs between the fence transition and owner publication.
+    @MainActor
     func transition(
         from expectedAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
         to newAuthority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws {
         try synchronized {
-            guard currentAuthority == expectedAuthority else {
+            guard storedAuthority == expectedAuthority else {
                 throw StateError.authorityChanged(
                     expected: expectedAuthority,
-                    current: currentAuthority
+                    current: storedAuthority
                 )
             }
-            currentAuthority = newAuthority
+            guard Self.isStrictlyNewer(newAuthority, than: expectedAuthority) else {
+                throw StateError.nonAdvancingTransition(
+                    from: expectedAuthority,
+                    to: newAuthority
+                )
+            }
+            storedAuthority = newAuthority
         }
+    }
+
+    private static func isStrictlyNewer(
+        _ candidate: PassiveCoreBluetoothArtifactAuthorityContext,
+        than current: PassiveCoreBluetoothArtifactAuthorityContext
+    ) -> Bool {
+        if candidate.targetSessionGeneration > current.targetSessionGeneration {
+            return true
+        }
+        guard candidate.targetSessionGeneration == current.targetSessionGeneration else {
+            return false
+        }
+        return candidate.authorityGeneration > current.authorityGeneration
     }
 
     private func synchronized<Result>(
@@ -93,5 +133,47 @@ final class PassiveCoreBluetoothArtifactAuthorityFence: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return try body()
+    }
+}
+
+extension PassiveCoreBluetoothCaptureRecorder {
+    /// Authority-sensitive explicit-clock lifecycle mutation.
+    ///
+    /// The actor hop happens before this synchronous method begins. Once on the
+    /// recorder actor, the exact authority check and the existing synchronous
+    /// boundary append share one fence hold. If authority changed while the caller
+    /// was suspended waiting for this actor, the stale decision appends zero
+    /// observation-boundary evidence.
+    func recordObservationBoundary(
+        _ kind: PassiveBluetoothObservationBoundaryKind,
+        observedAtUptimeNanoseconds: UInt64,
+        observedAtDate: Date,
+        expectedAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
+        authorityFence: PassiveCoreBluetoothArtifactAuthorityFence
+    ) throws {
+        try authorityFence.withCurrentAuthority(expectedAuthority) {
+            try recordObservationBoundary(
+                kind,
+                observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+                observedAtDate: observedAtDate
+            )
+        }
+    }
+}
+
+extension PassiveCoreBluetoothObservationBoundaryDecision {
+    /// Carries the exact pre-await #411 decision clocks and authority through the
+    /// recorder actor hop to the irreversible mutation point.
+    func recordBoundary(
+        on recorder: PassiveCoreBluetoothCaptureRecorder,
+        authorityFence: PassiveCoreBluetoothArtifactAuthorityFence
+    ) async throws {
+        try await recorder.recordObservationBoundary(
+            observationBoundaryKind,
+            observedAtUptimeNanoseconds: observedAtUptimeNanoseconds,
+            observedAtDate: observedAtDate,
+            expectedAuthority: authority,
+            authorityFence: authorityFence
+        )
     }
 }
