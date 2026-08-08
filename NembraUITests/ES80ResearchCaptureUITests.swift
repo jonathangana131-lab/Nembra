@@ -385,10 +385,10 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let scenarios = [
             ScenarioExpectation(
-                scenario: "firstPoweredOff",
+                scenario: "secondPoweredOff",
                 requiredText: "Scooter OFF",
                 requiredIdentifier: "es80.capture.begin-window",
-                screenshotName: "Nembra Capture V14 — SIMULATOR QA — OFF 1 Ready"
+                screenshotName: "Nembra Capture V14 — SIMULATOR QA — OFF 2 Ready"
             ),
             ScenarioExpectation(
                 scenario: "secondPoweredOn",
