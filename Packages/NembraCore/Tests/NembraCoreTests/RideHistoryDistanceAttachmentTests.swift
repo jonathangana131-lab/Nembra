@@ -94,13 +94,13 @@ struct RideHistoryDistanceAttachmentTests {
         history: RideHistoryRecord,
         odometerCoverage: RideDistanceCoverage = .complete,
         gpsCoverage: RideDistanceCoverage = .complete,
-        liveDistanceEvidence: RideHistoryLiveDistanceEvidence? = nil
+        liveDistanceCheckpoint: RideHistoryLiveDistanceCheckpoint? = nil
     ) throws -> RideHistoryDistanceRecord {
         try RideHistoryDistanceRecord(
             historyRecord: history,
             odometerCoverage: odometerCoverage,
             gpsRouteCoverage: gpsCoverage,
-            liveDistanceEvidence: liveDistanceEvidence,
+            liveDistanceCheckpoint: liveDistanceCheckpoint,
             transportGapOccurred: false,
             reconciliationPolicy: policy()
         )
@@ -136,10 +136,9 @@ struct RideHistoryDistanceAttachmentTests {
     func commitAndJoin() async throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let record = try attachment(history: history)
-        let distanceStore = InMemoryDistanceStore()
         let coordinator = RideHistoryDistanceCommitCoordinator(
             historyStore: InMemoryHistoryStore(records: [history]),
-            distanceStore: distanceStore
+            distanceStore: InMemoryDistanceStore()
         )
 
         #expect(try await coordinator.commit(record) == .inserted)
@@ -152,7 +151,7 @@ struct RideHistoryDistanceAttachmentTests {
         #expect(joined?.reconciledDistance.status == .complete)
     }
 
-    @Test("read-back re-runs selected-source coverage semantics instead of trusting a final-mileage blob")
+    @Test("selected partial source remains incomplete after durable join and statistics bridge")
     func selectedPartialSourceRemainsIncomplete() throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let record = try attachment(
@@ -180,7 +179,7 @@ struct RideHistoryDistanceAttachmentTests {
         #expect(statisticsRide.attributedDate == history.evidence.endedAtDate)
     }
 
-    @Test("complete selected-source evidence crosses the sealed history-to-statistics bridge")
+    @Test("complete selected-source evidence crosses the canonical sealed statistics bridge")
     func completeDistanceIsIncluded() throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let joined = try RideHistoryDistanceJoinedRecord(
@@ -198,8 +197,8 @@ struct RideHistoryDistanceAttachmentTests {
         #expect(statisticsRide.attributedDate == history.evidence.beganAtDate)
     }
 
-    @Test("durable encoding stores reproducible inputs, not a free-form final distance result")
-    func roundTripRecomputesFromInputs() throws {
+    @Test("only checkpoint inputs are Codable; trusted record is restored through exact base history")
+    func checkpointRoundTripRequiresSealedRestore() throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let original = try attachment(
             history: history,
@@ -207,28 +206,52 @@ struct RideHistoryDistanceAttachmentTests {
             gpsCoverage: .partial
         )
 
-        let data = try JSONEncoder().encode(original)
+        let data = try JSONEncoder().encode(original.checkpoint)
         let json = try #require(String(data: data, encoding: .utf8))
         #expect(!json.contains("finalDistanceMeters"))
         #expect(!json.contains("reconciledDistance"))
         #expect(!json.contains("confidence"))
         #expect(!json.contains("status"))
 
-        let decoded = try JSONDecoder().decode(RideHistoryDistanceRecord.self, from: data)
-        #expect(decoded == original)
+        let decoded = try JSONDecoder().decode(RideHistoryDistanceCheckpoint.self, from: data)
+        #expect(decoded == original.checkpoint)
+
+        let restored = try RideHistoryDistanceRecord(
+            checkpoint: decoded,
+            historyRecord: history
+        )
+        #expect(restored == original)
 
         let joined = try RideHistoryDistanceJoinedRecord(
             historyRecord: history,
-            distanceRecord: decoded
+            distanceRecord: restored
         )
         #expect(joined.reconciledDistance.status == .coverageIncomplete)
         #expect(joined.reconciledDistance.finalDistanceMeters == 995)
     }
 
-    @Test("live-distance aggregate is rebuilt from durable segment evidence")
+    @Test("decoded checkpoint cannot be restored against a different immutable base with the same UUID")
+    func decodedCheckpointStillRequiresExactBaseEvidence() throws {
+        let originalHistory = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 995))
+        let original = try attachment(history: originalHistory)
+        let data = try JSONEncoder().encode(original.checkpoint)
+        let decoded = try JSONDecoder().decode(RideHistoryDistanceCheckpoint.self, from: data)
+        let conflictingHistory = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 800))
+
+        #expect(
+            throws: RideHistoryDistanceAttachmentError.completedRideMismatch(sessionID)
+        ) {
+            _ = try RideHistoryDistanceRecord(
+                checkpoint: decoded,
+                historyRecord: conflictingHistory
+            )
+        }
+    }
+
+    @Test("live-distance aggregate is rebuilt from durable segment checkpoint evidence")
     func durableLiveSegmentsAreReaggregated() throws {
         let history = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 0))
-        let live = try RideHistoryLiveDistanceEvidence(
+        let live = try RideHistoryLiveDistanceCheckpoint(
             source: .scooterBluetooth,
             method: .trapezoidalBetweenMeasurements,
             segmentRecords: [try liveSegment(rideSessionID: sessionID, distanceMeters: 900)]
@@ -240,7 +263,7 @@ struct RideHistoryDistanceAttachmentTests {
             historyRecord: history,
             odometerCoverage: .complete,
             gpsRouteCoverage: .unknown,
-            liveDistanceEvidence: live,
+            liveDistanceCheckpoint: live,
             transportGapOccurred: false,
             reconciliationPolicy: liveFirstPolicy
         )
@@ -254,11 +277,11 @@ struct RideHistoryDistanceAttachmentTests {
         #expect(joined.reconciledDistance.finalSourceCoverage == .complete)
     }
 
-    @Test("foreign live-distance session cannot enter a history attachment")
+    @Test("foreign live-distance session cannot enter a trusted history attachment")
     func foreignLiveSessionRejected() throws {
         let history = RideHistoryRecord(evidence: try completedRide())
         let foreignSessionID = UUID(uuidString: "99999999-8888-7777-6666-555555555555")!
-        let live = try RideHistoryLiveDistanceEvidence(
+        let live = try RideHistoryLiveDistanceCheckpoint(
             source: .scooterBluetooth,
             method: .trapezoidalBetweenMeasurements,
             segmentRecords: [try liveSegment(rideSessionID: foreignSessionID)]
@@ -269,36 +292,20 @@ struct RideHistoryDistanceAttachmentTests {
                 historyRecord: history,
                 odometerCoverage: .complete,
                 gpsRouteCoverage: .complete,
-                liveDistanceEvidence: live,
+                liveDistanceCheckpoint: live,
                 transportGapOccurred: false,
                 reconciliationPolicy: policy()
             )
         }
     }
 
-    @Test("empty live-distance evidence cannot masquerade as a zero-distance aggregate")
+    @Test("empty live checkpoint cannot masquerade as a zero-distance aggregate")
     func emptyLiveEvidenceRejected() throws {
         #expect(throws: RideHistoryDistanceAttachmentError.invalidLiveDistanceEvidence) {
-            _ = try RideHistoryLiveDistanceEvidence(
+            _ = try RideHistoryLiveDistanceCheckpoint(
                 source: .scooterBluetooth,
                 method: .trapezoidalBetweenMeasurements,
                 segmentRecords: []
-            )
-        }
-    }
-
-    @Test("same UUID with different immutable completed evidence cannot join")
-    func exactBaseHistoryMismatchRejected() throws {
-        let originalHistory = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 995))
-        let attachment = try attachment(history: originalHistory)
-        let conflictingHistory = RideHistoryRecord(evidence: try completedRide(gpsDistanceMeters: 800))
-
-        #expect(
-            throws: RideHistoryDistanceAttachmentError.completedRideMismatch(sessionID)
-        ) {
-            _ = try RideHistoryDistanceJoinedRecord(
-                historyRecord: conflictingHistory,
-                distanceRecord: attachment
             )
         }
     }
@@ -346,7 +353,7 @@ struct RideHistoryDistanceAttachmentTests {
         }
     }
 
-    @Test("decoded invalid reconciliation policy fails at the durable boundary")
+    @Test("decoded invalid reconciliation policy fails at checkpoint boundary")
     func invalidPolicyDecodeRejected() throws {
         let json = """
         {
@@ -362,6 +369,25 @@ struct RideHistoryDistanceAttachmentTests {
             _ = try JSONDecoder().decode(
                 RideHistoryDistancePolicySnapshot.self,
                 from: Data(json.utf8)
+            )
+        }
+    }
+
+    @Test("unsupported checkpoint schema fails before any trusted record can exist")
+    func unsupportedSchemaRejected() throws {
+        let history = RideHistoryRecord(evidence: try completedRide())
+        let checkpoint = try attachment(history: history).checkpoint
+        let data = try JSONEncoder().encode(checkpoint)
+        var object = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        object["schemaVersion"] = 2
+        let unsupported = try JSONSerialization.data(withJSONObject: object)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(
+                RideHistoryDistanceCheckpoint.self,
+                from: unsupported
             )
         }
     }
