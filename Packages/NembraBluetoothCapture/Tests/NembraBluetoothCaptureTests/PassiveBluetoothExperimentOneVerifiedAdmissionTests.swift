@@ -102,8 +102,12 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
-        #expect(!source.contains("UserDefaults"))
-        #expect(!source.contains("ProcessInfo"))
+        // The private-research safety comment intentionally names UserDefaults as a forbidden
+        // authority source. Pin that warning and require it to be the only occurrence, so an
+        // executable preference lookup cannot hide behind a brittle whole-file substring ban.
+        #expect(source.contains("cannot be enabled by UserDefaults"))
+        #expect(source.components(separatedBy: "UserDefaults").count - 1 == 1)
+        #expect(source.components(separatedBy: "ProcessInfo").count - 1 == 0)
     }
 
     @Test("current app consumes only the exact-running-build private research factory")
