@@ -102,6 +102,25 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             self.source.index('rename_exclusive(source, destination'),
         )
 
+    def test_cleanup_only_removes_staging_directory_owned_by_this_process(self):
+        self.assertIn('FINAL_STAGING_OWNED=0', self.source)
+        cleanup_guard = (
+            'if [[ "${FINAL_STAGING_OWNED:-0}" == "1" '
+            '&& -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then'
+        )
+        self.assertIn(cleanup_guard, self.source)
+        self.assertNotIn(
+            'if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then',
+            self.source,
+        )
+        mkdir_index = self.source.index('mkdir "$FINAL_STAGING_DIR"')
+        owned_index = self.source.index('FINAL_STAGING_OWNED=1')
+        rename_index = self.source.index('rename_exclusive(source, destination')
+        released_index = self.source.rindex('FINAL_STAGING_OWNED=0')
+        self.assertLess(mkdir_index, owned_index)
+        self.assertLess(owned_index, rename_index)
+        self.assertLess(rename_index, released_index)
+
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
         self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
