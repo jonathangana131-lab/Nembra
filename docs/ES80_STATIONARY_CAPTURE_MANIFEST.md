@@ -98,11 +98,13 @@ The builder fails closed when:
 - there is no target GATT evidence;
 - the requested selected peripheral is absent from GATT evidence;
 - more than one GATT peripheral appears in the artifact;
-- a captured target-attributable peripheral identifier is not a valid CoreBluetooth UUID.
+- a captured target-attributable GATT peripheral identifier is not a valid CoreBluetooth UUID.
 
-Connection-only noise is deliberately weaker. A connection/disconnection callback never establishes target identity. An unrelated or legacy/non-UUID connection-only record does not invalidate an otherwise clean selected-target GATT artifact, and only a canonical connection identifier equal to the selected target can add a disconnect continuity break.
+Connection-only records remain deliberately weaker for **identity**. A connection/disconnection callback never establishes the selected target, and an unrelated or legacy/non-UUID connection-only record does not invalidate an otherwise clean selected-target GATT artifact merely by existing.
 
-This keeps a broad-scan candidate, connection-only neighbor, or mixed-target GATT artifact from silently becoming “the ES80” merely because a caller supplied a label.
+Continuity semantics are stricter than identity semantics. `NembraCore` defines every structured `.disconnected` capture event as `breaksByteContinuity == true`, independent of whether this sidecar can attribute that record to the selected UUID. The sidecar therefore preserves **every captured disconnect** in `continuityBreakCount` rather than under-reporting a known gap. This can conservatively retain an unattributed break; it can never turn a disconnect into evidence of target identity.
+
+This keeps a broad-scan candidate, connection-only neighbor, or mixed-target GATT artifact from silently becoming “the ES80,” while also preventing identity uncertainty from erasing continuity evidence.
 
 The selected UUID still does not explain **why the operator associated that UUID with the physical scooter**. The product-facing deterministic physical-candidate correlation flow is owned by the research-shell/runbook lanes. Once that executable flow is accepted, this incumbent sidecar should preserve only the actual accepted correlation method/result, without promoting it into permanent or cryptographic scooter identity.
 
@@ -113,7 +115,7 @@ The summary is descriptive only:
 - `targetGATTRecordCount` counts selected-target service/included-service/characteristic/descriptor/subscription/value records;
 - `targetValueRecordCount` counts selected-target raw value records;
 - `stockAppMarkerCount` counts human-observed correlation markers already present in the raw artifact;
-- `continuityBreakCount` counts generic interruption markers plus disconnects belonging to the selected target.
+- `continuityBreakCount` counts **every structured disconnect plus every generic interruption marker**, matching the core capture domain's byte-continuity semantics even when a disconnect record cannot establish target identity.
 
 None of these counts decodes a DP, proves field semantics, repairs a gap, or promotes a displayed stock-app value into raw protocol truth.
 
