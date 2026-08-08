@@ -57,6 +57,7 @@ struct ES80CaptureShellView: View {
     @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
     @State private var sharePreparationWarning: String?
     @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
+    @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var showingDetails = false
 
     init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
@@ -284,22 +285,41 @@ struct ES80CaptureShellView: View {
             if window == .firstPoweredOff, declaredStationarySetup == nil {
                 statePanel(
                     eyebrow: "PREFLIGHT / DECLARATION",
-                    title: "Confirm stationary setup",
-                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this Experiment One run.",
+                    title: "Declare stationary setup",
+                    message: "Choose the charger state you can physically see right now. Experiment One can continue only with the charger unplugged, Nembra foregrounded with the screen unlocked, and the stock scooter app closed.",
                     symbol: "checkmark.shield"
                 )
-                primaryButton(
-                    "Confirm setup",
-                    systemImage: "checkmark.circle.fill",
-                    identifier: "es80.capture.confirm-setup"
-                ) {
-                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
-                        chargerState: .disconnected,
-                        executionContext: .foregroundUnlockedScreenOn,
-                        stockAppReferenceSetup: .none
-                    )
+
+                chargerChoiceButton(
+                    "CHARGER UNPLUGGED",
+                    state: .disconnected,
+                    identifier: "es80.capture.charger-unplugged"
+                )
+                chargerChoiceButton(
+                    "CHARGER CONNECTED",
+                    state: .connected,
+                    identifier: "es80.capture.charger-connected"
+                )
+
+                if selectedChargerState == .disconnected {
+                    primaryButton(
+                        "Confirm stationary setup",
+                        systemImage: "checkmark.circle.fill",
+                        identifier: "es80.capture.confirm-setup"
+                    ) {
+                        declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+                            chargerState: .disconnected,
+                            executionContext: .foregroundUnlockedScreenOn,
+                            stockAppReferenceSetup: .none
+                        )
+                        selectedChargerState = nil
+                        diagnosticMessage = nil
+                    }
+                } else if selectedChargerState == .connected {
+                    diagnosticBanner("Charger connected. Unplug the scooter charger, then select CHARGER UNPLUGGED before confirming this Experiment One setup.")
                 }
-                guidanceFootnote("This records your operator declaration; it is not independent proof that the condition held continuously.")
+
+                guidanceFootnote("Your selection and confirmation are operator-declared setup provenance, not independent proof that these conditions held continuously.")
             } else {
                 correlationReadyPanel(window)
                 primaryButton(
@@ -941,6 +961,7 @@ struct ES80CaptureShellView: View {
         finalShareIntegrityReport = nil
         sharePreparationWarning = nil
         declaredStationarySetup = nil
+        selectedChargerState = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
         observationReadyBeganAtUptimeNanoseconds = nil
@@ -1140,6 +1161,50 @@ struct ES80CaptureShellView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 4)
+    }
+
+    private func chargerChoiceButton(
+        _ title: String,
+        state: PassiveBluetoothStationaryCaptureChargerState,
+        identifier: String
+    ) -> some View {
+        let isSelected = selectedChargerState == state
+        return Button {
+            selectedChargerState = state
+            diagnosticMessage = nil
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.headline)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline.monospaced().weight(.bold))
+                Spacer(minLength: 8)
+                Text(state == .disconnected ? "Required" : "Blocked")
+                    .font(.caption.monospaced().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 52)
+            .background(
+                isSelected ? .white.opacity(0.14) : .white.opacity(0.065),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? .white.opacity(0.42) : .white.opacity(0.10), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityHint(
+            state == .disconnected
+                ? "Select when the scooter charger is physically unplugged."
+                : "Selecting connected blocks Experiment One until the charger is unplugged."
+        )
     }
 
     private func primaryButton(

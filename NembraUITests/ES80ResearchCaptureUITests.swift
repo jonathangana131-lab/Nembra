@@ -115,6 +115,43 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
     }
 
+    func testStationarySetupRequiresExplicitChargerDeclarationAndConnectedStateFailsClosed() throws {
+        let source = try captureShellSource()
+
+        XCTAssertTrue(
+            source.contains("@State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?"),
+            "The operator's visible charger choice must be retained separately from confirmed setup provenance."
+        )
+        XCTAssertTrue(source.contains("CHARGER UNPLUGGED"))
+        XCTAssertTrue(source.contains("CHARGER CONNECTED"))
+        XCTAssertTrue(source.contains("identifier: \"es80.capture.charger-unplugged\""))
+        XCTAssertTrue(source.contains("identifier: \"es80.capture.charger-connected\""))
+        XCTAssertTrue(
+            source.contains("if selectedChargerState == .disconnected"),
+            "Only an explicitly selected unplugged state may expose setup confirmation."
+        )
+        XCTAssertTrue(
+            source.contains("else if selectedChargerState == .connected"),
+            "A connected charger declaration must remain an explicit fail-closed product state."
+        )
+        XCTAssertTrue(
+            source.contains("Charger connected. Unplug the scooter charger"),
+            "The connected state must give a visible corrective action instead of silently coercing provenance."
+        )
+        XCTAssertTrue(
+            source.contains("chargerState: .disconnected"),
+            "Confirmed stationary setup must retain the exact allowed charger declaration."
+        )
+        XCTAssertTrue(
+            source.contains("selectedChargerState = nil"),
+            "A fresh Experiment One must not inherit an earlier charger choice."
+        )
+        XCTAssertFalse(
+            source.contains("Confirm only when those are your declared setup conditions"),
+            "The old one-tap path that silently wrote disconnected provenance must be removed."
+        )
+    }
+
     private func captureShellSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
