@@ -16,17 +16,13 @@ public enum PassiveBluetoothControlledComparisonAvailability: String, Equatable,
 /// Stable identity for one comparison stratum. Value origin is part of the
 /// identity so a read response can never be silently compared with a
 /// notification/subscription callback from the same GATT characteristic.
+///
+/// Construction is intentionally package-internal. Comparison identities are
+/// evidence-derived output from `PassiveBluetoothCaptureComparison.compare`,
+/// not caller-authored authority.
 public struct PassiveBluetoothValueStreamComparisonIdentity: Hashable, Sendable, Comparable {
     public let key: PassiveBluetoothValueStreamKey
     public let origin: PassiveBluetoothValueOrigin
-
-    public init(
-        key: PassiveBluetoothValueStreamKey,
-        origin: PassiveBluetoothValueOrigin
-    ) {
-        self.key = key
-        self.origin = origin
-    }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.key == rhs.key && lhs.origin.rawValue == rhs.origin.rawValue
@@ -43,6 +39,8 @@ public struct PassiveBluetoothValueStreamComparisonIdentity: Hashable, Sendable,
     }
 }
 
+/// Immutable evidence-derived snapshot for one canonical comparison stratum.
+/// The raw capture remains the authority for original GATT spelling and bytes.
 public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
     public let key: PassiveBluetoothValueStreamKey
     public let origin: PassiveBluetoothValueOrigin
@@ -53,31 +51,14 @@ public struct PassiveBluetoothValueStreamSnapshot: Equatable, Sendable {
     public let lastPayload: Data?
     public let uniquePayloads: Set<Data>
 
-    public init(
-        key: PassiveBluetoothValueStreamKey,
-        origin: PassiveBluetoothValueOrigin,
-        sampleCount: Int,
-        continuitySegmentCount: Int,
-        uniquePayloadCount: Int,
-        firstPayload: Data?,
-        lastPayload: Data?,
-        uniquePayloads: Set<Data>
-    ) {
-        self.key = key
-        self.origin = origin
-        self.sampleCount = sampleCount
-        self.continuitySegmentCount = continuitySegmentCount
-        self.uniquePayloadCount = uniquePayloadCount
-        self.firstPayload = firstPayload
-        self.lastPayload = lastPayload
-        self.uniquePayloads = uniquePayloads
-    }
-
     public var identity: PassiveBluetoothValueStreamComparisonIdentity {
         PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
     }
 }
 
+/// Evidence-derived direct-comparison output. Construction is package-internal
+/// so external clients cannot manufacture `.comparable` metrics without passing
+/// through the producer's identity and continuity gates.
 public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identifiable {
     public enum Presence: String, Sendable {
         case baselineOnly
@@ -98,30 +79,6 @@ public struct PassiveBluetoothValueStreamComparison: Equatable, Sendable, Identi
 
     public var id: PassiveBluetoothValueStreamComparisonIdentity {
         PassiveBluetoothValueStreamComparisonIdentity(key: key, origin: origin)
-    }
-
-    public init(
-        key: PassiveBluetoothValueStreamKey,
-        origin: PassiveBluetoothValueOrigin,
-        presence: Presence,
-        differenceAvailability: PassiveBluetoothControlledComparisonAvailability,
-        baseline: PassiveBluetoothValueStreamSnapshot?,
-        comparison: PassiveBluetoothValueStreamSnapshot?,
-        sharedPayloadCount: Int?,
-        baselineOnlyPayloadCount: Int?,
-        comparisonOnlyPayloadCount: Int?,
-        lastPayloadChanged: Bool?
-    ) {
-        self.key = key
-        self.origin = origin
-        self.presence = presence
-        self.differenceAvailability = differenceAvailability
-        self.baseline = baseline
-        self.comparison = comparison
-        self.sharedPayloadCount = sharedPayloadCount
-        self.baselineOnlyPayloadCount = baselineOnlyPayloadCount
-        self.comparisonOnlyPayloadCount = comparisonOnlyPayloadCount
-        self.lastPayloadChanged = lastPayloadChanged
     }
 
     /// A descriptive sorting hint only when the captures resolve to the same
@@ -156,6 +113,9 @@ public enum PassiveBluetoothCapturePeripheralRelationship: String, Sendable {
     case unresolved
 }
 
+/// Top-level evidence-derived controlled-comparison report. Its memberwise
+/// initializer is intentionally package-internal: callers may inspect reports,
+/// but only `PassiveBluetoothCaptureComparison.compare` issues them.
 public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let baselineRecordCount: Int
     public let comparisonRecordCount: Int
@@ -183,38 +143,6 @@ public struct PassiveBluetoothCaptureComparisonReport: Equatable, Sendable {
     public let removedServices: Set<String>?
     public let sharedServices: Set<String>?
     public let streamComparisons: [PassiveBluetoothValueStreamComparison]
-
-    public init(
-        baselineRecordCount: Int,
-        comparisonRecordCount: Int,
-        baselinePeripheralIdentifier: String?,
-        comparisonPeripheralIdentifier: String?,
-        peripheralRelationship: PassiveBluetoothCapturePeripheralRelationship,
-        baselineContinuityBreakCount: Int,
-        comparisonContinuityBreakCount: Int,
-        differenceAvailability: PassiveBluetoothControlledComparisonAvailability,
-        baselineServices: Set<String>,
-        comparisonServices: Set<String>,
-        addedServices: Set<String>?,
-        removedServices: Set<String>?,
-        sharedServices: Set<String>?,
-        streamComparisons: [PassiveBluetoothValueStreamComparison]
-    ) {
-        self.baselineRecordCount = baselineRecordCount
-        self.comparisonRecordCount = comparisonRecordCount
-        self.baselinePeripheralIdentifier = baselinePeripheralIdentifier
-        self.comparisonPeripheralIdentifier = comparisonPeripheralIdentifier
-        self.peripheralRelationship = peripheralRelationship
-        self.baselineContinuityBreakCount = baselineContinuityBreakCount
-        self.comparisonContinuityBreakCount = comparisonContinuityBreakCount
-        self.differenceAvailability = differenceAvailability
-        self.baselineServices = baselineServices
-        self.comparisonServices = comparisonServices
-        self.addedServices = addedServices
-        self.removedServices = removedServices
-        self.sharedServices = sharedServices
-        self.streamComparisons = streamComparisons
-    }
 }
 
 /// Compares two immutable passive captures from controlled states.
@@ -387,10 +315,15 @@ public enum PassiveBluetoothCaptureComparison {
                 lastDisconnectSequenceByPeripheral[observation.peripheralIdentifier] = record.sequenceNumber
 
             case let .value(value):
+                // CoreBluetooth UUID text is representation, not physical stream
+                // identity. Normalize only the GATT service/characteristic fields
+                // used by this comparison layer. The peripheral identifier remains
+                // opaque and exact, and the immutable raw capture retains the
+                // original strings for provenance/audit.
                 let key = PassiveBluetoothValueStreamKey(
                     peripheralIdentifier: value.peripheralIdentifier,
-                    serviceUUID: value.serviceUUID,
-                    characteristicUUID: value.characteristicUUID
+                    serviceUUID: normalize(value.serviceUUID),
+                    characteristicUUID: normalize(value.characteristicUUID)
                 )
                 let identity = PassiveBluetoothValueStreamComparisonIdentity(
                     key: key,
