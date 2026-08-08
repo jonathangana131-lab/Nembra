@@ -16,320 +16,39 @@ jobs:
         with:
           ref: agent/capture-analysis-readiness-ui-v14
           fetch-depth: 0
-      - name: Gate analysis-ready UI on exact envelope integrity
+      - name: Apply exact analysis-readiness source transformation
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import base64
 
-          app_path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
-          app = app_path.read_text()
+          def decoded(value):
+              return base64.b64decode(value).decode()
 
-          def replace_once(source: str, old: str, new: str, label: str) -> str:
+          def replace_once(source, old, new, label):
               count = source.count(old)
               if count != 1:
                   raise SystemExit(f'{label}: expected exactly one match, found {count}')
               return source.replace(old, new, 1)
 
-          app = replace_once(
-              app,
-              '    @State private var softwareExportData: Data?\n    @State private var sharePreparationWarning: String?\n',
-              '    @State private var softwareExportData: Data?\n    @State private var softwareExportIntegrityReport: PassiveBluetoothExperimentOneSoftwareExportIntegrityReport?\n    @State private var analysisReadinessWarning: String?\n    @State private var sharePreparationWarning: String?\n',
-              'integrity state',
-          )
-
-          app = replace_once(
-              app,
-              '''                VStack(alignment: .leading, spacing: 4) {
-                    Text("CAPTURE COMPLETE")
-                        .font(.caption.monospaced().weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text("Ready for analysis")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-''',
-              '''                VStack(alignment: .leading, spacing: 4) {
-                    Text(softwareExportIntegrityReport == nil ? "CAPTURE SEALED" : "CAPTURE COMPLETE")
-                        .font(.caption.monospaced().weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text(softwareExportIntegrityReport == nil ? "Integrity check required" : "Ready for analysis")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-''',
-              'completion readiness title',
-          )
-
-          app = replace_once(
-              app,
-              '''            if let artifact = coordinator.finalizedArtifact {
-                let exportDescription = softwareExportData.map { " Package-owned Share envelope: \\($0.count.formatted()) bytes." } ?? ""
-                Text("\\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Correlation evidence remains bound to the same run.\\(exportDescription) No protocol field meaning is claimed yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-''',
-              '''            if let artifact = coordinator.finalizedArtifact {
-                let exportDescription = softwareExportData.map { " Package-owned Share envelope: \\($0.count.formatted()) bytes." } ?? ""
-                let readinessDescription = softwareExportIntegrityReport == nil
-                    ? " Local analysis readiness has not been earned yet."
-                    : " Exact envelope and nested Capture bytes passed the package-owned readability/integrity inspection."
-                Text("\\(artifact.captureJSON.count.formatted()) immutable capture bytes are sealed from this Experiment One authority. Correlation evidence remains bound to the same run.\\(exportDescription)\\(readinessDescription) No protocol field meaning is claimed yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let analysisReadinessWarning {
-                Text(analysisReadinessWarning)
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-''',
-              'completion integrity description',
-          )
-
-          app = replace_once(
-              app,
-              '''                    if let artifact = coordinator.finalizedArtifact {
-                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
-                        detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
-                    }
-
-                    Divider()
-
-                    Text("Truth boundary")
-                        .font(.headline)
-                    Text("This artifact is passive software evidence. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
-''',
-              '''                    if let artifact = coordinator.finalizedArtifact {
-                        detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
-                        detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
-                    }
-
-                    if let integrity = softwareExportIntegrityReport {
-                        Divider()
-
-                        Text("Exact software integrity")
-                            .font(.headline)
-                        detailRow("Envelope bytes", value: integrity.envelopeByteCount.formatted())
-                        detailBlock("Envelope SHA-256", value: integrity.envelopeSHA256)
-                        detailRow("Capture bytes", value: integrity.capture.byteCount.formatted())
-                        detailBlock("Capture SHA-256", value: integrity.capture.sha256)
-                        detailBlock("Capture session", value: integrity.capture.captureSessionID.uuidString)
-                        detailRow("Recorded events", value: integrity.capture.recordCount.formatted())
-                        detailRow("Raw value records", value: integrity.capture.rawValueRecordCount.formatted())
-                        detailRow("Build", value: integrity.buildIdentifier)
-                        detailBlock("Build instance", value: integrity.buildInstanceID)
-                        detailBlock("Source commit", value: integrity.sourceCommitSHA)
-                        detailBlock("Executable SHA-256", value: integrity.executableSHA256)
-                    } else if coordinator.finalizedArtifact != nil {
-                        Divider()
-
-                        Text("Analysis readiness")
-                            .font(.headline)
-                        Text("Capture is sealed, but the exact package-owned Share envelope has not passed local readability/integrity inspection. Nembra will not promote this state to Ready for analysis.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Divider()
-
-                    Text("Truth boundary")
-                        .font(.headline)
-                    Text("This artifact is passive software evidence. Exact SHA-256 and readability facts are software integrity, not independent build attestation or field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
-''',
-              'details integrity section',
-          )
-
-          old_prepare = '''    private func prepareSoftwareExportForShare() {
-        guard coordinator.finalizedArtifact != nil else { return }
-        guard let setup = declaredStationarySetup else {
-            sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
-            return
-        }
-        do {
-            let data = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
-                setup: setup,
-                prettyPrinted: true
-            )
-            softwareExportData = data
-            shareURL = try persistShareArtifact(data)
-            sharePreparationWarning = nil
-        } catch {
-            sharePreparationWarning = "Capture remains sealed, but the package-owned software Share envelope could not be prepared: \\(experimentErrorMessage(error))"
-        }
-    }
-'''
-          new_prepare = '''    private func prepareSoftwareExportForShare() {
-        guard coordinator.finalizedArtifact != nil else { return }
-        guard let setup = declaredStationarySetup else {
-            sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
-            return
-        }
-
-        let data: Data
-        if let retainedSoftwareExport = softwareExportData {
-            data = retainedSoftwareExport
-        } else {
-            do {
-                data = try coordinator.encodedFinalizedSoftwareExportForCurrentApplication(
-                    setup: setup,
-                    prettyPrinted: true
-                )
-                softwareExportData = data
-            } catch {
-                softwareExportIntegrityReport = nil
-                analysisReadinessWarning = "Capture remains sealed, but Nembra could not create the package-owned Share envelope required for local analysis readiness."
-                sharePreparationWarning = "Capture remains sealed, but the package-owned software Share envelope could not be prepared: \\(experimentErrorMessage(error))"
-                return
-            }
-        }
-
-        do {
-            softwareExportIntegrityReport = try PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(data)
-            analysisReadinessWarning = nil
-        } catch {
-            softwareExportIntegrityReport = nil
-            analysisReadinessWarning = "Capture remains sealed and the exact Share envelope is retained, but local readability/integrity inspection failed. Nembra will not call this artifact Ready for analysis: \\(experimentErrorMessage(error))"
-        }
-
-        do {
-            shareURL = try persistShareArtifact(data)
-            sharePreparationWarning = nil
-        } catch {
-            shareURL = nil
-            sharePreparationWarning = "Capture remains sealed and its exact Share envelope is retained, but temporary Share-file staging failed. Retry reuses the same envelope bytes: \\(experimentErrorMessage(error))"
-        }
-    }
-'''
-          app = replace_once(app, old_prepare, new_prepare, 'share preparation')
-
-          app = replace_once(
-              app,
-              '        softwareExportData = nil\n        sharePreparationWarning = nil\n',
-              '        softwareExportData = nil\n        softwareExportIntegrityReport = nil\n        analysisReadinessWarning = nil\n        sharePreparationWarning = nil\n',
-              'restart integrity reset',
-          )
-
-          app = replace_once(
-              app,
-              '''    private func detailRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
-            Text(value)
-                .font(.body.monospacedDigit().weight(.medium))
-                .multilineTextAlignment(.trailing)
-        }
-    }
-''',
-              '''    private func detailRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
-            Text(value)
-                .font(.body.monospacedDigit().weight(.medium))
-                .multilineTextAlignment(.trailing)
-        }
-    }
-
-    private func detailBlock(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.footnote.monospaced())
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-''',
-              'long integrity detail block',
-          )
-
-          app = replace_once(
-              app,
-              '''        if status.artifactFinalized {
-            return "Experiment One progress, capture sealed and ready for analysis"
-        }
-''',
-              '''        if status.artifactFinalized {
-            return softwareExportIntegrityReport == nil
-                ? "Experiment One progress, capture sealed; local integrity check required"
-                : "Experiment One progress, capture complete and ready for analysis"
-        }
-''',
-              'progress accessibility truth',
-          )
-
-          app = replace_once(
-              app,
-              '        case .complete: return "Evidence, sealed."\n',
-              '        case .complete: return softwareExportIntegrityReport == nil ? "Evidence, sealed." : "Evidence, verified."\n',
-              'hero completion truth',
-          )
-          app = replace_once(
-              app,
-              '        case .complete: return "Capture complete"\n',
-              '        case .complete: return softwareExportIntegrityReport == nil ? "Capture sealed" : "Capture complete"\n',
-              'status completion truth',
-          )
-
+          app_path = Path('NembraApp/Features/Research/ES80CaptureShellView.swift')
+          app = app_path.read_text()
+          app = replace_once(app, '    @State private var softwareExportData: Data?\n    @State private var sharePreparationWarning: String?\n', '    @State private var softwareExportData: Data?\n    @State private var softwareExportIntegrityReport: PassiveBluetoothExperimentOneSoftwareExportIntegrityReport?\n    @State private var analysisReadinessWarning: String?\n    @State private var sharePreparationWarning: String?\n', 'integrity state')
+          app = replace_once(app, decoded('ICAgICAgICAgICAgICAgIFZTdGFjayhhbGlnbm1lbnQ6IC5sZWFkaW5nLCBzcGFjaW5nOiA0KSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dCgiQ0FQVFVSRSBDT01QTEVURSIpCiAgICAgICAgICAgICAgICAgICAgICAgIC5mb250KC5jYXB0aW9uLm1vbm9zcGFjZWQoKS53ZWlnaHQoLmJvbGQpKQogICAgICAgICAgICAgICAgICAgICAgICAuZm9yZWdyb3VuZFN0eWxlKC5zZWNvbmRhcnkpCiAgICAgICAgICAgICAgICAgICAgVGV4dCgiUmVhZHkgZm9yIGFuYWx5c2lzIikKICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnRpdGxlMi53ZWlnaHQoLnNlbWlib2xkKSkKICAgICAgICAgICAgICAgICAgICAgICAgLmZvcmVncm91bmRTdHlsZSgud2hpdGUpCiAgICAgICAgICAgICAgICB9Cg=='), decoded('ICAgICAgICAgICAgICAgIFZTdGFjayhhbGlnbm1lbnQ6IC5sZWFkaW5nLCBzcGFjaW5nOiA0KSB7CiAgICAgICAgICAgICAgICAgICAgVGV4dChzb2Z0d2FyZUV4cG9ydEludGVncml0eVJlcG9ydCA9PSBuaWwgPyAiQ0FQVFVSRSBTRUFMRUQiIDogIkNBUFRVUkUgQ09NUExFVEUiKQogICAgICAgICAgICAgICAgICAgICAgICAuZm9udCguY2FwdGlvbi5tb25vc3BhY2VkKCkud2VpZ2h0KC5ib2xkKSkKICAgICAgICAgICAgICAgICAgICAgICAgLmZvcmVncm91bmRTdHlsZSguc2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgICAgIFRleHQoc29mdHdhcmVFeHBvcnRJbnRlZ3JpdHlSZXBvcnQgPT0gbmlsID8gIkludGVncml0eSBjaGVjayByZXF1aXJlZCIgOiAiUmVhZHkgZm9yIGFuYWx5c2lzIikKICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnRpdGxlMi53ZWlnaHQoLnNlbWlib2xkKSkKICAgICAgICAgICAgICAgICAgICAgICAgLmZvcmVncm91bmRTdHlsZSgud2hpdGUpCiAgICAgICAgICAgICAgICB9Cg=='), 'completion readiness')
+          app = replace_once(app, decoded('ICAgICAgICAgICAgaWYgbGV0IGFydGlmYWN0ID0gY29vcmRpbmF0b3IuZmluYWxpemVkQXJ0aWZhY3QgewogICAgICAgICAgICAgICAgbGV0IGV4cG9ydERlc2NyaXB0aW9uID0gc29mdHdhcmVFeHBvcnREYXRhLm1hcCB7ICIgUGFja2FnZS1vd25lZCBTaGFyZSBlbnZlbG9wZTogXCgkMC5jb3VudC5mb3JtYXR0ZWQoKSkgYnl0ZXMuIiB9ID8/ICIiCiAgICAgICAgICAgICAgICBUZXh0KCJcKGFydGlmYWN0LmNhcHR1cmVKU09OLmNvdW50LmZvcm1hdHRlZCgpKSBpbW11dGFibGUgY2FwdHVyZSBieXRlcyBhcmUgc2VhbGVkIGZyb20gdGhpcyBFeHBlcmltZW50IE9uZSBhdXRob3JpdHkuIENvcnJlbGF0aW9uIGV2aWRlbmNlIHJlbWFpbnMgYm91bmQgdG8gdGhlIHNhbWUgcnVuLlwoZXhwb3J0RGVzY3JpcHRpb24pIE5vIHByb3RvY29sIGZpZWxkIG1lYW5pbmcgaXMgY2xhaW1lZCB5ZXQuIikKICAgICAgICAgICAgICAgICAgICAuZm9udCguc3ViaGVhZGxpbmUpCiAgICAgICAgICAgICAgICAgICAgLmZvcmVncm91bmRTdHlsZSguc2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgICAgIC5maXhlZFNpemUoaG9yaXpvbnRhbDogZmFsc2UsIHZlcnRpY2FsOiB0cnVlKQogICAgICAgICAgICB9Cg=='), decoded('ICAgICAgICAgICAgaWYgbGV0IGFydGlmYWN0ID0gY29vcmRpbmF0b3IuZmluYWxpemVkQXJ0aWZhY3QgewogICAgICAgICAgICAgICAgbGV0IGV4cG9ydERlc2NyaXB0aW9uID0gc29mdHdhcmVFeHBvcnREYXRhLm1hcCB7ICIgUGFja2FnZS1vd25lZCBTaGFyZSBlbnZlbG9wZTogXCgkMC5jb3VudC5mb3JtYXR0ZWQoKSkgYnl0ZXMuIiB9ID8/ICIiCiAgICAgICAgICAgICAgICBsZXQgcmVhZGluZXNzRGVzY3JpcHRpb24gPSBzb2Z0d2FyZUV4cG9ydEludGVncml0eVJlcG9ydCA9PSBuaWwKICAgICAgICAgICAgICAgICAgICA/ICIgTG9jYWwgYW5hbHlzaXMgcmVhZGluZXNzIGhhcyBub3QgYmVlbiBlYXJuZWQgeWV0LiIKICAgICAgICAgICAgICAgICAgICA6ICIgRXhhY3QgZW52ZWxvcGUgYW5kIG5lc3RlZCBDYXB0dXJlIGJ5dGVzIHBhc3NlZCB0aGUgcGFja2FnZS1vd25lZCByZWFkYWJpbGl0eS9pbnRlZ3JpdHkgaW5zcGVjdGlvbi4iCiAgICAgICAgICAgICAgICBUZXh0KCJcKGFydGlmYWN0LmNhcHR1cmVKU09OLmNvdW50LmZvcm1hdHRlZCgpKSBpbW11dGFibGUgY2FwdHVyZSBieXRlcyBhcmUgc2VhbGVkIGZyb20gdGhpcyBFeHBlcmltZW50IE9uZSBhdXRob3JpdHkuIENvcnJlbGF0aW9uIGV2aWRlbmNlIHJlbWFpbnMgYm91bmQgdG8gdGhlIHNhbWUgcnVuLlwoZXhwb3J0RGVzY3JpcHRpb24pXChyZWFkaW5lc3NEZXNjcmlwdGlvbikgTm8gcHJvdG9jb2wgZmllbGQgbWVhbmluZyBpcyBjbGFpbWVkIHlldC4iKQogICAgICAgICAgICAgICAgICAgIC5mb250KC5zdWJoZWFkbGluZSkKICAgICAgICAgICAgICAgICAgICAuZm9yZWdyb3VuZFN0eWxlKC5zZWNvbmRhcnkpCiAgICAgICAgICAgICAgICAgICAgLmZpeGVkU2l6ZShob3Jpem9udGFsOiBmYWxzZSwgdmVydGljYWw6IHRydWUpCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIGlmIGxldCBhbmFseXNpc1JlYWRpbmVzc1dhcm5pbmcgewogICAgICAgICAgICAgICAgVGV4dChhbmFseXNpc1JlYWRpbmVzc1dhcm5pbmcpCiAgICAgICAgICAgICAgICAgICAgLmZvbnQoLmZvb3Rub3RlKQogICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kU3R5bGUoLm9yYW5nZSkKICAgICAgICAgICAgICAgICAgICAuZml4ZWRTaXplKGhvcml6b250YWw6IGZhbHNlLCB2ZXJ0aWNhbDogdHJ1ZSkKICAgICAgICAgICAgfQo='), 'completion description')
+          app = replace_once(app, decoded('ICAgICAgICAgICAgICAgICAgICBpZiBsZXQgYXJ0aWZhY3QgPSBjb29yZGluYXRvci5maW5hbGl6ZWRBcnRpZmFjdCB7CiAgICAgICAgICAgICAgICAgICAgICAgIGRldGFpbFJvdygiQ2FwdHVyZSBieXRlcyIsIHZhbHVlOiBhcnRpZmFjdC5jYXB0dXJlSlNPTi5jb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsUm93KCJPYnNlcnZhdGlvbiB3aW5kb3dzIiwgdmFsdWU6IGFydGlmYWN0LnBvd2VyQ3ljbGVSZXN1bHQud2luZG93cy5jb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICB9CgogICAgICAgICAgICAgICAgICAgIERpdmlkZXIoKQoKICAgICAgICAgICAgICAgICAgICBUZXh0KCJUcnV0aCBib3VuZGFyeSIpCiAgICAgICAgICAgICAgICAgICAgICAgIC5mb250KC5oZWFkbGluZSkKICAgICAgICAgICAgICAgICAgICBUZXh0KCJUaGlzIGFydGlmYWN0IGlzIHBhc3NpdmUgc29mdHdhcmUgZXZpZGVuY2UuIFJlcGVhdGVkIGZ1bGwtVVVJRCBjb3JyZWxhdGlvbiBkb2VzIG5vdCBhdXRoZW50aWNhdGUgdGhlIHBoeXNpY2FsIEVTODAsIGFuZCB0aGlzIHNjcmVlbiBkb2VzIG5vdCBhc3NpZ24gR0FUVCwgVHV5YS9EUCwgYmF0dGVyeSwgY3VycmVudCwgcG93ZXIsIHNwZWVkLCByZWdlbiwgb3IgY29tbWFuZCBzZW1hbnRpY3MuIikK'), decoded('ICAgICAgICAgICAgICAgICAgICBpZiBsZXQgYXJ0aWZhY3QgPSBjb29yZGluYXRvci5maW5hbGl6ZWRBcnRpZmFjdCB7CiAgICAgICAgICAgICAgICAgICAgICAgIGRldGFpbFJvdygiQ2FwdHVyZSBieXRlcyIsIHZhbHVlOiBhcnRpZmFjdC5jYXB0dXJlSlNPTi5jb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsUm93KCJPYnNlcnZhdGlvbiB3aW5kb3dzIiwgdmFsdWU6IGFydGlmYWN0LnBvd2VyQ3ljbGVSZXN1bHQud2luZG93cy5jb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICB9CgogICAgICAgICAgICAgICAgICAgIGlmIGxldCBpbnRlZ3JpdHkgPSBzb2Z0d2FyZUV4cG9ydEludGVncml0eVJlcG9ydCB7CiAgICAgICAgICAgICAgICAgICAgICAgIERpdmlkZXIoKQoKICAgICAgICAgICAgICAgICAgICAgICAgVGV4dCgiRXhhY3Qgc29mdHdhcmUgaW50ZWdyaXR5IikKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb250KC5oZWFkbGluZSkKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsUm93KCJFbnZlbG9wZSBieXRlcyIsIHZhbHVlOiBpbnRlZ3JpdHkuZW52ZWxvcGVCeXRlQ291bnQuZm9ybWF0dGVkKCkpCiAgICAgICAgICAgICAgICAgICAgICAgIGRldGFpbEJsb2NrKCJFbnZlbG9wZSBTSEEtMjU2IiwgdmFsdWU6IGludGVncml0eS5lbnZlbG9wZVNIQTI1NikKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsUm93KCJDYXB0dXJlIGJ5dGVzIiwgdmFsdWU6IGludGVncml0eS5jYXB0dXJlLmJ5dGVDb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsQmxvY2soIkNhcHR1cmUgU0hBLTI1NiIsIHZhbHVlOiBpbnRlZ3JpdHkuY2FwdHVyZS5zaGEyNTYpCiAgICAgICAgICAgICAgICAgICAgICAgIGRldGFpbEJsb2NrKCJDYXB0dXJlIHNlc3Npb24iLCB2YWx1ZTogaW50ZWdyaXR5LmNhcHR1cmUuY2FwdHVyZVNlc3Npb25JRC51dWlkU3RyaW5nKQogICAgICAgICAgICAgICAgICAgICAgICBkZXRhaWxSb3coIlJlY29yZGVkIGV2ZW50cyIsIHZhbHVlOiBpbnRlZ3JpdHkuY2FwdHVyZS5yZWNvcmRDb3VudC5mb3JtYXR0ZWQoKSkKICAgICAgICAgICAgICAgICAgICAgICAgZGV0YWlsUm93KCJSYXcgdmFsdWUgcmVjb3JkcyIsIHZhbHVlOiBpbnRlZ3JpdHkuY2FwdHVyZS5yYXdWYWx1ZVJlY29yZENvdW50LmZvcm1hdHRlZCgpKQogICAgICAgICAgICAgICAgICAgICAgICBkZXRhaWxSb3coIkJ1aWxkIiwgdmFsdWU6IGludGVncml0eS5idWlsZElkZW50aWZpZXIpCiAgICAgICAgICAgICAgICAgICAgICAgIGRldGFpbEJsb2NrKCJCdWlsZCBpbnN0YW5jZSIsIHZhbHVlOiBpbnRlZ3JpdHkuYnVpbGRJbnN0YW5jZUlEKQogICAgICAgICAgICAgICAgICAgICAgICBkZXRhaWxCbG9jaygiU291cmNlIGNvbW1pdCIsIHZhbHVlOiBpbnRlZ3JpdHkuc291cmNlQ29tbWl0U0hBKQogICAgICAgICAgICAgICAgICAgICAgICBkZXRhaWxCbG9jaygiRXhlY3V0YWJsZSBTSEEtMjU2IiwgdmFsdWU6IGludGVncml0eS5leGVjdXRhYmxlU0hBMjU2KQogICAgICAgICAgICAgICAgICAgIH0gZWxzZSBpZiBjb29yZGluYXRvci5maW5hbGl6ZWRBcnRpZmFjdCAhPSBuaWwgewogICAgICAgICAgICAgICAgICAgICAgICBEaXZpZGVyKCkKCiAgICAgICAgICAgICAgICAgICAgICAgIFRleHQoIkFuYWx5c2lzIHJlYWRpbmVzcyIpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAuZm9udCguaGVhZGxpbmUpCiAgICAgICAgICAgICAgICAgICAgICAgIFRleHQoIkNhcHR1cmUgaXMgc2VhbGVkLCBidXQgdGhlIGV4YWN0IHBhY2thZ2Utb3duZWQgU2hhcmUgZW52ZWxvcGUgaGFzIG5vdCBwYXNzZWQgbG9jYWwgcmVhZGFiaWxpdHkvaW50ZWdyaXR5IGluc3BlY3Rpb24uIE5lbWJyYSB3aWxsIG5vdCBwcm9tb3RlIHRoaXMgc3RhdGUgdG8gUmVhZHkgZm9yIGFuYWx5c2lzLiIpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAuZm9udCguYm9keSkKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kU3R5bGUoLnNlY29uZGFyeSkKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5maXhlZFNpemUoaG9yaXpvbnRhbDogZmFsc2UsIHZlcnRpY2FsOiB0cnVlKQogICAgICAgICAgICAgICAgICAgIH0KCiAgICAgICAgICAgICAgICAgICAgRGl2aWRlcigpCgogICAgICAgICAgICAgICAgICAgIFRleHQoIlRydXRoIGJvdW5kYXJ5IikKICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLmhlYWRsaW5lKQogICAgICAgICAgICAgICAgICAgIFRleHQoIlRoaXMgYXJ0aWZhY3QgaXMgcGFzc2l2ZSBzb2Z0d2FyZSBldmlkZW5jZS4gRXhhY3QgU0hBLTI1NiBhbmQgcmVhZGFiaWxpdHkgZmFjdHMgYXJlIHNvZnR3YXJlIGludGVncml0eSwgbm90IGluZGVwZW5kZW50IGJ1aWxkIGF0dGVzdGF0aW9uIG9yIGZpZWxkIGF1dGhvcml6YXRpb24uIFJlcGVhdGVkIGZ1bGwtVVVJRCBjb3JyZWxhdGlvbiBkb2VzIG5vdCBhdXRoZW50aWNhdGUgdGhlIHBoeXNpY2FsIEVTODAsIGFuZCB0aGlzIHNjcmVlbiBkb2VzIG5vdCBhc3NpZ24gR0FUVCwgVHV5YS9EUCwgYmF0dGVyeSwgY3VycmVudCwgcG93ZXIsIHNwZWVkLCByZWdlbiwgb3IgY29tbWFuZCBzZW1hbnRpY3MuIikK'), 'details integrity')
+          app = replace_once(app, decoded('ICAgIHByaXZhdGUgZnVuYyBwcmVwYXJlU29mdHdhcmVFeHBvcnRGb3JTaGFyZSgpIHsKICAgICAgICBndWFyZCBjb29yZGluYXRvci5maW5hbGl6ZWRBcnRpZmFjdCAhPSBuaWwgZWxzZSB7IHJldHVybiB9CiAgICAgICAgZ3VhcmQgbGV0IHNldHVwID0gZGVjbGFyZWRTdGF0aW9uYXJ5U2V0dXAgZWxzZSB7CiAgICAgICAgICAgIHNoYXJlUHJlcGFyYXRpb25XYXJuaW5nID0gIkNhcHR1cmUgaXMgc2VhbGVkLCBidXQgdGhpcyBydW4gaGFzIG5vIHJldGFpbmVkIG9wZXJhdG9yIHNldHVwIGRlY2xhcmF0aW9uLiBTdGFydCBhIGZyZXNoIEV4cGVyaW1lbnQgT25lIHJhdGhlciB0aGFuIGludmVudGluZyBzZXR1cCBwcm92ZW5hbmNlIGF0IGV4cG9ydCB0aW1lLiIKICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgfQogICAgICAgIGRvIHsKICAgICAgICAgICAgbGV0IGRhdGEgPSB0cnkgY29vcmRpbmF0b3IuZW5jb2RlZEZpbmFsaXplZFNvZnR3YXJlRXhwb3J0Rm9yQ3VycmVudEFwcGxpY2F0aW9uKAogICAgICAgICAgICAgICAgc2V0dXA6IHNldHVwLAogICAgICAgICAgICAgICAgcHJldHR5UHJpbnRlZDogdHJ1ZQogICAgICAgICAgICApCiAgICAgICAgICAgIHNvZnR3YXJlRXhwb3J0RGF0YSA9IGRhdGEKICAgICAgICAgICAgc2hhcmVVUkwgPSB0cnkgcGVyc2lzdFNoYXJlQXJ0aWZhY3QoZGF0YSkKICAgICAgICAgICAgc2hhcmVQcmVwYXJhdGlvbldhcm5pbmcgPSBuaWwKICAgICAgICB9IGNhdGNoIHsKICAgICAgICAgICAgc2hhcmVQcmVwYXJhdGlvbldhcm5pbmcgPSAiQ2FwdHVyZSByZW1haW5zIHNlYWxlZCwgYnV0IHRoZSBwYWNrYWdlLW93bmVkIHNvZnR3YXJlIFNoYXJlIGVudmVsb3BlIGNvdWxkIG5vdCBiZSBwcmVwYXJlZDogXChleHBlcmltZW50RXJyb3JNZXNzYWdlKGVycm9yKSkiCiAgICAgICAgfQogICAgfQo='), decoded('ICAgIHByaXZhdGUgZnVuYyBwcmVwYXJlU29mdHdhcmVFeHBvcnRGb3JTaGFyZSgpIHsKICAgICAgICBndWFyZCBjb29yZGluYXRvci5maW5hbGl6ZWRBcnRpZmFjdCAhPSBuaWwgZWxzZSB7IHJldHVybiB9CiAgICAgICAgZ3VhcmQgbGV0IHNldHVwID0gZGVjbGFyZWRTdGF0aW9uYXJ5U2V0dXAgZWxzZSB7CiAgICAgICAgICAgIHNoYXJlUHJlcGFyYXRpb25XYXJuaW5nID0gIkNhcHR1cmUgaXMgc2VhbGVkLCBidXQgdGhpcyBydW4gaGFzIG5vIHJldGFpbmVkIG9wZXJhdG9yIHNldHVwIGRlY2xhcmF0aW9uLiBTdGFydCBhIGZyZXNoIEV4cGVyaW1lbnQgT25lIHJhdGhlciB0aGFuIGludmVudGluZyBzZXR1cCBwcm92ZW5hbmNlIGF0IGV4cG9ydCB0aW1lLiIKICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgfQoKICAgICAgICBsZXQgZGF0YTogRGF0YQogICAgICAgIGlmIGxldCByZXRhaW5lZFNvZnR3YXJlRXhwb3J0ID0gc29mdHdhcmVFeHBvcnREYXRhIHsKICAgICAgICAgICAgZGF0YSA9IHJldGFpbmVkU29mdHdhcmVFeHBvcnQKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBkbyB7CiAgICAgICAgICAgICAgICBkYXRhID0gdHJ5IGNvb3JkaW5hdG9yLmVuY29kZWRGaW5hbGl6ZWRTb2Z0d2FyZUV4cG9ydEZvckN1cnJlbnRBcHBsaWNhdGlvbigKICAgICAgICAgICAgICAgICAgICBzZXR1cDogc2V0dXAsCiAgICAgICAgICAgICAgICAgICAgcHJldHR5UHJpbnRlZDogdHJ1ZQogICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgc29mdHdhcmVFeHBvcnREYXRhID0gZGF0YQogICAgICAgICAgICB9IGNhdGNoIHsKICAgICAgICAgICAgICAgIHNvZnR3YXJlRXhwb3J0SW50ZWdyaXR5UmVwb3J0ID0gbmlsCiAgICAgICAgICAgICAgICBhbmFseXNpc1JlYWRpbmVzc1dhcm5pbmcgPSAiQ2FwdHVyZSByZW1haW5zIHNlYWxlZCwgYnV0IE5lbWJyYSBjb3VsZCBub3QgY3JlYXRlIHRoZSBwYWNrYWdlLW93bmVkIFNoYXJlIGVudmVsb3BlIHJlcXVpcmVkIGZvciBsb2NhbCBhbmFseXNpcyByZWFkaW5lc3MuIgogICAgICAgICAgICAgICAgc2hhcmVQcmVwYXJhdGlvbldhcm5pbmcgPSAiQ2FwdHVyZSByZW1haW5zIHNlYWxlZCwgYnV0IHRoZSBwYWNrYWdlLW93bmVkIHNvZnR3YXJlIFNoYXJlIGVudmVsb3BlIGNvdWxkIG5vdCBiZSBwcmVwYXJlZDogXChleHBlcmltZW50RXJyb3JNZXNzYWdlKGVycm9yKSkiCiAgICAgICAgICAgICAgICByZXR1cm4KICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgZG8gewogICAgICAgICAgICBzb2Z0d2FyZUV4cG9ydEludGVncml0eVJlcG9ydCA9IHRyeSBQYXNzaXZlQmx1ZXRvb3RoRXhwZXJpbWVudE9uZVNvZnR3YXJlRXhwb3J0SW50ZWdyaXR5Lmluc3BlY3QoZGF0YSkKICAgICAgICAgICAgYW5hbHlzaXNSZWFkaW5lc3NXYXJuaW5nID0gbmlsCiAgICAgICAgfSBjYXRjaCB7CiAgICAgICAgICAgIHNvZnR3YXJlRXhwb3J0SW50ZWdyaXR5UmVwb3J0ID0gbmlsCiAgICAgICAgICAgIGFuYWx5c2lzUmVhZGluZXNzV2FybmluZyA9ICJDYXB0dXJlIHJlbWFpbnMgc2VhbGVkIGFuZCB0aGUgZXhhY3QgU2hhcmUgZW52ZWxvcGUgaXMgcmV0YWluZWQsIGJ1dCBsb2NhbCByZWFkYWJpbGl0eS9pbnRlZ3JpdHkgaW5zcGVjdGlvbiBmYWlsZWQuIE5lbWJyYSB3aWxsIG5vdCBjYWxsIHRoaXMgYXJ0aWZhY3QgUmVhZHkgZm9yIGFuYWx5c2lzOiBcKGV4cGVyaW1lbnRFcnJvck1lc3NhZ2UoZXJyb3IpKSIKICAgICAgICB9CgogICAgICAgIGRvIHsKICAgICAgICAgICAgc2hhcmVVUkwgPSB0cnkgcGVyc2lzdFNoYXJlQXJ0aWZhY3QoZGF0YSkKICAgICAgICAgICAgc2hhcmVQcmVwYXJhdGlvbldhcm5pbmcgPSBuaWwKICAgICAgICB9IGNhdGNoIHsKICAgICAgICAgICAgc2hhcmVVUkwgPSBuaWwKICAgICAgICAgICAgc2hhcmVQcmVwYXJhdGlvbldhcm5pbmcgPSAiQ2FwdHVyZSByZW1haW5zIHNlYWxlZCBhbmQgaXRzIGV4YWN0IFNoYXJlIGVudmVsb3BlIGlzIHJldGFpbmVkLCBidXQgdGVtcG9yYXJ5IFNoYXJlLWZpbGUgc3RhZ2luZyBmYWlsZWQuIFJldHJ5IHJldXNlcyB0aGUgc2FtZSBlbnZlbG9wZSBieXRlczogXChleHBlcmltZW50RXJyb3JNZXNzYWdlKGVycm9yKSkiCiAgICAgICAgfQogICAgfQo='), 'share preparation')
+          app = replace_once(app, '        softwareExportData = nil\n        sharePreparationWarning = nil\n', '        softwareExportData = nil\n        softwareExportIntegrityReport = nil\n        analysisReadinessWarning = nil\n        sharePreparationWarning = nil\n', 'reset integrity')
+          app = replace_once(app, decoded('ICAgIHByaXZhdGUgZnVuYyBkZXRhaWxSb3coXyB0aXRsZTogU3RyaW5nLCB2YWx1ZTogU3RyaW5nKSAtPiBzb21lIFZpZXcgewogICAgICAgIEhTdGFjayhhbGlnbm1lbnQ6IC5maXJzdFRleHRCYXNlbGluZSwgc3BhY2luZzogMTQpIHsKICAgICAgICAgICAgVGV4dCh0aXRsZSkKICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kU3R5bGUoLnNlY29uZGFyeSkKICAgICAgICAgICAgU3BhY2VyKG1pbkxlbmd0aDogMTIpCiAgICAgICAgICAgIFRleHQodmFsdWUpCiAgICAgICAgICAgICAgICAuZm9udCguYm9keS5tb25vc3BhY2VkRGlnaXQoKS53ZWlnaHQoLm1lZGl1bSkpCiAgICAgICAgICAgICAgICAubXVsdGlsaW5lVGV4dEFsaWdubWVudCgudHJhaWxpbmcpCiAgICAgICAgfQogICAgfQo='), decoded('ICAgIHByaXZhdGUgZnVuYyBkZXRhaWxSb3coXyB0aXRsZTogU3RyaW5nLCB2YWx1ZTogU3RyaW5nKSAtPiBzb21lIFZpZXcgewogICAgICAgIEhTdGFjayhhbGlnbm1lbnQ6IC5maXJzdFRleHRCYXNlbGluZSwgc3BhY2luZzogMTQpIHsKICAgICAgICAgICAgVGV4dCh0aXRsZSkKICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kU3R5bGUoLnNlY29uZGFyeSkKICAgICAgICAgICAgU3BhY2VyKG1pbkxlbmd0aDogMTIpCiAgICAgICAgICAgIFRleHQodmFsdWUpCiAgICAgICAgICAgICAgICAuZm9udCguYm9keS5tb25vc3BhY2VkRGlnaXQoKS53ZWlnaHQoLm1lZGl1bSkpCiAgICAgICAgICAgICAgICAubXVsdGlsaW5lVGV4dEFsaWdubWVudCgudHJhaWxpbmcpCiAgICAgICAgfQogICAgfQoKICAgIHByaXZhdGUgZnVuYyBkZXRhaWxCbG9jayhfIHRpdGxlOiBTdHJpbmcsIHZhbHVlOiBTdHJpbmcpIC0+IHNvbWUgVmlldyB7CiAgICAgICAgVlN0YWNrKGFsaWdubWVudDogLmxlYWRpbmcsIHNwYWNpbmc6IDYpIHsKICAgICAgICAgICAgVGV4dCh0aXRsZSkKICAgICAgICAgICAgICAgIC5mb250KC5jYXB0aW9uLndlaWdodCguc2VtaWJvbGQpKQogICAgICAgICAgICAgICAgLmZvcmVncm91bmRTdHlsZSguc2Vjb25kYXJ5KQogICAgICAgICAgICBUZXh0KHZhbHVlKQogICAgICAgICAgICAgICAgLmZvbnQoLmZvb3Rub3RlLm1vbm9zcGFjZWQoKSkKICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kU3R5bGUoLnByaW1hcnkpCiAgICAgICAgICAgICAgICAudGV4dFNlbGVjdGlvbiguZW5hYmxlZCkKICAgICAgICAgICAgICAgIC5maXhlZFNpemUoaG9yaXpvbnRhbDogZmFsc2UsIHZlcnRpY2FsOiB0cnVlKQogICAgICAgIH0KICAgICAgICAuZnJhbWUobWF4V2lkdGg6IC5pbmZpbml0eSwgYWxpZ25tZW50OiAubGVhZGluZykKICAgIH0K'), 'detail block')
+          app = replace_once(app, '        if status.artifactFinalized {\n            return "Experiment One progress, capture sealed and ready for analysis"\n        }\n', '        if status.artifactFinalized {\n            return softwareExportIntegrityReport == nil\n                ? "Experiment One progress, capture sealed; local integrity check required"\n                : "Experiment One progress, capture complete and ready for analysis"\n        }\n', 'accessibility readiness')
+          app = replace_once(app, '        case .complete: return "Evidence, sealed."\n', '        case .complete: return softwareExportIntegrityReport == nil ? "Evidence, sealed." : "Evidence, verified."\n', 'hero readiness')
+          app = replace_once(app, '        case .complete: return "Capture complete"\n', '        case .complete: return softwareExportIntegrityReport == nil ? "Capture sealed" : "Capture complete"\n', 'status readiness')
           app_path.write_text(app)
 
           tests_path = Path('NembraAppTests/NembraAppTests.swift')
           tests = tests_path.read_text()
-          old_test = '''    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let shell = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
-            encoding: .utf8
-        )
-        XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
-        XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
-        XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
-    }
-'''
-          new_test = '''    func testCaptureShellContinuesSameAuthorityThroughSealAndVerifiedAnalysisShare() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let shell = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
-            encoding: .utf8
-        )
-        XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
-        XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
-        XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"))
-        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(data)"))
-        XCTAssertTrue(shell.contains("softwareExportIntegrityReport == nil ? \\"CAPTURE SEALED\\" : \\"CAPTURE COMPLETE\\""))
-        XCTAssertTrue(shell.contains("softwareExportIntegrityReport == nil ? \\"Integrity check required\\" : \\"Ready for analysis\\""))
-        XCTAssertTrue(shell.contains("Envelope SHA-256"))
-        XCTAssertTrue(shell.contains("Capture SHA-256"))
-        XCTAssertTrue(shell.contains("Capture session"))
-        XCTAssertTrue(shell.contains("Raw value records"))
-        XCTAssertTrue(shell.contains("if let retainedSoftwareExport = softwareExportData"))
-        XCTAssertTrue(shell.contains("shareURL = try persistShareArtifact(data)"))
-        XCTAssertFalse(shell.contains("persistShareArtifact(artifact.captureJSON)"))
-    }
-'''
-          tests = replace_once(tests, old_test, new_test, 'wired app regression')
+          tests = replace_once(tests, decoded('ICAgIGZ1bmMgdGVzdENhcHR1cmVTaGVsbENvbnRpbnVlc1NhbWVBdXRob3JpdHlUaHJvdWdoU2VhbEFuZFNoYXJlKCkgdGhyb3dzIHsKICAgICAgICBsZXQgdGVzdEZpbGUgPSBVUkwoZmlsZVVSTFdpdGhQYXRoOiAjZmlsZVBhdGgpCiAgICAgICAgbGV0IHJvb3QgPSB0ZXN0RmlsZS5kZWxldGluZ0xhc3RQYXRoQ29tcG9uZW50KCkuZGVsZXRpbmdMYXN0UGF0aENvbXBvbmVudCgpCiAgICAgICAgbGV0IHNoZWxsID0gdHJ5IFN0cmluZygKICAgICAgICAgICAgY29udGVudHNPZjogcm9vdC5hcHBlbmRpbmdQYXRoQ29tcG9uZW50KCJOZW1icmFBcHAvRmVhdHVyZXMvUmVzZWFyY2gvRVM4MENhcHR1cmVTaGVsbFZpZXcuc3dpZnQiKSwKICAgICAgICAgICAgZW5jb2Rpbmc6IC51dGY4CiAgICAgICAgKQogICAgICAgIFhDVEFzc2VydEZhbHNlKHNoZWxsLmNvbnRhaW5zKCJQYXNzaXZlQmx1ZXRvb3RoUG93ZXJDeWNsZU9ic2VydmF0aW9uU2Vzc2lvbigiKSkKICAgICAgICBYQ1RBc3NlcnRGYWxzZShzaGVsbC5jb250YWlucygiUGFzc2l2ZSBjYXB0dXJlIGJpbmRpbmcgbm90IGF2YWlsYWJsZSBpbiB0aGlzIGJ1aWxkIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiY29vcmRpbmF0b3IucHJlcGFyZUNhcHR1cmVSZWRpc2NvdmVyeSgpIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiY29vcmRpbmF0b3IuY29ubmVjdFByZXBhcmVkQ2FwdHVyZSgpIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiZW5jb2RlZEZpbmFsaXplZE9ic2VydmF0aW9uSG9yaXpvbkpTT04iKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKHNoZWxsLmNvbnRhaW5zKCJTaGFyZUxpbmsoaXRlbTogZmluYWxpemVkQ2FwdHVyZVVSTCkiKSkKICAgIH0K'), decoded('ICAgIGZ1bmMgdGVzdENhcHR1cmVTaGVsbENvbnRpbnVlc1NhbWVBdXRob3JpdHlUaHJvdWdoU2VhbEFuZFZlcmlmaWVkQW5hbHlzaXNTaGFyZSgpIHRocm93cyB7CiAgICAgICAgbGV0IHRlc3RGaWxlID0gVVJMKGZpbGVVUkxXaXRoUGF0aDogI2ZpbGVQYXRoKQogICAgICAgIGxldCByb290ID0gdGVzdEZpbGUuZGVsZXRpbmdMYXN0UGF0aENvbXBvbmVudCgpLmRlbGV0aW5nTGFzdFBhdGhDb21wb25lbnQoKQogICAgICAgIGxldCBzaGVsbCA9IHRyeSBTdHJpbmcoCiAgICAgICAgICAgIGNvbnRlbnRzT2Y6IHJvb3QuYXBwZW5kaW5nUGF0aENvbXBvbmVudCgiTmVtYnJhQXBwL0ZlYXR1cmVzL1Jlc2VhcmNoL0VTODBDYXB0dXJlU2hlbGxWaWV3LnN3aWZ0IiksCiAgICAgICAgICAgIGVuY29kaW5nOiAudXRmOAogICAgICAgICkKICAgICAgICBYQ1RBc3NlcnRGYWxzZShzaGVsbC5jb250YWlucygiUGFzc2l2ZUJsdWV0b290aFBvd2VyQ3ljbGVPYnNlcnZhdGlvblNlc3Npb24oIikpCiAgICAgICAgWENUQXNzZXJ0RmFsc2Uoc2hlbGwuY29udGFpbnMoIlBhc3NpdmUgY2FwdHVyZSBiaW5kaW5nIG5vdCBhdmFpbGFibGUgaW4gdGhpcyBidWlsZCIpKQogICAgICAgIFhDVEFzc2VydFRydWUoc2hlbGwuY29udGFpbnMoImNvb3JkaW5hdG9yLmNvbmZpcm1Db3JyZWxhdGVkVGFyZ2V0QW5kQmVnaW5SZWRpc2NvdmVyeSgpIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiY29vcmRpbmF0b3IuY29ubmVjdFByZXBhcmVkQ2FwdHVyZSgpIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiY29vcmRpbmF0b3IuZmluYWxpemVPYnNlcnZhdGlvbkhvcml6b24oKSIpKQogICAgICAgIFhDVEFzc2VydFRydWUoc2hlbGwuY29udGFpbnMoImVuY29kZWRGaW5hbGl6ZWRTb2Z0d2FyZUV4cG9ydEZvckN1cnJlbnRBcHBsaWNhdGlvbiIpKQogICAgICAgIFhDVEFzc2VydFRydWUoc2hlbGwuY29udGFpbnMoIlBhc3NpdmVCbHVldG9vdGhFeHBlcmltZW50T25lU29mdHdhcmVFeHBvcnRJbnRlZ3JpdHkuaW5zcGVjdChkYXRhKSIpKQogICAgICAgIFhDVEFzc2VydFRydWUoc2hlbGwuY29udGFpbnMoInNvZnR3YXJlRXhwb3J0SW50ZWdyaXR5UmVwb3J0ID09IG5pbCA/IFwiQ0FQVFVSRSBTRUFMRURcIiA6IFwiQ0FQVFVSRSBDT01QTEVURVwiIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygic29mdHdhcmVFeHBvcnRJbnRlZ3JpdHlSZXBvcnQgPT0gbmlsID8gXCJJbnRlZ3JpdHkgY2hlY2sgcmVxdWlyZWRcIiA6IFwiUmVhZHkgZm9yIGFuYWx5c2lzXCIiKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKHNoZWxsLmNvbnRhaW5zKCJFbnZlbG9wZSBTSEEtMjU2IikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiQ2FwdHVyZSBTSEEtMjU2IikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiQ2FwdHVyZSBzZXNzaW9uIikpCiAgICAgICAgWENUQXNzZXJ0VHJ1ZShzaGVsbC5jb250YWlucygiUmF3IHZhbHVlIHJlY29yZHMiKSkKICAgICAgICBYQ1RBc3NlcnRUcnVlKHNoZWxsLmNvbnRhaW5zKCJpZiBsZXQgcmV0YWluZWRTb2Z0d2FyZUV4cG9ydCA9IHNvZnR3YXJlRXhwb3J0RGF0YSIpKQogICAgICAgIFhDVEFzc2VydFRydWUoc2hlbGwuY29udGFpbnMoInNoYXJlVVJMID0gdHJ5IHBlcnNpc3RTaGFyZUFydGlmYWN0KGRhdGEpIikpCiAgICAgICAgWENUQXNzZXJ0RmFsc2Uoc2hlbGwuY29udGFpbnMoInBlcnNpc3RTaGFyZUFydGlmYWN0KGFydGlmYWN0LmNhcHR1cmVKU09OKSIpKQogICAgfQo='), 'wired app regression')
           tests_path.write_text(tests)
           PY
       - name: Verify focused transformation
