@@ -20,7 +20,7 @@ struct NembraApp: App {
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
         _researchCoordinator = State(
             initialValue: launchMode == .es80PassiveCapture
-                ? try? PassiveBluetoothExperimentOneCoordinator()
+                ? try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
                 : nil
         )
     }
@@ -217,7 +217,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     /// package-owned coordinator, but it must also return through charger preflight instead of
     /// carrying the previous run's disconnected declaration into new evidence.
     private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
-        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator()
+        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
         coordinator = freshCoordinator
         selectedChargerState = nil
         disconnectedDeclarationAccepted = false
