@@ -127,15 +127,15 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         )
     }
 
-    /// Package-only composition seam for a capability whose exact instance-bound field status was
-    /// already minted by the package gate. This does not accept a Boolean, launch argument, user
-    /// preference, imported JSON document, target UUID, or caller-selected vehicle identity.
-    package init(
+    /// Module-private composition seam for the opaque capability minted by the exact-running-build
+    /// research gate. The raw GO `Status` is never accepted here, so sibling package targets cannot
+    /// inject a permissive value even if they can construct other package-owned objects.
+    init(
         controller: ForegroundCoreBluetoothCaptureController,
-        fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.Status
+        researchAdmission: PassiveBluetoothExperimentOneFieldExecutionGate.ResearchAdmission
     ) throws {
         self.controller = controller
-        self.fieldExecutionStatus = fieldExecutionStatus
+        fieldExecutionStatus = researchAdmission.status
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
