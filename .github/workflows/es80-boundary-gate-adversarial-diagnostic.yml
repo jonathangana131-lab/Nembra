@@ -1,0 +1,61 @@
+name: ES80 Boundary Gate Expected-Red Diagnostic
+
+on:
+  push:
+    branches:
+      - 'cell/es80-boundary-gate-adversarial/diagnostic/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-boundary-gate-adversarial-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expected-red:
+    name: Reproduce ready-to-horizon source blockers
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout diagnostic mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact diagnostic parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "64ca560f8cc50ebc6dc6f803c0d8a9f04bfdd5a6"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-boundary-gate-adversarial-diagnostic.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Prove package and incumbent queue tests compile and pass
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter PassiveCoreBluetoothObservationBoundaryQueueGateTests
+
+      - name: Reproduce the two expected cross-boundary failures
+        run: |
+          set -euo pipefail
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors --filter PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests 2>&1 | tee /tmp/cross-boundary.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "Expected-red suite unexpectedly passed; current source may have moved or the regression no longer reproduces." >&2
+            exit 1
+          fi
+
+          grep -F "horizon cutoff cannot regress behind the committed ready cutoff" /tmp/cross-boundary.log >/dev/null
+          grep -F "horizon must retain the exact authority that committed ready" /tmp/cross-boundary.log >/dev/null
+
+          echo "EXPECTED-RED REPRODUCED: current #388 queue-gate source admits both invalid ready→horizon transitions."
+          echo "This green diagnostic means the known source defect was mechanically reproduced; it is NOT product acceptance."
