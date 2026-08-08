@@ -20,7 +20,7 @@ struct NembraApp: App {
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
         _researchCoordinator = State(
             initialValue: launchMode == .es80PassiveCapture
-                ? try? PassiveBluetoothExperimentOneCoordinator()
+                ? try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
                 : nil
         )
     }
@@ -217,7 +217,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     /// package-owned coordinator, but it must also return through charger preflight instead of
     /// carrying the previous run's disconnected declaration into new evidence.
     private func makeFreshExperimentCoordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
-        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator()
+        let freshCoordinator = try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()
         coordinator = freshCoordinator
         selectedChargerState = nil
         disconnectedDeclarationAccepted = false
@@ -274,11 +274,8 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
     @State private var engineeringDetailsExpanded = false
-    private let runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
-
-    init() {
-        runtimeBuildIdentity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
-    }
+    @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
+    @State private var runtimeBuildIdentityCheckFinished = false
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
@@ -292,7 +289,9 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         if let runtimeBuildIdentity {
             return "Capture build, \(runtimeBuildIdentity.buildIdentifier)"
         }
-        return "Capture build identity unavailable"
+        return runtimeBuildIdentityCheckFinished
+            ? "Capture build identity unavailable"
+            : "Capture build identity checking"
     }
 
     var body: some View {
@@ -339,10 +338,14 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
-                        } else {
+                        } else if runtimeBuildIdentityCheckFinished {
                             Text("Identity unavailable")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.orange)
+                        } else {
+                            Text("Checking…")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .accessibilityElement(children: .ignore)
@@ -452,7 +455,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                         .accessibilityIdentifier("es80.capture.build-instance-id")
                                 }
-                            } else {
+                            } else if runtimeBuildIdentityCheckFinished {
                                 Divider().overlay(.white.opacity(0.12))
 
                                 VStack(alignment: .leading, spacing: 5) {
@@ -464,6 +467,19 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
+                            } else {
+                                Divider().overlay(.white.opacity(0.12))
+
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .accessibilityHidden(true)
+                                    Text("Checking build identity…")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("Checking capture build identity")
                             }
 
                             Text("Software evidence only. This does not verify a physical ES80 or unlock scooter controls.")
@@ -491,5 +507,18 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+        .task { await loadRuntimeBuildIdentity() }
+    }
+
+    private func loadRuntimeBuildIdentity() async {
+        guard runtimeBuildIdentity == nil, !runtimeBuildIdentityCheckFinished else { return }
+
+        let identity = await Task.detached(priority: .utility) {
+            try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        }.value
+
+        guard !Task.isCancelled else { return }
+        runtimeBuildIdentity = identity
+        runtimeBuildIdentityCheckFinished = true
     }
 }
