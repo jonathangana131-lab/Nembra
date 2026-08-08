@@ -160,12 +160,12 @@ public enum PassiveBluetoothTuyaCandidateBridge {
     /// invents a substitute clock/scope. Uptime and wall-clock Date remain the
     /// original capture metadata.
     ///
-    /// Continuity generations advance for every gap already classified by the
-    /// authoritative capture domain as `breaksByteContinuity`. Target attribution
-    /// remains separate: a disconnect carrying another peripheral identifier is
-    /// not relabeled as an ES80 disconnect, but its already-issued raw-byte gap is
-    /// still preserved for downstream framing. Empty raw value payloads fail the
-    /// whole projection rather than being dropped and accidentally allowing
+    /// Continuity generations advance for a selected-target disconnect or for a
+    /// global interruption already classified by the authoritative capture domain
+    /// as a raw-byte gap. A disconnect for another peripheral remains a real gap
+    /// in that other device's stream, but it must not manufacture a discontinuity
+    /// in the explicitly selected target transcript. Empty raw value payloads fail
+    /// the whole projection rather than being dropped and accidentally allowing
     /// fragments on either side to splice.
     public static func transcripts(
         in session: PassiveBluetoothCaptureSession,
@@ -194,7 +194,10 @@ public enum PassiveBluetoothTuyaCandidateBridge {
         var builderIndexByKey: [StreamKey: Int] = [:]
 
         for (recordIndex, record) in session.records.enumerated() {
-            if record.event.breaksByteContinuity {
+            if breaksTargetByteContinuity(
+                record.event,
+                peripheralIdentifier: peripheralIdentifier
+            ) {
                 continuityGeneration = try advancedContinuityGeneration(
                     continuityGeneration,
                     recordIndex: recordIndex,
@@ -320,6 +323,21 @@ public enum PassiveBluetoothTuyaCandidateBridge {
             case .advertisement, .stockAppState, .interruption:
                 false
             }
+        }
+    }
+
+    private static func breaksTargetByteContinuity(
+        _ event: PassiveBluetoothCaptureEvent,
+        peripheralIdentifier: String
+    ) -> Bool {
+        switch event {
+        case let .connection(observation):
+            return observation.state == .disconnected
+                && observation.peripheralIdentifier == peripheralIdentifier
+        case .interruption:
+            return true
+        default:
+            return false
         }
     }
 
