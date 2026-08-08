@@ -77,4 +77,51 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    func testCompletionSourceRequiresExactFinalShareIntegrityBeforeAnalysisReady() throws {
+        let source = try captureShellSource()
+
+        XCTAssertTrue(
+            source.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"),
+            "The app must prepare the package-owned final Share artifact, not stage raw capture or inner export bytes directly."
+        )
+        XCTAssertTrue(
+            source.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"),
+            "Analysis readiness must come from inspection of the exact final Share bytes."
+        )
+        XCTAssertTrue(
+            source.contains("Text(analysisReady ? \"Ready for analysis\" : \"Integrity check required\")"),
+            "Horizon seal alone must not render Ready for analysis."
+        )
+        XCTAssertTrue(
+            source.contains("if let data = finalShareData"),
+            "A temporary Share-file retry must reuse retained verified bytes rather than mint a new evidence artifact."
+        )
+        XCTAssertTrue(
+            source.contains("finalShareIntegrityReport = report"),
+            "The exact integrity report must be retained as the app's analysis-readiness authority."
+        )
+        XCTAssertTrue(
+            source.contains("coordinator.status.finalizationCleanup == .failed"),
+            "Post-seal cleanup failure must remain visible without revoking the sealed artifact."
+        )
+        XCTAssertFalse(
+            source.contains("prepareSoftwareExportForShare()"),
+            "The superseded inner-SoftwareExport-only Share path must not remain callable."
+        )
+        XCTAssertFalse(
+            source.contains("softwareExportData"),
+            "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
+    }
+
+    private func captureShellSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
 }
