@@ -33,6 +33,21 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         return source[beginning.lowerBound..<details.lowerBound]
     }
 
+    private static func slice(
+        _ source: String,
+        from beginningMarker: String,
+        throughBefore endMarker: String
+    ) throws -> Substring {
+        let beginning = try #require(source.range(of: beginningMarker))
+        let end = try #require(
+            source.range(
+                of: endMarker,
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<end.lowerBound]
+    }
+
     @Test("primary Capture states use rider language instead of implementation vocabulary")
     func primaryStatesStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -120,38 +135,46 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
     @Test("phase and restart helpers stay rider-readable too")
     func phaseAndRestartHelpersStayHumanFirst() throws {
         let source = try Self.shellSource()
-        let phaseStart = try #require(source.range(of: "private func phase("))
-        let errorStart = try #require(
-            source.range(
-                of: "private func experimentErrorMessage",
-                range: phaseStart.lowerBound..<source.endIndex
-            )
+        let phaseProjection = try Self.slice(
+            source,
+            from: "private func phase(",
+            throughBefore: "private func simulatorQAPhase("
         )
-        let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
+        let restartRecovery = try Self.slice(
+            source,
+            from: "private func restartExperiment()",
+            throughBefore: "private func handleScenePhaseChange("
+        )
 
-        let implementationPhrasesThatMustStayOutOfHelpers = [
+        let implementationPhrasesThatMustStayOutOfDynamicPrimaryCopy = [
             "Experiment One",
             "package-owned",
             "CoreBluetooth",
             "evidence life",
             "capture authority",
             "package-issued observation authority",
+            "accepted observation",
             "consumed authority",
             "scan-liveness",
+            "four-window observation series",
             "coordinator.lastDiagnostic",
             "String(describing: error)"
         ]
 
-        for phrase in implementationPhrasesThatMustStayOutOfHelpers {
+        for phrase in implementationPhrasesThatMustStayOutOfDynamicPrimaryCopy {
             #expect(
-                !helperSurface.contains(phrase),
-                "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
+                !phaseProjection.contains(phrase),
+                "Phase-derived Capture copy still exposes implementation vocabulary: \(phrase)"
+            )
+            #expect(
+                !restartRecovery.contains(phrase),
+                "Fresh-capture recovery still exposes implementation vocabulary: \(phrase)"
             )
         }
 
-        #expect(helperSurface.contains("start a fresh capture"))
-        #expect(helperSurface.contains("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series."))
-        #expect(helperSurface.contains("Nembra could not start a fresh capture."))
+        #expect(phaseProjection.contains("start a fresh capture"))
+        #expect(phaseProjection.contains("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series."))
+        #expect(restartRecovery.contains("Nembra could not start a fresh capture."))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
