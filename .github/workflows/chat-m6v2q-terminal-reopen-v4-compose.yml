@@ -1,0 +1,392 @@
+name: chat-m6v2q terminal reopen v4 composition
+
+on:
+  push:
+    branches:
+      - parallel/es80-terminal-fresh-reopen/chat-m6v2q-4
+    paths:
+      - .github/workflows/chat-m6v2q-terminal-reopen-v4-compose.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: parallel/es80-terminal-fresh-reopen/chat-m6v2q-4
+          fetch-depth: 0
+
+      - name: Add exact terminal retirement recovery onto latest pre-H recovery grammar
+        env:
+          EXPECTED_PARENT: efb2bb10506f3a7a622f7481bb526e5ca4f5b367
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift')
+          source = source_path.read_text()
+
+          def once(old, new, label):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              source = source.replace(old, new, 1)
+
+          once(
+              '        case abortQueueTailChanged\n',
+              '        case abortQueueTailChanged\n        case terminalQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)\n        case retainedEvidenceRoutingRequired(retainedCount: Int)\n',
+              'terminal reopen errors',
+          )
+
+          marker = '''    /// Requests a fresh lifecycle grammar only when no observation transaction has\n'''
+          if source.count(marker) != 1:
+              raise SystemExit(f'reset marker count={source.count(marker)}')
+
+          method = '''    /// Reopens boundary admission after a completed terminal Horizon only when\n    /// producer-issued post-H retirement proof still matches the exact terminal\n    /// transaction and the controller has already created a strictly newer durable\n    /// target session/recorder generation.\n    ///\n    /// The call is synchronous and MainActor-isolated. The controller must retire\n    /// the terminal queue and consume this receipt without an intervening `await`;\n    /// any callback that advances the global queue tail invalidates the receipt. A\n    /// receipt that preserves pending evidence is not standalone reopen authority:\n    /// retained recorder destinations require a separately accepted routing/adoption\n    /// contract and this overload deliberately cannot bypass that requirement.\n    ///\n    /// On success the exact fresh target-session generation is bound until its first\n    /// Ready begins, matching the stronger pre-H recovery grammar above. This means\n    /// neither the sealed terminal session nor an unrelated newer session may consume\n    /// the reopened lifecycle. Transaction revision remains monotonic because this\n    /// gate instance is preserved.\n    @MainActor\n    mutating func reopenAfterTerminalQueueRetirement(\n        _ receipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt,\n        currentLastEnqueuedEventSequence: UInt64,\n        freshTargetSessionGeneration: UInt64\n    ) throws {\n        guard case let .terminal(transaction) = phase else {\n            throw StateError.invalidTransition\n        }\n        guard receipt.terminalTransactionRevision == transaction.revision,\n              receipt.horizonQueueCutoff == transaction.queueCutoff else {\n            throw StateError.staleTransaction\n        }\n        guard receipt.terminalAuthority == transaction.authority else {\n            throw StateError.authorityChanged\n        }\n        guard receipt.validatedQueueTailSequence == currentLastEnqueuedEventSequence else {\n            throw StateError.terminalQueueChangedAfterRetirement(\n                expected: receipt.validatedQueueTailSequence,\n                actual: currentLastEnqueuedEventSequence\n            )\n        }\n        guard !receipt.requiresRetainedEvidenceRoutingBeforeReopen else {\n            throw StateError.retainedEvidenceRoutingRequired(\n                retainedCount: receipt.retainedPendingEvidenceCount\n            )\n        }\n        guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {\n            throw StateError.freshTargetSessionRequired\n        }\n\n        committedReadyTransaction = nil\n        requiredReadyTargetSessionGeneration = freshTargetSessionGeneration\n        phase = .awaitingReady\n    }\n\n'''
+          source = source.replace(marker, method + marker, 1)
+
+          once(
+              '''    /// `resetForNewCaptureSession()` never escapes abort quarantine and never clears\n    /// the exact fresh-session generation retained after a completed abort recovery.\n    /// Terminal artifact freeze likewise stays closed until its separate post-H\n    /// retirement/reopen authority is accepted and integrated.\n''',
+              '''    /// `resetForNewCaptureSession()` never escapes abort quarantine and never clears\n    /// the exact fresh-session generation retained after either completed pre-H abort\n    /// recovery or post-H terminal retirement recovery. Terminal artifact freeze alone\n    /// likewise stays closed until the receipt-gated transition above succeeds.\n''',
+              'reset docs',
+          )
+          source_path.write_text(source)
+
+          tests = textwrap.dedent(r'''\
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @MainActor
+          struct PassiveCoreBluetoothObservationBoundaryQueueGateFreshReopenTests {
+              private typealias Gate = PassiveCoreBluetoothObservationBoundaryQueueGate
+              private typealias Retirement = PassiveCoreBluetoothTerminalQueueRetirement
+
+              private struct Event: Equatable {
+                  let queueSequence: UInt64
+                  let authority: PassiveCoreBluetoothArtifactAuthorityContext
+              }
+
+              private let terminalAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                  targetSessionGeneration: 7,
+                  authorityGeneration: 11
+              )
+
+              @Test
+              func exactRetirementBindsExactFreshSessionAndPreservesRevision() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events = [
+                      Event(queueSequence: 13, authority: terminalAuthority),
+                      Event(queueSequence: 14, authority: terminalAuthority)
+                  ]
+                  let receipt = try retirementReceipt(events: &events, currentTail: 14, gate: gate)
+                  #expect(events.isEmpty)
+                  #expect(!receipt.requiresRetainedEvidenceRoutingBeforeReopen)
+
+                  try gate.reopenAfterTerminalQueueRetirement(
+                      receipt,
+                      currentLastEnqueuedEventSequence: 14,
+                      freshTargetSessionGeneration: 8
+                  )
+                  #expect(gate.phase == .awaitingReady)
+
+                  let sealedSessionNewAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 7,
+                      authorityGeneration: 12
+                  )
+                  let sealedError = captureGateError {
+                      _ = try gate.begin(
+                          .finiteAcquisitionReady,
+                          through: 14,
+                          authority: sealedSessionNewAuthority
+                      )
+                  }
+                  #expect(sealedError == .freshTargetSessionRequired)
+
+                  let unrelatedNewerSession = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 9,
+                      authorityGeneration: 1
+                  )
+                  let unrelatedError = captureGateError {
+                      _ = try gate.begin(
+                          .finiteAcquisitionReady,
+                          through: 14,
+                          authority: unrelatedNewerSession
+                      )
+                  }
+                  #expect(unrelatedError == .freshTargetSessionRequired)
+
+                  let exactFreshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 8,
+                      authorityGeneration: 1
+                  )
+                  let nextReady = try gate.begin(
+                      .finiteAcquisitionReady,
+                      through: 14,
+                      authority: exactFreshAuthority
+                  )
+                  #expect(nextReady.revision == terminal.horizon.revision + 1)
+                  #expect(nextReady.revision == 3)
+                  #expect(nextReady.authority == exactFreshAuthority)
+              }
+
+              @Test
+              func terminalRecoveryRejectsNonFreshSessionBeforeMutation() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events: [Event] = []
+                  let receipt = try retirementReceipt(events: &events, currentTail: 12, gate: gate)
+
+                  let error = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          receipt,
+                          currentLastEnqueuedEventSequence: 12,
+                          freshTargetSessionGeneration: 7
+                      )
+                  }
+                  #expect(error == .freshTargetSessionRequired)
+                  #expect(gate.phase == .terminal(terminal.horizon))
+              }
+
+              @Test
+              func normalResetCannotEraseTerminalFreshSessionBinding() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events: [Event] = []
+                  let receipt = try retirementReceipt(events: &events, currentTail: 12, gate: gate)
+
+                  try gate.reopenAfterTerminalQueueRetirement(
+                      receipt,
+                      currentLastEnqueuedEventSequence: 12,
+                      freshTargetSessionGeneration: 8
+                  )
+                  let resetAccepted = gate.resetForNewCaptureSession()
+                  #expect(resetAccepted)
+
+                  let wrongAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 9,
+                      authorityGeneration: 1
+                  )
+                  let wrongError = captureGateError {
+                      _ = try gate.begin(
+                          .finiteAcquisitionReady,
+                          through: 12,
+                          authority: wrongAuthority
+                      )
+                  }
+                  #expect(wrongError == .freshTargetSessionRequired)
+
+                  let exactAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 8,
+                      authorityGeneration: 1
+                  )
+                  let accepted = try gate.begin(
+                      .finiteAcquisitionReady,
+                      through: 12,
+                      authority: exactAuthority
+                  )
+                  #expect(accepted.authority == exactAuthority)
+              }
+
+              @Test
+              func retainedEvidenceCannotReopenWithoutSeparateRoutingAuthority() throws {
+                  let newerAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 8,
+                      authorityGeneration: 1
+                  )
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events = [
+                      Event(queueSequence: 13, authority: terminalAuthority),
+                      Event(queueSequence: 14, authority: newerAuthority)
+                  ]
+                  let receipt = try retirementReceipt(events: &events, currentTail: 14, gate: gate)
+                  #expect(events.map(\.queueSequence) == [14])
+                  #expect(receipt.requiresRetainedEvidenceRoutingBeforeReopen)
+
+                  let error = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          receipt,
+                          currentLastEnqueuedEventSequence: 14,
+                          freshTargetSessionGeneration: 8
+                      )
+                  }
+                  #expect(error == .retainedEvidenceRoutingRequired(retainedCount: 1))
+                  #expect(gate.phase == .terminal(terminal.horizon))
+                  #expect(gate.permittedDrainUpperBound(firstPending: 14, pendingTail: 14) == nil)
+              }
+
+              @Test
+              func callbackArrivalAfterRetirementKeepsGateTerminal() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events = [
+                      Event(queueSequence: 13, authority: terminalAuthority),
+                      Event(queueSequence: 14, authority: terminalAuthority)
+                  ]
+                  let receipt = try retirementReceipt(events: &events, currentTail: 14, gate: gate)
+
+                  let error = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          receipt,
+                          currentLastEnqueuedEventSequence: 15,
+                          freshTargetSessionGeneration: 8
+                      )
+                  }
+                  #expect(error == .terminalQueueChangedAfterRetirement(expected: 14, actual: 15))
+                  #expect(gate.phase == .terminal(terminal.horizon))
+              }
+
+              @Test
+              func receiptFromDifferentTerminalTransactionFailsAtomically() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  let otherTerminal = try terminalGate(horizonQueueCutoff: 13, authority: terminalAuthority)
+                  var otherEvents: [Event] = []
+                  let otherReceipt = try retirementReceipt(
+                      events: &otherEvents,
+                      currentTail: 13,
+                      gate: otherTerminal.gate
+                  )
+
+                  let error = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          otherReceipt,
+                          currentLastEnqueuedEventSequence: 13,
+                          freshTargetSessionGeneration: 8
+                      )
+                  }
+                  #expect(error == .staleTransaction)
+                  #expect(gate.phase == .terminal(terminal.horizon))
+              }
+
+              @Test
+              func receiptFromDifferentArtifactAuthorityFailsAtomically() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  let otherAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+                      targetSessionGeneration: 8,
+                      authorityGeneration: 1
+                  )
+                  let otherTerminal = try terminalGate(horizonQueueCutoff: 12, authority: otherAuthority)
+                  var otherEvents: [Event] = []
+                  let otherReceipt = try retirementReceipt(
+                      events: &otherEvents,
+                      currentTail: 12,
+                      gate: otherTerminal.gate
+                  )
+
+                  let error = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          otherReceipt,
+                          currentLastEnqueuedEventSequence: 12,
+                          freshTargetSessionGeneration: 9
+                      )
+                  }
+                  #expect(error == .authorityChanged)
+                  #expect(gate.phase == .terminal(terminal.horizon))
+              }
+
+              @Test
+              func retirementReceiptCannotBeReplayedAfterSuccessfulReopen() throws {
+                  let terminal = try terminalGate(horizonQueueCutoff: 12, authority: terminalAuthority)
+                  var gate = terminal.gate
+                  var events: [Event] = []
+                  let receipt = try retirementReceipt(events: &events, currentTail: 12, gate: gate)
+
+                  try gate.reopenAfterTerminalQueueRetirement(
+                      receipt,
+                      currentLastEnqueuedEventSequence: 12,
+                      freshTargetSessionGeneration: 8
+                  )
+                  let replayError = captureGateError {
+                      try gate.reopenAfterTerminalQueueRetirement(
+                          receipt,
+                          currentLastEnqueuedEventSequence: 12,
+                          freshTargetSessionGeneration: 8
+                      )
+                  }
+                  #expect(replayError == .invalidTransition)
+                  #expect(gate.phase == .awaitingReady)
+              }
+
+              private func retirementReceipt(
+                  events: inout [Event],
+                  currentTail: UInt64,
+                  gate: Gate
+              ) throws -> Retirement.Receipt {
+                  try Retirement.retire(
+                      from: &events,
+                      currentLastEnqueuedEventSequence: currentTail,
+                      terminalGate: gate
+                  ) { event in
+                      Retirement.PendingEvidenceIdentity(
+                          queueSequence: event.queueSequence,
+                          authority: event.authority
+                      )
+                  }
+              }
+
+              private func terminalGate(
+                  horizonQueueCutoff: UInt64,
+                  authority: PassiveCoreBluetoothArtifactAuthorityContext
+              ) throws -> (gate: Gate, horizon: Gate.Transaction) {
+                  var gate = Gate()
+                  let ready = try gate.begin(
+                      .finiteAcquisitionReady,
+                      through: 5,
+                      authority: authority
+                  )
+                  try gate.markBoundaryRecorded(
+                      ready,
+                      lastProcessedQueueSequence: 5,
+                      currentAuthority: authority
+                  )
+                  let horizon = try gate.begin(
+                      .observationHorizon,
+                      through: horizonQueueCutoff,
+                      processedThrough: 8,
+                      authority: authority
+                  )
+                  try gate.markBoundaryRecorded(
+                      horizon,
+                      lastProcessedQueueSequence: horizonQueueCutoff,
+                      currentAuthority: authority
+                  )
+                  try gate.completeHorizonArtifactFreeze(
+                      horizon,
+                      currentAuthority: authority
+                  )
+                  return (gate, horizon)
+              }
+
+              private func captureGateError(
+                  _ operation: () throws -> Void
+              ) -> Gate.StateError? {
+                  do {
+                      try operation()
+                      return nil
+                  } catch {
+                      return error as? Gate.StateError
+                  }
+              }
+          }
+          ''')
+          Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateFreshReopenTests.swift').write_text(tests)
+          PY
+
+          git config user.name 'nembra-chat-m6v2q'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothObservationBoundaryQueueGateFreshReopenTests.swift
+          git rm .github/workflows/chat-m6v2q-terminal-reopen-v4-compose.yml
+          git commit -m 'Bind terminal recovery to exact fresh durable session'
+          git push origin HEAD:parallel/es80-terminal-fresh-reopen/chat-m6v2q-4
