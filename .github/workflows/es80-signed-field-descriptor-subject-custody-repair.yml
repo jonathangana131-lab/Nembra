@@ -38,9 +38,9 @@ jobs:
           source = path.read_text(encoding="utf-8")
 
           old = dedent('''\
-          exec 7<"$PRIVATE_RUNNER_SNAPSHOT"
-          exec 8<"$INSPECTOR_SNAPSHOT"
-          exec 9<"$PRIVATE_RUNNER_SNAPSHOT"
+          exec 7< "$PRIVATE_RUNNER_SNAPSHOT"
+          exec 8< "$INSPECTOR_SNAPSHOT"
+          exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
           rm -f "$PRIVATE_RUNNER_SNAPSHOT" "$INSPECTOR_SNAPSHOT"
           ''')
           if source.count(old) != 1:
@@ -49,9 +49,9 @@ jobs:
               raise SystemExit("descriptor subject-custody repair unexpectedly already exists")
 
           new = dedent('''\
-          exec 7<"$PRIVATE_RUNNER_SNAPSHOT"
-          exec 8<"$INSPECTOR_SNAPSHOT"
-          exec 9<"$PRIVATE_RUNNER_SNAPSHOT"
+          exec 7< "$PRIVATE_RUNNER_SNAPSHOT"
+          exec 8< "$INSPECTOR_SNAPSHOT"
+          exec 9< "$PRIVATE_RUNNER_SNAPSHOT"
 
           # Bind each already-open descriptor to the exact accepted SOURCE_SHA Git blob before the
           # mutable snapshot pathnames disappear or any private intended-device input is exposed.
