@@ -166,7 +166,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
         #expect(gate.phase == .observing)
     }
 
-    @Test("sealed authority drift rejects recorder mutation before durable evidence changes")
+    @Test("sealed authority drift rejects mutation and only genuine rejection proof may abandon Ready")
     @MainActor
     func staleSealedDecisionCannotMutateRecorder() async throws {
         let recorder = try PassiveCoreBluetoothCaptureRecorder(
@@ -182,6 +182,7 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
             authorityFence: fence,
             gate: &gate
         )
+        let activeBeforeRejection = try #require(gate.activeTransaction)
         let replacement = PassiveCoreBluetoothArtifactAuthorityContext(
             targetSessionGeneration: 7,
             authorityGeneration: 12
@@ -191,19 +192,27 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecisionTests {
             with: replacement
         )
 
-        do {
-            try await ready.recordBoundary(on: recorder)
+        let outcome = try await ready.recordBoundaryWithMutationOutcome(on: recorder)
+        let rejection: PassiveCoreBluetoothObservationBoundaryRecorderMutationRejectionReceipt
+        switch outcome {
+        case .recorded:
             Issue.record("A stale sealed boundary must not append after authority replacement.")
-        } catch let error as PassiveCoreBluetoothArtifactAuthorityMutationFence.StateError {
-            #expect(error == .authorityChanged)
-        } catch {
-            Issue.record("Unexpected authority-fence error: \(error)")
+            return
+        case let .rejectedBeforeMutation(receipt):
+            rejection = receipt
         }
 
         let session = await recorder.snapshot()
         #expect(session.observationBoundaries.isEmpty)
-        #expect(gate.phase == .awaitingReady)
-        #expect(gate.activeTransaction?.authority == authority)
+        #expect(gate.phase == .drainingReady(activeBeforeRejection))
+        #expect(gate.activeTransaction == activeBeforeRejection)
+        #expect(rejection.authority == authority)
+        #expect(rejection.queueCutoff == ready.queueCutoff)
+
+        let abort = try gate.abortUncommittedReady(after: rejection)
+        #expect(abort.origin == .uncommittedReadyRejectedBeforeRecorderMutation)
+        #expect(gate.phase == .abortQuarantined(abort))
+        #expect(gate.activeTransaction == nil)
     }
 
     @Test("terminal helper cannot bless a horizon before its boundary is recorded")
