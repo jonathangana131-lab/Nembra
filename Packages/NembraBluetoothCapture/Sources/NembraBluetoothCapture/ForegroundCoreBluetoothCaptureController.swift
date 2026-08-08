@@ -573,9 +573,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         }
 
         guard let latestAdvertisement = latestAdvertisementByIdentifier[preview.peripheralIdentifier],
-              latestAdvertisement.receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds else {
-            // The sealed admission must be joined to a controller observation received after
-            // that handoff. Replaying an older cached advertisement would splice two software
+              latestAdvertisement.receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds else {
+            // The sealed admission must be joined to a controller observation received strictly after
+            // that handoff. Equality does not prove ordering when two monotonic reads share one tick. Replaying an older cached advertisement would splice two software
             // chronology lives and could enqueue evidence that predates this recorder.
             throw ControllerError.unknownPeripheral(preview.peripheralIdentifier)
         }
