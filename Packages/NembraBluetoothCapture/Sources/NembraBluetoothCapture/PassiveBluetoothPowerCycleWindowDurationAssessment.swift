@@ -67,8 +67,12 @@ public struct PassiveBluetoothPowerCycleWindowDurationAssessment: Equatable, Sen
 
         guard windows.count == expectedPhases.count,
               snapshots.count == expectedPhases.count,
-              zip(windows, expectedPhases).allSatisfy({ $0.phase == $1 }),
-              zip(windows, snapshots).allSatisfy({ $0.windowSequence == $1.windowSequence }),
+              zip(windows, expectedPhases).allSatisfy({ pair in
+                  pair.0.phase == pair.1
+              }),
+              zip(windows, snapshots).allSatisfy({ pair in
+                  pair.0.windowSequence == pair.1.windowSequence
+              }),
               strictlyIncreasing(windows.map { $0.windowSequence.rawValue }),
               correlationMatchesSnapshots(result.correlation, snapshots: snapshots) else {
             return Self(
@@ -92,8 +96,8 @@ public struct PassiveBluetoothPowerCycleWindowDurationAssessment: Equatable, Sen
             )
         }
 
-        let insufficientPhases = zip(windows, durations).compactMap { window, duration in
-            duration < minimumWindowDurationNanoseconds ? window.phase : nil
+        let insufficientPhases = zip(windows, durations).compactMap { pair in
+            pair.1 < minimumWindowDurationNanoseconds ? pair.0.phase : nil
         }
 
         return Self(
@@ -122,6 +126,8 @@ public struct PassiveBluetoothPowerCycleWindowDurationAssessment: Equatable, Sen
     }
 
     private static func strictlyIncreasing(_ values: [UInt64]) -> Bool {
-        zip(values, values.dropFirst()).allSatisfy(<)
+        zip(values, values.dropFirst()).allSatisfy { pair in
+            pair.0 < pair.1
+        }
     }
 }
