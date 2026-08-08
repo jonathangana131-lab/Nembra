@@ -1,27 +1,82 @@
 /// Package-owned field-execution lock for the first physical ES80 experiment.
 ///
-/// V14's definitive physical runbook is currently NO-GO. Product UI must therefore keep every
-/// action that asks the operator to begin the real OFF1 -> ON1 -> OFF2 -> ON2 physical procedure
-/// unavailable in a field build, even when the underlying passive correlation producer is capable
-/// of collecting software evidence.
+/// The default V14 product state remains mechanically NO-GO. The zero-argument status and Boolean
+/// intentionally cannot be changed by app preferences, launch markers, Info.plist values, typed
+/// identifiers, or caller-supplied flags.
 ///
-/// This type deliberately has no GO state, no initializer, and no caller-supplied authorization
-/// input. A future physical GO must be introduced by a deliberate accepted product change that
-/// binds the final composed exact build, procedure/recipe provenance, app/runtime acceptance, and
-/// the runbook's GO record. Flipping a UI Boolean or constructing a value in app code is not an
-/// authorization path.
+/// A future accepted field build may present a `PassiveBluetoothCaptureVerifiedFieldAuthorization`
+/// minted by the package's independent-signature verifier. `admit(verifiedAuthorization:)` turns
+/// only that non-forgeable verifier output into a package-owned `VerifiedAdmission` capability.
+/// The capability has no public initializer and is the only value a future live-controller factory
+/// may accept. Production cannot mint one today because the package trust root is deliberately
+/// unconfigured.
+///
+/// This is build/procedure authority only. Possession of a valid admission does not authenticate an
+/// AOVOPRO ES80, prove RF completeness, establish GATT/Tuya/telemetry semantics, or turn a write
+/// callback into physical acknowledgement.
 public enum PassiveBluetoothExperimentOneFieldExecutionGate {
     public static let recipeID: PassiveBluetoothExperimentRecipeID = .es80FingerprintV1
     public static let status: Status = .noGo(.finalComposedBuildNotAuthorized)
 
-    /// Derived from the sealed status so authorization cannot drift from the blocker vocabulary.
-    /// Adding any future GO status must intentionally update this exhaustive switch in the same
-    /// accepted product change.
+    /// Current product state. This deliberately remains false until the app is explicitly wired to
+    /// consume a separately verified field-authorization capability in a later accepted change.
     public static var permitsPhysicalProcedure: Bool {
         switch status {
         case .noGo:
             return false
         }
+    }
+
+    /// Non-forgeable package capability derived only from a verified signed field authorization.
+    ///
+    /// Its initializer is private to this source file. Public callers can obtain an instance only by
+    /// first producing a `PassiveBluetoothCaptureVerifiedFieldAuthorization` through the package's
+    /// public production verifier, which currently fails closed while the trust anchor is nil.
+    public struct VerifiedAdmission: Equatable, Sendable {
+        public let buildIdentifier: String
+        public let buildInstanceID: String
+        public let sourceCommitSHA: String
+        public let signedInstallableSHA256: String
+        public let fieldEvidenceRecordSHA256: String
+        public let authorizationPayloadSHA256: String
+
+        fileprivate init(authorization: PassiveBluetoothCaptureVerifiedFieldAuthorization) {
+            let evidence = authorization.fieldBuildEvidenceRecord
+            buildIdentifier = authorization.externalBuildRecord.buildIdentifier
+            buildInstanceID = authorization.externalBuildRecord.buildInstanceID
+            sourceCommitSHA = authorization.externalBuildRecord.sourceCommitSHA
+            signedInstallableSHA256 = evidence.signedInstallableSHA256
+            fieldEvidenceRecordSHA256 = evidence.exactEvidenceRecordSHA256
+            authorizationPayloadSHA256 = authorization.authorizationPayloadSHA256
+        }
+    }
+
+    /// Convert only already-verified external authority into a package-owned execution capability.
+    ///
+    /// The verifier currently enforces these relationships too; the gate repeats the final recipe,
+    /// procedure and exact-rendezvous checks so a later verifier evolution cannot silently broaden
+    /// physical execution policy.
+    public static func admit(
+        verifiedAuthorization authorization: PassiveBluetoothCaptureVerifiedFieldAuthorization
+    ) -> VerifiedAdmission? {
+        let record = authorization.externalBuildRecord
+        let evidence = authorization.fieldBuildEvidenceRecord
+
+        guard record.experimentRecipeID == recipeID,
+              record.procedureVersion == PassiveBluetoothCaptureExternalBuildRecord.requiredProcedureVersion,
+              evidence.experimentRecipeID == recipeID,
+              evidence.procedureVersion == PassiveBluetoothCaptureExternalBuildRecord.requiredProcedureVersion,
+              evidence.externalBuildRecordSHA256 == record.exactRecordSHA256,
+              evidence.buildIdentifier == record.buildIdentifier,
+              evidence.buildInstanceID == record.buildInstanceID,
+              evidence.sourceCommitSHA == record.sourceCommitSHA,
+              evidence.executableSHA256 == record.executableSHA256,
+              evidence.infoPlistSHA256 == record.infoPlistSHA256,
+              evidence.signedInstallableKind == PassiveBluetoothCaptureFieldBuildEvidenceRecord.requiredInstallableKind else {
+            return nil
+        }
+
+        return VerifiedAdmission(authorization: authorization)
     }
 
     public enum Status: Equatable, Sendable {
