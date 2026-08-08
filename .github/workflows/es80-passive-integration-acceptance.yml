@@ -1,0 +1,86 @@
+name: ES80 Passive Integration Acceptance
+
+on:
+  push:
+    branches:
+      - cell/es80-passive-capture/ci/chat-c7r4m-integration-1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-passive-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARTIFACTS_DIR: ${{ github.workspace }}/Artifacts/Xcode27Simulator
+
+jobs:
+  exact-integration:
+    name: Exact passive runtime + iOS 27 acceptance
+    runs-on: xcode-27
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout exact validation mirror
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "61f03d3e67d732e229b85ca2b53258ee689464d3"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/es80-passive-integration-acceptance.yml"
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Validate project structure
+        run: |
+          set -euo pipefail
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Guard passive package against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture runtime must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Test NembraCore with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraCore -Xswiftc -warnings-as-errors
+
+      - name: Test NembraBluetoothCapture with warnings as errors
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture -Xswiftc -warnings-as-errors
+
+      - name: Build passive package for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES build
+
+      - name: Build, test, and capture trusted iOS 27 Simulator states
+        run: |
+          set -euo pipefail
+          scripts/ci/xcode27_simulator_capture.sh
+
+      - name: Upload Simulator screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-es80-passive-integration-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/Xcode27Simulator
+          if-no-files-found: warn
+          retention-days: 30
