@@ -1,0 +1,105 @@
+name: chat-g5v6 align pre-H quarantine QA
+on:
+  push:
+    branches:
+      - parallel/es80-preh-quarantine-qa-repair/chat-g5v6
+    paths:
+      - .github/workflows/chat-g5v6-align-preh-quarantine-qa.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: parallel/es80-preh-quarantine-qa-repair/chat-g5v6
+          fetch-depth: 0
+      - name: Align regression with irreversible raw-retirement quarantine
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothPreHObservationRecoveryTests.swift')
+          s = p.read_text()
+
+          def replace_one(old: str, new: str) -> None:
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, got {count}: {old[:100]!r}')
+              s = s.replace(old, new, 1)
+
+          replace_one(
+              '@Test("committed Ready abort preserves exact identity and reopens only for bound fresh session")',
+              '@Test("committed Ready abort preserves exact identity and raw retirement stays quarantined")'
+          )
+          replace_one(
+              'func committedReadyAbortRequiresRetirementAndExactFreshSession() async throws {',
+              'func committedReadyAbortRetirementKeepsQuarantineClosed() async throws {'
+          )
+          replace_one(
+          '''        try gate.completeAbortedObservationRecovery(
+              retirement,
+              currentLastEnqueuedEventSequence: 3,
+              freshTargetSessionGeneration: 8
+          )
+          #expect(gate.phase == .awaitingReady)
+
+          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
+              _ = try gate.begin(
+                  .finiteAcquisitionReady,
+                  through: 4,
+                  authority: .init(targetSessionGeneration: 7, authorityGeneration: 99)
+              )
+          }
+          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.freshTargetSessionRequired) {
+              _ = try gate.begin(
+                  .finiteAcquisitionReady,
+                  through: 4,
+                  authority: .init(targetSessionGeneration: 9, authorityGeneration: 1)
+              )
+          }
+          _ = try gate.begin(
+              .finiteAcquisitionReady,
+              through: 4,
+              authority: .init(targetSessionGeneration: 8, authorityGeneration: 1)
+          )
+          ''',
+          '''        #expect(retirement.retainedPendingEvidenceCount == 0)
+          #expect(gate.phase == .abortQuarantined(abort))
+          #expect(!gate.resetForNewCaptureSession())
+          #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)
+
+          let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+              targetSessionGeneration: authority.targetSessionGeneration + 1,
+              authorityGeneration: 1
+          )
+          #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
+              _ = try gate.begin(
+                  .finiteAcquisitionReady,
+                  through: 4,
+                  authority: freshAuthority
+              )
+          }
+          #expect(gate.phase == .abortQuarantined(abort))
+          ''')
+
+          p.write_text(s)
+          PY
+
+          if git grep -n -E 'completeAbortedObservationRecovery|freshTargetSessionRequired' -- 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests' 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture'; then
+            echo 'stale raw-retirement reopen API remains' >&2
+            exit 1
+          fi
+          git diff --check
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/chat-g5v6-align-preh-quarantine-qa.yml
+          git config user.name 'nembra-chat-g5v6'
+          git config user.email 'nembra-chat-g5v6@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothPreHObservationRecoveryTests.swift
+          git commit -m 'test: keep raw pre-H retirement quarantine-closed'
+          git push origin HEAD:parallel/es80-preh-quarantine-qa-repair/chat-g5v6
