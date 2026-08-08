@@ -247,8 +247,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 case let .available(identity):
                     buildProvenanceStatus(
-                        symbol: "checkmark.circle",
-                        title: "Runtime identity present",
+                        symbol: "info.circle",
+                        title: "Runtime build evidence available",
                         message: "Nembra hashed the exact executable bytes currently running. The embedded build label and source commit remain declarations until an independently trusted build record matches this executable digest. This does not authorize the physical procedure."
                     )
                     buildDetailRow("BUILD", value: identity.buildIdentifier)
@@ -283,7 +283,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 Spacer(minLength: 8)
 
-                Text("PREFLIGHT")
+                Text("BUILD EVIDENCE")
                     .font(.caption2.monospaced().weight(.bold))
                     .foregroundStyle(.secondary)
             }
