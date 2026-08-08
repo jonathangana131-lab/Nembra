@@ -1,0 +1,45 @@
+name: ES80 human first final transform
+
+on:
+  push:
+    branches:
+      - product/es80-v14-human-first-final-gpt56
+    paths:
+      - .github/workflows/es80-human-first-final-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: product/es80-v14-human-first-final-gpt56
+          fetch-depth: 0
+      - name: Apply final rider-language transform
+        run: python3 scripts/ci/es80_human_first_final_gpt56.py
+      - name: Validate effective product diff
+        run: |
+          git diff --check
+          grep -F 'Keep unplugged for the whole capture' NembraApp/App/NembraApp.swift
+          grep -F 'Text("CAPTURE PROGRESS")' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'healthItem("SIGNAL"' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -F 'completion, Share recovery, progress, and Bluetooth fallback copy stays rider-first' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+      - name: Commit product checkpoint and remove construction files
+        env:
+          TARGET_BRANCH: product/es80-v14-human-first-final-gpt56
+        run: |
+          rm .github/workflows/es80-human-first-final-gpt56.yml
+          rm scripts/ci/es80_human_first_final_gpt56.py
+          git config user.name "nembra-gpt56-worker"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraApp.swift \
+                  NembraApp/Features/Research/ES80CaptureShellView.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureStationaryPreflightRiderLanguageAcceptanceTests.swift \
+                  .github/workflows/es80-human-first-final-gpt56.yml \
+                  scripts/ci/es80_human_first_final_gpt56.py
+          git commit -m "[Capture product v14] Finish human-first field language"
+          git push origin "HEAD:${TARGET_BRANCH}"
