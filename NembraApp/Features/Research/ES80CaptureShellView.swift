@@ -1,28 +1,29 @@
 @preconcurrency import CoreBluetooth
+import CoreTransferable
+import CryptoKit
 import Dispatch
 import Foundation
 import NembraBluetoothCapture
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Product-facing Nembra Capture shell for the first ES80 evidence workflow.
 ///
-/// This surface consumes the accepted public four-window CoreBluetooth producer directly:
-/// OFF1 -> ON1 -> OFF2 -> ON2. A single repeatable UUID is only correlated Bluetooth-target
-/// evidence. It is never presented as authenticated/permanent ES80 identity.
+/// One package-owned `PassiveBluetoothExperimentOneControllerSession` now spans the
+/// exact four-window OFF1 -> ON1 -> OFF2 -> ON2 producer, post-admission exact-target
+/// rediscovery, passive controller acquisition, trusted Ready -> Horizon finalization,
+/// immutable JSON, local integrity summary, and Share. The app never receives the
+/// admission token, mutable recorder, target authority, or generic controller.
 ///
-/// Critical authority boundary: the current package-owned `PassiveBluetoothExperimentOneRun`
-/// creates and owns its own four-window producer, and its recorder/final H-bounded seal remains
-/// intentionally internal. This app must not take an independently-created public correlation
-/// result and start a separate capture recorder as if those two evidence lives were one Experiment
-/// One authority. Therefore this shell can complete real correlation and exact read-only target
-/// reacquisition, but it deliberately does not expose Start Capture, Finish, or Share until the
-/// accepted controller composes the same package-issued Experiment One run end-to-end.
+/// A repeatable full CoreBluetooth UUID remains only a correlated Bluetooth target.
+/// No state in this view authenticates the physical scooter or assigns GATT/Tuya/
+/// telemetry semantics. The workflow is passive/read-only and the initial recipe is
+/// stationary.
 @MainActor
 struct ES80CaptureShellView: View {
     private enum Phase: Equatable {
         case bluetoothUnavailable(String)
-        case correlationUnavailable(String)
         case correlationReady(PassiveBluetoothPowerCycleObservationPhase)
         case correlationStarting(PassiveBluetoothPowerCycleObservationPhase)
         case correlationObserving(PassiveBluetoothPowerCycleObservationPhase)
@@ -33,22 +34,63 @@ struct ES80CaptureShellView: View {
         case rediscoveringTarget(UUID)
         case targetReacquired(UUID)
         case targetNotConnectable(UUID)
+        case connecting(UUID)
+        case passiveDiscovery(UUID)
+        case observationReady(UUID, retainedTransport: Bool)
+        case readyToFinish(UUID, retainedTransport: Bool)
+        case finalizing
+        case complete
         case failed(String)
     }
 
-    private static let requiredCorrelationWindowDuration: TimeInterval = 10
-    private static let requiredCorrelationWindowNanoseconds: UInt64 = 10_000_000_000
+    private struct ArtifactSummary: Sendable {
+        let sessionID: UUID
+        let byteCount: Int
+        let recordCount: Int
+        let valueRecordCount: Int
+        let continuityBreakCount: Int
+        let sha256: String
+    }
 
-    let controller: ForegroundCoreBluetoothCaptureController
+    private enum ArtifactAnalysis: Sendable {
+        case ready(ArtifactSummary)
+        case unavailable(sha256: String, reason: String)
+    }
+
+    private struct FinalizedCaptureArtifact: Sendable, Transferable {
+        let data: Data
+        let analysis: ArtifactAnalysis
+        let fileName: String
+
+        static var transferRepresentation: some TransferRepresentation {
+            FileRepresentation(exportedContentType: .json) { artifact in
+                let destination = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(artifact.fileName, isDirectory: false)
+                try artifact.data.write(to: destination, options: .atomic)
+                return SentTransferredFile(destination)
+            }
+        }
+    }
+
+    private static let correlationGuidanceDuration: TimeInterval = 10
+    private static let correlationGuidanceNanoseconds: UInt64 = 10_000_000_000
+
+    let session: PassiveBluetoothExperimentOneControllerSession
 
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     @State private var correlatedTargetIdentifier: UUID?
     @State private var rediscoveryRequested = false
-    @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
+    @State private var observedCorrelationScanBeganAtUptimeNanoseconds: UInt64?
     @State private var diagnosticMessage: String?
     @State private var lifecycleFailureMessage: String?
+    @State private var isFinalizing = false
+    @State private var finalizedArtifact: FinalizedCaptureArtifact?
+    @State private var showsArtifactDetails = false
+
+    private var correlationSession: PassiveBluetoothPowerCycleObservationSession {
+        session.powerCycleObservationSession
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
@@ -58,8 +100,12 @@ struct ES80CaptureShellView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     hero(for: currentPhase)
-                    physicalRunLock
-                    correlationProgress
+                    procedureBoundary
+
+                    if finalizedArtifact == nil {
+                        correlationProgress
+                    }
+
                     primaryContent(
                         for: currentPhase,
                         nowUptimeNanoseconds: nowUptimeNanoseconds
@@ -77,21 +123,23 @@ struct ES80CaptureShellView: View {
             }
             .background(Color.black.ignoresSafeArea())
             .onAppear {
-                prepareCorrelationSessionIfNeeded()
                 synchronizeIdleTimer(for: currentPhase)
-                synchronizeObservedScanClock(isScanning: correlationIsScanning)
+                synchronizeObservedCorrelationScanClock(isScanning: correlationIsScanning)
             }
             .onChange(of: currentPhase) { _, newPhase in
                 synchronizeIdleTimer(for: newPhase)
             }
             .onChange(of: correlationIsScanning) { _, isScanning in
-                synchronizeObservedScanClock(isScanning: isScanning)
+                synchronizeObservedCorrelationScanClock(isScanning: isScanning)
             }
         }
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            if finalizedArtifact == nil, session.hasTargetSession {
+                session.invalidateActiveCaptureForForegroundLoss()
+            }
         }
         .onChange(of: scenePhase) { _, newScenePhase in
             handleScenePhaseChange(newScenePhase)
@@ -107,7 +155,7 @@ struct ES80CaptureShellView: View {
                         .fill(.white.opacity(0.08))
                         .frame(width: 52, height: 52)
 
-                    Image(systemName: "wave.3.right.circle.fill")
+                    Image(systemName: phase == .complete ? "checkmark.seal.fill" : "wave.3.right.circle.fill")
                         .font(.system(size: 25, weight: .semibold))
                         .foregroundStyle(.white)
                 }
@@ -119,7 +167,7 @@ struct ES80CaptureShellView: View {
                         .tracking(1.4)
                         .foregroundStyle(.secondary)
 
-                    Text("Find the real scooter signal.")
+                    Text(heroTitle(for: phase))
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -147,20 +195,19 @@ struct ES80CaptureShellView: View {
         }
     }
 
-    private var physicalRunLock: some View {
+    private var procedureBoundary: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "lock.shield.fill")
+            Image(systemName: "shield.lefthalf.filled")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(.white)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("Physical Experiment One locked")
-                    .font(.headline)
+                Text("ES80-FINGERPRINT-v1")
+                    .font(.headline.monospaced())
                     .foregroundStyle(.white)
-                    .accessibilityIdentifier("es80.capture.physical-run-locked")
 
-                Text("This build can complete the real repeated Bluetooth correlation step. Passive capture remains locked until one package-owned Experiment One authority spans correlation, Ready, Horizon, immutable seal, and export. Nembra will not splice separate evidence lives just to make the workflow look complete.")
+                Text("Keep the scooter stationary for this first experiment. Nembra records software-observed Bluetooth evidence only; correlation is not physical authentication, and no control write is authorized by this workflow.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -169,13 +216,13 @@ struct ES80CaptureShellView: View {
         .padding(16)
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.procedure-boundary")
     }
 
     private var correlationProgress: some View {
-        let completed = correlationSession?.progress?.completedWindowCount
-            ?? correlationSession?.result?.windows.count
+        let completed = correlationSession.progress?.completedWindowCount
+            ?? correlationSession.result?.windows.count
             ?? 0
-        let current = correlationSession?.progress?.phase.rawValue
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -191,7 +238,7 @@ struct ES80CaptureShellView: View {
             HStack(spacing: 6) {
                 ForEach(0..<4, id: \.self) { index in
                     Capsule(style: .continuous)
-                        .fill(correlationSegmentFill(index: index, completed: completed, current: current))
+                        .fill(index < completed ? .white : .white.opacity(0.12))
                         .frame(height: 5)
                 }
             }
@@ -233,21 +280,6 @@ struct ES80CaptureShellView: View {
                 identifier: "es80.capture.begin-window"
             ) {}
 
-        case let .correlationUnavailable(message):
-            statePanel(
-                eyebrow: "PREFLIGHT",
-                title: "Correlation producer unavailable",
-                message: message,
-                symbol: "exclamationmark.triangle"
-            )
-            primaryButton(
-                "Retry setup",
-                systemImage: "arrow.clockwise",
-                identifier: "es80.capture.retry-correlation"
-            ) {
-                restartCorrelation()
-            }
-
         case let .correlationReady(windowPhase):
             correlationReadyPanel(windowPhase)
             primaryButton(
@@ -261,14 +293,11 @@ struct ES80CaptureShellView: View {
         case let .correlationStarting(windowPhase):
             statePanel(
                 eyebrow: "\(phaseShortName(windowPhase)) / STARTING",
-                title: "Opening a fresh scan window",
-                message: "Nembra is waiting for this window's new CoreBluetooth manager to report powered-on and active scanning. The evidence clock has not started yet.",
+                title: "Opening a fresh observation window",
+                message: "Nembra is waiting for the package-owned window producer to establish Bluetooth and scan readiness. The evidence clock has not started yet.",
                 symbol: "dot.radiowaves.left.and.right"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            progressIndicator()
 
         case let .correlationObserving(windowPhase):
             correlationObservingPanel(
@@ -288,7 +317,7 @@ struct ES80CaptureShellView: View {
                 completeCorrelationWindow(windowPhase)
             }
 
-            Text("The countdown is display guidance only. The producer accepts the window only from its own monotonic receipt boundary; tapping early is not an evidence shortcut.")
+            Text("The countdown is display guidance only. The producer accepts a window from its own monotonic receipt boundary; tapping early cannot manufacture duration evidence.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -296,47 +325,29 @@ struct ES80CaptureShellView: View {
         case let .correlationFailed(message):
             statePanel(
                 eyebrow: "CORRELATION STOPPED",
-                title: "Restart from OFF 1",
+                title: "Start a fresh evidence life",
                 message: message,
                 symbol: "arrow.counterclockwise.circle"
             )
-            primaryButton(
-                "Restart correlation",
-                systemImage: "arrow.counterclockwise",
-                identifier: "es80.capture.restart-correlation"
-            ) {
-                restartCorrelation()
-            }
+            restartButton()
 
         case .noRepeatableTarget:
             statePanel(
                 eyebrow: "NO UNIQUE TARGET",
-                title: "No scooter signal repeated twice",
-                message: "Nembra found no selectable full Bluetooth identifier that was absent in both OFF windows and repeated in both ON windows. Do not guess from name or signal strength.",
+                title: "No signal repeated twice",
+                message: "No selectable full Bluetooth identifier was absent in both OFF windows and repeated in both ON windows. Nembra will not guess from name, RSSI, services, or a short ID.",
                 symbol: "questionmark.circle"
             )
-            primaryButton(
-                "Repeat all four windows",
-                systemImage: "arrow.counterclockwise",
-                identifier: "es80.capture.restart-correlation"
-            ) {
-                restartCorrelation()
-            }
+            restartButton()
 
         case let .ambiguousTargets(count):
             statePanel(
                 eyebrow: "AMBIGUOUS TARGET",
                 title: "\(count) signals followed the same pattern",
-                message: "More than one selectable full Bluetooth identifier repeated the OFF / ON pattern. Nembra refuses to break the tie with name, RSSI, services, or short IDs.",
+                message: "More than one selectable full Bluetooth identifier repeated the OFF / ON pattern. Nembra refuses to break the tie with weak evidence.",
                 symbol: "point.3.filled.connected.trianglepath.dotted"
             )
-            primaryButton(
-                "Repeat all four windows",
-                systemImage: "arrow.counterclockwise",
-                identifier: "es80.capture.restart-correlation"
-            ) {
-                restartCorrelation()
-            }
+            restartButton()
 
         case let .correlatedTarget(identifier):
             correlatedTargetPanel(identifier)
@@ -352,15 +363,11 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "TARGET CONFIRMED",
                 title: "Reacquiring the exact signal",
-                message: "Nembra is using the read-only capture scanner to look for the exact full identifier that passed both OFF / ON cycles. Keep the scooter in the ON state from the final window.",
+                message: "The same package-owned Experiment One run issued its capture admission before this fresh scan epoch. Keep the scooter ON and stationary.",
                 symbol: "scope"
             )
             targetIdentifierStrip(identifier)
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
+            progressIndicator()
             secondaryButton(
                 "Restart rediscovery",
                 systemImage: "arrow.clockwise",
@@ -373,21 +380,27 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "CORRELATED TARGET",
                 title: "Exact signal reacquired",
-                message: "The scanner rediscovered the same full CoreBluetooth identifier that repeated across both cycles. This is strong local correlation evidence, not permanent hardware authentication.",
+                message: "The scanner received the same full CoreBluetooth identifier in the fresh post-admission epoch. This is local correlation evidence, not permanent hardware authentication.",
                 symbol: "checkmark.circle"
             )
             targetIdentifierStrip(identifier)
-            captureBindingLock
+            primaryButton(
+                "Begin passive discovery",
+                systemImage: "antenna.radiowaves.left.and.right",
+                identifier: "es80.capture.start"
+            ) {
+                connectReacquiredTarget()
+            }
 
         case let .targetNotConnectable(identifier):
             statePanel(
                 eyebrow: "TARGET REACQUIRED",
                 title: "Signal is not connectable",
-                message: "The exact correlated identifier is visible, but CoreBluetooth explicitly reports it as non-connectable. Nembra will not promote this observation into a target capture session.",
+                message: "CoreBluetooth reports the exact correlated identifier as non-connectable. Nembra will not promote it into a target capture session.",
                 symbol: "link.badge.plus"
             )
             targetIdentifierStrip(identifier)
-            primaryButton(
+            secondaryButton(
                 "Scan again",
                 systemImage: "arrow.clockwise",
                 identifier: "es80.capture.restart-rediscovery"
@@ -395,53 +408,96 @@ struct ES80CaptureShellView: View {
                 startExactTargetRediscovery(identifier)
             }
 
+        case let .connecting(identifier):
+            statePanel(
+                eyebrow: "PASSIVE DISCOVERY",
+                title: "Opening the target session",
+                message: "Nembra is connecting the run-owned recorder to the exact correlated target. No application characteristic write is performed.",
+                symbol: "link"
+            )
+            targetIdentifierStrip(identifier)
+            progressIndicator()
+
+        case let .passiveDiscovery(identifier):
+            statePanel(
+                eyebrow: "PASSIVE DISCOVERY",
+                title: "Building the finite evidence map",
+                message: "Keep Nembra foreground, the screen on, and the scooter stationary. Services, characteristics, descriptors, subscriptions, and raw values remain uninterpreted evidence.",
+                symbol: "waveform.path.ecg"
+            )
+            targetIdentifierStrip(identifier)
+            progressIndicator()
+            Text("Do not interact with the phone while the capture is armed for any later motion experiment. This first fingerprint recipe remains stationary.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+        case let .observationReady(identifier, retainedTransport):
+            statePanel(
+                eyebrow: retainedTransport ? "EVIDENCE RETAINED" : "OBSERVATION READY",
+                title: retainedTransport ? "Finite evidence is retained" : "Observation horizon is maturing",
+                message: retainedTransport
+                    ? "The finite acquisition is complete and retained after transport ended. Nembra will not reconnect inside this evidence life. Finish unlocks only when the trusted monotonic Ready-to-Horizon gate permits it."
+                    : "Finite acquisition is complete. Keep Nembra foreground and stationary; Finish remains unavailable until the package-owned monotonic Ready-to-Horizon duration gate becomes eligible.",
+                symbol: retainedTransport ? "archivebox" : "hourglass"
+            )
+            targetIdentifierStrip(identifier)
+            progressIndicator()
+            Text("There is intentionally no visual countdown claiming evidence authority. The UI polls only the accepted package gate.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+        case let .readyToFinish(identifier, retainedTransport):
+            statePanel(
+                eyebrow: retainedTransport ? "EVIDENCE RETAINED / READY" : "HORIZON READY",
+                title: "Ready to seal the capture",
+                message: "The finite target evidence is complete and the trusted monotonic minimum duration gate now permits one terminal Horizon. Confirm you are safely stopped before interacting.",
+                symbol: "checkmark.seal"
+            )
+            targetIdentifierStrip(identifier)
+            primaryButton(
+                "I’m safely stopped — Finish Capture",
+                systemImage: "seal.fill",
+                identifier: "es80.capture.finish"
+            ) {
+                finalizeCapture()
+            }
+
+        case .finalizing:
+            statePanel(
+                eyebrow: "SEALING",
+                title: "Freezing the immutable artifact",
+                message: "Nembra is draining the accepted FIFO prefix, recording the terminal Horizon, validating authority, and materializing exact JSON. Post-H callbacks cannot become evidence for this frozen artifact.",
+                symbol: "lock.doc"
+            )
+            progressIndicator()
+
+        case .complete:
+            captureCompletePanel()
+
         case let .failed(message):
             statePanel(
-                eyebrow: "CORRELATION STOPPED",
+                eyebrow: "CAPTURE STOPPED",
                 title: "Evidence failed closed",
                 message: message,
                 symbol: "exclamationmark.triangle"
             )
-            primaryButton(
-                "Restart from OFF 1",
-                systemImage: "arrow.counterclockwise",
-                identifier: "es80.capture.restart-correlation"
-            ) {
-                restartCorrelation()
+            if finalizedArtifact == nil {
+                restartButton()
             }
         }
     }
 
-    private var captureBindingLock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-                Text("Passive capture binding not available in this build")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-            }
-
-            Text("Correlation is complete and the exact target was reacquired, but starting the current standalone capture controller would mint a different evidence authority. Nembra stops here until the accepted controller can continue this same package-owned Experiment One run through Ready, Horizon, seal, and export.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("es80.capture.binding-locked")
-    }
-
-    private func correlationReadyPanel(_ windowPhase: PassiveBluetoothPowerCycleObservationPhase) -> some View {
-        let powerState = windowPhase.operatorExpectedPowerOn ? "ON" : "OFF"
-        let cycle = (windowPhase == .firstPoweredOff || windowPhase == .firstPoweredOn) ? 1 : 2
-
-        return statePanel(
-            eyebrow: "\(phaseShortName(windowPhase)) / CYCLE \(cycle)",
-            title: "Set the scooter \(powerState)",
-            message: "Physically place the scooter in the expected \(powerState) state, then begin this bounded observation window. Nembra records your intended procedure state; it cannot attest that the scooter actually changed power.",
+    private func correlationReadyPanel(
+        _ windowPhase: PassiveBluetoothPowerCycleObservationPhase
+    ) -> some View {
+        statePanel(
+            eyebrow: phaseShortName(windowPhase),
+            title: windowPhase.operatorExpectedPowerOn ? "Turn the scooter ON" : "Turn the scooter OFF",
+            message: windowPhase.operatorExpectedPowerOn
+                ? "Set the scooter to ON, keep it stationary, then begin this bounded observation window."
+                : "Set the scooter to OFF, keep the phone Bluetooth on, then begin this bounded observation window.",
             symbol: windowPhase.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle"
         )
     }
@@ -450,51 +506,30 @@ struct ES80CaptureShellView: View {
         _ windowPhase: PassiveBluetoothPowerCycleObservationPhase,
         nowUptimeNanoseconds: UInt64
     ) -> some View {
-        let expectedState = windowPhase.operatorExpectedPowerOn ? "ON" : "OFF"
-        let candidates = correlationSession?.progress?.currentObservedCandidateCount ?? 0
-        let remaining = correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: nowUptimeNanoseconds)
-
-        return VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    Circle()
-                        .stroke(.white.opacity(0.15), lineWidth: 7)
-                        .frame(width: 62, height: 62)
-
-                    Text(remaining == 0 ? "OK" : "\(remaining)")
-                        .font(.headline.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("OBSERVING \(phaseShortName(windowPhase))")
-                        .font(.caption.monospaced().weight(.bold))
-                        .foregroundStyle(.secondary)
-
-                    Text("Keep the scooter \(expectedState)")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-            }
-
-            Divider().overlay(.white.opacity(0.12))
-
+        let remaining = correlationGuidanceRemainingSeconds(
+            nowUptimeNanoseconds: nowUptimeNanoseconds
+        )
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                metric("Candidates", value: "\(candidates)")
+                Text("\(phaseShortName(windowPhase)) / OBSERVING")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
                 Spacer()
-                metric("Evidence", value: remaining == 0 ? "Window eligible" : "Collecting")
+                Text(remaining == 0 ? "MINIMUM MET" : "\(remaining)s")
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.white)
             }
 
-            Text("Candidate absence/presence here is callback evidence inside this bounded software window. It is not proof that the radio heard every nearby device.")
-                .font(.subheadline)
+            Text(windowPhase.operatorExpectedPowerOn ? "Hold the scooter ON" : "Hold the scooter OFF")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text("Do not change the requested power state until the producer accepts this window. Names, RSSI, and services do not break correlation ties.")
+                .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Observing \(phaseShortName(windowPhase)). Keep the scooter \(expectedState). \(candidates) Bluetooth candidates observed. \(remaining == 0 ? "Minimum display guidance complete." : "About \(remaining) seconds of display guidance remaining.")")
+        .padding(.vertical, 4)
     }
 
     private func correlatedTargetPanel(_ identifier: UUID) -> some View {
@@ -522,13 +557,96 @@ struct ES80CaptureShellView: View {
 
             targetIdentifierStrip(identifier)
 
-            Text("This full CoreBluetooth identifier was selectable in both ON windows and absent from both OFF catalogs under one package-issued observation series. Treat it as a correlated Bluetooth target only.")
+            Text("This full CoreBluetooth identifier was selectable in both ON windows and absent from both OFF catalogs under one package-owned observation series. Treat it only as a correlated Bluetooth target.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func captureCompletePanel() -> some View {
+        if let finalizedArtifact {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CAPTURE COMPLETE")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+
+                    switch finalizedArtifact.analysis {
+                    case .ready:
+                        Text("Ready for analysis")
+                            .font(.system(.title, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+                    case .unavailable:
+                        Text("Artifact sealed")
+                            .font(.system(.title, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    Text(completionMessage(for: finalizedArtifact.analysis))
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                ShareLink(item: finalizedArtifact) {
+                    Label("SHARE CAPTURE", systemImage: "square.and.arrow.up.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 56)
+                        .foregroundStyle(.black)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("es80.capture.share")
+
+                secondaryButton(
+                    showsArtifactDetails ? "Hide details" : "VIEW DETAILS",
+                    systemImage: showsArtifactDetails ? "chevron.up" : "info.circle",
+                    identifier: "es80.capture.view-details"
+                ) {
+                    showsArtifactDetails.toggle()
+                }
+
+                if showsArtifactDetails {
+                    artifactDetails(finalizedArtifact)
+                }
+            }
+            .padding(18)
+            .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+    }
+
+    private func artifactDetails(_ artifact: FinalizedCaptureArtifact) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Divider().overlay(.white.opacity(0.12))
+
+            switch artifact.analysis {
+            case let .ready(summary):
+                metric("Session", value: shortIdentifier(summary.sessionID))
+                metric("Artifact bytes", value: summary.byteCount.formatted())
+                metric("Recorded events", value: summary.recordCount.formatted())
+                metric("Raw value records", value: summary.valueRecordCount.formatted())
+                metric("Continuity breaks", value: summary.continuityBreakCount.formatted())
+                metric("SHA-256", value: String(summary.sha256.prefix(16)) + "…")
+            case let .unavailable(sha256, reason):
+                metric("Artifact bytes", value: artifact.data.count.formatted())
+                metric("SHA-256", value: String(sha256.prefix(16)) + "…")
+                Text(reason)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("These are exact-file and recorded-event facts only. They do not identify Tuya fields, prove RF completeness, or verify battery/current/power/speed semantics.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityIdentifier("es80.capture.artifact-details")
     }
 
     private func targetIdentifierStrip(_ identifier: UUID) -> some View {
@@ -559,6 +677,7 @@ struct ES80CaptureShellView: View {
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.white)
+                .textSelection(.enabled)
         }
     }
 
@@ -607,6 +726,14 @@ struct ES80CaptureShellView: View {
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    private func progressIndicator() -> some View {
+        ProgressView()
+            .tint(.white)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("Working")
+    }
+
     private func primaryButton(
         _ title: String,
         systemImage: String,
@@ -648,20 +775,67 @@ struct ES80CaptureShellView: View {
         .accessibilityIdentifier(identifier)
     }
 
+    private func restartButton() -> some View {
+        primaryButton(
+            "Restart from OFF 1",
+            systemImage: "arrow.counterclockwise",
+            identifier: "es80.capture.restart-correlation"
+        ) {
+            restartExperimentOne()
+        }
+    }
+
     private var phase: Phase {
+        if finalizedArtifact != nil {
+            return .complete
+        }
+        if isFinalizing {
+            return .finalizing
+        }
         if let lifecycleFailureMessage {
             return .failed(lifecycleFailureMessage)
         }
-        if controller.hasTargetSession {
-            return .failed("This app slice does not authorize a standalone target capture session because it would not share the correlation producer's Experiment One authority. Relaunch the research build.")
+        if session.captureFailed {
+            return .failed(
+                session.lastDiagnostic
+                    ?? "The package-owned Experiment One controller failed closed. Start a fresh evidence life."
+            )
+        }
+
+        if session.hasTargetSession {
+            let identifier = correlatedTargetIdentifier
+                ?? selectedConnectionIdentifier
+                ?? UUID()
+
+            switch session.connectionPhase {
+            case let .connecting(connectedIdentifier):
+                return .connecting(connectedIdentifier)
+            case let .connected(connectedIdentifier):
+                if session.hasCompleteTargetEvidence {
+                    return session.canFinalizeObservationHorizon
+                        ? .readyToFinish(connectedIdentifier, retainedTransport: false)
+                        : .observationReady(connectedIdentifier, retainedTransport: false)
+                }
+                return .passiveDiscovery(connectedIdentifier)
+            case .idle:
+                if session.hasCompleteTargetEvidence {
+                    return session.canFinalizeObservationHorizon
+                        ? .readyToFinish(identifier, retainedTransport: true)
+                        : .observationReady(identifier, retainedTransport: true)
+                }
+                if session.isSelectedTargetAwaitingTerminalCallback {
+                    return .failed("The target transport ended before finite evidence became ready. Nembra is preserving the terminal callback quarantine; start a fresh Experiment One after it resolves or relaunch if it never resolves.")
+                }
+                return .failed("The target session ended before finite evidence became ready. Nembra will not reconnect inside this evidence life.")
+            }
         }
 
         if let identifier = correlatedTargetIdentifier {
-            if controller.bluetoothState != .poweredOn {
+            if session.bluetoothState != .poweredOn {
                 return .bluetoothUnavailable(bluetoothUnavailableMessage)
             }
             if rediscoveryRequested,
-               let candidate = controller.discoveredPeripherals.first(where: { $0.id == identifier }) {
+               let candidate = session.discoveredPeripherals.first(where: { $0.id == identifier }) {
                 return candidate.isConnectable == false
                     ? .targetNotConnectable(identifier)
                     : .targetReacquired(identifier)
@@ -669,12 +843,12 @@ struct ES80CaptureShellView: View {
             return .rediscoveringTarget(identifier)
         }
 
-        if let result = correlationSession?.result {
+        if let result = correlationSession.result {
             switch result.correlation.disposition {
             case .invalidObservationAuthority:
-                return .correlationFailed("The four windows did not share one package-issued observation authority. Restart from OFF 1.")
+                return .correlationFailed("The four windows did not share one package-owned observation authority. Restart from OFF 1.")
             case .invalidObservationWindowOrder:
-                return .correlationFailed("The four windows did not preserve the required OFF 1, ON 1, OFF 2, ON 2 ordering. Restart from OFF 1.")
+                return .correlationFailed("The four windows did not preserve OFF 1, ON 1, OFF 2, ON 2 ordering. Restart from OFF 1.")
             case .noRepeatableCandidate:
                 return .noRepeatableTarget
             case let .ambiguousRepeatableCandidates(identifiers):
@@ -684,14 +858,11 @@ struct ES80CaptureShellView: View {
             }
         }
 
-        guard controller.bluetoothState == .poweredOn else {
+        guard session.bluetoothState == .poweredOn else {
             return .bluetoothUnavailable(bluetoothUnavailableMessage)
         }
-        guard let correlationSession else {
-            return .correlationUnavailable("Nembra could not initialize the bounded four-window observation producer.")
-        }
         guard let progress = correlationSession.progress else {
-            return .correlationUnavailable("The correlation producer has no remaining window and no final result. Restart the workflow.")
+            return .correlationFailed("The observation producer has no remaining window and no final result. Start a fresh evidence life.")
         }
         if progress.isSeriesInvalidated {
             return .correlationFailed("A known Bluetooth or scan-liveness gap invalidated this observation series. Completed windows cannot be reused across the gap.")
@@ -705,30 +876,31 @@ struct ES80CaptureShellView: View {
         return .correlationReady(progress.phase)
     }
 
-    private var correlationIsScanning: Bool {
-        correlationSession?.progress?.isScanning == true
-    }
-
-    private var correlationEvidenceIsLive: Bool {
-        guard let progress = correlationSession?.progress else { return false }
-        return progress.isAwaitingBluetoothPower || progress.isAwaitingScanReadiness || progress.isScanning
-    }
-
-    private func prepareCorrelationSessionIfNeeded() {
-        guard correlationSession == nil else { return }
-        do {
-            correlationSession = try PassiveBluetoothPowerCycleObservationSession(
-                minimumWindowDuration: Self.requiredCorrelationWindowDuration
-            )
-        } catch {
-            diagnosticMessage = "Correlation setup failed: \(String(describing: error))"
+    private var selectedConnectionIdentifier: UUID? {
+        switch session.connectionPhase {
+        case let .connecting(identifier), let .connected(identifier):
+            identifier
+        case .idle:
+            nil
         }
     }
 
-    private func beginCorrelationWindow(_ expectedPhase: PassiveBluetoothPowerCycleObservationPhase) {
+    private var correlationIsScanning: Bool {
+        correlationSession.progress?.isScanning == true
+    }
+
+    private var correlationEvidenceIsLive: Bool {
+        guard let progress = correlationSession.progress else { return false }
+        return progress.isAwaitingBluetoothPower
+            || progress.isAwaitingScanReadiness
+            || progress.isScanning
+    }
+
+    private func beginCorrelationWindow(
+        _ expectedPhase: PassiveBluetoothPowerCycleObservationPhase
+    ) {
         diagnosticMessage = nil
-        guard let correlationSession,
-              correlationSession.progress?.phase == expectedPhase else {
+        guard correlationSession.progress?.phase == expectedPhase else {
             diagnosticMessage = "The correlation series changed before this window could start. Restart from OFF 1."
             return
         }
@@ -740,10 +912,11 @@ struct ES80CaptureShellView: View {
         }
     }
 
-    private func completeCorrelationWindow(_ expectedPhase: PassiveBluetoothPowerCycleObservationPhase) {
+    private func completeCorrelationWindow(
+        _ expectedPhase: PassiveBluetoothPowerCycleObservationPhase
+    ) {
         diagnosticMessage = nil
-        guard let correlationSession,
-              correlationSession.progress?.phase == expectedPhase,
+        guard correlationSession.progress?.phase == expectedPhase,
               correlationSession.progress?.isScanning == true else {
             diagnosticMessage = "This observation window is not currently live."
             return
@@ -751,33 +924,25 @@ struct ES80CaptureShellView: View {
 
         do {
             _ = try correlationSession.finishCurrentWindow()
-            observedScanBeganAtUptimeNanoseconds = nil
+            observedCorrelationScanBeganAtUptimeNanoseconds = nil
         } catch {
             diagnosticMessage = correlationErrorMessage(error)
         }
     }
 
-    private func restartCorrelation() {
-        guard !controller.hasTargetSession else {
-            diagnosticMessage = "A target capture session already exists. Relaunch Nembra Capture instead of reusing this controller for a new Experiment One attempt."
-            return
-        }
-
-        correlationSession?.abandonCurrentWindow()
-        controller.stopScanning()
-        correlatedTargetIdentifier = nil
-        rediscoveryRequested = false
-        observedScanBeganAtUptimeNanoseconds = nil
-        lifecycleFailureMessage = nil
+    private func restartExperimentOne() {
         diagnosticMessage = nil
-
         do {
-            correlationSession = try PassiveBluetoothPowerCycleObservationSession(
-                minimumWindowDuration: Self.requiredCorrelationWindowDuration
-            )
+            try session.restartExperimentOne()
+            correlatedTargetIdentifier = nil
+            rediscoveryRequested = false
+            observedCorrelationScanBeganAtUptimeNanoseconds = nil
+            lifecycleFailureMessage = nil
+            isFinalizing = false
+            finalizedArtifact = nil
+            showsArtifactDetails = false
         } catch {
-            correlationSession = nil
-            diagnosticMessage = "Correlation setup failed: \(String(describing: error))"
+            diagnosticMessage = "A fresh Experiment One could not start: \(String(describing: error))"
         }
     }
 
@@ -788,68 +953,172 @@ struct ES80CaptureShellView: View {
 
     private func startExactTargetRediscovery(_ identifier: UUID) {
         diagnosticMessage = nil
-        controller.stopScanning()
+        session.stopExactTargetRediscovery()
         rediscoveryRequested = false
 
         do {
-            try controller.startScanning(captureAdvertisementCadence: false)
+            try session.prepareCaptureAndStartExactTargetRediscovery()
             rediscoveryRequested = true
         } catch {
             diagnosticMessage = "Exact-target rediscovery could not start: \(String(describing: error))"
         }
     }
 
+    private func connectReacquiredTarget() {
+        diagnosticMessage = nil
+        do {
+            try session.connectReacquiredTarget()
+            rediscoveryRequested = false
+        } catch {
+            lifecycleFailureMessage = "The run-owned target admission could not become a passive capture session: \(String(describing: error)). Start a fresh Experiment One; this admission is not replayable."
+        }
+    }
+
+    private func finalizeCapture() {
+        guard !isFinalizing,
+              finalizedArtifact == nil,
+              session.canFinalizeObservationHorizon else {
+            return
+        }
+
+        isFinalizing = true
+        diagnosticMessage = nil
+
+        Task { @MainActor in
+            do {
+                let data = try await session.encodedFinalizedObservationHorizonJSON(
+                    prettyPrinted: true
+                )
+                let artifact = await Self.prepareFinalizedArtifact(data)
+                finalizedArtifact = artifact
+
+                do {
+                    try session.teardownActiveConnectionAfterFinalization()
+                } catch {
+                    diagnosticMessage = "The artifact is sealed and shareable, but finalized transport teardown did not complete cleanly. Relaunch before any later capture: \(String(describing: error))"
+                }
+            } catch {
+                lifecycleFailureMessage = "Nembra could not seal the accepted observation Horizon: \(String(describing: error)). No completion claim or Share action was created."
+            }
+            isFinalizing = false
+        }
+    }
+
+    private nonisolated static func prepareFinalizedArtifact(
+        _ data: Data
+    ) async -> FinalizedCaptureArtifact {
+        await Task.detached(priority: .utility) {
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+
+            do {
+                let capture = try PassiveBluetoothCaptureJSON.decode(data)
+                let valueCount = capture.records.reduce(into: 0) { count, record in
+                    if case .value = record.event { count += 1 }
+                }
+                let continuityBreakCount = capture.records.reduce(into: 0) { count, record in
+                    if record.event.breaksByteContinuity { count += 1 }
+                }
+                let summary = ArtifactSummary(
+                    sessionID: capture.id,
+                    byteCount: data.count,
+                    recordCount: capture.records.count,
+                    valueRecordCount: valueCount,
+                    continuityBreakCount: continuityBreakCount,
+                    sha256: digest
+                )
+                return FinalizedCaptureArtifact(
+                    data: data,
+                    analysis: .ready(summary),
+                    fileName: "Nembra-ES80-Capture-\(capture.id.uuidString).json"
+                )
+            } catch {
+                return FinalizedCaptureArtifact(
+                    data: data,
+                    analysis: .unavailable(
+                        sha256: digest,
+                        reason: "The immutable bytes were preserved, but Nembra could not decode them with this build's capture schema: \(String(describing: error))"
+                    ),
+                    fileName: "Nembra-ES80-Capture-\(String(digest.prefix(12))).json"
+                )
+            }
+        }.value
+    }
+
     private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
         if newScenePhase == .active {
             if let identifier = correlatedTargetIdentifier,
+               !session.hasTargetSession,
                !rediscoveryRequested,
-               lifecycleFailureMessage == nil {
+               lifecycleFailureMessage == nil,
+               finalizedArtifact == nil {
                 startExactTargetRediscovery(identifier)
             }
             return
         }
 
+        if finalizedArtifact != nil {
+            return
+        }
+
         if correlationEvidenceIsLive {
-            correlationSession?.abandonCurrentWindow()
-            lifecycleFailureMessage = "Nembra left the active foreground while a bounded correlation window was live. This four-window series is no longer eligible for Experiment One correlation evidence."
+            correlationSession.abandonCurrentWindow()
+            lifecycleFailureMessage = "Nembra left the active foreground while a bounded correlation window was live. This four-window series is no longer eligible for Experiment One evidence."
+            diagnosticMessage = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            return
+        }
+
+        if session.hasTargetSession {
+            session.invalidateActiveCaptureForForegroundLoss()
+            lifecycleFailureMessage = "Nembra left the active foreground before immutable artifact freeze. This durable capture is permanently invalid for Experiment One evidence; start a fresh run."
             diagnosticMessage = nil
             UIApplication.shared.isIdleTimerDisabled = false
             return
         }
 
         if rediscoveryRequested {
-            controller.stopScanning()
+            session.stopExactTargetRediscovery()
             rediscoveryRequested = false
         }
     }
 
     private func synchronizeIdleTimer(for phase: Phase) {
         switch phase {
-        case .correlationStarting, .correlationObserving, .rediscoveringTarget, .targetReacquired:
+        case .correlationStarting,
+             .correlationObserving,
+             .rediscoveringTarget,
+             .targetReacquired,
+             .connecting,
+             .passiveDiscovery,
+             .observationReady,
+             .readyToFinish,
+             .finalizing:
             UIApplication.shared.isIdleTimerDisabled = true
         default:
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
 
-    private func synchronizeObservedScanClock(isScanning: Bool) {
+    private func synchronizeObservedCorrelationScanClock(isScanning: Bool) {
         if isScanning {
-            if observedScanBeganAtUptimeNanoseconds == nil {
-                observedScanBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            if observedCorrelationScanBeganAtUptimeNanoseconds == nil {
+                observedCorrelationScanBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
             }
         } else {
-            observedScanBeganAtUptimeNanoseconds = nil
+            observedCorrelationScanBeganAtUptimeNanoseconds = nil
         }
     }
 
-    private func correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: UInt64) -> Int {
-        guard let beganAt = observedScanBeganAtUptimeNanoseconds,
+    private func correlationGuidanceRemainingSeconds(
+        nowUptimeNanoseconds: UInt64
+    ) -> Int {
+        guard let beganAt = observedCorrelationScanBeganAtUptimeNanoseconds,
               nowUptimeNanoseconds >= beganAt else {
-            return Int(Self.requiredCorrelationWindowDuration)
+            return Int(Self.correlationGuidanceDuration)
         }
         let elapsed = nowUptimeNanoseconds - beganAt
-        guard elapsed < Self.requiredCorrelationWindowNanoseconds else { return 0 }
-        let remaining = Self.requiredCorrelationWindowNanoseconds - elapsed
+        guard elapsed < Self.correlationGuidanceNanoseconds else { return 0 }
+        let remaining = Self.correlationGuidanceNanoseconds - elapsed
         return Int((remaining + 999_999_999) / 1_000_000_000)
     }
 
@@ -882,12 +1151,12 @@ struct ES80CaptureShellView: View {
         case .nonMonotonicWindowClock:
             return "The monotonic receipt clock could not establish a valid window. Restart from OFF 1."
         case .windowSequenceExhausted:
-            return "The local observation-window sequence was exhausted. Restart the research build."
+            return "The observation-window sequence was exhausted. Start a fresh Experiment One."
         }
     }
 
     private var bluetoothUnavailableMessage: String {
-        switch controller.bluetoothState {
+        switch session.bluetoothState {
         case .unknown:
             "Waiting for CoreBluetooth to report its state."
         case .resetting:
@@ -897,25 +1166,17 @@ struct ES80CaptureShellView: View {
         case .unauthorized:
             "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting correlation."
         case .poweredOff:
-            "Turn Bluetooth on before beginning the first OFF observation window. The scooter's OFF state and the phone's Bluetooth state are separate requirements."
+            "Turn phone Bluetooth on before beginning the first OFF observation window. Scooter power state and phone Bluetooth state are separate requirements."
         case .poweredOn:
             "Bluetooth is ready."
         @unknown default:
-            "CoreBluetooth reported an unknown future state. Capture remains unavailable."
+            "CoreBluetooth reported an unknown state."
         }
     }
 
-    private func correlationSegmentFill(index: Int, completed: Int, current: Int?) -> Color {
-        if index < completed {
-            return .white
-        }
-        if current == index {
-            return .white.opacity(0.42)
-        }
-        return .white.opacity(0.12)
-    }
-
-    private func phaseShortName(_ phase: PassiveBluetoothPowerCycleObservationPhase) -> String {
+    private func phaseShortName(
+        _ phase: PassiveBluetoothPowerCycleObservationPhase
+    ) -> String {
         switch phase {
         case .firstPoweredOff: "OFF 1"
         case .firstPoweredOn: "ON 1"
@@ -928,49 +1189,73 @@ struct ES80CaptureShellView: View {
         String(identifier.uuidString.prefix(8))
     }
 
+    private func heroTitle(for phase: Phase) -> String {
+        switch phase {
+        case .complete:
+            "Capture sealed."
+        case .finalizing:
+            "Seal the evidence."
+        case .observationReady, .readyToFinish, .passiveDiscovery, .connecting:
+            "Observe the machine."
+        case .correlatedTarget, .rediscoveringTarget, .targetReacquired, .targetNotConnectable:
+            "Signal locked."
+        default:
+            "Find the real scooter signal."
+        }
+    }
+
     private func statusTitle(for phase: Phase) -> String {
         switch phase {
-        case .bluetoothUnavailable, .correlationUnavailable: "Preflight required"
-        case let .correlationReady(window): "Ready for \(phaseShortName(window))"
-        case let .correlationStarting(window): "Starting \(phaseShortName(window))"
-        case let .correlationObserving(window): "Observing \(phaseShortName(window))"
-        case .correlationFailed, .noRepeatableTarget, .ambiguousTargets: "Correlation needs a fresh run"
-        case .correlatedTarget: "Correlated Bluetooth target found"
-        case .rediscoveringTarget: "Reacquiring exact target"
-        case .targetReacquired: "Target reacquired — capture binding locked"
-        case .targetNotConnectable: "Correlated target unavailable"
-        case .failed: "Correlation failed closed"
+        case .bluetoothUnavailable: "Preflight blocked"
+        case .correlationReady: "Ready for next window"
+        case .correlationStarting: "Opening observation window"
+        case .correlationObserving: "Correlation live"
+        case .correlationFailed, .failed: "Evidence stopped"
+        case .noRepeatableTarget: "No unique target"
+        case .ambiguousTargets: "Target ambiguous"
+        case .correlatedTarget: "Correlated signal found"
+        case .rediscoveringTarget: "Exact-target rediscovery"
+        case .targetReacquired: "Exact signal reacquired"
+        case .targetNotConnectable: "Target not connectable"
+        case .connecting: "Opening passive target session"
+        case .passiveDiscovery: "Passive discovery live"
+        case .observationReady: "Observation ready"
+        case .readyToFinish: "Horizon eligible"
+        case .finalizing: "Sealing artifact"
+        case .complete: "Immutable artifact ready"
         }
     }
 
     private func statusSymbol(for phase: Phase) -> String {
         switch phase {
-        case .correlatedTarget, .targetReacquired:
+        case .complete, .readyToFinish, .correlatedTarget, .targetReacquired:
             "checkmark.circle.fill"
-        case .correlationObserving, .correlationStarting, .rediscoveringTarget:
-            "circle.dotted"
-        case .failed, .correlationFailed, .ambiguousTargets, .noRepeatableTarget, .targetNotConnectable:
+        case .bluetoothUnavailable, .correlationFailed, .failed, .targetNotConnectable:
             "exclamationmark.triangle.fill"
-        case .bluetoothUnavailable, .correlationUnavailable, .correlationReady:
+        case .noRepeatableTarget, .ambiguousTargets:
+            "questionmark.circle.fill"
+        case .finalizing, .correlationStarting, .correlationObserving, .rediscoveringTarget, .connecting, .passiveDiscovery, .observationReady:
+            "circle.dotted"
+        case .correlationReady:
             "circle.fill"
         }
     }
 
     private func statusColor(for phase: Phase) -> Color {
         switch phase {
-        case .correlatedTarget:
-            .green
-        case .failed, .correlationFailed:
-            .red
-        case .targetReacquired,
-             .ambiguousTargets,
-             .noRepeatableTarget,
-             .targetNotConnectable,
-             .bluetoothUnavailable,
-             .correlationUnavailable:
+        case .bluetoothUnavailable, .correlationFailed, .failed, .targetNotConnectable:
             .orange
-        case .correlationReady, .correlationStarting, .correlationObserving, .rediscoveringTarget:
-            .white.opacity(0.78)
+        default:
+            .white
+        }
+    }
+
+    private func completionMessage(for analysis: ArtifactAnalysis) -> String {
+        switch analysis {
+        case .ready:
+            "The exact H-bounded JSON decoded successfully with this build and is ready to share for offline protocol analysis."
+        case .unavailable:
+            "The H-bounded bytes are sealed and preserved, but this build could not complete its local schema check. Share the exact artifact for recovery analysis."
         }
     }
 }
