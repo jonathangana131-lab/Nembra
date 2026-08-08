@@ -1,5 +1,6 @@
 name: ES80 V14 Rider Copy Second Pass Runner
 
+# API-triggered after guarded cardinality correction.
 on:
   push:
     branches:
