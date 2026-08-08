@@ -1,0 +1,108 @@
+name: tmp-es80-abort-atomic-go2
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-flagship-recovery-atomic/gpt56-go2
+
+permissions:
+  contents: write
+
+jobs:
+  apply-production-fix:
+    if: "!contains(github.event.head_commit.message, '[tmp cleanup]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-flagship-recovery-atomic/gpt56-go2
+          fetch-depth: 0
+
+      - name: Apply exact failure-atomic publication repair
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+          old = '''        do {
+              try artifactAuthorityFence.transition(
+                  from: previousAuthority,
+                  to: freshAuthority
+              )
+              targetSessionGeneration = freshAuthority.targetSessionGeneration
+              artifactAuthorityGeneration = freshAuthority.authorityGeneration
+              recorder = freshSession.recorder
+              hasUsedInitialSessionIdentity = true
+              acquisitionLedger.beginTargetSession()
+              gattIdentityRegistry.reset()
+              selectedTargetCancellationPending = false
+              foregroundEvidenceIntegrityValid = true
+              committedReadyEpoch = nil
+
+              try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
+                  freshSession.receipt,
+                  installedRecorder: freshSession.recorder,
+                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+              )
+          } catch {
+              lastDiagnostic = Self.diagnostic(
+                  error,
+                  fallback: "Abort recovery failed while installing exact fresh capture authority."
+              )
+              throw ControllerError.captureFailed
+          }
+          '''
+          new = '''        do {
+              // Validate every throwing queue-gate precondition on a value copy before
+              // advancing the canonical reference-backed artifact-authority fence. A
+              // reopen rejection must leave both canonical authorities on the old abort
+              // quarantine rather than publishing a half-installed fresh recorder.
+              var reopenedGate = observationBoundaryQueueGate
+              try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                  freshSession.receipt,
+                  installedRecorder: freshSession.recorder,
+                  currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                  currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+              )
+
+              // This is the final throwing publication step. Everything after a
+              // successful fence transition is synchronous/non-failable owner state.
+              try artifactAuthorityFence.transition(
+                  from: previousAuthority,
+                  to: freshAuthority
+              )
+              targetSessionGeneration = freshAuthority.targetSessionGeneration
+              artifactAuthorityGeneration = freshAuthority.authorityGeneration
+              recorder = freshSession.recorder
+              hasUsedInitialSessionIdentity = true
+              acquisitionLedger.beginTargetSession()
+              gattIdentityRegistry.reset()
+              selectedTargetCancellationPending = false
+              foregroundEvidenceIntegrityValid = true
+              committedReadyEpoch = nil
+              observationBoundaryQueueGate = reopenedGate
+          } catch {
+              lastDiagnostic = Self.diagnostic(
+                  error,
+                  fallback: "Abort recovery failed while installing exact fresh capture authority."
+              )
+              throw ControllerError.captureFailed
+          }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one vulnerable abort-recovery block, found {source.count(old)}")
+          path.write_text(source.replace(old, new))
+
+      - name: Remove temporary workflow from product tree
+        run: git rm .github/workflows/tmp-es80-abort-atomic-go2.yml
+
+      - name: Commit exact repair
+        run: |
+          git config user.name "nembra-go2"
+          git config user.email "nembra-go2@users.noreply.github.com"
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortRecoveryAtomicityDiagnosticTests.swift
+          git diff --cached --check
+          git commit -m "[Capture recovery v14] Make abort publication failure-atomic [tmp cleanup]"
+          git push origin HEAD:integration/es80-v14-flagship-recovery-atomic/gpt56-go2
