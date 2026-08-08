@@ -14,22 +14,14 @@ fi
 
 : "${NEMBRA_DEVELOPMENT_TEAM:?Set NEMBRA_DEVELOPMENT_TEAM to the Apple signing TeamIdentifier.}"
 : "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"
-: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID to the intended field iPhone UDID for verification only.}"
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to a mode-0600 file containing the intended field iPhone UDID.}"
 
 if [[ ! "$NEMBRA_DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
   echo "NEMBRA_DEVELOPMENT_TEAM must be one canonical 10-character Apple TeamIdentifier." >&2
   exit 3
 fi
-if ! python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" <<'PY'
-import sys
-value = sys.argv[1]
-if not value or len(value.encode("utf-8")) > 128 or value != value.strip():
-    raise SystemExit(1)
-if any(ord(character) < 33 or ord(character) == 127 for character in value):
-    raise SystemExit(1)
-PY
-then
-  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID is not a valid bounded verification input." >&2
+if [[ ! -f "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" || -L "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" ]]; then
+  echo "NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must name one regular non-symlink private input file." >&2
   exit 4
 fi
 if [[ ! -f "$NEMBRA_EXPORT_OPTIONS_PLIST" ]]; then
@@ -48,8 +40,6 @@ case "$ALLOW_PROVISIONING_UPDATES" in
     ;;
 esac
 
-# Keep the producer compatible with the Bash 3.2 still shipped by macOS. Avoid optionally empty
-# arrays under nounset; pass provisioning updates through one explicit wrapper instead.
 run_xcodebuild() {
   if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]; then
     xcodebuild -allowProvisioningUpdates "$@"
@@ -58,9 +48,6 @@ run_xcodebuild() {
   fi
 }
 
-# A dirty invocation checkout is never accepted. The real build below is additionally produced from
-# a fresh detached worktree at SOURCE_SHA, preventing ignored/local/concurrent source mutation from
-# silently becoming bytes stamped as this exact commit.
 REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 if [[ -n "$REPOSITORY_STATUS" ]]; then
   echo "Signed field-candidate production refuses tracked changes or non-ignored untracked files." >&2
@@ -98,8 +85,6 @@ PY
 )"
 INSPECTION_DIR="$ARTIFACTS_DIR/inspection"
 
-# Candidate output is immutable. Resolve lexical traversal/symlink ancestors before safety checks;
-# never mix a new field candidate into an old or repository-root evidence directory.
 if [[ -z "$ARTIFACTS_DIR" || "$ARTIFACTS_DIR" == "/" || "$ARTIFACTS_DIR" == "$ROOT" ]]; then
   echo "ARTIFACTS_DIR is not a safe field-production output path: $ARTIFACTS_DIR" >&2
   exit 10
@@ -116,8 +101,6 @@ if [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then
   fi
 fi
 
-# Claim the final candidate root atomically after the policy checks. The earlier absence check is
-# advisory; this non--p mkdir is the mechanical no-mix boundary if another producer races us.
 ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
 mkdir -p "$ARTIFACTS_PARENT"
 if ! mkdir "$ARTIFACTS_DIR"; then
@@ -125,8 +108,6 @@ if ! mkdir "$ARTIFACTS_DIR"; then
   exit 13
 fi
 
-# Producer-owned provenance is a sibling of the inspector-owned evidence directory. The inspector's
-# failure-atomic/no-replace contract requires INSPECTION_DIR not to exist before invocation.
 mkdir "$ARTIFACTS_DIR/logs"
 EXPORT_OPTIONS_SNAPSHOT="$ARTIFACTS_DIR/ExportOptions.plist"
 cp -p "$EXPORT_OPTIONS_PLIST" "$EXPORT_OPTIONS_SNAPSHOT"
@@ -226,7 +207,6 @@ if [[ "$POST_BUILD_HEAD" != "$SOURCE_SHA" || -n "$POST_BUILD_SOURCE_STATUS" ]]; 
   exit 19
 fi
 
-# Closed-world top-level IPA selection without nullglob/empty arrays under Bash 3.2 + nounset.
 IPA_PATH="$(python3 - "$EXPORT_DIR" <<'PY'
 import sys
 from pathlib import Path
@@ -242,13 +222,13 @@ print(candidates[0])
 PY
 )"
 
-# The intended-device UDID is verification-only input. It is forwarded to the canonical inspector
-# and is deliberately never persisted, echoed, hashed, embedded into filenames, or copied into
-# candidate evidence. INSPECTION_DIR must remain absent until the failure-atomic inspector publishes.
-python3 scripts/ci/es80_signed_field_artifact_evidence.py \
+# The intended-device identifier is read only inside the path-only runner. The shell environment and
+# OS process argv contain only a private file path; the raw value never crosses a process boundary.
+# INSPECTION_DIR remains absent until the canonical inspector publishes failure-atomically.
+python3 scripts/ci/es80_signed_field_artifact_private_runner.py \
   --ipa "$IPA_PATH" \
   --expected-source-sha "$SOURCE_SHA" \
-  --intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID" \
+  --intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" \
   --output-dir "$INSPECTION_DIR"
 
 EXTERNAL_RECORD="$INSPECTION_DIR/NembraCaptureExternalBuildRecord.json"
@@ -279,57 +259,29 @@ field_path = pathlib.Path(sys.argv[2])
 inspection_path = pathlib.Path(sys.argv[3])
 ipa_path = pathlib.Path(sys.argv[4])
 source_sha, build_identifier, build_instance_id, expected_team, field_recipe = sys.argv[5:10]
-
 external_bytes = external_path.read_bytes()
 field_bytes = field_path.read_bytes()
 field = json.loads(field_bytes)
 inspection = json.loads(inspection_path.read_bytes())
-
 expected_field_keys = {
-    "schemaVersion",
-    "externalBuildRecordSHA256",
-    "signedInstallableSHA256",
-    "signedInstallableKind",
-    "buildIdentifier",
-    "buildInstanceID",
-    "sourceCommitSHA",
-    "executableSHA256",
-    "infoPlistSHA256",
-    "experimentRecipeID",
-    "procedureVersion",
+    "schemaVersion", "externalBuildRecordSHA256", "signedInstallableSHA256",
+    "signedInstallableKind", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
 }
 if set(field) != expected_field_keys:
     raise SystemExit(f"Canonical field-build evidence shape drifted: {sorted(field)!r}")
-
 expected_inspection_keys = {
-    "schemaVersion",
-    "authority",
-    "fieldBuildEvidenceRecordSHA256",
-    "externalBuildRecordSHA256",
-    "signedInstallableSHA256",
-    "signedInstallableKind",
-    "ipaByteCount",
-    "buildIdentifier",
-    "buildInstanceID",
-    "sourceCommitSHA",
-    "bundleIdentifier",
-    "platformName",
-    "supportedPlatforms",
-    "teamIdentifier",
-    "signingAuthorities",
-    "codeDirectoryHash",
-    "provisioningProfileSHA256",
-    "provisioningProfileUUID",
-    "provisioningProfileExpirationUTC",
-    "provisioningApplicationIdentifier",
-    "executableSHA256",
-    "infoPlistSHA256",
-    "experimentRecipeID",
-    "procedureVersion",
+    "schemaVersion", "authority", "fieldBuildEvidenceRecordSHA256",
+    "externalBuildRecordSHA256", "signedInstallableSHA256", "signedInstallableKind",
+    "ipaByteCount", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
+    "bundleIdentifier", "platformName", "supportedPlatforms", "teamIdentifier",
+    "signingAuthorities", "codeDirectoryHash", "provisioningProfileSHA256",
+    "provisioningProfileUUID", "provisioningProfileExpirationUTC",
+    "provisioningApplicationIdentifier", "executableSHA256", "infoPlistSHA256",
+    "experimentRecipeID", "procedureVersion",
 }
 if set(inspection) != expected_inspection_keys:
     raise SystemExit(f"Signing inspection shape drifted: {sorted(inspection)!r}")
-
 shared_expected = {
     "sourceCommitSHA": source_sha,
     "buildIdentifier": build_identifier,
@@ -341,7 +293,6 @@ for record_name, record in (("field-build evidence", field), ("signing inspectio
     for key, value in shared_expected.items():
         if record.get(key) != value:
             raise SystemExit(f"{record_name} mismatch for {key}: {record.get(key)!r} != {value!r}")
-
 if field.get("signedInstallableKind") != "ipa" or inspection.get("signedInstallableKind") != "ipa":
     raise SystemExit("Signed field evidence no longer describes one IPA installable")
 if inspection.get("authority") != "signed-field-artifact-inspection-not-field-authorization":
@@ -360,7 +311,6 @@ if not isinstance(inspection.get("provisioningProfileUUID"), str) or not inspect
     raise SystemExit("Signed field candidate lacks provisioning-profile identity")
 if not isinstance(inspection.get("provisioningProfileExpirationUTC"), str) or not inspection["provisioningProfileExpirationUTC"].endswith("Z"):
     raise SystemExit("Signed field candidate lacks normalized provisioning-profile expiration")
-
 external_sha = hashlib.sha256(external_bytes).hexdigest()
 field_sha = hashlib.sha256(field_bytes).hexdigest()
 if field.get("externalBuildRecordSHA256") != external_sha:
@@ -375,17 +325,12 @@ if inspection.get("executableSHA256") != field.get("executableSHA256"):
     raise SystemExit("Signing inspection and field-build evidence disagree on executable bytes")
 if inspection.get("infoPlistSHA256") != field.get("infoPlistSHA256"):
     raise SystemExit("Signing inspection and field-build evidence disagree on raw Info.plist bytes")
-
 ipa_digest = hashlib.sha256()
 with ipa_path.open("rb") as handle:
     for chunk in iter(lambda: handle.read(1024 * 1024), b""):
         ipa_digest.update(chunk)
 if ipa_digest.hexdigest() != field.get("signedInstallableSHA256"):
     raise SystemExit("Retained IPA bytes do not match canonical field-build evidence")
-
-# The canonical inspector has already rejected duplicate/colliding archive members. Re-open the exact
-# retained IPA only to prove the launch-routing marker in the signed Info.plist and bind those same
-# raw plist bytes to the field evidence digest.
 with zipfile.ZipFile(ipa_path) as archive:
     plist_members = [
         info for info in archive.infolist()
@@ -404,8 +349,6 @@ if hashlib.sha256(raw_info_plist).hexdigest() != field.get("infoPlistSHA256"):
     raise SystemExit("Signed field-launch recipe was not verified on the exact Info.plist evidence bytes")
 PY
 
-# Never persist the intended-device UDID. Candidate provenance records only non-sensitive build and
-# export-policy facts plus paths to the failure-atomic inspector evidence directory.
 {
   echo "source_commit_sha=$SOURCE_SHA"
   echo "build_identifier=$BUILD_IDENTIFIER"
