@@ -219,7 +219,7 @@ struct ES80CaptureShellView: View {
             statePanel(
                 eyebrow: "STEP 1",
                 title: "Find the scooter",
-                message: "Keep the ES80 powered on and close to the iPhone. Scanning lists nearby candidates; a name or UUID is not proof of vehicle identity.",
+                message: "Keep the ES80 close and follow the accepted physical-correlation procedure before selecting a candidate. A name or UUID is not proof of vehicle identity.",
                 symbol: "scope"
             )
             primaryButton("Scan for scooter", systemImage: "dot.radiowaves.left.and.right") {
