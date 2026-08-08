@@ -104,6 +104,49 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let shell = app.descendants(matching: .any)["es80.capture-shell"]
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let readyState = app.staticTexts["Capture can be sealed"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(readyState.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        keepScreenshot(named: "Nembra Capture V14 — Horizon Ready — Accessibility XXXL — Overview")
+
+        bringIntoScreenshotViewport(
+            readyState,
+            in: app,
+            context: "Horizon-ready rider state at Accessibility XXXL"
+        )
+        keepScreenshot(named: "Nembra Capture V14 — Horizon Ready — Accessibility XXXL — Status")
+
+        bringIntoScreenshotViewport(
+            finish,
+            in: app,
+            context: "Seal Capture at Accessibility XXXL"
+        )
+        XCTAssertTrue(finish.isHittable, "Seal Capture must remain actionable at Accessibility XXXL.")
+        keepScreenshot(named: "Nembra Capture V14 — Horizon Ready — Accessibility XXXL — Seal")
+
+        try app.performAccessibilityAudit()
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
@@ -221,6 +264,43 @@ final class NembraUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    @MainActor
+    private func bringIntoScreenshotViewport(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        context: String,
+        maximumSwipes: Int = 8
+    ) {
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 2), "Missing app window while positioning \(context).")
+
+        for _ in 0..<maximumSwipes {
+            let frame = element.frame
+            let windowFrame = window.frame
+            if !frame.isEmpty,
+               frame.minY >= windowFrame.minY,
+               frame.maxY <= windowFrame.maxY,
+               frame.minX >= windowFrame.minX,
+               frame.maxX <= windowFrame.maxX {
+                return
+            }
+
+            if !frame.isEmpty, frame.maxY < windowFrame.minY {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
+        }
+
+        let frame = element.frame
+        let windowFrame = window.frame
+        XCTAssertFalse(frame.isEmpty, "\(context) must expose a non-empty frame.")
+        XCTAssertGreaterThanOrEqual(frame.minY, windowFrame.minY, "\(context) is clipped above the screenshot viewport.")
+        XCTAssertLessThanOrEqual(frame.maxY, windowFrame.maxY, "\(context) is clipped below the screenshot viewport.")
+        XCTAssertGreaterThanOrEqual(frame.minX, windowFrame.minX, "\(context) is clipped left of the screenshot viewport.")
+        XCTAssertLessThanOrEqual(frame.maxX, windowFrame.maxX, "\(context) is clipped right of the screenshot viewport.")
     }
 
     @MainActor
