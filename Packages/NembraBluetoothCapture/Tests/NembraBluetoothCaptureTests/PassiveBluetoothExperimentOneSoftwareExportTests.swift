@@ -13,16 +13,18 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
     private let buildInstance = "12345678-90ab-cdef-1234-567890abcdef"
     private let commit = "0123456789abcdef0123456789abcdef01234567"
 
-    @Test("round trip preserves exact bytes, exact producer authority, target, and build rendezvous")
+    @Test("round trip preserves exact bytes, producer authority, declared setup, target, and build rendezvous")
     func roundTripPreservesBoundEvidence() throws {
         let captureJSON = try makeCaptureJSON()
         let result = try makePowerCycleResult()
         let identity = try makeBuildIdentity()
+        let declaredSetup = setup()
 
         let export = try Codec.make(
             captureJSON: captureJSON,
             powerCycleResult: result,
-            runtimeBuildIdentity: identity
+            runtimeBuildIdentity: identity,
+            setup: declaredSetup
         )
         let encoded = try Codec.encode(export)
         let verified = try Codec.decodeAndVerify(encoded)
@@ -47,13 +49,14 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         #expect(manifest.nembraBuildInstanceID == buildInstance)
         #expect(manifest.nembraBuildCommitSHA == commit)
         #expect(manifest.sourceArtifact.selectedPeripheralIdentifier == scooter.uuidString)
+        #expect(manifest.setup == declaredSetup)
     }
 
     @Test("wire replay cannot mint one authority over catalogs from different producer lives")
     func mixedObservationAuthorityFailsClosed() throws {
         var root = try exportJSONObject()
         var windows = try #require(root["correlationWindows"] as? [[String: Any]])
-        windows[1]["observationSeriesIdentity"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".uppercased()
+        windows[1]["observationSeriesIdentity"] = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
         root["correlationWindows"] = windows
 
         let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
@@ -81,7 +84,7 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         }
     }
 
-    @Test("build metadata cannot diverge from the stationary manifest binding")
+    @Test("build metadata cannot diverge from stationary manifest binding")
     func detachedBuildMetadataFailsClosed() throws {
         var root = try exportJSONObject()
         var build = try #require(root["build"] as? [String: Any])
@@ -110,14 +113,12 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         }
     }
 
-    @Test("construction rejects a detached correlation summary even when catalogs remain valid")
+    @Test("construction rejects detached correlation summary even when catalogs remain valid")
     func detachedCorrelationSummaryFailsClosed() throws {
-        let captureJSON = try makeCaptureJSON()
         let valid = try makePowerCycleResult()
         var alteredSnapshots = valid.observationSnapshots
-        let otherAuthority = PassiveBluetoothCandidateObservationSeriesIdentity()
         alteredSnapshots[1] = try PassiveBluetoothCandidateObservationSnapshot(
-            observationSeriesIdentity: otherAuthority,
+            observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity(),
             windowSequence: alteredSnapshots[1].windowSequence,
             candidates: alteredSnapshots[1].candidates
         )
@@ -129,9 +130,10 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
 
         #expect(throws: ExportError.correlationEvidenceInvalid) {
             _ = try Codec.make(
-                captureJSON: captureJSON,
+                captureJSON: makeCaptureJSON(),
                 powerCycleResult: detached,
-                runtimeBuildIdentity: makeBuildIdentity()
+                runtimeBuildIdentity: makeBuildIdentity(),
+                setup: setup()
             )
         }
     }
@@ -140,10 +142,20 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         let export = try Codec.make(
             captureJSON: makeCaptureJSON(),
             powerCycleResult: makePowerCycleResult(),
-            runtimeBuildIdentity: makeBuildIdentity()
+            runtimeBuildIdentity: makeBuildIdentity(),
+            setup: setup()
         )
-        let encoded = try Codec.encode(export)
-        return try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        return try #require(
+            JSONSerialization.jsonObject(with: Codec.encode(export)) as? [String: Any]
+        )
+    }
+
+    private func setup() -> PassiveBluetoothStationaryCaptureSetup {
+        .init(
+            chargerState: .disconnected,
+            executionContext: .foregroundUnlockedScreenOn,
+            stockAppReferenceSetup: .none
+        )
     }
 
     private func makeBuildIdentity() throws -> PassiveBluetoothCaptureRuntimeBuildIdentity {
@@ -188,9 +200,7 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         ))
     }
 
-    private func candidate(
-        _ id: UUID
-    ) -> PassiveBluetoothCandidateObservationSnapshot.Candidate {
+    private func candidate(_ id: UUID) -> PassiveBluetoothCandidateObservationSnapshot.Candidate {
         .init(id: id, isConnectable: true)
     }
 
