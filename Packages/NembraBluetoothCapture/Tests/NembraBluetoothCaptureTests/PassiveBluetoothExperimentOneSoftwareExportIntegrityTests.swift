@@ -88,7 +88,48 @@ struct PassiveBluetoothExperimentOneSoftwareExportIntegrityTests {
 
     private func makeCaptureJSON() throws -> Data {
         let startedAt = Date(timeIntervalSince1970: 1_750_000_000)
-        var session = try PassiveBluetoothCaptureSession(
+        let service = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 1,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: startedAt,
+            event: .service(
+                try PassiveBluetoothServiceObservation(
+                    peripheralIdentifier: scooter.uuidString,
+                    serviceUUID: "FFE0",
+                    isPrimary: true
+                )
+            )
+        )
+        let value = PassiveBluetoothCaptureRecord(
+            sequenceNumber: 2,
+            receivedAtUptimeNanoseconds: 2,
+            receivedAtDate: startedAt.addingTimeInterval(1),
+            event: .value(
+                try PassiveBluetoothValueObservation(
+                    peripheralIdentifier: scooter.uuidString,
+                    serviceUUID: "FFE0",
+                    characteristicUUID: "FFE1",
+                    origin: .subscriptionUpdate,
+                    payload: Data([0x01, 0x02])
+                )
+            )
+        )
+        let readyUptime: UInt64 = 1_000
+        let observationDuration = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPostReadyObservationDurationNanoseconds
+        let ready = PassiveBluetoothObservationBoundary(
+            kind: .finiteAcquisitionReady,
+            recordSequenceWatermark: 2,
+            observedAtUptimeNanoseconds: readyUptime,
+            observedAtDate: startedAt.addingTimeInterval(2)
+        )
+        let horizon = PassiveBluetoothObservationBoundary(
+            kind: .observationHorizon,
+            recordSequenceWatermark: 2,
+            observedAtUptimeNanoseconds: readyUptime + observationDuration,
+            observedAtDate: startedAt.addingTimeInterval(62)
+        )
+        let session = try PassiveBluetoothCaptureSession(
             id: sessionID,
             vehicleIdentity: VehicleIdentity(
                 manufacturer: "AOVOPRO",
@@ -96,29 +137,9 @@ struct PassiveBluetoothExperimentOneSoftwareExportIntegrityTests {
                 displayName: "AOVOPRO ES80",
                 protocolFamily: "unverified-tuya"
             ),
-            startedAt: startedAt
-        )
-        try session.append(
-            .service(try PassiveBluetoothServiceObservation(
-                peripheralIdentifier: scooter.uuidString,
-                serviceUUID: "FFE0",
-                isPrimary: true
-            )),
-            sequenceNumber: 1,
-            receivedAtUptimeNanoseconds: 1,
-            receivedAtDate: startedAt
-        )
-        try session.append(
-            .value(try PassiveBluetoothValueObservation(
-                peripheralIdentifier: scooter.uuidString,
-                serviceUUID: "FFE0",
-                characteristicUUID: "FFE1",
-                origin: .subscriptionUpdate,
-                payload: Data([0x01, 0x02])
-            )),
-            sequenceNumber: 2,
-            receivedAtUptimeNanoseconds: 2,
-            receivedAtDate: startedAt.addingTimeInterval(1)
+            startedAt: startedAt,
+            records: [service, value],
+            observationBoundaries: [ready, horizon]
         )
         return try PassiveBluetoothCaptureJSON.encode(session)
     }
