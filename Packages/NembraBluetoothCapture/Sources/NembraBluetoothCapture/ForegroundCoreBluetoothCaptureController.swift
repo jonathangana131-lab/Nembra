@@ -985,6 +985,16 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            // Validate every still-throwing queue-gate condition on a value copy before the
+            // reference-backed canonical authority fence advances. Once transition succeeds,
+            // publication below is deliberately synchronous and non-failable.
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterTerminalFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -998,13 +1008,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterTerminalFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             failCapture(error)
             throw ControllerError.captureFailed
@@ -1108,6 +1112,16 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
+            // `lastResolvedEventSequence` above is legitimate retired-FIFO chronology and may
+            // remain advanced if recovery fails. Canonical artifact authority must not advance
+            // until the exact queue-gate reopen has already succeeded on a detached value copy.
+            var reopenedGate = observationBoundaryQueueGate
+            try reopenedGate.reopenAfterAbortedFreshTargetSession(
+                freshSession.receipt,
+                installedRecorder: freshSession.recorder,
+                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
+                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
+            )
             try artifactAuthorityFence.transition(
                 from: previousAuthority,
                 to: freshAuthority
@@ -1121,13 +1135,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             selectedTargetCancellationPending = false
             foregroundEvidenceIntegrityValid = true
             committedReadyEpoch = nil
-
-            try observationBoundaryQueueGate.reopenAfterAbortedFreshTargetSession(
-                freshSession.receipt,
-                installedRecorder: freshSession.recorder,
-                currentResolvedThroughQueueSequence: lastResolvedEventSequence,
-                currentLastEnqueuedEventSequence: lastEnqueuedEventSequence
-            )
+            observationBoundaryQueueGate = reopenedGate
         } catch {
             lastDiagnostic = Self.diagnostic(
                 error,
