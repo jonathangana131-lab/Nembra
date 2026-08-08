@@ -637,12 +637,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
             let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)
             // No actor suspension may occur between the authority-fenced recorder
-            // return and typed queue commit. A callback cannot interleave here on
-            // MainActor and relabel this exact Horizon epoch.
-            let committedHorizon = try recordedHorizon.markBoundaryRecorded(
-                on: &observationBoundaryQueueGate,
-                lastProcessedQueueSequence: lastProcessedEventSequence
-            )
+            // return and typed queue commit. If that exact commit loses lifecycle
+            // authority, #507's producer-issued recorded-H token quarantines the
+            // durable H without fabricating terminal/frozen success.
+            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+            do {
+                committedHorizon = try recordedHorizon.markBoundaryRecorded(
+                    on: &observationBoundaryQueueGate,
+                    lastProcessedQueueSequence: lastProcessedEventSequence
+                )
+            } catch {
+                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                    recordedHorizon
+                )
+                throw error
+            }
 
             let data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
             try validateBoundaryAuthority(committedHorizon.authority)
