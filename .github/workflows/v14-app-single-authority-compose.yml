@@ -1,0 +1,290 @@
+name: V14 app single authority compose
+
+on:
+  push:
+    branches:
+      - feature/es80-v14-app-single-authority/gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/es80-v14-app-single-authority/gpt56-thinking
+      - name: Compose package-owned Experiment One app authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if text.count(old) != 1:
+                  raise SystemExit(f"{label}: expected one match, got {text.count(old)}")
+              return text.replace(old, new, 1)
+
+          coordinator_path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift")
+          coordinator = coordinator_path.read_text()
+          coordinator = replace_once(
+              coordinator,
+              "        case captureAdmissionAlreadyPrepared\n        case captureAdmissionNotPrepared\n",
+              "        case captureAdmissionAlreadyPrepared\n        case captureAdmissionNotPrepared\n        case captureSessionAlreadyStarted\n",
+              "coordinator error"
+          )
+          coordinator = replace_once(
+              coordinator,
+              "    private let run: PassiveBluetoothExperimentOneRun\n",
+              "    private var run: PassiveBluetoothExperimentOneRun\n",
+              "mutable run"
+          )
+          coordinator = replace_once(
+              coordinator,
+              "    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,\n    /// never injected by app/UI code merely to make a run eligible.\n    public init(controller: ForegroundCoreBluetoothCaptureController) throws {\n",
+              "    /// Product construction for Experiment One. The package creates the canonical ES80\n    /// foreground controller itself so app/UI code cannot mint a generic controller and then\n    /// present that separate lifecycle as field authority.\n    public convenience init() throws {\n        let controller = try ForegroundCoreBluetoothCaptureController(\n            vehicleIdentity: VehicleProfile.aovoproES80.identity\n        )\n        try self.init(controller: controller)\n    }\n\n    /// Dependency-injected construction retained for package tests. Experiment One is ES80-specific;\n    /// canonical vehicle context is still fixed inside this package-owned coordinator.\n    public init(controller: ForegroundCoreBluetoothCaptureController) throws {\n",
+              "coordinator product init"
+          )
+          coordinator = replace_once(
+              coordinator,
+              "        run = try PassiveBluetoothExperimentOneRun(\n            vehicleIdentity: VehicleProfile.aovoproES80.identity\n        )\n    }\n\n    /// Seals completed four-window correlation",
+              "        run = try PassiveBluetoothExperimentOneRun(\n            vehicleIdentity: VehicleProfile.aovoproES80.identity\n        )\n    }\n\n    /// Abandons only a still-pre-capture Experiment One life and replaces it with a new\n    /// package-owned four-window producer. Once a durable target session exists, relaunch is\n    /// required rather than laundering that recorder into a second correlation attempt.\n    public func restartCorrelation() throws {\n        guard pendingCaptureAdmission == nil else {\n            throw CoordinatorError.captureAdmissionAlreadyPrepared\n        }\n        guard !controller.hasTargetSession else {\n            throw CoordinatorError.captureSessionAlreadyStarted\n        }\n\n        run.powerCycleObservationSession.abandonCurrentWindow()\n        controller.stopScanning()\n        preparedCorrelatedTargetIdentifier = nil\n        run = try PassiveBluetoothExperimentOneRun(\n            vehicleIdentity: VehicleProfile.aovoproES80.identity\n        )\n    }\n\n    /// Seals completed four-window correlation",
+              "coordinator restart"
+          )
+          coordinator_path.write_text(coordinator)
+
+          app_path = Path("NembraApp/App/NembraApp.swift")
+          app = app_path.read_text()
+          app = replace_once(app, "@State private var researchController: ForegroundCoreBluetoothCaptureController?", "@State private var researchCoordinator: PassiveBluetoothExperimentOneCoordinator?", "app state")
+          app = replace_once(
+              app,
+              "        _researchController = State(\n            initialValue: fieldCaptureAuthorized\n                ? Self.makeES80ResearchController()\n                : nil\n        )",
+              "        _researchCoordinator = State(\n            initialValue: fieldCaptureAuthorized\n                ? Self.makeES80ResearchCoordinator()\n                : nil\n        )",
+              "app init state"
+          )
+          app = replace_once(app, "                        if let researchController {\n                            ES80CaptureShellView(controller: researchController)", "                        if let researchCoordinator {\n                            ES80CaptureShellView(coordinator: researchCoordinator)", "app shell wiring")
+          app = replace_once(
+              app,
+              "    private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {\n        // This is the declared software context required by the ES80 Experiment One authority.\n        // It is metadata consistency only and must never be presented as physical authentication.\n        try? ForegroundCoreBluetoothCaptureController(\n            vehicleIdentity: VehicleProfile.aovoproES80.identity\n        )\n    }",
+              "    private static func makeES80ResearchCoordinator() -> PassiveBluetoothExperimentOneCoordinator? {\n        // Field authority is minted inside the package-owned Experiment One workflow.\n        // App code receives one coordinator instead of constructing an unrelated generic recorder/controller.\n        try? PassiveBluetoothExperimentOneCoordinator()\n    }",
+              "app coordinator factory"
+          )
+          app_path.write_text(app)
+
+          shell_path = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          shell = shell_path.read_text()
+          shell = replace_once(
+              shell,
+              "/// Critical authority boundary: the current package-owned `PassiveBluetoothExperimentOneRun`\n/// creates and owns its own four-window producer, and its recorder/final H-bounded seal remains\n/// intentionally internal. This app must not take an independently-created public correlation\n/// result and start a separate capture recorder as if those two evidence lives were one Experiment\n/// One authority. Therefore this shell can complete real correlation and exact read-only target\n/// reacquisition, but it deliberately does not expose Start Capture, Finish, or Share until the\n/// accepted controller composes the same package-issued Experiment One run end-to-end.\n",
+              "/// Critical authority boundary: one package-owned `PassiveBluetoothExperimentOneCoordinator`\n/// owns the four-window producer, sealed capture admission, canonical ES80 controller, and exact\n/// rediscovery handoff. SwiftUI may drive that workflow but never splices a public correlation\n/// result into a separately minted recorder/controller. A repeated UUID remains correlation only.\n",
+              "shell authority comment"
+          )
+          shell = replace_once(shell, "        case targetReacquired(UUID)\n        case targetNotConnectable(UUID)", "        case targetReacquired(UUID)\n        case captureSessionArmed(UUID)\n        case targetNotConnectable(UUID)", "shell phase enum")
+          shell = replace_once(
+              shell,
+              "    let controller: ForegroundCoreBluetoothCaptureController\n\n    @Environment(\\.scenePhase) private var scenePhase\n\n    @State private var correlationSession: PassiveBluetoothPowerCycleObservationSession?",
+              "    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator\n\n    private var controller: ForegroundCoreBluetoothCaptureController {\n        coordinator.controller\n    }\n\n    init(coordinator: PassiveBluetoothExperimentOneCoordinator) {\n        _coordinator = State(initialValue: coordinator)\n    }\n\n    @Environment(\\.scenePhase) private var scenePhase\n\n    @State private var correlationSession: PassiveBluetoothPowerCycleObservationSession?",
+              "shell coordinator state"
+          )
+          shell = replace_once(
+              shell,
+              "                Text(\"This build can complete the real repeated Bluetooth correlation step. Passive capture remains locked until one package-owned Experiment One authority spans correlation, Ready, Horizon, immutable seal, and export. Nembra will not splice separate evidence lives just to make the workflow look complete.\")",
+              "                Text(\"This field surface is driven by one package-owned Experiment One authority from correlation into passive capture. Physical execution still remains controlled by the package GO gate, and later Ready, Horizon, immutable seal, analysis, Share, and runtime acceptance must stay on this same evidence life.\")",
+              "shell authority copy"
+          )
+          shell = replace_once(
+              shell,
+              "            targetIdentifierStrip(identifier)\n            captureBindingLock\n\n        case let .targetNotConnectable(identifier):",
+              "            targetIdentifierStrip(identifier)\n            primaryButton(\n                \"Start passive capture\",\n                systemImage: \"dot.radiowaves.left.and.right\",\n                identifier: \"es80.capture.start-passive-capture\"\n            ) {\n                startPassiveCapture(identifier)\n            }\n\n        case let .captureSessionArmed(identifier):\n            statePanel(\n                eyebrow: \"PASSIVE CAPTURE\",\n                title: \"Experiment One authority is live\",\n                message: \"The exact run-owned recorder is now attached to the correlated target through the package coordinator. Nembra is collecting read-only finite GATT evidence; this is not ES80 authentication and no characteristic write is authorized.\",\n                symbol: \"wave.3.right.circle.fill\"\n            )\n            targetIdentifierStrip(identifier)\n            HStack(spacing: 10) {\n                ProgressView().tint(.white)\n                Text(controller.hasCompleteTargetEvidence ? \"Finite acquisition complete — Ready/Horizon presentation is the next product rung.\" : \"Collecting finite passive evidence…\")\n                    .font(.subheadline)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n            }\n            .accessibilityIdentifier(\"es80.capture.passive-session-armed\")\n\n        case let .targetNotConnectable(identifier):",
+              "shell target handoff UI"
+          )
+          start = shell.index("    private var captureBindingLock: some View {")
+          end = shell.index("    private func correlationReadyPanel", start)
+          shell = shell[:start] + shell[end:]
+          shell = replace_once(
+              shell,
+              "        if controller.hasTargetSession {\n            return .failed(\"This app slice does not authorize a standalone target capture session because it would not share the correlation producer's Experiment One authority. Relaunch the research build.\")\n        }",
+              "        if controller.hasTargetSession {\n            if let identifier = correlatedTargetIdentifier ?? controller.selectedTargetIdentifier {\n                return .captureSessionArmed(identifier)\n            }\n            return .failed(\"Experiment One owns a target session but its correlated target context is unavailable. Relaunch the research build.\")\n        }",
+              "shell target session phase"
+          )
+          shell = replace_once(
+              shell,
+              "    private func prepareCorrelationSessionIfNeeded() {\n        guard correlationSession == nil else { return }\n        do {\n            correlationSession = try PassiveBluetoothPowerCycleObservationSession(\n                minimumWindowDuration: Self.requiredCorrelationWindowDuration\n            )\n        } catch {\n            diagnosticMessage = \"Correlation setup failed: \\(String(describing: error))\"\n        }\n    }",
+              "    private func prepareCorrelationSessionIfNeeded() {\n        guard correlationSession == nil else { return }\n        correlationSession = coordinator.powerCycleObservationSession\n    }",
+              "shell session source"
+          )
+          old_restart = '''    private func restartCorrelation() {
+        guard !controller.hasTargetSession else {
+            diagnosticMessage = "A target capture session already exists. Relaunch Nembra Capture instead of reusing this controller for a new Experiment One attempt."
+            return
+        }
+
+        correlationSession?.abandonCurrentWindow()
+        controller.stopScanning()
+        correlatedTargetIdentifier = nil
+        rediscoveryRequested = false
+        observedScanBeganAtUptimeNanoseconds = nil
+        lifecycleFailureMessage = nil
+        diagnosticMessage = nil
+
+        do {
+            correlationSession = try PassiveBluetoothPowerCycleObservationSession(
+                minimumWindowDuration: Self.requiredCorrelationWindowDuration
+            )
+        } catch {
+            correlationSession = nil
+            diagnosticMessage = "Correlation setup failed: \\(String(describing: error))"
+        }
+    }
+'''
+          new_restart = '''    private func restartCorrelation() {
+        correlatedTargetIdentifier = nil
+        rediscoveryRequested = false
+        observedScanBeganAtUptimeNanoseconds = nil
+        lifecycleFailureMessage = nil
+        diagnosticMessage = nil
+
+        do {
+            try coordinator.restartCorrelation()
+            correlationSession = coordinator.powerCycleObservationSession
+        } catch {
+            diagnosticMessage = "Correlation restart failed closed: \\(String(describing: error))"
+        }
+    }
+'''
+          shell = replace_once(shell, old_restart, new_restart, "shell restart")
+          old_confirm = '''    private func confirmCorrelatedTarget(_ identifier: UUID) {
+        correlatedTargetIdentifier = identifier
+        startExactTargetRediscovery(identifier)
+    }
+
+    private func startExactTargetRediscovery(_ identifier: UUID) {
+        diagnosticMessage = nil
+        controller.stopScanning()
+        rediscoveryRequested = false
+
+        do {
+            try controller.startScanning(captureAdvertisementCadence: false)
+            rediscoveryRequested = true
+        } catch {
+            diagnosticMessage = "Exact-target rediscovery could not start: \\(String(describing: error))"
+        }
+    }
+'''
+          new_confirm = '''    private func confirmCorrelatedTarget(_ identifier: UUID) {
+        diagnosticMessage = nil
+        correlatedTargetIdentifier = identifier
+        rediscoveryRequested = false
+
+        do {
+            try coordinator.prepareCaptureRediscovery()
+            guard coordinator.preparedCorrelatedTargetIdentifier == identifier else {
+                throw PassiveBluetoothExperimentOneCoordinator.CoordinatorError.correlatedTargetUnavailable
+            }
+            rediscoveryRequested = true
+        } catch {
+            diagnosticMessage = "Experiment One handoff could not prepare rediscovery: \\(String(describing: error))"
+        }
+    }
+
+    private func startExactTargetRediscovery(_ identifier: UUID) {
+        diagnosticMessage = nil
+        guard coordinator.preparedCorrelatedTargetIdentifier == identifier else {
+            diagnosticMessage = "The sealed Experiment One admission no longer matches this correlated target. Restart from OFF 1."
+            return
+        }
+        rediscoveryRequested = false
+
+        do {
+            try coordinator.restartPreparedRediscovery()
+            rediscoveryRequested = true
+        } catch {
+            diagnosticMessage = "Exact-target rediscovery could not restart: \\(String(describing: error))"
+        }
+    }
+
+    private func startPassiveCapture(_ identifier: UUID) {
+        diagnosticMessage = nil
+        guard coordinator.preparedCorrelatedTargetIdentifier == identifier else {
+            diagnosticMessage = "The prepared Experiment One admission no longer matches this target. Restart from OFF 1."
+            return
+        }
+
+        do {
+            try coordinator.connectPreparedCapture()
+            rediscoveryRequested = false
+        } catch {
+            diagnosticMessage = "Passive capture could not start: \\(String(describing: error))"
+        }
+    }
+'''
+          shell = replace_once(shell, old_confirm, new_confirm, "shell coordinator handoff")
+          shell = replace_once(
+              shell,
+              "        if correlationEvidenceIsLive {",
+              "        if controller.hasTargetSession {\n            controller.invalidateActiveCaptureForForegroundLoss()\n            lifecycleFailureMessage = \"Nembra left the active foreground while the package-owned passive capture was live. This Experiment One evidence life is permanently invalid for export.\"\n            diagnosticMessage = nil\n            UIApplication.shared.isIdleTimerDisabled = false\n            return\n        }\n\n        if correlationEvidenceIsLive {",
+              "shell foreground capture invalidation"
+          )
+          shell = replace_once(shell, "        case .correlationStarting, .correlationObserving, .rediscoveringTarget, .targetReacquired:", "        case .correlationStarting, .correlationObserving, .rediscoveringTarget, .targetReacquired, .captureSessionArmed:", "shell idle timer")
+          shell = replace_once(shell, "        case .targetReacquired: \"Target reacquired — capture binding locked\"", "        case .targetReacquired: \"Target reacquired — ready for passive capture\"\n        case .captureSessionArmed: \"Passive Experiment One capture active\"", "shell status title")
+          shell = replace_once(shell, "        case .correlatedTarget, .targetReacquired:\n            \"checkmark.circle.fill\"", "        case .correlatedTarget, .targetReacquired:\n            \"checkmark.circle.fill\"\n        case .captureSessionArmed:\n            \"wave.3.right.circle.fill\"", "shell status symbol")
+          shell = replace_once(shell, "        case .correlatedTarget:\n            .green", "        case .correlatedTarget, .captureSessionArmed:\n            .green", "shell status color")
+          shell_path.write_text(shell)
+
+          tests_path = Path("NembraAppTests/NembraAppTests.swift")
+          tests = tests_path.read_text()
+          marker = "/// V14 app single-authority source contract."
+          if marker not in tests:
+              tests += r'''
+
+/// V14 app single-authority source contract.
+/// These checks prove the product no longer splices a public correlation producer to a generic controller.
+extension NembraAppTests {
+    private func experimentOneRepositorySource(at relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    func testCaptureShellDoesNotMintStandalonePublicCorrelationProducer() throws {
+        let shell = try experimentOneRepositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+        XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
+        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneCoordinator"))
+    }
+
+    func testResearchLaunchDoesNotMintGenericControllerAsFieldAuthority() throws {
+        let app = try experimentOneRepositorySource(at: "NembraApp/App/NembraApp.swift")
+        XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
+        XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
+    }
+
+    func testBindingLockedStateIsReplacedByCoordinatorHandoff() throws {
+        let shell = try experimentOneRepositorySource(at: "NembraApp/Features/Research/ES80CaptureShellView.swift")
+        XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
+        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
+        XCTAssertTrue(shell.contains("es80.capture.passive-session-armed"))
+    }
+}
+'''
+          tests_path.write_text(tests)
+          PY
+          ! grep -R -n 'PassiveBluetoothPowerCycleObservationSession(' NembraApp/Features/Research/ES80CaptureShellView.swift
+          ! grep -n 'try? ForegroundCoreBluetoothCaptureController(' NembraApp/App/NembraApp.swift
+          ! grep -n 'Passive capture binding not available in this build' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -q 'coordinator.prepareCaptureRediscovery()' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -q 'coordinator.connectPreparedCapture()' NembraApp/Features/Research/ES80CaptureShellView.swift
+          grep -q 'public convenience init() throws' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift
+          git diff --check
+          rm .github/workflows/v14-app-single-authority-compose.yml
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift NembraApp/App/NembraApp.swift NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift .github/workflows/v14-app-single-authority-compose.yml
+          git diff --cached --check
+          git commit -m "[Capture v14] Wire one Experiment One authority through app"
+          git push origin HEAD:feature/es80-v14-app-single-authority/gpt56-thinking
