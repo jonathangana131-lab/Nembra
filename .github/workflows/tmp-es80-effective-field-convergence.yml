@@ -1,0 +1,142 @@
+name: Temporary ES80 effective field convergence
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-field-effective-convergence-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: integration/es80-v14-field-effective-convergence-gpt56
+
+      - name: Apply reviewed effective-installability and Release-routing deltas
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            recovery/es80-v14-signed-ipa-effective-proof-gpt56 \
+            closure/es80-v14-field-launch-routing-current/gpt56-thinking-go
+
+          git diff f64371ca72d9f781c72475b927bafa33c80bc0c7..04848469d51358a707ba8908b9a247016fc8b8a1 \
+            -- scripts/ci/es80_signed_field_artifact_evidence.py \
+            | git apply --3way --index
+
+          git show cc52d617c57b7c83f7db572f775ecb23af82033d --format= -- \
+            NembraApp/App/NembraApp.swift \
+            NembraAppTests/NembraAppTests.swift \
+            | git apply --3way --index
+
+      - name: Bridge canonical producer to atomic evidence, field recipe, and intended device proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          inspector = Path('scripts/ci/es80_signed_field_artifact_evidence.py')
+          text = inspector.read_text()
+          old = '''        platform_name, supported_platforms = verify_device_platform(info)\n\n        build_identifier = plist_string(info, "NembraCaptureBuildIdentifier")\n'''
+          new = '''        platform_name, supported_platforms = verify_device_platform(info)\n\n        field_launch_recipe = plist_string(info, "NembraCaptureFieldRecipe")\n        if field_launch_recipe != RECIPE_ID:\n            raise EvidenceError(\n                f"signed field IPA launch recipe does not match Experiment One: {field_launch_recipe!r}"\n            )\n\n        build_identifier = plist_string(info, "NembraCaptureBuildIdentifier")\n'''
+          if old not in text:
+              raise SystemExit('inspector launch-recipe insertion point changed')
+          inspector.write_text(text.replace(old, new, 1))
+
+          producer = Path('scripts/ci/xcode27_signed_field_candidate.sh')
+          source = producer.read_text()
+          old = ': "${NEMBRA_EXPORT_OPTIONS_PLIST:?Set NEMBRA_EXPORT_OPTIONS_PLIST to an existing Xcode export-options plist.}"\n'
+          new = old + ': "${NEMBRA_FIELD_DEVICE_UDID:?Set NEMBRA_FIELD_DEVICE_UDID to the intended field iPhone UDID for verification only.}"\n'
+          if old not in source:
+              raise SystemExit('producer required-input insertion point changed')
+          source = source.replace(old, new, 1)
+
+          old = 'BUILD_INSTANCE_ID="$(python3 -c \'import uuid; print(str(uuid.uuid4()))\')"\n'
+          new = old + 'FIELD_RECIPE_ID="ES80-FINGERPRINT-v1"\n'
+          if old not in source:
+              raise SystemExit('producer build-instance insertion point changed')
+          source = source.replace(old, new, 1)
+
+          old = '''  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \\\n  archive\n'''
+          new = '''  "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$SOURCE_SHA" \\\n  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID" \\\n  archive\n'''
+          if old not in source:
+              raise SystemExit('producer archive Info.plist insertion point changed')
+          source = source.replace(old, new, 1)
+
+          old = '''# Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a\n# successful producer run would silently dirty the operator checkout after admission.\nif [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then\n'''
+          new = '''# Candidate evidence written inside the invocation checkout must already be ignored. Otherwise a\n# successful producer run would silently dirty the operator checkout after admission.\nif [[ -e "$ARTIFACTS_DIR" ]]; then\n  echo "ARTIFACTS_DIR already exists; refusing to mix or overwrite field-production evidence: $ARTIFACTS_DIR" >&2\n  exit 8\nfi\nSIGNED_EVIDENCE_DIR="$ARTIFACTS_DIR/signed-field-evidence"\nif [[ "$ARTIFACTS_DIR" == "$ROOT"/* ]]; then\n'''
+          if old not in source:
+              raise SystemExit('producer atomic-output insertion point changed')
+          source = source.replace(old, new, 1)
+
+          old = '''  --ipa "$IPA_PATH" \\\n  --expected-source-sha "$SOURCE_SHA" \\\n  --output-dir "$ARTIFACTS_DIR"\n\nEXTERNAL_RECORD="$ARTIFACTS_DIR/NembraCaptureExternalBuildRecord.json"\nFIELD_BUILD_RECORD="$ARTIFACTS_DIR/NembraCaptureFieldBuildEvidenceRecord.json"\nSIGNING_INSPECTION="$ARTIFACTS_DIR/NembraCaptureSignedFieldArtifactInspection.json"\nRETAINED_IPA="$ARTIFACTS_DIR/build-evidence/NembraField.ipa"\n'''
+          new = '''  --ipa "$IPA_PATH" \\\n  --expected-source-sha "$SOURCE_SHA" \\\n  --intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID" \\\n  --output-dir "$SIGNED_EVIDENCE_DIR"\n\nEXTERNAL_RECORD="$SIGNED_EVIDENCE_DIR/NembraCaptureExternalBuildRecord.json"\nFIELD_BUILD_RECORD="$SIGNED_EVIDENCE_DIR/NembraCaptureFieldBuildEvidenceRecord.json"\nSIGNING_INSPECTION="$SIGNED_EVIDENCE_DIR/NembraCaptureSignedFieldArtifactInspection.json"\nRETAINED_IPA="$SIGNED_EVIDENCE_DIR/build-evidence/NembraField.ipa"\n'''
+          if old not in source:
+              raise SystemExit('producer inspector invocation block changed')
+          source = source.replace(old, new, 1)
+          producer.write_text(source)
+
+          tests = Path('scripts/ci/tests/test_xcode27_signed_field_candidate_source.py')
+          test_text = tests.read_text()
+          test_text = test_text.replace(
+              "        self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)\n",
+              "        self.assertIn('INFOPLIST_KEY_NembraCaptureBuildCommitSHA', self.source)\n"
+              "        self.assertIn('INFOPLIST_KEY_NembraCaptureFieldRecipe=$FIELD_RECIPE_ID', self.source)\n"
+              "        self.assertIn('FIELD_RECIPE_ID=\"ES80-FINGERPRINT-v1\"', self.source)\n",
+              1,
+          )
+          test_text = test_text.replace(
+              "        self.assertIn('--expected-source-sha \"$SOURCE_SHA\"', self.source)\n",
+              "        self.assertIn('--expected-source-sha \"$SOURCE_SHA\"', self.source)\n"
+              "        self.assertIn('--intended-device-udid \"$NEMBRA_FIELD_DEVICE_UDID\"', self.source)\n"
+              "        self.assertIn('--output-dir \"$SIGNED_EVIDENCE_DIR\"', self.source)\n",
+              1,
+          )
+          test_text = test_text.replace(
+              "        self.assertIn('--output-dir \"$ARTIFACTS_DIR\"', self.source)\n",
+              "        self.assertIn('SIGNED_EVIDENCE_DIR=\"$ARTIFACTS_DIR/signed-field-evidence\"', self.source)\n"
+              "        self.assertIn('--output-dir \"$SIGNED_EVIDENCE_DIR\"', self.source)\n"
+              "        self.assertNotIn('--output-dir \"$ARTIFACTS_DIR\"', self.source)\n",
+              1,
+          )
+          marker = '    def test_never_mutates_physical_authorization(self):\n'
+          extra = '''    def test_field_device_identity_is_verification_only(self):\n        self.assertIn('NEMBRA_FIELD_DEVICE_UDID', self.source)\n        self.assertIn('--intended-device-udid "$NEMBRA_FIELD_DEVICE_UDID"', self.source)\n        self.assertNotIn('device_udid=', self.source)\n        self.assertNotIn('field_device_udid=', self.source)\n        self.assertNotIn('echo "$NEMBRA_FIELD_DEVICE_UDID"', self.source)\n\n'''
+          if marker not in test_text:
+              raise SystemExit('producer test insertion point changed')
+          tests.write_text(test_text.replace(marker, extra + marker, 1))
+          PY
+
+      - name: Validate portable convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m unittest scripts.ci.tests.test_xcode27_signed_field_candidate_source -v
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          git diff --cached --check
+          git diff --check
+
+      - name: Commit product delta and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-es80-effective-field-convergence.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/ci/es80_signed_field_artifact_evidence.py \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+            NembraApp/App/NembraApp.swift \
+            NembraAppTests/NembraAppTests.swift \
+            .github/workflows/tmp-es80-effective-field-convergence.yml
+          git diff --cached --check
+          git commit -m '[Capture field v14] Converge effective launchable signed candidate'
+          git push origin HEAD:integration/es80-v14-field-effective-convergence-gpt56
