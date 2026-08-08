@@ -99,6 +99,10 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
+    private var physicalLockAccessibilityLabel: String {
+        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -143,7 +147,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Text("Physical Experiment One locked")
                             .font(.headline)
                             .foregroundStyle(.white)
-                            .accessibilityIdentifier("es80.capture.physical-run-locked")
 
                         Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
                             .font(.subheadline)
@@ -153,7 +156,9 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 }
                 .padding(18)
                 .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(physicalLockAccessibilityLabel)
+                .accessibilityIdentifier("es80.capture.physical-run-locked")
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
