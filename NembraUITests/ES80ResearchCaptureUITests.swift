@@ -31,8 +31,8 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The dedicated package-gated NO-GO surface must be active."
         )
         XCTAssertTrue(
-            app.staticTexts["Physical Experiment One locked"].waitForExistence(timeout: 3),
-            "The physical NO-GO boundary must remain explicit."
+            app.descendants(matching: .any)["es80.capture.physical-run-locked"].waitForExistence(timeout: 3),
+            "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
         XCTAssertTrue(
             app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
