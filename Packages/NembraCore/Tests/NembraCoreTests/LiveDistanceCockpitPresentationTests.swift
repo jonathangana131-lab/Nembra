@@ -126,6 +126,42 @@ struct LiveDistanceCockpitPresentationTests {
         #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
     }
 
+    @Test("a missing accepted interval cannot masquerade as gap-free evidence")
+    func unrecordedMissingIntervalFailsClosed() {
+        let snapshot = LiveDistanceSegmentSnapshot(
+            source: .gps,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 100,
+            firstAcceptedSampleUptimeNanoseconds: 100,
+            lastAcceptedSampleUptimeNanoseconds: 2_000_000_100,
+            distanceMeters: 1,
+            hasKnownCoverageGap: false,
+            acceptedSampleCount: 3,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 0
+        )
+
+        #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
+    }
+
+    @Test("recorded gaps must account for every non-integrated accepted interval")
+    func insufficientGapAccountingFailsClosed() {
+        let snapshot = LiveDistanceSegmentSnapshot(
+            source: .gps,
+            method: .trapezoidalBetweenMeasurements,
+            segmentStartUptimeNanoseconds: 100,
+            firstAcceptedSampleUptimeNanoseconds: 100,
+            lastAcceptedSampleUptimeNanoseconds: 3_000_000_100,
+            distanceMeters: 1,
+            hasKnownCoverageGap: true,
+            acceptedSampleCount: 4,
+            integratedIntervalCount: 1,
+            knownCoverageGapCount: 1
+        )
+
+        #expect(LiveDistanceCockpitState(snapshot: snapshot) == .unavailable)
+    }
+
     @Test("gap flag and gap count must agree")
     func contradictoryGapMetadataFailsClosed() {
         let snapshot = LiveDistanceSegmentSnapshot(
