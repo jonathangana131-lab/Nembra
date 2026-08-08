@@ -99,6 +99,16 @@ public final class PassiveBluetoothExperimentOneCoordinator {
         }
     }
 
+    /// Package-only composition seam used by the mechanically gated canonical ES80 factory.
+    /// App code cannot inject a generic controller or bypass the field-execution gate through this
+    /// initializer; `makeAuthorizedES80()` is the only public live-controller construction path.
+    package init(controller: ForegroundCoreBluetoothCaptureController) throws {
+        self.controller = controller
+        run = try PassiveBluetoothExperimentOneRun(
+            vehicleIdentity: VehicleProfile.aovoproES80.identity
+        )
+    }
+
     public var status: Status {
         Status(
             fieldExecutionStatus: PassiveBluetoothExperimentOneFieldExecutionGate.status,
