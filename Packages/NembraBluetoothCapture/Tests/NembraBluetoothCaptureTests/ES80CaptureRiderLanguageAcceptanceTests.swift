@@ -63,7 +63,23 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "package producer",
             "HORIZON READY",
             "healthItem(\"FINITE\"",
-            "healthItem(\"HORIZON\""
+            "healthItem(\"HORIZON\"",
+    "FIELD AUTHORITY",
+    "PREFLIGHT / DECLARATION",
+    "operator declaration",
+    "bounded Bluetooth observation window",
+    "ready to request window completion",
+    "capture system, not this display timer",
+    "CORRELATION STOPPED",
+    "short IDs",
+    "short identifier",
+    "Confirm correlated target",
+    "local correlation evidence",
+    "hardware authentication",
+    "PASSIVE CONNECTION",
+    "Learning the readable surface",
+    "final evidence cutoff",
+    "final capture artifact"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
