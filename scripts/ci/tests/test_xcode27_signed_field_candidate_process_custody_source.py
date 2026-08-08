@@ -53,7 +53,11 @@ class SignedFieldCandidateProcessCustodySourceTests(unittest.TestCase):
             1,
             "The producer must have one authoritative PATH assignment rather than restoring ambient PATH later.",
         )
-        self.assertNotIn("$PATH", self.source.split("\n", 8)[0:8])
+        self.assertNotRegex(
+            self.source,
+            re.compile(r'(?m)^\s*PATH=.*\$\{?PATH\}?'),
+            "The closed producer PATH must never append/prepend caller PATH again.",
+        )
 
     def test_python_is_pinned_and_isolated_in_addition_to_global_path_custody(self):
         self.assertIn('PYTHON3="/usr/bin/python3"', self.source)
