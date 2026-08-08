@@ -102,6 +102,23 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             self.source.index('rename_exclusive(source, destination'),
         )
 
+    def test_successful_publication_is_crash_durable_not_only_namespace_atomic(self):
+        """Success must mean the complete candidate and final directory entry survived storage loss."""
+        publish = self.source[self.source.index('# macOS renamex_np(RENAME_EXCL)'):]
+        self.assertIn('os.fsync', publish)
+        self.assertIn('fsync_tree', publish)
+        self.assertIn('fsync_directory', publish)
+        self.assertIn('durably commit staged field-candidate bytes before publication', publish)
+        self.assertIn('durably commit final field-candidate directory entry after publication', publish)
+        self.assertLess(
+            publish.index('fsync_tree'),
+            publish.index('rename_exclusive(source, destination'),
+        )
+        self.assertLess(
+            publish.index('rename_exclusive(source, destination'),
+            publish.rindex('fsync_directory'),
+        )
+
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
         self.assertIn('Final field-candidate staging directory already exists; refusing reuse', self.source)
