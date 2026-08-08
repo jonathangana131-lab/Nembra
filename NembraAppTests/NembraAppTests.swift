@@ -308,7 +308,7 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
-    func testCaptureShellContinuesSameAuthorityThroughSealAndShare() throws {
+    func testCaptureShellContinuesSameAuthorityThroughSealAndSoftwareEnvelopeShare() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
         let shell = try String(
@@ -317,9 +317,12 @@ extension NembraAppTests {
         )
         XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
         XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.prepareCaptureRediscovery()"))
+        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
         XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("encodedFinalizedObservationHorizonJSON"))
-        XCTAssertTrue(shell.contains("ShareLink(item: finalizedCaptureURL)"))
+        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
+        XCTAssertTrue(shell.contains("declaredStationarySetup"))
+        XCTAssertTrue(shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"))
+        XCTAssertTrue(shell.contains("ShareLink(item: shareURL)"))
+        XCTAssertFalse(shell.contains("ShareLink(item: finalizedCaptureURL)"))
     }
 }
