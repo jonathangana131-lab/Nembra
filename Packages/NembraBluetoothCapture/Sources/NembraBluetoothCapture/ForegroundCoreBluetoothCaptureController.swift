@@ -323,6 +323,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
     private var selectedTargetCancellationPending = false
+    /// Peripheral identifiers whose currently retired CoreBluetooth attempt crossed
+    /// the admitted Horizon. Their eventual terminal callback is transport cleanup
+    /// only and must never be promoted into evidence for a later fresh recorder.
+    private var transportOnlyTerminalCallbackIdentifiers: Set<UUID> = []
     private var scanRequested = false
 
     private var centralManager: CBCentralManager!
@@ -537,6 +541,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         // state but must not revoke the artifact authority or append interruption
         // evidence to the closing/finalized recorder.
         if observationBoundaryBlocksArtifactMutation {
+            transportOnlyTerminalCallbackIdentifiers.insert(peripheral.identifier)
             _ = targetState.retireActiveAttempt()
             peripheral.delegate = nil
             activePeripheral = nil
@@ -1045,6 +1050,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 // the authority currently sealing H.
                 self.connectionTimeoutTask = nil
                 self.selectedTargetCancellationPending = true
+                self.transportOnlyTerminalCallbackIdentifiers.insert(identifier)
                 _ = self.targetState.retireActiveAttempt()
                 peripheral.delegate = nil
                 self.activePeripheral = nil
@@ -1458,6 +1464,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         let disposition = targetState.completeDisconnect(from: identifier)
         guard disposition != .ignored else { return }
 
+        if transportOnlyTerminalCallbackIdentifiers.remove(identifier) != nil {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            return
+        }
+
         // After Horizon admission/freeze, consume CoreBluetooth transport cleanup
         // only. The finalized/closing artifact authority is immutable.
         if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
@@ -1525,6 +1539,10 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             scanRequested = false
             if central.isScanning {
                 central.stopScan()
+            }
+            if observationBoundaryBlocksArtifactMutation,
+               let identifier = activePeripheral?.identifier {
+                transportOnlyTerminalCallbackIdentifiers.insert(identifier)
             }
             if activePeripheral != nil {
                 activePeripheral?.delegate = nil
@@ -1612,6 +1630,7 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
             connectionTimeoutTask?.cancel()
             connectionTimeoutTask = nil
             selectedTargetCancellationPending = true
+            transportOnlyTerminalCallbackIdentifiers.insert(identifier)
             _ = targetState.retireActiveAttempt()
             peripheral.delegate = nil
             activePeripheral = nil
@@ -1652,6 +1671,14 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         let identifier = peripheral.identifier
         let disposition = targetState.completeFailedConnection(from: identifier)
         guard disposition != .ignored else { return }
+
+        if transportOnlyTerminalCallbackIdentifiers.remove(identifier) != nil {
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            return
+        }
 
         if observationBoundaryBlocksArtifactMutation {
             // This terminal transport callback arrived outside H. Consume transport
