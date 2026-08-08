@@ -14,9 +14,6 @@ def once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
-# Producer: carry one monotonic software handoff boundary in the producer-sealed
-# payload. Use intentionally tiny anchors so formatting/comment churn cannot turn
-# this transform into a broad rewrite.
 run_source = once(
     run_source,
     "        let admissionIdentity: UUID\n",
@@ -78,8 +75,6 @@ run_source = once(
     "admission issuance",
 )
 
-# Controller: require a callback receipt on/after that boundary before any target
-# publication or exact recorder installation.
 controller_source = once(
     controller_source,
     "        case experimentOneVehicleContextMismatch\n",
@@ -114,8 +109,14 @@ controller_source = once(
     "",
     "remove stale optional advertisement lookup",
 )
-controller_source = once(
-    controller_source,
+
+consumer_start = controller_source.index("func connectUsingExperimentOneAdmission(")
+consumer_end = controller_source.index("public func cancelActiveConnection()", consumer_start)
+prefix = controller_source[:consumer_start]
+consumer = controller_source[consumer_start:consumer_end]
+suffix = controller_source[consumer_end:]
+consumer = once(
+    consumer,
     """        if let latestAdvertisement {
             enqueue(
                 .advertisement(latestAdvertisement.observation),
@@ -130,8 +131,9 @@ controller_source = once(
             receivedAtDate: latestAdvertisement.receivedAtDate
         )
 """,
-    "fresh advertisement enqueue",
+    "Experiment One fresh advertisement enqueue",
 )
+controller_source = prefix + consumer + suffix
 
 run_path.write_text(run_source)
 controller_path.write_text(controller_source)
