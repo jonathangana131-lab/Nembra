@@ -16,123 +16,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Close producer executable and Python startup custody
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("scripts/ci/xcode27_signed_field_candidate.sh")
-          source = path.read_text()
-
-          shell_anchor = "set -euo pipefail\n"
-          closed_path = '''set -euo pipefail
-
-# Field production must not select same-UID child executables from caller-controlled PATH. Establish
-# one system-only executable search path before dirname, uname, git, xcodebuild, tee, or any other
-# child process participates in source/provenance/private-input handling.
-PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-export PATH
-'''
-          if source.count(shell_anchor) != 1:
-              raise SystemExit("shell-options anchor drifted")
-          source = source.replace(shell_anchor, closed_path, 1)
-
-          python_anchor = '''unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
-
-# Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
-'''
-          python_block = '''unset NEMBRA_INTENDED_FIELD_DEVICE_UDID
-
-# Python participates directly in private-input validation and evidence admission. Never discover it
-# through PATH, and always use isolated mode so caller PYTHON* startup/import state cannot gain
-# authority before descriptor-bound source executes.
-PYTHON3="/usr/bin/python3"
-if [[ ! -x "$PYTHON3" ]]; then
-  echo "Signed field-candidate production requires the sealed system Python 3 at $PYTHON3." >&2
-  exit 2
-fi
-
-# Produce one exact signed iOS Nembra Capture field-build CANDIDATE.
-'''
-          if source.count(python_anchor) != 1:
-              raise SystemExit("Python custody insertion anchor drifted")
-          source = source.replace(python_anchor, python_block, 1)
-
-          # Every current producer Python process is evidence/provenance relevant. Run all of them
-          # through the fixed interpreter in isolated mode; preserve all current arguments/heredocs.
-          occurrences = source.count("python3 ")
-          if occurrences < 10:
-              raise SystemExit(f"expected at least ten producer python3 invocations, found {occurrences}")
-          source = source.replace("python3 ", '"$PYTHON3" -I ')
-
-          env_anchor = '''  echo "physical_authorization=not-granted"
-  xcodebuild -version
-'''
-          env_replacement = '''  echo "physical_authorization=not-granted"
-  "$PYTHON3" -I --version
-  xcodebuild -version
-'''
-          if source.count(env_anchor) != 1:
-              raise SystemExit("field-candidate environment-record anchor drifted")
-          source = source.replace(env_anchor, env_replacement, 1)
-
-          # Preserve the newly composed private-input ancestry hardening while changing interpreter
-          # selection. This is the collision guard that prevents replaying the older #1084 blob.
-          required_preserved = [
-              '--repository-root "$ROOT"',
-              'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE',
-              'PRIVATE_RUNNER_SNAPSHOT',
-              'INSPECTOR_SNAPSHOT',
-              'FINAL_STAGING_OWNED=0',
-              'renamex_np',
-          ]
-          for token in required_preserved:
-              if token not in source:
-                  raise SystemExit(f"current producer protection disappeared: {token}")
-
-          path.write_text(source)
-          PY
+      - name: Apply current-spine custody transform
+        run: python3 scripts/ci/zz_temp_es80_signed_field_process_custody_transform.py
 
       - name: Validate focused process custody
         run: |
           bash -n scripts/ci/xcode27_signed_field_candidate.sh
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path("scripts/ci/xcode27_signed_field_candidate.sh").read_text()
-          path_match = re.search(
-              r'^PATH="/usr/bin:/bin:/usr/sbin:/sbin"\s*\nexport PATH$',
-              source,
-              re.MULTILINE,
-          )
-          if not path_match:
-              raise SystemExit("closed system PATH missing")
-          if path_match.start() > source.index('ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"'):
-              raise SystemExit("PATH is not closed before repository-root child commands")
-          if source.count('PATH="/usr/bin:/bin:/usr/sbin:/sbin"') != 1:
-              raise SystemExit("producer has more than one authoritative PATH assignment")
-          if 'PYTHON3="/usr/bin/python3"' not in source:
-              raise SystemExit("fixed system Python missing")
-          if re.search(r'(?m)^\s*python3(?:\s|$)', source):
-              raise SystemExit("unqualified python3 invocation remains")
-          invocations = re.findall(r'(?m)^\s*"\$PYTHON3"[^\n]*', source)
-          if not invocations:
-              raise SystemExit("no pinned Python invocations found")
-          for invocation in invocations:
-              if not re.search(r'"\$PYTHON3"\s+-I(?:\s|$)', invocation):
-                  raise SystemExit(f"non-isolated pinned Python invocation: {invocation}")
-          for descriptor in (7, 9):
-              if not re.search(rf'"\$PYTHON3"\s+-I\s+/dev/fd/{descriptor}\b', source):
-                  raise SystemExit(f"private runner FD {descriptor} is not pinned+isolated")
-          if '--repository-root "$ROOT"' not in source:
-              raise SystemExit("new private-input ancestry argument was lost")
-          PY
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_process_custody_source.py
+          grep -F -- '--repository-root "$ROOT"' scripts/ci/xcode27_signed_field_candidate.sh
           git diff --check
 
       - name: Publish clean product checkpoint
         run: |
           rm .github/workflows/zz-es80-signed-field-process-custody-transform.yml
+          rm scripts/ci/zz_temp_es80_signed_field_process_custody_transform.py
           git config user.name "Nembra V14 process-custody recovery"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
