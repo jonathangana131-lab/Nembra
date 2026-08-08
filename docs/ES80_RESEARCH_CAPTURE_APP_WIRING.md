@@ -6,9 +6,9 @@ Recovery worker lane: `parallel/recover-es80-research-capture-app-v13/chat-m8q2r
 
 Recovery PR: #350
 
-Accepted passive-runtime dependency: PR #297 product head `ae0f2a20a6aecec02d972b9a66f75864d97796e9`.
+Accepted passive-runtime source dependency: PR #297 product head `ae0f2a20a6aecec02d972b9a66f75864d97796e9`.
 
-Current-main passive-runtime re-anchor remains separately owned; do not race that worker or treat this dependent PR as permission to write its branch.
+Current-main passive-runtime integration dependency: PR #353 or its accepted reconciled descendant.
 
 ## Product outcome
 
@@ -27,11 +27,11 @@ Release builds ignore those selectors and use the standard app path.
 
 ## Nembra Capture workflow
 
-The default research surface is intentionally sparse and operator-oriented:
+The product-facing research surface is intentionally sparse and operator-oriented:
 
 1. preflight Bluetooth while stationary;
 2. **Scan for scooter** without auto-selecting a device;
-3. physically correlate and explicitly select one nearby candidate;
+3. physically correlate and explicitly select one nearby candidate using the accepted experiment procedure;
 4. **Start Capture**, which invokes the controller's real target-session/connect boundary;
 5. wait for finite service/topology/read/subscription acquisition to become complete;
 6. once **Capture Active** appears, keep Nembra in the foreground with the screen awake and set the phone down safely;
@@ -40,9 +40,17 @@ The default research surface is intentionally sparse and operator-oriented:
 9. Nembra requests the controller's versioned JSON first, decodes those exact prepared bytes through the capture schema, then ends the selected connection;
 10. review the prepared-file facts and share the unchanged JSON for offline analysis.
 
-Technical UUID/GATT/raw-stream/marker controls remain available behind **Advanced details** while the controller is idle. The polished shell does not duplicate the recorder, invent a second telemetry source, or promote presentation state into evidence.
-
 A separate same-target session currently requires relaunching Nembra Capture because the parent controller intentionally does not expose an unsafe public reset that could silently reuse or mix target evidence.
+
+## No legacy-console escape hatch
+
+The accepted package also contains `ES80PassiveCaptureResearchView`, a broad engineering console with its own scan, connect, cancel, marker, analysis, and export controls.
+
+That console is useful package-level research infrastructure, but it is **not** a read-only details screen. Exposing it from the product shell would let an operator start a second acquisition path outside the shell's foreground-integrity, one-shot-finalization, and product-state rules.
+
+Therefore #350 intentionally does **not** link the package console from Nembra Capture.
+
+A future advanced disclosure may return only when it is implemented as a genuinely read-only inspector over the same authoritative selected session/artifact, or when the package console itself adopts the exact same product lifecycle contract. Do not re-add the existing control-capable console under a harmless-sounding **Advanced details** label.
 
 ## Foreground-only lifecycle contract
 
@@ -75,6 +83,8 @@ Broad scan results remain candidates, not verified ES80 identities.
 The visible row and VoiceOver semantics both include the same short UUID prefix as a **candidate ID**. This lets VoiceOver users distinguish two nearby peripherals with the same or missing local name without promoting that UUID, local name, or RSSI into physical identity proof.
 
 The shell also fails closed if a locally selected UUID disappears from the controller's current candidate catalog. A stale UUID cannot continue to render an enabled **Start Capture** action after a scan epoch or central-state invalidation clears the candidate catalog.
+
+Candidate selection still requires an external, accepted physical-correlation procedure. Name, candidate ID, and RSSI alone are never sufficient proof. If the accepted first-physical-capture runbook cannot mechanically disambiguate the target with current tooling, the experiment must stop rather than asking the operator to choose by intuition.
 
 ## Prepared-file summary
 
@@ -138,7 +148,7 @@ The product shell keeps primary actions at large touch targets, gives candidate 
 
 The intentionally black research surface uses an explicit dark presentation so semantic secondary text keeps deterministic contrast even when the phone otherwise uses Light appearance.
 
-Raw technical detail remains a secondary disclosure rather than occupying the primary physical workflow.
+The product shell intentionally omits the control-capable package console. Future raw technical detail must be a read-only disclosure that cannot silently become a second acquisition workflow.
 
 ## Simulator acceptance
 
@@ -148,7 +158,7 @@ Simulator QA proves only that:
 - the explicit launch selector resolves to **Nembra Capture**;
 - the passive-only and foreground-only warnings remain visible;
 - the obvious stationary setup action exists;
-- advanced technical detail remains available by disclosure;
+- the control-capable package research console is **not** exposed from the product shell;
 - the normal `Vehicle controls` surface is absent;
 - the shell renders at the iPhone 12 / iOS 27 baseline without claiming any physical Bluetooth result.
 
@@ -164,28 +174,27 @@ That accepted parent proof does not accept later app-shell commits. This child r
 
 ## First physical experiment after combined build acceptance
 
-Use the smallest first physical action before any moving capture or field decoding:
+The authoritative V13 physical procedure is owned by #351 or its accepted descendant. Do not execute from this section if the dedicated runbook has moved.
 
-1. install/run the accepted Debug build on the iPhone 12 / iOS 27 target by selecting **Nembra ES80 Research**;
-2. verify **Nembra Capture**, **Passive evidence only**, and the foreground-only warning are visible;
-3. keep the ES80 powered on, stationary, charger state noted, and do not enable any unknown command path;
-4. choose **Scan for scooter**;
-5. physically correlate the likely scooter candidate, then explicitly select it; do not treat name/RSSI/candidate ID as identity proof;
-6. choose **Start Capture** and wait until the shell reports **Capture Active**;
-7. keep Nembra foregrounded with the screen awake; set the phone down safely and keep the first baseline stationary for about 60 seconds;
-8. while still safely stopped, choose **Finish Capture**, review the prepared-file facts, and share the versioned JSON unchanged;
-9. inspect the immutable artifact with Nembra's offline tooling before proposing Tuya framing or any battery/current/power/speed field mapping.
+At minimum, the product-shell side of the gate requires:
+
+1. an accepted Debug build on the iPhone 12 / iOS 27 target through **Nembra ES80 Research**;
+2. visible **Nembra Capture**, **Passive evidence only**, and foreground-only warnings;
+3. one mechanically disambiguated candidate under the accepted first-capture procedure — never a choice based only on name/RSSI/candidate ID;
+4. one **Start Capture** target session reaching **Capture Active** while stationary;
+5. Nembra kept foregrounded with the screen awake for the accepted stationary evidence window;
+6. one **Finish Capture** activation while safely stopped;
+7. export of the prepared versioned JSON unchanged;
+8. offline analysis before any Tuya framing or battery/current/power/speed field mapping is promoted.
 
 If Nembra leaves the active foreground during live evidence capture, discard that attempt and repeat it; the shell intentionally refuses export from that session.
-
-Only after this stationary path is repeatable and accepted should a later experiment ask for a short moving capture. A moving experiment still requires a safe mounting/handling plan that keeps the research app foregrounded without rider interaction.
 
 Expected first evidence is real advertisement identity, real GATT topology/properties, passive value streams, provenance, raw cadence, and continuity boundaries. It is **not** yet battery/current/power/speed semantics.
 
 ## Dependency / merge rule
 
-This recovery intentionally targets the accepted #297 dependency branch while the current-main passive-capture re-anchor is owned elsewhere. It must not duplicate, rewrite, or race that re-anchor branch.
+This recovery intentionally targets the accepted #297 dependency branch while #353 owns the current-main passive-runtime re-anchor. It must not duplicate, rewrite, or race #353.
 
-After the passive runtime is accepted on current main (or an explicitly accepted successor branch), reconcile this six-path app-facing slice onto that exact descendant, verify dependency-relative scope again, and rerun exact-head Xcode 27 / iPhone 12 / iOS 27 acceptance before integration.
+After #353 (or its successor) is accepted on then-current main, create/recover a fresh app-shell integration branch from that exact accepted descendant. Graft only this app-facing slice intentionally, refresh changed-path overlap against current main, and rerun exact-head Xcode 27 / iPhone 12 / iOS 27 acceptance before integration.
 
 No ancestor, queued, skipped, or failed run becomes proof for a newer child head. Software/Simulator green is not physical AOVOPRO ES80 proof.
