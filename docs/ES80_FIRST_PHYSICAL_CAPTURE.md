@@ -20,19 +20,22 @@ After this first artifact is analyzed, the next experiment must be selected from
 
 Do not run this experiment until **all** of the following are true:
 
-- the accepted passive-capture runtime closes the current source-truth blockers, not merely its compile/test gate;
-- stopped/non-powered discovery callbacks cannot mutate the candidate catalog or selected-target evidence;
-- local/operator cancellation records its explicit continuity fence before artifact-authority retirement, while timeout/finalized teardown paths do not manufacture duplicate or false interruptions;
-- the current-main passive-capture integration composes the reviewed controlled-comparison descendant (currently #334 or an accepted equivalent), including canonical GATT stream identity, rather than the older comparison blob;
-- the accepted target-correlation descendant (currently #358 or an equivalent) provides a **live package-owned producer** that can issue honestly bounded `OFF₁ -> ON₁ -> OFF₂ -> ON₂` observation windows under one software observation authority;
-- that live producer does not represent a local counter as CoreBluetooth scan-request provenance. If it uses multiple scan requests, it must solve delayed-callback isolation legitimately; if it uses one uninterrupted scan, it must bind windows to admitted callback-receipt evidence and fail the series on lifecycle/authority loss;
-- the V13 product-facing Nembra Capture shell (currently #350 or an accepted descendant) is reconciled onto that repaired current-main passive runtime **and** the accepted repeated-correlation producer, then passes exact-head iPhone 12 / iOS 27 app acceptance;
-- the shell keeps its screen-awake policy through artifact finalization and its first-run copy matches the accepted repeated power-cycle flow rather than a weaker one-cycle/name/RSSI heuristic;
-- if the stationary sidecar (#347 or accepted descendant) is part of the accepted experiment path, Nembra exposes a mechanical shell/CLI path to build and verify it from exact raw bytes, full selected UUID, build SHA, and setup. The operator must not hand-edit a sidecar or write Swift code to create one;
-- the exact Nembra build/commit used on the phone is known;
-- immutable raw export and the accepted offline report executable are available.
+- the accepted passive-capture runtime closes source-truth blockers, not merely its compile/test gate;
+- stopped/non-powered discovery callbacks cannot mutate the selected-target evidence path;
+- connection cancellation uses cause-correct continuity fencing, while timeout/finalized teardown paths do not manufacture duplicate or false interruptions;
+- the current-main passive-capture integration composes the reviewed controlled-comparison descendant (currently #334 or an accepted equivalent), including canonical GATT value-stream identity and sealed evidence-derived result authority;
+- the repeated target-correlation policy (currently #358 or accepted equivalent) and the **live window producer** (currently #361 or accepted equivalent) are both accepted;
+- the live correlation producer can form all four `OFF₁ -> ON₁ -> OFF₂ -> ON₂` receipt-bounded windows without fabricating CoreBluetooth scan-request provenance. The current #361 design uses one fresh `CBCentralManager` transport epoch per window and exact callback-manager identity; if that design changes, the accepted replacement must preserve equivalent delayed-callback isolation;
+- explicit correlation abandonment invalidates the whole non-complete series even **between** completed windows, so foreground/operator/lifecycle failure can never patch pre-gap windows into later phases;
+- immutable observation-session evidence (currently #363 or accepted equivalent) is integrated so finite-ready and terminal observation-horizon boundaries are ordered against the same controller evidence queue/cutoff as raw callbacks;
+- the accepted producer proves the post-ready observation interval from monotonic boundary evidence, not a UI timer or first/last BLE callback span;
+- the V13 product-facing Nembra Capture shell (currently #350 or accepted descendant) is reconciled onto the repaired current-main runtime, accepted live correlation producer, and accepted observation-horizon producer, then passes exact-head iPhone 12 / iOS 27 app acceptance;
+- the shell keeps its screen-awake / foreground-integrity policy through correlation, selected-target capture, terminal horizon, immutable artifact preparation, and share/export;
+- if the stationary sidecar (#347 or accepted descendant) is part of the accepted experiment path, Nembra exposes a mechanical shell/CLI path to build and verify it from exact raw bytes, full selected UUID, build SHA, setup, and accepted correlation provenance. The operator must not hand-edit a sidecar or write Swift code to create one;
+- immutable raw export and the accepted offline report executable (#301 or accepted descendant) are available;
+- the exact Nembra product head used on the phone has terminal exact-head Apple-toolchain/app acceptance. A skipped, queued, cancelled, stale-parent, or pre-fix run is not green.
 
-A terminal green workflow on an older source blob is not enough if source review has demonstrated a truth defect on that exact blob. Repair, compose, then re-gate the **exact final product head**.
+A terminal green workflow on an older source blob is not enough if later product-source commits change the evidence boundary. Repair, compose, then re-gate the **exact final product head**.
 
 A green Simulator/package run is software evidence only. It never satisfies the physical experiment by itself.
 
@@ -64,8 +67,8 @@ For experiment one:
 - do not treat `.write` / `.writeWithoutResponse` as authorization;
 - keep the stock Tuya/AOVOPRO app closed on every device for experiment one;
 - insert **zero** stock-app reference markers;
-- keep Nembra in the active foreground for the entire correlation, selected-target session, and artifact finalization;
-- any foreground-integrity loss, Bluetooth-authority loss, correlation-authority reset, ambiguous target result, finite-acquisition failure, or artifact-finalization failure makes the attempt unusable. Do not reconstruct a pass from partial evidence.
+- keep Nembra in the active foreground for the entire correlation, selected-target session, observation horizon, and artifact finalization;
+- any foreground-integrity loss, Bluetooth-authority loss, correlation-series invalidation, ambiguous target result, finite-acquisition failure, boundary-ordering failure, or artifact-finalization failure makes the attempt unusable. Do not reconstruct a pass from partial evidence.
 
 ## Physical setup
 
@@ -78,17 +81,23 @@ For experiment one:
 
 ## Target correlation — accepted repeated flow only
 
-The former one-cycle `OFF -> ON` procedure is no longer sufficient.
+The former one-cycle `OFF -> ON` procedure is not sufficient.
 
-Experiment one may proceed only through the accepted live descendant of the repeated target-correlation policy currently owned by #358:
+Experiment one proceeds only through the accepted live descendant of the repeated policy:
 
 `OFF₁ -> ON₁ -> OFF₂ -> ON₂`
 
+For this first procedure, each measurement window uses a **10-second minimum accepted callback-receipt window**. Ten seconds is an operator/runbook sampling duration, not a claimed BLE cadence or proof that OFF-window non-observation equals physical absence.
+
 Required product behavior:
 
-- all four bounded observation windows belong to one package-issued software observation authority;
-- window chronology is strictly increasing inside that authority;
+- all four completed snapshots belong to one sealed package-issued observation-series authority;
+- the live producer mechanically isolates adjacent transport windows. Under the current #361 design, each window gets a fresh `CBCentralManager`; delayed callbacks from a retired manager fail exact-manager identity rather than inheriting a local scan-generation counter;
+- one completed window must never be reused after explicit series abandonment, foreground loss, Bluetooth-authority failure, controller/producer reset, invalid receipt chronology, or another known authority gap;
+- whole-series invalidation must work during a live window **and between** windows;
+- window chronology is strictly increasing inside the one series;
 - snapshots use **full CoreBluetooth UUIDs**, never shortened prefixes;
+- snapshots contain callbacks actually admitted inside the bounded window, not a cumulative candidate catalog carried from another window;
 - a UUID seen in either complete OFF window is ineligible as the positive “new when powered on” candidate for that cycle;
 - explicitly non-connectable ON candidates are excluded; unknown connectability may remain only as the accepted policy permits;
 - the same full UUID must satisfy the ON-vs-OFF pattern in both cycles;
@@ -98,23 +107,39 @@ Required product behavior:
 - local name, RSSI, advertised service/product guesses, short UUID prefixes, ordering, or Tuya signatures never break a tie or manufacture authority;
 - the report is **physical-correlation evidence only**, not scooter authentication or permanent identity.
 
-Do not manually improvise four stop/restart scans while #358 still says live window isolation is unresolved. Follow the exact accepted shell/producer workflow once that software exists. If the producer cannot honestly form four bounded windows, stop here and do not perform the physical capture.
+### Operator sequence
+
+Use the accepted shell; do not manually improvise raw CoreBluetooth scans.
+
+1. Confirm the shell shows `OFF₁` as the expected operator phase. Leave the scooter powered off.
+2. Start the first correlation window and keep the app foreground for at least 10 accepted seconds. Finish the window only when the product says the minimum receipt window is satisfied.
+3. Power the stationary scooter on normally. Wait for the accepted shell's transition/settling instruction; transition time is outside the measurement window and is not RF-emission evidence.
+4. Run the `ON₁` window for at least 10 accepted seconds and finish it through the product flow.
+5. Power the scooter off normally. Follow the accepted transition/settling instruction, then run `OFF₂` for at least 10 accepted seconds.
+6. Power the scooter on normally. Follow the accepted transition/settling instruction, then run `ON₂` for at least 10 accepted seconds.
+7. Do not continue if the product reports series invalidation, zero repeatable candidates, or ambiguity.
+8. Continue to selected-target capture only if the accepted producer returns exactly one repeatable **full** UUID and the operator explicitly selects that UUID.
+
+A fresh-manager transport epoch or another accepted isolation mechanism is a software evidence boundary only. The repeated result remains correlation, not physical authentication.
 
 ## Selected-target passive capture
 
 After the accepted correlation flow returns exactly one repeatable full UUID and the operator explicitly selects it:
 
-1. Leave the scooter powered on, stationary, and untouched for the settling interval required by the accepted shell/producer.
+1. Leave the scooter powered on, stationary, and untouched for the settling interval required by the accepted shell.
 2. Start the target-scoped connection/capture for that exact full UUID.
 3. Keep Nembra foregrounded while it performs finite service / included-service / characteristic / descriptor discovery plus only GATT-permitted reads/subscriptions.
-4. Wait until Nembra reports finite passive acquisition complete/ready.
-5. If it fails closed, times out, disconnects before readiness, changes authority, reports lifecycle-integrity loss, or becomes ambiguous, stop. Preserve diagnostics only as failure evidence; do not claim an unobserved service/field is absent.
-6. After readiness, leave the healthy foreground target session running for **60 seconds** without touching scooter controls.
-7. Tap **Finish Capture once** while still stationary.
-8. Keep Nembra active/foreground and the screen awake until immutable artifact preparation/share UI is complete.
-9. Export the prepared versioned JSON unchanged.
-10. If the accepted provenance tooling is wired, generate and verify the stationary sidecar **mechanically** from those exact raw bytes. Do not type a short UUID into it or manually reconstruct the full UUID.
-11. End the experiment. Do not add a decoder, rename streams, or send a write from the phone.
+4. Wait until the trusted finite acquisition ledger reaches accepted ready state.
+5. The controller must place a `finiteAcquisitionReady` observation boundary into the **same ordered evidence authority** after every raw callback admitted through that ready transition. A boundary written merely because a UI label changed is insufficient.
+6. If finite acquisition fails closed, times out, disconnects before readiness, changes authority, reports lifecycle-integrity loss, or cannot preserve the ready boundary ordering, stop. Preserve diagnostics only as failure evidence; do not claim an unobserved service/field is absent.
+7. After the accepted ready boundary, keep the scooter untouched and Nembra foregrounded for a **minimum 60 seconds of monotonic observation time**. BLE may be quiet; do not generate periodic fake events to make the interval visible.
+8. Finish becomes eligible only when the accepted observation-horizon producer can append a terminal `observationHorizon` boundary at least 60,000,000,000 monotonic nanoseconds after the accepted ready boundary, under unchanged target/lifecycle authority.
+9. The terminal horizon must be ordered after every raw callback admitted through its controller cutoff and must watermark the final raw-record prefix included in the immutable artifact. Later teardown callbacks must not mutate or fail that frozen artifact.
+10. Tap **Finish Capture once** while still stationary. Keep Nembra active/foreground and the screen awake until immutable artifact preparation/share UI is complete.
+11. Export the prepared schema-versioned JSON unchanged.
+12. Verify the immutable artifact itself contains the accepted ready→horizon evidence with a monotonic interval of at least 60 seconds. A UI timer, wall clock, or first/last BLE callback span is not a substitute.
+13. If the accepted provenance tooling is wired, generate and verify the stationary sidecar **mechanically** from those exact raw bytes. Do not type a short UUID into it or manually reconstruct the full UUID.
+14. End the experiment. Do not add a decoder, rename streams, or send a write from the phone.
 
 ## First-run provenance values
 
@@ -125,9 +150,10 @@ For the accepted stationary-capture manifest/sidecar contract, the intended setu
 - execution context: `foregroundUnlockedScreenOn`;
 - stock-app reference setup: `none`;
 - raw stock-app marker count: `0`;
-- target-correlation provenance: the accepted repeated correlation report/method result, if/when the accepted sidecar schema has a truthful representation for it.
+- target-correlation provenance: accepted repeated `OFF₁/ON₁/OFF₂/ON₂` result and full selected UUID, if/when the accepted sidecar schema has a truthful representation for it;
+- observation interval: derive from the immutable capture's accepted `finiteAcquisitionReady` -> `observationHorizon` monotonic boundary evidence, not from operator memory.
 
-These are experiment/procedure facts or operator declarations, not scooter telemetry, permanent identity, or OS attestation. If the immutable raw artifact contradicts metadata that can be checked mechanically, fail closed.
+These are experiment/procedure facts or structured Nembra observation evidence, not scooter telemetry, permanent identity, RF emission timestamps, or OS attestation. If the immutable raw artifact contradicts metadata that can be checked mechanically, fail closed.
 
 ## Automated offline handoff
 
@@ -149,9 +175,10 @@ If the accepted report tool is unavailable, preserve the raw capture unchanged a
 
 Keep together:
 
-- exact versioned raw capture JSON bytes;
+- exact schema-versioned raw capture JSON bytes;
 - exact Nembra build/commit identity;
 - accepted repeated-correlation report/provenance, including the full selected CoreBluetooth UUID;
+- immutable `finiteAcquisitionReady` and terminal `observationHorizon` boundaries proving the accepted post-ready observation interval;
 - explicit operator-declared state: stationary, charger disconnected, foreground/unlocked/screen-on, stock app unused;
 - generated stationary sidecar if accepted tooling supports it;
 - generated offline report as a separate derived artifact;
@@ -166,6 +193,9 @@ Only if:
 - the operator explicitly selected that UUID;
 - the accepted runtime preserved candidate/connection/evidence lifecycle truth;
 - finite acquisition reached accepted ready state;
+- immutable capture evidence contains an accepted `finiteAcquisitionReady` boundary;
+- immutable capture evidence contains a terminal `observationHorizon` boundary at least 60 seconds later on the same valid experiment/target authority;
+- the horizon watermarks the final raw-record prefix through the accepted cutoff and no later callback mutates/fails the frozen artifact;
 - one immutable target-scoped artifact exported successfully;
 - target attribution is non-ambiguous;
 - no capture-integrity / foreground / Bluetooth-authority failure occurred;
@@ -173,7 +203,7 @@ Only if:
 - accepted offline tooling can open the raw artifact;
 - accepted provenance tooling, when part of the run gate, verifies its sidecar against those exact bytes.
 
-A pass means only: **Nembra has a usable passive physical fingerprint artifact for one repeatedly correlated observed CoreBluetooth target.**
+A pass means only: **Nembra has a usable passive physical fingerprint artifact for one repeatedly correlated observed CoreBluetooth target, including a truthful stationary post-ready observation horizon.**
 
 It does **not** mean: Nembra decoded the ES80 protocol, permanently authenticated scooter identity, verified a telemetry field, or authorized any command.
 
@@ -182,9 +212,12 @@ It does **not** mean: Nembra decoded the ES80 protocol, permanently authenticate
 Retry later with a completely fresh accepted correlation/capture series if:
 
 - repeated correlation yields zero or multiple candidates;
-- observation authority/window integrity is invalid;
-- correlation product wiring is not yet accepted;
+- observation-series authority/window integrity is invalid;
+- a known correlation abandonment/lifecycle gap occurs, including between windows;
+- correlation product wiring is not accepted;
 - finite acquisition never becomes ready;
+- ready/horizon ordering or watermark evidence is invalid;
+- the accepted monotonic post-ready interval is less than 60 seconds;
 - capture fails closed;
 - the app leaves the required active foreground condition;
 - Bluetooth authority changes;
