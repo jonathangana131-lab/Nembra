@@ -529,7 +529,7 @@ struct ES80CaptureShellView: View {
         case .acquiring:
             statePanel(
                 eyebrow: "PASSIVE DISCOVERY",
-                title: "Learning the readable surface",
+                title: "Reading available data",
                 message: "Nembra is passively discovering what this target exposes. Observation starts only after that discovery is complete.",
                 symbol: "waveform.path.ecg.rectangle"
             )
@@ -593,8 +593,8 @@ struct ES80CaptureShellView: View {
         case .finalizing:
             statePanel(
                 eyebrow: "SEALING",
-                title: "Freezing final evidence",
-                message: "Nembra is sealing the final evidence cutoff, checking capture integrity, and preparing the final capture artifact. Do not leave the app while this finishes.",
+                title: "Sealing capture",
+                message: "Nembra is finishing the accepted read-only observations, checking capture integrity, and preparing the final Share file. Keep Nembra open until this finishes.",
                 symbol: "lock.doc"
             )
             ProgressView()
@@ -785,12 +785,12 @@ struct ES80CaptureShellView: View {
 #else
             if let report = finalShareIntegrityReport {
 #endif
-                Text("The exact \(report.finalShareByteCount.formatted())-byte final Share artifact passed the final Share and nested capture integrity checks. No protocol field meaning is claimed yet.")
+                Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required integrity check and is ready to share for analysis. No protocol field meaning is claimed yet.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let artifact = coordinator.finalizedArtifact {
-                Text("\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Analysis readiness is not earned until Nembra verifies the exact final Share bytes and their nested evidence.")
+                Text("\(artifact.captureJSON.count.formatted()) capture bytes are sealed from this run. Nembra still needs to verify the final Share file before this capture is ready for analysis.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1599,10 +1599,10 @@ struct ES80CaptureShellView: View {
 
     private func heroTitle(for phase: Phase) -> String {
         switch phase {
-        case .complete: return "Evidence, sealed."
-        case .readyToSeal, .observing: return "Hold the evidence line."
-        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Bind the real signal."
-        default: return "Find the real scooter signal."
+        case .complete: return "Capture, sealed."
+        case .readyToSeal, .observing: return "Keep it steady."
+        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Stay with this signal."
+        default: return "Find the scooter signal."
         }
     }
 
