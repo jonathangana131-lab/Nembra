@@ -65,7 +65,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
 
     /// Evaluates a caller-required minimum against the exact completed window receipts.
     ///
-    /// The canonical OFF₁ -> ON₁ -> OFF₂ -> ON₂ phase order and strictly increasing package-issued
+    /// The canonical OFF₁ -> ON₁ -> OFF₂ -> ON₂ phase order and exact package-issued 1 -> 2 -> 3 -> 4
     /// window sequence are rechecked instead of trusting only `result != nil`. A zero minimum fails
     /// closed so an accidentally unconfigured provenance gate cannot silently pass.
     public static func assess(
@@ -92,13 +92,11 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
             )
         }
 
-        var previousSequence: UInt64?
         var evidence: [WindowEvidence] = []
         evidence.reserveCapacity(result.windows.count)
 
-        for receipt in result.windows {
-            if let previousSequence,
-               receipt.windowSequence.rawValue <= previousSequence {
+        for (index, receipt) in result.windows.enumerated() {
+            guard receipt.windowSequence.rawValue == UInt64(index + 1) else {
                 return Self(
                     status: .invalidWindowSet,
                     observationResult: result,
@@ -106,7 +104,6 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
                     windows: evidence
                 )
             }
-            previousSequence = receipt.windowSequence.rawValue
 
             guard receipt.endedAtUptimeNanoseconds >= receipt.startedAtUptimeNanoseconds else {
                 return Self(
