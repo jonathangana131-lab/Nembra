@@ -25,6 +25,10 @@ final class NembraUITests: XCTestCase {
 
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
+        XCTAssertTrue(
+            waitForEnabled(drive),
+            "Drive must become actionable after the prior confirmed command fully clears."
+        )
         drive.tap()
 
         let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
@@ -36,6 +40,10 @@ final class NembraUITests: XCTestCase {
 
         let lock = button(containing: "Lock", in: app)
         XCTAssertTrue(lock.exists)
+        XCTAssertTrue(
+            waitForEnabled(lock),
+            "Lock must become actionable after the confirmed mode command fully clears."
+        )
         lock.tap()
         let confirmLock = app.sheets.buttons["Lock"]
         XCTAssertTrue(confirmLock.waitForExistence(timeout: 2))
@@ -51,6 +59,141 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(controls.exists)
         controls.tap()
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        assertMinimumTouchTarget(app.buttons["vehicle-controls.mode.drive"], named: "Vehicle Controls Drive mode")
+        keepScreenshot(named: "Vehicle Controls Connected")
+    }
+
+    @MainActor
+    func testVehicleControlsUnavailableVisualTruth() {
+        let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 3))
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Last confirmed settings shown below"].waitForExistence(timeout: 2))
+
+        let drive = app.buttons["vehicle-controls.mode.drive"]
+        if drive.waitForExistence(timeout: 1) {
+            XCTAssertFalse(drive.isEnabled, "Vehicle mode controls must stay unavailable while the scooter is not connected.")
+            XCTAssertEqual(drive.value as? String, "Last confirmed selection")
+        }
+
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable")
+    }
+
+    @MainActor
+    func testVehicleControlsPrimaryES80UnverifiedVisualTruth() {
+        let app = launchProduction(orientation: .portrait)
+
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Controls unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["This vehicle configuration is not verified for control commands."].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["Reconnect"].exists, "Unverified ES80 production state must not offer a fake reconnect-to-controls path.")
+        XCTAssertFalse(
+            app.descendants(matching: .any)["vehicle-controls.retained-state"].exists,
+            "An ordinary unverified ES80 launch has no confirmed vehicle session to label as retained."
+        )
+
+        let cruiseOn = app.buttons["vehicle-controls.cruise.on"]
+        if cruiseOn.waitForExistence(timeout: 1) {
+            XCTAssertFalse(cruiseOn.isEnabled, "Unverified ES80 cruise controls must remain read-only.")
+        }
+        let zeroStart = app.buttons["vehicle-controls.start.zeroStart"]
+        if zeroStart.waitForExistence(timeout: 1) {
+            XCTAssertFalse(zeroStart.isEnabled, "Unverified ES80 start behavior controls must remain read-only.")
+        }
+
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Unverified")
+    }
+
+    @MainActor
+    func testVehicleControlsPrimaryES80RecomposesAtAccessibilityDynamicType() {
+        let app = launchProduction(
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3))
+
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        XCTAssertTrue(scrollToHittable(controls, in: app), "Vehicle controls must remain reachable at Accessibility XXXL.")
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Controls unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["This vehicle configuration is not verified for control commands."].waitForExistence(timeout: 2))
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Accessibility XXXL Top")
+
+        let cruiseOff = app.buttons["vehicle-controls.cruise.off"]
+        let cruiseOn = app.buttons["vehicle-controls.cruise.on"]
+        XCTAssertTrue(scrollToVisible(cruiseOff, in: app))
+        XCTAssertTrue(scrollToVisible(cruiseOn, in: app))
+        XCTAssertFalse(cruiseOff.isEnabled)
+        XCTAssertFalse(cruiseOn.isEnabled)
+        XCTAssertGreaterThan(
+            cruiseOn.frame.minY,
+            cruiseOff.frame.maxY,
+            "Accessibility Dynamic Type must stack ES80 Cruise controls vertically instead of preserving the compact adaptive row."
+        )
+
+        keepScreenshot(named: "Vehicle Controls AOVOPRO ES80 Accessibility XXXL Controls")
+    }
+
+    @MainActor
+    func testVehicleControlsUnavailableRecoveryRecomposesAtAccessibilityDynamicType() {
+        let app = launch(
+            scenario: "scooter-unavailable",
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 4))
+        let controls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        XCTAssertTrue(scrollToHittable(controls, in: app), "Vehicle controls must remain reachable in the unavailable fixture at Accessibility XXXL.")
+        controls.tap()
+
+        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        let recoveryMessage = app.staticTexts["Keep the scooter powered on and nearby, then try again."]
+        let reconnect = app.buttons["Reconnect"]
+        XCTAssertTrue(recoveryMessage.waitForExistence(timeout: 2))
+        XCTAssertTrue(reconnect.waitForExistence(timeout: 2))
+        XCTAssertGreaterThan(
+            reconnect.frame.minY,
+            recoveryMessage.frame.maxY,
+            "Accessibility Dynamic Type must place the recovery action below the complete issue prose instead of squeezing both into one row."
+        )
+        XCTAssertTrue(app.staticTexts["Last confirmed settings shown below"].waitForExistence(timeout: 2))
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable Accessibility XXXL Top")
+
+        let walk = app.buttons["vehicle-controls.mode.walk"]
+        let eco = app.buttons["vehicle-controls.mode.eco"]
+        XCTAssertTrue(scrollToVisible(walk, in: app))
+        XCTAssertTrue(scrollToVisible(eco, in: app))
+        XCTAssertGreaterThan(
+            eco.frame.minY,
+            walk.frame.maxY,
+            "Accessibility Dynamic Type must stack Ride Mode controls in one column."
+        )
+
+        keepScreenshot(named: "Vehicle Controls Scooter Unavailable Accessibility XXXL Controls")
     }
 
     @MainActor
@@ -195,13 +338,71 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func launch(
         scenario: String,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        applyContentSizeCategory(contentSizeCategory, to: app)
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func launchProduction(
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
+    ) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
+        let app = XCUIApplication()
+        applyContentSizeCategory(contentSizeCategory, to: app)
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func applyContentSizeCategory(_ contentSizeCategory: String?, to app: XCUIApplication) {
+        guard let contentSizeCategory else { return }
+        // Validation-only Simulator override already used by Nembra's Home visual QA.
+        // It changes presentation only and never enters vehicle/simulation truth.
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            contentSizeCategory
+        ]
+    }
+
+    @MainActor
+    private func scrollToHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 5
+    ) -> Bool {
+        if element.exists && element.isHittable { return true }
+        for _ in 0..<maxSwipes {
+            app.swipeUp()
+            if element.exists && element.isHittable { return true }
+        }
+        return false
+    }
+
+    @MainActor
+    private func scrollToVisible(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 5
+    ) -> Bool {
+        func isVisible() -> Bool {
+            guard element.exists, !element.frame.isEmpty else { return false }
+            return app.frame.intersects(element.frame)
+        }
+
+        if isVisible() { return true }
+        for _ in 0..<maxSwipes {
+            app.swipeUp()
+            if isVisible() { return true }
+        }
+        return false
     }
 
     @MainActor
@@ -220,6 +421,13 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForLabelFragment(_ fragment: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "label CONTAINS %@", fragment)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "enabled == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
