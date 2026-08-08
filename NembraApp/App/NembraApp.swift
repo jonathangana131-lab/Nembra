@@ -18,6 +18,7 @@ struct NembraApp: App {
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
     @State private var researchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+    @State private var privateResearchAdmission: PassiveBluetoothExperimentOneFieldExecutionGate.PrivateResearchAdmission?
 
     init() {
         let launchMode = Self.resolveLaunchMode()
@@ -59,7 +60,17 @@ struct NembraApp: App {
 
             case .es80PassiveCapture:
                 NavigationStack {
-                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+                    if let privateResearchAdmission,
+                       let researchCoordinator {
+                        ES80ExperimentOneStationaryPreflightView(
+                            coordinator: researchCoordinator,
+                            freshExperimentCoordinatorFactory: {
+                                try PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80(
+                                    privateResearchAdmission: privateResearchAdmission
+                                )
+                            }
+                        )
+                    } else if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
                         if let researchCoordinator {
                             ES80ExperimentOneStationaryPreflightView(
                                 coordinator: researchCoordinator
@@ -74,7 +85,9 @@ struct NembraApp: App {
                             .accessibilityIdentifier("es80.research-capture-unavailable")
                         }
                     } else {
-                        ES80ExperimentOneFieldNoGoView()
+                        ES80ExperimentOneFieldNoGoView(
+                            onPrivateResearchAuthorizationAccepted: activatePrivateResearch
+                        )
                     }
                 }
                 .preferredColorScheme(.dark)
@@ -115,8 +128,24 @@ struct NembraApp: App {
         }
     }
 
+    private func activatePrivateResearch(
+        _ admission: PassiveBluetoothExperimentOneFieldExecutionGate.PrivateResearchAdmission
+    ) {
+        guard let coordinator = try? PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80(
+            privateResearchAdmission: admission
+        ) else {
+            return
+        }
+
+        researchCoordinator = coordinator
+        privateResearchAdmission = admission
+    }
+
     /// Routes the exact field-build recipe marker into Capture even in a Release archive.
-    /// The marker is launch routing only; it cannot mint package physical authority.
+    /// The marker alone remains launch routing, not public/release field authority. TODAY's private
+    /// research path additionally requires the package to verify the exact running build identity
+    /// and the operator to deliberately admit that package-minted capability before CoreBluetooth
+    /// is instantiated.
     static func resolveLaunchMode(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -156,8 +185,8 @@ struct NembraApp: App {
 /// same condition into the package-owned stationary setup object.
 ///
 /// This remains an operator declaration, not electrical sensing or continuous-condition attestation.
-/// It cannot bypass the package-owned physical execution gate because this view is reachable only
-/// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
+/// It is reachable only after either accepted public/release authority or the package-minted exact
+/// private-research admission has already been deliberately accepted.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
@@ -357,16 +386,27 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    let onPrivateResearchAuthorizationAccepted:
+        (PassiveBluetoothExperimentOneFieldExecutionGate.PrivateResearchAdmission) -> Void
+
     @State private var engineeringDetailsExpanded = false
     @State private var runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity?
+    @State private var privateResearchAuthorization: PassiveBluetoothCaptureVerifiedPrivateResearchAuthorization?
     @State private var runtimeBuildIdentityCheckFinished = false
 
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
+    private var privateResearchReady: Bool {
+        privateResearchAuthorization != nil
+    }
+
     private var physicalLockAccessibilityLabel: String {
-        "Capture locked on this build. This exact build has not been explicitly cleared for physical scooter capture. Final app and build checks are still in progress. No scooter action is needed yet."
+        if privateResearchReady {
+            return "Private research build verified. Capture is still locked until you deliberately authorize this exact build, then confirm the stationary charger-disconnected preflight."
+        }
+        return "Capture locked on this build. This exact build has not been explicitly cleared for physical scooter capture. Final app and build checks are still in progress. No scooter action is needed yet."
     }
 
     private var buildIdentityAccessibilityLabel: String {
@@ -388,7 +428,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .fill(.white.opacity(0.08))
                                 .frame(width: 52, height: 52)
 
-                            Image(systemName: "lock.shield.fill")
+                            Image(systemName: privateResearchReady ? "checkmark.shield.fill" : "lock.shield.fill")
                                 .font(.system(size: 23, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
@@ -400,16 +440,20 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                 .tracking(1.4)
                                 .foregroundStyle(.secondary)
 
-                            Text("Capture locked")
+                            Text(privateResearchReady ? "Private build ready" : "Capture locked")
                                 .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        privateResearchReady
+                            ? "This exact signed research build matches the ES80 fingerprint recipe. Deliberately authorize it below before Bluetooth capture can start."
+                            : "This build is still finishing its final checks before it can collect real ES80 data."
+                    )
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("BUILD")
@@ -438,20 +482,24 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 }
 
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "exclamationmark.lock.fill")
+                    Image(systemName: privateResearchReady ? "checkmark.shield.fill" : "exclamationmark.lock.fill")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(privateResearchReady ? .white : .orange)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Not ready for scooter capture yet")
+                        Text(privateResearchReady ? "Exact private build ready" : "Not ready for scooter capture yet")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            privateResearchReady
+                                ? "Nembra verified the running build identity and build-time ES80-FINGERPRINT-v1 marker. No scan has started. Authorize this exact build to continue into the separate stationary and charger-disconnected preflight."
+                                : "Nembra keeps every scooter action locked until the exact app build passes its required checks and is explicitly cleared for this physical procedure. When this screen unlocks, Capture will guide the OFF / ON sequence step by step."
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(18)
@@ -459,6 +507,30 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(physicalLockAccessibilityLabel)
                 .accessibilityIdentifier("es80.capture.physical-run-locked")
+
+                if let privateResearchAuthorization {
+                    Button {
+                        guard let admission = PassiveBluetoothExperimentOneFieldExecutionGate.admit(
+                            privateResearchAuthorization: privateResearchAuthorization
+                        ) else {
+                            return
+                        }
+                        onPrivateResearchAuthorizationAccepted(admission)
+                    } label: {
+                        Label("Authorize stationary research capture", systemImage: "checkmark.shield.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 56)
+                            .foregroundStyle(Color.black)
+                            .background(
+                                Color.white,
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Authorizes only this exact build for the private read-only ES80 fingerprint recipe. Charger-disconnected stationary preflight is still required next.")
+                    .accessibilityIdentifier("es80.capture.private-research-authorize")
+                }
 
                 VStack(alignment: .leading, spacing: 14) {
                     Button {
@@ -511,9 +583,9 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer(minLength: 12)
-                                Text("NO-GO")
+                                Text(privateResearchReady ? "PRIVATE RESEARCH READY" : "NO-GO")
                                     .font(.subheadline.monospaced().weight(.bold))
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(privateResearchReady ? .white : .orange)
                             }
 
                             if let runtimeBuildIdentity {
@@ -577,10 +649,14 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    privateResearchReady
+                        ? "No scan has started. This private authorization applies only to the exact running build and read-only ES80 fingerprint recipe; the next screen still requires stationary, charger-disconnected setup before OFF 1."
+                        : "No scooter action is required yet. Capture can only unlock on a Nembra build explicitly cleared for this physical procedure; changing a setting or preference cannot bypass this lock."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 660)
             .padding(.horizontal, 22)
@@ -598,12 +674,19 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     private func loadRuntimeBuildIdentity() async {
         guard runtimeBuildIdentity == nil, !runtimeBuildIdentityCheckFinished else { return }
 
-        let identity = await Task.detached(priority: .utility) {
-            try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        let result = await Task.detached(priority: .utility) {
+            let identity = try? PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+            let authorization = identity.flatMap { identity in
+                try? PassiveBluetoothCapturePrivateResearchAuthorizationReader.currentApplication(
+                    runtimeBuildIdentity: identity
+                )
+            }
+            return (identity, authorization)
         }.value
 
         guard !Task.isCancelled else { return }
-        runtimeBuildIdentity = identity
+        runtimeBuildIdentity = result.0
+        privateResearchAuthorization = result.1
         runtimeBuildIdentityCheckFinished = true
     }
 }
