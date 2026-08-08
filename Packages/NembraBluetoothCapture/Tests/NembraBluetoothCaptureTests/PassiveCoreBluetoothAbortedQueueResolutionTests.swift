@@ -60,7 +60,7 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
         #expect(gate.isAbortQuarantined)
     }
 
-    @Test("already-settled recorder prefix remains distinct from retired suffix")
+    @Test("already-settled prefix remains distinct from retired suffix")
     @MainActor
     func settledPrefixMayExtendPastReadyBeforeRetirement() async throws {
         let gate = try await quarantinedCommittedReadyGate()
@@ -69,9 +69,10 @@ struct PassiveCoreBluetoothAbortedQueueResolutionTests {
             pendingEvent(sequence: 3, authorityGeneration: 13),
         ]
 
-        // Queue position 1 was already settled before quarantine. Retirement owns
-        // only 2...3; resolution therefore advances 1 -> 3 and never claims 1 was
-        // part of the retired suffix.
+        // Queue position 1 was already settled before quarantine. This fixture does
+        // not claim whether it was recorder-written or resolved by another accepted
+        // lifecycle operation. Retirement owns only 2...3; resolution therefore
+        // advances 1 -> 3 without relabeling position 1 or the retired suffix.
         let retirement = try Retirement.retire(
             from: &pending,
             currentLastEnqueuedEventSequence: 3,
