@@ -9,14 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  transform:
-    if: github.actor != 'github-actions[bot]'
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/capture-analysis-readiness-ui-v14
-          fetch-depth: 1
+          fetch-depth: 0
       - name: Gate analysis-ready UI on exact envelope integrity
         shell: bash
         run: |
@@ -333,18 +332,20 @@ jobs:
           tests = replace_once(tests, old_test, new_test, 'wired app regression')
           tests_path.write_text(tests)
           PY
-
-          git diff --check
+      - name: Verify focused transformation
+        shell: bash
+        run: |
           grep -F 'PassiveBluetoothExperimentOneSoftwareExportIntegrity.inspect(data)' NembraApp/Features/Research/ES80CaptureShellView.swift
           grep -F 'CAPTURE SEALED' NembraApp/Features/Research/ES80CaptureShellView.swift
           grep -F 'Envelope SHA-256' NembraApp/Features/Research/ES80CaptureShellView.swift
-          ! grep -F 'coordinator.prepareCaptureRediscovery()' NembraAppTests/NembraAppTests.swift
-      - name: Commit effective product delta and remove transformer
+          grep -F 'testCaptureShellContinuesSameAuthorityThroughSealAndVerifiedAnalysisShare' NembraAppTests/NembraAppTests.swift
+          git diff --check
+      - name: Remove temporary workflow and checkpoint product change
         shell: bash
         run: |
-          git config user.name "nembra-go-worker"
-          git config user.email "nembra-go-worker@users.noreply.github.com"
-          git rm .github/workflows/capture-analysis-readiness-transform.yml
-          git add NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift
-          git commit -m "Gate Capture analysis readiness on exact envelope integrity"
+          rm .github/workflows/capture-analysis-readiness-transform.yml
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift NembraAppTests/NembraAppTests.swift .github/workflows/capture-analysis-readiness-transform.yml
+          git commit -m 'fix(capture): gate analysis readiness on exact envelope integrity'
           git push origin HEAD:agent/capture-analysis-readiness-ui-v14
