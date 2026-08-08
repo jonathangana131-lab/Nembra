@@ -1,0 +1,76 @@
+name: TEMP ES80 visual evidence current-spine reanchor
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-simulator-visual-evidence-custody-current/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+
+      - name: Reanchor exact descriptor-bound harness blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            fix/es80-v14-simulator-visual-evidence-custody/gpt56-thinking-go:refs/remotes/origin/custody-source
+          git show refs/remotes/origin/custody-source:scripts/ci/xcode27_simulator_capture.sh \
+            > scripts/ci/xcode27_simulator_capture.sh
+          git show refs/remotes/origin/custody-source:scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py \
+            > scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/ci/xcode27_simulator_capture.sh").read_text(encoding="utf-8")
+          marker = 'VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"'
+          start = source.index(marker)
+          block_start = source.index("<<'PY'\n", start) + len("<<'PY'\n")
+          block_end = source.index("\nPY\n", block_start)
+          Path("/tmp/nembra_visual_manifest.py").write_text(source[block_start:block_end], encoding="utf-8")
+          PY
+          python3 -m py_compile /tmp/nembra_visual_manifest.py
+
+          fixture="$(mktemp -d)"
+          mkdir -p "$fixture/screenshots" "$fixture/test-attachments/nested"
+          printf 'simulator-screen\n' > "$fixture/screenshots/state.png"
+          printf 'xctest-attachment\n' > "$fixture/test-attachments/nested/action.txt"
+          python3 /tmp/nembra_visual_manifest.py \
+            "$fixture/manifest.json" "$fixture" \
+            "Capture Build V14-deadbeefcafe" \
+            "01234567-89ab-cdef-0123-456789abcdef" \
+            "0123456789abcdef0123456789abcdef01234567" \
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          python3 - "$fixture/manifest.json" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          manifest = Path(sys.argv[1])
+          report = json.loads(manifest.read_text(encoding="utf-8"))
+          assert report["authority"] == "simulator-visual-evidence-not-physical-authorization"
+          assert len(report["files"]) == 2
+          for entry in report["files"]:
+              payload = (manifest.parent / entry["relativePath"]).read_bytes()
+              assert entry["byteCount"] == len(payload)
+              assert entry["sha256"] == hashlib.sha256(payload).hexdigest()
+          print("current-spine descriptor-bound visual manifest: PASS")
+          PY
+
+          git diff --check
+          rm .github/workflows/tmp-es80-visual-evidence-current-reanchor.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Bind retained Simulator evidence to descriptors"
+          git push origin HEAD:${{ github.ref_name }}
