@@ -5,6 +5,15 @@ import NembraBluetoothCapture
 import SwiftUI
 import UIKit
 
+/// Presentation-only polling for the non-observable package coordinator.
+///
+/// Capture authority and all evidence clocks remain package-owned. The shell polls often enough
+/// to keep state changes subsecond while avoiding four full hierarchy evaluations per second for
+/// integer-second guidance that is never evidence.
+enum ES80CaptureRefreshPolicy {
+    static let statusPollInterval: TimeInterval = 0.5
+}
+
 /// Product-facing Nembra Capture shell for ES80 Experiment One.
 ///
 /// One package-owned coordinator now carries the complete software provenance life from
@@ -70,7 +79,10 @@ struct ES80CaptureShellView: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+        TimelineView(.periodic(
+            from: .now,
+            by: ES80CaptureRefreshPolicy.statusPollInterval
+        )) { _ in
             let status = coordinator.status
             let currentPhase = phase(status: status)
             let now = DispatchTime.now().uptimeNanoseconds
@@ -334,6 +346,14 @@ struct ES80CaptureShellView: View {
                 window,
                 nowUptimeNanoseconds: nowUptimeNanoseconds
             )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(phaseShortName(window)) observation")
+            .accessibilityValue(
+                window.operatorExpectedPowerOn
+                    ? "Keep the scooter on"
+                    : "Keep the scooter off"
+            )
+            .accessibilityHint("Nembra is recording this bounded Bluetooth observation window.")
 
             let remaining = correlationGuidanceRemainingSeconds(
                 nowUptimeNanoseconds: nowUptimeNanoseconds
@@ -346,6 +366,13 @@ struct ES80CaptureShellView: View {
             ) {
                 completeCorrelationWindow()
             }
+            .accessibilityLabel("\(phaseShortName(window)) observation timer")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; ready to request window completion"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("The package producer, not this timer, decides whether the window has enough evidence.")
 
             guidanceFootnote("This countdown is display guidance only. The package producer accepts the window only from its own monotonic receipt boundary; tapping early cannot create evidence.")
 
@@ -477,6 +504,14 @@ struct ES80CaptureShellView: View {
                 message: "Finite acquisition is Ready. Keep Nembra foregrounded and the scooter stationary while the accepted monotonic observation interval matures. The displayed timer is guidance only.",
                 symbol: "timer"
             )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Observation ready")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; waiting for accepted Horizon authority"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("Keep Nembra foregrounded and the scooter stationary.")
             observationHealthStrip(status: status)
             primaryButton(
                 status.canFinalizeObservationHorizon ? "Seal Capture" : "Observation in progress",
@@ -486,6 +521,13 @@ struct ES80CaptureShellView: View {
             ) {
                 finalizeCapture()
             }
+            .accessibilityLabel("Seal Capture")
+            .accessibilityValue(
+                status.canFinalizeObservationHorizon
+                    ? "Ready"
+                    : "Unavailable; waiting for accepted Horizon authority"
+            )
+            .accessibilityHint("Available only after the package accepts the required monotonic observation duration.")
 
         case .readyToSeal:
             statePanel(
