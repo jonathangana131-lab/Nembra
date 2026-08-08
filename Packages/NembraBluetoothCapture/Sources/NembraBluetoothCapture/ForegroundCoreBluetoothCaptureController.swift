@@ -653,9 +653,23 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
-            await flushPendingEvents(through: horizonAdmission.queueCutoff)
-            try ensureCaptureHealthy()
-            try validateBoundaryAuthority(horizonAdmission.authority)
+            do {
+                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try ensureCaptureHealthy()
+                try validateBoundaryAuthority(horizonAdmission.authority)
+            } catch {
+                let preAttemptFailure = error
+                do {
+                    let abandonment = try horizonAdmission.abandonBeforeRecorderMutation()
+                    try observationBoundaryQueueGate.abortUncommittedHorizon(after: abandonment)
+                } catch {
+                    // Recovery authority failure is stronger than the original
+                    // pre-attempt error because the allocated H lifecycle could not
+                    // be proven quarantined. Surface it to the outer fail-closed path.
+                    throw error
+                }
+                throw preAttemptFailure
+            }
 
             let horizonMutationOutcome = try await horizonAdmission
                 .recordBoundaryWithMutationOutcome(on: recorder)
