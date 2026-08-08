@@ -14,13 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Guard exact live flagship parent
+      - name: Guard exact live flagship ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "0a8f6b765b007b35a3f3018966c9cc2214543886"
+          FLAGSHIP_PARENT="0a8f6b765b007b35a3f3018966c9cc2214543886"
+          test "$(git rev-parse HEAD~2)" = "$FLAGSHIP_PARENT"
+          test "$(git diff --name-only "$FLAGSHIP_PARENT"..HEAD)" = ".github/workflows/zz-capture-exact-inspection-compose-go.yml"
 
       - name: Merge reviewed exact-subject lineage
         shell: bash
@@ -29,6 +31,10 @@ jobs:
           SOURCE_HEAD="9e0482b2995e91e8e6bb1ee6720bb91dc599a6b3"
           git fetch --no-tags origin "$SOURCE_HEAD"
           test "$(git cat-file -t "$SOURCE_HEAD")" = commit
+          git merge-base --is-ancestor c766e094fd9be3cc30cb61e0e5d17d83f7e80da5 HEAD
+          git merge-base --is-ancestor c766e094fd9be3cc30cb61e0e5d17d83f7e80da5 "$SOURCE_HEAD"
+          git config user.name "nembra-go-worker"
+          git config user.email "actions@users.noreply.github.com"
           git merge --no-ff --no-edit "$SOURCE_HEAD"
 
       - name: Validate composed producer integrity
@@ -46,14 +52,17 @@ jobs:
           python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
           python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
           git diff --check HEAD^
+          test "$(git diff --name-only 0a8f6b765b007b35a3f3018966c9cc2214543886...HEAD | sort)" = "$(printf '%s\n' \
+            .github/workflows/zz-capture-exact-inspection-compose-go.yml \
+            scripts/ci/es80_signed_field_artifact_private_runner.py \
+            scripts/ci/tests/test_xcode27_signed_field_candidate_source.py \
+            scripts/ci/xcode27_signed_field_candidate.sh | sort)"
 
       - name: Remove temporary workflow and publish composed checkpoint
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/zz-capture-exact-inspection-compose-go.yml
-          git config user.name "nembra-go-worker"
-          git config user.email "actions@users.noreply.github.com"
           git add .github/workflows/zz-capture-exact-inspection-compose-go.yml
           git diff --cached --check
           git commit -m "chore(capture): retire temporary exact-subject composer"
