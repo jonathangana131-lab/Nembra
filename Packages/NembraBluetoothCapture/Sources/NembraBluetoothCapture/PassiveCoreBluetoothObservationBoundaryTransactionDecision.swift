@@ -45,6 +45,27 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         }
     }
 
+    /// Producer-issued proof that the exact Ready admission was deliberately
+    /// abandoned before any recorder mutation attempt. Claiming this receipt consumes
+    /// the same shared one-shot permit as recording, so no copied admission can later
+    /// append a Ready lifecycle marker or mint mutation-point rejection authority.
+    struct ReadyRecorderMutationAbandonmentReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let transactionIdentity: UUID
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
+        }
+    }
+
     enum ReadyRecorderMutationOutcome: Equatable, Sendable {
         case recorded(RecordedReadyBoundary)
         case rejectedBeforeMutation(ReadyRecorderMutationRejectionReceipt)
@@ -424,6 +445,17 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             transaction: transaction,
             authorityFence: authorityFence,
             mutationPermit: PassiveCoreBluetoothObservationBoundaryMutationPermit()
+        )
+    }
+
+    /// Deliberately abandons this exact Ready admission before any recorder call.
+    /// The shared permit proves no value copy has already attempted Ready mutation and
+    /// permanently prevents a later recorder append or mutation-point rejection.
+    func abandonBeforeRecorderMutation() throws -> ReadyRecorderMutationAbandonmentReceipt {
+        try mutationPermit.claim()
+        return ReadyRecorderMutationAbandonmentReceipt(
+            decision: decision,
+            transaction: transaction
         )
     }
 

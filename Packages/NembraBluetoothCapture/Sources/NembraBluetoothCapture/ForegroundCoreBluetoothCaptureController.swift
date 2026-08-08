@@ -653,9 +653,23 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         )
 
         do {
-            await flushPendingEvents(through: horizonAdmission.queueCutoff)
-            try ensureCaptureHealthy()
-            try validateBoundaryAuthority(horizonAdmission.authority)
+            do {
+                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try ensureCaptureHealthy()
+                try validateBoundaryAuthority(horizonAdmission.authority)
+            } catch {
+                let preAttemptFailure = error
+                do {
+                    let abandonment = try horizonAdmission.abandonBeforeRecorderMutation()
+                    try observationBoundaryQueueGate.abortUncommittedHorizon(after: abandonment)
+                } catch {
+                    // Recovery authority failure is stronger than the original
+                    // pre-attempt error because the allocated H lifecycle could not
+                    // be proven quarantined. Surface it to the outer fail-closed path.
+                    throw error
+                }
+                throw preAttemptFailure
+            }
 
             let horizonMutationOutcome = try await horizonAdmission
                 .recordBoundaryWithMutationOutcome(on: recorder)
@@ -949,7 +963,22 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 await self.flushPendingEvents(through: admission.queueCutoff)
 
                 do {
-                    try self.ensureCaptureHealthy()
+                    do {
+                        try self.ensureCaptureHealthy()
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderMutation()
+                            try self.observationBoundaryQueueGate.abortUncommittedReady(after: abandonment)
+                        } catch {
+                            // Recovery authority failure is stronger than the original
+                            // pre-attempt error because the allocated Ready lifecycle
+                            // could not be proven quarantined.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):
