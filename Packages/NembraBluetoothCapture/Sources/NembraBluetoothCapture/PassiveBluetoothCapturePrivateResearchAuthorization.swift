@@ -37,7 +37,7 @@ public enum PassiveBluetoothCapturePrivateResearchAuthorizationError: Error, Equ
 /// Fail-closed reader for TODAY's private research authorization.
 ///
 /// Production app code cannot provide arbitrary bytes, a preference value, launch argument, or
-/// imported JSON. The public entry point reads only the running main bundle. A Debug launch argument
+/// imported JSON. The public entry points read only the running main bundle. A Debug launch argument
 /// therefore remains routing only: without the build-time `NembraCaptureFieldRecipe` declaration and
 /// canonical exact-source field build identity, no private research capability can be minted.
 public enum PassiveBluetoothCapturePrivateResearchAuthorizationReader {
@@ -48,9 +48,23 @@ public enum PassiveBluetoothCapturePrivateResearchAuthorizationReader {
         throw PassiveBluetoothCapturePrivateResearchAuthorizationError.unavailableOnSimulator
 #else
         let runtimeIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        return try currentApplication(runtimeBuildIdentity: runtimeIdentity)
+#endif
+    }
+
+    /// Reuses a package-minted runtime identity so app presentation can hash the executable and
+    /// Info.plist once off the MainActor, then evaluate private research authority without a second
+    /// expensive measurement. `PassiveBluetoothCaptureRuntimeBuildIdentity` has no public initializer,
+    /// so app code still cannot manufacture the identity supplied here.
+    public static func currentApplication(
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws -> PassiveBluetoothCaptureVerifiedPrivateResearchAuthorization {
+#if targetEnvironment(simulator)
+        throw PassiveBluetoothCapturePrivateResearchAuthorizationError.unavailableOnSimulator
+#else
         return try resolveEmbeddedAuthorization(
             infoDictionary: Bundle.main.infoDictionary ?? [:],
-            runtimeBuildIdentity: runtimeIdentity
+            runtimeBuildIdentity: runtimeBuildIdentity
         )
 #endif
     }
