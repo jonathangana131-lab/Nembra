@@ -3,21 +3,33 @@ import Testing
 
 @Suite("ES80 Capture rider-language acceptance")
 struct ES80CaptureRiderLanguageAcceptanceTests {
-    private static func shellSource() throws -> String {
+    private static func repositoryRoot() -> URL {
         let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
+        return testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+    }
 
-        return try String(
-            contentsOf: repositoryRoot
+    private static func shellSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("Features")
                 .appendingPathComponent("Research")
                 .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func appSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("App")
+                .appendingPathComponent("NembraApp.swift"),
             encoding: .utf8
         )
     }
@@ -31,6 +43,35 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             )
         )
         return source[beginning.lowerBound..<details.lowerBound]
+    }
+
+    private static func stationaryPreflightSurface(in source: String) throws -> Substring {
+        let beginning = try #require(
+            source.range(of: "private struct ES80ExperimentOneStationaryPreflightView")
+        )
+        let fieldNoGo = try #require(
+            source.range(
+                of: "private struct ES80ExperimentOneFieldNoGoView",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<fieldNoGo.lowerBound]
+    }
+
+    @Test("stationary preflight stays rider-first while exact recipe truth remains available")
+    func stationaryPreflightStaysHumanFirst() throws {
+        let source = try Self.appSource()
+        let preflight = try Self.stationaryPreflightSurface(in: source)
+
+        #expect(!preflight.contains("Required for ES80-FINGERPRINT-v1"))
+        #expect(!preflight.contains("Continue to setup confirmation"))
+        #expect(preflight.contains("Required for this capture"))
+        #expect(preflight.contains("Label(\"Confirm setup\""))
+        #expect(preflight.contains("es80.capture.preflight.continue"))
+
+        #expect(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue"))
+        #expect(source.contains("private var recipeID: String"))
+        #expect(source.contains("Text(recipeID)"))
     }
 
     @Test("primary Capture states use rider language instead of implementation vocabulary")
