@@ -1,0 +1,44 @@
+name: Agent Capture App Single Authority Refine
+
+on:
+  push:
+    branches:
+      - agent/capture-app-single-authority-v14
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/capture-app-single-authority-v14
+          fetch-depth: 0
+      - name: Apply guarded recovery refinements
+        run: python3 .github/app_single_authority_refine.py
+      - name: Verify source authority contract
+        run: |
+          set -euo pipefail
+          shell=NembraApp/Features/Research/ES80CaptureShellView.swift
+          app=NembraApp/App/NembraApp.swift
+          coordinator=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift
+          test=NembraAppTests/NembraAppTests.swift
+          ! grep -q 'PassiveBluetoothPowerCycleObservationSession(' "$shell"
+          ! grep -q 'Passive capture binding not available in this build' "$shell"
+          ! grep -q 'try? ForegroundCoreBluetoothCaptureController(' "$app"
+          grep -q '!controller.hasTargetSession' "$shell"
+          grep -q 'case .unknownPeripheral,' "$coordinator"
+          grep -q 'testCaptureShellContinuesSameAuthorityThroughSealAndShare' "$test"
+          git diff --cached --check
+      - name: Commit product-only refinement
+        run: |
+          set -euo pipefail
+          git rm .github/app_single_authority_refine.py .github/workflows/agent-capture-app-single-authority-refine.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -u
+          git commit -m '[Capture app] Preserve recoverable admission and foreground authority'
+          git push origin HEAD:agent/capture-app-single-authority-v14
