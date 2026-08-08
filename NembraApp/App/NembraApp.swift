@@ -19,8 +19,11 @@ struct NembraApp: App {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
+
+        let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
+            && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
         _researchController = State(
-            initialValue: launchMode == .es80PassiveCapture
+            initialValue: fieldCaptureAuthorized
                 ? Self.makeES80ResearchController()
                 : nil
         )
