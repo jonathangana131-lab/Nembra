@@ -3,20 +3,31 @@ import Testing
 
 @Suite("ES80 Capture Dynamic Type source acceptance")
 struct ES80CaptureDynamicTypeSourceAcceptanceTests {
+    private static func repositoryRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     private static func shellSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot
+        try String(
+            contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("Features")
                 .appendingPathComponent("Research")
                 .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func primaryUITestSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraUITests")
+                .appendingPathComponent("NembraUITests.swift"),
             encoding: .utf8
         )
     }
@@ -93,6 +104,33 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         #expect(
             Self.hasIntentionalAdaptiveLayout(health),
             "Target / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
+        )
+    }
+
+    @Test("horizon-ready state retains Accessibility XXXL visual evidence")
+    func horizonReadyAccessibilityXXXLVisualEvidence() throws {
+        let source = try Self.primaryUITestSource()
+
+        let testBlock = try Self.section(
+            source,
+            from: "func testCaptureHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge() throws",
+            to: "func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls()"
+        )
+
+        #expect(testBlock.contains("--es80-passive-capture-simulator-qa"))
+        #expect(testBlock.contains("--es80-capture-qa-scenario=observationHorizonReady"))
+        #expect(testBlock.contains("-UIPreferredContentSizeCategoryName"))
+        #expect(testBlock.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(testBlock.contains("es80.capture-shell"))
+        #expect(testBlock.contains("es80.capture.finish"))
+        #expect(testBlock.contains("Capture can be sealed"))
+        #expect(testBlock.contains("performAccessibilityAudit"))
+        #expect(testBlock.contains("Horizon Ready — Accessibility XXXL — Overview"))
+        #expect(testBlock.contains("Horizon Ready — Accessibility XXXL — Status"))
+        #expect(testBlock.contains("Horizon Ready — Accessibility XXXL — Seal"))
+        #expect(
+            testBlock.contains("finish.isHittable"),
+            "The retained evidence path must prove Seal Capture remains actionable at Accessibility XXXL."
         )
     }
 }
