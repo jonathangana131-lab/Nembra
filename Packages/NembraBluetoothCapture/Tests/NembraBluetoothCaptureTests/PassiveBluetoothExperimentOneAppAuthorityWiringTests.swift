@@ -21,8 +21,8 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         )
     }
 
-    @Test("research launch and fresh restart use only the canonical authorized factory")
-    func appUsesCanonicalAuthorizedFactoryForBothConstructionSites() throws {
+    @Test("research launch and fresh restart keep zero-argument construction fail-closed")
+    func appKeepsLegacyConstructionFailClosed() throws {
         let source = try Self.appSource()
         let factory = "PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"
         let factoryCount = source.components(separatedBy: factory).count - 1
@@ -33,6 +33,19 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(source.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"))
         #expect(source.contains("selectedChargerState = nil"))
         #expect(source.contains("disconnectedDeclarationAccepted = false"))
+    }
+
+    @Test("private research path requires package admission plus a deliberate app action")
+    func privateResearchPathIsExplicitAndAdmissionBearing() throws {
+        let source = try Self.appSource()
+
+        #expect(source.contains("onPrivateResearchAuthorizationAccepted: activatePrivateResearch"))
+        #expect(source.contains("privateResearchAdmission: admission"))
+        #expect(source.contains("privateResearchAdmission: privateResearchAdmission"))
+        #expect(source.contains("Authorize stationary research capture"))
+        #expect(source.contains("es80.capture.private-research-authorize"))
+        #expect(source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.admit("))
+        #expect(source.contains("privateResearchAuthorization: privateResearchAuthorization"))
     }
 
     @Test("locked build identity measurement stays off MainActor and exposes a truthful pending state")
@@ -59,11 +72,15 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         let reader = try #require(
             loader.range(of: "PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()")
         )
+        let privateAuthorization = try #require(
+            loader.range(of: "PassiveBluetoothCapturePrivateResearchAuthorizationReader.currentApplication(")
+        )
         let cancellation = try #require(loader.range(of: "guard !Task.isCancelled else { return }"))
-        let publish = try #require(loader.range(of: "runtimeBuildIdentity = identity"))
+        let publish = try #require(loader.range(of: "runtimeBuildIdentity = result.0"))
 
         #expect(detached.lowerBound < reader.lowerBound)
-        #expect(reader.lowerBound < cancellation.lowerBound)
+        #expect(reader.lowerBound < privateAuthorization.lowerBound)
+        #expect(privateAuthorization.lowerBound < cancellation.lowerBound)
         #expect(cancellation.lowerBound < publish.lowerBound)
     }
 }
