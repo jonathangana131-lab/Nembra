@@ -77,10 +77,11 @@ struct NembraES80CaptureReportCommand {
             )
         }
 
-        let artifactData = try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+        let inputReceipt = try PassiveBluetoothCaptureArtifactInputPolicy.readExactReceipt(
             at: options.inputURL,
             maximumBytes: options.maximumArtifactBytes
         )
+        let artifactData = inputReceipt.bytes
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
             maximumEncryptedMessageBytes: options.maximumMessageBytes,
             maximumFragmentCount: options.maximumFragmentCount
@@ -96,6 +97,7 @@ struct NembraES80CaptureReportCommand {
         if let outputURL = options.outputURL {
             try PassiveBluetoothCaptureArtifactOutputPolicy.writeDerivedReport(
                 reportData,
+                inputReceipt: inputReceipt,
                 inputURL: options.inputURL,
                 outputURL: outputURL,
                 allowReplacingExistingOutput: options.forceOutput
@@ -261,7 +263,8 @@ struct NembraES80CaptureReportCommand {
     Evidence preservation:
       The command refuses to overwrite its source capture even with --force-output.
       Existing derived reports are also protected unless --force-output is explicit.
-      Protected writes publish through a uniquely named sibling and a non-replacing move.
+      File-output publication remains bound to the exact filesystem subject admitted
+      for the bytes that generated the report; a later pathname replacement fails closed.
 
     Truth boundary:
       The output is PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY. It does not
