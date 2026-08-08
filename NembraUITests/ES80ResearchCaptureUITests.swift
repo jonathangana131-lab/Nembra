@@ -374,6 +374,111 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(retryAttachment)
     }
 
+    @MainActor
+    func testV14SimulatorQACaptureCompleteRemainsActionableAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=captureComplete",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let completeState = app.staticTexts["CAPTURE COMPLETE"]
+        let shareCapture = app.buttons["Share Capture"]
+        let viewDetails = app.buttons["View Details"]
+
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(completeState.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Ready for analysis"].waitForExistence(timeout: 3))
+        XCTAssertTrue(shareCapture.waitForExistence(timeout: 3))
+        XCTAssertTrue(viewDetails.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: windowFrame,
+            context: "synthetic Simulator QA disclosure at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            completeState,
+            windowFrame: windowFrame,
+            context: "Capture Complete state at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            shareCapture,
+            windowFrame: windowFrame,
+            context: "Share Capture action at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            viewDetails,
+            windowFrame: windowFrame,
+            context: "View Details action at Accessibility XXXL"
+        )
+    }
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady"
+        ]
+        app.launch()
+
+        let shell = app.descendants(matching: .any)["es80.capture-shell"]
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let readyState = app.staticTexts["Capture can be sealed"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(readyState.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(
+            windowFrame.width,
+            windowFrame.height,
+            "The positive-state visual gate must actually run in landscape."
+        )
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: windowFrame,
+            context: "synthetic Simulator QA disclosure in positive-state landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            readyState,
+            windowFrame: windowFrame,
+            context: "Horizon-ready state in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: windowFrame,
+            context: "Finish Capture action in landscape"
+        )
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
