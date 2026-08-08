@@ -47,23 +47,10 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
     @Test("ordinary construction stays locked even under a future permissive field gate")
     func futureGateCannotUnlockOrdinaryConstruction() {
         let policy = PassiveBluetoothExperimentOneCoordinatorConstructionPolicy.self
-
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: false,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: false
-        ) == false)
-        #expect(policy.permitsPhysicalProcedure(
-            hasCanonicalLiveController: true,
-            fieldGatePermitsPhysicalProcedure: true
-        ) == true)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: false) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: false, fieldGatePermitsPhysicalProcedure: true) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: false) == false)
+        #expect(policy.permitsPhysicalProcedure(hasCanonicalLiveController: true, fieldGatePermitsPhysicalProcedure: true) == true)
     }
 
     @Test("public coordinator construction never creates the live CoreBluetooth controller")
@@ -72,7 +59,6 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let start = try #require(source.range(of: "    public init() throws {")?.lowerBound)
         let end = try #require(source.range(of: "    package init(controller:", range: start..<source.endIndex)?.lowerBound)
         let initializer = source[start..<end]
-
         #expect(initializer.contains("controller = nil"))
         #expect(!initializer.contains("ForegroundCoreBluetoothCaptureController("))
         #expect(!initializer.contains("PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
@@ -113,9 +99,11 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         let source = try Self.coordinatorSource()
         let start = try #require(source.range(of: "    public func connectPreparedCapture()")?.lowerBound)
         let connection = source[start...]
-        let catalogGuard = try #require(connection.range(of: "controller.discoveredPeripherals.first(where: { $0.id == identifier })"))
+        let lookup = try #require(connection.range(of: "controller.hasDiscoveredPeripheral(identifier: identifier)"))
+        let discovery = try #require(connection.range(of: "controller.discoveredPeripheral(identifier: identifier)"))
         let connect = try #require(connection.range(of: "controller.connectUsingExperimentOneAdmission(admission, timeout: 12)"))
-        #expect(catalogGuard.lowerBound < connect.lowerBound)
+        #expect(lookup.lowerBound < discovery.lowerBound)
+        #expect(discovery.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable"))
     }
