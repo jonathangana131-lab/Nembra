@@ -276,6 +276,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     public var hasCompleteTargetEvidence: Bool {
         recorder != nil
             && !captureFailed
+            && foregroundEvidenceIntegrityValid
             && acquisitionLedger.isReady
             && !selectedTargetCancellationPending
     }
@@ -323,6 +324,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     private var acquisitionLedger = PassiveCoreBluetoothAcquisitionOperationLedger()
     private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
     private var selectedTargetCancellationPending = false
+    /// Foreground-only evidence validity is durable for the current target session.
+    /// Once lost, reconnecting/reusing that same recorder cannot restore it; only a
+    /// genuinely fresh durable recorder/session may publish valid evidence again.
+    private var foregroundEvidenceIntegrityValid = true
     private var scanRequested = false
 
     private var centralManager: CBCentralManager!
@@ -503,6 +508,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     /// interruption before transport teardown. Product shells should use this
     /// instead of presenting foreground integrity loss as an operator cancel.
     public func invalidateActiveCaptureForForegroundLoss() {
+        // A terminal artifact is already immutable. Before terminal freeze,
+        // foreground loss permanently poisons this durable capture even when H
+        // intentionally blocks transport teardown from changing artifact authority.
+        if !observationBoundaryQueueGate.isTerminal {
+            foregroundEvidenceIntegrityValid = false
+        }
         cancelActiveConnection(cause: .foregroundIntegrityLoss)
     }
 
@@ -655,6 +666,7 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         do {
             do {
                 await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                try requireForegroundEvidenceIntegrity()
                 try ensureCaptureHealthy()
                 try validateBoundaryAuthority(horizonAdmission.authority)
             } catch {
@@ -692,15 +704,25 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             // durable H without fabricating terminal/frozen success.
             let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
             do {
+                // The recorder actor hop may overlap foreground loss. Recheck the
+                // durable session integrity immediately before promoting recorded H.
+                try requireForegroundEvidenceIntegrity()
                 committedHorizon = try recordedHorizon.markBoundaryRecorded(
                     on: &observationBoundaryQueueGate,
                     lastProcessedQueueSequence: lastProcessedEventSequence
                 )
             } catch {
-                _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
-                    recordedHorizon
-                )
-                throw error
+                let recordedHorizonFailure = error
+                do {
+                    _ = try observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                        recordedHorizon
+                    )
+                } catch {
+                    // Exact quarantine failure is stronger than the triggering
+                    // foreground/queue-commit failure; never strand durable H silently.
+                    throw error
+                }
+                throw recordedHorizonFailure
             }
 
             let data: Data
@@ -711,6 +733,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                 // quarantine the exact producer-issued committed H rather than retry
                 // under a newer authority or fabricate terminal success.
                 data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                // JSON materialization is another actor suspension. Foreground loss
+                // while it is in flight invalidates this session before terminal freeze.
+                try requireForegroundEvidenceIntegrity()
                 try validateBoundaryAuthority(committedHorizon.authority)
                 try committedHorizon.completeHorizonArtifactFreeze(
                     on: &observationBoundaryQueueGate
@@ -803,6 +828,9 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         acquisitionLedger.beginTargetSession()
         gattIdentityRegistry.reset()
         selectedTargetCancellationPending = false
+        // Restore foreground validity only while publishing a genuinely fresh durable
+        // recorder/session. Same-target early reuse above never reaches this reset.
+        foregroundEvidenceIntegrityValid = true
         hasUsedInitialSessionIdentity = true
         recorder = newRecorder
 
@@ -960,10 +988,31 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
 
             observationBoundaryTask = Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.flushPendingEvents(through: admission.queueCutoff)
-
                 do {
-                    try self.ensureCaptureHealthy()
+                    // Ready admission has already allocated an exact .drainingReady
+                    // transaction. If the FIFO/health/foreground/authority stage fails
+                    // before the first recorder call, consume the same one-shot permit
+                    // as recording and quarantine that exact zero-mutation Ready.
+                    do {
+                        await self.flushPendingEvents(through: admission.queueCutoff)
+                        try self.requireForegroundEvidenceIntegrity()
+                        try self.ensureCaptureHealthy()
+                        try self.validateBoundaryAuthority(admission.authority)
+                    } catch {
+                        let preAttemptFailure = error
+                        do {
+                            let abandonment = try admission.abandonBeforeRecorderMutation()
+                            try self.observationBoundaryQueueGate.abortUncommittedReady(
+                                after: abandonment
+                            )
+                        } catch {
+                            // Recovery-authority failure is stronger than the original
+                            // pre-attempt failure because exact quarantine is unproven.
+                            throw error
+                        }
+                        throw preAttemptFailure
+                    }
+
                     let outcome = try await admission.recordBoundaryWithMutationOutcome(on: recorder)
                     switch outcome {
                     case let .rejectedBeforeMutation(rejection):
@@ -980,11 +1029,19 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                                 lastProcessedQueueSequence: self.lastProcessedEventSequence
                             )
                         } catch {
-                            // Recorder mutation already happened, so quarantine with
-                            // the distinct recorded-before-commit origin. Never label
-                            // this a zero-mutation rejection.
-                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
-                            throw error
+                            let recordedReadyFailure = error
+                            do {
+                                // Recorder mutation already happened, so quarantine
+                                // with the distinct recorded-before-commit origin.
+                                // Exact quarantine failure outranks the triggering
+                                // queue-commit error and must never be suppressed.
+                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
+                                    recordedReady
+                                )
+                            } catch {
+                                throw error
+                            }
+                            throw recordedReadyFailure
                         }
                     }
                 } catch {
@@ -998,6 +1055,12 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             }
         } catch {
             failCapture(error)
+        }
+    }
+
+    private func requireForegroundEvidenceIntegrity() throws {
+        guard foregroundEvidenceIntegrityValid else {
+            throw ControllerError.captureFailed
         }
     }
 
