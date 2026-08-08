@@ -374,6 +374,131 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         add(retryAttachment)
     }
 
+    @MainActor
+    func testV14SimulatorQACaptureCompleteAccessibilityXXXLKeepsTruthAndActionsLegible() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=captureComplete",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let simulatorDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let primaryStatus = app.staticTexts["CAPTURE COMPLETE"]
+        let analysisStatus = app.staticTexts["Ready for analysis"]
+        let share = app.buttons["Share Capture"]
+        let details = app.buttons["View Details"]
+
+        XCTAssertTrue(simulatorDisclosure.waitForExistence(timeout: 5))
+        XCTAssertTrue(primaryStatus.waitForExistence(timeout: 3))
+        XCTAssertTrue(analysisStatus.waitForExistence(timeout: 3))
+        XCTAssertTrue(share.waitForExistence(timeout: 3))
+        XCTAssertTrue(details.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            simulatorDisclosure,
+            windowFrame: windowFrame,
+            context: "Simulator QA disclosure at positive Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: windowFrame,
+            context: "Capture Complete status at Accessibility XXXL"
+        )
+
+        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Status"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        bringIntoScreenshotViewport(
+            share,
+            in: app,
+            context: "Share Capture action at Accessibility XXXL"
+        )
+        let actionWindowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            share,
+            windowFrame: actionWindowFrame,
+            context: "Share Capture action at Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            details,
+            windowFrame: actionWindowFrame,
+            context: "View Details action at Accessibility XXXL"
+        )
+
+        let actionsAttachment = XCTAttachment(screenshot: app.screenshot())
+        actionsAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Capture Complete — Accessibility XXXL — Actions"
+        actionsAttachment.lifetime = .keepAlways
+        add(actionsAttachment)
+    }
+
+    @MainActor
+    func testV14SimulatorQAHorizonReadyLandscapeKeepsTruthAndSealActionLegible() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let simulatorDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let primaryStatus = app.staticTexts["Capture can be sealed"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(simulatorDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(primaryStatus.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            simulatorDisclosure,
+            windowFrame: windowFrame,
+            context: "Simulator QA disclosure in positive landscape state"
+        )
+
+        let topAttachment = XCTAttachment(screenshot: app.screenshot())
+        topAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Status"
+        topAttachment.lifetime = .keepAlways
+        add(topAttachment)
+
+        bringIntoScreenshotViewport(
+            finish,
+            in: app,
+            context: "Seal Capture action in positive landscape state"
+        )
+        let actionWindowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            primaryStatus,
+            windowFrame: actionWindowFrame,
+            context: "Capture can be sealed status in landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: actionWindowFrame,
+            context: "Seal Capture action in landscape"
+        )
+
+        let actionAttachment = XCTAttachment(screenshot: app.screenshot())
+        actionAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Horizon Ready — Landscape — Seal"
+        actionAttachment.lifetime = .keepAlways
+        add(actionAttachment)
+    }
+
     func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {
         let appSource = try repositorySource(at: "NembraApp/App/NembraApp.swift")
         let shellSource = try captureShellSource()
@@ -439,6 +564,47 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             source.contains("softwareExportData"),
             "The app should retain the exact final Share artifact rather than an ambiguous inner-export state."
+        )
+    }
+
+    @MainActor
+    private func bringIntoScreenshotViewport(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        context: String,
+        maxSwipes: Int = 6,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "Required \(context) must exist before viewport navigation.",
+            file: file,
+            line: line
+        )
+
+        var remaining = maxSwipes
+        while remaining > 0 {
+            let windowFrame = app.windows.firstMatch.frame
+            let frame = element.frame
+            if frame.width > 0,
+               frame.height > 0,
+               frame.minX >= windowFrame.minX - 1,
+               frame.maxX <= windowFrame.maxX + 1,
+               frame.minY >= windowFrame.minY - 1,
+               frame.maxY <= windowFrame.maxY + 1 {
+                return
+            }
+            app.swipeUp()
+            remaining -= 1
+        }
+
+        assertVisibleInScreenshotViewport(
+            element,
+            windowFrame: app.windows.firstMatch.frame,
+            context: context,
+            file: file,
+            line: line
         )
     }
 
