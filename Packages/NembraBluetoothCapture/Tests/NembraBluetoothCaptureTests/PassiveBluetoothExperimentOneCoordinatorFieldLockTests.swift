@@ -12,7 +12,8 @@ struct PassiveBluetoothExperimentOneCoordinatorFieldLockTests {
         let coordinator = try Coordinator()
         let initialProgress = coordinator.status.powerCycleProgress
 
-        func requirePhysicalLock(_ operation: () throws -> Void) {
+        @MainActor
+        func requirePhysicalLock(_ operation: @MainActor () throws -> Void) {
             do {
                 try operation()
                 Issue.record("expected physical procedure lock")
