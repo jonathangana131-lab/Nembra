@@ -1,0 +1,70 @@
+name: Capture Experiment One admission current convergence
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-foreground-finalization-integrity/chatgpt56-thinking-go
+    paths:
+      - .github/workflows/capture-exp1-admission-current-convergence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-current-foreground-finalization-integrity/chatgpt56-thinking-go
+          fetch-depth: 2
+
+      - name: Verify exact staging parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "1a7bca21e882862df6d8755deedea91561d24a25"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-exp1-admission-current-convergence.yml"
+
+      - name: Apply reviewed sealed-admission controller delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=20850315ca3fa5e8af5ab30bc8ad5c5f25e2866b
+          source=94cd75dd4d84c6edcad7a57875c1180f456f3890
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          contract=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneAdmissionContractTests.swift
+
+          git fetch --no-tags origin "$base" "$source"
+          git diff --binary "$base" "$source" -- "$controller" > /tmp/exp1-controller.patch
+          test -s /tmp/exp1-controller.patch
+          git apply --3way --index /tmp/exp1-controller.patch
+          mkdir -p "$(dirname "$contract")"
+          git show "$source:$contract" > "$contract"
+          git add "$contract"
+          rm .github/workflows/capture-exp1-admission-current-convergence.yml
+          git add -u .github/workflows/capture-exp1-admission-current-convergence.yml
+
+          git diff --cached --check
+          test "$(grep -c 'func connectUsingExperimentOneAdmission(' "$controller")" = "1"
+          test "$(grep -c 'public func connectUsingExperimentOneAdmission(' "$controller" || true)" = "0"
+          test "$(grep -c 'admission.consume()' "$controller")" = "1"
+          test "$(grep -c 'recorder = payload.recorder' "$controller")" = "1"
+          test "$(grep -c 'beginTargetSessionIfNeeded(for: payload.peripheralIdentifier)' "$controller" || true)" = "0"
+          test "$(grep -c 'connect(to: payload.peripheralIdentifier' "$controller" || true)" = "0"
+          test "$(grep -c 'PassiveCoreBluetoothCaptureRecorder(' "$controller")" = "1"
+          test "$(grep -c 'validateBoundaryAuthority(admission.authority)' "$controller")" -ge "1"
+          test "$(grep -c 'let recordedReadyFailure = error' "$controller")" = "1"
+          test "$(grep -c 'let recordedHorizonFailure = error' "$controller")" = "1"
+          test "$(grep -c 'foregroundEvidenceIntegrityValid = false' "$controller")" = "1"
+          test -f "$contract"
+          test ! -e .github/workflows/capture-exp1-admission-current-convergence.yml
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-chatgpt56-thinking"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "feat: consume sealed Experiment One admission on flagship spine"
+          git push origin HEAD:integration/es80-v14-current-foreground-finalization-integrity/chatgpt56-thinking-go
