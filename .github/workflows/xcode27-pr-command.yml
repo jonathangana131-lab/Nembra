@@ -100,6 +100,11 @@ jobs:
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           python3 scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
 
+      - name: Validate offline field authorization signer
+        run: |
+          python3 -m py_compile scripts/ci/es80_field_authorization_envelope.py
+          python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+
       - name: Validate signed field candidate producer source
         run: |
           bash -n scripts/ci/xcode27_signed_field_candidate.sh
