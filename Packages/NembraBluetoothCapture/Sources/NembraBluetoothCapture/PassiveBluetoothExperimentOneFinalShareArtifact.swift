@@ -221,6 +221,9 @@ public enum PassiveBluetoothExperimentOneFinalShareArtifactCodec {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) != nil {
+            throw PassiveBluetoothExperimentOneFinalShareArtifactError.malformedWireData
+        }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PassiveBluetoothExperimentOneFinalShareArtifactError.malformedWireData
         }
