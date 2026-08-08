@@ -651,7 +651,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
             try ensureCaptureHealthy()
             try validateBoundaryAuthority(horizonAdmission.authority)
 
-            let recordedHorizon = try await horizonAdmission.recordBoundary(on: recorder)
+            let horizonMutationOutcome = try await horizonAdmission
+                .recordBoundaryWithMutationOutcome(on: recorder)
+            let recordedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.RecordedHorizonBoundary
+            switch horizonMutationOutcome {
+            case let .recorded(boundary):
+                recordedHorizon = boundary
+            case let .rejectedBeforeMutation(rejection):
+                // Canonical authority was revoked before the recorder mutation body
+                // executed. Preserve Ready as the furthest durable boundary and
+                // quarantine the exact attempted H transaction as zero-mutation
+                // lifecycle provenance. Do not fabricate H evidence.
+                try observationBoundaryQueueGate.abortUncommittedHorizon(after: rejection)
+                throw ControllerError.targetSessionChanged
+            }
+
             // No actor suspension may occur between the authority-fenced recorder
             // return and typed queue commit. If that exact commit loses lifecycle
             // authority, #507's producer-issued recorded-H token quarantines the
