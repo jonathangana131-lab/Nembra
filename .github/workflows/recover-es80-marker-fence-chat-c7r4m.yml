@@ -1,0 +1,152 @@
+name: Recover ES80 marker fence
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-passive-lifecycle-marker-fence/chat-c7r4m
+
+permissions:
+  contents: write
+
+jobs:
+  apply-exact-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact recovery trigger
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Verify immutable recovery parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=ed6864eb8d253801592461f32d57c3a1db6826f8
+          WORKFLOW=.github/workflows/recover-es80-marker-fence-chat-c7r4m.yml
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_PARENT"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$WORKFLOW"
+
+      - name: Apply marker quarantine fence and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift")
+
+          source = controller.read_text()
+          old = '''        try ensureCaptureHealthy()
+          guard recorder != nil else { throw ControllerError.targetNotSelected }
+          let observation = try PassiveBluetoothStockAppObservation(
+          '''
+          new = '''        try ensureCaptureHealthy()
+          guard recorder != nil,
+                let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+              throw ControllerError.targetNotSelected
+          }
+          guard !selectedTargetCancellationPending,
+                !targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier) else {
+              throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+          }
+          let observation = try PassiveBluetoothStockAppObservation(
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one marker-admission seam, found {source.count(old)}")
+          if "!targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier)" in source:
+              raise SystemExit("marker quarantine fence already present; refusing duplicate patch")
+          source = source.replace(old, new, 1)
+          controller.write_text(source)
+
+          test_source = tests.read_text()
+          anchor = '''    @Test
+              func acquisitionWatchdogRetainsOneSpecificFenceWithoutGenericCancel() throws {
+          '''
+          addition = '''    @Test
+              func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
+                  let source = try Self.controllerSource()
+                  let cancellation = try Self.section(
+                      in: source,
+                      from: "    private func cancelActiveConnection(cause:",
+                      to: "    /// Adds a human-observed stock-app value"
+                  )
+                  let pendingOffset = try Self.offset(
+                      of: "selectedTargetCancellationPending = true",
+                      in: cancellation
+                  )
+                  let retirementOffset = try Self.offset(
+                      of: "_ = targetState.retireActiveAttempt()",
+                      in: cancellation
+                  )
+                  #expect(pendingOffset < retirementOffset)
+
+                  let marker = try Self.section(
+                      in: source,
+                      from: "    public func recordStockAppObservation(",
+                      to: "    public func captureSnapshot() async throws"
+                  )
+                  let pendingGuardOffset = try Self.offset(
+                      of: "!selectedTargetCancellationPending",
+                      in: marker
+                  )
+                  let quarantineGuardOffset = try Self.offset(
+                      of: "!targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier)",
+                      in: marker
+                  )
+                  let rejectionOffset = try Self.offset(
+                      of: "throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)",
+                      in: marker
+                  )
+                  let observationOffset = try Self.offset(
+                      of: "let observation = try PassiveBluetoothStockAppObservation(",
+                      in: marker
+                  )
+                  let enqueueOffset = try Self.offset(
+                      of: "enqueue(.stockAppState(observation))",
+                      in: marker
+                  )
+
+                  #expect(pendingGuardOffset < observationOffset)
+                  #expect(quarantineGuardOffset < observationOffset)
+                  #expect(rejectionOffset < observationOffset)
+                  #expect(observationOffset < enqueueOffset)
+              }
+
+              @Test
+              func acquisitionWatchdogRetainsOneSpecificFenceWithoutGenericCancel() throws {
+          '''
+          if test_source.count(anchor) != 1:
+              raise SystemExit(f"expected one watchdog test anchor, found {test_source.count(anchor)}")
+          if "finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback" in test_source:
+              raise SystemExit("marker regression already present; refusing duplicate patch")
+          test_source = test_source.replace(anchor, addition, 1)
+          tests.write_text(test_source)
+          PY
+
+          grep -Fq '!selectedTargetCancellationPending' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq '!targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier)' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq 'finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
+
+      - name: Commit exact product delta and remove patch workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_PARENT=ed6864eb8d253801592461f32d57c3a1db6826f8
+          WORKFLOW=.github/workflows/recover-es80-marker-fence-chat-c7r4m.yml
+          SOURCE=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          TESTS=Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
+
+          git rm "$WORKFLOW"
+          mapfile -t EFFECTIVE < <(git diff --name-only "$PRODUCT_PARENT" | sort)
+          EXPECTED=("$SOURCE" "$TESTS")
+          mapfile -t EXPECTED_SORTED < <(printf '%s\n' "${EXPECTED[@]}" | sort)
+          test "${#EFFECTIVE[@]}" -eq 2
+          test "${EFFECTIVE[0]}" = "${EXPECTED_SORTED[0]}"
+          test "${EFFECTIVE[1]}" = "${EXPECTED_SORTED[1]}"
+
+          git add "$SOURCE" "$TESTS"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "[recover es80 passive lifecycle] Reject markers during terminal quarantine"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
