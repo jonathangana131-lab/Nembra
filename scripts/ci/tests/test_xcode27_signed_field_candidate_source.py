@@ -41,7 +41,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
 
     def test_intended_device_is_verification_only(self):
         self.assertIn('NEMBRA_INTENDED_DEVICE_UDID', self.source)
-        self.assertIn('never persist, print, or hash it', self.source)
+        self.assertIn('does not persist, print, or hash it', self.source)
         self.assertNotIn('intended_device_udid=', self.source)
         self.assertNotIn('intended_device_udid_sha', self.source)
         self.assertNotIn('device_udid=', self.source)
@@ -57,7 +57,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('Archive/export changed immutable source state', self.source)
         self.assertIn('git worktree remove --force "$SOURCE_ROOT"', self.source)
 
-    def test_is_bash_32_safe_for_optional_provisioning_and_ipa_selection(self):
+    def test_is_bash_32_safe_for_optional_inputs_and_pipeline_status(self):
         self.assertIn('ALLOW_PROVISIONING_UPDATES="${NEMBRA_ALLOW_PROVISIONING_UPDATES:-0}"', self.source)
         self.assertIn('run_xcodebuild()', self.source)
         self.assertIn('if [[ "$ALLOW_PROVISIONING_UPDATES" == "1" ]]', self.source)
@@ -65,6 +65,9 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertNotIn('IPA_FILES=(', self.source)
         self.assertNotIn('shopt -s nullglob', self.source)
         self.assertIn('Expected exactly one exported .ipa', self.source)
+        self.assertIn('ARCHIVE_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('EXPORT_PIPESTATUS=("${PIPESTATUS[@]}")', self.source)
+        self.assertIn('Snapshot PIPESTATUS in one assignment', self.source)
 
     def test_keeps_canonical_evidence_failure_atomic_and_producer_audit_separate(self):
         self.assertIn('PRODUCER_AUDIT_DIR="${ARTIFACTS_DIR}.producer-audit"', self.source)
