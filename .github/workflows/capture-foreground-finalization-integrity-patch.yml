@@ -1,0 +1,191 @@
+name: Capture foreground-finalization integrity patch
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-foreground-finalization-integrity/gpt56-go
+    paths:
+      - .github/workflows/capture-foreground-finalization-integrity-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-foreground-finalization-integrity/gpt56-go
+          fetch-depth: 2
+
+      - name: Verify exact diagnostic parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "69b9ea2525a2b8937b03745e5959395f7b06d2bb"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-foreground-finalization-integrity-patch.yml"
+
+      - name: Apply exact foreground-integrity controller repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = controller.read_text()
+
+          replacements = [
+              (
+                  """    public var hasCompleteTargetEvidence: Bool {
+                  recorder != nil
+                      && !captureFailed
+                      && acquisitionLedger.isReady
+                      && !selectedTargetCancellationPending
+              }""",
+                  """    public var hasCompleteTargetEvidence: Bool {
+                  recorder != nil
+                      && !captureFailed
+                      && foregroundEvidenceIntegrityValid
+                      && acquisitionLedger.isReady
+                      && !selectedTargetCancellationPending
+              }""",
+              ),
+              (
+                  """    private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
+              private var selectedTargetCancellationPending = false
+              private var scanRequested = false""",
+                  """    private var gattIdentityRegistry = PassiveCoreBluetoothGATTIdentityRegistry()
+              private var selectedTargetCancellationPending = false
+              /// Foreground-only evidence remains valid for exactly one durable target
+              /// capture. Once the app leaves foreground, that capture can never regain
+              /// export/finalization authority merely by reconnecting transport.
+              private var foregroundEvidenceIntegrityValid = true
+              private var scanRequested = false""",
+              ),
+              (
+                  """    public func invalidateActiveCaptureForForegroundLoss() {
+              cancelActiveConnection(cause: .foregroundIntegrityLoss)
+          }""",
+                  """    public func invalidateActiveCaptureForForegroundLoss() {
+              // A terminal artifact is already immutable. Before terminal freeze,
+              // foreground loss permanently poisons this durable capture even when H
+              // intentionally blocks transport teardown from changing artifact authority.
+              if !observationBoundaryQueueGate.isTerminal {
+                  foregroundEvidenceIntegrityValid = false
+              }
+              cancelActiveConnection(cause: .foregroundIntegrityLoss)
+          }""",
+              ),
+              (
+                  """                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                  try ensureCaptureHealthy()
+                  try validateBoundaryAuthority(horizonAdmission.authority)""",
+                  """                await flushPendingEvents(through: horizonAdmission.queueCutoff)
+                  try requireForegroundEvidenceIntegrity()
+                  try ensureCaptureHealthy()
+                  try validateBoundaryAuthority(horizonAdmission.authority)""",
+              ),
+              (
+                  """            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+              do {
+                  committedHorizon = try recordedHorizon.markBoundaryRecorded(
+                      on: &observationBoundaryQueueGate,
+                      lastProcessedQueueSequence: lastProcessedEventSequence
+                  )
+              } catch {
+                  _ = try? observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                      recordedHorizon
+                  )
+                  throw error
+              }""",
+                  """            let committedHorizon: PassiveCoreBluetoothObservationBoundaryTransactionDecision.CommittedHorizonBoundary
+              do {
+                  // Foreground loss can interleave while the recorder actor owns H.
+                  // Re-check before promoting durable H into queue-committed authority.
+                  try requireForegroundEvidenceIntegrity()
+                  committedHorizon = try recordedHorizon.markBoundaryRecorded(
+                      on: &observationBoundaryQueueGate,
+                      lastProcessedQueueSequence: lastProcessedEventSequence
+                  )
+              } catch {
+                  let recordedHorizonFailure = error
+                  do {
+                      _ = try observationBoundaryQueueGate.abortRecordedHorizonBeforeGateCommit(
+                          recordedHorizon
+                      )
+                  } catch {
+                      // Exact quarantine failure is stronger than the triggering
+                      // foreground/commit failure; never leave ambiguous recorded H.
+                      throw error
+                  }
+                  throw recordedHorizonFailure
+              }""",
+              ),
+              (
+                  """                data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                  try validateBoundaryAuthority(committedHorizon.authority)
+                  try committedHorizon.completeHorizonArtifactFreeze(""",
+                  """                data = try await recorder.encodedJSON(prettyPrinted: prettyPrinted)
+                  // JSON materialization is an actor hop. Foreground integrity must
+                  // still be valid immediately before the synchronous terminal freeze.
+                  try requireForegroundEvidenceIntegrity()
+                  try validateBoundaryAuthority(committedHorizon.authority)
+                  try committedHorizon.completeHorizonArtifactFreeze(""",
+              ),
+              (
+                  """        gattIdentityRegistry.reset()
+              selectedTargetCancellationPending = false
+              hasUsedInitialSessionIdentity = true
+              recorder = newRecorder""",
+                  """        gattIdentityRegistry.reset()
+              selectedTargetCancellationPending = false
+              // Only publication of a genuinely fresh durable recorder/session may
+              // restore foreground-only evidence validity after a prior scene loss.
+              foregroundEvidenceIntegrityValid = true
+              hasUsedInitialSessionIdentity = true
+              recorder = newRecorder""",
+              ),
+              (
+                  """    private func validateBoundaryAuthority(
+              _ authority: PassiveCoreBluetoothArtifactAuthorityContext
+          ) throws {""",
+                  """    private func requireForegroundEvidenceIntegrity() throws {
+              guard foregroundEvidenceIntegrityValid else {
+                  throw ControllerError.captureIncomplete
+              }
+          }
+
+          private func validateBoundaryAuthority(
+              _ authority: PassiveCoreBluetoothArtifactAuthorityContext
+          ) throws {""",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one controller patch site, found {count}: {old.splitlines()[0]!r}")
+              source = source.replace(old, new)
+
+          controller.write_text(source)
+          Path(".github/workflows/capture-foreground-finalization-integrity-patch.yml").unlink()
+          PY
+
+          git diff --check
+          test "$(grep -c 'private var foregroundEvidenceIntegrityValid = true' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "1"
+          test "$(grep -c 'foregroundEvidenceIntegrityValid = false' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "1"
+          test "$(grep -c 'requireForegroundEvidenceIntegrity()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "3"
+          test "$(grep -c 'foregroundEvidenceIntegrityValid = true' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift)" = "2"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerForegroundFinalizationIntegrityTests.swift
+
+      - name: Commit exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: preserve foreground integrity through Horizon finalization"
+          git push origin HEAD:integration/es80-v14-foreground-finalization-integrity/gpt56-go
