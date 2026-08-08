@@ -50,22 +50,24 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
         #expect(gate.phase == .observing)
 
         do {
-            _ = try gate.begin(
-                .observationHorizon,
+            _ = try gate.beginObservationHorizon(
                 through: 5,
                 processedThrough: 4,
-                authority: changedAuthority
+                authority: changedAuthority,
+                establishedByReadyRevision: ready.revision,
+                establishedByReadyIdentity: ready.identity
             )
             Issue.record("Reset while observing must not detach the committed ready authority.")
         } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
             #expect(error == .authorityChanged)
         }
 
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: 5,
             processedThrough: 4,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         #expect(horizon.revision == ready.revision + 1)
     }
@@ -83,11 +85,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
             lastProcessedQueueSequence: 2,
             currentAuthority: authority
         )
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: 6,
             processedThrough: 2,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
 
         #expect(gate.permittedDrainUpperBound(firstPending: 3, pendingTail: 8) == 6)
@@ -111,11 +114,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateResetSafetyTests {
             lastProcessedQueueSequence: 2,
             currentAuthority: authority
         )
-        let horizon = try gate.begin(
-            .observationHorizon,
+        let horizon = try gate.beginObservationHorizon(
             through: 6,
             processedThrough: 2,
-            authority: authority
+            authority: authority,
+            establishedByReadyRevision: ready.revision,
+            establishedByReadyIdentity: ready.identity
         )
         try gate.markBoundaryRecorded(
             horizon,
