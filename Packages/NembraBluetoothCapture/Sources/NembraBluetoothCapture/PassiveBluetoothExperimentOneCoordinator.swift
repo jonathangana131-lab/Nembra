@@ -14,6 +14,7 @@ import Foundation
 @MainActor
 public final class PassiveBluetoothExperimentOneCoordinator {
     public enum CoordinatorError: Error, Equatable, Sendable {
+        case fieldExecutionNotAuthorized
         case captureAdmissionAlreadyPrepared
         case captureAdmissionNotPrepared
         case correlatedTargetUnavailable
@@ -40,9 +41,10 @@ public final class PassiveBluetoothExperimentOneCoordinator {
     private let run: PassiveBluetoothExperimentOneRun
     private var pendingCaptureAdmission: PassiveBluetoothExperimentOneCaptureAdmission?
 
-    /// Experiment One is ES80-specific. Canonical vehicle context is selected inside the package,
-    /// never injected by app/UI code merely to make a run eligible.
-    public init(controller: ForegroundCoreBluetoothCaptureController) throws {
+    /// Package-only deterministic composition seam. Product UI cannot inject a generic controller
+    /// and call that a field-authorized Experiment One. Public production construction is owned by
+    /// `makeAuthorizedES80()` in the canonical-ES80 extension and is mechanically gated there.
+    package init(controller: ForegroundCoreBluetoothCaptureController) throws {
         self.controller = controller
         run = try PassiveBluetoothExperimentOneRun(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
