@@ -19,6 +19,10 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         authorityGeneration: 11
     )
 
+    private let targetPeripheralIdentifier = UUID(
+        uuidString: "57E94B09-81C9-4B45-9C20-2D79355FB34D"
+    )!
+
     private let es80 = VehicleIdentity(
         manufacturer: "AOVOPRO",
         model: "ES80",
@@ -26,17 +30,19 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
-    @Test("terminal resolution reopens only for the exact bound fresh durable target session")
+    @Test("terminal resolution reopens only for the exact producer-created fresh target session")
     @MainActor
     func exactFreshSessionIsRequired() async throws {
         var gate = try await terminalGate(horizon: 12)
         let terminal = try #require(terminalTransaction(from: gate))
         let resolution = try resolveTerminalQueue(gate: gate, tail: 14)
+        let freshSession = try makeFreshSession(after: resolution)
 
         try gate.reopenAfterTerminalQueueResolution(
             resolution,
+            freshSession: freshSession,
             currentLastEnqueuedEventSequence: 14,
-            freshTargetSessionGeneration: 8
+            currentResolvedThroughQueueSequence: 14
         )
         #expect(gate.phase == .awaitingReady)
 
@@ -64,10 +70,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
             )
         }
 
-        let exactFreshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
-            targetSessionGeneration: 8,
-            authorityGeneration: 1
-        )
+        let exactFreshAuthority = freshSession.reopenAuthority.freshArtifactAuthority
         let ready = try gate.begin(
             .finiteAcquisitionReady,
             through: 14,
@@ -75,6 +78,28 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         )
         #expect(ready.revision > terminal.revision)
         #expect(ready.authority == exactFreshAuthority)
+    }
+
+    @Test("fresh-session producer constructs the recorder before exposing reopen authority")
+    @MainActor
+    func producerBacksAuthorityWithRealRecorder() async throws {
+        let gate = try await terminalGate(horizon: 12)
+        let resolution = try resolveTerminalQueue(gate: gate, tail: 12)
+        let sessionID = UUID(uuidString: "43F13675-8C1A-4B6B-9C86-5BAAF916453D")!
+        let freshSession = try PassiveCoreBluetoothFreshTerminalCaptureSession.create(
+            after: resolution,
+            targetPeripheralIdentifier: targetPeripheralIdentifier,
+            vehicleIdentity: es80,
+            sessionID: sessionID,
+            startedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        let snapshot = await freshSession.recorder.snapshot()
+        #expect(snapshot.id == sessionID)
+        #expect(freshSession.reopenAuthority.terminalAuthority == terminalAuthority)
+        #expect(freshSession.reopenAuthority.freshArtifactAuthority.targetSessionGeneration == 8)
+        #expect(freshSession.reopenAuthority.freshArtifactAuthority.authorityGeneration == 1)
+        #expect(freshSession.reopenAuthority.targetPeripheralIdentifier == targetPeripheralIdentifier)
     }
 
     @Test("equal-scalar foreign terminal resolution cannot reopen this gate")
@@ -90,11 +115,13 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         #expect(terminalA.identity != terminalB.identity)
 
         let resolutionA = try resolveTerminalQueue(gate: gateA, tail: 13)
+        let freshSessionA = try makeFreshSession(after: resolutionA)
         #expect(throws: Gate.StateError.staleTransaction) {
             try gateB.reopenAfterTerminalQueueResolution(
                 resolutionA,
+                freshSession: freshSessionA,
                 currentLastEnqueuedEventSequence: 13,
-                freshTargetSessionGeneration: 8
+                currentResolvedThroughQueueSequence: 13
             )
         }
         #expect(gateB.phase == .terminal(terminalB))
@@ -106,6 +133,7 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         var gate = try await terminalGate(horizon: 12)
         let terminal = try #require(terminalTransaction(from: gate))
         let resolution = try resolveTerminalQueue(gate: gate, tail: 13)
+        let freshSession = try makeFreshSession(after: resolution)
 
         #expect(
             throws: Gate.StateError.terminalQueueChangedAfterResolution(
@@ -115,11 +143,57 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
         ) {
             try gate.reopenAfterTerminalQueueResolution(
                 resolution,
+                freshSession: freshSession,
                 currentLastEnqueuedEventSequence: 14,
-                freshTargetSessionGeneration: 8
+                currentResolvedThroughQueueSequence: 13
             )
         }
         #expect(gate.phase == .terminal(terminal))
+    }
+
+    @Test("resolution possession without controller frontier application cannot reopen")
+    @MainActor
+    func unappliedResolvedFrontierFailsClosed() async throws {
+        var gate = try await terminalGate(horizon: 12)
+        let terminal = try #require(terminalTransaction(from: gate))
+        let resolution = try resolveTerminalQueue(gate: gate, tail: 14)
+        let freshSession = try makeFreshSession(after: resolution)
+
+        #expect(
+            throws: Gate.StateError.terminalResolutionNotApplied(
+                expected: 14,
+                actual: 12
+            )
+        ) {
+            try gate.reopenAfterTerminalQueueResolution(
+                resolution,
+                freshSession: freshSession,
+                currentLastEnqueuedEventSequence: 14,
+                currentResolvedThroughQueueSequence: 12
+            )
+        }
+        #expect(gate.phase == .terminal(terminal))
+    }
+
+    @Test("fresh authority from a different real terminal cannot substitute")
+    @MainActor
+    func foreignFreshSessionAuthorityFailsClosed() async throws {
+        var gateA = try await terminalGate(horizon: 12)
+        let gateB = try await terminalGate(horizon: 12)
+        let terminalA = try #require(terminalTransaction(from: gateA))
+        let resolutionA = try resolveTerminalQueue(gate: gateA, tail: 12)
+        let resolutionB = try resolveTerminalQueue(gate: gateB, tail: 12)
+        let freshSessionB = try makeFreshSession(after: resolutionB)
+
+        #expect(throws: Gate.StateError.staleTransaction) {
+            try gateA.reopenAfterTerminalQueueResolution(
+                resolutionA,
+                freshSession: freshSessionB,
+                currentLastEnqueuedEventSequence: 12,
+                currentResolvedThroughQueueSequence: 12
+            )
+        }
+        #expect(gateA.phase == .terminal(terminalA))
     }
 
     @Test("reset cannot erase fresh-session binding after terminal recovery")
@@ -127,10 +201,12 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
     func resetPreservesExactFreshSessionBinding() async throws {
         var gate = try await terminalGate(horizon: 12)
         let resolution = try resolveTerminalQueue(gate: gate, tail: 12)
+        let freshSession = try makeFreshSession(after: resolution)
         try gate.reopenAfterTerminalQueueResolution(
             resolution,
+            freshSession: freshSession,
             currentLastEnqueuedEventSequence: 12,
-            freshTargetSessionGeneration: 8
+            currentResolvedThroughQueueSequence: 12
         )
 
         #expect(gate.resetForNewCaptureSession())
@@ -210,6 +286,17 @@ struct PassiveCoreBluetoothTerminalQueueResolutionReopenV14Tests {
             currentLastEnqueuedEventSequence: tail,
             retirementReceipt: retirement,
             terminalGate: gate
+        )
+    }
+
+    private func makeFreshSession(
+        after resolution: Resolution.Receipt
+    ) throws -> PassiveCoreBluetoothFreshTerminalCaptureSession {
+        try PassiveCoreBluetoothFreshTerminalCaptureSession.create(
+            after: resolution,
+            targetPeripheralIdentifier: targetPeripheralIdentifier,
+            vehicleIdentity: es80,
+            startedAt: Date(timeIntervalSince1970: 200)
         )
     }
 
