@@ -117,6 +117,34 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(failureCopy.contains("OFF / ON"))
     }
 
+    @Test("phase and restart helpers stay rider-readable too")
+    func phaseAndRestartHelpersStayHumanFirst() throws {
+        let source = try Self.shellSource()
+        let phaseStart = try #require(source.range(of: "private func phase("))
+        let errorStart = try #require(
+            source.range(
+                of: "private func experimentErrorMessage",
+                range: phaseStart.lowerBound..<source.endIndex
+            )
+        )
+        let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
+
+        let implementationPhrasesThatMustStayOutOfHelpers = [
+            "evidence life cannot regain capture authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow",
+            "fresh package-owned Experiment One workflow"
+        ]
+
+        for phrase in implementationPhrasesThatMustStayOutOfHelpers {
+            #expect(
+                !helperSurface.contains(phrase),
+                "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+    }
+
     @Test("engineering truth remains available in Details instead of being deleted")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
