@@ -2,44 +2,31 @@ import CryptoKit
 import Foundation
 import NembraCore
 
-/// Fail-closed target selection errors for one versioned passive-capture
-/// artifact. Automatic selection is allowed only when target-attributable
-/// evidence identifies exactly one peripheral.
-public enum PassiveBluetoothTuyaCaptureArtifactReportError: Error, Equatable, Sendable {
-    case noAttributablePeripheral
-    case ambiguousPeripherals([String])
-    case requestedPeripheralNotPresent(requested: String, available: [String])
-}
-
-extension PassiveBluetoothTuyaCaptureArtifactReportError: CustomStringConvertible {
-    public var description: String {
-        switch self {
-        case .noAttributablePeripheral:
-            "capture contains no target-attributable connection/GATT/value peripheral evidence"
-        case let .ambiguousPeripherals(identifiers):
-            "capture contains multiple attributable peripherals; pass --peripheral with one exact identifier: \(identifiers.joined(separator: ", "))"
-        case let .requestedPeripheralNotPresent(requested, available):
-            "requested peripheral \(requested) is not present in target-attributable capture evidence; available: \(available.joined(separator: ", "))"
-        }
-    }
-}
-
-/// Durable wrapper that cryptographically binds a deterministic framing report
-/// to the exact capture JSON bytes that produced it.
+/// Durable wrapper that binds a deterministic framing-candidate report to the
+/// exact package-owned final Share bytes and their already-verified nested
+/// SoftwareExport + immutable capture subjects.
 ///
-/// The SHA-256 is an artifact-integrity/provenance identifier only. It does not
-/// authenticate the scooter, prove who recorded the capture, or verify any ES80
+/// These hashes are software integrity/provenance identifiers only. They do not
+/// authenticate the physical scooter, prove RF completeness, or verify any ES80
 /// protocol/telemetry meaning.
 public struct PassiveBluetoothTuyaCaptureArtifactReport: Equatable, Codable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public let schemaVersion: Int
     public let sourceArtifact: SourceArtifactSummary
     public let analysis: PassiveBluetoothTuyaCaptureReport
 
     public struct SourceArtifactSummary: Equatable, Codable, Sendable {
-        public let sha256: String
-        public let byteCount: Int
+        public let finalShareSHA256: String
+        public let finalShareByteCount: Int
+        public let softwareExportSHA256: String
+        public let captureSHA256: String
+        public let captureByteCount: Int
+        public let experimentID: UUID
+        public let experimentRecipeID: String
+        public let procedureVersion: String
+        public let buildInstanceID: String
+        public let sourceCommitSHA: String
     }
 
     public func jsonData(prettyPrinted: Bool = true) throws -> Data {
@@ -51,44 +38,57 @@ public struct PassiveBluetoothTuyaCaptureArtifactReport: Equatable, Codable, Sen
 }
 
 public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
-    /// Validates the exact source-artifact byte count before decode, then decodes
-    /// the versioned capture artifact, selects one target without guessing, runs
-    /// the bounded candidate analyzer, and binds the output to the original input
-    /// bytes with SHA-256.
+    /// Verifies and analyzes the exact final Share file emitted by Nembra Capture.
+    ///
+    /// The outer final-share closed-world codec validates procedure/build/recipe
+    /// rendezvous and its exact nested SoftwareExport digest; the SoftwareExport
+    /// codec validates the nested capture/manifest/correlation relationship; the
+    /// manifest then supplies the already-verified selected peripheral. The
+    /// operator is never asked to extract nested JSON or type a UUID.
     ///
     /// `maximumArtifactBytes` is an offline process-safety ceiling only. It is not
-    /// an ES80 protocol/session/message-size claim. File-based callers should use
-    /// `PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes` first so the
-    /// source `Data` itself is also bounded before materialization.
+    /// a physical ES80 packet/session/capture maximum. File callers should first
+    /// use `PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes` so the
+    /// source Data is bounded before whole-file materialization or JSON decode.
     public static func make(
-        captureJSON: Data,
-        peripheralIdentifier requestedPeripheralIdentifier: String? = nil,
+        finalShareJSON: Data,
         policy: TuyaCandidateFragmentReassemblyPolicy,
         maximumArtifactBytes: Int = PassiveBluetoothCaptureArtifactInputPolicy.defaultMaximumArtifactBytes
     ) throws -> PassiveBluetoothTuyaCaptureArtifactReport {
         try PassiveBluetoothCaptureArtifactInputPolicy.validateByteCount(
-            captureJSON.count,
+            finalShareJSON.count,
             maximumBytes: maximumArtifactBytes
         )
 
-        let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
-        let available = PassiveBluetoothTuyaCaptureReportBuilder
-            .attributablePeripheralIdentifiers(in: session)
-        let selected = try selectPeripheral(
-            requested: requestedPeripheralIdentifier,
-            available: available
+        let verifiedFinalShare = try PassiveBluetoothExperimentOneFinalShareArtifactCodec
+            .decodeAndVerify(finalShareJSON)
+        let softwareExport = verifiedFinalShare.softwareExport
+        let captureJSON = softwareExport.captureJSON
+        let manifest = try PassiveBluetoothStationaryCaptureManifestJSON.verifyCaptureBinding(
+            manifestJSON: softwareExport.stationaryManifestJSON,
+            captureJSON: captureJSON
         )
+
+        let selectedPeripheralIdentifier = manifest.sourceArtifact.selectedPeripheralIdentifier
         let analysis = try PassiveBluetoothTuyaCaptureReportBuilder.make(
-            session: session,
-            peripheralIdentifier: selected,
+            session: PassiveBluetoothCaptureJSON.decode(captureJSON),
+            peripheralIdentifier: selectedPeripheralIdentifier,
             policy: policy
         )
 
         return PassiveBluetoothTuyaCaptureArtifactReport(
             schemaVersion: PassiveBluetoothTuyaCaptureArtifactReport.currentSchemaVersion,
             sourceArtifact: .init(
-                sha256: sha256Hex(of: captureJSON),
-                byteCount: captureJSON.count
+                finalShareSHA256: sha256Hex(of: finalShareJSON),
+                finalShareByteCount: finalShareJSON.count,
+                softwareExportSHA256: verifiedFinalShare.softwareExportSHA256,
+                captureSHA256: manifest.sourceArtifact.sha256,
+                captureByteCount: manifest.sourceArtifact.byteCount,
+                experimentID: verifiedFinalShare.experimentID,
+                experimentRecipeID: verifiedFinalShare.experimentRecipeID.rawValue,
+                procedureVersion: verifiedFinalShare.procedureVersion,
+                buildInstanceID: verifiedFinalShare.buildInstanceID,
+                sourceCommitSHA: softwareExport.build.sourceCommitSHA
             ),
             analysis: analysis
         )
@@ -98,30 +98,5 @@ public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
         SHA256.hash(data: data).map { byte in
             String(format: "%02x", byte)
         }.joined()
-    }
-
-    private static func selectPeripheral(
-        requested: String?,
-        available: [String]
-    ) throws -> String {
-        if let requested {
-            guard available.contains(requested) else {
-                throw PassiveBluetoothTuyaCaptureArtifactReportError
-                    .requestedPeripheralNotPresent(
-                        requested: requested,
-                        available: available
-                    )
-            }
-            return requested
-        }
-
-        switch available.count {
-        case 0:
-            throw PassiveBluetoothTuyaCaptureArtifactReportError.noAttributablePeripheral
-        case 1:
-            return available[0]
-        default:
-            throw PassiveBluetoothTuyaCaptureArtifactReportError.ambiguousPeripherals(available)
-        }
     }
 }
