@@ -5,63 +5,55 @@ import Testing
 struct ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests {
     private static func controllerMethodSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile
-            .deletingLastPathComponent() // NembraBluetoothCaptureTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // package root
-        let source = try String(
-            contentsOf: packageRoot
-                .appendingPathComponent("Sources")
-                .appendingPathComponent("NembraBluetoothCapture")
-                .appendingPathComponent("ForegroundCoreBluetoothCaptureController.swift"),
-            encoding: .utf8
-        )
-
+        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: packageRoot.appendingPathComponent("Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift"), encoding: .utf8)
         let start = try #require(source.range(of: "func connectUsingExperimentOneAdmission("))
-        let end = try #require(source.range(
-            of: "public func cancelActiveConnection()",
-            range: start.lowerBound..<source.endIndex
-        ))
+        let end = try #require(source.range(of: "public func cancelActiveConnection()", range: start.lowerBound..<source.endIndex))
         return String(source[start.lowerBound..<end.lowerBound])
     }
 
-    private static func codeOnly(_ source: String) -> String {
-        source
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line in
-                guard let comment = line.range(of: "//") else { return String(line) }
-                return String(line[..<comment.lowerBound])
-            }
-            .joined(separator: "\n")
+    private static func runSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: packageRoot.appendingPathComponent("Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift"), encoding: .utf8)
     }
 
-    @Test("recoverable target staging completes before the sealed one-shot admission is consumed")
-    func rediscoveryMissDoesNotBurnExperimentOneAdmission() throws {
-        let method = Self.codeOnly(try Self.controllerMethodSource())
-
-        let catalog = try #require(method.range(of: "peripheralByIdentifier["))
-        let discovery = try #require(method.range(of: "latestDiscoveryByIdentifier["))
-        let attempt = try #require(method.range(of: "targetState.validateCanBeginAttempt("))
-        let advertisement = try #require(method.range(of: "latestAdvertisementByIdentifier["))
+    @Test("recoverable staging precedes one-shot consumption with strict post-handoff chronology")
+    func rediscoveryMissDoesNotBurnAdmission() throws {
+        let method = try Self.controllerMethodSource()
+        let preview = try #require(method.range(of: "previewForControllerStaging()"))
+        let catalog = try #require(method.range(of: "peripheralByIdentifier[preview.peripheralIdentifier]"))
+        let discovery = try #require(method.range(of: "latestDiscoveryByIdentifier[preview.peripheralIdentifier]"))
+        let attempt = try #require(method.range(of: "targetState.validateCanBeginAttempt(for: preview.peripheralIdentifier)"))
+        let advertisement = try #require(method.range(of: "latestAdvertisementByIdentifier[preview.peripheralIdentifier]"))
         let freshness = try #require(method.range(of: "receivedAtUptimeNanoseconds > preview.issuedAtUptimeNanoseconds"))
         let consume = try #require(method.range(of: "admission.consume()"))
+        let rebind = try #require(method.range(of: "payload.admissionIdentity == preview.admissionIdentity"))
         let publication = try #require(method.range(of: "recorder = payload.recorder"))
-
-        // A missing/not-yet-fresh current controller observation is a recoverable
-        // staging state. It must not consume the only handoff before the rider can
-        // keep scanning and retry with the same completed OFF1/ON1/OFF2/ON2 run.
+        #expect(preview.lowerBound < catalog.lowerBound)
         #expect(catalog.lowerBound < consume.lowerBound)
         #expect(discovery.lowerBound < consume.lowerBound)
         #expect(attempt.lowerBound < consume.lowerBound)
         #expect(advertisement.lowerBound < consume.lowerBound)
         #expect(freshness.lowerBound < consume.lowerBound)
+        #expect(consume.lowerBound < rebind.lowerBound)
+        #expect(rebind.lowerBound < publication.lowerBound)
+        #expect(method.components(separatedBy: "admission.consume()").count - 1 == 1)
         #expect(!method.contains("receivedAtUptimeNanoseconds >= preview.issuedAtUptimeNanoseconds"))
+    }
 
-        // Equality is intentionally recoverable/fail-closed: sharing one monotonic clock tick
-        // with issuance cannot prove that the callback receipt happened afterward.
-
-        // Consumption remains the irreversible ownership handoff and therefore
-        // must still precede publication of the exact run-owned recorder.
-        #expect(consume.lowerBound < publication.lowerBound)
+    @Test("staging preview carries no recorder or raw evidence and is producer constructed")
+    func previewSurfaceIsNarrow() throws {
+        let source = try Self.runSource()
+        let start = try #require(source.range(of: "struct StagingPreview: Equatable, Sendable"))
+        let end = try #require(source.range(of: "struct Payload", range: start.upperBound..<source.endIndex))
+        let preview = String(source[start.lowerBound..<end.lowerBound])
+        #expect(preview.contains("let admissionIdentity: UUID"))
+        #expect(preview.contains("let peripheralIdentifier: UUID"))
+        #expect(preview.contains("let issuedAtUptimeNanoseconds: UInt64"))
+        #expect(preview.contains("fileprivate init("))
+        #expect(!preview.contains("recorder"))
+        #expect(!preview.contains("powerCycleEvidence"))
+        #expect(source.contains("func previewForControllerStaging() throws -> StagingPreview"))
     }
 }
