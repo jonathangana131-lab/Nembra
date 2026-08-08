@@ -99,6 +99,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         }
 
         let windows = try makeCorrelationWindows(powerCycleResult)
+        try validateCorrelationWindowChronology(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -193,6 +194,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         let windows = try wire.correlationWindows.enumerated().map { index, item in
             try decodedWindow(item, index: index)
         }
+        try validateCorrelationWindowChronology(windows)
         let replayed = try replayCorrelation(windows)
         let selectedTarget: UUID
         switch replayed.disposition {
@@ -241,13 +243,19 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
                     .correlationWindowPhaseMismatch(index: index)
             }
-            guard receipt.windowSequence == snapshot.windowSequence else {
+            guard receipt.windowSequence == snapshot.windowSequence,
+                  receipt.windowSequence.rawValue == UInt64(index + 1) else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
                     .correlationWindowSequenceMismatch(index: index)
             }
             guard receipt.observedCandidateCount == snapshot.candidates.count else {
                 throw PassiveBluetoothExperimentOneSoftwareExportError
                     .correlationCandidateCountMismatch(index: index)
+            }
+            guard receipt.endedAtUptimeNanoseconds >= receipt.startedAtUptimeNanoseconds,
+                  receipt.endedAtUptimeNanoseconds - receipt.startedAtUptimeNanoseconds >=
+                    PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
             }
             return .init(
                 phase: receipt.phase,
@@ -292,10 +300,18 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
     ) throws -> PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow {
         guard let phase = PassiveBluetoothPowerCycleObservationPhase(rawValue: wire.phase),
               phase.rawValue == index,
-              wire.endedAtUptimeNanoseconds >= wire.startedAtUptimeNanoseconds,
               let authority = canonicalUUID(wire.observationSeriesIdentity) else {
             throw PassiveBluetoothExperimentOneSoftwareExportError
                 .correlationWindowPhaseMismatch(index: index)
+        }
+        guard wire.windowSequence == UInt64(index + 1) else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError
+                .correlationWindowSequenceMismatch(index: index)
+        }
+        guard wire.endedAtUptimeNanoseconds >= wire.startedAtUptimeNanoseconds,
+              wire.endedAtUptimeNanoseconds - wire.startedAtUptimeNanoseconds >=
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
         }
         let candidates = try wire.candidates.map { candidate in
             guard let id = canonicalUUID(candidate.peripheralIdentifier) else {
@@ -314,6 +330,17 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             endedAtUptimeNanoseconds: wire.endedAtUptimeNanoseconds,
             candidates: candidates
         )
+    }
+
+    private static func validateCorrelationWindowChronology(
+        _ windows: [PassiveBluetoothExperimentOneSoftwareExport.CorrelationWindow]
+    ) throws {
+        for index in windows.indices.dropFirst() {
+            guard windows[index].startedAtUptimeNanoseconds >=
+                    windows[index - 1].endedAtUptimeNanoseconds else {
+                throw PassiveBluetoothExperimentOneSoftwareExportError.correlationEvidenceInvalid
+            }
+        }
     }
 
     private static func canonicalUUID(_ raw: String) -> UUID? {
