@@ -27,7 +27,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The app must expose the physical NO-GO boundary instead of implying a runnable experiment."
         )
         XCTAssertTrue(
-            app.otherElements["es80.capture.correlation-progress"].waitForExistence(timeout: 3),
+            app.descendants(matching: .any)["es80.capture.correlation-progress"].waitForExistence(timeout: 3),
             "The primary workflow must expose the four-window OFF1/ON1/OFF2/ON2 correlation sequence."
         )
         XCTAssertTrue(
@@ -38,6 +38,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCTAssertFalse(
             app.buttons["Scan for scooter"].exists,
             "The V13 generic manual-candidate scan must not remain the primary correlation path."
+        )
+        XCTAssertFalse(
+            app.buttons["Start passive capture"].exists,
+            "The app must not splice standalone correlation into a separately-issued capture authority."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.start"].exists,
+            "No hidden or differently-labeled Start Capture action may bypass the Experiment One authority boundary."
         )
         XCTAssertFalse(
             app.buttons["Finish Capture"].exists,
