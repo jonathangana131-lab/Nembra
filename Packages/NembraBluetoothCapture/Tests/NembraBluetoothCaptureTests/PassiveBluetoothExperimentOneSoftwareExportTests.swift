@@ -136,6 +136,53 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         }
     }
 
+    @Test("construction cannot export a correlation window shorter than the official recipe")
+    func constructionRejectsShortPowerCycleWindow() throws {
+        let minimum = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds
+        let observed = minimum - 1
+        let shortResult = try makePowerCycleResult(windowDurationNanoseconds: observed)
+
+        #expect(
+            throws: ExportError.correlationWindowDurationRejected(
+                index: 0,
+                observedNanoseconds: observed,
+                minimumRequiredNanoseconds: minimum
+            )
+        ) {
+            _ = try Codec.make(
+                captureJSON: makeCaptureJSON(),
+                powerCycleResult: shortResult,
+                runtimeBuildIdentity: makeBuildIdentity()
+            )
+        }
+    }
+
+    @Test("wire replay cannot shrink an accepted correlation window below the official recipe")
+    func serializedDurationShrinkageFailsClosed() throws {
+        let minimum = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds
+        let observed = minimum - 1
+        var root = try exportJSONObject()
+        var windows = try #require(root["correlationWindows"] as? [[String: Any]])
+        let started = try #require(
+            windows[2]["startedAtUptimeNanoseconds"] as? NSNumber
+        ).uint64Value
+        windows[2]["endedAtUptimeNanoseconds"] = NSNumber(value: started + observed)
+        root["correlationWindows"] = windows
+
+        let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        #expect(
+            throws: ExportError.correlationWindowDurationRejected(
+                index: 2,
+                observedNanoseconds: observed,
+                minimumRequiredNanoseconds: minimum
+            )
+        ) {
+            _ = try Codec.decodeAndVerify(tampered)
+        }
+    }
+
     private func exportJSONObject() throws -> [String: Any] {
         let export = try Codec.make(
             captureJSON: makeCaptureJSON(),
@@ -160,30 +207,35 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         )
     }
 
-    private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
+    private func makePowerCycleResult(
+        windowDurationNanoseconds duration: UInt64 = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds
+    ) throws -> PassiveBluetoothPowerCycleObservationResult {
         var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        let stride = PassiveBluetoothExperimentOneCapturePolicy
+            .minimumPowerCycleWindowDurationNanoseconds + 1_000_000_000
         _ = try ledger.completeWindow(
             phase: .firstPoweredOff,
-            startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
+            startedAtUptimeNanoseconds: 0,
+            endedAtUptimeNanoseconds: duration,
             candidates: [candidate(neighbor)]
         )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
+            startedAtUptimeNanoseconds: stride,
+            endedAtUptimeNanoseconds: stride + duration,
             candidates: [candidate(neighbor), candidate(scooter)]
         )
         _ = try ledger.completeWindow(
             phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
+            startedAtUptimeNanoseconds: stride * 2,
+            endedAtUptimeNanoseconds: stride * 2 + duration,
             candidates: [candidate(neighbor)]
         )
         return try #require(ledger.completeWindow(
             phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
+            startedAtUptimeNanoseconds: stride * 3,
+            endedAtUptimeNanoseconds: stride * 3 + duration,
             candidates: [candidate(neighbor), candidate(scooter)]
         ))
     }
