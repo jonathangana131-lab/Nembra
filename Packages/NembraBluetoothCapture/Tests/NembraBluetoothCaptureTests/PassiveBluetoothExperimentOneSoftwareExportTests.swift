@@ -12,6 +12,7 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
     private let neighbor = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
     private let buildInstance = "12345678-90ab-cdef-1234-567890abcdef"
     private let commit = "0123456789abcdef0123456789abcdef01234567"
+    private let windowDuration: UInt64 = 10_000_000_000
 
     @Test("round trip preserves exact bytes, producer authority, declared setup, target, and build rendezvous")
     func roundTripPreservesBoundEvidence() throws {
@@ -138,6 +139,74 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
         }
     }
 
+    @Test("wire cannot shorten an accepted ten-second receipt window")
+    func shortenedReceiptWindowFailsClosed() throws {
+        var root = try exportJSONObject()
+        var windows = try #require(root["correlationWindows"] as? [[String: Any]])
+        let start = try uint64(windows[0]["startedAtUptimeNanoseconds"])
+        windows[0]["endedAtUptimeNanoseconds"] = NSNumber(value: start + windowDuration - 1)
+        root["correlationWindows"] = windows
+
+        let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        #expect(throws: ExportError.correlationWindowTooShort(index: 0)) {
+            _ = try Codec.decodeAndVerify(tampered)
+        }
+    }
+
+    @Test("wire cannot overlap otherwise valid receipt windows")
+    func overlappingReceiptWindowsFailClosed() throws {
+        var root = try exportJSONObject()
+        var windows = try #require(root["correlationWindows"] as? [[String: Any]])
+        let firstEnd = try uint64(windows[0]["endedAtUptimeNanoseconds"])
+        let overlappingStart = firstEnd - 1
+        windows[1]["startedAtUptimeNanoseconds"] = NSNumber(value: overlappingStart)
+        windows[1]["endedAtUptimeNanoseconds"] = NSNumber(value: overlappingStart + windowDuration)
+        root["correlationWindows"] = windows
+
+        let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        #expect(throws: ExportError.correlationWindowOverlap(index: 1)) {
+            _ = try Codec.decodeAndVerify(tampered)
+        }
+    }
+
+    @Test("construction rejects receipt chronology below the sealed recipe minimum")
+    func constructionRejectsShortReceiptEvidence() throws {
+        var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        _ = try ledger.completeWindow(
+            phase: .firstPoweredOff,
+            startedAtUptimeNanoseconds: 0,
+            endedAtUptimeNanoseconds: 1,
+            candidates: [candidate(neighbor)]
+        )
+        _ = try ledger.completeWindow(
+            phase: .firstPoweredOn,
+            startedAtUptimeNanoseconds: 2,
+            endedAtUptimeNanoseconds: 3,
+            candidates: [candidate(neighbor), candidate(scooter)]
+        )
+        _ = try ledger.completeWindow(
+            phase: .secondPoweredOff,
+            startedAtUptimeNanoseconds: 4,
+            endedAtUptimeNanoseconds: 5,
+            candidates: [candidate(neighbor)]
+        )
+        let short = try #require(ledger.completeWindow(
+            phase: .secondPoweredOn,
+            startedAtUptimeNanoseconds: 6,
+            endedAtUptimeNanoseconds: 7,
+            candidates: [candidate(neighbor), candidate(scooter)]
+        ))
+
+        #expect(throws: ExportError.correlationWindowTooShort(index: 0)) {
+            _ = try Codec.make(
+                captureJSON: makeCaptureJSON(),
+                powerCycleResult: short,
+                runtimeBuildIdentity: makeBuildIdentity(),
+                setup: setup()
+            )
+        }
+    }
+
     private func exportJSONObject() throws -> [String: Any] {
         let export = try Codec.make(
             captureJSON: makeCaptureJSON(),
@@ -173,35 +242,41 @@ struct PassiveBluetoothExperimentOneSoftwareExportTests {
     }
 
     private func makePowerCycleResult() throws -> PassiveBluetoothPowerCycleObservationResult {
-        var ledger = PassiveBluetoothPowerCycleObservationLedger(minimumWindowDurationNanoseconds: 1)
+        var ledger = PassiveBluetoothPowerCycleObservationLedger(
+            minimumWindowDurationNanoseconds: windowDuration
+        )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOff,
-            startedAtUptimeNanoseconds: 10,
-            endedAtUptimeNanoseconds: 11,
+            startedAtUptimeNanoseconds: 0,
+            endedAtUptimeNanoseconds: 10_000_000_000,
             candidates: [candidate(neighbor)]
         )
         _ = try ledger.completeWindow(
             phase: .firstPoweredOn,
-            startedAtUptimeNanoseconds: 20,
-            endedAtUptimeNanoseconds: 21,
+            startedAtUptimeNanoseconds: 20_000_000_000,
+            endedAtUptimeNanoseconds: 30_000_000_000,
             candidates: [candidate(neighbor), candidate(scooter)]
         )
         _ = try ledger.completeWindow(
             phase: .secondPoweredOff,
-            startedAtUptimeNanoseconds: 30,
-            endedAtUptimeNanoseconds: 31,
+            startedAtUptimeNanoseconds: 40_000_000_000,
+            endedAtUptimeNanoseconds: 50_000_000_000,
             candidates: [candidate(neighbor)]
         )
         return try #require(ledger.completeWindow(
             phase: .secondPoweredOn,
-            startedAtUptimeNanoseconds: 40,
-            endedAtUptimeNanoseconds: 41,
+            startedAtUptimeNanoseconds: 60_000_000_000,
+            endedAtUptimeNanoseconds: 70_000_000_000,
             candidates: [candidate(neighbor), candidate(scooter)]
         ))
     }
 
     private func candidate(_ id: UUID) -> PassiveBluetoothCandidateObservationSnapshot.Candidate {
         .init(id: id, isConnectable: true)
+    }
+
+    private func uint64(_ value: Any?) throws -> UInt64 {
+        try #require(value as? NSNumber).uint64Value
     }
 
     private func makeCaptureJSON() throws -> Data {
