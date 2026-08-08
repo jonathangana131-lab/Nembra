@@ -33,6 +33,17 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         return source[beginning.lowerBound..<details.lowerBound]
     }
 
+    private static func detailsSurface(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private var captureDetailsSheet"))
+        let phase = try #require(
+            source.range(
+                of: "private func phase(",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<phase.lowerBound]
+    }
+
     @Test("primary Capture states use rider language instead of implementation vocabulary")
     func primaryStatesStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -131,11 +142,15 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
 
         let implementationPhrasesThatMustStayOutOfHelpers = [
-            "evidence life cannot regain capture authority",
+            "evidence life",
+            "consumed authority",
             "package-owned CoreBluetooth controller",
             "package-issued observation authority",
             "package-owned Experiment One workflow",
-            "fresh package-owned Experiment One workflow"
+            "fresh package-owned Experiment One workflow",
+            "coordinator.lastDiagnostic ??",
+            "scan-liveness",
+            "String(describing: error)"
         ]
 
         for phrase in implementationPhrasesThatMustStayOutOfHelpers {
@@ -144,13 +159,17 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
                 "Rendered Capture helper still exposes implementation vocabulary: \(phrase)"
             )
         }
+
+        #expect(helperSurface.contains("Start a fresh capture"))
+        #expect(helperSurface.contains("Bluetooth capture is unavailable"))
+        #expect(helperSurface.contains("OFF / ON"))
+        #expect(helperSurface.contains("Simulator QA interruption fixture"))
     }
 
-    @Test("engineering truth remains available in Details instead of being deleted")
+    @Test("engineering truth remains inside the Details view instead of leaking from later source")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
-        let detailsStart = try #require(source.range(of: "private var captureDetailsSheet"))
-        let details = source[detailsStart.lowerBound..<source.endIndex]
+        let details = try Self.detailsSurface(in: source)
 
         #expect(details.contains("Truth boundary"))
         #expect(details.contains("CoreBluetooth"))
