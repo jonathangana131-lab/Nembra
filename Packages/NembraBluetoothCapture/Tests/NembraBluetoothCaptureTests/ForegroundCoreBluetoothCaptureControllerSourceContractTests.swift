@@ -98,6 +98,54 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     }
 
     @Test
+    func finalizedTeardownRequiresFrozenCurrentAuthorityAndAuthorityChangesRevokeIt() throws {
+        let source = try Self.controllerSource()
+        let teardown = try Self.section(
+            in: source,
+            from: "    public func teardownActiveConnectionAfterFinalization() throws {",
+            to: "    private func cancelActiveConnection(cause:"
+        )
+        let authorizationOffset = try Self.offset(
+            of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
+            in: teardown
+        )
+        let rejectionOffset = try Self.offset(
+            of: "throw ControllerError.artifactNotFinalized",
+            in: teardown
+        )
+        let transportOffset = try Self.offset(
+            of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
+            in: teardown
+        )
+        #expect(authorizationOffset < rejectionOffset)
+        #expect(rejectionOffset < transportOffset)
+
+        let artifactReads = try Self.section(
+            in: source,
+            from: "    public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {",
+            to: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {"
+        )
+        #expect(
+            artifactReads.components(separatedBy: "lastFinalizedArtifactAuthority = context.authority").count - 1 == 2
+        )
+
+        let authorityAdvance = try Self.section(
+            in: source,
+            from: "    private func advanceArtifactAuthority() -> Bool {",
+            to: "    private func scheduleConnectionTimeout("
+        )
+        let revokeOffset = try Self.offset(
+            of: "lastFinalizedArtifactAuthority = nil",
+            in: authorityAdvance
+        )
+        let generationOffset = try Self.offset(
+            of: "artifactAuthorityGeneration += 1",
+            in: authorityAdvance
+        )
+        #expect(revokeOffset < generationOffset)
+    }
+
+    @Test
     func acquisitionWatchdogRetainsOneSpecificFenceWithoutGenericCancel() throws {
         let source = try Self.controllerSource()
         let body = try Self.section(
