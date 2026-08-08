@@ -33,32 +33,41 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift')
           text = path.read_text()
           text = text.replace(
               'while producer `stagingPreview()` proves this exact admission is still unconsumed.',
               'while producer `previewForControllerStaging()` proves this exact admission is still unconsumed.'
           )
-          old = '''            if (try? admission.stagingPreview()) == nil {
-                pendingCaptureAdmission = nil
-                preparedCorrelatedTargetIdentifier = nil
-            }'''
-          new = '''            // The narrowed producer staging preview remains readable only before
-            // irreversible one-shot consumption. Preserve the same completed
-            // OFF/ON evidence life only while that exact authority still exists.
-            do {
-                _ = try admission.previewForControllerStaging()
-            } catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {
-                pendingCaptureAdmission = nil
-                preparedCorrelatedTargetIdentifier = nil
-            } catch {
-                // Unknown/future staging-state failures are not proven retryable.
-                pendingCaptureAdmission = nil
-                preparedCorrelatedTargetIdentifier = nil
-            }'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one old staging probe, found {text.count(old)}')
-          text = text.replace(old, new, 1)
+          pattern = re.compile(
+              r'^(?P<i>\s*)if \(try\? admission\.stagingPreview\(\)\) == nil \{\n'
+              r'(?P=i)    pendingCaptureAdmission = nil\n'
+              r'(?P=i)    preparedCorrelatedTargetIdentifier = nil\n'
+              r'(?P=i)\}',
+              re.MULTILINE,
+          )
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'expected one old staging probe, found {len(matches)}; marker count={text.count("admission.stagingPreview()") }')
+          indent = matches[0].group('i')
+          replacement = (
+              f'{indent}// The narrowed producer staging preview remains readable only before\n'
+              f'{indent}// irreversible one-shot consumption. Preserve the same completed\n'
+              f'{indent}// OFF/ON evidence life only while that exact authority still exists.\n'
+              f'{indent}do {{\n'
+              f'{indent}    _ = try admission.previewForControllerStaging()\n'
+              f'{indent}}} catch PassiveBluetoothExperimentOneCaptureAdmission.ConsumptionError.alreadyConsumed {{\n'
+              f'{indent}    pendingCaptureAdmission = nil\n'
+              f'{indent}    preparedCorrelatedTargetIdentifier = nil\n'
+              f'{indent}}} catch {{\n'
+              f'{indent}    // Unknown/future staging-state failures are not proven retryable.\n'
+              f'{indent}    pendingCaptureAdmission = nil\n'
+              f'{indent}    preparedCorrelatedTargetIdentifier = nil\n'
+              f'{indent}}}'
+          )
+          text = pattern.sub(replacement, text, count=1)
           path.write_text(text)
           PY
       - name: Verify resolved authority composition
