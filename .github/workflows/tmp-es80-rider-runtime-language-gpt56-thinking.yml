@@ -1,0 +1,92 @@
+name: Temporary ES80 rider runtime language hardening
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-rider-runtime-language-gpt56-thinking
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact predecessor
+        run: test "$(git rev-parse HEAD^)" = "88227946e160f72b936d464d21194dc5a12ee6cd"
+
+      - name: Harden rendered rider copy and acceptance boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shell = Path("NembraApp/Features/Research/ES80CaptureShellView.swift")
+          source = shell.read_text(encoding="utf-8")
+          replacements = [
+              ('The package producer, not this timer, decides whether the window has enough evidence.', 'Nembra, not this display timer, decides whether the window has enough evidence.'),
+              ('No selectable full Bluetooth identifier was absent in both OFF windows and repeated in both ON windows.', 'No Bluetooth signal stayed absent in both OFF windows and repeated in both ON windows.'),
+              ('More than one selectable full Bluetooth identifier repeated the OFF / ON pattern.', 'More than one Bluetooth signal repeated the OFF / ON pattern.'),
+              ('Available only after the package accepts the required monotonic observation duration.', 'Available only after Nembra accepts the required observation time.'),
+              ('eyebrow: "HORIZON READY"', 'eyebrow: "READY TO SEAL"'),
+              ('healthItem("FINITE", value: observationReady ? "READY" : "WAIT")', 'healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")'),
+              ('healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")', 'healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")'),
+              ('Capture health. Target \\(connection == .connected ? "bound" : "waiting"). Finite acquisition \\(observationReady ? "ready" : "waiting"). Horizon \\(horizonReady ? "ready" : "waiting").', 'Capture health. Target \\(connection == .connected ? "bound" : "waiting"). Passive discovery \\(observationReady ? "ready" : "waiting"). Seal \\(horizonReady ? "ready" : "waiting").'),
+              ('This evidence life cannot regain capture authority; start a fresh Experiment One.', 'This capture cannot resume safely; start a fresh Experiment One.'),
+              ('The package-owned CoreBluetooth controller is unavailable for this coordinator.', 'Bluetooth capture is unavailable for this run.'),
+              ('The four windows did not preserve one valid package-issued observation authority and required OFF 1, ON 1, OFF 2, ON 2 ordering.', 'The four windows did not preserve one valid OFF 1, ON 1, OFF 2, ON 2 sequence. Start again from OFF 1.'),
+              ('The package-owned Experiment One workflow has no active correlation progress and no final result.', 'This Experiment One run has no active progress and no final result. Start a fresh run.'),
+              ('Nembra could not create a fresh package-owned Experiment One workflow:', 'Nembra could not create a fresh Experiment One run:'),
+              ('The package-owned physical execution gate is closed for this build.', 'Field capture is locked for this build.'),
+              ('The correlated-target admission is already prepared. Continue the current rediscovery.', 'The correlated target is already prepared. Continue the current rescan.'),
+              ('No sealed correlated-target admission is ready for this step.', 'No confirmed correlated target is ready for this step.'),
+              ('The four-window evidence authority or ordering is invalid.', 'The four-window evidence or ordering is invalid.'),
+              ('The exact correlated target has not reappeared in the fresh post-admission scan yet.', 'The exact correlated target has not reappeared in the fresh scan yet.'),
+              ('The package-owned passive capture controller is unavailable.', 'Passive Bluetooth capture is unavailable.'),
+              ('The accepted Ready epoch and minimum monotonic observation interval are not complete yet.', 'Read-only setup and the required observation time are not complete yet.'),
+              ("The producer's monotonic receipt window has not reached the required minimum yet.", 'The observation window has not reached the required minimum yet.'),
+              ('The producer could not establish a monotonic observation window.', 'Nembra could not establish a valid observation window.'),
+              ('The package-owned Bluetooth controller has not been instantiated for this build.', 'Bluetooth capture is not available for this build.'),
+              ('Waiting for CoreBluetooth to report its state.', 'Waiting for Bluetooth to report its state.'),
+              ('CoreBluetooth reported an unknown future state. Capture remains unavailable.', 'Bluetooth reported an unknown future state. Capture remains unavailable.'),
+              ('return "H READY"', 'return "SEAL READY"'),
+              ('return "ACQUIRE"', 'return "DISCOVER"'),
+              ('observation Horizon ready to seal', 'observation ready to seal'),
+              ('case .correlationFailed, .failed: return "Evidence stopped"', 'case .correlationFailed, .failed: return "Capture stopped"'),
+              ('case .acquiring: return "Finite acquisition"', 'case .acquiring: return "Read-only setup"'),
+              ('case .readyToSeal: return "Horizon ready"', 'case .readyToSeal: return "Ready to seal"'),
+              ('case .finalizing: return "Sealing artifact"', 'case .finalizing: return "Sealing capture"'),
+          ]
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f"expected current rider copy not found: {old}")
+              source = source.replace(old, new)
+          shell.write_text(source, encoding="utf-8")
+
+          tests = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift")
+          test_source = tests.read_text(encoding="utf-8")
+          marker = '    @Test("engineering truth remains available in Details instead of being deleted")\n'
+          addition = '''    @Test("rendered status and failure helpers stay human-first too")\n    func renderedHelpersStayHumanFirst() throws {\n        let source = try Self.shellSource()\n        let helperStart = try #require(source.range(of: "private func phase("))\n        let helperSurface = source[helperStart.lowerBound..<source.endIndex]\n        let forbidden = [\n            "evidence life cannot regain capture authority",\n            "package-owned CoreBluetooth controller",\n            "package-issued observation authority",\n            "package-owned Experiment One workflow",\n            "fresh package-owned Experiment One workflow",\n            "package-owned physical execution gate",\n            "sealed correlated-target admission",\n            "fresh post-admission scan",\n            "package-owned passive capture controller",\n            "accepted Ready epoch",\n            "producer's monotonic receipt window",\n            "producer could not establish a monotonic observation window",\n            "package-owned Bluetooth controller",\n            "CoreBluetooth reported an unknown future state",\n            "observation Horizon ready to seal",\n            "Finite acquisition",\n            "Horizon ready",\n            "Sealing artifact"\n        ]\n        for phrase in forbidden {\n            #expect(!helperSurface.contains(phrase), "Rendered Capture helper still exposes engineering vocabulary: \\(phrase)")\n        }\n    }\n\n'''
+          if marker not in test_source:
+              raise SystemExit("rider-language test insertion marker missing")
+          test_source = test_source.replace(marker, addition + marker, 1)
+          tests.write_text(test_source, encoding="utf-8")
+          PY
+
+      - name: Verify effective scope
+        run: |
+          git diff --check
+          git diff --name-only | sort | diff -u - <(printf '%s\n' 'NembraApp/Features/Research/ES80CaptureShellView.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift' | sort)
+
+      - name: Commit product fix and self-delete transformer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-rider-runtime-language-gpt56-thinking.yml
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
+          git commit -m "Capture: keep runtime failure copy rider-first"
+          git push origin HEAD:fix/es80-v14-rider-runtime-language-gpt56-thinking
