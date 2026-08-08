@@ -105,10 +105,20 @@ public final class PassiveBluetoothExperimentOneCoordinator {
             throw CoordinatorError.targetNotConnectable(identifier)
         }
 
-        defer {
-            pendingCaptureAdmission = nil
-            preparedCorrelatedTargetIdentifier = nil
+        do {
+            try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
+        } catch {
+            // Controller-local staging failures that happen before consumption are
+            // recoverable: keep the exact sealed admission so the app may continue
+            // passive scan and retry. Once consumed, any later failure is fail-closed.
+            if (try? admission.previewForControllerStaging()) == nil {
+                pendingCaptureAdmission = nil
+                preparedCorrelatedTargetIdentifier = nil
+            }
+            throw error
         }
-        try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)
+
+        pendingCaptureAdmission = nil
+        preparedCorrelatedTargetIdentifier = nil
     }
 }

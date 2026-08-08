@@ -83,12 +83,20 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
-    struct Preview: Equatable, Sendable {
+    /// Read-only package-owned staging view used before the one-shot admission is burned.
+    /// It deliberately carries no recorder or raw power-cycle evidence and cannot be
+    /// constructed outside this producer file.
+    struct StagingPreview: Equatable, Sendable {
         let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
         let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(payload: Payload) {
+            admissionIdentity = payload.admissionIdentity
+            peripheralIdentifier = payload.peripheralIdentifier
+            issuedAtUptimeNanoseconds = payload.issuedAtUptimeNanoseconds
+        }
     }
 
     struct Payload {
@@ -131,14 +139,13 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         )
     }
 
-    /// Read-only producer-owned staging view. Reading it cannot consume the handoff.
-    var preview: Preview {
-        Preview(
-            admissionIdentity: payload.admissionIdentity,
-            powerCycleEvidence: payload.powerCycleEvidence,
-            peripheralIdentifier: payload.peripheralIdentifier,
-            issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
-        )
+    /// Allows package-owned staging checks without consuming the handoff. Once an alias
+    /// has consumed the admission, no later caller can obtain a fresh staging view.
+    func previewForControllerStaging() throws -> StagingPreview {
+        guard !hasBeenConsumed else {
+            throw ConsumptionError.alreadyConsumed
+        }
+        return StagingPreview(payload: payload)
     }
 
     func consume() throws -> Payload {

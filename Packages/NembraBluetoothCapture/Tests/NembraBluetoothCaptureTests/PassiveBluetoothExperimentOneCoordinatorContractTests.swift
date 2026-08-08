@@ -68,6 +68,9 @@ struct PassiveBluetoothExperimentOneCoordinatorContractTests {
         #expect(catalogGuard.lowerBound < connect.lowerBound)
         #expect(connection.contains("throw CoordinatorError.targetNotRediscovered(identifier)"))
         #expect(connection.contains("throw CoordinatorError.targetNotConnectable(identifier)"))
-        #expect(connection.contains("defer {"))
+        #expect(!connection.contains("defer {"))
+        #expect(connection.contains("try controller.connectUsingExperimentOneAdmission(admission, timeout: timeout)"))
+        #expect(connection.contains("if (try? admission.previewForControllerStaging()) == nil"))
+        #expect(connection.contains("throw error"))
     }
 }
