@@ -134,6 +134,41 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
     }
 
     @Test
+    func duplicateBuildRecordFieldsFailClosedBeforeDecoding() throws {
+        let canonical = try makeRecordJSON()
+        let decodedObject = try JSONSerialization.jsonObject(with: canonical)
+        let object = try #require(decodedObject as? [String: Any])
+
+        for field in baseRecordObject().keys.sorted() {
+            let duplicated = try insertingDuplicateField(
+                field,
+                value: try #require(object[field]),
+                into: canonical
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(duplicated)
+            }
+        }
+    }
+
+    @Test
+    func escapedDuplicateBuildRecordKeyFailsClosedBySemanticName() throws {
+        let canonical = String(decoding: try makeRecordJSON(), as: UTF8.self)
+        let duplicated = Data(
+            ("{\"sourceCommitSH\\u0041\":\"\(sourceCommitSHA)\"," + canonical.dropFirst()).utf8
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureExternalBuildRecordError
+                .duplicateField("sourceCommitSHA")
+        ) {
+            _ = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(duplicated)
+        }
+    }
+
+    @Test
     func unsupportedSchemaRecipeAndProcedureFailClosed() throws {
         #expect(
             throws: PassiveBluetoothCaptureExternalBuildRecordError.unsupportedSchemaVersion(4)
@@ -280,9 +315,33 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         ]
     }
 
+    private func insertingDuplicateField(
+        _ field: String,
+        value: Any,
+        into objectData: Data
+    ) throws -> Data {
+        let canonicalObject = String(decoding: objectData, as: UTF8.self)
+        guard canonicalObject.first == "{" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+
+        let wrappedValue = try JSONSerialization.data(withJSONObject: [value])
+        let wrappedValueJSON = String(decoding: wrappedValue, as: UTF8.self)
+        guard wrappedValueJSON.first == "[", wrappedValueJSON.last == "]" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+        let valueJSON = wrappedValueJSON.dropFirst().dropLast()
+        return Data(
+            ("{\"\(field)\":\(valueJSON)," + canonicalObject.dropFirst()).utf8
+        )
+    }
+
     private func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+    private enum TestFixtureError: Error {
+        case expectedJSONObject
     }
 }
