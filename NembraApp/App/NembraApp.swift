@@ -323,7 +323,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
 
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Text("CAPTURE RECIPE")
+                        Text("FIELD STATUS")
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -331,13 +331,6 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(.orange)
                     }
-
-                    Text(recipeID)
-                        .font(.title3.monospaced().weight(.semibold))
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("es80.capture.recipe-id")
-
-                    Divider().overlay(.white.opacity(0.12))
 
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.seal")
@@ -356,6 +349,23 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
+
+                    DisclosureGroup("Engineering details") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Procedure")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(recipeID)
+                                .font(.subheadline.monospaced().weight(.semibold))
+                                .foregroundStyle(.white)
+                                .accessibilityIdentifier("es80.capture.recipe-id")
+                        }
+                        .padding(.top, 8)
+                    }
+                    .tint(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .accessibilityIdentifier("es80.capture.engineering-details")
                 }
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
