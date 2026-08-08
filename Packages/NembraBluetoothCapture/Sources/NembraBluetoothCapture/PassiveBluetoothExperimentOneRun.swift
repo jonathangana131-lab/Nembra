@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -72,8 +73,11 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 ///
 /// `consume()` is MainActor-isolated and one-shot. Aliasing the reference does not create another
 /// permit; the first consumer permanently burns the handoff. The returned payload also has a
-/// producer-file-private initializer and carries a process-local admission UUID, so a future
-/// controller can bind one exact consumption event instead of trusting equal scalar fields.
+/// producer-file-private initializer and carries a process-local admission UUID, so the controller
+/// can bind one exact consumption event instead of trusting equal caller-mintable scalar fields.
+/// `isConsumed` is package-internal, read-only lifecycle state so the package-owned coordinator can
+/// distinguish a recoverable pre-consumption controller rejection from a failure after irreversible
+/// ownership transfer. It exposes no payload, recorder, target, or mutation capability to app/UI.
 ///
 /// This is software ownership authority only. It does not authenticate the correlated physical
 /// device or assign any GATT/Tuya meaning.
@@ -116,6 +120,13 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
 
     private let payload: Payload
     private var hasBeenConsumed = false
+
+    /// Read-only package lifecycle truth. This intentionally does not expose the payload or create
+    /// another authority token; it lets the package coordinator retain the same sealed admission
+    /// only when a controller failure provably happened before `consume()`.
+    var isConsumed: Bool {
+        hasBeenConsumed
+    }
 
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
@@ -210,8 +221,8 @@ final class PassiveBluetoothExperimentOneRun {
     /// The only same-module bridge from completed correlation into live capture ownership.
     ///
     /// Callers provide only a local recorder start timestamp. The target UUID, producer authority,
-    /// and mutable recorder all come from this exact run. A second call fails because the recorder is
-    /// one-shot per run, and the returned admission itself can also be consumed only once.
+    /// and mutable recorder all come from this exact run. A second call fails because the recorder
+    /// is one-shot per run, and the returned admission itself can also be consumed only once.
     func issueCaptureAdmission(
         startedAt: Date = Date()
     ) throws -> PassiveBluetoothExperimentOneCaptureAdmission {
