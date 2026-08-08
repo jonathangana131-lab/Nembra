@@ -1,0 +1,78 @@
+name: ES80 Signed Field Candidate Source QA
+
+on:
+  push:
+    branches:
+      - cell/es80-v14-signed-field-candidate/ci/chatgpt56-thinking-go
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout validation mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Prove exact product parent and validation-only delta
+        env:
+          EXPECTED_PRODUCT_HEAD: fe317cf3b14eabfb39630c435e2e807607c1955d
+          EXPECTED_WORKFLOW: .github/workflows/qa-es80-signed-field-candidate-shell-chatgpt56.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_HEAD"
+          mapfile -t changed_paths < <(git diff --name-only HEAD^ HEAD)
+          test "${#changed_paths[@]}" -eq 1
+          test "${changed_paths[0]}" = "$EXPECTED_WORKFLOW"
+
+      - name: Validate signed-candidate shell syntax
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/xcode27_signed_capture_candidate.sh
+
+      - name: Assert field-candidate truth guards
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path("scripts/field/xcode27_signed_capture_candidate.sh").read_text(encoding="utf-8")
+          doc = Path("docs/ES80_SIGNED_FIELD_CANDIDATE.md").read_text(encoding="utf-8")
+
+          required_script_fragments = [
+              'ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/artifacts/Xcode27FieldCandidate}"',
+              'git check-ignore -q -- "$relative_path"',
+              'POST_BUILD_REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"',
+              'TeamIdentifier',
+              'if [[ "$ACTUAL_SIGNING_TEAM" != "$DEVELOPMENT_TEAM" ]]',
+              '"developmentTeam": actual_signing_team',
+              '"evidenceClass": "signed-field-candidate-not-field-authorization"',
+              'THIS IS NOT PHYSICAL FIELD AUTHORIZATION.',
+          ]
+          for fragment in required_script_fragments:
+              if fragment not in script:
+                  raise SystemExit(f"missing signed-candidate source guard: {fragment}")
+
+          forbidden_script_fragments = [
+              'PassiveBluetoothExperimentOneFieldExecutionGate',
+              'physicalGO',
+              '"decision": "GO"',
+          ]
+          for fragment in forbidden_script_fragments:
+              if fragment in script:
+                  raise SystemExit(f"candidate producer contains field-authority material: {fragment}")
+
+          required_doc_fragments = [
+              "PHYSICAL EXPERIMENT ONE REMAINS NO-GO",
+              "verified code-signature team",
+              "artifacts/Xcode27FieldCandidate/",
+              "Only after that evidence is accepted",
+          ]
+          for fragment in required_doc_fragments:
+              if fragment not in doc:
+                  raise SystemExit(f"missing signed-candidate truth documentation: {fragment}")
+          PY
