@@ -1,0 +1,124 @@
+name: Compose accepted ES80 passive runtime
+
+on:
+  push:
+    branches:
+      - parallel/recover-es80-passive-integration/chat-c7r4m
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact current-main integration parent
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+
+      - name: Verify immutable integration parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN=cc8737ca2e059ad35b9d86bb02501d3dafbff9a2
+          WORKFLOW=.github/workflows/recover-es80-passive-integration-chat-c7r4m.yml
+          test "$(git rev-parse HEAD^)" = "$MAIN"
+          test "$(git diff --name-only "$MAIN" HEAD)" = "$WORKFLOW"
+
+      - name: Transplant accepted passive runtime and comparison truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN=cc8737ca2e059ad35b9d86bb02501d3dafbff9a2
+          LIFECYCLE=87fdb7442c2b537f09b5ff0ead5a2c9b1e45f288
+          COMPARISON=349459df954a66d46a3eb6c9a765ac7eaf126a3d
+
+          git fetch --no-tags origin "$LIFECYCLE" "$COMPARISON"
+
+          git checkout "$LIFECYCLE" -- \
+            Packages/NembraBluetoothCapture \
+            Packages/NembraCore/Package.swift \
+            Packages/NembraCore/Sources/NembraCore/PassiveBluetoothCapture.swift \
+            Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureTests.swift \
+            docs/ES80_COREBLUETOOTH_CAPTURE_ADAPTER.md \
+            docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md \
+            docs/ES80_PROTOCOL_CAPTURE.md
+
+          git checkout "$COMPARISON" -- \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothCaptureComparison.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothCaptureComparisonTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothCaptureComparisonIdentityAvailabilityTests.swift
+
+          # Comparison truth must be byte-exact to the accepted #367 head.
+          for path in \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothCaptureComparison.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothCaptureComparisonTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothCaptureComparisonIdentityAvailabilityTests.swift
+          do
+            test "$(git hash-object "$path")" = "$(git rev-parse "$COMPARISON:$path")"
+          done
+
+          # Every other imported capture-package file must remain byte-exact to accepted #370.
+          while IFS= read -r path; do
+            case "$path" in
+              Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothCaptureComparison.swift|\
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothCaptureComparisonTests.swift)
+                continue
+                ;;
+            esac
+            test "$(git hash-object "$path")" = "$(git rev-parse "$LIFECYCLE:$path")"
+          done < <(git ls-tree -r --name-only "$LIFECYCLE" Packages/NembraBluetoothCapture)
+
+          # The current-main core manifest should differ only by the four accepted platform lines.
+          git diff --check "$MAIN" -- Packages/NembraCore/Package.swift
+          test "$(git diff --numstat "$MAIN" -- Packages/NembraCore/Package.swift)" = $'4\t0\tPackages/NembraCore/Package.swift'
+
+      - name: Prove bounded current-main product scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN=cc8737ca2e059ad35b9d86bb02501d3dafbff9a2
+          WORKFLOW=.github/workflows/recover-es80-passive-integration-chat-c7r4m.yml
+
+          git rm "$WORKFLOW"
+          git diff --check "$MAIN"
+
+          while IFS=$'\t' read -r status path rest; do
+            case "$path" in
+              Packages/NembraBluetoothCapture/*)
+                test "$status" = A
+                ;;
+              Packages/NembraCore/Package.swift)
+                test "$status" = M
+                ;;
+              Packages/NembraCore/Sources/NembraCore/PassiveBluetoothCapture.swift|\
+              Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureTests.swift|\
+              docs/ES80_COREBLUETOOTH_CAPTURE_ADAPTER.md|\
+              docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md|\
+              docs/ES80_PROTOCOL_CAPTURE.md)
+                test "$status" = A
+                ;;
+              *)
+                echo "Unexpected current-main integration path: $status $path" >&2
+                exit 1
+                ;;
+            esac
+          done < <(git diff --name-status "$MAIN")
+
+          test -z "$(git diff --name-only "$MAIN" -- .github/workflows)"
+          test -z "$(git diff --name-only "$MAIN" -- NembraApp NembraAppTests NembraUITests)"
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture integration must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+
+      - name: Commit exact current-main integration product
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add Packages/NembraBluetoothCapture Packages/NembraCore docs
+          git config user.name "nembra-integration-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "[recover es80 passive integration] Compose accepted capture truth"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
