@@ -27,6 +27,36 @@ extension PassiveBluetoothCaptureArtifactInputPolicyError: CustomStringConvertib
     }
 }
 
+struct PassiveBluetoothCaptureArtifactSourceIdentity: Equatable, Sendable {
+    let device: UInt64
+    let inode: UInt64
+    let mode: UInt64
+    let ownerUser: UInt64
+    let ownerGroup: UInt64
+    let byteCount: Int64
+    let modifiedSeconds: Int64
+    let modifiedNanoseconds: Int64
+    let changedSeconds: Int64
+    let changedNanoseconds: Int64
+}
+
+/// Exact offline bytes plus the stable filesystem subject that supplied them.
+///
+/// The identity is intentionally package-internal: callers may carry this receipt
+/// to publication but cannot manufacture or reinterpret its filesystem authority.
+public struct PassiveBluetoothCaptureArtifactInputReceipt: Sendable {
+    public let bytes: Data
+    let admittedSourceIdentity: PassiveBluetoothCaptureArtifactSourceIdentity
+
+    init(
+        bytes: Data,
+        admittedSourceIdentity: PassiveBluetoothCaptureArtifactSourceIdentity
+    ) {
+        self.bytes = bytes
+        self.admittedSourceIdentity = admittedSourceIdentity
+    }
+}
+
 /// Offline process-safety policy for loading passive-capture artifacts.
 ///
 /// These byte ceilings protect the operator tool from materializing or decoding
@@ -37,24 +67,21 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
     public static let defaultMaximumArtifactBytes = 64 * 1024 * 1024
     private static let readChunkBytes = 1024 * 1024
 
-    private struct DescriptorIdentity: Equatable {
-        let device: UInt64
-        let inode: UInt64
-        let mode: UInt64
-        let ownerUser: UInt64
-        let ownerGroup: UInt64
-        let byteCount: Int64
-        let modifiedSeconds: Int64
-        let modifiedNanoseconds: Int64
-        let changedSeconds: Int64
-        let changedNanoseconds: Int64
-    }
-
     public static func readExactBytes(
         at inputURL: URL,
         maximumBytes: Int = defaultMaximumArtifactBytes
     ) throws -> Data {
-        try readExactBytes(
+        try readExactArtifact(
+            at: inputURL,
+            maximumBytes: maximumBytes
+        ).bytes
+    }
+
+    public static func readExactArtifact(
+        at inputURL: URL,
+        maximumBytes: Int = defaultMaximumArtifactBytes
+    ) throws -> PassiveBluetoothCaptureArtifactInputReceipt {
+        try readExactArtifact(
             at: inputURL,
             maximumBytes: maximumBytes,
             afterFirstReadChunk: nil,
@@ -68,13 +95,27 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
         afterFirstReadChunk: (() throws -> Void)? = nil,
         betweenVerificationPasses: (() throws -> Void)?
     ) throws -> Data {
+        try readExactArtifact(
+            at: inputURL,
+            maximumBytes: maximumBytes,
+            afterFirstReadChunk: afterFirstReadChunk,
+            betweenVerificationPasses: betweenVerificationPasses
+        ).bytes
+    }
+
+    static func readExactArtifact(
+        at inputURL: URL,
+        maximumBytes: Int,
+        afterFirstReadChunk: (() throws -> Void)? = nil,
+        betweenVerificationPasses: (() throws -> Void)?
+    ) throws -> PassiveBluetoothCaptureArtifactInputReceipt {
         try validateMaximum(maximumBytes)
 
         let handle = try FileHandle(forReadingFrom: inputURL)
         defer { try? handle.close() }
 
-        let admittedIdentity = try descriptorIdentity(of: handle)
-        guard admittedIdentity.byteCount <= Int64(maximumBytes) else {
+        let admittedSourceIdentity = try descriptorIdentity(of: handle)
+        guard admittedSourceIdentity.byteCount <= Int64(maximumBytes) else {
             throw PassiveBluetoothCaptureArtifactInputPolicyError
                 .sourceArtifactExceedsMaximumBytes(maximumBytes: maximumBytes)
         }
@@ -84,14 +125,14 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
             maximumBytes: maximumBytes,
             afterFirstReadChunk: afterFirstReadChunk
         )
-        guard firstPass.count == Int(admittedIdentity.byteCount),
-              try descriptorIdentity(of: handle) == admittedIdentity else {
+        guard firstPass.count == Int(admittedSourceIdentity.byteCount),
+              try descriptorIdentity(of: handle) == admittedSourceIdentity else {
             throw PassiveBluetoothCaptureArtifactInputPolicyError
                 .sourceArtifactChangedWhileReading
         }
 
         try betweenVerificationPasses?()
-        guard try descriptorIdentity(of: handle) == admittedIdentity else {
+        guard try descriptorIdentity(of: handle) == admittedSourceIdentity else {
             throw PassiveBluetoothCaptureArtifactInputPolicyError
                 .sourceArtifactChangedWhileReading
         }
@@ -102,11 +143,15 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
             from: handle,
             maximumBytes: maximumBytes
         )
-        guard try descriptorIdentity(of: handle) == admittedIdentity else {
+        guard try descriptorIdentity(of: handle) == admittedSourceIdentity else {
             throw PassiveBluetoothCaptureArtifactInputPolicyError
                 .sourceArtifactChangedWhileReading
         }
-        return firstPass
+
+        return PassiveBluetoothCaptureArtifactInputReceipt(
+            bytes: firstPass,
+            admittedSourceIdentity: admittedSourceIdentity
+        )
     }
 
     public static func validateByteCount(
@@ -120,7 +165,9 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
         }
     }
 
-    private static func descriptorIdentity(of handle: FileHandle) throws -> DescriptorIdentity {
+    private static func descriptorIdentity(
+        of handle: FileHandle
+    ) throws -> PassiveBluetoothCaptureArtifactSourceIdentity {
         #if canImport(Darwin) || canImport(Glibc)
         var metadata = stat()
         guard fstat(handle.fileDescriptor, &metadata) == 0 else {
@@ -150,7 +197,7 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
         let changedNanoseconds = Int64(metadata.st_ctim.tv_nsec)
         #endif
 
-        return DescriptorIdentity(
+        return PassiveBluetoothCaptureArtifactSourceIdentity(
             device: UInt64(metadata.st_dev),
             inode: UInt64(metadata.st_ino),
             mode: UInt64(metadata.st_mode),
