@@ -51,14 +51,26 @@ public struct PassiveBluetoothTuyaCaptureArtifactReport: Equatable, Codable, Sen
 }
 
 public enum PassiveBluetoothTuyaCaptureArtifactReportBuilder {
-    /// Decodes and validates the exact versioned capture artifact, selects one
-    /// target without guessing, runs the bounded candidate analyzer, and binds
-    /// the output to the original input bytes with SHA-256.
+    /// Validates the exact source-artifact byte count before decode, then decodes
+    /// the versioned capture artifact, selects one target without guessing, runs
+    /// the bounded candidate analyzer, and binds the output to the original input
+    /// bytes with SHA-256.
+    ///
+    /// `maximumArtifactBytes` is an offline process-safety ceiling only. It is not
+    /// an ES80 protocol/session/message-size claim. File-based callers should use
+    /// `PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes` first so the
+    /// source `Data` itself is also bounded before materialization.
     public static func make(
         captureJSON: Data,
         peripheralIdentifier requestedPeripheralIdentifier: String? = nil,
-        policy: TuyaCandidateFragmentReassemblyPolicy
+        policy: TuyaCandidateFragmentReassemblyPolicy,
+        maximumArtifactBytes: Int = PassiveBluetoothCaptureArtifactInputPolicy.defaultMaximumArtifactBytes
     ) throws -> PassiveBluetoothTuyaCaptureArtifactReport {
+        try PassiveBluetoothCaptureArtifactInputPolicy.validateByteCount(
+            captureJSON.count,
+            maximumBytes: maximumArtifactBytes
+        )
+
         let session = try PassiveBluetoothCaptureJSON.decode(captureJSON)
         let available = PassiveBluetoothTuyaCaptureReportBuilder
             .attributablePeripheralIdentifiers(in: session)
