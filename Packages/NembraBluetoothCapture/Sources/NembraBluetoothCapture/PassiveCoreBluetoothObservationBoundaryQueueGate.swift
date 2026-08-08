@@ -29,6 +29,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case horizonCutoffPrecedesReady
         case horizonCutoffPrecedesProcessedPrefix
         case cutoffNotDrained
+        case cutoffOverrun
         case horizonArtifactNotReady
     }
 
@@ -170,29 +171,49 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         }
     }
 
-    /// Commits the lifecycle boundary only after every queued event through the
-    /// transaction cutoff has finished its recorder hop under the same authority.
-    /// Ready releases the drain barrier immediately; horizon intentionally keeps
-    /// it closed until the caller freezes the immutable artifact.
+    /// Commits the lifecycle boundary only when the controller reports the exact
+    /// recorder-completed queue frontier owned by this transaction. Under-drain
+    /// means the cutoff is not complete; overrun means evidence already crossed the
+    /// supposedly exact barrier. Neither may be retroactively blessed as a boundary.
+    /// Ready releases the drain barrier immediately; horizon intentionally keeps it
+    /// closed until the caller freezes the immutable artifact.
     mutating func markBoundaryRecorded(
         _ transaction: Transaction,
         lastProcessedQueueSequence: UInt64,
         currentAuthority: PassiveCoreBluetoothArtifactAuthorityContext
     ) throws {
+        switch phase {
+        case let .drainingReady(current):
+            guard current == transaction else {
+                throw StateError.staleTransaction
+            }
+        case let .drainingHorizon(current):
+            guard current == transaction else {
+                throw StateError.staleTransaction
+            }
+        default:
+            throw StateError.staleTransaction
+        }
+
         guard transaction.authority == currentAuthority else {
             throw StateError.authorityChanged
         }
         guard lastProcessedQueueSequence >= transaction.queueCutoff else {
             throw StateError.cutoffNotDrained
         }
+        guard lastProcessedQueueSequence == transaction.queueCutoff else {
+            throw StateError.cutoffOverrun
+        }
 
         switch phase {
-        case let .drainingReady(current) where current == transaction:
+        case .drainingReady:
             committedReadyTransaction = transaction
             phase = .observing
-        case let .drainingHorizon(current) where current == transaction:
+        case .drainingHorizon:
             phase = .horizonBoundaryRecorded(transaction)
         default:
+            // Current-transaction identity was proven above and no mutation occurs
+            // between the two switches, so this is unreachable under value semantics.
             throw StateError.staleTransaction
         }
     }
