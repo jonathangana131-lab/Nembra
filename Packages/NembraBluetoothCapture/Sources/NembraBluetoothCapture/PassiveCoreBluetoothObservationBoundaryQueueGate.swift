@@ -31,6 +31,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case cutoffNotDrained
         case cutoffOverrun
         case horizonArtifactNotReady
+        case freshTargetSessionRequired
     }
 
     struct Transaction: Equatable, Sendable {
@@ -38,6 +39,21 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         let queueCutoff: UInt64
         let authority: PassiveCoreBluetoothArtifactAuthorityContext
         let revision: UInt64
+    }
+
+    /// Producer-issued proof that one committed Ready observation epoch was
+    /// intentionally abandoned before Horizon. The abandoned recorder is
+    /// incomplete evidence; this receipt never upgrades it into a terminal
+    /// artifact and carries no physical scooter meaning.
+    struct ObservationEpochAbortReceipt: Equatable, Sendable {
+        let abandonedReadyTransaction: Transaction
+        let abandonedTargetSessionGeneration: UInt64
+
+        private init(abandonedReadyTransaction: Transaction) {
+            self.abandonedReadyTransaction = abandonedReadyTransaction
+            abandonedTargetSessionGeneration =
+                abandonedReadyTransaction.authority.targetSessionGeneration
+        }
     }
 
     enum Phase: Equatable, Sendable {
@@ -59,6 +75,12 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     /// later horizon may reuse neither an older raw-event prefix nor another artifact
     /// authority merely because the public phase name is the same.
     private var committedReadyTransaction: Transaction?
+
+    /// A pre-H abort may reopen only the lifecycle grammar, never the old
+    /// durable capture session. Until a Ready transaction arrives under a
+    /// strictly newer target-session generation, this fence prevents the
+    /// abandoned recorder/session from earning a second Ready boundary.
+    private var abandonedTargetSessionGeneration: UInt64?
 
     var isTerminal: Bool {
         if case .terminal = phase { return true }
@@ -100,7 +122,11 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     ) throws -> Transaction {
         switch (phase, boundaryKind) {
         case (.awaitingReady, .finiteAcquisitionReady):
-            break
+            if let abandonedTargetSessionGeneration {
+                guard authority.targetSessionGeneration > abandonedTargetSessionGeneration else {
+                    throw StateError.freshTargetSessionRequired
+                }
+            }
 
         case (.observing, .observationHorizon):
             guard let ready = committedReadyTransaction else {
@@ -139,6 +165,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
 
         switch boundaryKind {
         case .finiteAcquisitionReady:
+            abandonedTargetSessionGeneration = nil
             phase = .drainingReady(transaction)
         case .observationHorizon:
             phase = .drainingHorizon(transaction)
@@ -249,15 +276,58 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         return queueSequence > transaction.queueCutoff
     }
 
+    /// Intentionally abandons one already-committed Ready epoch before
+    /// Horizon begins. This is a recovery transition for an incomplete
+    /// observation artifact, not a successful finalization path.
+    ///
+    /// The caller must present the exact Ready transaction that established
+    /// `.observing`; stale/wrong transactions cannot reset another epoch.
+    /// After abort, a later Ready is admitted only under a strictly newer
+    /// `targetSessionGeneration`, mechanically requiring controller-level
+    /// durable session/recorder rotation rather than reusing the abandoned
+    /// recorder under a newer authority generation.
+    ///
+    /// The transition is deliberately unavailable during Ready drain, after
+    /// Horizon begins, or after terminal freeze. Those states retain their
+    /// existing fail-closed queue barriers and must be resolved by their own
+    /// accepted transaction/retirement contracts.
+    @discardableResult
+    mutating func abortObservationEpoch(
+        establishedBy readyTransaction: Transaction
+    ) throws -> ObservationEpochAbortReceipt {
+        guard case .observing = phase else {
+            throw StateError.invalidTransition
+        }
+        guard let committedReadyTransaction,
+              committedReadyTransaction == readyTransaction else {
+            throw StateError.staleTransaction
+        }
+        guard readyTransaction.boundaryKind == .finiteAcquisitionReady else {
+            throw StateError.staleTransaction
+        }
+
+        let receipt = ObservationEpochAbortReceipt(
+            abandonedReadyTransaction: readyTransaction
+        )
+        abandonedTargetSessionGeneration =
+            readyTransaction.authority.targetSessionGeneration
+        self.committedReadyTransaction = nil
+        phase = .awaitingReady
+        return receipt
+    }
+
     /// Requests a fresh lifecycle grammar only when no observation transaction has
     /// begun yet. Once Ready starts, this gate remains closed through terminal freeze.
+    ///
+    /// A pre-H abort is the one explicit exception: it may return the gate to
+    /// `.awaitingReady`, but its fresh-target-session fence survives this no-op
+    /// reset and requires a strictly newer durable target session before Ready.
     ///
     /// Terminal artifact freeze proves the immutable artifact is sealed; it does NOT
     /// prove callbacks intentionally withheld after Horizon have been retired from
     /// the controller FIFO. Reopening here would erase their terminal quarantine and
-    /// make old-generation post-cut evidence drainable again. A future explicit
-    /// controller-owned retirement/abort operation must prove the old queue generation
-    /// is gone before this gate gains a terminal -> awaitingReady transition.
+    /// make old-generation post-cut evidence drainable again. Terminal -> fresh still
+    /// requires the separate controller-owned post-H retirement/reopen authority.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else {
