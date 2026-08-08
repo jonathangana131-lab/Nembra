@@ -1,0 +1,36 @@
+name: TEMP ES80 visual evidence nonblocking custody repair
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-visual-evidence-nonblocking-custody/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Apply and validate nonblocking custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_es80_visual_evidence_nonblocking_custody.py
+          bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 -B scripts/ci/tests/test_xcode27_simulator_visual_evidence_descriptor_custody_source.py
+          python3 -B scripts/ci/tests/test_xcode27_simulator_visual_evidence_manifest_subject_custody_source.py
+          python3 -B scripts/ci/tests/test_xcode27_simulator_visual_evidence_mutation_race_source.py
+          git diff --check
+          rm scripts/ci/tmp_es80_visual_evidence_nonblocking_custody.py
+          rm .github/workflows/tmp-es80-visual-evidence-nonblocking.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[Capture visual QA v14] Make retained visual evidence nonblocking"
+          git push origin HEAD:${{ github.ref_name }}
