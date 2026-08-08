@@ -147,6 +147,7 @@ xcodebuild \
   "INFOPLIST_KEY_NembraCaptureBuildIdentifier=$CAPTURE_BUILD_IDENTIFIER" \
   "INFOPLIST_KEY_NembraCaptureBuildInstanceID=$CAPTURE_BUILD_INSTANCE_ID" \
   "INFOPLIST_KEY_NembraCaptureBuildCommitSHA=$CAPTURE_BUILD_COMMIT_SHA" \
+  "INFOPLIST_KEY_NembraCaptureFieldRecipe=$CAPTURE_RECIPE_IDENTIFIER" \
   archive \
   | tee "$LOGS_DIR/xcodebuild-archive.log"
 ARCHIVE_STATUS=${PIPESTATUS[0]}
@@ -214,6 +215,7 @@ FINAL_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$FINA
 FINAL_BUILD_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildIdentifier' "$FINAL_INFO_PLIST" 2>/dev/null || true)"
 FINAL_BUILD_INSTANCE_ID="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildInstanceID' "$FINAL_INFO_PLIST" 2>/dev/null || true)"
 FINAL_BUILD_COMMIT_SHA="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildCommitSHA' "$FINAL_INFO_PLIST" 2>/dev/null || true)"
+FINAL_FIELD_RECIPE="$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureFieldRecipe' "$FINAL_INFO_PLIST" 2>/dev/null || true)"
 if [[ "$FINAL_BUNDLE_ID" != "$BUNDLE_ID" ]]; then
   echo "Exported app bundle ID mismatch: $FINAL_BUNDLE_ID" >&2
   exit 18
@@ -230,34 +232,38 @@ if [[ "$FINAL_BUILD_COMMIT_SHA" != "$CAPTURE_BUILD_COMMIT_SHA" ]]; then
   echo "Exported app lost the exact Capture source commit SHA." >&2
   exit 21
 fi
+if [[ "$FINAL_FIELD_RECIPE" != "$CAPTURE_RECIPE_IDENTIFIER" ]]; then
+  echo "Exported app lost the exact field-launch recipe marker." >&2
+  exit 22
+fi
 
 FINAL_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$FINAL_INFO_PLIST" 2>/dev/null || true)"
 FINAL_EXECUTABLE="$FINAL_APP/$FINAL_EXECUTABLE_NAME"
 if [[ -z "$FINAL_EXECUTABLE_NAME" || ! -f "$FINAL_EXECUTABLE" ]]; then
   echo "Could not resolve the exported Nembra executable." >&2
-  exit 22
+  exit 23
 fi
 if ! codesign --verify --deep --strict --verbose=2 "$FINAL_APP" 2> "$LOGS_DIR/codesign-export-verify.log"; then
   echo "Exported Nembra.app failed strict code-signature verification." >&2
-  exit 23
+  exit 24
 fi
 codesign -d --verbose=4 "$FINAL_APP" > /dev/null 2> "$EVIDENCE_DIR/codesign-display.txt"
 
 FINAL_MOBILEPROVISION="$FINAL_APP/embedded.mobileprovision"
 if [[ ! -f "$FINAL_MOBILEPROVISION" ]]; then
   echo "Exported device app has no embedded.mobileprovision; refusing field evidence promotion." >&2
-  exit 24
+  exit 25
 fi
 RETAINED_MOBILEPROVISION="$EVIDENCE_DIR/embedded.mobileprovision"
 cp -p "$FINAL_MOBILEPROVISION" "$RETAINED_MOBILEPROVISION"
 if ! cmp -s "$FINAL_MOBILEPROVISION" "$RETAINED_MOBILEPROVISION"; then
   echo "Retained provisioning-profile bytes diverged from the exported app." >&2
-  exit 25
+  exit 26
 fi
 PROVISIONING_PLIST="$EVIDENCE_DIR/embedded.mobileprovision.plist"
 if ! security cms -D -i "$RETAINED_MOBILEPROVISION" > "$PROVISIONING_PLIST" 2> "$LOGS_DIR/security-cms.log"; then
   echo "Could not decode the exported app provisioning profile." >&2
-  exit 26
+  exit 27
 fi
 
 PROFILE_TEAM_ID="$(python3 - "$PROVISIONING_PLIST" <<'PY'
@@ -277,11 +283,11 @@ PY
 )"
 if [[ -z "$PROFILE_TEAM_ID" || "$PROFILE_TEAM_ID" != "$TEAM_ID" ]]; then
   echo "Provisioning profile team '$PROFILE_TEAM_ID' does not match requested team '$TEAM_ID'." >&2
-  exit 27
+  exit 28
 fi
 if [[ "$PROFILE_APPLICATION_ID" != *".$BUNDLE_ID" ]]; then
   echo "Provisioning application identifier does not bind the Nembra bundle ID: $PROFILE_APPLICATION_ID" >&2
-  exit 28
+  exit 29
 fi
 
 sha256() {
@@ -306,7 +312,7 @@ for digest in \
   "$EXPORT_OPTIONS_SHA256"; do
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "Could not derive one canonical SHA-256 build-evidence digest." >&2
-    exit 29
+    exit 30
   fi
 done
 
