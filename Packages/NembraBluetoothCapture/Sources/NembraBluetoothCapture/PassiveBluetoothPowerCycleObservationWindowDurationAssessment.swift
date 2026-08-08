@@ -7,6 +7,10 @@ import Foundation
 /// it satisfies experiment one's stronger per-phase minimum. Downstream provenance must supply the
 /// required policy explicitly and preserve this producer-derived assessment with the artifact.
 ///
+/// The assessment retains the exact completed result it evaluated so the threshold decision cannot
+/// be silently detached and paired with another observation series across async/persistence/UI
+/// boundaries. This is software provenance, not cryptographic binding or physical authentication.
+///
 /// This assessment uses only the result's monotonic callback-receipt window bounds. It does not
 /// prove RF completeness, advertisement cadence, physical scooter power state, ES80 identity, or
 /// protocol semantics.
@@ -36,6 +40,8 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
     }
 
     public let status: Status
+    /// Exact package-issued four-window result this assessment evaluated.
+    public let observationResult: PassiveBluetoothPowerCycleObservationResult
     /// The explicit downstream policy this assessment evaluated, retained for durable provenance.
     public let minimumRequiredDurationNanoseconds: UInt64
     /// Ordered, recomputed monotonic receipt durations for the exact four result windows.
@@ -47,10 +53,12 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
 
     private init(
         status: Status,
+        observationResult: PassiveBluetoothPowerCycleObservationResult,
         minimumRequiredDurationNanoseconds: UInt64,
         windows: [WindowEvidence]
     ) {
         self.status = status
+        self.observationResult = observationResult
         self.minimumRequiredDurationNanoseconds = minimumRequiredDurationNanoseconds
         self.windows = windows
     }
@@ -67,6 +75,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
         guard minimumDurationNanoseconds > 0 else {
             return Self(
                 status: .invalidMinimumDuration,
+                observationResult: result,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 windows: []
             )
@@ -77,6 +86,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
               result.windows.map(\.phase) == expectedPhases else {
             return Self(
                 status: .invalidWindowSet,
+                observationResult: result,
                 minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                 windows: []
             )
@@ -91,6 +101,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
                receipt.windowSequence.rawValue <= previousSequence {
                 return Self(
                     status: .invalidWindowSet,
+                    observationResult: result,
                     minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                     windows: evidence
                 )
@@ -100,6 +111,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
             guard receipt.endedAtUptimeNanoseconds >= receipt.startedAtUptimeNanoseconds else {
                 return Self(
                     status: .nonMonotonicWindowClock,
+                    observationResult: result,
                     minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
                     windows: evidence
                 )
@@ -121,6 +133,7 @@ public struct PassiveBluetoothPowerCycleObservationWindowDurationAssessment: Equ
 
         return Self(
             status: status,
+            observationResult: result,
             minimumRequiredDurationNanoseconds: minimumDurationNanoseconds,
             windows: evidence
         )
