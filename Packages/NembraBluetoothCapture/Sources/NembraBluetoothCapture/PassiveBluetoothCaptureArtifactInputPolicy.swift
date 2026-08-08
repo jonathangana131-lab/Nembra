@@ -1,8 +1,14 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public enum PassiveBluetoothCaptureArtifactInputPolicyError: Error, Equatable, Sendable {
     case invalidMaximumArtifactBytes(Int)
     case sourceArtifactExceedsMaximumBytes(maximumBytes: Int)
+    case sourceArtifactIsNotRegularFile
     case sourceArtifactChangedWhileReading
 }
 
@@ -13,9 +19,43 @@ extension PassiveBluetoothCaptureArtifactInputPolicyError: CustomStringConvertib
             "maximum source-artifact byte limit must be between 1 and Int.max - 1, got: \(value)"
         case let .sourceArtifactExceedsMaximumBytes(maximumBytes):
             "source capture exceeds configured offline artifact limit of \(maximumBytes) bytes"
+        case .sourceArtifactIsNotRegularFile:
+            "source capture must be one regular file"
         case .sourceArtifactChangedWhileReading:
             "source capture changed while its exact offline-analysis bytes were being admitted"
         }
+    }
+}
+
+struct PassiveBluetoothCaptureArtifactInputIdentity: Equatable, Sendable {
+    let device: UInt64
+    let inode: UInt64
+    let mode: UInt64
+    let ownerUser: UInt64
+    let ownerGroup: UInt64
+    let byteCount: Int64
+    let modifiedSeconds: Int64
+    let modifiedNanoseconds: Int64
+    let changedSeconds: Int64
+    let changedNanoseconds: Int64
+}
+
+/// Durable cross-phase receipt for one exact admitted raw-capture filesystem subject.
+///
+/// The exact bytes are retained together with descriptor identity measured before
+/// and after two matching reads. Offline report publication can therefore prove
+/// it is still protecting the same source subject instead of reopening a path and
+/// silently accepting a replacement inode between admission and publication.
+public struct PassiveBluetoothCaptureArtifactInputReceipt: Sendable {
+    public let bytes: Data
+    let admittedSourceIdentity: PassiveBluetoothCaptureArtifactInputIdentity
+
+    init(
+        bytes: Data,
+        admittedSourceIdentity: PassiveBluetoothCaptureArtifactInputIdentity
+    ) {
+        self.bytes = bytes
+        self.admittedSourceIdentity = admittedSourceIdentity
     }
 }
 
@@ -26,68 +66,93 @@ extension PassiveBluetoothCaptureArtifactInputPolicyError: CustomStringConvertib
 /// describe an ES80 packet, message, session, transport, or physical capture
 /// maximum.
 public enum PassiveBluetoothCaptureArtifactInputPolicy {
-    /// A deliberately generous default for the offline tool, not a protocol
-    /// expectation. Callers may choose another explicit positive ceiling.
     public static let defaultMaximumArtifactBytes = 64 * 1024 * 1024
-
     private static let readChunkBytes = 1024 * 1024
 
-    /// Reads one stable exact source byte sequence while never retaining more
-    /// than the configured ceiling plus the one byte required to prove that the
-    /// source is oversized.
-    ///
-    /// The source is read twice through the same open file handle. Pass one is
-    /// the exact byte subject returned to the caller; pass two must match it
-    /// byte-for-byte and terminate at the same offset. This prevents an in-place
-    /// mutation during admission from silently producing a mixed artifact whose
-    /// digest would look authoritative even though no stable file state had those
-    /// bytes. A later replacement of the path does not alter the already-open
-    /// subject and therefore cannot retarget the admitted bytes.
-    ///
-    /// Unlike a whole-file `Data(contentsOf:)` load followed by a size check,
-    /// this bounds file materialization before JSON decode. The returned bytes are
-    /// unchanged and remain suitable for exact SHA-256 provenance.
-    public static func readExactBytes(
+    public static func readExactReceipt(
         at inputURL: URL,
         maximumBytes: Int = defaultMaximumArtifactBytes
-    ) throws -> Data {
-        try readExactBytes(
+    ) throws -> PassiveBluetoothCaptureArtifactInputReceipt {
+        try readExactReceipt(
             at: inputURL,
             maximumBytes: maximumBytes,
+            afterFirstReadChunk: nil,
             betweenVerificationPasses: nil
         )
     }
 
-    /// Internal deterministic seam used only by package tests to prove that a
-    /// same-length in-place mutation between verification passes fails closed.
+    public static func readExactBytes(
+        at inputURL: URL,
+        maximumBytes: Int = defaultMaximumArtifactBytes
+    ) throws -> Data {
+        try readExactReceipt(at: inputURL, maximumBytes: maximumBytes).bytes
+    }
+
     static func readExactBytes(
         at inputURL: URL,
         maximumBytes: Int,
+        afterFirstReadChunk: (() throws -> Void)? = nil,
         betweenVerificationPasses: (() throws -> Void)?
     ) throws -> Data {
+        try readExactReceipt(
+            at: inputURL,
+            maximumBytes: maximumBytes,
+            afterFirstReadChunk: afterFirstReadChunk,
+            betweenVerificationPasses: betweenVerificationPasses
+        ).bytes
+    }
+
+    static func readExactReceipt(
+        at inputURL: URL,
+        maximumBytes: Int,
+        afterFirstReadChunk: (() throws -> Void)? = nil,
+        betweenVerificationPasses: (() throws -> Void)?
+    ) throws -> PassiveBluetoothCaptureArtifactInputReceipt {
         try validateMaximum(maximumBytes)
 
         let handle = try FileHandle(forReadingFrom: inputURL)
         defer { try? handle.close() }
 
+        let admittedIdentity = try descriptorIdentity(of: handle)
+        guard admittedIdentity.byteCount <= Int64(maximumBytes) else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactExceedsMaximumBytes(maximumBytes: maximumBytes)
+        }
+
         let firstPass = try readBoundedPass(
             from: handle,
-            maximumBytes: maximumBytes
+            maximumBytes: maximumBytes,
+            afterFirstReadChunk: afterFirstReadChunk
         )
+        guard firstPass.count == Int(admittedIdentity.byteCount),
+              try descriptorIdentity(of: handle) == admittedIdentity else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        }
 
         try betweenVerificationPasses?()
+        guard try descriptorIdentity(of: handle) == admittedIdentity else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        }
+
         try handle.seek(toOffset: 0)
         try requireSecondPassMatches(
             firstPass,
             from: handle,
             maximumBytes: maximumBytes
         )
-        return firstPass
+        guard try descriptorIdentity(of: handle) == admittedIdentity else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        }
+
+        return PassiveBluetoothCaptureArtifactInputReceipt(
+            bytes: firstPass,
+            admittedSourceIdentity: admittedIdentity
+        )
     }
 
-    /// Bounds already-materialized input before the much larger decoded capture
-    /// object graph can be created. File-based callers should also use
-    /// `readExactBytes(at:maximumBytes:)` so the source `Data` itself is bounded.
     public static func validateByteCount(
         _ byteCount: Int,
         maximumBytes: Int = defaultMaximumArtifactBytes
@@ -99,12 +164,64 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
         }
     }
 
+    private static func descriptorIdentity(
+        of handle: FileHandle
+    ) throws -> PassiveBluetoothCaptureArtifactInputIdentity {
+        #if canImport(Darwin) || canImport(Glibc)
+        var metadata = stat()
+        guard fstat(handle.fileDescriptor, &metadata) == 0 else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        }
+
+        let fileType = mode_t(metadata.st_mode) & mode_t(S_IFMT)
+        guard fileType == mode_t(S_IFREG) else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactIsNotRegularFile
+        }
+        guard metadata.st_size >= 0 else {
+            throw PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        }
+
+        #if canImport(Darwin)
+        let modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
+        #else
+        let modifiedSeconds = Int64(metadata.st_mtim.tv_sec)
+        let modifiedNanoseconds = Int64(metadata.st_mtim.tv_nsec)
+        let changedSeconds = Int64(metadata.st_ctim.tv_sec)
+        let changedNanoseconds = Int64(metadata.st_ctim.tv_nsec)
+        #endif
+
+        return PassiveBluetoothCaptureArtifactInputIdentity(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            mode: UInt64(metadata.st_mode),
+            ownerUser: UInt64(metadata.st_uid),
+            ownerGroup: UInt64(metadata.st_gid),
+            byteCount: Int64(metadata.st_size),
+            modifiedSeconds: modifiedSeconds,
+            modifiedNanoseconds: modifiedNanoseconds,
+            changedSeconds: changedSeconds,
+            changedNanoseconds: changedNanoseconds
+        )
+        #else
+        throw PassiveBluetoothCaptureArtifactInputPolicyError
+            .sourceArtifactChangedWhileReading
+        #endif
+    }
+
     private static func readBoundedPass(
         from handle: FileHandle,
-        maximumBytes: Int
+        maximumBytes: Int,
+        afterFirstReadChunk: (() throws -> Void)?
     ) throws -> Data {
         var data = Data()
         data.reserveCapacity(min(maximumBytes, readChunkBytes))
+        var invokedFirstChunkSeam = false
 
         while true {
             let remaining = maximumBytes - data.count
@@ -117,6 +234,11 @@ public enum PassiveBluetoothCaptureArtifactInputPolicy {
             guard data.count <= maximumBytes else {
                 throw PassiveBluetoothCaptureArtifactInputPolicyError
                     .sourceArtifactExceedsMaximumBytes(maximumBytes: maximumBytes)
+            }
+
+            if !invokedFirstChunkSeam {
+                invokedFirstChunkSeam = true
+                try afterFirstReadChunk?()
             }
         }
     }

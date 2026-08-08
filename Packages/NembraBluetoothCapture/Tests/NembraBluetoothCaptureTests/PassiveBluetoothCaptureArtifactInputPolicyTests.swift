@@ -23,6 +23,28 @@ struct PassiveBluetoothCaptureArtifactInputPolicyTests {
         )
     }
 
+    @Test("same-length in-place mutation during the first pass fails descriptor stability")
+    func sameLengthMutationDuringFirstPassFailsClosed() throws {
+        let source = Data([0x10, 0x20, 0x30, 0x40, 0x50])
+        let replacement = Data([0x10, 0x20, 0x31, 0x40, 0x50])
+        let url = try writeTemporary(source)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(
+            throws: PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactChangedWhileReading
+        ) {
+            try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+                at: url,
+                maximumBytes: source.count,
+                afterFirstReadChunk: {
+                    try replacement.write(to: url, options: [])
+                },
+                betweenVerificationPasses: nil
+            )
+        }
+    }
+
     @Test("same-length in-place mutation across admission fails closed")
     func sameLengthMutationFailsClosed() throws {
         let source = Data([0x10, 0x20, 0x30, 0x40, 0x50])
@@ -40,6 +62,24 @@ struct PassiveBluetoothCaptureArtifactInputPolicyTests {
                 betweenVerificationPasses: {
                     try replacement.write(to: url, options: [])
                 }
+            )
+        }
+    }
+
+    @Test("non-regular descriptor input fails before any source bytes are admitted")
+    func directoryInputFailsClosed() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-artifact-input-directory-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(
+            throws: PassiveBluetoothCaptureArtifactInputPolicyError
+                .sourceArtifactIsNotRegularFile
+        ) {
+            try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+                at: url,
+                maximumBytes: 1024
             )
         }
     }
