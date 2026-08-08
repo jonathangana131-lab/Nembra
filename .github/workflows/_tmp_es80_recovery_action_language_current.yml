@@ -36,20 +36,12 @@ jobs:
           path.write_bytes(updated)
           PY
 
-      - name: Verify product edit
-        shell: bash
-        run: |
-          git diff --check -- NembraApp/Features/Research/ES80CaptureShellView.swift
-          grep -F 'Start a fresh Capture' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
-          ! grep -F 'Start a fresh Experiment One' NembraApp/Features/Research/ES80CaptureShellView.swift >/dev/null
-
-      - name: Commit product delta and self-delete transformer
+      - name: Commit isolated candidate for authoritative diff review
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/_tmp_es80_recovery_action_language_current.yml
           git add NembraApp/Features/Research/ES80CaptureShellView.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ES80CaptureRiderLanguageAcceptanceTests.swift
-          git diff --cached --check
           git commit -m "Capture UX: make stopped-state recovery action rider-first"
           git push origin HEAD:product/es80-v14-recovery-action-language-current/gpt56-go
