@@ -21,8 +21,10 @@ jobs:
         shell: bash
         run: |
           set -u
+          set +e
           python3 .github/scripts/v14_app_single_authority.py > /tmp/app-patch.log 2>&1
           code=$?
+          set -e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if [ "$code" -ne 0 ]; then
@@ -32,7 +34,6 @@ jobs:
             git push origin HEAD:feature/es80-v14-app-single-authority-current/gpt56-thinking
             exit 0
           fi
-          set -e
           ! grep -n 'PassiveBluetoothPowerCycleObservationSession(' NembraApp/Features/Research/ES80CaptureShellView.swift
           ! grep -n 'try? ForegroundCoreBluetoothCaptureController(' NembraApp/App/NembraApp.swift
           ! grep -n 'Passive capture binding not available in this build' NembraApp/Features/Research/ES80CaptureShellView.swift
