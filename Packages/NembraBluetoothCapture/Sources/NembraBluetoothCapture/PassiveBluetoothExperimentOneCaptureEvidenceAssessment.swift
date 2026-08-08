@@ -12,15 +12,16 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
     public static let minimumPostReadyObservationDurationNanoseconds: UInt64 = 60_000_000_000
 }
 
-/// Fail-closed composition of the software evidence required from Experiment One's passive capture.
+/// Package-internal fail-closed composition of the software evidence required from Experiment One.
 ///
-/// The public composition boundary accepts only evidence wrappers issued by a package-owned
-/// `PassiveBluetoothExperimentOneRun`. Raw power-cycle results and raw capture sessions cannot be
-/// supplied directly. Before any cross-artifact interpretation, both wrappers must carry the same
-/// hidden run authority. This prevents a valid result from run A from inheriting the observation
-/// horizon of a later same-UUID capture from run B.
+/// This type deliberately is not public yet. Until the accepted foreground controller owns the
+/// authority-bearing recorder and H-bounded finalization, ordinary app/UI code must have **no API**
+/// that can turn public raw capture/session constructors into an Experiment One coherent PASS.
+/// Public raw evidence remains available for research and offline analysis only.
 ///
-/// Within one matching software run, this assessment also closes these evidence boundaries:
+/// Once invoked by the package-owned producer path, composition closes these evidence boundaries:
+/// - both opaque inputs must carry the same package-issued run authority before UUID/duration can
+///   contribute at all;
 /// - the exact four receipt-bounded OFF₁ -> ON₁ -> OFF₂ -> ON₂ result must meet Experiment One's
 ///   per-window duration policy;
 /// - the raw package-issued candidate snapshots must still align with their window receipts and
@@ -36,8 +37,8 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
 /// physical absence, that radio traffic was complete, that a CoreBluetooth UUID is permanent, or
 /// that any GATT/Tuya field has vehicle semantics. Raw-byte provenance and offline protocol analysis
 /// remain separate gates.
-public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendable {
-    public enum Status: Equatable, Sendable {
+struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendable {
+    enum Status: Equatable, Sendable {
         /// The two otherwise-valid artifacts were issued by different package-owned experiment
         /// runs. UUID equality cannot repair this provenance break.
         case experimentRunAuthorityMismatch
@@ -55,24 +56,24 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
         case coherentCaptureEvidence(UUID)
     }
 
-    public let status: Status
-    public let powerCycleDurationAssessment: PassiveBluetoothPowerCycleObservationWindowDurationAssessment
-    public let observationDurationAssessment: PassiveBluetoothObservationWindowDurationAssessment
+    let status: Status
+    let powerCycleDurationAssessment: PassiveBluetoothPowerCycleObservationWindowDurationAssessment
+    let observationDurationAssessment: PassiveBluetoothObservationWindowDurationAssessment
 
     /// Exact source capture identity/context assessed for the post-ready observation interval.
-    public let captureSessionID: UUID
-    public let vehicleIdentity: VehicleIdentity
+    let captureSessionID: UUID
+    let vehicleIdentity: VehicleIdentity
 
     /// Sorted exact identifier strings seen on typed GATT-path evidence. Advertisement-only and
     /// connection-only neighbors are deliberately excluded from target attribution.
-    public let captureGATTPeripheralIdentifiers: [String]
+    let captureGATTPeripheralIdentifiers: [String]
 
     /// Present only when the replayed correlation report has exactly one repeated full UUID.
-    public let correlatedPeripheralIdentifier: UUID?
+    let correlatedPeripheralIdentifier: UUID?
     /// Present only when the capture has one syntactically valid UUID on typed GATT-path evidence.
-    public let capturedPeripheralIdentifier: UUID?
+    let capturedPeripheralIdentifier: UUID?
 
-    public var isCaptureEvidenceCoherent: Bool {
+    var isCaptureEvidenceCoherent: Bool {
         if case .coherentCaptureEvidence(_) = status { return true }
         return false
     }
@@ -99,7 +100,7 @@ public struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable,
 
     /// Recomputes every component from package-bound evidence instead of accepting raw independently
     /// produced artifacts, detached caller-authored booleans, or weakened thresholds.
-    public static func assess(
+    static func assess(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         captureEvidence: PassiveBluetoothExperimentOneCaptureEvidence
     ) -> Self {
