@@ -84,9 +84,11 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         /// Begins Horizon only from the exact Ready epoch that established the
         /// observation session. No authority-fence parameter is accepted here.
         ///
-        /// If the retained canonical fence has advanced since Ready, the gate sees
-        /// that newer authority and rejects Horizon against its privately retained
-        /// committed Ready transaction before mutating phase.
+        /// The retained fence must still equal this token's original Ready
+        /// authority before any Horizon clock is captured or queue state mutates.
+        /// A retired Ready token therefore cannot follow the shared mutable fence
+        /// into a later lifecycle. #427's strictly-forward / anti-ABA transition
+        /// contract makes a retired Ready authority permanently stale.
         @MainActor
         func beginHorizon(
             queueCutoff: UInt64,
@@ -94,11 +96,18 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
             gate: inout PassiveCoreBluetoothObservationBoundaryQueueGate
         ) throws -> HorizonAdmission {
             let currentAuthority = authorityFence.currentAuthority
+            guard currentAuthority == readyDecision.authority else {
+                throw PassiveCoreBluetoothArtifactAuthorityFence.StateError.authorityChanged(
+                    expected: readyDecision.authority,
+                    current: currentAuthority
+                )
+            }
+
             let decision = try PassiveCoreBluetoothObservationBoundaryDecision.capture(
                 kind: .observationHorizon,
                 queueCutoff: queueCutoff,
                 processedThrough: processedThrough,
-                authority: currentAuthority
+                authority: readyDecision.authority
             )
 
             let transaction = try gate.begin(
