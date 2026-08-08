@@ -55,7 +55,8 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(admission.authorizationPayloadSHA256 == sha256Hex(payload))
 
         // Minting a capability in a deterministic package test does not mutate global product
-        // policy. The production app still uses the zero-argument gate/factory and remains locked.
+        // policy. Signed evidence remains necessary-but-insufficient while the deliberate final
+        // field gate is NO-GO.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -63,24 +64,43 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure)
     }
 
-    @Test("future live factory accepts only the non-forgeable admission type")
-    func canonicalFactoryKeepsBooleanAndPreferenceAuthorityOut() throws {
+    @Test("future live factory requires both admission and final field GO")
+    func canonicalFactoryKeepsBooleanPreferenceAndEvidenceOnlyAuthorityOut() throws {
         let source = try sourceFile(
             "Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift"
         )
 
+        let gateGuard = "guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"
         #expect(source.contains("static func makeAuthorizedES80() throws"))
         #expect(
             source.contains(
                 "verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission"
             )
         )
-        #expect(source.contains("guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure"))
+        #expect(source.components(separatedBy: gateGuard).count - 1 == 2)
         #expect(source.contains("private static func makeLiveES80Coordinator() throws"))
         #expect(!source.contains("authorized: Bool"))
         #expect(!source.contains("permission: Bool"))
         #expect(!source.contains("UserDefaults"))
         #expect(!source.contains("ProcessInfo"))
+
+        let verifiedFactoryStart = try #require(
+            source.range(
+                of: "static func makeAuthorizedES80(\n        verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission"
+            )?.lowerBound
+        )
+        let liveFactoryStart = try #require(
+            source.range(
+                of: "private static func makeLiveES80Coordinator() throws",
+                range: verifiedFactoryStart..<source.endIndex
+            )?.lowerBound
+        )
+        let verifiedFactory = source[verifiedFactoryStart..<liveFactoryStart]
+        let verifiedGuard = try #require(verifiedFactory.range(of: gateGuard))
+        let liveConstruction = try #require(
+            verifiedFactory.range(of: "return try makeLiveES80Coordinator()")
+        )
+        #expect(verifiedGuard.lowerBound < liveConstruction.lowerBound)
     }
 
     @Test("current app has no verified-admission consumption path")
