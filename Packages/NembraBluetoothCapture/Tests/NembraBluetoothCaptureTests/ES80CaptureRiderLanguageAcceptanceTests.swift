@@ -33,6 +33,21 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         return source[beginning.lowerBound..<details.lowerBound]
     }
 
+    /// `phase(...)`, the coordinator-error mapper, and Bluetooth-state mapper live below Details in
+    /// source order, but their returned strings are rendered back into the primary rider surface.
+    /// Keep that dynamic copy in the rider-language acceptance boundary instead of accidentally
+    /// treating source-file location as UI hierarchy.
+    private static func riderDynamicCopy(in source: String) throws -> Substring {
+        let beginning = try #require(source.range(of: "private func phase("))
+        let end = try #require(
+            source.range(
+                of: "private func statePanel(",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        return source[beginning.lowerBound..<end.lowerBound]
+    }
+
     @Test("primary Capture states use rider language instead of implementation vocabulary")
     func primaryStatesStayHumanFirst() throws {
         let source = try Self.shellSource()
@@ -82,6 +97,35 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("View Details"))
         #expect(riderSurface.contains("DISCOVERY"))
         #expect(riderSurface.contains("SEAL"))
+    }
+
+    @Test("dynamic failure and recovery copy is rider-facing even when helpers live below Details")
+    func dynamicPrimaryCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let dynamicCopy = try Self.riderDynamicCopy(in: source)
+
+        let implementationPhrasesThatMustNotReachDynamicPrimaryCopy = [
+            "evidence life",
+            "capture authority",
+            "consumed authority",
+            "package-owned CoreBluetooth controller",
+            "package-issued observation authority",
+            "package-owned Experiment One workflow",
+            "fresh package-owned Experiment One workflow",
+            "bounded startup interval",
+            "local observation-window sequence"
+        ]
+
+        for phrase in implementationPhrasesThatMustNotReachDynamicPrimaryCopy {
+            #expect(
+                !dynamicCopy.contains(phrase),
+                "Dynamic Capture copy still exposes implementation vocabulary: \(phrase)"
+            )
+        }
+
+        #expect(dynamicCopy.contains("start a fresh Experiment One"))
+        #expect(dynamicCopy.contains("Passive Bluetooth capture is unavailable"))
+        #expect(dynamicCopy.contains("Restart from OFF 1") || dynamicCopy.contains("restart from OFF 1"))
     }
 
     @Test("engineering truth remains available in Details instead of being deleted")
