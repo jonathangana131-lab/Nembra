@@ -107,11 +107,11 @@ enum PassiveBluetoothPowerCycleScanReadinessPolicy {
         guard isPoweredOn else {
             return .bluetoothUnavailable
         }
-        if isScanning {
-            return .ready
-        }
         if nowUptimeNanoseconds >= deadlineUptimeNanoseconds {
             return .timedOut
+        }
+        if isScanning {
+            return .ready
         }
         return .wait
     }
@@ -238,7 +238,7 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
 /// - local names, RSSI, services, short UUIDs, and product signatures never affect correlation;
 /// - window phases are operator-declared expected power state, not physical attestation;
 /// - a scan request is not a window start; receipt timing begins only after the manager is observed
-///   powered-on and actively scanning within a bounded readiness interval;
+///   powered-on and actively scanning strictly before a bounded readiness deadline;
 /// - a completed catalog contains callbacks accepted while the exact manager reported active scan
 ///   before the synchronous receipt cutoff; it is not radio-time completeness proof;
 /// - a unique repeated UUID is correlation evidence only, never permanent ES80 identity.
@@ -319,8 +319,8 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
     /// Starts the next operator-declared window using a brand-new CoreBluetooth manager epoch.
     /// If the manager has not reported powered-on state yet, scanning begins only after that
     /// manager's own state callback says it is powered on. The scan request then enters a bounded
-    /// readiness interval; the receipt window opens only after `isScanning` is observed true.
-    /// Terminal non-powered states or readiness expiry invalidate the entire series.
+    /// readiness interval; the receipt window opens only after `isScanning` is observed true before
+    /// the deadline. Terminal non-powered states or readiness expiry invalidate the entire series.
     public func startCurrentWindow() throws {
         guard !ledger.isInvalidated else {
             throw terminalError ?? PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
