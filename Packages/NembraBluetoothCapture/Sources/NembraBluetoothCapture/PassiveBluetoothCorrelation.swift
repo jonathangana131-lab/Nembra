@@ -121,10 +121,10 @@ public enum PassiveBluetoothCorrelation {
         )
     }
 
-    /// Generic interruption events are global observation gaps. Structured
-    /// disconnects are scoped to the exact peripheral being analyzed so a
-    /// disconnect from unrelated imported device B cannot split target A's
-    /// otherwise-continuous correlation segment.
+    /// Raw-byte continuity is capture-wide and follows the authoritative Core
+    /// event policy. Target identity remains a separate attribution/filtering
+    /// question: a structured disconnect from imported device B still proves an
+    /// observation gap and therefore fences target A's marker/value correlation.
     private static func buildWindows(
         in session: PassiveBluetoothCaptureSession,
         peripheralIdentifier: String?,
@@ -141,10 +141,7 @@ public enum PassiveBluetoothCorrelation {
 
         for index in records.indices {
             segmentIndexByRecord[index] = currentSegment
-            if breaksContinuity(
-                records[index].event,
-                peripheralIdentifier: peripheralIdentifier
-            ) {
+            if records[index].event.breaksByteContinuity {
                 segmentEnds.append(index)
                 segmentStart = index + 1
                 currentSegment += 1
@@ -250,22 +247,6 @@ public enum PassiveBluetoothCorrelation {
         }
 
         return identifiers
-    }
-
-    private static func breaksContinuity(
-        _ event: PassiveBluetoothCaptureEvent,
-        peripheralIdentifier: String?
-    ) -> Bool {
-        switch event {
-        case let .connection(observation):
-            guard observation.state == .disconnected else { return false }
-            guard let peripheralIdentifier else { return true }
-            return observation.peripheralIdentifier == peripheralIdentifier
-        case .interruption:
-            return true
-        default:
-            return false
-        }
     }
 
     private static func signedOffsetSeconds(candidate: UInt64, marker: UInt64) -> Double {
