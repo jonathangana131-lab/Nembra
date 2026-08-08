@@ -29,6 +29,8 @@ public enum PassiveBluetoothPowerCycleObservationSessionError: Error, Equatable,
     case windowAlreadyActive
     case windowNotActive
     case bluetoothBecameUnavailable
+    case scanReadinessPending
+    case scanReadinessTimedOut
     case scanBecameInactive
     case minimumWindowDurationNotReached
     case nonMonotonicWindowClock
@@ -39,6 +41,7 @@ public enum PassiveBluetoothPowerCycleObservationSessionError: Error, Equatable,
 public struct PassiveBluetoothPowerCycleObservationProgress: Equatable, Sendable {
     public let phase: PassiveBluetoothPowerCycleObservationPhase
     public let isAwaitingBluetoothPower: Bool
+    public let isAwaitingScanReadiness: Bool
     public let isScanning: Bool
     public let isSeriesInvalidated: Bool
     public let currentObservedCandidateCount: Int
@@ -80,6 +83,37 @@ enum PassiveBluetoothPowerCycleScanLiveness {
         hasStartedReceiptWindow: Bool
     ) -> Bool {
         isPoweredOn && isScanning && hasStartedReceiptWindow
+    }
+}
+
+/// CoreBluetooth publicly exposes `isScanning`, but does not document that it must become `true`
+/// synchronously before `scanForPeripherals` returns. This policy therefore distinguishes a scan
+/// request from confirmed scan liveness and permits a short bounded readiness interval before
+/// failing closed. It is software-manager evidence only, never radio-time completeness evidence.
+enum PassiveBluetoothPowerCycleScanReadinessDecision: Equatable, Sendable {
+    case wait
+    case ready
+    case bluetoothUnavailable
+    case timedOut
+}
+
+enum PassiveBluetoothPowerCycleScanReadinessPolicy {
+    static func decide(
+        isPoweredOn: Bool,
+        isScanning: Bool,
+        nowUptimeNanoseconds: UInt64,
+        deadlineUptimeNanoseconds: UInt64
+    ) -> PassiveBluetoothPowerCycleScanReadinessDecision {
+        guard isPoweredOn else {
+            return .bluetoothUnavailable
+        }
+        if isScanning {
+            return .ready
+        }
+        if nowUptimeNanoseconds >= deadlineUptimeNanoseconds {
+            return .timedOut
+        }
+        return .wait
     }
 }
 
@@ -195,14 +229,16 @@ struct PassiveBluetoothPowerCycleObservationLedger: Sendable {
 /// the callback, so callbacks from a retired window fail the exact-manager guard once a new
 /// transport is active instead of being stamped with a fabricated local scan generation.
 ///
-/// Any Bluetooth-authority failure, scan-liveness loss, or explicit operator abandonment
-/// permanently invalidates the whole four-window series. The caller must construct a fresh session
-/// and restart at OFF₁; already-completed windows are never reused across a known gap.
+/// Any Bluetooth-authority failure, scan-liveness loss, readiness timeout, or explicit operator
+/// abandonment permanently invalidates the whole four-window series. The caller must construct a
+/// fresh session and restart at OFF₁; already-completed windows are never reused across a known gap.
 ///
 /// Safety / truth boundary:
 /// - broad discovery only; no connection and no characteristic-value writes;
 /// - local names, RSSI, services, short UUIDs, and product signatures never affect correlation;
 /// - window phases are operator-declared expected power state, not physical attestation;
+/// - a scan request is not a window start; receipt timing begins only after the manager is observed
+///   powered-on and actively scanning within a bounded readiness interval;
 /// - a completed catalog contains callbacks accepted while the exact manager reported active scan
 ///   before the synchronous receipt cutoff; it is not radio-time completeness proof;
 /// - a unique repeated UUID is correlation evidence only, never permanent ES80 identity.
@@ -220,14 +256,21 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         }
     }
 
+    private static let scanReadinessTimeoutNanoseconds: UInt64 = 2_000_000_000
+    private static let scanReadinessPollInterval: Duration = .milliseconds(20)
+
     private var ledger: PassiveBluetoothPowerCycleObservationLedger
     private let minimumWindowDurationNanoseconds: UInt64
     private var activeManager: CBCentralManager?
     private var awaitingPoweredOn = false
+    private var awaitingScanReadiness = false
+    private var scanReadinessDeadlineUptimeNanoseconds: UInt64?
+    private var scanReadinessToken: UUID?
+    private var scanReadinessTask: Task<Void, Never>?
     private var windowStartedAtUptimeNanoseconds: UInt64?
     private var candidatesByIdentifier: [UUID: CandidateState] = [:]
     private var finalResult: PassiveBluetoothPowerCycleObservationResult?
-    private var lastWindowInvalidatedByBluetooth = false
+    private var terminalError: PassiveBluetoothPowerCycleObservationSessionError?
 
     public init(minimumWindowDuration: TimeInterval) throws {
         guard minimumWindowDuration.isFinite,
@@ -257,6 +300,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         return PassiveBluetoothPowerCycleObservationProgress(
             phase: phase,
             isAwaitingBluetoothPower: awaitingPoweredOn,
+            isAwaitingScanReadiness: awaitingScanReadiness,
             isScanning: PassiveBluetoothPowerCycleScanLiveness.isLive(
                 isPoweredOn: managerIsPoweredOn,
                 isScanning: managerIsScanning,
@@ -274,11 +318,12 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
 
     /// Starts the next operator-declared window using a brand-new CoreBluetooth manager epoch.
     /// If the manager has not reported powered-on state yet, scanning begins only after that
-    /// manager's own state callback says it is powered on. Terminal non-powered states invalidate
-    /// the entire series without producing a snapshot.
+    /// manager's own state callback says it is powered on. The scan request then enters a bounded
+    /// readiness interval; the receipt window opens only after `isScanning` is observed true.
+    /// Terminal non-powered states or readiness expiry invalidate the entire series.
     public func startCurrentWindow() throws {
         guard !ledger.isInvalidated else {
-            throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+            throw terminalError ?? PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
         }
         guard ledger.nextPhase != nil, finalResult == nil else {
             throw PassiveBluetoothPowerCycleObservationSessionError.seriesComplete
@@ -287,18 +332,18 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
             throw PassiveBluetoothPowerCycleObservationSessionError.windowAlreadyActive
         }
 
+        cancelScanReadinessObservation()
         candidatesByIdentifier.removeAll(keepingCapacity: true)
         windowStartedAtUptimeNanoseconds = nil
-        lastWindowInvalidatedByBluetooth = false
+        terminalError = nil
         awaitingPoweredOn = true
+        awaitingScanReadiness = false
 
         let manager = CBCentralManager(delegate: self, queue: .main, options: nil)
         activeManager = manager
         switch manager.state {
         case .poweredOn:
-            guard beginScanIfAwaiting(on: manager) else {
-                throw PassiveBluetoothPowerCycleObservationSessionError.scanBecameInactive
-            }
+            requestScanIfAwaiting(on: manager)
         case .poweredOff, .unauthorized, .unsupported:
             invalidateCurrentTransportForBluetoothState(manager)
             throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
@@ -310,9 +355,10 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         }
     }
 
-    /// Freezes the current receipt-bounded catalog. Calling this early fails without advancing
-    /// phase or reusing the manager; the same window genuinely keeps scanning on the same manager
-    /// until the minimum duration is satisfied.
+    /// Freezes the current receipt-bounded catalog. Calling this early after the receipt window
+    /// starts fails without advancing phase or reusing the manager; the same window genuinely keeps
+    /// scanning until the minimum duration is satisfied. Calling while a scan request is still
+    /// awaiting confirmed liveness reports `scanReadinessPending` and does not manufacture a start.
     ///
     /// On success, the manager is stopped and retired synchronously before evidence is sealed. Any
     /// callback already queued from that manager reaches the delegate with a non-active manager
@@ -320,10 +366,10 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
     @discardableResult
     public func finishCurrentWindow() throws -> PassiveBluetoothPowerCycleObservationResult? {
         guard !ledger.isInvalidated else {
-            if lastWindowInvalidatedByBluetooth {
-                throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
-            }
-            throw PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+            throw terminalError ?? PassiveBluetoothPowerCycleObservationSessionError.seriesInvalidated
+        }
+        if awaitingScanReadiness {
+            throw PassiveBluetoothPowerCycleObservationSessionError.scanReadinessPending
         }
         guard let manager = activeManager,
               let startedAt = windowStartedAtUptimeNanoseconds,
@@ -335,13 +381,19 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
             throw PassiveBluetoothPowerCycleObservationSessionError.bluetoothBecameUnavailable
         }
         guard manager.isScanning else {
-            retireCurrentTransport(manager, bluetoothFailure: false)
+            retireCurrentTransport(
+                manager,
+                terminalError: .scanBecameInactive
+            )
             throw PassiveBluetoothPowerCycleObservationSessionError.scanBecameInactive
         }
 
         let endedAt = DispatchTime.now().uptimeNanoseconds
         guard endedAt >= startedAt else {
-            retireCurrentTransport(manager, bluetoothFailure: false)
+            retireCurrentTransport(
+                manager,
+                terminalError: .nonMonotonicWindowClock
+            )
             throw PassiveBluetoothPowerCycleObservationSessionError.nonMonotonicWindowClock
         }
         guard endedAt - startedAt >= minimumWindowDurationNanoseconds else {
@@ -351,6 +403,8 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         manager.stopScan()
         activeManager = nil
         awaitingPoweredOn = false
+        awaitingScanReadiness = false
+        cancelScanReadinessObservation()
         windowStartedAtUptimeNanoseconds = nil
 
         let candidates = candidatesByIdentifier.values
@@ -374,6 +428,7 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
             return completed
         } catch {
             ledger.invalidate()
+            terminalError = .seriesInvalidated
             throw error
         }
     }
@@ -385,13 +440,18 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         guard finalResult == nil, !ledger.isInvalidated else { return }
 
         if let manager = activeManager {
-            retireCurrentTransport(manager, bluetoothFailure: false)
+            retireCurrentTransport(
+                manager,
+                terminalError: .seriesInvalidated
+            )
             return
         }
 
         ledger.invalidate()
-        lastWindowInvalidatedByBluetooth = false
+        terminalError = .seriesInvalidated
         awaitingPoweredOn = false
+        awaitingScanReadiness = false
+        cancelScanReadinessObservation()
         windowStartedAtUptimeNanoseconds = nil
         candidatesByIdentifier.removeAll(keepingCapacity: true)
     }
@@ -402,12 +462,17 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         switch central.state {
         case .poweredOn:
             if awaitingPoweredOn {
-                _ = beginScanIfAwaiting(on: central)
-            } else if windowStartedAtUptimeNanoseconds != nil, !central.isScanning {
-                retireCurrentTransport(central, bluetoothFailure: false)
+                requestScanIfAwaiting(on: central)
+            } else if !awaitingScanReadiness,
+                      windowStartedAtUptimeNanoseconds != nil,
+                      !central.isScanning {
+                retireCurrentTransport(
+                    central,
+                    terminalError: .scanBecameInactive
+                )
             }
         case .unknown, .resetting:
-            if windowStartedAtUptimeNanoseconds != nil {
+            if awaitingScanReadiness || windowStartedAtUptimeNanoseconds != nil {
                 invalidateCurrentTransportForBluetoothState(central)
             }
         case .poweredOff, .unauthorized, .unsupported:
@@ -446,49 +511,140 @@ public final class PassiveBluetoothPowerCycleObservationSession: NSObject {
         }
     }
 
-    /// Starts a scan only for the exact active powered-on manager. A successful scan request must
-    /// be reflected by `CBCentralManager.isScanning` before a receipt window is opened; otherwise
-    /// the whole series fails closed instead of timing a window that was never known live.
-    @discardableResult
-    private func beginScanIfAwaiting(on manager: CBCentralManager) -> Bool {
+    /// Requests a scan only for the exact active powered-on manager, then observes readiness over a
+    /// bounded main-actor interval. A request itself never opens the evidence window and an
+    /// immediate `isScanning == false` is never interpreted as terminal framework failure.
+    private func requestScanIfAwaiting(on manager: CBCentralManager) {
         guard !ledger.isInvalidated,
               manager === activeManager,
               awaitingPoweredOn,
               manager.state == .poweredOn,
               windowStartedAtUptimeNanoseconds == nil else {
-            return false
+            return
         }
 
         awaitingPoweredOn = false
+        awaitingScanReadiness = true
         candidatesByIdentifier.removeAll(keepingCapacity: true)
+
+        let now = DispatchTime.now().uptimeNanoseconds
+        let (deadline, overflow) = now.addingReportingOverflow(Self.scanReadinessTimeoutNanoseconds)
+        guard !overflow else {
+            retireCurrentTransport(
+                manager,
+                terminalError: .scanReadinessTimedOut
+            )
+            return
+        }
+
+        scanReadinessDeadlineUptimeNanoseconds = deadline
+        let token = UUID()
+        scanReadinessToken = token
         manager.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
-        guard manager.isScanning else {
-            retireCurrentTransport(manager, bluetoothFailure: false)
-            return false
+        beginScanReadinessObservation(token: token)
+    }
+
+    /// Polls only manager software state. No callback or `isScanning` read is promoted into proof
+    /// that the radio observed every advertisement. Callbacks arriving before readiness is confirmed
+    /// are intentionally discarded because their receipt precedes the authoritative window start.
+    private func beginScanReadinessObservation(token: UUID) {
+        scanReadinessTask?.cancel()
+        scanReadinessTask = Task { @MainActor [weak self] in
+            while let self,
+                  self.scanReadinessToken == token,
+                  !Task.isCancelled {
+                guard let manager = self.activeManager,
+                      let deadline = self.scanReadinessDeadlineUptimeNanoseconds else {
+                    return
+                }
+
+                let now = DispatchTime.now().uptimeNanoseconds
+                switch PassiveBluetoothPowerCycleScanReadinessPolicy.decide(
+                    isPoweredOn: manager.state == .poweredOn,
+                    isScanning: manager.isScanning,
+                    nowUptimeNanoseconds: now,
+                    deadlineUptimeNanoseconds: deadline
+                ) {
+                case .ready:
+                    self.confirmScanReadiness(
+                        on: manager,
+                        token: token,
+                        observedAtUptimeNanoseconds: now
+                    )
+                    return
+                case .bluetoothUnavailable:
+                    self.invalidateCurrentTransportForBluetoothState(manager)
+                    return
+                case .timedOut:
+                    self.retireCurrentTransport(
+                        manager,
+                        terminalError: .scanReadinessTimedOut
+                    )
+                    return
+                case .wait:
+                    do {
+                        try await Task.sleep(for: Self.scanReadinessPollInterval)
+                    } catch {
+                        return
+                    }
+                }
+            }
         }
-        windowStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        return true
+    }
+
+    private func confirmScanReadiness(
+        on manager: CBCentralManager,
+        token: UUID,
+        observedAtUptimeNanoseconds: UInt64
+    ) {
+        guard !ledger.isInvalidated,
+              manager === activeManager,
+              scanReadinessToken == token,
+              awaitingScanReadiness,
+              manager.state == .poweredOn,
+              manager.isScanning,
+              windowStartedAtUptimeNanoseconds == nil else {
+            return
+        }
+
+        awaitingScanReadiness = false
+        scanReadinessToken = nil
+        scanReadinessDeadlineUptimeNanoseconds = nil
+        scanReadinessTask = nil
+        windowStartedAtUptimeNanoseconds = observedAtUptimeNanoseconds
+    }
+
+    private func cancelScanReadinessObservation() {
+        scanReadinessTask?.cancel()
+        scanReadinessTask = nil
+        scanReadinessToken = nil
+        scanReadinessDeadlineUptimeNanoseconds = nil
     }
 
     private func invalidateCurrentTransportForBluetoothState(_ manager: CBCentralManager) {
-        retireCurrentTransport(manager, bluetoothFailure: true)
+        retireCurrentTransport(
+            manager,
+            terminalError: .bluetoothBecameUnavailable
+        )
     }
 
     private func retireCurrentTransport(
         _ manager: CBCentralManager,
-        bluetoothFailure: Bool
+        terminalError: PassiveBluetoothPowerCycleObservationSessionError
     ) {
         guard manager === activeManager else { return }
         if manager.isScanning {
             manager.stopScan()
         }
         ledger.invalidate()
-        lastWindowInvalidatedByBluetooth = bluetoothFailure
+        self.terminalError = terminalError
         activeManager = nil
         awaitingPoweredOn = false
+        awaitingScanReadiness = false
+        cancelScanReadinessObservation()
         windowStartedAtUptimeNanoseconds = nil
         candidatesByIdentifier.removeAll(keepingCapacity: true)
     }
