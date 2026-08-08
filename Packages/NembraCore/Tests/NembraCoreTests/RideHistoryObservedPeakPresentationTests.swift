@@ -41,6 +41,22 @@ struct RideHistoryObservedPeakPresentationTests {
         #expect(!presentation.requiresQualityDisclosure)
     }
 
+    @Test("clean continuity does not override a failed telemetry-quality policy")
+    func telemetryQualityFailureIsUnqualified() throws {
+        let fixture = try bluetoothFixture(
+            speeds: [3, 6, 5],
+            minimumAcceptedSampleCount: 4
+        )
+        let presentation = try RideHistoryObservedPeakPresenter.present(joined(fixture))
+
+        #expect(presentation.state == .unqualifiedAcceptedObservation)
+        #expect(presentation.acceptedObservedSpeedEvidenceMetersPerSecond == 6)
+        #expect(presentation.qualifiedObservedMaximumMetersPerSecond == nil)
+        #expect(presentation.observationContinuity == .noRecordedSelectedSourceEvidenceLoss)
+        #expect(!presentation.permitsObservedMaximumWording)
+        #expect(presentation.requiresQualityDisclosure)
+    }
+
     @Test("interrupted faster observation remains visible evidence but cannot become max wording")
     func interruptedObservationIsUnqualified() throws {
         let fixture = try bluetoothFixture(
@@ -146,7 +162,8 @@ struct RideHistoryObservedPeakPresentationTests {
         speeds: [Double],
         interruptionThenSpeeds: [Double] = [],
         includeForeignSourceCallback: Bool = false,
-        maximumRejectedFraction: Double = 0
+        maximumRejectedFraction: Double = 0,
+        minimumAcceptedSampleCount: Int = 3
     ) throws -> Fixture {
         let ride = try completedRide()
         var accumulator = RideSpeedEvidenceSessionAccumulator(
@@ -181,7 +198,10 @@ struct RideHistoryObservedPeakPresentationTests {
 
         let snapshot = accumulator.snapshot
         let readiness = snapshot.observedPeakReadiness(
-            using: try bluetoothPolicy(maximumRejectedFraction: maximumRejectedFraction)
+            using: try bluetoothPolicy(
+                maximumRejectedFraction: maximumRejectedFraction,
+                minimumAcceptedSampleCount: minimumAcceptedSampleCount
+            )
         )
         let ridePeak = try #require(snapshot.peakEvidence)
         let completedPeak = try CompletedRidePeakSpeedEvidence(
@@ -235,12 +255,13 @@ struct RideHistoryObservedPeakPresentationTests {
     }
 
     private func bluetoothPolicy(
-        maximumRejectedFraction: Double = 0
+        maximumRejectedFraction: Double = 0,
+        minimumAcceptedSampleCount: Int = 3
     ) throws -> RideObservedPeakQualityPolicy {
         try RideObservedPeakQualityPolicy(
             telemetry: SpeedTelemetryQualityPolicy(
                 requiredSource: .scooterBluetooth,
-                minimumAcceptedSampleCount: 3,
+                minimumAcceptedSampleCount: minimumAcceptedSampleCount,
                 maximumRejectedSampleFraction: maximumRejectedFraction,
                 maximumMeanIntervalMilliseconds: 150,
                 maximumObservedIntervalMilliseconds: 200,
