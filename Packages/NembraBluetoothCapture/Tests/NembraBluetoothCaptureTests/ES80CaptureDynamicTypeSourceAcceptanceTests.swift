@@ -3,20 +3,31 @@ import Testing
 
 @Suite("ES80 Capture Dynamic Type source acceptance")
 struct ES80CaptureDynamicTypeSourceAcceptanceTests {
+    private static func repositoryRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     private static func shellSource() throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let repositoryRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot
+        try String(
+            contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
                 .appendingPathComponent("Features")
                 .appendingPathComponent("Research")
                 .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private static func researchUITestSource() throws -> String {
+        try String(
+            contentsOf: repositoryRoot()
+                .appendingPathComponent("NembraUITests")
+                .appendingPathComponent("ES80ResearchCaptureUITests.swift"),
             encoding: .utf8
         )
     }
@@ -93,6 +104,42 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         #expect(
             Self.hasIntentionalAdaptiveLayout(health),
             "Target / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
+        )
+    }
+
+    @Test("horizon-ready Capture retains Accessibility XXXL visual evidence")
+    func horizonReadyAccessibilityXXXLVisualEvidenceIsRequired() throws {
+        let source = try Self.researchUITestSource()
+        let functionBlocks = source.components(separatedBy: "@MainActor")
+        let horizonXXXLBlock = functionBlocks.first { block in
+            block.contains("--es80-capture-qa-scenario=observationHorizonReady")
+                && block.contains("-UIPreferredContentSizeCategoryName")
+                && block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")
+        }
+
+        let block = try #require(
+            horizonXXXLBlock,
+            "The real horizon-ready Capture state must be launched at Accessibility XXXL, not only default text size."
+        )
+        #expect(block.contains("es80.capture-shell"))
+        #expect(block.contains("es80.capture.finish"))
+        #expect(block.contains("Capture can be sealed"))
+        #expect(
+            block.localizedCaseInsensitiveContains("accessibility xxxl"),
+            "Horizon-ready Accessibility XXXL must retain screenshot evidence for human visual critique."
+        )
+    }
+
+    @Test("existing Accessibility XXXL product evidence is not regressed")
+    func existingAccessibilityXXXLProductEvidenceRemains() throws {
+        let source = try Self.researchUITestSource()
+
+        #expect(source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(source.contains("Rider NO-GO — Accessibility XXXL"))
+        #expect(source.contains("Capture Complete — Accessibility XXXL"))
+        #expect(
+            source.contains("--es80-capture-qa-scenario=captureComplete"),
+            "Capture Complete Accessibility XXXL remains valuable positive-state evidence while horizon/progress/health evidence is added."
         )
     }
 }
