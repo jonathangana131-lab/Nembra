@@ -489,7 +489,14 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         note: String? = nil
     ) throws {
         try ensureCaptureHealthy()
-        guard recorder != nil else { throw ControllerError.targetNotSelected }
+        guard recorder != nil,
+              let selectedTargetIdentifier = targetState.selectedTargetIdentifier else {
+            throw ControllerError.targetNotSelected
+        }
+        guard !selectedTargetCancellationPending,
+              !targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier) else {
+            throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)
+        }
         let observation = try PassiveBluetoothStockAppObservation(
             field: field,
             displayedValue: displayedValue,

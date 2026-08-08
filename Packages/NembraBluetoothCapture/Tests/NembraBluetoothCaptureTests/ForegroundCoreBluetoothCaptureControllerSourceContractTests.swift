@@ -146,6 +146,56 @@ struct ForegroundCoreBluetoothCaptureControllerSourceContractTests {
     }
 
     @Test
+    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
+        let source = try Self.controllerSource()
+        let cancellation = try Self.section(
+            in: source,
+            from: "    private func cancelActiveConnection(cause:",
+            to: "    /// Adds a human-observed stock-app value"
+        )
+        let pendingOffset = try Self.offset(
+            of: "selectedTargetCancellationPending = true",
+            in: cancellation
+        )
+        let retirementOffset = try Self.offset(
+            of: "_ = targetState.retireActiveAttempt()",
+            in: cancellation
+        )
+        #expect(pendingOffset < retirementOffset)
+
+        let marker = try Self.section(
+            in: source,
+            from: "    public func recordStockAppObservation(",
+            to: "    public func captureSnapshot() async throws"
+        )
+        let pendingGuardOffset = try Self.offset(
+            of: "!selectedTargetCancellationPending",
+            in: marker
+        )
+        let quarantineGuardOffset = try Self.offset(
+            of: "!targetState.isAwaitingTerminalCallback(for: selectedTargetIdentifier)",
+            in: marker
+        )
+        let rejectionOffset = try Self.offset(
+            of: "throw ControllerError.peripheralAwaitingTerminalCallback(selectedTargetIdentifier)",
+            in: marker
+        )
+        let observationOffset = try Self.offset(
+            of: "let observation = try PassiveBluetoothStockAppObservation(",
+            in: marker
+        )
+        let enqueueOffset = try Self.offset(
+            of: "enqueue(.stockAppState(observation))",
+            in: marker
+        )
+
+        #expect(pendingGuardOffset < observationOffset)
+        #expect(quarantineGuardOffset < observationOffset)
+        #expect(rejectionOffset < observationOffset)
+        #expect(observationOffset < enqueueOffset)
+    }
+
+    @Test
     func acquisitionWatchdogRetainsOneSpecificFenceWithoutGenericCancel() throws {
         let source = try Self.controllerSource()
         let body = try Self.section(
