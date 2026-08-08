@@ -1,0 +1,51 @@
+name: Capture descriptor r3 diagnostic
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-descriptor-bound-ipa-r3/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-descriptor-bound-ipa-r3/gpt56-thinking-go
+          fetch-depth: 0
+      - name: Capture transform and validation output without failing the job
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .github/nembra_tmp
+          LOG=.github/nembra_tmp/descriptor_r3_diagnostic.log
+          : > "$LOG"
+          printf 'HEAD=%s\n' "$(git rev-parse HEAD)" >> "$LOG"
+          printf '\n=== patch ===\n' >> "$LOG"
+          python3 .github/nembra_tmp/descriptor_bound_ipa_r3_patch.py >> "$LOG" 2>&1
+          PATCH_STATUS=$?
+          printf 'status=%s\n' "$PATCH_STATUS" >> "$LOG"
+          if [ "$PATCH_STATUS" -eq 0 ]; then
+            for CMD in \
+              "python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py" \
+              "python3 scripts/ci/es80_signed_field_artifact_evidence.py --self-test" \
+              "python3 scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py" \
+              "git diff --check"
+            do
+              printf '\n=== %s ===\n' "$CMD" >> "$LOG"
+              bash -lc "$CMD" >> "$LOG" 2>&1
+              STATUS=$?
+              printf 'status=%s\n' "$STATUS" >> "$LOG"
+              if [ "$STATUS" -ne 0 ]; then break; fi
+            done
+          fi
+          git restore --source=HEAD -- scripts/ci/es80_signed_field_artifact_evidence.py scripts/ci/tests/test_es80_signed_field_artifact_exact_subject.py
+          git config user.name "nembra-v14-diagnostic"
+          git config user.email "actions@users.noreply.github.com"
+          git add "$LOG"
+          git commit -m "chore(capture): retain descriptor r3 diagnostic" || true
+          git push origin HEAD:fix/es80-v14-descriptor-bound-ipa-r3/gpt56-thinking-go
+          exit 0
