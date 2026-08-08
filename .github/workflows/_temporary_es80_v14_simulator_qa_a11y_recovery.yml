@@ -44,6 +44,7 @@ jobs:
                     .accessibilityIdentifier("es80.capture.engineering-details")'''
 
           count = text.count(old)
+          print(f'engineering_details_stale_anchor_count={count}')
           if count != 1:
               raise SystemExit(f'expected exactly one stale engineering-details anchor, found {count}')
           text = text.replace(old, new, 1)
@@ -72,7 +73,6 @@ jobs:
                   raise SystemExit(f'missing synthetic fail-closed fixture token: {token}')
           PY
 
-          git rm .github/workflows/_temporary_es80_v14_simulator_qa_a11y_recovery.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
