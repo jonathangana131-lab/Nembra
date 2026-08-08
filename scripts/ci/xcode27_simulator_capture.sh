@@ -379,7 +379,7 @@ find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIF
 # screenshots into physical or protocol authority. The manifest is deliberately external to the app
 # and can be independently re-hashed after the Actions artifact is downloaded for visual review.
 VISUAL_EVIDENCE_MANIFEST="$ARTIFACTS_DIR/NembraCaptureSimulatorVisualEvidence.json"
-python3 - \
+VISUAL_EVIDENCE_MANIFEST_SHA256="$(python3 - \
   "$VISUAL_EVIDENCE_MANIFEST" \
   "$ARTIFACTS_DIR" \
   "$CAPTURE_BUILD_IDENTIFIER" \
@@ -403,7 +403,12 @@ from pathlib import Path
 ) = sys.argv[1:]
 
 artifacts_root = Path(artifacts_root_text).resolve()
-manifest_path = Path(manifest_path_text).resolve()
+manifest_path = Path(manifest_path_text)
+manifest_name = manifest_path.name
+if manifest_name != "NembraCaptureSimulatorVisualEvidence.json":
+    raise SystemExit("unexpected Simulator visual-evidence manifest filename")
+if manifest_path.parent.resolve() != artifacts_root:
+    raise SystemExit("Simulator visual-evidence manifest must remain in the exact artifact root")
 
 if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
     raise SystemExit("platform cannot enforce no-follow visual-evidence descriptor custody")
@@ -566,11 +571,45 @@ manifest = {
     "files": entries,
 }
 manifest_bytes = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-with manifest_path.open("xb") as handle:
-    handle.write(manifest_bytes)
-PY
 
-VISUAL_EVIDENCE_MANIFEST_SHA256="$(shasum -a 256 "$VISUAL_EVIDENCE_MANIFEST" | awk '{print $1}')"
+try:
+    publication_root_fd = os.open(artifacts_root, _DIRECTORY_FLAGS)
+except OSError as exc:
+    raise SystemExit("could not reopen exact Simulator artifact root for manifest publication") from exc
+try:
+    publication_root_metadata = os.fstat(publication_root_fd)
+    if stable_identity(root_before) != stable_identity(publication_root_metadata):
+        raise SystemExit("Simulator artifact root changed before visual-evidence manifest publication")
+
+    manifest_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        manifest_flags |= os.O_CLOEXEC
+    try:
+        manifest_fd = os.open(manifest_name, manifest_flags, 0o600, dir_fd=publication_root_fd)
+    except OSError as exc:
+        raise SystemExit("could not publish Simulator visual-evidence manifest without replacement") from exc
+    try:
+        before_manifest = os.fstat(manifest_fd)
+        if not stat.S_ISREG(before_manifest.st_mode):
+            raise SystemExit("published Simulator visual-evidence manifest is not one regular file")
+        with os.fdopen(os.dup(manifest_fd), "wb", closefd=True) as handle:
+            handle.write(manifest_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        after_manifest = os.fstat(manifest_fd)
+        if (
+            stable_identity(before_manifest)[:-4] != stable_identity(after_manifest)[:-4]
+            or after_manifest.st_size != len(manifest_bytes)
+        ):
+            raise SystemExit("Simulator visual-evidence manifest changed during descriptor-bound publication")
+    finally:
+        os.close(manifest_fd)
+finally:
+    os.close(publication_root_fd)
+
+print(hashlib.sha256(manifest_bytes).hexdigest())
+PY
+)"
 if [[ ! "$VISUAL_EVIDENCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not derive a valid SHA-256 digest for the Simulator visual evidence manifest." >&2
   exit 23
