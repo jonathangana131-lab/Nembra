@@ -39,6 +39,17 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The installed versioned procedure must be identified without becoming executable."
         )
 
+        let viewDetails = app.descendants(matching: .any)["es80.capture.view-details"]
+        XCTAssertTrue(
+            viewDetails.waitForExistence(timeout: 3),
+            "The locked product must expose build/procedure preflight details without exposing field actions."
+        )
+        viewDetails.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["es80.capture.build-provenance-status"].waitForExistence(timeout: 3),
+            "View Details must report the running build provenance state, including fail-closed unavailable metadata."
+        )
+
         XCTAssertFalse(
             app.buttons["Begin OFF 1 window"].exists,
             "A NO-GO build must not expose the first physical OFF/ON action."
@@ -64,6 +75,14 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "Finish cannot exist before field authorization and accepted Horizon/seal authority."
         )
         XCTAssertFalse(
+            app.buttons["Share Capture"].exists,
+            "Share cannot exist before one accepted immutable capture artifact has actually been produced."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["es80.capture.share"].exists,
+            "No hidden Share action may turn a locked preflight state into apparent capture completion."
+        )
+        XCTAssertFalse(
             app.buttons["Vehicle controls"].exists,
             "Research capture must not silently expose the normal vehicle-control experience."
         )
@@ -73,7 +92,7 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Nembra Capture V14 — Package-Owned Physical NO-GO"
+        attachment.name = "Nembra Capture V14 — NO-GO Runtime Provenance Details"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
