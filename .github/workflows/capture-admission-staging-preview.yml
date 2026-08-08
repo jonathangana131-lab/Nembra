@@ -1,0 +1,53 @@
+name: Capture admission staging preview
+
+on:
+  push:
+    branches:
+      - feature/es80-v14-admission-staging-preview/gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+          ref: feature/es80-v14-admission-staging-preview/gpt56
+
+      - name: Verify immutable producer input
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_path=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          test "$(git hash-object "$source_path")" = "c2f09af126d609b55c18bf0d48001ca77b18c932"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneAdmissionStagingPreviewTests.swift
+          python3 -m py_compile scripts/ci/capture_admission_staging_preview_patch.py
+
+      - name: Apply sealed preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/capture_admission_staging_preview_patch.py
+          git diff --check
+          source_path=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          test "$(grep -c 'struct StagingPreview: Equatable, Sendable' "$source_path")" = "1"
+          test "$(grep -c 'func stagingPreview() throws -> StagingPreview' "$source_path")" = "1"
+          test "$(grep -c 'admissionIdentity: payload.admissionIdentity' "$source_path")" = "1"
+          test "$(grep -c 'peripheralIdentifier: payload.peripheralIdentifier' "$source_path")" = "1"
+          test "$(grep -c 'issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds' "$source_path")" = "1"
+
+      - name: Commit clean product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-admission-staging-preview.yml
+          rm scripts/ci/capture_admission_staging_preview_patch.py
+          rm -rf scripts/ci/__pycache__
+          git config user.name "nembra-v14-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(capture): preview sealed admission before ownership handoff"
+          git push origin HEAD:feature/es80-v14-admission-staging-preview/gpt56
