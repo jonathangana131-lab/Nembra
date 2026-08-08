@@ -20,6 +20,11 @@ struct PassiveCoreBluetoothTerminalFreshTargetSession: Sendable {
         let terminalResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt
         let targetSessionGeneration: UInt64
         let sessionID: UUID
+        /// Process-local identity of the exact recorder actor whose successful
+        /// construction earned this receipt. A controller consumer can compare
+        /// this to its installed recorder before lifecycle reopen without making
+        /// actor identity persisted capture evidence.
+        let recorderIdentity: ObjectIdentifier
         /// Opaque process-local identity for this exact provisioning event. It is
         /// not persisted capture evidence and carries no BLE/RF meaning.
         let provisioningIdentity: UUID
@@ -28,11 +33,13 @@ struct PassiveCoreBluetoothTerminalFreshTargetSession: Sendable {
             terminalResolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
             targetSessionGeneration: UInt64,
             sessionID: UUID,
+            recorderIdentity: ObjectIdentifier,
             provisioningIdentity: UUID = UUID()
         ) {
             self.terminalResolution = terminalResolution
             self.targetSessionGeneration = targetSessionGeneration
             self.sessionID = sessionID
+            self.recorderIdentity = recorderIdentity
             self.provisioningIdentity = provisioningIdentity
         }
     }
@@ -70,7 +77,8 @@ struct PassiveCoreBluetoothTerminalFreshTargetSession: Sendable {
         let receipt = Receipt(
             terminalResolution: terminalResolution,
             targetSessionGeneration: previousGeneration + 1,
-            sessionID: id
+            sessionID: id,
+            recorderIdentity: ObjectIdentifier(recorder)
         )
         return Self(recorder: recorder, receipt: receipt)
     }
