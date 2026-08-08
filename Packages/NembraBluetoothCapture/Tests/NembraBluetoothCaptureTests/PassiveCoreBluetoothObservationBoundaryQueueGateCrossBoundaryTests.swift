@@ -27,6 +27,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
             _ = try gate.begin(
                 .observationHorizon,
                 through: 4,
+                processedThrough: 8,
                 authority: authority
             )
             Issue.record(
@@ -46,6 +47,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         let validHorizon = try gate.begin(
             .observationHorizon,
             through: 12,
+            processedThrough: 8,
             authority: authority
         )
         #expect(validHorizon.revision == ready.revision + 1)
@@ -75,6 +77,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
             _ = try gate.begin(
                 .observationHorizon,
                 through: 9,
+                processedThrough: 8,
                 authority: changedAuthority
             )
             Issue.record(
@@ -94,9 +97,94 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGateCrossBoundaryTests {
         let validHorizon = try gate.begin(
             .observationHorizon,
             through: 12,
+            processedThrough: 8,
             authority: authority
         )
         #expect(validHorizon.revision == ready.revision + 1)
         #expect(gate.phase == .drainingHorizon(validHorizon))
+    }
+
+    @Test("horizon cutoff cannot trail raw evidence already processed while observing")
+    func horizonCutoffCannotTrailProcessedPrefix() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 8,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            ready,
+            lastProcessedQueueSequence: 8,
+            currentAuthority: authority
+        )
+
+        // Ordinary observation draining has already completed recorder hops through
+        // queue sequence 12. A stale horizon decision at 10 cannot put records 11-12
+        // "after" a horizon that is only being opened now.
+        do {
+            _ = try gate.begin(
+                .observationHorizon,
+                through: 10,
+                processedThrough: 12,
+                authority: authority
+            )
+            Issue.record(
+                "A horizon cutoff may not move behind the recorder-completed queue prefix."
+            )
+        } catch {
+            // Taxonomy is intentionally not the contract; atomic rejection is.
+        }
+
+        #expect(gate.phase == .observing)
+        #expect(gate.activeTransaction == nil)
+        #expect(gate.permittedDrainUpperBound(firstPending: 9, pendingTail: 12) == 12)
+
+        let validHorizon = try gate.begin(
+            .observationHorizon,
+            through: 12,
+            processedThrough: 12,
+            authority: authority
+        )
+        #expect(validHorizon.revision == ready.revision + 1)
+        #expect(gate.phase == .drainingHorizon(validHorizon))
+    }
+
+    @Test("horizon cannot open without the recorder-completed processed frontier")
+    func horizonRequiresProcessedPrefix() throws {
+        var gate = PassiveCoreBluetoothObservationBoundaryQueueGate()
+        let ready = try gate.begin(
+            .finiteAcquisitionReady,
+            through: 8,
+            authority: authority
+        )
+        try gate.markBoundaryRecorded(
+            ready,
+            lastProcessedQueueSequence: 8,
+            currentAuthority: authority
+        )
+
+        do {
+            _ = try gate.begin(
+                .observationHorizon,
+                through: 8,
+                authority: authority
+            )
+            Issue.record(
+                "A horizon without the controller-owned processed frontier must fail closed."
+            )
+        } catch let error as PassiveCoreBluetoothObservationBoundaryQueueGate.StateError {
+            #expect(error == .horizonProcessedPrefixRequired)
+        }
+
+        #expect(gate.phase == .observing)
+        #expect(gate.activeTransaction == nil)
+
+        let validHorizon = try gate.begin(
+            .observationHorizon,
+            through: 8,
+            processedThrough: 8,
+            authority: authority
+        )
+        #expect(validHorizon.revision == ready.revision + 1)
     }
 }
