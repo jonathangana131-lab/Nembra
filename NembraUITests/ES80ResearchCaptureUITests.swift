@@ -35,8 +35,12 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             "The physical NO-GO boundary must be exposed as one stable accessibility element."
         )
         XCTAssertTrue(
-            app.staticTexts["ES80-FINGERPRINT-v1"].waitForExistence(timeout: 3),
-            "The installed versioned procedure must be identified without becoming executable."
+            app.staticTexts["Experiment One"].waitForExistence(timeout: 3),
+            "The rider-facing experiment identity must stay visible without exposing the raw recipe token."
+        )
+        XCTAssertFalse(
+            app.staticTexts["ES80-FINGERPRINT-v1"].exists,
+            "The raw recipe identifier belongs in engineering evidence, not the primary rider-facing locked state."
         )
 
         XCTAssertFalse(
@@ -106,17 +110,17 @@ final class ES80ResearchCaptureUITests: XCTestCase {
 
         let lockedState = app.descendants(matching: .any)["es80.capture.field-no-go"]
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let experiment = app.staticTexts["Experiment One"]
 
         XCTAssertTrue(lockedState.waitForExistence(timeout: 5))
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(experiment.waitForExistence(timeout: 3))
         XCTAssertTrue(lockedState.isHittable || lockedState.frame.height > 0)
         XCTAssertTrue(physicalBoundary.frame.height > 0)
-        XCTAssertTrue(recipe.frame.height > 0)
+        XCTAssertTrue(experiment.frame.height > 0)
 
         let windowFrame = app.windows.firstMatch.frame
-        for element in [lockedState, physicalBoundary, recipe] {
+        for element in [lockedState, physicalBoundary, experiment] {
             XCTAssertGreaterThanOrEqual(
                 element.frame.minX,
                 windowFrame.minX - 1,
@@ -154,11 +158,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let physicalBoundary = app.descendants(matching: .any)["es80.capture.physical-run-locked"]
-        let recipe = app.staticTexts["ES80-FINGERPRINT-v1"]
+        let experiment = app.staticTexts["Experiment One"]
         XCTAssertTrue(physicalBoundary.waitForExistence(timeout: 3))
-        XCTAssertTrue(recipe.waitForExistence(timeout: 3))
+        XCTAssertTrue(experiment.waitForExistence(timeout: 3))
         XCTAssertGreaterThan(physicalBoundary.frame.height, 0)
-        XCTAssertGreaterThan(recipe.frame.height, 0)
+        XCTAssertGreaterThan(experiment.frame.height, 0)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.begin-window"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.stationary-preflight"].exists)
 
