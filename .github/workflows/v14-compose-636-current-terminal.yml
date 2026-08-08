@@ -1,0 +1,28 @@
+name: V14 compose 636 current terminal
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-current-terminal-fresh-handoff/gpt56-go2
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compose exact terminal gate commit
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-gpt56
+          git config user.email actions@users.noreply.github.com
+          git cherry-pick 5b5163b969da197ffcfc0c7d4e23464e7d9978df
+          rm .github/workflows/v14-compose-636-current-terminal.yml
+          git add -A
+          git commit --amend --no-edit
+          git diff 291095fc8bf48438635992e9bd44cb6c0ae897f2..HEAD --check
+          git push origin HEAD:integration/es80-v14-current-terminal-fresh-handoff/gpt56-go2
