@@ -28,11 +28,29 @@ public struct RideCheckpointCadence: Equatable, Sendable {
 /// `completedPendingCommit`; only the future completed-ride ledger may acknowledge
 /// that handoff and clear the recovery journal.
 public actor RideCheckpointCoordinator {
+    private enum MutationPermitOutcome: Sendable {
+        case admitted
+        case cancelled
+    }
+
+    private struct MutationWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<MutationPermitOutcome, Never>
+    }
+
     private var engine: RideEngine
     private let store: any RideCheckpointStore
     private let cadence: RideCheckpointCadence
     private var lastSuccessfulCheckpointUptimeNanoseconds: UInt64?
     private var pendingCompletedRide: CompletedRideEvidence?
+
+    // Swift actors are reentrant at `await`. A durable save/clear therefore needs
+    // a separate transaction boundary so a later mutation cannot stage from an
+    // older engine/pending-completion snapshot while the first write is suspended.
+    // Read-only accessors intentionally remain outside this permit and expose only
+    // already-committed actor state.
+    private var mutationInFlight = false
+    private var mutationWaiters: [MutationWaiter] = []
 
     public init(
         engine: RideEngine,
@@ -107,6 +125,9 @@ public actor RideCheckpointCoordinator {
     }
 
     public func ingest(_ observation: RideObservation) async throws -> RideEngineUpdate {
+        try await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
         if let pendingCompletedRide {
             throw RideCheckpointCoordinatorError.completedRideAwaitingCommit(pendingCompletedRide.sessionID)
         }
@@ -147,12 +168,85 @@ public actor RideCheckpointCoordinator {
     /// session. Clearing first would reopen the exact crash-loss window this layer
     /// exists to close.
     public func acknowledgeCompletedRideCommitted(sessionID: UUID) async throws {
+        try await acquireMutationPermit()
+        defer { releaseMutationPermit() }
+
         guard pendingCompletedRide?.sessionID == sessionID else {
             throw RideCheckpointCoordinatorError.noMatchingPendingCompletion
         }
         try await store.clear()
         pendingCompletedRide = nil
         lastSuccessfulCheckpointUptimeNanoseconds = nil
+    }
+
+    /// Acquires one FIFO mutation transaction permit across external store awaits.
+    ///
+    /// Cancellation before admission removes/drops the queued mutation. Once the
+    /// permit has been transferred, cancellation no longer pretends a durable
+    /// transaction can be rolled back: a cancellation racing with handoff releases
+    /// the transferred permit before throwing; cancellation after this method
+    /// returns is past the admission boundary and the mutation completes normally.
+    private func acquireMutationPermit() async throws {
+        try Task.checkCancellation()
+
+        guard mutationInFlight else {
+            mutationInFlight = true
+            return
+        }
+
+        let waiterID = UUID()
+        let outcome = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: .cancelled)
+                    return
+                }
+                mutationWaiters.append(
+                    MutationWaiter(id: waiterID, continuation: continuation)
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelMutationWaiter(id: waiterID)
+            }
+        }
+
+        switch outcome {
+        case .cancelled:
+            throw CancellationError()
+        case .admitted:
+            do {
+                try Task.checkCancellation()
+            } catch {
+                // `releaseMutationPermit()` already transferred ownership to this
+                // waiter. Cancellation that raced with that handoff must return the
+                // permit before propagating or the FIFO would remain locked forever.
+                releaseMutationPermit()
+                throw error
+            }
+        }
+    }
+
+    private func cancelMutationWaiter(id: UUID) {
+        guard let index = mutationWaiters.firstIndex(where: { $0.id == id }) else {
+            // Release may already have admitted this waiter. The resumed task's
+            // post-handoff cancellation check owns the corresponding permit return.
+            return
+        }
+        let waiter = mutationWaiters.remove(at: index)
+        waiter.continuation.resume(returning: .cancelled)
+    }
+
+    private func releaseMutationPermit() {
+        guard !mutationWaiters.isEmpty else {
+            mutationInFlight = false
+            return
+        }
+
+        // Ownership transfers directly; `mutationInFlight` intentionally remains
+        // true so a later caller cannot overtake this FIFO waiter.
+        let next = mutationWaiters.removeFirst()
+        next.continuation.resume(returning: .admitted)
     }
 
     private func shouldPersistInProgress(
