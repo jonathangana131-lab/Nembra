@@ -1,14 +1,11 @@
 import CryptoKit
 import Foundation
 
-/// Shareable, self-contained Experiment One evidence produced from the package-owned finalized
-/// coordinator artifact.
+/// Self-contained Experiment One evidence for analysis/share.
 ///
-/// This envelope binds the exact immutable capture bytes to the complete four-window correlation
-/// observations, the stationary manifest, and the runtime-produced build identity. The hashes are
-/// integrity checks, not signatures or authorization. In particular, this type does not authorize a
-/// physical experiment and does not upgrade correlated Bluetooth identity into verified ES80 identity
-/// or protocol meaning.
+/// The envelope binds exact sealed capture bytes to the complete four-window correlation evidence,
+/// stationary manifest, and runtime-produced build identity. Its hashes detect corruption; they are
+/// not signatures, physical authorization, ES80 authentication, or protocol proof.
 public struct PassiveBluetoothExperimentOneExportEnvelope: Equatable, Sendable {
     public struct RuntimeBuildProvenance: Equatable, Sendable {
         public let buildIdentifier: String
@@ -16,16 +13,11 @@ public struct PassiveBluetoothExperimentOneExportEnvelope: Equatable, Sendable {
         public let sourceCommitSHA: String
         public let executableSHA256: String
 
-        fileprivate init(
-            buildIdentifier: String,
-            buildInstanceID: String,
-            sourceCommitSHA: String,
-            executableSHA256: String
-        ) {
-            self.buildIdentifier = buildIdentifier
-            self.buildInstanceID = buildInstanceID
-            self.sourceCommitSHA = sourceCommitSHA
-            self.executableSHA256 = executableSHA256
+        fileprivate init(_ wire: PassiveBluetoothExperimentOneExportEnvelopeJSON.RuntimeBuildWire) {
+            buildIdentifier = wire.buildIdentifier
+            buildInstanceID = wire.buildInstanceID
+            sourceCommitSHA = wire.sourceCommitSHA
+            executableSHA256 = wire.executableSHA256
         }
     }
 
@@ -34,14 +26,10 @@ public struct PassiveBluetoothExperimentOneExportEnvelope: Equatable, Sendable {
         public let stationaryManifestSHA256: String
         public let powerCycleEvidenceSHA256: String
 
-        fileprivate init(
-            captureSHA256: String,
-            stationaryManifestSHA256: String,
-            powerCycleEvidenceSHA256: String
-        ) {
-            self.captureSHA256 = captureSHA256
-            self.stationaryManifestSHA256 = stationaryManifestSHA256
-            self.powerCycleEvidenceSHA256 = powerCycleEvidenceSHA256
+        fileprivate init(_ wire: PassiveBluetoothExperimentOneExportEnvelopeJSON.HashesWire) {
+            captureSHA256 = wire.captureSHA256
+            stationaryManifestSHA256 = wire.stationaryManifestSHA256
+            powerCycleEvidenceSHA256 = wire.powerCycleEvidenceSHA256
         }
     }
 
@@ -56,25 +44,19 @@ public struct PassiveBluetoothExperimentOneExportEnvelope: Equatable, Sendable {
     public let integrityHashes: IntegrityHashes
 
     fileprivate init(
-        schemaVersion: Int,
-        experimentRecipeID: PassiveBluetoothExperimentRecipeID,
-        captureJSON: Data,
-        stationaryManifestJSON: Data,
-        stationaryManifest: PassiveBluetoothStationaryCaptureManifest,
-        powerCycleEvidenceJSON: Data,
-        powerCycleResult: PassiveBluetoothPowerCycleObservationResult,
-        runtimeBuildProvenance: RuntimeBuildProvenance,
-        integrityHashes: IntegrityHashes
+        wire: PassiveBluetoothExperimentOneExportEnvelopeJSON.WireV1,
+        manifest: PassiveBluetoothStationaryCaptureManifest,
+        powerCycleResult: PassiveBluetoothPowerCycleObservationResult
     ) {
-        self.schemaVersion = schemaVersion
-        self.experimentRecipeID = experimentRecipeID
-        self.captureJSON = captureJSON
-        self.stationaryManifestJSON = stationaryManifestJSON
-        self.stationaryManifest = stationaryManifest
-        self.powerCycleEvidenceJSON = powerCycleEvidenceJSON
+        schemaVersion = wire.schemaVersion
+        experimentRecipeID = wire.experimentRecipeID
+        captureJSON = wire.captureJSON
+        stationaryManifestJSON = wire.stationaryManifestJSON
+        stationaryManifest = manifest
+        powerCycleEvidenceJSON = wire.powerCycleEvidenceJSON
         self.powerCycleResult = powerCycleResult
-        self.runtimeBuildProvenance = runtimeBuildProvenance
-        self.integrityHashes = integrityHashes
+        runtimeBuildProvenance = .init(wire.runtimeBuildIdentity)
+        integrityHashes = .init(wire.hashes)
     }
 }
 
@@ -82,6 +64,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeError: Error, Equatable, 
     case unsupportedSchemaVersion(Int)
     case unexpectedField(String)
     case unsupportedExperimentRecipe(PassiveBluetoothExperimentRecipeID)
+    case invalidRuntimeBuildProvenance
     case invalidWindowCount(Int)
     case invalidSnapshotCount(Int)
     case invalidWindowPhaseOrder
@@ -99,14 +82,13 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeError: Error, Equatable, 
 
 /// Canonical JSON producer/verifier for the first physical-research share artifact.
 ///
-/// Production creation intentionally accepts a `FinalizedArtifact`, not independently supplied
-/// capture/correlation values. That preserves the coordinator's same-run authority fence. Runtime
-/// build identity likewise comes from the package-owned runtime reader rather than rider-entered
-/// strings.
+/// Production creation accepts the coordinator's `FinalizedArtifact`, never independently supplied
+/// capture/correlation inputs, preserving the same-run authority fence. Runtime build identity also
+/// comes from the package-owned runtime reader rather than rider-entered strings.
 public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
     public static let currentSchemaVersion = 1
 
-    private struct RuntimeBuildWire: Codable, Equatable {
+    fileprivate struct RuntimeBuildWire: Codable, Equatable {
         let buildIdentifier: String
         let buildInstanceID: String
         let sourceCommitSHA: String
@@ -118,32 +100,15 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
             sourceCommitSHA = identity.sourceCommitSHA
             executableSHA256 = identity.executableSHA256
         }
-
-        var publicValue: PassiveBluetoothExperimentOneExportEnvelope.RuntimeBuildProvenance {
-            .init(
-                buildIdentifier: buildIdentifier,
-                buildInstanceID: buildInstanceID,
-                sourceCommitSHA: sourceCommitSHA,
-                executableSHA256: executableSHA256
-            )
-        }
     }
 
-    private struct HashesWire: Codable, Equatable {
+    fileprivate struct HashesWire: Codable, Equatable {
         let captureSHA256: String
         let stationaryManifestSHA256: String
         let powerCycleEvidenceSHA256: String
-
-        var publicValue: PassiveBluetoothExperimentOneExportEnvelope.IntegrityHashes {
-            .init(
-                captureSHA256: captureSHA256,
-                stationaryManifestSHA256: stationaryManifestSHA256,
-                powerCycleEvidenceSHA256: powerCycleEvidenceSHA256
-            )
-        }
     }
 
-    private struct WireV1: Codable {
+    fileprivate struct WireV1: Codable {
         let schemaVersion: Int
         let experimentRecipeID: PassiveBluetoothExperimentRecipeID
         let captureJSON: Data
@@ -177,9 +142,6 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         let snapshots: [Snapshot]
     }
 
-    /// Produces the share artifact from one immutable coordinator finalization and the exact runtime
-    /// build that is executing the app. `setup` is explicit operator-declared provenance; it is not
-    /// continuous attestation of those conditions.
     public static func make(
         finalizedArtifact: PassiveBluetoothExperimentOneCoordinator.FinalizedArtifact,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
@@ -214,15 +176,11 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
                 powerCycleEvidenceSHA256: sha256Hex(powerCycleEvidenceJSON)
             )
         )
-
         return try encoder().encode(wire)
     }
 
-    /// Decodes and re-verifies all bindings from the bytes being shared.
-    ///
-    /// Correlation disposition is deliberately not serialized as detached authority. It is replayed
-    /// from the exact four observation snapshots, then required to remain uniquely correlated to the
-    /// same full peripheral identifier bound by the stationary manifest.
+    /// Replays every authoritative software binding from the bytes being shared.
+    /// Correlation disposition is intentionally not serialized as detached authority.
     public static func decodeAndVerify(
         _ data: Data
     ) throws -> PassiveBluetoothExperimentOneExportEnvelope {
@@ -230,32 +188,22 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         let wire = try decoder().decode(WireV1.self, from: data)
 
         guard wire.schemaVersion == currentSchemaVersion else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .unsupportedSchemaVersion(wire.schemaVersion)
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.unsupportedSchemaVersion(wire.schemaVersion)
         }
         guard wire.experimentRecipeID == .es80FingerprintV1 else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .unsupportedExperimentRecipe(wire.experimentRecipeID)
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.unsupportedExperimentRecipe(wire.experimentRecipeID)
         }
-
-        try verifyHash(
-            wire.hashes.captureSHA256,
-            actualData: wire.captureJSON,
-            field: "captureSHA256"
-        )
+        try validateRuntimeBuild(wire.runtimeBuildIdentity)
+        try verifyHash(wire.hashes.captureSHA256, data: wire.captureJSON, field: "captureSHA256")
         try verifyHash(
             wire.hashes.stationaryManifestSHA256,
-            actualData: wire.stationaryManifestJSON,
+            data: wire.stationaryManifestJSON,
             field: "stationaryManifestSHA256"
         )
         try verifyHash(
             wire.hashes.powerCycleEvidenceSHA256,
-            actualData: wire.powerCycleEvidenceJSON,
+            data: wire.powerCycleEvidenceJSON,
             field: "powerCycleEvidenceSHA256"
-        )
-        _ = try canonicalSHA256(
-            wire.runtimeBuildIdentity.executableSHA256,
-            field: "runtimeBuildIdentity.executableSHA256"
         )
 
         let powerCycleResult = try decodePowerCycleEvidence(wire.powerCycleEvidenceJSON)
@@ -278,21 +226,12 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.selectedPeripheralMismatch
         }
         guard manifest.sourceArtifact.sha256 == wire.hashes.captureSHA256 else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .integrityMismatch(field: "manifest.sourceArtifact.sha256")
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.integrityMismatch(
+                field: "manifest.sourceArtifact.sha256"
+            )
         }
 
-        return PassiveBluetoothExperimentOneExportEnvelope(
-            schemaVersion: wire.schemaVersion,
-            experimentRecipeID: wire.experimentRecipeID,
-            captureJSON: wire.captureJSON,
-            stationaryManifestJSON: wire.stationaryManifestJSON,
-            stationaryManifest: manifest,
-            powerCycleEvidenceJSON: wire.powerCycleEvidenceJSON,
-            powerCycleResult: powerCycleResult,
-            runtimeBuildProvenance: wire.runtimeBuildIdentity.publicValue,
-            integrityHashes: wire.hashes.publicValue
-        )
+        return .init(wire: wire, manifest: manifest, powerCycleResult: powerCycleResult)
     }
 
     private static func encodePowerCycleEvidence(
@@ -303,7 +242,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
             windows: result.windows.map { receipt in
                 .init(
                     phase: receipt.phase.rawValue,
-                    windowSequence: receipt.windowSequence,
+                    windowSequence: receipt.windowSequence.rawValue,
                     startedAtUptimeNanoseconds: receipt.startedAtUptimeNanoseconds,
                     endedAtUptimeNanoseconds: receipt.endedAtUptimeNanoseconds,
                     observedCandidateCount: receipt.observedCandidateCount
@@ -313,9 +252,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
                 .init(
                     observationSeriesIdentity: snapshot.observationSeriesIdentity.rawValue,
                     windowSequence: snapshot.windowSequence.rawValue,
-                    candidates: snapshot.candidates.map { candidate in
-                        .init(id: candidate.id, isConnectable: candidate.isConnectable)
-                    }
+                    candidates: snapshot.candidates.map { .init(id: $0.id, isConnectable: $0.isConnectable) }
                 )
             }
         )
@@ -328,27 +265,25 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         try validatePowerCycleEvidenceShape(data)
         let wire = try decoder().decode(PowerCycleEvidenceWire.self, from: data)
 
-        let windows: [PassiveBluetoothPowerCycleObservationWindowReceipt] = try wire.windows.map { value in
+        let windows = try wire.windows.map { value -> PassiveBluetoothPowerCycleObservationWindowReceipt in
             guard let phase = PassiveBluetoothPowerCycleObservationPhase(rawValue: value.phase) else {
                 throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidWindowPhaseOrder
             }
             return PassiveBluetoothPowerCycleObservationWindowReceipt(
                 phase: phase,
-                windowSequence: value.windowSequence,
+                windowSequence: PassiveBluetoothCandidateObservationWindowSequence(rawValue: value.windowSequence),
                 startedAtUptimeNanoseconds: value.startedAtUptimeNanoseconds,
                 endedAtUptimeNanoseconds: value.endedAtUptimeNanoseconds,
                 observedCandidateCount: value.observedCandidateCount
             )
         }
 
-        let snapshots: [PassiveBluetoothCandidateObservationSnapshot] = try wire.snapshots.map { value in
+        let snapshots = try wire.snapshots.map { value -> PassiveBluetoothCandidateObservationSnapshot in
             try PassiveBluetoothCandidateObservationSnapshot(
                 observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity(
                     rawValue: value.observationSeriesIdentity
                 ),
-                windowSequence: PassiveBluetoothCandidateObservationWindowSequence(
-                    rawValue: value.windowSequence
-                ),
+                windowSequence: PassiveBluetoothCandidateObservationWindowSequence(rawValue: value.windowSequence),
                 candidates: value.candidates.map {
                     PassiveBluetoothCandidateObservationSnapshot.Candidate(
                         id: $0.id,
@@ -359,8 +294,7 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         }
 
         guard snapshots.count == 4 else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .invalidSnapshotCount(snapshots.count)
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidSnapshotCount(snapshots.count)
         }
         let replayed = PassiveBluetoothPowerCycleTargetCorrelation.assess(
             firstOff: snapshots[0],
@@ -381,28 +315,24 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         _ result: PassiveBluetoothPowerCycleObservationResult
     ) throws -> UUID {
         guard result.windows.count == 4 else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .invalidWindowCount(result.windows.count)
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidWindowCount(result.windows.count)
         }
         guard result.observationSnapshots.count == 4 else {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError
-                .invalidSnapshotCount(result.observationSnapshots.count)
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidSnapshotCount(
+                result.observationSnapshots.count
+            )
         }
-
-        let expectedPhases: [PassiveBluetoothPowerCycleObservationPhase] = [
-            .firstPoweredOff,
-            .firstPoweredOn,
-            .secondPoweredOff,
-            .secondPoweredOn,
+        let expected: [PassiveBluetoothPowerCycleObservationPhase] = [
+            .firstPoweredOff, .firstPoweredOn, .secondPoweredOff, .secondPoweredOn,
         ]
-        guard Array(result.windows.map(\.phase)) == expectedPhases else {
+        guard result.windows.map(\.phase) == expected else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidWindowPhaseOrder
         }
 
         for index in 0..<4 {
             let receipt = result.windows[index]
             let snapshot = result.observationSnapshots[index]
-            guard receipt.windowSequence == snapshot.windowSequence.rawValue else {
+            guard receipt.windowSequence == snapshot.windowSequence else {
                 throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidWindowSequence
             }
             guard receipt.endedAtUptimeNanoseconds >= receipt.startedAtUptimeNanoseconds else {
@@ -429,92 +359,80 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
         return identifier
     }
 
+    private static func validateRuntimeBuild(_ value: RuntimeBuildWire) throws {
+        let trimmed = value.buildIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasControl = value.buildIdentifier.unicodeScalars.contains {
+            CharacterSet.controlCharacters.contains($0)
+        }
+        guard !value.buildIdentifier.isEmpty,
+              value.buildIdentifier.utf8.count <= 128,
+              value.buildIdentifier == trimmed,
+              !hasControl,
+              PassiveBluetoothCaptureRuntimeBuildIdentityReader.normalizedBuildInstanceID(value.buildInstanceID)
+                  == value.buildInstanceID,
+              PassiveBluetoothCaptureRuntimeBuildIdentityReader.normalizedFullGitCommitSHA(value.sourceCommitSHA)
+                  == value.sourceCommitSHA else {
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidRuntimeBuildProvenance
+        }
+        _ = try canonicalSHA256(value.executableSHA256, field: "runtimeBuildIdentity.executableSHA256")
+    }
+
     private static func validateEnvelopeShape(_ data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        try requireExactKeys(
-            root,
-            allowed: [
-                "schemaVersion", "experimentRecipeID", "captureJSON", "stationaryManifestJSON",
-                "powerCycleEvidenceJSON", "runtimeBuildIdentity", "hashes",
-            ]
-        )
+        try rejectUnknownKeys(root, allowed: [
+            "schemaVersion", "experimentRecipeID", "captureJSON", "stationaryManifestJSON",
+            "powerCycleEvidenceJSON", "runtimeBuildIdentity", "hashes",
+        ])
         if let runtime = root["runtimeBuildIdentity"] as? [String: Any] {
-            try requireExactKeys(
-                runtime,
-                allowed: ["buildIdentifier", "buildInstanceID", "sourceCommitSHA", "executableSHA256"]
-            )
+            try rejectUnknownKeys(runtime, allowed: [
+                "buildIdentifier", "buildInstanceID", "sourceCommitSHA", "executableSHA256",
+            ])
         }
         if let hashes = root["hashes"] as? [String: Any] {
-            try requireExactKeys(
-                hashes,
-                allowed: ["captureSHA256", "stationaryManifestSHA256", "powerCycleEvidenceSHA256"]
-            )
+            try rejectUnknownKeys(hashes, allowed: [
+                "captureSHA256", "stationaryManifestSHA256", "powerCycleEvidenceSHA256",
+            ])
         }
     }
 
     private static func validatePowerCycleEvidenceShape(_ data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        try requireExactKeys(root, allowed: ["windows", "snapshots"])
-
-        if let windows = root["windows"] as? [[String: Any]] {
-            for window in windows {
-                try requireExactKeys(
-                    window,
-                    allowed: [
-                        "phase", "windowSequence", "startedAtUptimeNanoseconds",
-                        "endedAtUptimeNanoseconds", "observedCandidateCount",
-                    ]
-                )
-            }
+        try rejectUnknownKeys(root, allowed: ["windows", "snapshots"])
+        for window in root["windows"] as? [[String: Any]] ?? [] {
+            try rejectUnknownKeys(window, allowed: [
+                "phase", "windowSequence", "startedAtUptimeNanoseconds",
+                "endedAtUptimeNanoseconds", "observedCandidateCount",
+            ])
         }
-        if let snapshots = root["snapshots"] as? [[String: Any]] {
-            for snapshot in snapshots {
-                try requireExactKeys(
-                    snapshot,
-                    allowed: ["observationSeriesIdentity", "windowSequence", "candidates"]
-                )
-                if let candidates = snapshot["candidates"] as? [[String: Any]] {
-                    for candidate in candidates {
-                        try requireExactKeys(candidate, allowed: ["id", "isConnectable"])
-                    }
-                }
+        for snapshot in root["snapshots"] as? [[String: Any]] ?? [] {
+            try rejectUnknownKeys(snapshot, allowed: [
+                "observationSeriesIdentity", "windowSequence", "candidates",
+            ])
+            for candidate in snapshot["candidates"] as? [[String: Any]] ?? [] {
+                try rejectUnknownKeys(candidate, allowed: ["id", "isConnectable"])
             }
         }
     }
 
-    private static func requireExactKeys(
+    private static func rejectUnknownKeys(
         _ object: [String: Any],
         allowed: Set<String>
     ) throws {
-        if let unexpected = Set(object.keys).subtracting(allowed).sorted().first {
-            throw PassiveBluetoothExperimentOneExportEnvelopeError.unexpectedField(unexpected)
+        if let key = Set(object.keys).subtracting(allowed).sorted().first {
+            throw PassiveBluetoothExperimentOneExportEnvelopeError.unexpectedField(key)
         }
     }
 
-    private static func verifyHash(
-        _ expected: String,
-        actualData: Data,
-        field: String
-    ) throws {
+    private static func verifyHash(_ expected: String, data: Data, field: String) throws {
         let canonical = try canonicalSHA256(expected, field: field)
-        guard canonical == sha256Hex(actualData) else {
+        guard canonical == sha256Hex(data) else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.integrityMismatch(field: field)
         }
     }
 
-    private static func canonicalSHA256(
-        _ value: String,
-        field: String
-    ) throws -> String {
-        guard value.count == 64,
-              value.unicodeScalars.allSatisfy({ scalar in
-                  switch scalar.value {
-                  case 48...57, 97...102:
-                      true
-                  default:
-                      false
-                  }
-              }) else {
+    private static func canonicalSHA256(_ value: String, field: String) throws -> String {
+        guard value.utf8.count == 64,
+              value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
             throw PassiveBluetoothExperimentOneExportEnvelopeError.invalidSHA256(field: field)
         }
         return value
@@ -525,15 +443,10 @@ public enum PassiveBluetoothExperimentOneExportEnvelopeJSON {
     }
 
     private static func encoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
+        let value = JSONEncoder()
+        value.outputFormatting = [.sortedKeys]
+        return value
     }
 
-    private static func decoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }
+    private static func decoder() -> JSONDecoder { JSONDecoder() }
 }
