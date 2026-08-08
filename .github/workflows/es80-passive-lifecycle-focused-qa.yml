@@ -1,0 +1,49 @@
+name: ES80 Passive Lifecycle Focused QA
+
+on:
+  push:
+    branches:
+      - 'cell/es80-passive-lifecycle/ci/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nembra-es80-passive-lifecycle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Test lifecycle-repaired passive package
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Verify immutable checkout and exact product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "f1771cab72d3219953892658c6b59d9bc1230130"
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+      - name: Guard passive adapter against application writes
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --include='*.swift' -E '\.writeValue[[:space:]]*\(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'Passive ES80 capture adapter must not call CoreBluetooth writeValue.' >&2
+            exit 1
+          fi
+      - name: Test NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+      - name: Build NembraBluetoothCapture for iOS Simulator
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme NembraBluetoothCapture -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
