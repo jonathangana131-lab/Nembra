@@ -106,7 +106,7 @@ extension RideObservedPeakHistoryBenchmark {
     /// interval/rate into a policy-passing one.
     private static func approximatelyEqual(_ lhs: Double, _ rhs: Double) -> Bool {
         guard lhs.isFinite, rhs.isFinite else { return false }
-        let scale = max(abs(lhs), abs(rhs), 1)
+        let scale = max(max(abs(lhs), abs(rhs)), 1)
         return abs(lhs - rhs) <= max(1e-9, scale * 1e-9)
     }
 
