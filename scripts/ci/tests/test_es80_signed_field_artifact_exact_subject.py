@@ -56,6 +56,7 @@ class SignedFieldArtifactExactSubjectTests(unittest.TestCase):
                 "NembraCaptureBuildIdentifier": inspector.expected_build_identifier(source_sha),
                 "NembraCaptureBuildInstanceID": "12345678-1234-4abc-8def-1234567890ab",
                 "NembraCaptureBuildCommitSHA": source_sha,
+                "NembraCaptureFieldRecipe": inspector.RECIPE_ID,
                 "CFBundleExecutable": "Nembra",
             }
             observed_identities = []
