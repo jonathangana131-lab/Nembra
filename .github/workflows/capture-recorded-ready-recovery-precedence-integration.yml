@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "366014eea9498afc0744170ffefdf734114044b5"
+          test "$(git rev-parse HEAD^)" = "733171c637fdd4a6c9d62615e867b8fd39d0900b"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-recorded-ready-recovery-precedence-integration.yml"
 
       - name: Apply exact recorded Ready precedence repair
@@ -44,7 +44,7 @@ jobs:
                         )
                         throw error
                     }
-'''
+          '''
           new = '''                    } catch {
                         let recordedReadyFailure = error
                         do {
@@ -60,7 +60,7 @@ jobs:
                         }
                         throw recordedReadyFailure
                     }
-'''
+          '''
           count = source.count(old)
           if count != 1:
               raise SystemExit(f"recorded Ready recovery: expected exactly one patch site, found {count}")
