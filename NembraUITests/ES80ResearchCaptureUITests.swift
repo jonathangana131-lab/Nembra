@@ -427,6 +427,60 @@ final class ES80ResearchCaptureUITests: XCTestCase {
     }
 
     @MainActor
+    func testV14SimulatorQAHorizonReadyProgressRecomposesAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        assertVisibleInScreenshotViewport(
+            qaDisclosure,
+            windowFrame: windowFrame,
+            context: "synthetic Simulator QA disclosure at positive-state Accessibility XXXL"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: windowFrame,
+            context: "paired positive Capture progress rail at Accessibility XXXL"
+        )
+
+        let progressAttachment = XCTAttachment(screenshot: app.screenshot())
+        progressAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Paired Progress — Accessibility XXXL"
+        progressAttachment.lifetime = .keepAlways
+        add(progressAttachment)
+
+        for _ in 0..<4 {
+            if finish.frame.intersects(windowFrame) { break }
+            app.swipeUp()
+        }
+        assertVisibleInScreenshotViewport(
+            finish,
+            windowFrame: windowFrame,
+            context: "Seal Capture action after inspecting paired progress at Accessibility XXXL"
+        )
+
+        let sealAttachment = XCTAttachment(screenshot: app.screenshot())
+        sealAttachment.name = "Nembra Capture V14 — SIMULATOR QA — Seal — Accessibility XXXL"
+        sealAttachment.lifetime = .keepAlways
+        add(sealAttachment)
+    }
+
+    @MainActor
     func testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible() {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -443,9 +497,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
 
         let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
         let readyState = app.staticTexts["Capture can be sealed"]
         let finish = app.descendants(matching: .any)["es80.capture.finish"]
         XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
         XCTAssertTrue(readyState.waitForExistence(timeout: 3))
         XCTAssertTrue(finish.waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
@@ -466,6 +522,11 @@ final class ES80ResearchCaptureUITests: XCTestCase {
             qaDisclosure,
             windowFrame: windowFrame,
             context: "synthetic Simulator QA disclosure in positive-state landscape"
+        )
+        assertVisibleInScreenshotViewport(
+            progress,
+            windowFrame: windowFrame,
+            context: "positive Capture progress rail in landscape"
         )
         assertVisibleInScreenshotViewport(
             readyState,
