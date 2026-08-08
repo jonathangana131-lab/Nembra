@@ -3,6 +3,18 @@ import NembraBluetoothCapture
 import NembraCore
 import SwiftUI
 
+private enum ES80CaptureBuildPreflight: Equatable {
+    case ready(PassiveBluetoothCaptureRuntimeBuildIdentity)
+    case blocked(String)
+
+    var permitsRuntimeCapture: Bool {
+        if case .ready = self {
+            return true
+        }
+        return false
+    }
+}
+
 @main
 @MainActor
 struct NembraApp: App {
@@ -12,6 +24,7 @@ struct NembraApp: App {
     }
 
     private let launchMode: LaunchMode
+    private let researchBuildPreflight: ES80CaptureBuildPreflight?
     @State private var runtime: AppRuntime?
     @State private var researchController: ForegroundCoreBluetoothCaptureController?
 
@@ -20,8 +33,14 @@ struct NembraApp: App {
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
 
+        let buildPreflight = launchMode == .es80PassiveCapture
+            ? Self.resolveES80CaptureBuildPreflight()
+            : nil
+        researchBuildPreflight = buildPreflight
+
         let fieldCaptureAuthorized = launchMode == .es80PassiveCapture
             && PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure
+            && buildPreflight?.permitsRuntimeCapture == true
         _researchController = State(
             initialValue: fieldCaptureAuthorized
                 ? Self.makeES80ResearchController()
@@ -50,24 +69,38 @@ struct NembraApp: App {
 
             case .es80PassiveCapture:
                 NavigationStack {
-                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let researchController {
-                            ES80CaptureShellView(controller: researchController)
-                        } else {
-                            ContentUnavailableView(
-                                "Capture unavailable",
-                                systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The passive Bluetooth research controller could not be created.")
-                            )
-                            .navigationTitle("Nembra Capture")
-                            .accessibilityIdentifier("es80.research-capture-unavailable")
-                        }
-                    } else {
-                        ES80ExperimentOneFieldNoGoView()
-                    }
+                    es80ResearchRoot
                 }
                 .preferredColorScheme(.dark)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var es80ResearchRoot: some View {
+        let buildPreflight = researchBuildPreflight
+            ?? .blocked("Capture build identity was not evaluated for this launch.")
+
+        if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
+            switch buildPreflight {
+            case .ready:
+                if let researchController {
+                    ES80CaptureShellView(controller: researchController)
+                } else {
+                    ContentUnavailableView(
+                        "Capture unavailable",
+                        systemImage: "antenna.radiowaves.left.and.right.slash",
+                        description: Text("The passive Bluetooth research controller could not be created.")
+                    )
+                    .navigationTitle("Nembra Capture")
+                    .accessibilityIdentifier("es80.research-capture-unavailable")
+                }
+
+            case let .blocked(message):
+                ES80CaptureBuildIdentityNoGoView(message: message)
+            }
+        } else {
+            ES80ExperimentOneFieldNoGoView(buildPreflight: buildPreflight)
         }
     }
 
@@ -84,6 +117,37 @@ struct NembraApp: App {
         return .standard
     }
 
+    private static func resolveES80CaptureBuildPreflight() -> ES80CaptureBuildPreflight {
+        do {
+            return .ready(try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication())
+        } catch let error as PassiveBluetoothCaptureRuntimeBuildIdentityError {
+            return .blocked(buildIdentityFailureMessage(for: error))
+        } catch {
+            return .blocked("Nembra could not establish the runtime build identity for this Capture build.")
+        }
+    }
+
+    private static func buildIdentityFailureMessage(
+        for error: PassiveBluetoothCaptureRuntimeBuildIdentityError
+    ) -> String {
+        switch error {
+        case .missingBuildIdentifier:
+            return "This build is missing the required Nembra Capture build identifier."
+        case .invalidBuildIdentifier:
+            return "The embedded Nembra Capture build identifier is malformed."
+        case .missingSourceCommitSHA:
+            return "This build is missing its exact source commit declaration."
+        case .invalidSourceCommitSHA:
+            return "The embedded source commit declaration is not a full 40-character Git SHA."
+        case .executableUnavailable:
+            return "Nembra cannot locate the executable bytes required for runtime provenance."
+        case .executableNotRegularFile:
+            return "The running executable is not a regular file, so Capture provenance cannot be established."
+        case .executableUnreadable:
+            return "Nembra cannot read the running executable bytes required for the Capture fingerprint."
+        }
+    }
+
     private static func makeES80ResearchController() -> ForegroundCoreBluetoothCaptureController? {
         // This is the declared software context required by the ES80 Experiment One authority.
         // It is metadata consistency only and must never be presented as physical authentication.
@@ -94,7 +158,62 @@ struct NembraApp: App {
 }
 
 @MainActor
+private struct ES80CaptureBuildIdentityNoGoView: View {
+    let message: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+
+                Text("Build identity required")
+                    .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Capture preflight blocked")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(18)
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                Text("No field controls are available. Rebuild through the accepted exact-head Capture build path so the build declaration and runtime executable fingerprint are produced automatically.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 660)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 42)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle("Nembra Capture")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("es80.capture.build-provenance-blocked")
+    }
+}
+
+@MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    let buildPreflight: ES80CaptureBuildPreflight
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
@@ -199,6 +318,8 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
+                buildProvenance
+
                 Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag or local preference cannot do it.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -214,5 +335,81 @@ private struct ES80ExperimentOneFieldNoGoView: View {
         .navigationTitle("Nembra Capture")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("es80.capture.field-no-go")
+    }
+
+    @ViewBuilder
+    private var buildProvenance: some View {
+        switch buildPreflight {
+        case let .ready(identity):
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("BUILD PROVENANCE")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Label("READY", systemImage: "checkmark.seal.fill")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.green)
+                }
+
+                Text(identity.buildIdentifier)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .accessibilityIdentifier("es80.capture.build-identifier")
+
+                provenanceRow(
+                    label: "DECLARED SOURCE",
+                    value: String(identity.sourceCommitSHA.prefix(12))
+                )
+                provenanceRow(
+                    label: "RUNTIME BYTES",
+                    value: "\(String(identity.executableSHA256.prefix(12)))…"
+                )
+
+                Text("The build label and source SHA are declarations injected by the build path. The runtime SHA-256 is byte evidence for the executable actually running. Final GO still requires the accepted trusted build record to bind those facts; this card does not claim cryptographic source attestation.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("es80.capture.build-provenance-ready")
+
+        case let .blocked(message):
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.lock.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Build provenance blocked")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(18)
+            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("es80.capture.build-provenance-blocked")
+        }
+    }
+
+    private func provenanceRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
     }
 }
