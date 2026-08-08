@@ -307,6 +307,30 @@ extension NembraAppTests {
         XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
     }
 
+    func testEveryFreshCaptureReturnsThroughStationaryPreflight() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let app = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraApp.swift"),
+            encoding: .utf8
+        )
+        let shell = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(app.contains("onRequestFreshExperiment: resetForFreshExperiment"))
+        XCTAssertTrue(app.contains("selectedChargerState = nil"))
+        XCTAssertTrue(app.contains("disconnectedDeclarationAccepted = false"))
+        XCTAssertTrue(app.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"))
+        XCTAssertTrue(shell.contains("private let onRequestFreshExperiment: () -> Void"))
+        XCTAssertTrue(shell.contains("onRequestFreshExperiment()"))
+        XCTAssertFalse(
+            shell.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"),
+            "A fresh run must be rebuilt by the parent preflight so charger state is declared again before OFF 1."
+        )
+    }
+
     func testCaptureShellContinuesSameAuthorityThroughFinalShareIntegrity() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()

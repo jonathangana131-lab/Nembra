@@ -96,14 +96,21 @@ struct NembraApp: App {
 /// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
-    let coordinator: PassiveBluetoothExperimentOneCoordinator
-
+    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator?
     @State private var selectedChargerState: PassiveBluetoothStationaryCaptureChargerState?
     @State private var disconnectedDeclarationAccepted = false
+    @State private var coordinatorCreationError: String?
+
+    init(coordinator: PassiveBluetoothExperimentOneCoordinator) {
+        _coordinator = State(initialValue: coordinator)
+    }
 
     var body: some View {
-        if disconnectedDeclarationAccepted {
-            ES80CaptureShellView(coordinator: coordinator)
+        if disconnectedDeclarationAccepted, let coordinator {
+            ES80CaptureShellView(
+                coordinator: coordinator,
+                onRequestFreshExperiment: resetForFreshExperiment
+            )
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -167,11 +174,31 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                         .accessibilityIdentifier("es80.capture.preflight.charger-blocked")
                     }
 
-                    Button {
-                        guard selectedChargerState?.rawValue
-                                == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue else {
-                            return
+                    if let coordinatorCreationError {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Fresh capture unavailable")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                Text(coordinatorCreationError)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        .padding(18)
+                        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("es80.capture.preflight.coordinator-unavailable")
+                    }
+
+                    Button {
+                        guard canContinue else { return }
                         disconnectedDeclarationAccepted = true
                     } label: {
                         Label("Continue to setup confirmation", systemImage: "checkmark.shield.fill")
@@ -210,6 +237,22 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
     private var canContinue: Bool {
         selectedChargerState?.rawValue
             == PassiveBluetoothStationaryCaptureChargerState.disconnected.rawValue
+            && coordinator != nil
+            && coordinatorCreationError == nil
+    }
+
+    private func resetForFreshExperiment() {
+        coordinator?.abandonExperiment()
+        selectedChargerState = nil
+        disconnectedDeclarationAccepted = false
+        coordinatorCreationError = nil
+
+        do {
+            coordinator = try PassiveBluetoothExperimentOneCoordinator()
+        } catch {
+            coordinator = nil
+            coordinatorCreationError = "Nembra could not create a fresh Experiment One workflow. Close Capture and try again before starting another run."
+        }
     }
 
     private func chargerStateButton(
