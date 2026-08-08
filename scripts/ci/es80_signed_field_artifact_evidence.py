@@ -102,6 +102,12 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return path
 
 
+def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
+    if member in seen_members:
+        raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
+    seen_members.add(member)
+
+
 def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
     try:
         archive = zipfile.ZipFile(ipa_path)
@@ -109,9 +115,12 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
+    seen_members: set[PurePosixPath] = set()
     with archive:
         for info in archive.infolist():
             member = _safe_member_path(info.filename.rstrip("/"))
+            _require_unique_member_path(member, seen_members)
+
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
                 raise EvidenceError(f"IPA contains unsupported symbolic-link member: {info.filename}")
@@ -384,6 +393,13 @@ def self_test() -> None:
     assert canonical_uuid("12345678-1234-4abc-8def-1234567890ab") == "12345678-1234-4abc-8def-1234567890ab"
     assert valid_build_identifier("Capture Build V14-aaaaaaaaaaaa")
     assert not valid_build_identifier(" Capture Build V14-aaaaaaaaaaaa")
+    assert not valid_build_identifier("Capture\nBuild")
+    try:
+        canonical_sha40("A" * 40)
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("uppercase SHA must fail canonicalization")
     for bad in ("../Payload/Nembra.app", "/Payload/Nembra.app", "Payload/../Nembra.app"):
         try:
             _safe_member_path(bad)
@@ -391,6 +407,16 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
+
+    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
+    seen_members: set[PurePosixPath] = set()
+    _require_unique_member_path(duplicate_member, seen_members)
+    try:
+        _require_unique_member_path(duplicate_member, seen_members)
+    except EvidenceError:
+        pass
+    else:
+        raise AssertionError("duplicate ZIP member path was accepted")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
