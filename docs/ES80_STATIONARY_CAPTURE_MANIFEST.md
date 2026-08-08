@@ -12,7 +12,7 @@ The passive capture artifact preserves raw Bluetooth evidence, receipt chronolog
 - exact selected CoreBluetooth peripheral identifier;
 - whether the scooter was intentionally stationary;
 - charger connected/disconnected state;
-- the declared foreground/screen-on execution condition required by the current research path;
+- the declared foreground/unlocked/screen-on execution condition required by the current research path;
 - how any visible stock-app reference values were obtained;
 - exact raw artifact bytes used for later analysis.
 
@@ -30,7 +30,7 @@ The builder requires:
 - a full 40- or 64-hex Git commit SHA (stored lowercase);
 - a valid CoreBluetooth UUID for the explicitly selected peripheral;
 - an explicit charger state (`connected` or `disconnected`);
-- an operator-declared execution context. Schema v1 intentionally has only `foregroundScreenOn`, matching the current foreground-only research procedure;
+- an operator-declared execution context. Schema v1 intentionally has only `foregroundUnlockedScreenOn`, matching the current foreground-only research procedure;
 - a structured stock-app reference setup:
   - none;
   - same device before capture;
@@ -38,7 +38,7 @@ The builder requires:
   - same device before and after capture;
   - separate observer device.
 
-`foregroundScreenOn` is operator-declared provenance, not an iOS attestation that the app stayed continuously active. If the phone locks/backgrounds during the real experiment, that physical attempt must be treated according to the runbook rather than assuming missing callbacks are protocol silence. A future background-capable case belongs here only after Nembra legitimately implements and validates that lifecycle.
+`foregroundUnlockedScreenOn` is operator-declared provenance, not an iOS attestation that the app stayed continuously active. If the phone locks/backgrounds or Nembra leaves the foreground during the real experiment, that physical attempt must be treated according to the runbook rather than assuming missing callbacks are protocol silence. A future background-capable case belongs here only after Nembra legitimately implements and validates that lifecycle.
 
 There is deliberately no “simultaneous same-phone stock-app observation” state. Nembra must not imply it sniffed or co-observed another app's private CoreBluetooth exchange.
 
@@ -57,6 +57,8 @@ The sidecar stores:
 SHA-256 is only artifact-integrity/provenance evidence. It does not authenticate the physical scooter, prove that a peripheral UUID is a permanent scooter identity, verify who recorded the capture, or prove any Tuya/telemetry meaning.
 
 `PassiveBluetoothStationaryCaptureManifestJSON.verify(manifestJSON:captureJSON:)` never accepts an imported sidecar by itself. It rebuilds the sidecar from the supplied raw capture and requires exact equality. Even semantically identical JSON with different bytes is a different source artifact and fails the old sidecar's verification. Tampering with derived summary fields also fails verification even if digest/session/setup fields are left unchanged.
+
+The schema-v1 execution context is required rather than defaulted. An imported sidecar missing `setup.executionContext` fails JSON decoding instead of silently assuming the physical procedure was followed.
 
 ## Stock-app provenance consistency
 
@@ -100,7 +102,7 @@ Once the parent passive-capture app/runtime is accepted on the exact product hea
 
 1. build/run the accepted Nembra ES80 research configuration on the iPhone 12;
 2. keep the scooter stationary and record charger state explicitly;
-3. keep the phone unlocked, screen on, and Nembra foreground for the finite capture window; record `foregroundScreenOn` as declared execution context;
+3. keep the phone unlocked, screen on, and Nembra foreground for the finite capture window; record `foregroundUnlockedScreenOn` as declared execution context;
 4. scan, physically correlate, and explicitly select the intended peripheral;
 5. acquire a healthy finite GATT/passive session;
 6. record a short stationary baseline and any legitimate stock-app reference markers supported by the actual setup;
@@ -115,7 +117,7 @@ No manual hex interpretation is required from the rider. The sidecar exists so N
 This lane does **not** verify or enable:
 
 - that a physical session actually remained stationary merely because its sidecar declares `stationaryBaseline`;
-- that iOS cryptographically proved continuous foreground/screen-on execution merely because the operator declared `foregroundScreenOn`;
+- that iOS cryptographically proved continuous foreground/unlocked/screen-on execution merely because the operator declared `foregroundUnlockedScreenOn`;
 - physical AOVOPRO ES80 identity;
 - stable per-scooter identity across relaunch/reboot/rebind;
 - Tuya framing, encryption, DP IDs/types/scales/signedness;
