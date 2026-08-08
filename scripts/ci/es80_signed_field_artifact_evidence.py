@@ -469,7 +469,7 @@ def validate_provisioning_profile(
             "provisioning profile application-identifier does not match the signed Nembra bundle"
         )
     entitlement_team = entitlements.get("com.apple.developer.team-identifier")
-    if entitlement_team is not None and entitlement_team != team_identifier:
+    if entitlement_team != team_identifier:
         raise EvidenceError("provisioning profile entitlement TeamIdentifier does not match code signing")
 
     if signed_entitlements.get("application-identifier") != expected_application_identifier:
@@ -981,10 +981,19 @@ def self_test() -> None:
         now=datetime(2098, 1, 1, tzinfo=timezone.utc),
     )
 
+    missing_entitlement_team_profile = {
+    **valid_profile,
+    "Entitlements": {
+        key: value
+        for key, value in valid_profile["Entitlements"].items()
+        if key != "com.apple.developer.team-identifier"
+    },
+}
     bad_profiles = (
         {**valid_profile, "TeamIdentifier": ["OTHER12345"]},
         {**valid_profile, "ExpirationDate": datetime(2097, 1, 1, tzinfo=timezone.utc)},
         {**valid_profile, "DeveloperCertificates": [b"different-certificate"]},
+        missing_entitlement_team_profile,
     )
     for malformed in bad_profiles:
         try:
