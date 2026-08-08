@@ -163,6 +163,27 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
         }
     }
 
+    /// Issued only by an exact unused Horizon admission when the controller abandons
+    /// that admission before any recorder mutation attempt begins. This is deliberately
+    /// distinct from mutation-point rejection: it proves only that the admission's
+    /// shared one-shot mutation permit was consumed without attempting the recorder.
+    struct HorizonPreAttemptAbandonmentReceipt: Equatable, Sendable {
+        let queueCutoff: UInt64
+        let authority: PassiveCoreBluetoothArtifactAuthorityContext
+        let transactionRevision: UInt64
+        let transactionIdentity: UUID
+
+        fileprivate init(
+            decision: PassiveCoreBluetoothObservationBoundaryDecision,
+            transaction: PassiveCoreBluetoothObservationBoundaryQueueGate.Transaction
+        ) {
+            queueCutoff = decision.queueCutoff
+            authority = decision.authority
+            transactionRevision = transaction.revision
+            transactionIdentity = transaction.identity
+        }
+    }
+
     /// Issued only when the exact one-shot Horizon admission loses canonical
     /// authority before the recorder mutation body executes. It proves zero durable H
     /// mutation for this exact producer transaction; it is not a recorded-H token.
@@ -208,6 +229,17 @@ struct PassiveCoreBluetoothObservationBoundaryTransactionDecision: Equatable, Se
                 && lhs.transaction == rhs.transaction
                 && lhs.authorityFence === rhs.authorityFence
                 && lhs.mutationPermit === rhs.mutationPermit
+        }
+
+        /// Abandons this exact H transaction before any recorder attempt. Claiming the
+        /// same reference-backed permit used by both recorder APIs makes abandonment
+        /// and recording mutually exclusive even across copied admissions or races.
+        func abandonBeforeRecorderAttempt() throws -> HorizonPreAttemptAbandonmentReceipt {
+            try mutationPermit.claim()
+            return HorizonPreAttemptAbandonmentReceipt(
+                decision: decision,
+                transaction: transaction
+            )
         }
 
         func recordBoundary(
