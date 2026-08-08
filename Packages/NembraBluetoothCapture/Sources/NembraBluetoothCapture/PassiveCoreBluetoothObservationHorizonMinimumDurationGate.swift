@@ -16,7 +16,8 @@ import Foundation
 /// Software observation-clock authority only. This does not prove BLE/RF traffic,
 /// scooter identity, physical state, protocol semantics, or hardware behavior.
 struct PassiveCoreBluetoothObservationHorizonMinimumDurationGate: Sendable {
-    static let experimentOneMinimumDurationNanoseconds: UInt64 = 60_000_000_000
+    static let experimentOneMinimumDurationNanoseconds: UInt64 =
+        PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds
 
     enum Status: Equatable, Sendable {
         case invalidMinimumDuration
