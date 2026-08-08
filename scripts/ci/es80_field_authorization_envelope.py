@@ -21,7 +21,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -34,6 +33,7 @@ MAX_SUBJECT_BYTES = 1024 * 1024
 MAX_PRIVATE_KEY_BYTES = 64 * 1024
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SELF_TEST_OPENSSL = Path("/usr/bin/openssl")
 P256_SPKI_PREFIX = bytes.fromhex(
     "3059301306072a8648ce3d020106082a8648ce3d030107034200"
 )
@@ -118,11 +118,40 @@ def read_exact_subject(path: Path, label: str) -> bytes:
     return data
 
 
-def require_openssl() -> str:
-    executable = shutil.which("openssl")
-    if executable is None:
-        raise AuthorizationEnvelopeError("OpenSSL is required for offline P-256 signing")
-    return executable
+def require_openssl(path: Path) -> str:
+    """Accept only an explicit, canonical, non-repository OpenSSL executable.
+
+    Production signing must never discover the process through ambient PATH because the selected
+    process receives access to the private signing-key descriptor. Release authority therefore
+    supplies the executable path explicitly. The built-in self-test may use the fixed system path
+    because it generates only an ephemeral test key.
+    """
+    requested = path.expanduser().absolute()
+    if requested.is_symlink():
+        raise AuthorizationEnvelopeError("OpenSSL executable must not be a symlink")
+    try:
+        resolved = requested.resolve(strict=True)
+        metadata = resolved.stat()
+    except OSError as exc:
+        raise AuthorizationEnvelopeError("explicit OpenSSL executable does not exist") from exc
+
+    if path_is_within(resolved, REPOSITORY_ROOT):
+        raise AuthorizationEnvelopeError(
+            f"OpenSSL executable must remain outside the Nembra repository: {resolved}"
+        )
+    if not stat.S_ISREG(metadata.st_mode):
+        raise AuthorizationEnvelopeError("OpenSSL executable must be one regular file")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must not be writable by group or other users"
+        )
+    if hasattr(os, "geteuid") and metadata.st_uid not in {0, os.geteuid()}:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be owned by root or the signing user"
+        )
+    if not os.access(resolved, os.X_OK):
+        raise AuthorizationEnvelopeError("OpenSSL executable is not executable")
+    return str(resolved)
 
 
 def run_openssl(
@@ -179,6 +208,10 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError(
                 "P-256 private key must not be accessible by group or other users"
             )
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError(
+                "P-256 private key must be owned by the signing user"
+            )
 
         fd_path = Path("/dev/fd") / str(descriptor)
         if not fd_path.exists():
@@ -199,6 +232,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             before.st_dev,
             before.st_ino,
             before.st_mode,
+            before.st_uid,
+            before.st_gid,
             before.st_size,
             before.st_mtime_ns,
             before.st_ctime_ns,
@@ -206,6 +241,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             after.st_dev,
             after.st_ino,
             after.st_mode,
+            after.st_uid,
+            after.st_gid,
             after.st_size,
             after.st_mtime_ns,
             after.st_ctime_ns,
@@ -218,6 +255,8 @@ def snapshot_private_key(openssl: str, private_key_path: Path, directory: Path) 
             raise AuthorizationEnvelopeError("OpenSSL did not produce one private signing-key snapshot")
         if snapshot_stat.st_mode & 0o077:
             raise AuthorizationEnvelopeError("private signing-key snapshot permissions are not private")
+        if hasattr(os, "geteuid") and snapshot_stat.st_uid != os.geteuid():
+            raise AuthorizationEnvelopeError("private signing-key snapshot ownership is not private")
         return snapshot_path
     finally:
         os.close(descriptor)
@@ -347,6 +386,7 @@ def create_envelope(
     field_evidence_path: Path,
     private_key_path: Path,
     output_path: Path,
+    openssl_path: Path,
 ) -> dict[str, str]:
     external_record = read_exact_subject(external_record_path, "external build record")
     field_evidence = read_exact_subject(field_evidence_path, "field-build evidence record")
@@ -356,7 +396,7 @@ def create_envelope(
         raise AuthorizationEnvelopeError("authorization output cannot replace the private key")
 
     payload = build_payload(external_record, field_evidence)
-    openssl = require_openssl()
+    openssl = require_openssl(openssl_path)
     signature, public_key_x963 = sign_payload(openssl, private_key, payload)
     envelope = build_envelope(external_record, field_evidence, payload, signature)
     published = write_envelope_no_replace(output, envelope)
@@ -373,8 +413,9 @@ def create_envelope(
     }
 
 
-def self_test() -> None:
-    openssl = require_openssl()
+def self_test(openssl_path: Path) -> None:
+    openssl = require_openssl(openssl_path)
+    openssl_path = Path(openssl)
     with tempfile.TemporaryDirectory(prefix="nembra-field-auth-self-test-") as temporary:
         directory = Path(temporary)
         private_key = directory / "candidate-authority-private-key.pem"
@@ -397,6 +438,7 @@ def self_test() -> None:
             field_evidence,
             private_key,
             envelope_path,
+            openssl_path,
         )
         envelope = json.loads(envelope_path.read_bytes())
         if set(envelope) != {
@@ -439,6 +481,7 @@ def self_test() -> None:
                 field_evidence,
                 private_key,
                 envelope_path,
+                openssl_path,
             )
         except AuthorizationEnvelopeError as error:
             if "refusing to overwrite" not in str(error):
@@ -458,6 +501,7 @@ def self_test() -> None:
                 field_evidence,
                 permissive_key,
                 directory / "permissive-key-envelope.json",
+                openssl_path,
             )
         except AuthorizationEnvelopeError as error:
             if "group or other" not in str(error):
@@ -507,6 +551,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--field-evidence", type=Path)
     parser.add_argument("--private-key-pem", type=Path)
     parser.add_argument("--output-envelope", type=Path)
+    parser.add_argument(
+        "--openssl",
+        type=Path,
+        help="Explicit trusted OpenSSL executable path; production signing never searches PATH.",
+    )
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
@@ -514,7 +563,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     arguments = parse_args(argv)
     if arguments.self_test:
-        self_test()
+        self_test(arguments.openssl or DEFAULT_SELF_TEST_OPENSSL)
         print("field authorization envelope self-test: PASS")
         return 0
 
@@ -525,6 +574,7 @@ def main(argv: list[str]) -> int:
             ("--field-evidence", arguments.field_evidence),
             ("--private-key-pem", arguments.private_key_pem),
             ("--output-envelope", arguments.output_envelope),
+            ("--openssl", arguments.openssl),
         )
         if value is None
     ]
@@ -538,6 +588,7 @@ def main(argv: list[str]) -> int:
         arguments.field_evidence,
         arguments.private_key_pem,
         arguments.output_envelope,
+        arguments.openssl,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
