@@ -187,6 +187,163 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     }
 
     @Test
+    func duplicateEnvelopeAuthorityFieldsFailClosedBeforeDecoding() throws {
+        let fixture = try makeFixture()
+        let envelopeObject = try jsonObject(fixture.envelope)
+
+        for field in [
+            "schemaVersion",
+            "externalBuildRecordBase64",
+            "fieldBuildEvidenceRecordBase64",
+            "authorizationPayloadBase64",
+            "signatureDERBase64",
+        ] {
+            let duplicated = try insertingDuplicateField(
+                field,
+                value: try #require(envelopeObject[field]),
+                into: fixture.envelope
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureFieldAuthorizationError
+                    .duplicateEnvelopeField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                    duplicated,
+                    publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                    runtimeBuildIdentity: fixture.runtimeIdentity
+                )
+            }
+        }
+    }
+
+    @Test
+    func signedDuplicateAuthorizationPayloadFieldsFailClosedBeforePromotion() throws {
+        let fixture = try makeFixture()
+        let payloadObject = try jsonObject(fixture.payload)
+
+        for field in [
+            "schemaVersion",
+            "decision",
+            "externalBuildRecordSHA256",
+            "fieldBuildEvidenceRecordSHA256",
+        ] {
+            let duplicatedPayload = try insertingDuplicateField(
+                field,
+                value: try #require(payloadObject[field]),
+                into: fixture.payload
+            )
+            let signedEnvelope = try makeEnvelope(
+                record: fixture.record,
+                fieldEvidence: fixture.fieldEvidence,
+                payload: duplicatedPayload,
+                signingKey: fixture.privateKey
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureFieldAuthorizationError
+                    .duplicateAuthorizationPayloadField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                    signedEnvelope,
+                    publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                    runtimeBuildIdentity: fixture.runtimeIdentity
+                )
+            }
+        }
+    }
+
+    @Test
+    func escapedDuplicateAuthorizationKeyFailsClosedBySemanticName() throws {
+        let fixture = try makeFixture()
+        let canonicalPayload = String(decoding: fixture.payload, as: UTF8.self)
+        let escapedDuplicatePayload = Data(
+            ("{\"decisio\\u006e\":\"GO\"," + canonicalPayload.dropFirst()).utf8
+        )
+        let signedEnvelope = try makeEnvelope(
+            record: fixture.record,
+            fieldEvidence: fixture.fieldEvidence,
+            payload: escapedDuplicatePayload,
+            signingKey: fixture.privateKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateAuthorizationPayloadField("decision")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                signedEnvelope,
+                publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                runtimeBuildIdentity: fixture.runtimeIdentity
+            )
+        }
+    }
+
+    @Test
+    func signedDuplicateExternalBuildRecordFieldFailsClosedEvenWithMatchingDigest() throws {
+        let signingKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let canonicalRecord = try json(baseRecordObject())
+        let duplicatedRecord = try insertingDuplicateField(
+            "infoPlistSHA256",
+            value: sha256Hex(infoPlistData),
+            into: canonicalRecord
+        )
+        let fieldEvidence = try json(
+            fieldEvidenceObject(externalRecordSHA256: sha256Hex(duplicatedRecord))
+        )
+        let payload = try makePayload(record: duplicatedRecord, fieldEvidence: fieldEvidence)
+        let envelope = try makeEnvelope(
+            record: duplicatedRecord,
+            fieldEvidence: fieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateExternalBuildRecordField("infoPlistSHA256")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                envelope,
+                publicKeyX963Representation: signingKey.publicKey.x963Representation,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        }
+    }
+
+    @Test
+    func signedDuplicateFieldEvidenceFieldFailsClosedEvenWithMatchingDigest() throws {
+        let signingKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = try makeRuntimeIdentity()
+        let record = try json(baseRecordObject())
+        let canonicalFieldEvidence = try json(
+            fieldEvidenceObject(externalRecordSHA256: sha256Hex(record))
+        )
+        let duplicatedFieldEvidence = try insertingDuplicateField(
+            "signedInstallableSHA256",
+            value: signedInstallableSHA256,
+            into: canonicalFieldEvidence
+        )
+        let payload = try makePayload(record: record, fieldEvidence: duplicatedFieldEvidence)
+        let envelope = try makeEnvelope(
+            record: record,
+            fieldEvidence: duplicatedFieldEvidence,
+            payload: payload,
+            signingKey: signingKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateFieldBuildEvidenceRecordField("signedInstallableSHA256")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                envelope,
+                publicKeyX963Representation: signingKey.publicKey.x963Representation,
+                runtimeBuildIdentity: runtimeIdentity
+            )
+        }
+    }
+
+    @Test
     func onlyCanonicalSignedGoDecisionIsAccepted() throws {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
@@ -396,6 +553,27 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
             "authorizationPayloadBase64": payload.base64EncodedString(),
             "signatureDERBase64": signature.derRepresentation.base64EncodedString(),
         ])
+    }
+
+    private func insertingDuplicateField(
+        _ field: String,
+        value: Any,
+        into objectData: Data
+    ) throws -> Data {
+        let canonicalObject = String(decoding: objectData, as: UTF8.self)
+        guard canonicalObject.first == "{" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+
+        let wrappedValue = try JSONSerialization.data(withJSONObject: [value])
+        let wrappedValueJSON = String(decoding: wrappedValue, as: UTF8.self)
+        guard wrappedValueJSON.first == "[", wrappedValueJSON.last == "]" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+        let valueJSON = wrappedValueJSON.dropFirst().dropLast()
+        return Data(
+            ("{\"\(field)\":\(valueJSON)," + canonicalObject.dropFirst()).utf8
+        )
     }
 
     private func json(_ object: [String: Any]) throws -> Data {
