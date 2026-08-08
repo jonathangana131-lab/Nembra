@@ -81,41 +81,153 @@ struct PassiveBluetoothExperimentOneSimulatorQAFixtureTests {
                  .firstPoweredOff,
                  .firstPoweredOn,
                  .secondPoweredOff:
-                assertSnapshot(snapshot, correlation: .incomplete, connection: .idle, admissionPrepared: false, targetRediscovered: false, observationReady: false, canFinalize: false, artifactState: .unavailable)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .incomplete,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
             case .secondPoweredOn:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .idle, admissionPrepared: false, targetRediscovered: false, observationReady: false, canFinalize: false, artifactState: .unavailable)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
             case .targetConfirmation:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .idle, admissionPrepared: true, targetRediscovered: false, observationReady: false, canFinalize: false, artifactState: .unavailable)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: true,
+                    targetRediscovered: false,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
             case .passiveDiscovery:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .connecting, admissionPrepared: true, targetRediscovered: true, observationReady: false, canFinalize: false, artifactState: .unavailable)
-            case .observationReady, .captureInProgress:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .connected, admissionPrepared: false, targetRediscovered: false, observationReady: true, canFinalize: false, artifactState: .unavailable)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connecting,
+                    admissionPrepared: true,
+                    targetRediscovered: true,
+                    observationReady: false,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .observationReady:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
+            case .captureInProgress:
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .unavailable
+                )
             case .observationHorizonReady:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .connected, admissionPrepared: false, targetRediscovered: false, observationReady: true, canFinalize: true, artifactState: .unavailable)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .connected,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: true,
+                    artifactState: .unavailable
+                )
             case .horizonSealed:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .idle, admissionPrepared: false, targetRediscovered: false, observationReady: true, canFinalize: false, artifactState: .sealed)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .sealed
+                )
             case .captureComplete:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .idle, admissionPrepared: false, targetRediscovered: false, observationReady: true, canFinalize: false, artifactState: .completeReadyForAnalysis)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .completeReadyForAnalysis
+                )
             case .shareRetry:
-                assertSnapshot(snapshot, correlation: .singleRepeatableCandidate, connection: .idle, admissionPrepared: false, targetRediscovered: false, observationReady: true, canFinalize: false, artifactState: .shareRetry)
+                assertSnapshot(
+                    snapshot,
+                    correlation: .singleRepeatableCandidate,
+                    connection: .idle,
+                    admissionPrepared: false,
+                    targetRediscovered: false,
+                    observationReady: true,
+                    canFinalize: false,
+                    artifactState: .shareRetry
+                )
             case .foregroundInterrupted:
                 Issue.record("foreground interruption must not enter the happy path")
             }
+
             _ = fixture.advance()
         }
 
         #expect(visited == Fixture.happyPathScenarios)
         #expect(fixture.snapshot.scenario == .shareRetry)
 
-        let interrupted = Fixture.make(scenario: .foregroundInterrupted).snapshot
-        assertSnapshot(interrupted, correlation: .invalidEvidence, connection: .unavailable, admissionPrepared: false, targetRediscovered: false, observationReady: false, canFinalize: false, artifactState: .invalidated)
-        #expect(fixture.reset().scenario == .stationaryPreflight)
+        let interruptedFixture = Fixture.make(scenario: .foregroundInterrupted)
+        let interrupted = interruptedFixture.snapshot
+        assertSnapshot(
+            interrupted,
+            correlation: .invalidEvidence,
+            connection: .unavailable,
+            admissionPrepared: false,
+            targetRediscovered: false,
+            observationReady: false,
+            canFinalize: false,
+            artifactState: .invalidated
+        )
+        #expect(interruptedFixture.advance() == interrupted)
+
+        let reset = fixture.reset()
+        #expect(reset.scenario == .stationaryPreflight)
+        #expect(reset.artifactState == .unavailable)
     }
     #endif
 
     private func fixtureSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try String(contentsOf: packageRoot.appendingPathComponent("Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift"), encoding: .utf8)
+        let packageRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
