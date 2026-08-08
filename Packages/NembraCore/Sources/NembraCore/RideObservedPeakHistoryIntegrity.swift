@@ -53,7 +53,7 @@ extension RideObservedPeakHistoryBenchmark {
             let expectedRateHertz = Double(intervalCount) / observedDurationSeconds
             guard Self.approximatelyEqual(mean, expectedMeanMilliseconds),
                   Self.approximatelyEqual(rate, expectedRateHertz),
-                  Self.standardDeviationIsPossible(
+                  Self.populationStandardDeviationIsPossible(
                     jitter,
                     minimum: minimum,
                     maximum: maximum
@@ -81,7 +81,7 @@ extension RideObservedPeakHistoryBenchmark {
                   let minimum = minimumDeliveryLatencyMilliseconds,
                   let maximum = maximumDeliveryLatencyMilliseconds,
                   let deviation = deliveryLatencyStandardDeviationMilliseconds,
-                  Self.standardDeviationIsPossible(
+                  Self.populationStandardDeviationIsPossible(
                     deviation,
                     minimum: minimum,
                     maximum: maximum
@@ -110,14 +110,20 @@ extension RideObservedPeakHistoryBenchmark {
         return abs(lhs - rhs) <= max(1e-9, scale * 1e-9)
     }
 
-    private static func standardDeviationIsPossible(
+    /// `TelemetryBenchmarkCollector` persists population standard deviation.
+    /// Popoviciu's inequality gives variance <= (max - min)^2 / 4 for every
+    /// bounded population, so any decoded population SD above half the retained
+    /// range is mathematically impossible regardless of the underlying samples.
+    private static func populationStandardDeviationIsPossible(
         _ deviation: Double,
         minimum: Double,
         maximum: Double
     ) -> Bool {
         let range = maximum - minimum
         guard range.isFinite, range >= 0 else { return false }
-        return deviation <= range + max(1e-9, max(abs(range), 1) * 1e-9)
+        let upperBound = range / 2
+        let tolerance = max(1e-9, max(abs(upperBound), 1) * 1e-9)
+        return deviation <= upperBound + tolerance
     }
 }
 
