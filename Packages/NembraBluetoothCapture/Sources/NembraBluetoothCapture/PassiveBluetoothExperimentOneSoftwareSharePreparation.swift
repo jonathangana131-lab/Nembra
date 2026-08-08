@@ -62,7 +62,7 @@ public enum PassiveBluetoothExperimentOneSoftwareSharePreparation {
             finalizedArtifact: finalizedArtifact,
             setup: setup
         )
-        return try prepareVerified(softwareExport, prettyPrinted: prettyPrinted)
+        return try prepareValidated(softwareExport, prettyPrinted: prettyPrinted)
     }
 
     /// Deterministic package-test seam. Production app/UI targets cannot inject raw correlation or
@@ -80,10 +80,10 @@ public enum PassiveBluetoothExperimentOneSoftwareSharePreparation {
             runtimeBuildIdentity: runtimeBuildIdentity,
             setup: setup
         )
-        return try prepareVerified(softwareExport, prettyPrinted: prettyPrinted)
+        return try prepareValidated(softwareExport, prettyPrinted: prettyPrinted)
     }
 
-    private static func prepareVerified(
+    private static func prepareValidated(
         _ softwareExport: PassiveBluetoothExperimentOneSoftwareExport,
         prettyPrinted: Bool
     ) throws -> PassiveBluetoothExperimentOnePreparedSoftwareShare {
@@ -91,19 +91,20 @@ public enum PassiveBluetoothExperimentOneSoftwareSharePreparation {
             softwareExport,
             prettyPrinted: prettyPrinted
         )
-        let verified = try PassiveBluetoothExperimentOneSoftwareExportCodec.decodeAndVerify(encoded)
-        guard verified == softwareExport else {
+        let validated = try PassiveBluetoothExperimentOneSoftwareExportCodec
+            .decodeAndValidateSelfConsistency(encoded)
+        guard validated == softwareExport else {
             throw PassiveBluetoothExperimentOneSoftwareSharePreparationError.roundTripVerificationMismatch
         }
 
         return .init(
             softwareExportJSON: encoded,
-            captureByteCount: verified.captureJSON.count,
-            experimentRecipeID: verified.experimentRecipeID,
-            buildIdentifier: verified.build.buildIdentifier,
-            buildInstanceID: verified.build.buildInstanceID,
-            sourceCommitSHA: verified.build.sourceCommitSHA,
-            executableSHA256: verified.build.executableSHA256
+            captureByteCount: validated.captureJSON.count,
+            experimentRecipeID: validated.experimentRecipeID,
+            buildIdentifier: validated.build.buildIdentifier,
+            buildInstanceID: validated.build.buildInstanceID,
+            sourceCommitSHA: validated.build.sourceCommitSHA,
+            executableSHA256: validated.build.executableSHA256
         )
     }
 }
