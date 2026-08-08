@@ -418,6 +418,11 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         guard !observationBoundaryQueueGate.isTerminal else {
             throw ControllerError.captureFinalized
         }
+        // Horizon admission freezes the artifact cutoff. A new transport attempt
+        // cannot revoke that closing authority while JSON sealing is in flight.
+        guard !observationBoundaryBlocksArtifactMutation else {
+            throw ControllerError.captureIncomplete
+        }
         guard centralManager.state == .poweredOn else {
             throw ControllerError.bluetoothNotPoweredOn
         }
@@ -770,6 +775,10 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
     }
 
     private func advanceArtifactAuthority() -> Bool {
+        // Defense in depth: once H owns the immutable cutoff, no transport path may
+        // replace the artifact authority. Callers still perform their own transport
+        // cleanup so this guard is not used as lifecycle control flow.
+        guard !observationBoundaryBlocksArtifactMutation else { return false }
         guard artifactAuthorityGeneration != UInt64.max else {
             failCapture(AcquisitionError.artifactAuthorityGenerationExhausted)
             return false
@@ -924,6 +933,21 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
                   peripheral.identifier == identifier,
                   self.connectionPhase == .connecting(identifier),
                   self.targetState.acceptsActiveCallback(from: identifier) else { return }
+
+            if self.observationBoundaryBlocksArtifactMutation {
+                // The timeout happened outside the admitted artifact horizon. Retire
+                // transport state only; do not append interruption evidence or revoke
+                // the authority currently sealing H.
+                self.connectionTimeoutTask = nil
+                self.selectedTargetCancellationPending = true
+                _ = self.targetState.retireActiveAttempt()
+                peripheral.delegate = nil
+                self.activePeripheral = nil
+                self.clearAcquisitionObjects()
+                self.connectionPhase = .idle
+                self.centralManager.cancelPeripheralConnection(peripheral)
+                return
+            }
 
             self.lastDiagnostic = "Connection attempt timed out and was cancelled."
             self.enqueueInterruption("connection attempt timed out")
@@ -1471,6 +1495,20 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
 
         connectionTimeoutTask?.cancel()
         connectionTimeoutTask = nil
+
+        if observationBoundaryBlocksArtifactMutation {
+            // A connect callback that arrives after H admission belongs to transport
+            // cleanup, not a new finite-acquisition epoch inside the sealed artifact.
+            selectedTargetCancellationPending = true
+            _ = targetState.retireActiveAttempt()
+            peripheral.delegate = nil
+            activePeripheral = nil
+            clearAcquisitionObjects()
+            connectionPhase = .idle
+            centralManager.cancelPeripheralConnection(peripheral)
+            return
+        }
+
         activePeripheral = peripheral
         peripheral.delegate = self
         connectionPhase = .connected(identifier)
@@ -1500,6 +1538,16 @@ extension ForegroundCoreBluetoothCaptureController: @preconcurrency CBCentralMan
         let identifier = peripheral.identifier
         let disposition = targetState.completeFailedConnection(from: identifier)
         guard disposition != .ignored else { return }
+
+        if observationBoundaryBlocksArtifactMutation {
+            // This terminal transport callback arrived outside H. Consume transport
+            // state only and preserve the authority of the closing artifact.
+            selectedTargetCancellationPending = false
+            if case .active = disposition {
+                clearActiveConnectionState(for: identifier)
+            }
+            return
+        }
 
         if targetState.selectedTargetIdentifier == identifier {
             selectedTargetCancellationPending = false
