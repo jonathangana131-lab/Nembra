@@ -94,7 +94,8 @@ struct PassiveCoreBluetoothPreHObservationRecoveryTests {
         // authority is composed into a successor recovery admission.
         #expect(gate.phase == .abortQuarantined(abort))
         #expect(gate.permittedDrainUpperBound(firstPending: 4, pendingTail: 4) == nil)
-        #expect(!gate.resetForNewCaptureSession())
+        let resetAfterRetirement = gate.resetForNewCaptureSession()
+        #expect(!resetAfterRetirement)
         #expect(throws: PassiveCoreBluetoothObservationBoundaryQueueGate.StateError.invalidTransition) {
             _ = try gate.begin(
                 .finiteAcquisitionReady,
