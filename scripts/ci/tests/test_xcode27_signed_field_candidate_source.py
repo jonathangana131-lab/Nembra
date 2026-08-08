@@ -23,17 +23,26 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('raw_info_plist', self.source)
         self.assertIn('field.get("infoPlistSHA256")', self.source)
 
-    def test_forwards_intended_device_only_to_current_canonical_inspector(self):
-        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID', self.source)
-        self.assertIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertIn('is not a valid bounded verification input', self.source)
+    def test_keeps_intended_device_out_of_environment_value_and_process_argv(self):
+        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE', self.source)
+        self.assertIn('NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE must be an absolute path', self.source)
+        self.assertIn('read_private_identifier(Path(sys.argv[1]))', self.source)
+        self.assertIn('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true', self.source)
+        self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
+        self.assertIn('--intended-device-udid-file "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"', self.source)
+        self.assertNotIn(': "${NEMBRA_INTENDED_FIELD_DEVICE_UDID:?', self.source)
+        self.assertNotIn('--intended-device-udid "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
+        self.assertNotIn('python3 - "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
         self.assertNotIn('intended_device_udid=', self.source)
         self.assertNotIn('field_device_udid=', self.source)
         self.assertNotIn('echo "$NEMBRA_INTENDED_FIELD_DEVICE_UDID"', self.source)
-        self.assertNotIn('${NEMBRA_INTENDED_FIELD_DEVICE_UDID}', self.source)
+        self.assertLess(
+            self.source.index('unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true'),
+            self.source.index('run_xcodebuild()'),
+        )
 
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
-        self.assertIn('es80_signed_field_artifact_evidence.py', self.source)
+        self.assertIn('es80_signed_field_artifact_private_runner.py', self.source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
         self.assertIn('--expected-source-sha "$SOURCE_SHA"', self.source)
         self.assertIn('--output-dir "$INSPECTION_DIR"', self.source)
@@ -65,6 +74,8 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('logs/xcodebuild-export.log', self.source)
         self.assertIn('inspection_directory=inspection', self.source)
         self.assertNotIn('--output-dir "$ARTIFACTS_DIR"', self.source)
+        self.assertNotIn('intended_device_udid_file=', self.source)
+        self.assertNotIn('field_device_udid_file=', self.source)
 
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
