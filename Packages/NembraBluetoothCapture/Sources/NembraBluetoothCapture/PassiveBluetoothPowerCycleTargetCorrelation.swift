@@ -245,7 +245,9 @@ public enum PassiveBluetoothPowerCycleTargetCorrelation {
     }
 
     private static func strictlyIncreasing(_ values: [UInt64]) -> Bool {
-        zip(values, values.dropFirst()).allSatisfy(<)
+        zip(values, values.dropFirst()).allSatisfy { pair in
+            pair.0 < pair.1
+        }
     }
 
     private static func sortedIdentifiers(_ identifiers: Set<UUID>) -> [UUID] {
