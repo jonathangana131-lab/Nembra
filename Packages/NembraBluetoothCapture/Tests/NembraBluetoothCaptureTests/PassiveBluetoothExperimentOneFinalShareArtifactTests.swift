@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import NembraCore
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -68,9 +69,8 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
     func exactInnerByteTamperBreaksOuterDigestBeforeEvidencePromotion() throws {
         let artifact = try makeArtifact()
         var root = try jsonObject(artifact.json)
-        var softwareExportJSON = try #require(
-            Data(base64Encoded: try #require(root["softwareExportJSONBase64"] as? String))
-        )
+        let softwareExportBase64 = try #require(root["softwareExportJSONBase64"] as? String)
+        var softwareExportJSON = try #require(Data(base64Encoded: softwareExportBase64))
         softwareExportJSON.append(0x20)
         root["softwareExportJSONBase64"] = softwareExportJSON.base64EncodedString()
         let tampered = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
@@ -87,9 +87,8 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
     func recomputingOuterDigestCannotBypassInnerClosedWorldAuthorityFence() throws {
         let artifact = try makeArtifact()
         var root = try jsonObject(artifact.json)
-        let originalInner = try #require(
-            Data(base64Encoded: try #require(root["softwareExportJSONBase64"] as? String))
-        )
+        let originalInnerBase64 = try #require(root["softwareExportJSONBase64"] as? String)
+        let originalInner = try #require(Data(base64Encoded: originalInnerBase64))
         var inner = try jsonObject(originalInner)
         inner["fieldAuthorized"] = true
         let forgedInner = try JSONSerialization.data(withJSONObject: inner, options: [.sortedKeys])
@@ -162,7 +161,8 @@ struct PassiveBluetoothExperimentOneFinalShareArtifactTests {
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
                     commit,
             ],
-            executableData: Data("final-share-test-executable".utf8)
+            executableData: Data("final-share-test-executable".utf8),
+            infoPlistData: Data("fixture Info.plist".utf8)
         )
     }
 
