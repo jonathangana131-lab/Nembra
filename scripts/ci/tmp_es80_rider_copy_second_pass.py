@@ -29,7 +29,7 @@ replacements = [
     ('eyebrow: "HORIZON READY"', 'eyebrow: "CAPTURE READY"', 1),
     ('title: "Freezing immutable evidence"', 'title: "Sealing Capture"', 1),
     ('"Start a fresh Experiment One"', '"Start fresh capture"', 1),
-    ('begin this bounded observation window.', 'begin this capture window.', 2),
+    ('begin this bounded observation window.', 'begin this capture window.', 1),
     ('Nembra is recording this bounded Bluetooth observation window.', 'Nembra is recording nearby Bluetooth signals for this window.', 1),
     ('healthItem("FINITE", value: observationReady ? "READY" : "WAIT")', 'healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")', 1),
     ('healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")', 'healthItem("TIME", value: horizonReady ? "READY" : "HOLD")', 1),
