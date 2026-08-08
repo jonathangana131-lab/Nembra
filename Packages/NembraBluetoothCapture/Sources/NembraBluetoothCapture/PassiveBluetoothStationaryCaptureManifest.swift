@@ -10,6 +10,7 @@ import NembraCore
 public enum PassiveBluetoothStationaryCaptureManifestError: Error, Equatable, Sendable {
     case invalidBuildCommitSHA(String)
     case invalidBuildIdentifier(String)
+    case invalidBuildInstanceID(String)
     case invalidPreparedAt
     case invalidSelectedPeripheralIdentifier(String)
     case invalidCapturedPeripheralIdentifier(String)
@@ -65,11 +66,12 @@ public struct PassiveBluetoothStationaryCaptureSetup: Equatable, Codable, Sendab
 
 /// A capture-consistent sidecar projection for one stationary physical-capture artifact.
 ///
-/// Schema v2 adds the stable experiment recipe ID and a human-readable field-build identifier while
-/// retaining the exact build commit SHA. v1 remains readable so previously collected evidence is not
-/// relabeled as if it had provenance that was never recorded.
+/// Schema v2 added the stable experiment recipe ID and human-readable field-build identifier while
+/// retaining the exact build commit SHA. Schema v3 additionally records the opaque per-produced-build
+/// rendezvous identifier emitted by the accepted build pipeline. v1/v2 remain readable so previously
+/// collected evidence is never relabeled with provenance that was not recorded at capture time.
 public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
 
     public struct SourceArtifact: Equatable, Sendable {
         public let sha256: String
@@ -112,11 +114,13 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
     public let schemaVersion: Int
     public let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
     public let experimentID: UUID
-    /// Stable recipe/version identity recorded by schema v2. `nil` only for verified legacy v1 data.
+    /// Stable recipe/version identity recorded by schema v2+. `nil` only for verified legacy v1 data.
     public let experimentRecipeID: PassiveBluetoothExperimentRecipeID?
     public let preparedAt: Date
-    /// Human-readable field build, e.g. `Capture Build V14-F1`. `nil` only for legacy v1 data.
+    /// Human-readable field build. `nil` only for verified legacy v1 data.
     public let nembraBuildIdentifier: String?
+    /// Opaque exact-produced-build rendezvous. Present only in schema v3+; never authorization alone.
+    public let nembraBuildInstanceID: String?
     /// Exact Git commit declared by the producing build.
     public let nembraBuildCommitSHA: String
     public let setup: PassiveBluetoothStationaryCaptureSetup
@@ -130,6 +134,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
         experimentRecipeID: PassiveBluetoothExperimentRecipeID?,
         preparedAt: Date,
         nembraBuildIdentifier: String?,
+        nembraBuildInstanceID: String?,
         nembraBuildCommitSHA: String,
         setup: PassiveBluetoothStationaryCaptureSetup,
         sourceArtifact: SourceArtifact,
@@ -141,6 +146,7 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
         self.experimentRecipeID = experimentRecipeID
         self.preparedAt = preparedAt
         self.nembraBuildIdentifier = nembraBuildIdentifier
+        self.nembraBuildInstanceID = nembraBuildInstanceID
         self.nembraBuildCommitSHA = nembraBuildCommitSHA
         self.setup = setup
         self.sourceArtifact = sourceArtifact
@@ -151,15 +157,16 @@ public struct PassiveBluetoothStationaryCaptureManifest: Equatable, Sendable {
 public enum PassiveBluetoothStationaryCaptureManifestBuilder {
     /// Creates the current closed-world sidecar for the sealed ES80 fingerprint recipe.
     ///
-    /// Callers provide the package-owned recipe object rather than minting a raw recipe ID. This
-    /// records intended procedure identity only; it does not prove that the operator completed the
-    /// recipe or that any physical state occurred.
+    /// The build-instance ID must come from the accepted runtime/build provenance producer. It is an
+    /// opaque rendezvous value that correlates this artifact with an independently accepted external
+    /// build record; it is not cryptographic authorization and must never be rider-entered.
     public static func make(
         captureJSON: Data,
         experimentID: UUID = UUID(),
         experimentRecipe: PassiveBluetoothExperimentRecipe,
         preparedAt: Date = Date(),
         nembraBuildIdentifier: String,
+        nembraBuildInstanceID: String,
         nembraBuildCommitSHA: String,
         selectedPeripheralIdentifier: String,
         setup: PassiveBluetoothStationaryCaptureSetup
@@ -175,6 +182,38 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             experimentRecipeID: experimentRecipe.id,
             preparedAt: preparedAt,
             nembraBuildIdentifier: nembraBuildIdentifier,
+            nembraBuildInstanceID: nembraBuildInstanceID,
+            nembraBuildCommitSHA: nembraBuildCommitSHA,
+            selectedPeripheralIdentifier: selectedPeripheralIdentifier,
+            setup: setup
+        )
+    }
+
+    /// Package-only legacy constructor retained so v2 regression fixtures can continue to prove old
+    /// artifacts without exposing a production API that can mint a new capture without build-instance
+    /// provenance. External app consumers can only see the schema-v3 producer above.
+    package static func make(
+        captureJSON: Data,
+        experimentID: UUID = UUID(),
+        experimentRecipe: PassiveBluetoothExperimentRecipe,
+        preparedAt: Date = Date(),
+        nembraBuildIdentifier: String,
+        nembraBuildCommitSHA: String,
+        selectedPeripheralIdentifier: String,
+        setup: PassiveBluetoothStationaryCaptureSetup
+    ) throws -> PassiveBluetoothStationaryCaptureManifest {
+        guard experimentRecipe.id == .es80FingerprintV1 else {
+            throw PassiveBluetoothStationaryCaptureManifestError
+                .unsupportedExperimentRecipe(experimentRecipe.id)
+        }
+        return try makeValidated(
+            schemaVersion: 2,
+            captureJSON: captureJSON,
+            experimentID: experimentID,
+            experimentRecipeID: experimentRecipe.id,
+            preparedAt: preparedAt,
+            nembraBuildIdentifier: nembraBuildIdentifier,
+            nembraBuildInstanceID: nil,
             nembraBuildCommitSHA: nembraBuildCommitSHA,
             selectedPeripheralIdentifier: selectedPeripheralIdentifier,
             setup: setup
@@ -188,18 +227,23 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         experimentRecipeID: PassiveBluetoothExperimentRecipeID?,
         preparedAt: Date,
         nembraBuildIdentifier: String?,
+        nembraBuildInstanceID: String?,
         nembraBuildCommitSHA: String,
         selectedPeripheralIdentifier: String,
         setup: PassiveBluetoothStationaryCaptureSetup
     ) throws -> PassiveBluetoothStationaryCaptureManifest {
         let buildCommit = try validatedBuildCommitSHA(nembraBuildCommitSHA)
         let buildIdentifier: String?
+        let buildInstanceID: String?
         switch schemaVersion {
         case 1:
-            guard experimentRecipeID == nil, nembraBuildIdentifier == nil else {
+            guard experimentRecipeID == nil,
+                  nembraBuildIdentifier == nil,
+                  nembraBuildInstanceID == nil else {
                 throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
             }
             buildIdentifier = nil
+            buildInstanceID = nil
         case 2:
             guard let experimentRecipeID else {
                 throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
@@ -208,10 +252,24 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
                 throw PassiveBluetoothStationaryCaptureManifestError
                     .unsupportedExperimentRecipe(experimentRecipeID)
             }
-            guard let nembraBuildIdentifier else {
+            guard let nembraBuildIdentifier, nembraBuildInstanceID == nil else {
                 throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
             }
             buildIdentifier = try validatedBuildIdentifier(nembraBuildIdentifier)
+            buildInstanceID = nil
+        case 3:
+            guard let experimentRecipeID else {
+                throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
+            }
+            guard experimentRecipeID == .es80FingerprintV1 else {
+                throw PassiveBluetoothStationaryCaptureManifestError
+                    .unsupportedExperimentRecipe(experimentRecipeID)
+            }
+            guard let nembraBuildIdentifier, let nembraBuildInstanceID else {
+                throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
+            }
+            buildIdentifier = try validatedBuildIdentifier(nembraBuildIdentifier)
+            buildInstanceID = try validatedBuildInstanceID(nembraBuildInstanceID)
         default:
             throw PassiveBluetoothStationaryCaptureManifestError.unsupportedSchemaVersion(schemaVersion)
         }
@@ -244,6 +302,7 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
             experimentRecipeID: experimentRecipeID,
             preparedAt: preparedAt,
             nembraBuildIdentifier: buildIdentifier,
+            nembraBuildInstanceID: buildInstanceID,
             nembraBuildCommitSHA: buildCommit,
             setup: setup,
             sourceArtifact: .init(
@@ -286,6 +345,28 @@ public enum PassiveBluetoothStationaryCaptureManifestBuilder {
         }
         guard !normalized.isEmpty, normalized.count <= 96, !hasControlCharacter else {
             throw PassiveBluetoothStationaryCaptureManifestError.invalidBuildIdentifier(value)
+        }
+        return normalized
+    }
+
+    fileprivate static func validatedBuildInstanceID(_ value: String) throws -> String {
+        let normalized = value.lowercased()
+        guard normalized.utf8.count == 36 else {
+            throw PassiveBluetoothStationaryCaptureManifestError.invalidBuildInstanceID(value)
+        }
+
+        let bytes = Array(normalized.utf8)
+        let hyphenOffsets: Set<Int> = [8, 13, 18, 23]
+        for (offset, byte) in bytes.enumerated() {
+            if hyphenOffsets.contains(offset) {
+                guard byte == 45 else {
+                    throw PassiveBluetoothStationaryCaptureManifestError.invalidBuildInstanceID(value)
+                }
+            } else {
+                guard (48...57).contains(byte) || (97...102).contains(byte) else {
+                    throw PassiveBluetoothStationaryCaptureManifestError.invalidBuildInstanceID(value)
+                }
+            }
         }
         return normalized
     }
@@ -434,6 +515,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
                 experimentRecipeID: nil,
                 preparedAt: preparedAt,
                 nembraBuildIdentifier: nil,
+                nembraBuildInstanceID: nil,
                 nembraBuildCommitSHA: nembraBuildCommitSHA,
                 setup: setup,
                 sourceArtifact: sourceArtifact.exactArtifact,
@@ -456,7 +538,8 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
 
         init(_ manifest: PassiveBluetoothStationaryCaptureManifest) throws {
             guard let experimentRecipeID = manifest.experimentRecipeID,
-                  let nembraBuildIdentifier = manifest.nembraBuildIdentifier else {
+                  let nembraBuildIdentifier = manifest.nembraBuildIdentifier,
+                  manifest.nembraBuildInstanceID == nil else {
                 throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
             }
             schemaVersion = manifest.schemaVersion
@@ -479,6 +562,56 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
                 experimentRecipeID: experimentRecipeID,
                 preparedAt: preparedAt,
                 nembraBuildIdentifier: nembraBuildIdentifier,
+                nembraBuildInstanceID: nil,
+                nembraBuildCommitSHA: nembraBuildCommitSHA,
+                setup: setup,
+                sourceArtifact: sourceArtifact.exactArtifact,
+                evidenceSummary: evidenceSummary.exactSummary
+            )
+        }
+    }
+
+    private struct WireV3: Codable {
+        let schemaVersion: Int
+        let experimentKind: PassiveBluetoothStationaryCaptureExperimentKind
+        let experimentID: UUID
+        let experimentRecipeID: PassiveBluetoothExperimentRecipeID
+        let preparedAt: Date
+        let nembraBuildIdentifier: String
+        let nembraBuildInstanceID: String
+        let nembraBuildCommitSHA: String
+        let setup: PassiveBluetoothStationaryCaptureSetup
+        let sourceArtifact: SourceArtifactWire
+        let evidenceSummary: EvidenceSummaryWire
+
+        init(_ manifest: PassiveBluetoothStationaryCaptureManifest) throws {
+            guard let experimentRecipeID = manifest.experimentRecipeID,
+                  let nembraBuildIdentifier = manifest.nembraBuildIdentifier,
+                  let nembraBuildInstanceID = manifest.nembraBuildInstanceID else {
+                throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
+            }
+            schemaVersion = manifest.schemaVersion
+            experimentKind = manifest.experimentKind
+            experimentID = manifest.experimentID
+            self.experimentRecipeID = experimentRecipeID
+            preparedAt = manifest.preparedAt
+            self.nembraBuildIdentifier = nembraBuildIdentifier
+            self.nembraBuildInstanceID = nembraBuildInstanceID
+            nembraBuildCommitSHA = manifest.nembraBuildCommitSHA
+            setup = manifest.setup
+            sourceArtifact = .init(manifest.sourceArtifact)
+            evidenceSummary = .init(manifest.evidenceSummary)
+        }
+
+        func exactManifest() -> PassiveBluetoothStationaryCaptureManifest {
+            PassiveBluetoothStationaryCaptureManifest(
+                schemaVersion: schemaVersion,
+                experimentKind: experimentKind,
+                experimentID: experimentID,
+                experimentRecipeID: experimentRecipeID,
+                preparedAt: preparedAt,
+                nembraBuildIdentifier: nembraBuildIdentifier,
+                nembraBuildInstanceID: nembraBuildInstanceID,
                 nembraBuildCommitSHA: nembraBuildCommitSHA,
                 setup: setup,
                 sourceArtifact: sourceArtifact.exactArtifact,
@@ -507,6 +640,10 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
         case 2:
             allowedTopLevel = commonTopLevelKeys.union([
                 "experimentRecipeID", "nembraBuildIdentifier",
+            ])
+        case 3:
+            allowedTopLevel = commonTopLevelKeys.union([
+                "experimentRecipeID", "nembraBuildIdentifier", "nembraBuildInstanceID",
             ])
         default:
             throw PassiveBluetoothStationaryCaptureManifestError.unsupportedSchemaVersion(schemaVersion)
@@ -564,6 +701,8 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
             return try encoder.encode(WireV1(manifest))
         case 2:
             return try encoder.encode(WireV2(manifest))
+        case 3:
+            return try encoder.encode(WireV3(manifest))
         default:
             throw PassiveBluetoothStationaryCaptureManifestError
                 .unsupportedSchemaVersion(manifest.schemaVersion)
@@ -571,7 +710,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
     }
 
     /// Verifies capture binding against the exact immutable capture bytes. Build/procedure fields are
-    /// schema-validated declarations; cryptographic attestation of the app binary is a separate layer.
+    /// schema-validated declarations; cryptographic authorization of the field build is a separate layer.
     public static func verifyCaptureBinding(
         manifestJSON: Data,
         captureJSON: Data
@@ -592,6 +731,7 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
                 experimentRecipeID: nil,
                 preparedAt: wire.preparedAt,
                 nembraBuildIdentifier: nil,
+                nembraBuildInstanceID: nil,
                 nembraBuildCommitSHA: wire.nembraBuildCommitSHA,
                 selectedPeripheralIdentifier: wire.sourceArtifact.selectedPeripheralIdentifier,
                 setup: wire.setup
@@ -609,6 +749,25 @@ public enum PassiveBluetoothStationaryCaptureManifestJSON {
                 experimentRecipeID: wire.experimentRecipeID,
                 preparedAt: wire.preparedAt,
                 nembraBuildIdentifier: wire.nembraBuildIdentifier,
+                nembraBuildInstanceID: nil,
+                nembraBuildCommitSHA: wire.nembraBuildCommitSHA,
+                selectedPeripheralIdentifier: wire.sourceArtifact.selectedPeripheralIdentifier,
+                setup: wire.setup
+            )
+            guard rebuilt == wire.exactManifest() else {
+                throw PassiveBluetoothStationaryCaptureManifestError.manifestDoesNotMatchCapture
+            }
+            return rebuilt
+        case 3:
+            let wire = try decoder.decode(WireV3.self, from: manifestJSON)
+            let rebuilt = try PassiveBluetoothStationaryCaptureManifestBuilder.makeValidated(
+                schemaVersion: 3,
+                captureJSON: captureJSON,
+                experimentID: wire.experimentID,
+                experimentRecipeID: wire.experimentRecipeID,
+                preparedAt: wire.preparedAt,
+                nembraBuildIdentifier: wire.nembraBuildIdentifier,
+                nembraBuildInstanceID: wire.nembraBuildInstanceID,
                 nembraBuildCommitSHA: wire.nembraBuildCommitSHA,
                 selectedPeripheralIdentifier: wire.sourceArtifact.selectedPeripheralIdentifier,
                 setup: wire.setup
