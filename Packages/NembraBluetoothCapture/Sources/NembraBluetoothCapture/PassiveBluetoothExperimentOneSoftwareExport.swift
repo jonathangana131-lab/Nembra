@@ -4,9 +4,9 @@ import Foundation
 ///
 /// This object binds immutable capture bytes, replayable four-window correlation evidence,
 /// the sealed recipe, stationary-manifest provenance, and the running build identity. It is
-/// deliberately software evidence only: neither successful construction nor verification is
-/// physical field authorization, and an independent accepted field-build / GO record remains
-/// required before a physical experiment may run.
+/// deliberately software evidence only: neither successful construction nor self-consistency
+/// validation is physical field authorization, and an independent accepted field-build / GO record
+/// remains required before a physical experiment may run.
 public struct PassiveBluetoothExperimentOneSoftwareExport: Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -68,6 +68,7 @@ public enum PassiveBluetoothExperimentOneSoftwareExportError: Error, Equatable, 
     case manifestRecipeMismatch
     case manifestBuildMismatch
     case manifestTargetMismatch
+    case runtimeBuildIdentityMismatch
     case malformedWireData
     case unexpectedWireField(String)
 }
@@ -162,7 +163,13 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
         return try encoder.encode(WireV1(export))
     }
 
-    public static func decodeAndVerify(_ data: Data) throws -> PassiveBluetoothExperimentOneSoftwareExport {
+    /// Validates the closed-world wire shape, immutable capture/manifest binding, recipe, target,
+    /// four-window producer authority, and internal build-field binding. This is deliberately named
+    /// self-consistency validation: every build value here is still supplied by the same artifact.
+    /// In particular, this method does not independently attest `executableSHA256`.
+    public static func decodeAndValidateSelfConsistency(
+        _ data: Data
+    ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
         try validateClosedWorldShape(data)
 
         let decoder = JSONDecoder()
@@ -230,6 +237,36 @@ public enum PassiveBluetoothExperimentOneSoftwareExportCodec {
             experimentRecipeID: recipe,
             correlationWindows: windows,
             build: build
+        )
+    }
+
+    /// Verifies a self-consistent export against an independently supplied runtime build identity.
+    /// Production callers cannot construct that identity directly; the package-owned runtime reader
+    /// measures the running executable. This comparison still does not replace the external accepted
+    /// field-build / GO record required for physical authorization.
+    public static func decodeAndVerify(
+        _ data: Data,
+        expectedRuntimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
+        let decoded = try decodeAndValidateSelfConsistency(data)
+        guard decoded.build.buildIdentifier == expectedRuntimeBuildIdentity.buildIdentifier,
+              decoded.build.buildInstanceID == expectedRuntimeBuildIdentity.buildInstanceID,
+              decoded.build.sourceCommitSHA == expectedRuntimeBuildIdentity.sourceCommitSHA,
+              decoded.build.executableSHA256 == expectedRuntimeBuildIdentity.executableSHA256 else {
+            throw PassiveBluetoothExperimentOneSoftwareExportError.runtimeBuildIdentityMismatch
+        }
+        return decoded
+    }
+
+    /// Convenience for validating an export claimed to have been produced by this exact running app.
+    /// Offline analysis of another produced build must use an independently accepted external build
+    /// record rather than pretending the analyzer's own executable identity is the producer's.
+    public static func decodeAndVerifyForCurrentApplication(
+        _ data: Data
+    ) throws -> PassiveBluetoothExperimentOneSoftwareExport {
+        try decodeAndVerify(
+            data,
+            expectedRuntimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
         )
     }
 
