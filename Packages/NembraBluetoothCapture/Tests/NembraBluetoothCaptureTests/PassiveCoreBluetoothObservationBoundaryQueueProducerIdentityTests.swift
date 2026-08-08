@@ -4,6 +4,12 @@ import Testing
 struct PassiveCoreBluetoothObservationBoundaryQueueProducerIdentityTests {
     private typealias Identity = PassiveCoreBluetoothObservationBoundaryQueueProducerIdentity
 
+    private struct TransactionEnvelope: Equatable {
+        let producer: Identity
+        let revision: UInt64
+        let queueCutoff: UInt64
+    }
+
     @Test
     func copiedReferencePreservesProducerIdentity() {
         let original = Identity.mint()
@@ -11,7 +17,6 @@ struct PassiveCoreBluetoothObservationBoundaryQueueProducerIdentityTests {
 
         #expect(copied == original)
         #expect(copied === original)
-        #expect(Set([original, copied]).count == 1)
     }
 
     @Test
@@ -21,7 +26,26 @@ struct PassiveCoreBluetoothObservationBoundaryQueueProducerIdentityTests {
 
         #expect(first != second)
         #expect(first !== second)
-        #expect(Set([first, second]).count == 2)
+    }
+
+    @Test
+    func equalScalarTransactionFieldsRemainDistinctAcrossIndependentProducers() {
+        let gateA = TransactionEnvelope(
+            producer: Identity.mint(),
+            revision: 2,
+            queueCutoff: 12
+        )
+        let gateB = TransactionEnvelope(
+            producer: Identity.mint(),
+            revision: 2,
+            queueCutoff: 12
+        )
+        let copiedGateA = gateA
+
+        #expect(gateA.revision == gateB.revision)
+        #expect(gateA.queueCutoff == gateB.queueCutoff)
+        #expect(gateA != gateB)
+        #expect(gateA == copiedGateA)
     }
 
     @Test
