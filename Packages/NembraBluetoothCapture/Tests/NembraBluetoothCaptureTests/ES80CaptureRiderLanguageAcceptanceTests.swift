@@ -142,9 +142,11 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         let helperSurface = source[phaseStart.lowerBound..<errorStart.lowerBound]
 
         let implementationPhrasesThatMustStayOutOfHelpers = [
+            "Experiment One",
+            "package-owned",
+            "CoreBluetooth",
             "evidence life",
             "consumed authority",
-            "package-owned CoreBluetooth controller",
             "package-issued observation authority",
             "package-owned Experiment One workflow",
             "fresh package-owned Experiment One workflow",
@@ -164,6 +166,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(helperSurface.contains("Bluetooth capture is unavailable"))
         #expect(helperSurface.contains("OFF / ON"))
         #expect(helperSurface.contains("Simulator QA interruption fixture"))
+        #expect(helperSurface.contains("missing the setup confirmation needed to prepare a Share file"))
     }
 
     @Test("engineering truth remains inside the Details view instead of leaking from later source")

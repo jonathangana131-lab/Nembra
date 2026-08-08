@@ -1159,7 +1159,7 @@ struct ES80CaptureShellView: View {
     private func prepareFinalShareForAnalysisAndSharing() {
         guard coordinator.finalizedArtifact != nil else { return }
         guard let setup = declaredStationarySetup else {
-            sharePreparationWarning = "Capture is sealed, but this run has no retained operator setup declaration. Start a fresh Experiment One rather than inventing setup provenance at export time."
+            sharePreparationWarning = "Capture is sealed, but this run is missing the setup confirmation needed to prepare a Share file. Start a fresh capture."
             return
         }
 
