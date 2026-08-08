@@ -1,0 +1,63 @@
+name: capture flagship terminal handoff compose
+on:
+  push:
+    branches:
+      - integration/es80-v14-flagship-admission-terminal-handoff/chatgpt56-go
+    paths:
+      - .github/workflows/capture-flagship-terminal-handoff-compose.yml
+permissions:
+  contents: write
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-flagship-admission-terminal-handoff/chatgpt56-go
+          fetch-depth: 0
+      - name: Verify exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "42ed7c8fc7ac4c3b78b858c9fb0fb5ba1ae2437c"
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD | sort)
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = ".github/workflows/capture-flagship-terminal-handoff-compose.yml"
+          test "${changed[1]}" = ".nembra/capture-flagship-terminal-handoff-compose.py"
+      - name: Apply exact terminal gate and controller handoff
+        run: python3 .nembra/capture-flagship-terminal-handoff-compose.py
+      - name: Verify product truth shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          gate=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          grep -q 'pendingTerminalQueueResolution = terminalResolution' "$controller"
+          grep -q 'guard !isSelectedTargetAwaitingTerminalCallback else' "$controller"
+          grep -q 'PassiveCoreBluetoothTerminalFreshTargetSession.create(' "$controller"
+          grep -q 'lastResolvedEventSequence == terminalResolution.resolvedThroughQueueSequence' "$controller"
+          grep -q 'reopenAfterTerminalFreshTargetSession(' "$controller"
+          grep -q 'installedRecorder: freshTargetSession.recorder' "$controller"
+          grep -q 'reopenAfterTerminalFreshTargetSession(' "$gate"
+          grep -q 'freshRecorderIdentityMismatch' "$gate"
+          grep -q 'requiredReadyTargetSessionGeneration' "$gate"
+          grep -q 'uncommittedReadyAbandonedBeforeRecorderMutation' "$gate"
+          grep -q 'PassiveBluetoothExperimentOneCaptureAdmission' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          if grep -R --line-number '\.writeValue(' Packages/NembraBluetoothCapture/Sources; then
+            echo 'application CoreBluetooth write path detected'
+            exit 1
+          fi
+      - name: Commit product only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-flagship-terminal-handoff-compose.yml
+          git rm .nembra/capture-flagship-terminal-handoff-compose.py
+          git config user.name 'nembra-gpt56'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerTerminalFreshSessionReopenContractTests.swift
+          git commit -m 'capture: consume exact terminal fresh-recorder handoff on flagship'
+          git push origin HEAD:integration/es80-v14-flagship-admission-terminal-handoff/chatgpt56-go
