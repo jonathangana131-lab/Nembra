@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import NembraBluetoothCapture
@@ -11,9 +12,8 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
 
     @Test
     func canonicalV3RecordParsesAndProjectsExactSoftwareExportBuildReference() throws {
-        let record = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(
-            try makeRecordJSON()
-        )
+        let data = try makeRecordJSON()
+        let record = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(data)
         let reference = try record.makeSoftwareExportBuildReference()
         let expectedReference = try PassiveBluetoothExperimentOneSoftwareExportBuildReference(
             buildIdentifier: buildIdentifier,
@@ -22,6 +22,7 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
             executableSHA256: executableSHA256
         )
 
+        #expect(record.exactRecordSHA256 == sha256Hex(data))
         #expect(record.schemaVersion == 3)
         #expect(record.buildIdentifier == buildIdentifier)
         #expect(record.buildInstanceID == buildInstanceID)
@@ -31,6 +32,23 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
         #expect(record.experimentRecipeID == .es80FingerprintV1)
         #expect(record.procedureVersion == "V14")
         #expect(reference == expectedReference)
+    }
+
+    @Test
+    func exactRecordDigestTracksAttestedBytesRatherThanDecodedSemantics() throws {
+        let object = baseRecordObject()
+        let compact = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let pretty = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+
+        let compactRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(compact)
+        let prettyRecord = try PassiveBluetoothCaptureExternalBuildRecordJSON.decodeDeclaration(pretty)
+
+        #expect(compactRecord.buildIdentifier == prettyRecord.buildIdentifier)
+        #expect(compactRecord.buildInstanceID == prettyRecord.buildInstanceID)
+        #expect(compactRecord.executableSHA256 == prettyRecord.executableSHA256)
+        #expect(compactRecord.exactRecordSHA256 == sha256Hex(compact))
+        #expect(prettyRecord.exactRecordSHA256 == sha256Hex(pretty))
+        #expect(compactRecord.exactRecordSHA256 != prettyRecord.exactRecordSHA256)
     }
 
     @Test
@@ -144,5 +162,11 @@ struct PassiveBluetoothCaptureExternalBuildRecordTests {
             "experimentRecipeID": "ES80-FINGERPRINT-v1",
             "procedureVersion": "V14",
         ]
+    }
+
+    private func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
