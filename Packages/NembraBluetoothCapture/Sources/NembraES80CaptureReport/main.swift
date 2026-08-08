@@ -19,6 +19,7 @@ struct NembraES80CaptureReportCommand {
         let inputURL: URL
         let outputURL: URL?
         let peripheralIdentifier: String?
+        let maximumArtifactBytes: Int
         let maximumMessageBytes: Int
         let maximumFragmentCount: Int
         let prettyPrinted: Bool
@@ -76,7 +77,10 @@ struct NembraES80CaptureReportCommand {
             )
         }
 
-        let artifactData = try Data(contentsOf: options.inputURL, options: [.mappedIfSafe])
+        let artifactData = try PassiveBluetoothCaptureArtifactInputPolicy.readExactBytes(
+            at: options.inputURL,
+            maximumBytes: options.maximumArtifactBytes
+        )
         let policy = try TuyaCandidateFragmentReassemblyPolicy(
             maximumEncryptedMessageBytes: options.maximumMessageBytes,
             maximumFragmentCount: options.maximumFragmentCount
@@ -84,7 +88,8 @@ struct NembraES80CaptureReportCommand {
         let artifactReport = try PassiveBluetoothTuyaCaptureArtifactReportBuilder.make(
             captureJSON: artifactData,
             peripheralIdentifier: options.peripheralIdentifier,
-            policy: policy
+            policy: policy,
+            maximumArtifactBytes: options.maximumArtifactBytes
         )
         let reportData = try artifactReport.jsonData(prettyPrinted: options.prettyPrinted)
 
@@ -117,6 +122,8 @@ struct NembraES80CaptureReportCommand {
         var inputPath: String?
         var outputPath: String?
         var peripheralIdentifier: String?
+        var maximumArtifactBytes = PassiveBluetoothCaptureArtifactInputPolicy
+            .defaultMaximumArtifactBytes
         var maximumMessageBytes = defaultMaximumMessageBytes
         var maximumFragmentCount = defaultMaximumFragmentCount
         var prettyPrinted = true
@@ -136,6 +143,10 @@ struct NembraES80CaptureReportCommand {
                     throw CommandError.emptyPeripheralIdentifier
                 }
                 peripheralIdentifier = trimmed
+
+            case "--max-artifact-bytes":
+                let value = try nextValue(arguments, index: &index, option: argument)
+                maximumArtifactBytes = try positiveInteger(value, option: argument)
 
             case "--max-message-bytes":
                 let value = try nextValue(arguments, index: &index, option: argument)
@@ -171,6 +182,7 @@ struct NembraES80CaptureReportCommand {
             inputURL: URL(fileURLWithPath: inputPath),
             outputURL: outputPath.map { URL(fileURLWithPath: $0) },
             peripheralIdentifier: peripheralIdentifier,
+            maximumArtifactBytes: maximumArtifactBytes,
             maximumMessageBytes: maximumMessageBytes,
             maximumFragmentCount: maximumFragmentCount,
             prettyPrinted: prettyPrinted,
@@ -221,6 +233,8 @@ struct NembraES80CaptureReportCommand {
                                  runs also print candidate outcome counts to stderr.
       --force-output             Replace an existing derived report. Requires --output
                                  and never permits replacing the raw capture input path.
+      --max-artifact-bytes <n>   Offline source-file/decode ceiling (default: 67108864).
+                                 This is process safety, not an ES80 capture/protocol limit.
       --max-message-bytes <n>    Offline analysis ceiling (default: 65536).
       --max-fragments <n>        Offline analysis ceiling (default: 256).
       --compact                  Emit compact sorted-key JSON.
@@ -231,6 +245,12 @@ struct NembraES80CaptureReportCommand {
       lowercase SHA-256 digest so analysis can be traced back to the precise JSON
       bytes that were decoded. The digest identifies the artifact; it does not
       authenticate the scooter, recorder, or person who produced the capture.
+
+    Resource safety:
+      Source bytes are read under --max-artifact-bytes before JSON decode. The
+      message/fragment ceilings apply later to framing-candidate analysis. All of
+      these are operator-tool resource limits, never claims about physical ES80
+      packet, session, message, or capture maxima.
 
     Outcome counts:
       completed/rejected/incomplete values describe bounded framing-candidate
