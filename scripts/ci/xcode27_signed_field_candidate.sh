@@ -98,6 +98,7 @@ PY
 )"
 ARTIFACTS_PARENT="$(dirname "$ARTIFACTS_DIR")"
 FINAL_STAGING_DIR="$ARTIFACTS_PARENT/.nembra-field-candidate-$BUILD_INSTANCE_ID.staging"
+FINAL_STAGING_DIR_OWNED=0
 
 # Candidate output is immutable and failure-atomic. The public destination does not exist until the
 # final exclusive rename after archive, export, inspector verification, and complete staging.
@@ -128,8 +129,8 @@ cleanup() {
   cd "$ROOT" >/dev/null 2>&1 || true
   git worktree remove --force "$SOURCE_ROOT" >/dev/null 2>&1 || true
   rm -rf "$WORK_ROOT"
-  if [[ -n "${FINAL_STAGING_DIR:-}" && -e "$FINAL_STAGING_DIR" ]]; then
-    rm -rf "$FINAL_STAGING_DIR"
+  if [[ "${FINAL_STAGING_DIR_OWNED:-0}" == "1" && -n "${FINAL_STAGING_DIR:-}" ]]; then
+    rm -rf -- "$FINAL_STAGING_DIR"
   fi
 }
 trap cleanup EXIT
@@ -441,6 +442,9 @@ PY
 # Assemble the complete candidate on the destination filesystem while the public final path remains
 # absent. This preserves the current inspection/ layout without exposing partial evidence on failure.
 mkdir "$FINAL_STAGING_DIR"
+# Only a successful non-recursive claim transfers cleanup ownership to this producer. If mkdir
+# fails because another process claimed the path, the EXIT trap must leave that foreign tree alone.
+FINAL_STAGING_DIR_OWNED=1
 cp -p "$EXPORT_OPTIONS_SNAPSHOT" "$FINAL_STAGING_DIR/ExportOptions.plist"
 mkdir "$FINAL_STAGING_DIR/logs"
 cp -p "$LOG_DIR/xcodebuild-archive.log" "$FINAL_STAGING_DIR/logs/xcodebuild-archive.log"
@@ -518,6 +522,7 @@ if rename_exclusive(source, destination, 0x00000004) != 0:  # RENAME_EXCL
 PY
 
 # Ownership moved atomically to ARTIFACTS_DIR; cleanup must never target the published candidate.
+FINAL_STAGING_DIR_OWNED=0
 FINAL_STAGING_DIR=""
 
 echo "Signed Nembra iOS field-build CANDIDATE retained at: $ARTIFACTS_DIR"

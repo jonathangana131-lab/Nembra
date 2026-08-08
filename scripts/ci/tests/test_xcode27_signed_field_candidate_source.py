@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
@@ -78,6 +80,70 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('private_runner_source_git_blob=', self.source)
         self.assertIn('canonical_inspector_source_git_blob=', self.source)
 
+    def test_bound_descriptor_execution_path_is_real_not_source_only(self):
+        intended = "00008101-001234567890001E"
+        with tempfile.TemporaryDirectory(prefix="nembra-bound-runner-test-") as temporary:
+            root = Path(temporary)
+            private_file = root / "device-id"
+            private_file.write_text(intended, encoding="utf-8")
+            private_file.chmod(0o600)
+
+            runner_fd = os.open(PRIVATE_RUNNER, os.O_RDONLY)
+            try:
+                preflight = subprocess.run(
+                    [
+                        sys.executable,
+                        f"/dev/fd/{runner_fd}",
+                        "--validate-intended-device-udid-file",
+                        str(private_file),
+                    ],
+                    pass_fds=(runner_fd,),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            finally:
+                os.close(runner_fd)
+            self.assertEqual(preflight.returncode, 0, preflight.stderr)
+            self.assertIn("private intended-device verification input: PASS", preflight.stdout)
+            self.assertNotIn(intended, preflight.stdout + preflight.stderr)
+
+            fake_inspector = root / "exact-inspector.py"
+            fake_inspector.write_text(
+                "class EvidenceError(RuntimeError):\n    pass\n\ndef main(argv):\n"
+                f"    assert {intended!r} in argv\n    return 0\n",
+                encoding="utf-8",
+            )
+            fake_inspector.chmod(0o400)
+            runner_fd = os.open(PRIVATE_RUNNER, os.O_RDONLY)
+            inspector_fd = os.open(fake_inspector, os.O_RDONLY)
+            try:
+                inspection = subprocess.run(
+                    [
+                        sys.executable,
+                        f"/dev/fd/{runner_fd}",
+                        "--ipa",
+                        str(root / "candidate.ipa"),
+                        "--output-dir",
+                        str(root / "inspection"),
+                        "--expected-source-sha",
+                        "a" * 40,
+                        "--intended-device-udid-file",
+                        str(private_file),
+                        "--canonical-inspector-fd",
+                        str(inspector_fd),
+                    ],
+                    pass_fds=(runner_fd, inspector_fd),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            finally:
+                os.close(inspector_fd)
+                os.close(runner_fd)
+            self.assertEqual(inspection.returncode, 0, inspection.stderr)
+            self.assertNotIn(intended, inspection.stdout + inspection.stderr)
+
     def test_reuses_live_canonical_signed_field_evidence_contract(self):
         self.assertIn('es80_signed_field_artifact_evidence.py', self.runner_source)
         self.assertIn('--ipa "$IPA_PATH"', self.source)
@@ -125,6 +191,19 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             self.source.index('mkdir "$FINAL_STAGING_DIR"'),
             self.source.index('rename_exclusive(source, destination'),
         )
+
+    def test_cleanup_removes_only_a_staging_directory_this_run_claimed(self):
+        self.assertIn('FINAL_STAGING_DIR_OWNED=0', self.source)
+        self.assertIn('"${FINAL_STAGING_DIR_OWNED:-0}" == "1"', self.source)
+        self.assertIn('FINAL_STAGING_DIR_OWNED=1', self.source)
+        self.assertGreater(
+            self.source.index('FINAL_STAGING_DIR_OWNED=1'),
+            self.source.index('mkdir "$FINAL_STAGING_DIR"'),
+        )
+        publication = self.source.index('rename_exclusive(source, destination')
+        release = self.source.rindex('FINAL_STAGING_DIR_OWNED=0')
+        self.assertGreater(release, publication)
+        self.assertIn('rm -rf -- "$FINAL_STAGING_DIR"', self.source)
 
     def test_retains_exact_external_export_policy_and_refuses_output_reuse(self):
         self.assertIn('ARTIFACTS_DIR already exists; refusing to mix or overwrite', self.source)
