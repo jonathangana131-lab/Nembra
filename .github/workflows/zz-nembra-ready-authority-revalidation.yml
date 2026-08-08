@@ -1,0 +1,70 @@
+name: Nembra Ready authority revalidation transform
+
+"on":
+  push:
+    branches:
+      - integration/es80-v14-ready-authority-revalidation/chat-gpt56-go3
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify exact controller source
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          test "$(git hash-object "$file")" = "c931c11655f52ffe7cd98286943153e7952405c1"
+
+      - name: Revalidate exact Ready authority after drain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
+          source = path.read_text()
+          needle = (
+              "                        try self.requireForegroundEvidenceIntegrity()\n"
+              "                        try self.ensureCaptureHealthy()\n"
+              "                    } catch {\n"
+          )
+          replacement = (
+              "                        try self.requireForegroundEvidenceIntegrity()\n"
+              "                        try self.ensureCaptureHealthy()\n"
+              "                        try self.validateBoundaryAuthority(admission.authority)\n"
+              "                    } catch {\n"
+          )
+          count = source.count(needle)
+          if count != 1:
+              raise SystemExit(f"expected exactly one current Ready pre-attempt block, found {count}")
+          path.write_text(source.replace(needle, replacement, 1))
+          PY
+
+      - name: Assert authority ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -Fq 'try self.validateBoundaryAuthority(admission.authority)' "$file"
+          git diff --check
+
+      - name: Remove one-shot workflow and commit product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/zz-nembra-ready-authority-revalidation.yml
+          git config user.name 'nembra-chatgpt56-go3'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+                  .github/workflows/zz-nembra-ready-authority-revalidation.yml
+          git diff --cached --check
+          git commit -m 'fix: revalidate exact Ready authority before recorder attempt'
+          git push origin HEAD:integration/es80-v14-ready-authority-revalidation/chat-gpt56-go3
