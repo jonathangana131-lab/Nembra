@@ -28,6 +28,17 @@ class PrivateInputError(RuntimeError):
     pass
 
 
+def _stable_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
 def read_private_identifier(path: Path) -> str:
     """Read one opaque identifier through one no-follow descriptor without repairing the bytes."""
     if not hasattr(os, "O_NOFOLLOW"):
@@ -50,10 +61,16 @@ def read_private_identifier(path: Path) -> str:
             raise PrivateInputError("intended-device verification input has an invalid bounded size")
         if metadata.st_mode & 0o077:
             raise PrivateInputError("intended-device verification file must not be accessible by group/other")
+        if hasattr(os, "geteuid") and metadata.st_uid != os.geteuid():
+            raise PrivateInputError("intended-device verification file must be owned by the current user")
 
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             raw = handle.read(MAX_IDENTIFIER_BYTES + 1)
-        if len(raw) != metadata.st_size:
+        final_metadata = os.fstat(descriptor)
+        if (
+            len(raw) != metadata.st_size
+            or _stable_file_identity(final_metadata) != _stable_file_identity(metadata)
+        ):
             raise PrivateInputError("intended-device verification file changed while being read")
     finally:
         os.close(descriptor)
