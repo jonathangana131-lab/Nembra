@@ -19,8 +19,8 @@ struct PassiveBluetoothExperimentOneAuthorityContinuityTests {
     private let target = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
     private let neighbor = UUID(uuidString: "90000000-0000-0000-0000-000000000009")!
 
-    @Test("one immutable capture cannot inherit whole-experiment coherence from two distinct power-cycle authorities")
-    func detachedPowerCycleAuthoritiesCannotBothBindTheSameCapture() throws {
+    @Test("detached power-cycle authorities cannot inherit whole-experiment coherence from one capture")
+    func detachedPowerCycleAuthoritiesCannotBindTheSameCapture() throws {
         let firstPowerCycle = try powerCycleResult()
         let secondPowerCycle = try powerCycleResult()
 
@@ -42,14 +42,13 @@ struct PassiveBluetoothExperimentOneAuthorityContinuityTests {
             captureSession: capture
         )
 
-        // A single immutable capture cannot truthfully be the continuation of two distinct
-        // package-issued OFF1 -> ON1 -> OFF2 -> ON2 producer lives. If both assessments are
-        // accepted solely because their repeated CoreBluetooth UUID equals the capture's GATT UUID,
-        // the composition has converted target correlation into a missing experiment-provenance join.
-        // This regression intentionally does not prescribe which producer-owned authority shape
-        // closes that join; it only requires whole-experiment coherence to fail closed when the
-        // same capture is detached and paired with multiple distinct series authorities.
-        #expect(!(firstAssessment.isCaptureEvidenceCoherent && secondAssessment.isCaptureEvidenceCoherent))
+        // This capture carries no producer-issued relationship to either package-issued OFF1 ->
+        // ON1 -> OFF2 -> ON2 series. UUID equality cannot choose one detached producer life and
+        // invent experiment provenance, so both combinations must fail closed. Once Nembra has a
+        // sealed finalized-capture authority that is positively bound to one series, this fixture
+        // should evolve to prove A + C can be coherent while independently issued B + C is rejected.
+        #expect(!firstAssessment.isCaptureEvidenceCoherent)
+        #expect(!secondAssessment.isCaptureEvidenceCoherent)
     }
 
     @Test("a structurally valid caller-built capture is not experiment-one PASS authority")
