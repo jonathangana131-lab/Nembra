@@ -51,7 +51,8 @@ struct ES80CaptureRecoveryLanguageAcceptanceTests {
             "package-issued observation authority",
             "package-owned Experiment One workflow",
             "exact correlated target",
-            "consumed authority"
+            "consumed authority",
+            "lastDiagnostic"
         ]
 
         for phrase in banned {
@@ -96,5 +97,20 @@ struct ES80CaptureRecoveryLanguageAcceptanceTests {
         #expect(source.contains("SIMULATOR / QA"))
         #expect(source.contains("SYNTHETIC SOFTWARE STATE"))
         #expect(source.contains("No Bluetooth transport or capture evidence is created by this presentation fixture."))
+    }
+
+    @Test("fresh-run recovery does not dump raw construction errors into rider copy")
+    func freshRunConstructionFailureIsContained() throws {
+        let source = try Self.shellSource()
+        let restart = try Self.section(
+            source,
+            beginning: "private func restartExperiment()",
+            ending: "private func handleScenePhaseChange("
+        )
+
+        #expect(restart.contains("Nembra could not start a fresh Capture."))
+        #expect(restart.contains("Close and reopen Nembra, then try again."))
+        #expect(!restart.contains("String(describing: error)"))
+        #expect(!restart.contains("package-owned Experiment One workflow"))
     }
 }
