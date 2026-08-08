@@ -37,8 +37,8 @@ replacements = [
     ('healthItem("FINITE", value: observationReady ? "READY" : "WAIT")', 'healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")'),
     ('healthItem("HORIZON", value: horizonReady ? "READY" : "HOLD")', 'healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")'),
     (
-        '"Capture health. Target \\(connection == .connected ? \"bound\" : \"waiting\"). Finite acquisition \\(observationReady ? \"ready\" : \"waiting\"). Horizon \\(horizonReady ? \"ready\" : \"waiting\")."',
-        '"Capture health. Target \\(connection == .connected ? \"bound\" : \"waiting\"). Read-only discovery \\(observationReady ? \"ready\" : \"waiting\"). Seal \\(horizonReady ? \"ready\" : \"waiting\")."',
+        r'Finite acquisition \(observationReady ? "ready" : "waiting"). Horizon \(horizonReady ? "ready" : "waiting").',
+        r'Read-only discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting").',
     ),
 ]
 
