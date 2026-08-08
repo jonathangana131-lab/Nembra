@@ -31,9 +31,11 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
 
     /// One process-lifetime admission for the app that is actually running.
     ///
-    /// Check the cheap recipe marker before hashing the executable/Info.plist so ordinary app and
-    /// package-test launches stay inert and do not perform unnecessary build-identity I/O.
+    /// The live authority lane is mechanically absent from Debug, Simulator, and non-iOS builds even
+    /// if matching metadata is injected. The canonical producer archives Release for physical iOS;
+    /// only that build class may pay the runtime hashing cost and attempt exact-build admission.
     package static let currentResearchBuildAdmission: ResearchBuildAdmission? = {
+#if os(iOS) && !targetEnvironment(simulator) && !DEBUG
         let infoDictionary = Bundle.main.infoDictionary ?? [:]
         guard let fieldRecipe = infoDictionary[researchFieldRecipeInfoDictionaryKey] as? String,
               fieldRecipe == recipeID.rawValue,
@@ -46,6 +48,9 @@ public enum PassiveBluetoothExperimentOneFieldExecutionGate {
             infoDictionary: infoDictionary,
             runtimeBuildIdentity: runtimeBuildIdentity
         )
+#else
+        return nil
+#endif
     }()
 
     public static let status: Status = {
