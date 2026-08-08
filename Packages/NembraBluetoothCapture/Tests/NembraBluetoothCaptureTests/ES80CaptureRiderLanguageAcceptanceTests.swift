@@ -35,7 +35,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
     }
 
     private static func riderSurface(in source: String) throws -> Substring {
-        let beginning = try #require(source.range(of: "private var passiveSafetyPanel"))
+        let beginning = try #require(source.range(of: "private func hero"))
         let details = try #require(
             source.range(
                 of: "private var captureDetailsSheet",
@@ -87,7 +87,13 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "HORIZON READY",
             "FIELD AUTHORITY",
             "healthItem(\"FINITE\"",
-            "healthItem(\"HORIZON\""
+            "healthItem(\"HORIZON\"",
+            "Text(\"EXPERIMENT ONE\")",
+            "this Experiment One run",
+            "Restart Experiment One",
+            "Start a fresh Experiment One",
+            "Freezing final evidence",
+            "another Experiment One run"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -97,9 +103,8 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             )
         }
 
-        // The persistent read-only badge sits above `passiveSafetyPanel`, so validate it against
-        // the full shell rather than accidentally requiring it to be duplicated in every state.
-        #expect(source.contains("PASSIVE / READ ONLY"))
+        #expect(riderSurface.contains("PASSIVE / READ ONLY"))
+        #expect(riderSurface.contains("CAPTURE PROGRESS"))
         #expect(riderSurface.contains("Scooter OFF"))
         #expect(riderSurface.contains("Scooter ON"))
         #expect(riderSurface.contains("Share Capture"))
@@ -204,6 +209,29 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(helperSurface.contains("Simulator QA interruption fixture"))
     }
 
+    @Test("sealed-capture recovery stays rider-readable without weakening seal truth")
+    func sealedShareRecoveryStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+        let beginning = try #require(source.range(of: "private func prepareFinalShareForAnalysisAndSharing()"))
+        let restart = try #require(
+            source.range(
+                of: "private func restartExperiment()",
+                range: beginning.lowerBound..<source.endIndex
+            )
+        )
+        let shareRecovery = source[beginning.lowerBound..<restart.lowerBound]
+
+        #expect(!shareRecovery.contains("retained operator setup declaration"))
+        #expect(!shareRecovery.contains("Start a fresh Experiment One"))
+        #expect(!shareRecovery.contains("inventing setup provenance"))
+        #expect(shareRecovery.contains("Capture is sealed, but its setup confirmation is missing."))
+        #expect(shareRecovery.contains("Start a fresh capture instead of exporting incomplete setup information."))
+
+        #expect(shareRecovery.contains("guard coordinator.finalizedArtifact != nil else { return }"))
+        #expect(shareRecovery.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
+        #expect(shareRecovery.contains("finalShareIntegrityReport = report"))
+    }
+
     @Test("engineering truth remains inside the Details view instead of leaking from later source")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
@@ -211,6 +239,7 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
 
         #expect(details.contains("Truth boundary"))
         #expect(details.contains("CoreBluetooth"))
+        #expect(details.contains("full peripheral identity"))
         #expect(details.contains("Software Export SHA-256"))
         #expect(details.contains("Runtime executable SHA-256"))
         #expect(details.contains("does not authenticate the physical ES80"))
