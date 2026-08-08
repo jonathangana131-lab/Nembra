@@ -109,6 +109,7 @@ public struct PassiveBluetoothCaptureSignedFieldArtifactEvidence: Equatable, Sen
 
 public enum PassiveBluetoothCaptureSignedFieldArtifactEvidenceError: Error, Equatable, Sendable {
     case malformedJSON
+    case duplicateField(String)
     case unexpectedField(String)
     case unsupportedSchemaVersion(Int)
     case invalidAuthority
@@ -263,6 +264,10 @@ public enum PassiveBluetoothCaptureSignedFieldArtifactEvidenceJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureSignedFieldArtifactEvidenceError.duplicateField(duplicateKey)
+        }
+
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
@@ -282,6 +287,67 @@ public enum PassiveBluetoothCaptureSignedFieldArtifactEvidenceJSON {
         for key in root.keys.sorted() where !allowed.contains(key) {
             throw PassiveBluetoothCaptureSignedFieldArtifactEvidenceError.unexpectedField(key)
         }
+    }
+
+    /// JSONSerialization and JSONDecoder both collapse duplicate object members into keyed storage.
+    /// Scan the exact UTF-8 evidence bytes first so parser precedence can never choose between two
+    /// conflicting declarations. Escaped and unescaped spellings of one semantic key are duplicates.
+    private static func duplicateTopLevelObjectKey(in data: Data) -> String? {
+        let bytes = Array(data)
+        var objectDepth = 0
+        var seenKeys = Set<String>()
+        var index = 0
+
+        while index < bytes.count {
+            switch bytes[index] {
+            case 0x7B: // {
+                objectDepth += 1
+            case 0x7D: // }
+                objectDepth -= 1
+            case 0x22: // "
+                let stringStart = index
+                index += 1
+                var isEscaped = false
+
+                while index < bytes.count {
+                    let byte = bytes[index]
+                    if isEscaped {
+                        isEscaped = false
+                    } else if byte == 0x5C { // \\
+                        isEscaped = true
+                    } else if byte == 0x22 {
+                        break
+                    }
+                    index += 1
+                }
+
+                guard index < bytes.count else { return nil }
+                let stringEnd = index
+
+                if objectDepth == 1 {
+                    var lookahead = index + 1
+                    while lookahead < bytes.count, isJSONWhitespace(bytes[lookahead]) {
+                        lookahead += 1
+                    }
+                    if lookahead < bytes.count, bytes[lookahead] == 0x3A { // :
+                        let encodedKey = Data(bytes[stringStart...stringEnd])
+                        if let key = try? JSONDecoder().decode(String.self, from: encodedKey),
+                           !seenKeys.insert(key).inserted {
+                            return key
+                        }
+                    }
+                }
+            default:
+                break
+            }
+            index += 1
+        }
+
+        return nil
+    }
+
+    private static func isJSONWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
     }
 
     private static func validSupportedPlatforms(_ values: [String]) -> Bool {
