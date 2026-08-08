@@ -800,7 +800,7 @@ struct ES80CaptureShellView: View {
 
     private func synchronizeIdleTimer(for phase: Phase) {
         switch phase {
-        case .connecting, .preparingEvidence, .capturing:
+        case .connecting, .preparingEvidence, .capturing, .finishing:
             UIApplication.shared.isIdleTimerDisabled = true
         default:
             UIApplication.shared.isIdleTimerDisabled = false
