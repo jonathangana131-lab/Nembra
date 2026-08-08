@@ -5,7 +5,8 @@
 /// Horizon artifact is frozen. Reopening that lifecycle is unsafe until every
 /// callback accepted after H under the *same* artifact authority has been removed
 /// from the pending recorder FIFO. A newer authority or another target session is
-/// not collateral damage and must remain queued for its own lifecycle.
+/// not collateral damage and must remain queued for its own lifecycle, but merely
+/// preserving it is not proof that its captured recorder is safe to drain.
 ///
 /// This helper performs validation and mutation synchronously on MainActor so a
 /// CoreBluetooth callback cannot interleave between the queue snapshot and the
@@ -27,6 +28,11 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
     /// global FIFO tail supplied at retirement time. A future terminal -> fresh
     /// transition must require both bindings and reject the receipt if the current
     /// `lastEnqueuedEventSequence` has advanced in the meantime.
+    ///
+    /// A receipt with retained pending evidence is deliberately *not* standalone
+    /// reopen authority. Before normal draining can resume, the controller must
+    /// synchronously prove that every retained event is routed/quarantined/adopted
+    /// by a valid nonterminal recorder lifecycle. Otherwise it must remain closed.
     struct Receipt: Equatable, Sendable {
         let terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext
         let terminalTransactionRevision: UInt64
@@ -36,6 +42,10 @@ struct PassiveCoreBluetoothTerminalQueueRetirement: Sendable {
         let firstRetiredQueueSequence: UInt64?
         let lastRetiredQueueSequence: UInt64?
         let retainedPendingEvidenceCount: Int
+
+        var requiresRetainedEvidenceRoutingBeforeReopen: Bool {
+            retainedPendingEvidenceCount > 0
+        }
 
         fileprivate init(
             terminalAuthority: PassiveCoreBluetoothArtifactAuthorityContext,
