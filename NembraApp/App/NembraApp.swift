@@ -1,6 +1,7 @@
 import Foundation
 import NembraBluetoothCapture
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 @MainActor
@@ -13,16 +14,16 @@ struct NembraApp: App {
     private let launchMode: LaunchMode
     @State private var runtime: AppRuntime?
     @State private var researchCoordinator: PassiveBluetoothExperimentOneCoordinator?
+    @State private var isFieldAuthorizationImporterPresented = false
+    @State private var fieldAuthorizationRejectionMessage: String?
 
     init() {
         let launchMode = Self.resolveLaunchMode()
         self.launchMode = launchMode
         _runtime = State(initialValue: launchMode == .standard ? AppBootstrap.makeRuntime() : nil)
-        _researchCoordinator = State(
-            initialValue: launchMode == .es80PassiveCapture
-                ? try? PassiveBluetoothExperimentOneCoordinator()
-                : nil
-        )
+        // Research transport is deliberately not constructed at launch. The default package gate is
+        // NO-GO and the only live-controller initializer requires a verified exact-build authority.
+        _researchCoordinator = State(initialValue: nil)
     }
 
     var body: some Scene {
@@ -46,25 +47,27 @@ struct NembraApp: App {
 
             case .es80PassiveCapture:
                 NavigationStack {
-                    if PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure {
-                        if let researchCoordinator {
-                            ES80ExperimentOneStationaryPreflightView(
-                                coordinator: researchCoordinator
-                            )
-                        } else {
-                            ContentUnavailableView(
-                                "Capture unavailable",
-                                systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The package-owned Experiment One workflow could not be created.")
-                            )
-                            .navigationTitle("Nembra Capture")
-                            .accessibilityIdentifier("es80.research-capture-unavailable")
-                        }
+                    if let researchCoordinator,
+                       researchCoordinator.status.physicalProcedurePermitted {
+                        ES80ExperimentOneStationaryPreflightView(
+                            coordinator: researchCoordinator
+                        )
                     } else {
-                        ES80ExperimentOneFieldNoGoView()
+                        ES80ExperimentOneFieldNoGoView(
+                            authorizationRejectionMessage: fieldAuthorizationRejectionMessage,
+                            loadFieldAuthorization: {
+                                isFieldAuthorizationImporterPresented = true
+                            }
+                        )
                     }
                 }
                 .preferredColorScheme(.dark)
+                .fileImporter(
+                    isPresented: $isFieldAuthorizationImporterPresented,
+                    allowedContentTypes: [.json]
+                ) { result in
+                    handleFieldAuthorizationImport(result)
+                }
             }
         }
     }
@@ -81,6 +84,59 @@ struct NembraApp: App {
 #endif
         return .standard
     }
+
+    /// Imports one externally issued authorization envelope. Reading a file does not itself unlock
+    /// anything: the package verifier must validate the trusted signature, exact external-record
+    /// bytes, running executable/build identity, and exact runtime Info.plist before the package can
+    /// mint the non-forgeable value required by the live coordinator initializer.
+    private func handleFieldAuthorizationImport(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            let hasSecurityScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let envelopeData = try Data(contentsOf: url, options: .mappedIfSafe)
+            let authorization = try PassiveBluetoothCaptureFieldAuthorizationVerifier
+                .verifyForCurrentApplication(envelopeData)
+            let coordinator = try PassiveBluetoothExperimentOneCoordinator(
+                fieldAuthorization: authorization
+            )
+            guard coordinator.status.physicalProcedurePermitted else {
+                throw FieldAuthorizationImportError.verifiedAuthorizationDidNotPermitProcedure
+            }
+
+            researchCoordinator = coordinator
+            fieldAuthorizationRejectionMessage = nil
+        } catch {
+            // A failed/rejected import cannot preserve or create live transport. Keep the product on
+            // the same physical NO-GO surface and present one concise corrective explanation.
+            researchCoordinator = nil
+            fieldAuthorizationRejectionMessage = Self.fieldAuthorizationMessage(for: error)
+        }
+    }
+
+    private static func fieldAuthorizationMessage(for error: Error) -> String {
+        if let fieldError = error as? PassiveBluetoothCaptureFieldAuthorizationError {
+            switch fieldError {
+            case .missingAuthorizationPublicKey, .invalidAuthorizationPublicKey:
+                return "This app was not produced with the accepted field-authorization key. Use the exact approved field build."
+            case .runtimeBuildMismatch, .runtimeInfoPlistMismatch:
+                return "That authorization belongs to a different app build. Use the authorization issued for this exact build."
+            default:
+                return "That field authorization could not be verified. Use the exact signed authorization issued with the approved build."
+            }
+        }
+
+        return "That field authorization could not be opened or verified. Use the exact signed authorization issued with the approved build."
+    }
+
+    private enum FieldAuthorizationImportError: Error {
+        case verifiedAuthorizationDidNotPermitProcedure
+    }
 }
 
 /// Product-level prerequisite between accepted package field authority and the Experiment One shell.
@@ -92,8 +148,8 @@ struct NembraApp: App {
 /// same condition into the package-owned stationary setup object.
 ///
 /// This remains an operator declaration, not electrical sensing or continuous-condition attestation.
-/// It cannot bypass the package-owned physical execution gate because this view is reachable only
-/// after `PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure` is already true.
+/// It cannot bypass package-owned field authority because this view is reachable only from a
+/// coordinator that retained a verified exact-build authorization.
 @MainActor
 private struct ES80ExperimentOneStationaryPreflightView: View {
     let coordinator: PassiveBluetoothExperimentOneCoordinator
@@ -256,12 +312,15 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
 @MainActor
 private struct ES80ExperimentOneFieldNoGoView: View {
+    let authorizationRejectionMessage: String?
+    let loadFieldAuthorization: () -> Void
+
     private var recipeID: String {
         PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Capture locked on this build. Nembra is still completing the final app and build checks required before the scooter capture can begin. No scooter action is needed yet."
+        "Capture locked on this build. Real scooter capture remains unavailable until this exact app build verifies its signed Nembra field authorization."
     }
 
     var body: some View {
@@ -292,7 +351,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
 
-                    Text("This build is still finishing its final checks before it can collect real ES80 data.")
+                    Text("Real scooter capture stays locked until this exact app build proves its field authorization.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -305,11 +364,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Not ready for scooter capture yet")
+                        Text("Scooter actions remain locked")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra keeps every scooter action locked until the exact app build has passed its required checks. When this screen unlocks, Capture will guide the OFF / ON sequence step by step.")
+                        Text("Loading a file cannot bypass Nembra's safety gate. Capture unlocks only after the package verifies the signed authorization against this exact running build.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -352,7 +411,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Scooter capture unavailable on this build")
+                        Text("Signed field authorization required")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -360,7 +419,47 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No scooter action is required yet. Capture can only unlock from an accepted Nembra build; changing a setting or preference cannot bypass this lock.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("FIELD BUILD")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+
+                    Text("Have the authorization issued with the approved build?")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+
+                    Text("Nembra verifies it locally before creating any Bluetooth capture transport.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button(action: loadFieldAuthorization) {
+                        Label("Load field authorization", systemImage: "checkmark.shield")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 52)
+                            .foregroundStyle(.black)
+                            .background(
+                                Color.white,
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Select the signed authorization issued for this exact approved Nembra build.")
+                    .accessibilityIdentifier("es80.capture.load-field-authorization")
+
+                    if let authorizationRejectionMessage {
+                        Text(authorizationRejectionMessage)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("es80.capture.field-authorization-rejected")
+                    }
+                }
+                .padding(18)
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                Text("Until verification succeeds, OFF / ON steps, scanning, connection, observation, and Share remain unreachable.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
