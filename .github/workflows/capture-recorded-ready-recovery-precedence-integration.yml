@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "dd88b9839465c3966b4c4615e6a43a5b68a0bf53"
+          test "$(git rev-parse HEAD^)" = "83f463a5a4584c0fd5dca61aadcf79f8341a2735"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-recorded-ready-recovery-precedence-integration.yml"
 
       - name: Apply exact recorded Ready precedence repair
@@ -35,37 +35,24 @@ jobs:
 
           controller = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
           source = controller.read_text()
-
-          old = '''                        } catch {
-                            // Recorder mutation already happened, so quarantine with
-                            // the distinct recorded-before-commit origin. Never label
-                            // this a zero-mutation rejection.
-                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)
-                            throw error
-                        }
-          '''
-          new = '''                        } catch {
-                            let recordedReadyFailure = error
-                            do {
-                                // Recorder mutation already happened, so quarantine with
-                                // the distinct recorded-before-commit origin. Never label
-                                // this a zero-mutation rejection.
-                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(
-                                    recordedReady
-                                )
-                            } catch {
-                                // Exact quarantine failure is stronger lifecycle evidence than
-                                // the triggering queue-commit failure. Never suppress it.
-                                throw error
-                            }
-                            throw recordedReadyFailure
-                        }
-          '''
+          old = "                            _ = try? self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(recordedReady)\n                            throw error\n"
+          new = (
+              "                            let recordedReadyFailure = error\n"
+              "                            do {\n"
+              "                                _ = try self.observationBoundaryQueueGate.abortRecordedReadyBeforeGateCommit(\n"
+              "                                    recordedReady\n"
+              "                                )\n"
+              "                            } catch {\n"
+              "                                // Exact quarantine failure is stronger lifecycle evidence than\n"
+              "                                // the triggering queue-commit failure. Never suppress it.\n"
+              "                                throw error\n"
+              "                            }\n"
+              "                            throw recordedReadyFailure\n"
+          )
           count = source.count(old)
           if count != 1:
-              raise SystemExit(f"recorded Ready recovery: expected exactly one patch site, found {count}")
-          source = source.replace(old, new, 1)
-          controller.write_text(source)
+              raise SystemExit(f"recorded Ready recovery: expected exactly one executable patch site, found {count}")
+          controller.write_text(source.replace(old, new, 1))
           Path(".github/workflows/capture-recorded-ready-recovery-precedence-integration.yml").unlink()
           PY
 
