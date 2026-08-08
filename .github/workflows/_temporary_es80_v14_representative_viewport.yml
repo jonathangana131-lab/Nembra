@@ -1,0 +1,163 @@
+name: Temporary ES80 representative viewport repair
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-representative-viewport-current/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded UI-test viewport repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraUITests/ES80ResearchCaptureUITests.swift')
+          source = path.read_text()
+          start_token = '    func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates() {'
+          end_token = '    func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked() throws {'
+          start = source.index(start_token)
+          end = source.index(end_token, start)
+          matrix = source[start:end]
+
+          old_qa = '''            XCTAssertTrue(
+                app.descendants(matching: .any)["es80.capture.simulator-qa"].waitForExistence(timeout: 3),
+                "Scenario \\(expectation.scenario) must stay explicitly labeled SIMULATOR / QA."
+            )'''
+          new_qa = '''            let qaDisclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+            XCTAssertTrue(
+                qaDisclosure.waitForExistence(timeout: 3),
+                "Scenario \\(expectation.scenario) must stay explicitly labeled SIMULATOR / QA."
+            )'''
+
+          old_state = '''            XCTAssertTrue(
+                app.staticTexts[expectation.requiredText].waitForExistence(timeout: 3),
+                "Scenario \\(expectation.scenario) did not render its expected rider-facing state."
+            )'''
+          new_state = '''            let requiredState = app.staticTexts[expectation.requiredText]
+            XCTAssertTrue(
+                requiredState.waitForExistence(timeout: 3),
+                "Scenario \\(expectation.scenario) did not render its expected rider-facing state."
+            )'''
+
+          old_action = '''            if let identifier = expectation.requiredIdentifier {
+                XCTAssertTrue(
+                    app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
+                    "Scenario \\(expectation.scenario) lost its stable state/action identifier \\(identifier)."
+                )
+            }'''
+          new_action = '''            var requiredAction: XCUIElement?
+            if let identifier = expectation.requiredIdentifier {
+                let action = app.descendants(matching: .any)[identifier]
+                XCTAssertTrue(
+                    action.waitForExistence(timeout: 3),
+                    "Scenario \\(expectation.scenario) lost its stable state/action identifier \\(identifier)."
+                )
+                requiredAction = action
+            }'''
+
+          old_capture = '''            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = expectation.screenshotName
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.terminate()'''
+          new_capture = '''            bringIntoScreenshotViewport(
+                qaDisclosure,
+                in: app,
+                context: "SIMULATOR / QA disclosure for \\(expectation.scenario)"
+            )
+            assertVisibleInScreenshotViewport(
+                qaDisclosure,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "SIMULATOR / QA disclosure for \\(expectation.scenario)"
+            )
+            let qaAttachment = XCTAttachment(screenshot: app.screenshot())
+            qaAttachment.name = expectation.screenshotName + " — QA Boundary"
+            qaAttachment.lifetime = .keepAlways
+            add(qaAttachment)
+
+            bringIntoScreenshotViewport(
+                requiredState,
+                in: app,
+                context: "rider-facing state for \\(expectation.scenario)"
+            )
+            assertVisibleInScreenshotViewport(
+                requiredState,
+                windowFrame: app.windows.firstMatch.frame,
+                context: "rider-facing state for \\(expectation.scenario)"
+            )
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = expectation.screenshotName
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            if let requiredAction {
+                bringIntoScreenshotViewport(
+                    requiredAction,
+                    in: app,
+                    context: "required action for \\(expectation.scenario)"
+                )
+                assertVisibleInScreenshotViewport(
+                    requiredAction,
+                    windowFrame: app.windows.firstMatch.frame,
+                    context: "required action for \\(expectation.scenario)"
+                )
+                let actionAttachment = XCTAttachment(screenshot: app.screenshot())
+                actionAttachment.name = expectation.screenshotName + " — Action"
+                actionAttachment.lifetime = .keepAlways
+                add(actionAttachment)
+            }
+
+            app.terminate()'''
+
+          for old, new, label in (
+              (old_qa, new_qa, 'QA disclosure'),
+              (old_state, new_state, 'rider state'),
+              (old_action, new_action, 'required action'),
+              (old_capture, new_capture, 'retained screenshot'),
+          ):
+              count = matrix.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one {label} anchor in representative matrix, found {count}')
+              matrix = matrix.replace(old, new, 1)
+
+          required_tokens = (
+              'assertVisibleInScreenshotViewport(',
+              'bringIntoScreenshotViewport(',
+              'es80.capture.simulator-qa',
+              'expectation.requiredText',
+              'expectation.requiredIdentifier',
+              'XCTAttachment(screenshot: app.screenshot())',
+          )
+          for token in required_tokens:
+              if token not in matrix:
+                  raise SystemExit(f'missing representative viewport token: {token}')
+
+          source = source[:start] + matrix + source[end:]
+          path.write_text(source)
+          PY
+          git diff --check
+
+      - name: Commit clean UI-test repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/_temporary_es80_v14_representative_viewport.yml
+          git add NembraUITests/ES80ResearchCaptureUITests.swift
+          git diff --cached --check
+          git commit -m 'test(capture): prove representative screenshot viewports'
+          git push origin HEAD:fix/es80-v14-representative-viewport-current/gpt56-thinking-go
