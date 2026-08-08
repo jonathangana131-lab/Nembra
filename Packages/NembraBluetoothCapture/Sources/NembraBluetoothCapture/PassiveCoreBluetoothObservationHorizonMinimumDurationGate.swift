@@ -16,7 +16,13 @@ import Foundation
 /// Software observation-clock authority only. This does not prove BLE/RF traffic,
 /// scooter identity, physical state, protocol semantics, or hardware behavior.
 struct PassiveCoreBluetoothObservationHorizonMinimumDurationGate: Sendable {
-    static let experimentOneMinimumDurationNanoseconds: UInt64 = 60_000_000_000
+    /// Experiment One procedure policy has exactly one production authority. The
+    /// duration gate consumes the sealed experiment policy instead of restating the
+    /// sixty-second literal, so an accepted recipe revision cannot silently diverge
+    /// from the lifecycle mutation gate.
+    static var experimentOneMinimumDurationNanoseconds: UInt64 {
+        PassiveBluetoothExperimentOneCapturePolicy.minimumPostReadyObservationDurationNanoseconds
+    }
 
     enum Status: Equatable, Sendable {
         case invalidMinimumDuration

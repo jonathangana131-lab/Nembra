@@ -20,8 +20,13 @@ struct PassiveCoreBluetoothObservationHorizonMinimumDurationGateTests {
         protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
     )
 
-    @Test("Experiment One minimum is exactly sixty monotonic seconds")
+    @Test("Experiment One minimum comes from the sealed capture policy")
     func fixedExperimentOneMinimum() {
+        #expect(
+            DurationGate.experimentOneMinimumDurationNanoseconds
+                == PassiveBluetoothExperimentOneCapturePolicy
+                    .minimumPostReadyObservationDurationNanoseconds
+        )
         #expect(DurationGate.experimentOneMinimumDurationNanoseconds == 60_000_000_000)
     }
 
