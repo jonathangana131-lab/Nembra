@@ -496,6 +496,125 @@ public final class ForegroundCoreBluetoothCaptureController: NSObject {
         scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)
     }
 
+    /// Consumes one package-issued Experiment One admission and connects only to
+    /// the exact full CoreBluetooth UUID that the completed four-window producer
+    /// correlated. The run-owned recorder is installed directly; this path never
+    /// creates or substitutes a second recorder and never treats correlation as
+    /// physical ES80 authentication.
+    ///
+    /// The admission is intentionally consumed before UUID catalog validation. If
+    /// the correlated target is no longer in this controller's current discovery
+    /// epoch, the one-shot handoff is burned and Experiment One must reacquire fresh
+    /// correlation evidence rather than replay stale authority.
+    func connectUsingExperimentOneAdmission(
+        _ admission: PassiveBluetoothExperimentOneCaptureAdmission,
+        timeout: TimeInterval = 12
+    ) throws {
+        try ensureCaptureHealthy()
+        guard !observationBoundaryQueueGate.isTerminal else {
+            throw ControllerError.captureFinalized
+        }
+        guard !observationBoundaryBlocksArtifactMutation else {
+            throw ControllerError.captureIncomplete
+        }
+        guard centralManager.state == .poweredOn else {
+            throw ControllerError.bluetoothNotPoweredOn
+        }
+        guard let timeoutNanoseconds = PassiveCoreBluetoothAcquisitionPolicy.connectionTimeoutNanoseconds(timeout) else {
+            throw ControllerError.invalidConnectionTimeout
+        }
+        guard connectionPhase == .idle else {
+            throw ControllerError.connectionAlreadyActive
+        }
+        // Experiment One owns one sealed provenance life. Never splice its recorder
+        // into a controller that already has a durable target session.
+        guard recorder == nil, targetState.selectedTargetIdentifier == nil else {
+            throw ControllerError.captureIncomplete
+        }
+
+        let payload = try admission.consume()
+        guard let peripheral = peripheralByIdentifier[payload.peripheralIdentifier],
+              let discovery = latestDiscoveryByIdentifier[payload.peripheralIdentifier] else {
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        }
+        guard peripheral.identifier == payload.peripheralIdentifier else {
+            throw ControllerError.unknownPeripheral(payload.peripheralIdentifier)
+        }
+        if discovery.isConnectable == false {
+            throw ControllerError.peripheralNotConnectable(payload.peripheralIdentifier)
+        }
+
+        do {
+            try targetState.validateCanBeginAttempt(for: payload.peripheralIdentifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
+            throw ControllerError.attemptGenerationExhausted
+        } catch {
+            throw ControllerError.targetNotSelected
+        }
+
+        guard targetSessionGeneration != UInt64.max else {
+            throw ControllerError.captureFailed
+        }
+        guard observationBoundaryQueueGate.resetForNewCaptureSession() else {
+            throw ControllerError.captureIncomplete
+        }
+        committedReadyEpoch = nil
+
+        let previousAuthority = currentArtifactAuthorityContext()
+        let freshAuthority = PassiveCoreBluetoothArtifactAuthorityContext(
+            targetSessionGeneration: targetSessionGeneration + 1,
+            authorityGeneration: 1
+        )
+        do {
+            try artifactAuthorityFence.transition(
+                from: previousAuthority,
+                to: freshAuthority
+            )
+        } catch {
+            failCapture(error)
+            throw ControllerError.captureFailed
+        }
+        targetSessionGeneration = freshAuthority.targetSessionGeneration
+        artifactAuthorityGeneration = freshAuthority.authorityGeneration
+        lastFinalizedArtifactAuthority = nil
+
+        targetState.selectTarget(payload.peripheralIdentifier)
+        acquisitionLedger.beginTargetSession()
+        gattIdentityRegistry.reset()
+        selectedTargetCancellationPending = false
+        foregroundEvidenceIntegrityValid = true
+        hasUsedInitialSessionIdentity = true
+        recorder = payload.recorder
+
+        // Do not backfill this recorder with an advertisement observed before the
+        // admission was consumed. Four-window correlation owns that earlier evidence;
+        // this recorder begins with post-admission transport/GATT evidence.
+        do {
+            _ = try targetState.beginAttempt(for: payload.peripheralIdentifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.peripheralAwaitingTerminalCallback(let identifier) {
+            throw ControllerError.peripheralAwaitingTerminalCallback(identifier)
+        } catch PassiveCoreBluetoothTargetState.StateError.generationExhausted {
+            throw ControllerError.attemptGenerationExhausted
+        } catch {
+            throw ControllerError.targetNotSelected
+        }
+
+        acquisitionLedger.beginConnectionAttempt()
+        selectedTargetCancellationPending = false
+        guard advanceArtifactAuthority() else {
+            throw ControllerError.captureFailed
+        }
+
+        stopScanning()
+        connectionPhase = .connecting(payload.peripheralIdentifier)
+        activePeripheral = peripheral
+        peripheral.delegate = self
+        centralManager.connect(peripheral, options: nil)
+        scheduleConnectionTimeout(for: peripheral, nanoseconds: timeoutNanoseconds)
+    }
+
     /// Cancels the active attempt without allowing a subsequent attempt to the
     /// same CoreBluetooth peripheral until one of its terminal callbacks arrives.
     /// A different selected target may start immediately and late callbacks from
