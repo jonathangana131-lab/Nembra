@@ -3,10 +3,15 @@ import os
 from pathlib import Path
 import re
 import runpy
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
 SIGNER = Path(__file__).resolve().parents[1] / "es80_field_authorization_envelope.py"
+ATOMIC_PUBLICATION_TEST = Path(__file__).with_name(
+    "test_es80_field_authorization_atomic_publication.py"
+)
 
 
 class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
@@ -176,6 +181,27 @@ class OfflineFieldAuthorizationSignerCustodySourceTests(unittest.TestCase):
         self.assertNotIn('"privatekeypath"', lowered)
         self.assertNotIn('"private_key_path"', lowered)
         self.assertIn('signatureDERBase64', self.source)
+
+    def test_authorization_envelope_publication_is_failure_atomic(self):
+        completed = subprocess.run(
+            [sys.executable, str(ATOMIC_PUBLICATION_TEST)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            "Atomic authorization publication regression failed.\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}",
+        )
+        self.assertIn(
+            "field authorization atomic-publication regression: PASS",
+            completed.stdout,
+        )
 
 
 if __name__ == "__main__":
