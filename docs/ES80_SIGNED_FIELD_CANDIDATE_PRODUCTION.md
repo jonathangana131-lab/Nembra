@@ -4,11 +4,11 @@ Status: **CANDIDATE PRODUCTION / EVIDENCE ONLY — PHYSICAL EXPERIMENT ONE REMAI
 
 ## Canonical production chain
 
-`scripts/ci/xcode27_signed_field_candidate.sh` produces the real signed/exported iPhone Capture candidate. It builds from a fresh detached worktree at the exact source SHA, stamps the exact V14 Capture build tuple plus `NembraCaptureFieldRecipe=ES80-FINGERPRINT-v1`, exports one IPA, and passes that IPA into the canonical post-build inspector `scripts/ci/es80_signed_field_artifact_evidence.py`.
+`scripts/ci/xcode27_signed_field_candidate.sh` produces the real signed/exported iPhone Capture candidate. It builds from a fresh detached worktree at the exact source SHA, stamps the exact V14 Capture build tuple plus `NembraCaptureFieldRecipe=ES80-FINGERPRINT-v1`, exports one IPA, and passes that IPA into the canonical post-build inspector.
 
 The field-recipe Info.plist value is launch routing only. It lets an accepted Release field build opened from the iPhone Home Screen enter the Capture instrument without a DEBUG-only Xcode launch argument. It cannot grant physical authority; the package field gate remains independently fail-closed.
 
-The intended field-device identifier is verification-only input. It is used to prove that the embedded provisioning profile authorizes the intended device (unless the profile explicitly provisions all devices), and it must never be retained in logs, evidence records, artifact names, hashes, or environment provenance.
+The intended field-device identifier is verification-only input. The producer accepts only an absolute private file path through `NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE`; the file must be a regular non-symlink private input. `scripts/ci/es80_signed_field_artifact_private_runner.py` opens and validates that file through its descriptor boundary, then invokes the canonical inspector in-process so the raw identifier is not placed in the producer or runner OS-visible process arguments. The raw identifier must never be retained in logs, evidence records, artifact names, hashes, or environment provenance.
 
 The producer does not create another field evidence schema. The machine-readable inspector subjects are published failure-atomically under the candidate's `inspection/` directory:
 
@@ -63,7 +63,7 @@ The candidate directory retains:
 
 The archive and export commands are piped through `tee`; failure from either Xcode or log capture is a producer failure. The detached source worktree is rechecked after archive/export and must still be the exact clean source SHA.
 
-The intended field-device identifier is deliberately absent from durable candidate evidence and environment provenance.
+Neither the raw intended field-device identifier nor its private input-file path is durable candidate evidence or environment provenance.
 
 ## Signed-device checks inherited from the canonical inspector
 
