@@ -1,9 +1,11 @@
 @preconcurrency import CoreBluetooth
+import CoreTransferable
 import Dispatch
 import Foundation
 import NembraBluetoothCapture
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Presentation-only polling for the non-observable package coordinator.
 ///
@@ -12,6 +14,22 @@ import UIKit
 /// integer-second guidance that is never evidence.
 enum ES80CaptureRefreshPolicy {
     static let statusPollInterval: TimeInterval = 0.5
+}
+
+/// Exact verified Share bytes are the transfer authority. The system may materialize these bytes
+/// for a destination, but Nembra never reopens a mutable pathname after integrity verification.
+private struct VerifiedFinalShareTransfer: Transferable {
+    let data: Data
+    let filename: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { transfer in
+            transfer.data
+        }
+        .suggestedFileName { transfer in
+            transfer.filename
+        }
+    }
 }
 
 /// Product-facing Nembra Capture shell for ES80 Experiment One.
@@ -53,6 +71,10 @@ struct ES80CaptureShellView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
     @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
@@ -61,7 +83,9 @@ struct ES80CaptureShellView: View {
     @State private var finalizationInFlight = false
     @State private var diagnosticMessage: String?
     @State private var localFailureMessage: String?
-    @State private var shareURL: URL?
+    @State private var didPresentAnalysisReadySemantics = false
+    @State private var successHapticTick = 0
+    @State private var warningHapticTick = 0
     @State private var finalShareData: Data?
     @State private var finalShareFilename: String?
     @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
@@ -140,6 +164,18 @@ struct ES80CaptureShellView: View {
             }
             .onChange(of: currentPhase) { _, newPhase in
                 synchronizeIdleTimer(for: newPhase)
+                handleSemanticPhaseTransition(newPhase)
+                announceAccessibilityStatus(newPhase)
+            }
+            .onChange(of: diagnosticMessage) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: sharePreparationWarning) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: presentationAnalysisReady) { _, isReady in
+                guard isReady, currentPhase == .complete else { return }
+                presentAnalysisReadySemanticsIfNeeded()
             }
             .onChange(of: status.powerCycleProgress?.isScanning == true) { _, isScanning in
                 synchronizeObservedScanClock(isScanning: isScanning)
@@ -160,6 +196,8 @@ struct ES80CaptureShellView: View {
             captureDetailsSheet
         }
         .accessibilityIdentifier("es80.capture-shell")
+        .sensoryFeedback(.success, trigger: successHapticTick)
+        .sensoryFeedback(.warning, trigger: warningHapticTick)
     }
 
     private func hero(for phase: Phase) -> some View {
@@ -186,6 +224,7 @@ struct ES80CaptureShellView: View {
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                 }
 
                 Spacer(minLength: 0)
@@ -272,7 +311,7 @@ struct ES80CaptureShellView: View {
             }
         }
         .padding(16)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("es80.capture.single-authority")
     }
@@ -301,14 +340,12 @@ struct ES80CaptureShellView: View {
                 ) {
                     ForEach(0..<6, id: \.self) { index in
                         VStack(alignment: .leading, spacing: 6) {
-                            Capsule(style: .continuous)
-                                .fill(progressSegmentFill(
-                                    index: index,
-                                    completedWindows: completed,
-                                    currentWindow: current,
-                                    status: status
-                                ))
-                                .frame(height: 5)
+                            progressSegment(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
                             Text(labels[index])
                                 .font(.caption2.monospaced().weight(.semibold))
                                 .foregroundStyle(.secondary)
@@ -329,14 +366,12 @@ struct ES80CaptureShellView: View {
 
                 HStack(spacing: 6) {
                     ForEach(0..<6, id: \.self) { index in
-                        Capsule(style: .continuous)
-                            .fill(progressSegmentFill(
-                                index: index,
-                                completedWindows: completed,
-                                currentWindow: current,
-                                status: status
-                            ))
-                            .frame(height: 5)
+                        progressSegment(
+                            index: index,
+                            completedWindows: completed,
+                            currentWindow: current,
+                            status: status
+                        )
                     }
                 }
 
@@ -435,10 +470,7 @@ struct ES80CaptureShellView: View {
                 message: "Nembra is waiting for Bluetooth scanning to begin. This check has not started yet.",
                 symbol: "dot.radiowaves.left.and.right"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            reduceMotionActivityIndicator
 
         case let .correlationObserving(window):
             correlationObservingPanel(
@@ -542,10 +574,7 @@ struct ES80CaptureShellView: View {
                 message: "Nembra is checking for the same Bluetooth signal again. Keep the scooter ON after the final check.",
                 symbol: "scope"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            reduceMotionActivityIndicator
             secondaryButton(
                 "Restart signal check",
                 systemImage: "arrow.clockwise",
@@ -576,10 +605,7 @@ struct ES80CaptureShellView: View {
                 message: "Nembra is connecting only to the matched scooter signal. This Capture remains read only and sends no scooter commands.",
                 symbol: "link"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            reduceMotionActivityIndicator
 
         case .acquiring:
             statePanel(
@@ -588,10 +614,7 @@ struct ES80CaptureShellView: View {
                 message: "Nembra is learning what the matched signal exposes over Bluetooth. Observation starts only after this read-only discovery is complete.",
                 symbol: "waveform.path.ecg.rectangle"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            reduceMotionActivityIndicator
 
         case .observing:
             let remaining = observationGuidanceRemainingSeconds(
@@ -652,10 +675,7 @@ struct ES80CaptureShellView: View {
                 message: "Nembra is finishing the accepted observations, checking Capture integrity, and preparing the Capture to share. Keep Nembra open until sealing finishes.",
                 symbol: "lock.doc"
             )
-            ProgressView()
-                .tint(.white)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            reduceMotionActivityIndicator
 
         case .complete:
             completionPanel
@@ -676,8 +696,11 @@ struct ES80CaptureShellView: View {
                 }
             } else {
 #endif
-                if let shareURL {
-                    ShareLink(item: shareURL) {
+                if let finalShareTransfer {
+                    ShareLink(
+                        item: finalShareTransfer,
+                        preview: SharePreview(finalShareTransfer.filename)
+                    ) {
                         Label("Share Capture", systemImage: "square.and.arrow.up")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
@@ -781,7 +804,7 @@ struct ES80CaptureShellView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private func observationHealthStrip(
@@ -811,7 +834,7 @@ struct ES80CaptureShellView: View {
             }
         }
         .padding(14)
-        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "Capture health. Signal \(connection == .connected ? "matched" : "waiting"). Discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
@@ -871,7 +894,7 @@ struct ES80CaptureShellView: View {
             }
         }
         .padding(18)
-        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
         .accessibilityIdentifier("es80.capture.complete")
@@ -883,6 +906,7 @@ struct ES80CaptureShellView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Experiment One")
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
 #if DEBUG && targetEnvironment(simulator)
                     if let simulatorQASnapshot {
                         Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
@@ -900,12 +924,12 @@ struct ES80CaptureShellView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
 #endif
-                        detailRow("Recipe", value: PassiveBluetoothExperimentOneFieldExecutionGate.recipeID.rawValue)
                         detailRow("Correlation", value: correlationDetailValue)
                         detailRow("Cleanup", value: finalizationCleanupDetailValue)
 
                         if let report = finalShareIntegrityReport {
                             detailRow("Analysis readiness", value: "Ready")
+                            detailRow("Recipe", value: report.experimentRecipeID.rawValue)
                             detailRow("Procedure", value: report.procedureVersion)
                             detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
                             digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
@@ -931,6 +955,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
                     Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
@@ -1056,6 +1081,15 @@ struct ES80CaptureShellView: View {
         }
     }
 #endif
+
+    private var finalShareTransfer: VerifiedFinalShareTransfer? {
+        guard let data = finalShareData,
+              let filename = finalShareFilename,
+              finalShareIntegrityReport != nil else {
+            return nil
+        }
+        return VerifiedFinalShareTransfer(data: data, filename: filename)
+    }
 
     private var presentationAnalysisReady: Bool {
 #if DEBUG && targetEnvironment(simulator)
@@ -1216,8 +1250,8 @@ struct ES80CaptureShellView: View {
                 return
             }
 
-            // Horizon is already immutable here. Final-share verification and temporary-file staging
-            // are recoverable product layers and must never relabel seal truth.
+            // Horizon is already immutable here. Final-share verification and byte-backed transfer
+            // preparation are recoverable product layers and must never relabel seal truth.
             finalizationInFlight = false
             prepareFinalShareForAnalysisAndSharing()
         }
@@ -1230,18 +1264,12 @@ struct ES80CaptureShellView: View {
             return
         }
 
-        // A previously verified exact artifact is retained independently from temporary file staging.
-        // Retrying a failed Share file must never silently mint new evidence bytes.
-        if let data = finalShareData,
+        // A previously verified exact artifact remains the transfer authority. Retrying Share never
+        // reopens a pathname or silently mints new evidence bytes.
+        if finalShareData != nil,
            finalShareIntegrityReport != nil,
-           let filename = finalShareFilename {
-            do {
-                shareURL = try persistShareArtifact(data, suggestedFilename: filename)
-                sharePreparationWarning = nil
-            } catch {
-                shareURL = nil
-                sharePreparationWarning = "Capture remains sealed and ready for analysis, but Nembra could not prepare the Share file: \(experimentErrorMessage(error))"
-            }
+           finalShareFilename != nil {
+            sharePreparationWarning = nil
             return
         }
 
@@ -1254,7 +1282,6 @@ struct ES80CaptureShellView: View {
             finalShareData = nil
             finalShareFilename = nil
             finalShareIntegrityReport = nil
-            shareURL = nil
             sharePreparationWarning = "Capture remains sealed, but Nembra could not verify the Share file for analysis: \(experimentErrorMessage(error))"
             return
         }
@@ -1262,17 +1289,7 @@ struct ES80CaptureShellView: View {
         finalShareData = artifact.json
         finalShareFilename = artifact.suggestedFilename
         finalShareIntegrityReport = report
-
-        do {
-            shareURL = try persistShareArtifact(
-                artifact.json,
-                suggestedFilename: artifact.suggestedFilename
-            )
-            sharePreparationWarning = nil
-        } catch {
-            shareURL = nil
-            sharePreparationWarning = "Capture remains sealed and ready for analysis, but Nembra could not prepare the Share file: \(experimentErrorMessage(error))"
-        }
+        sharePreparationWarning = nil
     }
 
     private func restartExperiment() {
@@ -1281,11 +1298,11 @@ struct ES80CaptureShellView: View {
         localFailureMessage = nil
         captureConnectionAttempted = false
         finalizationInFlight = false
-        shareURL = nil
         finalShareData = nil
         finalShareFilename = nil
         finalShareIntegrityReport = nil
         sharePreparationWarning = nil
+        didPresentAnalysisReadySemantics = false
         declaredStationarySetup = nil
         showingDetails = false
         observedScanBeganAtUptimeNanoseconds = nil
@@ -1361,16 +1378,6 @@ struct ES80CaptureShellView: View {
         guard elapsed < Self.requiredObservationGuidanceNanoseconds else { return 0 }
         let remaining = Self.requiredObservationGuidanceNanoseconds - elapsed
         return Int((remaining + 999_999_999) / 1_000_000_000)
-    }
-
-    private func persistShareArtifact(
-        _ data: Data,
-        suggestedFilename: String
-    ) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(suggestedFilename)
-        try data.write(to: url, options: .atomic)
-        return url
     }
 
     private func experimentErrorMessage(_ error: Error) -> String {
@@ -1479,6 +1486,7 @@ struct ES80CaptureShellView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
 
             Text(message)
                 .font(.body)
@@ -1486,6 +1494,30 @@ struct ES80CaptureShellView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 4)
+    }
+
+    private var captureSurfaceFill: Color {
+        if accessibilityReduceTransparency {
+            return .white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.16)
+        }
+        return .white.opacity(colorSchemeContrast == .increased ? 0.11 : 0.055)
+    }
+
+    @ViewBuilder
+    private var reduceMotionActivityIndicator: some View {
+        if accessibilityReduceMotion {
+            Image(systemName: "ellipsis")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .accessibilityHidden(true)
+        } else {
+            ProgressView()
+                .tint(.white)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
+        }
     }
 
     private func primaryButton(
@@ -1523,7 +1555,7 @@ struct ES80CaptureShellView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 50)
                 .foregroundStyle(.white)
-                .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
@@ -1541,6 +1573,67 @@ struct ES80CaptureShellView: View {
         }
         .padding(14)
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Capture alert")
+        .accessibilityValue(message)
+    }
+
+    /// Automatic accessibility speech is event-driven and never runs from the 2 Hz display clock.
+    private func announceAccessibilityStatus(_ phase: Phase) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let announcement: String?
+        switch phase {
+        case let .bluetoothUnavailable(message): announcement = "Bluetooth is not ready. \(message)"
+        case let .correlationFailed(message): announcement = "Capture stopped. \(message)"
+        case .noRepeatableTarget: announcement = "No unique scooter signal was found. Repeat the OFF / ON sequence."
+        case let .ambiguousTargets(count): announcement = "\(count) Bluetooth signals matched. Repeat the OFF / ON sequence."
+        case .readyToSeal: announcement = "Capture is ready to seal. Seal Capture is now available."
+        case .complete:
+            announcement = presentationAnalysisReady ? nil : "Capture sealed. Final artifact verification is still required."
+        case let .failed(message): announcement = "Capture stopped safely. \(message)"
+        default: announcement = nil
+        }
+        guard let announcement else { return }
+        UIAccessibility.post(notification: .announcement, argument: announcement)
+    }
+
+    private func announceAccessibilityAlert(_ message: String?) {
+        guard UIAccessibility.isVoiceOverRunning, let message, !message.isEmpty else { return }
+        UIAccessibility.post(notification: .announcement, argument: "Capture alert. \(message)")
+    }
+
+    private func handleSemanticPhaseTransition(_ phase: Phase) {
+        if phase != .complete {
+            didPresentAnalysisReadySemantics = false
+        }
+        if isBlockingHapticPhase(phase) {
+            warningHapticTick &+= 1
+        }
+        if phase == .complete {
+            presentAnalysisReadySemanticsIfNeeded()
+        }
+    }
+
+    private func presentAnalysisReadySemanticsIfNeeded() {
+        guard presentationAnalysisReady,
+              phase(status: coordinator.status) == .complete,
+              !didPresentAnalysisReadySemantics else { return }
+        didPresentAnalysisReadySemantics = true
+        successHapticTick &+= 1
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Capture complete. Ready for analysis and sharing."
+        )
+    }
+
+    private func isBlockingHapticPhase(_ phase: Phase) -> Bool {
+        switch phase {
+        case .bluetoothUnavailable, .correlationFailed, .noRepeatableTarget, .ambiguousTargets, .failed:
+            return true
+        default:
+            return false
+        }
     }
 
     private func guidanceFootnote(_ text: String) -> some View {
@@ -1562,15 +1655,28 @@ struct ES80CaptureShellView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func detailRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
-            Text(value)
-                .font(.body.monospacedDigit().weight(.medium))
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            }
         }
     }
 
@@ -1586,6 +1692,51 @@ struct ES80CaptureShellView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func progressSegment(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        Capsule(style: .continuous)
+            .fill(progressSegmentFill(
+                index: index,
+                completedWindows: completedWindows,
+                currentWindow: currentWindow,
+                status: status
+            ))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(
+                        .white.opacity(accessibilityDifferentiateWithoutColor ? 0.82 : 0),
+                        lineWidth: progressSegmentStroke(
+                            index: index,
+                            completedWindows: completedWindows,
+                            currentWindow: currentWindow,
+                            status: status
+                        )
+                    )
+            }
+            .frame(height: 5)
+    }
+
+    private func progressSegmentStroke(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> CGFloat {
+        guard accessibilityDifferentiateWithoutColor else { return 0 }
+        if index < 4 {
+            if currentWindow == index { return 2 }
+            return index < completedWindows ? 1 : 0
+        }
+        if index == 4 {
+            return presentationObservationReady(status: status) ? 1 : 0
+        }
+        return presentationArtifactFinalized(status: status) ? 1 : 0
     }
 
     private func progressSegmentFill(
