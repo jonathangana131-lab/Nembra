@@ -1,0 +1,182 @@
+import Foundation
+import NembraCore
+
+/// Software-lifecycle failures for one package-owned Experiment One attempt.
+///
+/// These states describe Nembra's local evidence workflow only. They do not authenticate a
+/// physical scooter or imply any BLE/Tuya field semantics.
+enum PassiveBluetoothExperimentOneRunError: Error, Equatable, Sendable {
+    case invalidVehicleContext
+    case powerCycleIncomplete
+    case powerCycleAuthorityInvalid
+    case powerCycleCorrelationNotUnique
+    case captureRecorderAlreadyCreated
+    case captureRecorderNotCreated
+}
+
+/// A completed four-window result that can be joined to Experiment One capture evidence only by
+/// the package-owned run that issued both producers.
+///
+/// `observationSeriesIdentity` is not a second experiment token: it is the exact opaque,
+/// package-issued authority already retained by all four accepted power-cycle snapshots. This type
+/// is intentionally package-internal until the accepted foreground controller owns subsequent
+/// recorder mutation and H-bounded finalization.
+struct PassiveBluetoothExperimentOnePowerCycleEvidence: Equatable, Sendable {
+    let result: PassiveBluetoothPowerCycleObservationResult
+    let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
+
+    /// Issuance is producer-file private. Other production files in this module may inspect an
+    /// issued value but cannot wrap an arbitrary detached result as Experiment One authority.
+    fileprivate init?(
+        result: PassiveBluetoothPowerCycleObservationResult
+    ) {
+        let identities = result.correlation.observationSeriesIdentities
+        guard identities.count == PassiveBluetoothPowerCycleObservationPhase.allCases.count,
+              let identity = identities.first,
+              identities.allSatisfy({ $0 == identity }) else {
+            return nil
+        }
+
+        self.result = result
+        observationSeriesIdentity = identity
+    }
+}
+
+/// An immutable capture snapshot bound to the exact package-issued power-cycle producer authority
+/// that opened the capture phase.
+///
+/// This is package-internal: public raw `PassiveBluetoothCaptureSession` remains useful research
+/// evidence, but app/UI code cannot promote an arbitrary capture into this authority-bearing input.
+struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
+    let session: PassiveBluetoothCaptureSession
+    let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
+
+    /// Issuance is producer-file private for the same reason as power-cycle evidence: same-module
+    /// consumers cannot join an arbitrary raw capture to a caller-chosen matching authority token.
+    fileprivate init(
+        observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity,
+        session: PassiveBluetoothCaptureSession
+    ) {
+        self.observationSeriesIdentity = observationSeriesIdentity
+        self.session = session
+    }
+}
+
+/// Package-internal provenance root for one complete Experiment One attempt.
+///
+/// One instance owns one four-window producer. Only after that exact producer finishes under one
+/// valid package-issued `PassiveBluetoothCandidateObservationSeriesIdentity` with one unique
+/// repeated full UUID may the run create its capture recorder. Subsequent capture evidence retains
+/// that same producer identity. A different producer life receives a different package-issued
+/// identity even when CoreBluetooth later reports the same peripheral UUID, so stale/swapped
+/// same-UUID artifacts cannot satisfy Experiment One composition.
+///
+/// Experiment One's 10-second per-window policy is fixed inside this product-specific owner. The
+/// caller cannot shorten it to reach capture acquisition sooner. That duration remains a local
+/// callback-receipt procedure threshold, not a BLE cadence or RF-completeness claim.
+///
+/// The caller may supply software vehicle context only so contradictory context can fail closed.
+/// This ES80-specific authority accepts exactly Nembra's canonical `VehicleProfile.aovoproES80`
+/// identity; the deferred MAXSHOT profile or any custom identity cannot originate this run. Matching
+/// declared context is still software metadata and is never physical ES80 authentication.
+///
+/// **Critical integration boundary:** this run and all authority-bearing result types remain
+/// package-internal, while the mutable recorder handoff/finalization path below remains
+/// producer-file private. Another production file in `NembraBluetoothCapture` therefore cannot
+/// obtain the recorder that would later earn Experiment One authority. The accepted foreground
+/// controller integration must deliberately replace this sealed boundary with controller-owned
+/// mutation plus finalized H-bounded artifact issuance; until then no package consumer can call an
+/// Experiment One PASS path. Physical Experiment One remains blocked.
+@MainActor
+final class PassiveBluetoothExperimentOneRun {
+    let vehicleIdentity: VehicleIdentity
+    let powerCycleObservationSession: PassiveBluetoothPowerCycleObservationSession
+
+    private var captureRecorder: PassiveCoreBluetoothCaptureRecorder?
+    private var captureObservationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity?
+
+    init(vehicleIdentity: VehicleIdentity) throws {
+        guard vehicleIdentity == VehicleProfile.aovoproES80.identity else {
+            throw PassiveBluetoothExperimentOneRunError.invalidVehicleContext
+        }
+
+        self.vehicleIdentity = VehicleProfile.aovoproES80.identity
+        powerCycleObservationSession = try PassiveBluetoothPowerCycleObservationSession(
+            minimumWindowDuration: TimeInterval(
+                PassiveBluetoothExperimentOneCapturePolicy.minimumPowerCycleWindowDurationNanoseconds
+            ) / 1_000_000_000
+        )
+    }
+
+    /// Bound evidence exists only after this run's exact package-owned four-window producer has
+    /// completed under one valid observation-series authority.
+    var completedPowerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence? {
+        guard let result = powerCycleObservationSession.result else { return nil }
+        return PassiveBluetoothExperimentOnePowerCycleEvidence(result: result)
+    }
+
+    var hasCaptureRecorder: Bool {
+        captureRecorder != nil
+    }
+
+    /// Deliberately file-private while physical Experiment One remains blocked. The future live
+    /// controller integration must establish an explicit controller-owned mutation/finalization
+    /// contract before this handoff can be widened beyond the producer implementation file.
+    @discardableResult
+    fileprivate func beginCaptureRecorder(
+        startedAt: Date = Date()
+    ) throws -> PassiveCoreBluetoothCaptureRecorder {
+        guard captureRecorder == nil else {
+            throw PassiveBluetoothExperimentOneRunError.captureRecorderAlreadyCreated
+        }
+        guard powerCycleObservationSession.result != nil else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
+        }
+        guard let evidence = completedPowerCycleEvidence else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
+        }
+        guard case .singleRepeatableCandidate(_) = evidence.result.correlation.disposition else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleCorrelationNotUnique
+        }
+
+        let recorder = try PassiveCoreBluetoothCaptureRecorder(
+            vehicleIdentity: vehicleIdentity,
+            startedAt: startedAt
+        )
+        captureObservationSeriesIdentity = evidence.observationSeriesIdentity
+        captureRecorder = recorder
+        return recorder
+    }
+
+    /// Producer-file private for the same reason as recorder creation: no other production file can
+    /// wrap mutable/raw capture evidence into Experiment One authority before controller ownership.
+    fileprivate func captureEvidenceSnapshot() async throws -> PassiveBluetoothExperimentOneCaptureEvidence {
+        guard let captureRecorder else {
+            throw PassiveBluetoothExperimentOneRunError.captureRecorderNotCreated
+        }
+        guard let captureObservationSeriesIdentity else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
+        }
+        return PassiveBluetoothExperimentOneCaptureEvidence(
+            observationSeriesIdentity: captureObservationSeriesIdentity,
+            session: await captureRecorder.snapshot()
+        )
+    }
+
+    /// Producer-file private one-shot structural boundary. A later controller-integration slice must
+    /// not expose this evaluator until recorder mutation and finalized H-bounded artifact production
+    /// are owned by the accepted live controller authority.
+    fileprivate func captureEvidenceAssessment() async throws -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment {
+        guard powerCycleObservationSession.result != nil else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
+        }
+        guard let powerCycleEvidence = completedPowerCycleEvidence else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
+        }
+        let captureEvidence = try await captureEvidenceSnapshot()
+        return PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
+            powerCycleEvidence: powerCycleEvidence,
+            captureEvidence: captureEvidence
+        )
+    }
+}
