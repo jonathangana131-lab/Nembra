@@ -25,6 +25,10 @@ final class NembraUITests: XCTestCase {
 
         let drive = app.buttons["home.mode.drive"]
         XCTAssertTrue(drive.exists)
+        XCTAssertTrue(
+            waitForEnabled(drive),
+            "Drive must become actionable after the prior confirmed command fully clears."
+        )
         drive.tap()
 
         let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
@@ -36,6 +40,10 @@ final class NembraUITests: XCTestCase {
 
         let lock = button(containing: "Lock", in: app)
         XCTAssertTrue(lock.exists)
+        XCTAssertTrue(
+            waitForEnabled(lock),
+            "Lock must become actionable after the confirmed mode command fully clears."
+        )
         lock.tap()
         let confirmLock = app.sheets.buttons["Lock"]
         XCTAssertTrue(confirmLock.waitForExistence(timeout: 2))
@@ -68,10 +76,12 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Vehicle configuration"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Scooter not found"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Last confirmed settings shown below"].waitForExistence(timeout: 2))
 
         let drive = app.buttons["vehicle-controls.mode.drive"]
         if drive.waitForExistence(timeout: 1) {
             XCTAssertFalse(drive.isEnabled, "Vehicle mode controls must stay unavailable while the scooter is not connected.")
+            XCTAssertEqual(drive.value as? String, "Last confirmed selection")
         }
 
         keepScreenshot(named: "Vehicle Controls Scooter Unavailable")
@@ -244,6 +254,13 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func waitForLabelFragment(_ fragment: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "label CONTAINS %@", fragment)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "enabled == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
