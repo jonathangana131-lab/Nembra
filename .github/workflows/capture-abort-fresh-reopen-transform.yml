@@ -1,0 +1,52 @@
+name: Capture abort fresh reopen transform
+
+on:
+  push:
+    branches:
+      - feature/capture-abort-fresh-reopen-v14-current
+
+permissions:
+  contents: write
+
+env:
+  METHOD_B64: ICAgIC8vLyBSZW9wZW5zIG9uZSBhYmFuZG9uZWQgb2JzZXJ2YXRpb24gZXBvY2ggb25seSBhZnRlciB0aGUgY29udHJvbGxlciBoYXMKICAgIC8vLyBpbnN0YWxsZWQgdGhlIGV4YWN0IHJlY29yZGVyIHdob3NlIGNvbnN0cnVjdGlvbiBlYXJuZWQgcHJvZHVjZXItaXNzdWVkIGFib3J0CiAgICAvLy8gZnJlc2gtc2Vzc2lvbiBwcm9vZiwgYXBwbGllZCB0aGUgZXhhY3QgYWJhbmRvbmVkLXF1ZXVlIHJlc29sdXRpb24gdG8gaXRzIGdsb2JhbAogICAgLy8vIHJlc29sdmVkIGZyb250aWVyLCBhbmQgcHJvdmVkIG5vIGNhbGxiYWNrIGFkdmFuY2VkIHRoZSBGSUZPIHRhaWwgYWZ0ZXJ3YXJkLgogICAgLy8vCiAgICAvLy8gUmVjZWlwdCBwb3NzZXNzaW9uLCBhIGNhbGxlci1jaG9zZW4gZ2VuZXJhdGlvbiwgb3Igc2NhbGFyIHJlY29yZGVyIGlkZW50aXR5IGFsb25lCiAgICAvLy8gYXJlIGRlbGliZXJhdGVseSBpbnN1ZmZpY2llbnQuIFJldGlyZWQgRklGTyBwb3NpdGlvbnMgcmVtYWluIHJlc29sdmVkLWJ5LXJldGlyZW1lbnQKICAgIC8vLyBhbmQgYXJlIG5ldmVyIHJlbGFiZWxlZCBhcyByZWNvcmRlci13cml0dGVuIGV2aWRlbmNlLgogICAgQE1haW5BY3RvcgogICAgbXV0YXRpbmcgZnVuYyByZW9wZW5BZnRlckFib3J0ZWRGcmVzaFRhcmdldFNlc3Npb24oCiAgICAgICAgXyBmcmVzaFRhcmdldFNlc3Npb246IFBhc3NpdmVDb3JlQmx1ZXRvb3RoQWJvcnRlZEZyZXNoVGFyZ2V0U2Vzc2lvbi5SZWNlaXB0LAogICAgICAgIGluc3RhbGxlZFJlY29yZGVyOiBQYXNzaXZlQ29yZUJsdWV0b290aENhcHR1cmVSZWNvcmRlciwKICAgICAgICBjdXJyZW50UmVzb2x2ZWRUaHJvdWdoUXVldWVTZXF1ZW5jZTogVUludDY0LAogICAgICAgIGN1cnJlbnRMYXN0RW5xdWV1ZWRFdmVudFNlcXVlbmNlOiBVSW50NjQKICAgICkgdGhyb3dzIHsKICAgICAgICBndWFyZCBjYXNlIGxldCAuYWJvcnRRdWFyYW50aW5lZChjdXJyZW50QWJvcnQpID0gcGhhc2UgZWxzZSB7CiAgICAgICAgICAgIHRocm93IFN0YXRlRXJyb3IuaW52YWxpZFRyYW5zaXRpb24KICAgICAgICB9CgogICAgICAgIGxldCByZXNvbHV0aW9uID0gZnJlc2hUYXJnZXRTZXNzaW9uLmFib3J0ZWRSZXNvbHV0aW9uCiAgICAgICAgZ3VhcmQgY3VycmVudEFib3J0ID09IHJlc29sdXRpb24uYWJvcnRSZWNlaXB0IGVsc2UgewogICAgICAgICAgICB0aHJvdyBTdGF0ZUVycm9yLmFib3J0UmVzb2x1dGlvblJlY2VpcHRNaXNtYXRjaAogICAgICAgIH0KICAgICAgICBndWFyZCBPYmplY3RJZGVudGlmaWVyKGZyZXNoVGFyZ2V0U2Vzc2lvbi5yZWNvcmRlcikgPT0gT2JqZWN0SWRlbnRpZmllcihpbnN0YWxsZWRSZWNvcmRlciksCiAgICAgICAgICAgICAgZnJlc2hUYXJnZXRTZXNzaW9uLnJlY29yZGVySWRlbnRpdHkgPT0gT2JqZWN0SWRlbnRpZmllcihpbnN0YWxsZWRSZWNvcmRlcikgZWxzZSB7CiAgICAgICAgICAgIHRocm93IFN0YXRlRXJyb3IuZnJlc2hSZWNvcmRlcklkZW50aXR5TWlzbWF0Y2gKICAgICAgICB9CiAgICAgICAgZ3VhcmQgY3VycmVudFJlc29sdmVkVGhyb3VnaFF1ZXVlU2VxdWVuY2UgPT0gcmVzb2x1dGlvbi5yZXNvbHZlZFRocm91Z2hRdWV1ZVNlcXVlbmNlIGVsc2UgewogICAgICAgICAgICB0aHJvdyBTdGF0ZUVycm9yLmFib3J0UmVzb2x2ZWRGcm9udGllck5vdEFwcGxpZWQoCiAgICAgICAgICAgICAgICBleHBlY3RlZDogcmVzb2x1dGlvbi5yZXNvbHZlZFRocm91Z2hRdWV1ZVNlcXVlbmNlLAogICAgICAgICAgICAgICAgYWN0dWFsOiBjdXJyZW50UmVzb2x2ZWRUaHJvdWdoUXVldWVTZXF1ZW5jZQogICAgICAgICAgICApCiAgICAgICAgfQogICAgICAgIGd1YXJkIGN1cnJlbnRMYXN0RW5xdWV1ZWRFdmVudFNlcXVlbmNlID09IHJlc29sdXRpb24ucmVzb2x2ZWRUaHJvdWdoUXVldWVTZXF1ZW5jZSBlbHNlIHsKICAgICAgICAgICAgdGhyb3cgU3RhdGVFcnJvci5hYm9ydFF1ZXVlQ2hhbmdlZEFmdGVyUmVzb2x1dGlvbigKICAgICAgICAgICAgICAgIGV4cGVjdGVkOiByZXNvbHV0aW9uLnJlc29sdmVkVGhyb3VnaFF1ZXVlU2VxdWVuY2UsCiAgICAgICAgICAgICAgICBhY3R1YWw6IGN1cnJlbnRMYXN0RW5xdWV1ZWRFdmVudFNlcXVlbmNlCiAgICAgICAgICAgICkKICAgICAgICB9CiAgICAgICAgZ3VhcmQgZnJlc2hUYXJnZXRTZXNzaW9uLnRhcmdldFNlc3Npb25HZW5lcmF0aW9uID4gY3VycmVudEFib3J0LmFiYW5kb25lZFRhcmdldFNlc3Npb25HZW5lcmF0aW9uIGVsc2UgewogICAgICAgICAgICB0aHJvdyBTdGF0ZUVycm9yLmZyZXNoVGFyZ2V0U2Vzc2lvblJlcXVpcmVkCiAgICAgICAgfQoKICAgICAgICBjb21taXR0ZWRSZWFkeVRyYW5zYWN0aW9uID0gbmlsCiAgICAgICAgcmVxdWlyZWRSZWFkeVRhcmdldFNlc3Npb25HZW5lcmF0aW9uID0gZnJlc2hUYXJnZXRTZXNzaW9uLnRhcmdldFNlc3Npb25HZW5lcmF0aW9uCiAgICAgICAgcGhhc2UgPSAuYXdhaXRpbmdSZWFkeQogICAgfQoK
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/capture-abort-fresh-reopen-v14-current
+      - name: Apply guarded abort reopen patch
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "2a36b6e35d55a9ad8d1d2cb001cea5ecf3a1a8f2"
+          python3 <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift")
+          text = path.read_text()
+          old = "        case freshRecorderIdentityMismatch\n        case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n"
+          new = "        case freshRecorderIdentityMismatch\n        case abortResolutionReceiptMismatch\n        case abortResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n        case abortQueueChangedAfterResolution(expected: UInt64, actual: UInt64)\n        case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n"
+          if text.count(old) != 1:
+              raise SystemExit("abort error insertion guard failed")
+          text = text.replace(old, new, 1)
+
+          marker = "    /// Reopens a successful terminal Horizon only after the controller has\n"
+          if text.count(marker) != 1:
+              raise SystemExit("abort reopen insertion guard failed")
+          method = base64.b64decode(os.environ["METHOD_B64"]).decode()
+          path.write_text(text.replace(marker, method + marker, 1))
+          PY
+          git diff --check
+          grep -F 'reopenAfterAbortedFreshTargetSession' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift
+          rm .github/workflows/capture-abort-fresh-reopen-transform.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m '[Capture abort v14] Reopen only from exact fresh recorder authority'
+          git push origin HEAD:feature/capture-abort-fresh-reopen-v14-current
