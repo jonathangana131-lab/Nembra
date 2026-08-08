@@ -55,7 +55,7 @@ struct NembraApp: App {
                             ContentUnavailableView(
                                 "Capture unavailable",
                                 systemImage: "antenna.radiowaves.left.and.right.slash",
-                                description: Text("The package-owned Experiment One workflow could not be created.")
+                                description: Text("The Experiment One capture workflow could not be created.")
                             )
                             .navigationTitle("Nembra Capture")
                             .accessibilityIdentifier("es80.research-capture-unavailable")
@@ -117,7 +117,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                             .font(.system(.largeTitle, design: .rounded, weight: .semibold))
                             .foregroundStyle(.white)
 
-                        Text("Declare the scooter charger state before Experiment One can expose OFF 1.")
+                        Text("Confirm the charger state before OFF 1 becomes available.")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -137,7 +137,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
 
                         chargerStateButton(
                             title: "Connected",
-                            detail: "Experiment One remains blocked",
+                            detail: "Unplug charger to continue",
                             systemImage: "bolt.fill",
                             state: .connected
                         )
@@ -155,7 +155,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                                     .font(.headline)
                                     .foregroundStyle(.white)
 
-                                Text("The accepted stationary fingerprint recipe requires the scooter charger disconnected. Nembra will not convert a connected declaration into disconnected provenance. Unplug the charger, then select Disconnected.")
+                                Text("This capture requires the scooter to be unplugged. Unplug the charger, then select Disconnected.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -189,7 +189,7 @@ private struct ES80ExperimentOneStationaryPreflightView: View {
                     .accessibilityHint("Available only after declaring that the charger is disconnected.")
                     .accessibilityIdentifier("es80.capture.preflight.continue")
 
-                    Text("This is an operator declaration, not charger sensing or proof that the condition remains unchanged. Keep the charger disconnected, Nembra foregrounded with the screen unlocked, and the stock scooter app closed through the run.")
+                    Text("Nembra cannot sense the charger directly. Keep it disconnected, keep Nembra open with the screen unlocked, and keep the stock scooter app closed for the whole capture.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -261,7 +261,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
     }
 
     private var physicalLockAccessibilityLabel: String {
-        "Physical Experiment One locked. Nembra will not expose the OFF and ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization."
+        "Physical Experiment One is locked. This build cannot start the scooter procedure. Nembra will enable it only after this exact build passes final validation and is deliberately authorized."
     }
 
     var body: some View {
@@ -292,7 +292,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         }
                     }
 
-                    Text("This exact build is not authorized to begin the physical ES80 procedure.")
+                    Text("This build is not cleared to begin a physical ES80 capture yet.")
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
@@ -305,11 +305,11 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Physical Experiment One locked")
+                        Text("Physical capture unavailable")
                             .font(.headline)
                             .foregroundStyle(.white)
 
-                        Text("Nembra will not expose the OFF/ON field controls until the final composed app, lifecycle authority, provenance, runtime, visual, accessibility, performance, and runbook gates have all earned a deliberate GO authorization.")
+                        Text("The OFF/ON steps stay hidden until this exact build passes final validation and is deliberately authorized for the field procedure.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -343,7 +343,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "checkmark.seal")
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
-                        Text("Single-authority workflow installed")
+                        Text("Capture workflow installed")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.white)
                     }
@@ -352,7 +352,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                         Image(systemName: "lock.fill")
                             .foregroundStyle(.orange)
                             .accessibilityHidden(true)
-                        Text("Field execution unavailable on this build")
+                        Text("Field procedure locked on this build")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -360,7 +360,7 @@ private struct ES80ExperimentOneFieldNoGoView: View {
                 .padding(18)
                 .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                Text("No physical action is required. A future accepted build must unlock this mechanically from package-owned authorization; a UI flag, typed identifier, or local preference cannot do it.")
+                Text("No action is needed on the scooter. Use only a build that explicitly shows GO before starting Experiment One; this screen cannot unlock the procedure.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
