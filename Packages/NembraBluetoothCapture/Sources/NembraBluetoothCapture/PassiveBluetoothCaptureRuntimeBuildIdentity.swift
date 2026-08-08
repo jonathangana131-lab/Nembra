@@ -15,7 +15,7 @@ public struct PassiveBluetoothCaptureRuntimeBuildIdentity: Equatable, Sendable {
     public let sourceCommitSHA: String
     public let executableSHA256: String
 
-    fileprivate init(
+    package init(
         buildIdentifier: String,
         buildInstanceID: String,
         sourceCommitSHA: String,
@@ -43,8 +43,9 @@ public enum PassiveBluetoothCaptureRuntimeBuildIdentityError: Error, Equatable, 
 /// Fail-closed producer for the build identity of the application that is actually running.
 ///
 /// Production callers intentionally receive no API that accepts arbitrary metadata or bytes.
-/// The only public producer reads `Bundle.main` and hashes its executable. Tests use the
-/// package-scoped resolver below to exercise validation deterministically.
+/// The only public producer reads `Bundle.main` and hashes its executable. Tests and package-owned
+/// artifact verification use package-scoped construction/resolution without exposing that surface
+/// to the app target.
 public enum PassiveBluetoothCaptureRuntimeBuildIdentityReader {
     public static let buildIdentifierInfoDictionaryKey = "NembraCaptureBuildIdentifier"
     public static let buildInstanceIDInfoDictionaryKey = "NembraCaptureBuildInstanceID"
