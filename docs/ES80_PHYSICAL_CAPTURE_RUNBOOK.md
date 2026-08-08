@@ -89,6 +89,7 @@ Before the first scan, the accepted app must mechanically verify or clearly bloc
 - storage/export readiness;
 - the exact versioned experiment recipe;
 - any required stock-app/reference-marker setup;
+- an explicit fresh-run **operator declaration** that the charger is physically **disconnected** and will remain disconnected for the capture; Nembra does **not sense or measure charger state directly**, so this declaration is setup provenance rather than measured device truth;
 - no unknown Nembra command path enabled;
 - scooter stationary and safe to test;
 - one intended physical ES80 available for the correlation sequence.
@@ -254,6 +255,7 @@ Stop the experiment and preserve only legitimate evidence if any required condit
 - runtime build identity no longer matches the package-owned accepted field-build authority;
 - the field-authorization envelope bytes, signed subject bytes, or authorization payload do not match the exact digests recorded in the final GO record;
 - the package trust anchor on the running accepted build does not match the final GO record's accepted authority public-key X9.63 SHA-256;
+- the operator-declared **charger-disconnected** setup stops being true or becomes uncertain; stop the session and restart only from a fresh preflight after the charger is safely disconnected again;
 - the physical setup becomes unsafe or would require touching the phone while moving.
 
 Do not improvise around a failed gate in the field. The correct result is an incomplete/failed capture plus an exact blocker for the next software or experiment iteration.
