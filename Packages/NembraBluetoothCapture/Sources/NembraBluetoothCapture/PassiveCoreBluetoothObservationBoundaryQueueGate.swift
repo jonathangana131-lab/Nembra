@@ -35,8 +35,7 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
         case abortQueueRetirementRequired
         case abortRetirementReceiptMismatch
         case abortQueueTailChanged
-        case terminalQueueChangedAfterRetirement(expected: UInt64, actual: UInt64)
-        case retainedEvidenceRoutingRequired(retainedCount: Int)
+        case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)
     }
 
     struct Transaction: Equatable, Sendable {
@@ -396,47 +395,43 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     }
 
     /// Reopens boundary admission after a completed terminal Horizon only when
-    /// producer-issued post-H retirement proof still matches the exact terminal
-    /// transaction and the controller has already created a strictly newer durable
-    /// target session/recorder generation.
+    /// producer-issued queue-resolution proof matches the exact terminal transaction
+    /// and the controller has already created a strictly newer durable target
+    /// session/recorder generation.
     ///
-    /// The call is synchronous and MainActor-isolated. The controller must retire
-    /// the terminal queue and consume this receipt without an intervening `await`;
-    /// any callback that advances the global queue tail invalidates the receipt. A
-    /// receipt that preserves pending evidence is not standalone reopen authority:
-    /// retained recorder destinations require a separately accepted routing/adoption
-    /// contract and this overload deliberately cannot bypass that requirement.
+    /// Resolution authority is intentionally stronger than the lower-level retirement
+    /// receipt. `PassiveCoreBluetoothTerminalQueueResolution` has already proven that
+    /// the complete post-H suffix was retired with zero retained evidence and that the
+    /// controller's prior globally-resolved frontier was exactly H. Those positions are
+    /// therefore resolved-by-retirement, never relabeled as recorder-written evidence.
     ///
-    /// On success the exact fresh target-session generation is bound until its first
-    /// Ready begins, matching the stronger pre-H recovery grammar above. This means
-    /// neither the sealed terminal session nor an unrelated newer session may consume
-    /// the reopened lifecycle. Transaction revision remains monotonic because this
-    /// gate instance is preserved.
+    /// The call is synchronous and MainActor-isolated. The controller must resolve the
+    /// terminal queue and consume this receipt without an intervening `await`; any
+    /// callback that advances the global queue tail invalidates the receipt. On success
+    /// the exact fresh target-session generation is bound until its first Ready begins,
+    /// matching the pre-H recovery grammar. Transaction revision remains monotonic
+    /// because this gate instance is preserved.
     @MainActor
-    mutating func reopenAfterTerminalQueueRetirement(
-        _ receipt: PassiveCoreBluetoothTerminalQueueRetirement.Receipt,
+    mutating func reopenAfterTerminalQueueResolution(
+        _ resolution: PassiveCoreBluetoothTerminalQueueResolution.Receipt,
         currentLastEnqueuedEventSequence: UInt64,
         freshTargetSessionGeneration: UInt64
     ) throws {
         guard case let .terminal(transaction) = phase else {
             throw StateError.invalidTransition
         }
-        guard receipt.terminalTransactionRevision == transaction.revision,
-              receipt.horizonQueueCutoff == transaction.queueCutoff else {
+        guard resolution.terminalTransactionRevision == transaction.revision,
+              resolution.horizonQueueCutoff == transaction.queueCutoff,
+              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
             throw StateError.staleTransaction
         }
-        guard receipt.terminalAuthority == transaction.authority else {
+        guard resolution.terminalAuthority == transaction.authority else {
             throw StateError.authorityChanged
         }
-        guard receipt.validatedQueueTailSequence == currentLastEnqueuedEventSequence else {
-            throw StateError.terminalQueueChangedAfterRetirement(
-                expected: receipt.validatedQueueTailSequence,
+        guard resolution.resolvedThroughQueueSequence == currentLastEnqueuedEventSequence else {
+            throw StateError.terminalQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
                 actual: currentLastEnqueuedEventSequence
-            )
-        }
-        guard !receipt.requiresRetainedEvidenceRoutingBeforeReopen else {
-            throw StateError.retainedEvidenceRoutingRequired(
-                retainedCount: receipt.retainedPendingEvidenceCount
             )
         }
         guard freshTargetSessionGeneration > transaction.authority.targetSessionGeneration else {
@@ -455,8 +450,8 @@ struct PassiveCoreBluetoothObservationBoundaryQueueGate: Equatable, Sendable {
     ///
     /// `resetForNewCaptureSession()` never escapes abort quarantine and never clears
     /// the exact fresh-session generation retained after either completed pre-H abort
-    /// recovery or post-H terminal retirement recovery. Terminal artifact freeze alone
-    /// likewise stays closed until the receipt-gated transition above succeeds.
+    /// recovery or post-H resolved-by-retirement recovery. Terminal artifact freeze
+    /// alone likewise stays closed until the resolution-gated transition above succeeds.
     @discardableResult
     mutating func resetForNewCaptureSession() -> Bool {
         guard phase == .awaitingReady else {
