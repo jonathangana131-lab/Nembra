@@ -7,6 +7,7 @@ import NembraCore
 /// physical scooter or imply any BLE/Tuya field semantics.
 enum PassiveBluetoothExperimentOneRunError: Error, Equatable, Sendable {
     case powerCycleIncomplete
+    case powerCycleAuthorityInvalid
     case powerCycleCorrelationNotUnique
     case captureRecorderAlreadyCreated
     case captureRecorderNotCreated
@@ -15,48 +16,55 @@ enum PassiveBluetoothExperimentOneRunError: Error, Equatable, Sendable {
 /// A completed four-window result that can be joined to Experiment One capture evidence only by
 /// the package-owned run that issued both producers.
 ///
-/// This type is intentionally package-internal until the accepted foreground controller owns the
-/// subsequent recorder and H-bounded finalization. Ordinary clients cannot construct or retain an
-/// authority-bearing Experiment One handoff from an arbitrary raw result.
+/// `observationSeriesIdentity` is not a second experiment token: it is the exact opaque,
+/// package-issued authority already retained by all four accepted power-cycle snapshots. This type
+/// is intentionally package-internal until the accepted foreground controller owns subsequent
+/// recorder mutation and H-bounded finalization.
 struct PassiveBluetoothExperimentOnePowerCycleEvidence: Equatable, Sendable {
     let result: PassiveBluetoothPowerCycleObservationResult
-    let runAuthorityID: UUID
+    let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
 
-    init(
-        runAuthorityID: UUID,
+    init?(
         result: PassiveBluetoothPowerCycleObservationResult
     ) {
-        self.runAuthorityID = runAuthorityID
+        let identities = result.correlation.observationSeriesIdentities
+        guard identities.count == PassiveBluetoothPowerCycleObservationPhase.allCases.count,
+              let identity = identities.first,
+              identities.allSatisfy({ $0 == identity }) else {
+            return nil
+        }
+
         self.result = result
+        observationSeriesIdentity = identity
     }
 }
 
-/// An immutable capture snapshot bound to the same package-owned Experiment One run authority as
-/// its power-cycle producer.
+/// An immutable capture snapshot bound to the exact package-issued power-cycle producer authority
+/// that opened the capture phase.
 ///
-/// This is package-internal for the same reason as the run itself: a public raw
-/// `PassiveBluetoothCaptureSession` remains useful research/offline evidence, but must not be
-/// promotable by app/UI code into an authority-bearing Experiment One completion input.
+/// This is package-internal: public raw `PassiveBluetoothCaptureSession` remains useful research
+/// evidence, but app/UI code cannot promote an arbitrary capture into this authority-bearing input.
 struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
     let session: PassiveBluetoothCaptureSession
-    let runAuthorityID: UUID
+    let observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity
 
     init(
-        runAuthorityID: UUID,
+        observationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity,
         session: PassiveBluetoothCaptureSession
     ) {
-        self.runAuthorityID = runAuthorityID
+        self.observationSeriesIdentity = observationSeriesIdentity
         self.session = session
     }
 }
 
 /// Package-internal provenance root for one complete Experiment One attempt.
 ///
-/// One instance issues exactly one four-window producer and, only after that producer finishes with
-/// one unique repeated full UUID, at most one passive capture recorder. Evidence snapshots emitted
-/// by this object carry the same package-generated run authority. A different run receives a
-/// different authority even when CoreBluetooth later reports the same peripheral UUID, so
-/// stale/swapped same-UUID artifacts cannot satisfy the package-owned evidence composition.
+/// One instance owns one four-window producer. Only after that exact producer finishes under one
+/// valid package-issued `PassiveBluetoothCandidateObservationSeriesIdentity` with one unique
+/// repeated full UUID may the run create its capture recorder. Subsequent capture evidence retains
+/// that same producer identity. A different producer life receives a different package-issued
+/// identity even when CoreBluetooth later reports the same peripheral UUID, so stale/swapped
+/// same-UUID artifacts cannot satisfy Experiment One composition.
 ///
 /// Experiment One's 10-second per-window policy is fixed inside this product-specific owner. The
 /// caller cannot shorten it to reach capture acquisition sooner. That duration remains a local
@@ -73,8 +81,8 @@ final class PassiveBluetoothExperimentOneRun {
     let vehicleIdentity: VehicleIdentity
     let powerCycleObservationSession: PassiveBluetoothPowerCycleObservationSession
 
-    private let runAuthorityID = UUID()
     private var captureRecorder: PassiveCoreBluetoothCaptureRecorder?
+    private var captureObservationSeriesIdentity: PassiveBluetoothCandidateObservationSeriesIdentity?
 
     init(vehicleIdentity: VehicleIdentity) throws {
         self.vehicleIdentity = vehicleIdentity
@@ -86,13 +94,10 @@ final class PassiveBluetoothExperimentOneRun {
     }
 
     /// Bound evidence exists only after this run's exact package-owned four-window producer has
-    /// completed. No external caller can substitute a detached result into this property.
+    /// completed under one valid observation-series authority.
     var completedPowerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence? {
         guard let result = powerCycleObservationSession.result else { return nil }
-        return PassiveBluetoothExperimentOnePowerCycleEvidence(
-            runAuthorityID: runAuthorityID,
-            result: result
-        )
+        return PassiveBluetoothExperimentOnePowerCycleEvidence(result: result)
     }
 
     var hasCaptureRecorder: Bool {
@@ -100,8 +105,8 @@ final class PassiveBluetoothExperimentOneRun {
     }
 
     /// Package-internal only. The future live coordinator may use this exact recorder as the one
-    /// injected into/owned by the corrected foreground controller. It must never be surfaced as the
-    /// app-facing authority-bearing capture handoff.
+    /// injected into/owned by the corrected foreground controller. Starting capture retains the
+    /// exact existing power-cycle producer authority; no caller-supplied identity is accepted.
     @discardableResult
     func beginCaptureRecorder(
         startedAt: Date = Date()
@@ -109,8 +114,11 @@ final class PassiveBluetoothExperimentOneRun {
         guard captureRecorder == nil else {
             throw PassiveBluetoothExperimentOneRunError.captureRecorderAlreadyCreated
         }
-        guard let evidence = completedPowerCycleEvidence else {
+        guard powerCycleObservationSession.result != nil else {
             throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
+        }
+        guard let evidence = completedPowerCycleEvidence else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
         }
         guard case .singleRepeatableCandidate(_) = evidence.result.correlation.disposition else {
             throw PassiveBluetoothExperimentOneRunError.powerCycleCorrelationNotUnique
@@ -120,18 +128,22 @@ final class PassiveBluetoothExperimentOneRun {
             vehicleIdentity: vehicleIdentity,
             startedAt: startedAt
         )
+        captureObservationSeriesIdentity = evidence.observationSeriesIdentity
         captureRecorder = recorder
         return recorder
     }
 
     /// Snapshots only this run's exact internally held recorder and binds that immutable session to
-    /// the same hidden authority as the completed four-window result.
+    /// the producer authority captured atomically when the run entered its capture phase.
     func captureEvidenceSnapshot() async throws -> PassiveBluetoothExperimentOneCaptureEvidence {
         guard let captureRecorder else {
             throw PassiveBluetoothExperimentOneRunError.captureRecorderNotCreated
         }
+        guard let captureObservationSeriesIdentity else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
+        }
         return PassiveBluetoothExperimentOneCaptureEvidence(
-            runAuthorityID: runAuthorityID,
+            observationSeriesIdentity: captureObservationSeriesIdentity,
             session: await captureRecorder.snapshot()
         )
     }
@@ -140,8 +152,11 @@ final class PassiveBluetoothExperimentOneRun {
     /// app-facing completion signal until the controller owns recorder mutation and finalized
     /// H-bounded artifact production under accepted controller authority.
     func captureEvidenceAssessment() async throws -> PassiveBluetoothExperimentOneCaptureEvidenceAssessment {
-        guard let powerCycleEvidence = completedPowerCycleEvidence else {
+        guard powerCycleObservationSession.result != nil else {
             throw PassiveBluetoothExperimentOneRunError.powerCycleIncomplete
+        }
+        guard let powerCycleEvidence = completedPowerCycleEvidence else {
+            throw PassiveBluetoothExperimentOneRunError.powerCycleAuthorityInvalid
         }
         let captureEvidence = try await captureEvidenceSnapshot()
         return PassiveBluetoothExperimentOneCaptureEvidenceAssessment.assess(
