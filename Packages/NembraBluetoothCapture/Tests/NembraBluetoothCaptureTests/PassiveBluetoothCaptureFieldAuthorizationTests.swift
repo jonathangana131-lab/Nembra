@@ -121,6 +121,93 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
     }
 
     @Test
+    func duplicateEnvelopeAuthorityFieldsFailClosedBeforeDecoding() throws {
+        let fixture = try makeFixture()
+        let envelopeObject = try jsonObject(fixture.envelope)
+
+        for field in [
+            "schemaVersion",
+            "externalBuildRecordBase64",
+            "authorizationPayloadBase64",
+            "signatureDERBase64",
+        ] {
+            let duplicated = try insertingDuplicateField(
+                field,
+                value: try #require(envelopeObject[field]),
+                into: fixture.envelope
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureFieldAuthorizationError
+                    .duplicateEnvelopeField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                    duplicated,
+                    publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                    runtimeBuildIdentity: fixture.runtimeIdentity
+                )
+            }
+        }
+    }
+
+    @Test
+    func signedDuplicateAuthorizationPayloadFieldsFailClosedBeforePromotion() throws {
+        let fixture = try makeFixture()
+        let payloadObject = try jsonObject(fixture.payload)
+
+        for field in [
+            "schemaVersion",
+            "decision",
+            "externalBuildRecordSHA256",
+        ] {
+            let duplicatedPayload = try insertingDuplicateField(
+                field,
+                value: try #require(payloadObject[field]),
+                into: fixture.payload
+            )
+            let signedEnvelope = try makeEnvelope(
+                record: fixture.record,
+                payload: duplicatedPayload,
+                signingKey: fixture.privateKey
+            )
+            #expect(
+                throws: PassiveBluetoothCaptureFieldAuthorizationError
+                    .duplicateAuthorizationPayloadField(field)
+            ) {
+                _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                    signedEnvelope,
+                    publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                    runtimeBuildIdentity: fixture.runtimeIdentity
+                )
+            }
+        }
+    }
+
+    @Test
+    func escapedDuplicateAuthorizationKeyFailsClosedBySemanticName() throws {
+        let fixture = try makeFixture()
+        let canonicalPayload = String(decoding: fixture.payload, as: UTF8.self)
+        let escapedDuplicatePayload = Data(
+            ("{\"decisio\\u006e\":\"GO\"," + canonicalPayload.dropFirst()).utf8
+        )
+        let signedEnvelope = try makeEnvelope(
+            record: fixture.record,
+            payload: escapedDuplicatePayload,
+            signingKey: fixture.privateKey
+        )
+
+        #expect(
+            throws: PassiveBluetoothCaptureFieldAuthorizationError
+                .duplicateAuthorizationPayloadField("decision")
+        ) {
+            _ = try PassiveBluetoothCaptureFieldAuthorizationVerifier.verify(
+                signedEnvelope,
+                publicKeyX963Representation: fixture.privateKey.publicKey.x963Representation,
+                runtimeBuildIdentity: fixture.runtimeIdentity
+            )
+        }
+    }
+
+    @Test
     func onlyCanonicalSignedGoDecisionIsAccepted() throws {
         let signingKey = P256.Signing.PrivateKey()
         let runtimeIdentity = try makeRuntimeIdentity()
@@ -268,6 +355,27 @@ struct PassiveBluetoothCaptureFieldAuthorizationTests {
             throw TestFixtureError.expectedJSONObject
         }
         return dictionary
+    }
+
+    private func insertingDuplicateField(
+        _ field: String,
+        value: Any,
+        into objectData: Data
+    ) throws -> Data {
+        let canonicalObject = String(decoding: objectData, as: UTF8.self)
+        guard canonicalObject.first == "{" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+
+        let wrappedValue = try JSONSerialization.data(withJSONObject: [value])
+        let wrappedValueJSON = String(decoding: wrappedValue, as: UTF8.self)
+        guard wrappedValueJSON.first == "[", wrappedValueJSON.last == "]" else {
+            throw TestFixtureError.expectedJSONObject
+        }
+        let valueJSON = wrappedValueJSON.dropFirst().dropLast()
+        return Data(
+            ("{\"\(field)\":\(valueJSON)," + canonicalObject.dropFirst()).utf8
+        )
     }
 
     private func sha256Hex(_ data: Data) -> String {
