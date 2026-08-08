@@ -104,6 +104,92 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureHorizonReadyRecomposesAtAccessibilityExtraExtraExtraLarge() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+        ]
+        app.launch()
+
+        let shell = app.descendants(matching: .any)["es80.capture-shell"]
+        let disclosure = app.descendants(matching: .any)["es80.capture.simulator-qa"]
+        let passiveMode = app.staticTexts["PASSIVE / READ ONLY"]
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        let health = app.descendants(matching: .any)["es80.capture.health"]
+        let finish = app.descendants(matching: .any)["es80.capture.finish"]
+
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(passiveMode.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertTrue(health.waitForExistence(timeout: 3))
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+        XCTAssertFalse(app.buttons["Vehicle controls"].exists)
+
+        assertVisibleInCurrentViewport(
+            disclosure,
+            app: app,
+            context: "synthetic QA disclosure at Accessibility XXXL"
+        )
+        assertVisibleInCurrentViewport(
+            passiveMode,
+            app: app,
+            context: "PASSIVE / READ ONLY hero state at Accessibility XXXL"
+        )
+        keepScreenshot(named: "Nembra Capture V14 — SIMULATOR QA — Hero — Accessibility XXXL")
+
+        bringIntoCurrentViewport(
+            progress,
+            app: app,
+            context: "paired Capture progress at Accessibility XXXL"
+        )
+        keepScreenshot(named: "Nembra Capture V14 — SIMULATOR QA — Progress — Accessibility XXXL")
+
+        bringIntoCurrentViewport(
+            health,
+            app: app,
+            context: "stacked Capture health at Accessibility XXXL"
+        )
+        keepScreenshot(named: "Nembra Capture V14 — SIMULATOR QA — Health — Accessibility XXXL")
+
+        bringIntoCurrentViewport(
+            finish,
+            app: app,
+            context: "Seal Capture action at Accessibility XXXL"
+        )
+        keepScreenshot(named: "Nembra Capture V14 — SIMULATOR QA — Seal — Accessibility XXXL")
+    }
+
+    @MainActor
+    func testCaptureHorizonReadyProgressRemainsReviewableInLandscape() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--es80-passive-capture-simulator-qa",
+            "--es80-capture-qa-scenario=observationHorizonReady"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["es80.capture-shell"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.orientation = .landscapeLeft
+
+        let progress = app.descendants(matching: .any)["es80.capture.experiment-progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["es80.capture.field-no-go"].exists)
+
+        let window = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(window.width, window.height, "Capture progress review must actually run in landscape.")
+        bringIntoCurrentViewport(progress, app: app, context: "Capture progress in landscape")
+        keepScreenshot(named: "Nembra Capture V14 — SIMULATOR QA — Progress — Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
@@ -196,6 +282,64 @@ final class NembraUITests: XCTestCase {
             "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
         )
         keepScreenshot(named: screenshotName)
+    }
+
+    @MainActor
+    private func bringIntoCurrentViewport(
+        _ element: XCUIElement,
+        app: XCUIApplication,
+        context: String,
+        maxSwipes: Int = 6,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "Required \(context) must exist before viewport navigation.",
+            file: file,
+            line: line
+        )
+
+        var remaining = maxSwipes
+        while remaining > 0 {
+            if isVisibleInCurrentViewport(element, app: app) {
+                return
+            }
+            app.swipeUp()
+            remaining -= 1
+        }
+
+        assertVisibleInCurrentViewport(element, app: app, context: context, file: file, line: line)
+    }
+
+    @MainActor
+    private func assertVisibleInCurrentViewport(
+        _ element: XCUIElement,
+        app: XCUIApplication,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let window = app.windows.firstMatch.frame
+        let frame = element.frame
+        XCTAssertGreaterThan(frame.width, 0, "Required \(context) must have positive width.", file: file, line: line)
+        XCTAssertGreaterThan(frame.height, 0, "Required \(context) must have positive height.", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(frame.minX, window.minX - 1, "Required \(context) clips off the leading viewport edge.", file: file, line: line)
+        XCTAssertLessThanOrEqual(frame.maxX, window.maxX + 1, "Required \(context) clips off the trailing viewport edge.", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(frame.minY, window.minY - 1, "Required \(context) clips above the viewport.", file: file, line: line)
+        XCTAssertLessThanOrEqual(frame.maxY, window.maxY + 1, "Required \(context) clips below the viewport.", file: file, line: line)
+    }
+
+    @MainActor
+    private func isVisibleInCurrentViewport(_ element: XCUIElement, app: XCUIApplication) -> Bool {
+        let window = app.windows.firstMatch.frame
+        let frame = element.frame
+        return frame.width > 0
+            && frame.height > 0
+            && frame.minX >= window.minX - 1
+            && frame.maxX <= window.maxX + 1
+            && frame.minY >= window.minY - 1
+            && frame.maxY <= window.maxY + 1
     }
 
     @MainActor
