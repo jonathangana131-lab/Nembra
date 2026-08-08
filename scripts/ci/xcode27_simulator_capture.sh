@@ -9,19 +9,27 @@ DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
-mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE"
 
 CAPTURE_BUILD_COMMIT_SHA="$(git rev-parse --verify HEAD^{commit})"
 if [[ ! "$CAPTURE_BUILD_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Capture build identity requires an exact 40-hex Git commit; got: $CAPTURE_BUILD_COMMIT_SHA" >&2
   exit 8
 fi
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-  echo "Capture build identity refuses a checkout with tracked-file modifications." >&2
-  git status --short --untracked-files=no >&2
+
+# Exact source identity must cover every non-ignored file that could enter the build. SwiftPM and
+# Xcode can discover an untracked source under synchronized/package source roots, so checking only
+# tracked modifications would allow HEAD to look exact while the binary contains code outside Git.
+# Run this before creating the QA artifact directory so runner output cannot contaminate the check.
+REPOSITORY_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
+if [[ -n "$REPOSITORY_STATUS" ]]; then
+  echo "Capture build identity refuses tracked changes or non-ignored untracked files." >&2
+  printf '%s\n' "$REPOSITORY_STATUS" >&2
   exit 9
 fi
+
+mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
+rm -rf "$RESULT_BUNDLE"
+
 CAPTURE_BUILD_IDENTIFIER="Capture Build V14-${CAPTURE_BUILD_COMMIT_SHA:0:12}"
 CAPTURE_BUILD_INSTANCE_ID="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
 if [[ ! "$CAPTURE_BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
