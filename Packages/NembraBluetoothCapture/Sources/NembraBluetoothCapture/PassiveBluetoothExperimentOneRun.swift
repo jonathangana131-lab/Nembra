@@ -83,12 +83,21 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         case alreadyConsumed
     }
 
-    struct Preview: Equatable, Sendable {
+    struct StagingPreview: Equatable, Sendable {
         let admissionIdentity: UUID
-        let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         /// Local monotonic handoff boundary. This is callback chronology only, never RF emission time.
         let issuedAtUptimeNanoseconds: UInt64
+
+        fileprivate init(
+            admissionIdentity: UUID,
+            peripheralIdentifier: UUID,
+            issuedAtUptimeNanoseconds: UInt64
+        ) {
+            self.admissionIdentity = admissionIdentity
+            self.peripheralIdentifier = peripheralIdentifier
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
+        }
     }
 
     struct Payload {
@@ -117,13 +126,6 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     private let payload: Payload
     private var hasBeenConsumed = false
 
-    /// Package-owned read-only one-shot state. This reveals no payload, recorder,
-    /// target identifier, or mutation authority; it only lets the coordinator decide
-    /// whether a controller error happened before or after irreversible consumption.
-    var isConsumed: Bool {
-        hasBeenConsumed
-    }
-
     fileprivate init(
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
@@ -138,11 +140,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
         )
     }
 
-    /// Read-only producer-owned staging view. Reading it cannot consume the handoff.
-    var preview: Preview {
-        Preview(
+    /// Producer-owned read-only staging authority. It exposes no recorder or raw
+    /// power-cycle evidence and cannot be read after any alias consumes the handoff.
+    func previewForControllerStaging() throws -> StagingPreview {
+        guard !hasBeenConsumed else {
+            throw ConsumptionError.alreadyConsumed
+        }
+        return StagingPreview(
             admissionIdentity: payload.admissionIdentity,
-            powerCycleEvidence: payload.powerCycleEvidence,
             peripheralIdentifier: payload.peripheralIdentifier,
             issuedAtUptimeNanoseconds: payload.issuedAtUptimeNanoseconds
         )
