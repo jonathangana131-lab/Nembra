@@ -46,10 +46,6 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
         self.procedureVersion = procedureVersion
     }
 
-    /// Projects this parsed declaration into #781's mechanical build-comparison input.
-    ///
-    /// A successful projection inherits no trust merely because this record parsed. Callers must
-    /// keep independently accepted external-record/attestation authority separate from this value.
     public func makeSoftwareExportBuildReference() throws
         -> PassiveBluetoothExperimentOneSoftwareExportBuildReference
     {
@@ -61,11 +57,6 @@ public struct PassiveBluetoothCaptureExternalBuildRecord: Equatable, Sendable {
         )
     }
 
-    /// Fail-closed mechanical comparison against the identity measured from the running app.
-    ///
-    /// Exact equality here proves only that this parsed declaration names the same build facts the
-    /// app can measure locally. It does **not** prove that the external record was independently
-    /// attested or accepted, and it never authorizes the physical Experiment One procedure.
     public func validateRuntimeBinding(
         to runtimeIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
     ) throws {
@@ -98,6 +89,7 @@ public enum PassiveBluetoothCaptureExternalBuildRuntimeBindingError: Error, Equa
 public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, Sendable {
     case malformedJSON
     case unexpectedField(String)
+    case duplicateField(String)
     case unsupportedSchemaVersion(Int)
     case invalidBuildIdentifier
     case buildIdentifierSourceMismatch
@@ -109,9 +101,6 @@ public enum PassiveBluetoothCaptureExternalBuildRecordError: Error, Equatable, S
     case unsupportedProcedureVersion(String)
 }
 
-/// Strict parser for the non-self-referential external build record produced by Nembra's build
-/// pipeline. This parser intentionally performs no network lookup and mints no accepted/attested
-/// authority from arbitrary JSON bytes.
 public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
     private struct WireV3: Decodable {
         let schemaVersion: Int
@@ -185,6 +174,10 @@ public enum PassiveBluetoothCaptureExternalBuildRecordJSON {
     }
 
     private static func validateClosedWorldShape(_ data: Data) throws {
+        if let duplicateKey = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
+            throw PassiveBluetoothCaptureExternalBuildRecordError.duplicateField(duplicateKey)
+        }
+
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
