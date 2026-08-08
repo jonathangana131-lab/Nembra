@@ -84,10 +84,20 @@ jobs:
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
           bash -n scripts/ci/xcode27_simulator_capture.sh
+          python3 -m py_compile \
+            scripts/ci/verify_es80_field_artifact.py \
+            scripts/ci/test_verify_es80_field_artifact.py
 
       - name: Validate core package
         working-directory: Packages/NembraCore
         run: swift test
+
+      - name: Validate Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Validate signed field-artifact verifier
+        run: python3 scripts/ci/test_verify_es80_field_artifact.py
 
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
