@@ -1,0 +1,31 @@
+name: Temporary ES80 V14 rider-language patch
+
+on:
+  push:
+    branches:
+      - product/es80-v14-rider-language-current/gpt56-thinking-go
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply and verify product copy
+        run: |
+          python3 .github/scripts/_temporary_es80_v14_rider_language_patch.py
+          git diff --check
+      - name: Commit product result and remove temporary machinery
+        run: |
+          rm .github/workflows/_temporary_es80_v14_rider_language_patch.yml
+          rm .github/scripts/_temporary_es80_v14_rider_language_patch.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/Features/Research/ES80CaptureShellView.swift .github/workflows/_temporary_es80_v14_rider_language_patch.yml .github/scripts/_temporary_es80_v14_rider_language_patch.py
+          git commit -m 'fix(capture): make primary field copy human-first'
+          git push origin HEAD:product/es80-v14-rider-language-current/gpt56-thinking-go
