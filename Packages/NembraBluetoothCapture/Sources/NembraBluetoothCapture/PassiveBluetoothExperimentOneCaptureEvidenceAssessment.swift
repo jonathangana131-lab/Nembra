@@ -20,8 +20,8 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
 /// Public raw evidence remains available for research and offline analysis only.
 ///
 /// Once invoked by the package-owned producer path, composition closes these evidence boundaries:
-/// - both opaque inputs must carry the same package-issued run authority before UUID/duration can
-///   contribute at all;
+/// - both opaque inputs must retain the same exact package-issued power-cycle observation-series
+///   identity before UUID/duration can contribute at all;
 /// - the exact four receipt-bounded OFF₁ -> ON₁ -> OFF₂ -> ON₂ result must meet Experiment One's
 ///   per-window duration policy;
 /// - the raw package-issued candidate snapshots must still align with their window receipts and
@@ -39,9 +39,9 @@ public enum PassiveBluetoothExperimentOneCapturePolicy {
 /// remain separate gates.
 struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendable {
     enum Status: Equatable, Sendable {
-        /// The two otherwise-valid artifacts were issued by different package-owned experiment
-        /// runs. UUID equality cannot repair this provenance break.
-        case experimentRunAuthorityMismatch
+        /// The two otherwise-valid artifacts were issued under different package-owned power-cycle
+        /// producer lives. UUID equality cannot repair this provenance break.
+        case observationSeriesAuthorityMismatch
         case powerCycleDurationRejected(
             PassiveBluetoothPowerCycleObservationWindowDurationAssessment.Status
         )
@@ -136,8 +136,8 @@ struct PassiveBluetoothExperimentOneCaptureEvidenceAssessment: Equatable, Sendab
         }
 
         let status: Status
-        if powerCycleEvidence.runAuthorityID != captureEvidence.runAuthorityID {
-            status = .experimentRunAuthorityMismatch
+        if powerCycleEvidence.observationSeriesIdentity != captureEvidence.observationSeriesIdentity {
+            status = .observationSeriesAuthorityMismatch
         } else if !powerCycleDuration.isDurationSufficient {
             status = .powerCycleDurationRejected(powerCycleDuration.status)
         } else if replayedCorrelation == nil || replayedCorrelation != powerCycleResult.correlation {
