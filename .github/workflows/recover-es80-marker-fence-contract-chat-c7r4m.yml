@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 6
+          fetch-depth: 8
       - name: Verify exact product ancestry
         run: |
           set -euo pipefail
@@ -28,44 +28,52 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+
           path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift")
           source = path.read_text()
-          old = '''    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
-              let source = try Self.controllerSource()
-              let cancellation = try Self.section(
-          '''
-          new = '''    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {
-              let source = try Self.controllerSource()
-
-              let artifactReads = try Self.section(
-                  in: source,
-                  from: "    public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {",
-                  to: "    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {"
-              )
-              #expect(artifactReads.contains("lastFinalizedArtifactAuthority = context.authority"))
-
-              let teardown = try Self.section(
-                  in: source,
-                  from: "    public func teardownActiveConnectionAfterFinalization() throws {",
-                  to: "    private func cancelActiveConnection(cause:"
-              )
-              let finalizationAuthorizationOffset = try Self.offset(
-                  of: "guard let finalizedAuthority = lastFinalizedArtifactAuthority,",
-                  in: teardown
-              )
-              let finalizedTeardownOffset = try Self.offset(
-                  of: "cancelActiveConnection(cause: .finalizedArtifactTeardown)",
-                  in: teardown
-              )
-              #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)
-
-              let cancellation = try Self.section(
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected one finalized-teardown regression seam, found {source.count(old)}")
-          if "let finalizationAuthorizationOffset" in source:
+          method_start_marker = "    func finalizedTeardownQuarantineRejectsMarkersBeforeTerminalCallback() throws {\n"
+          method_end_marker = "    @Test\n    func acquisitionWatchdogRetainsOneSpecificFenceWithoutGenericCancel() throws {\n"
+          start = source.find(method_start_marker)
+          if start < 0:
+              raise SystemExit("finalized teardown marker regression method not found")
+          end = source.find(method_end_marker, start)
+          if end < 0:
+              raise SystemExit("watchdog regression boundary not found")
+          method = source[start:end]
+          if "let finalizationAuthorizationOffset" in method:
               raise SystemExit("authoritative ordering assertions already present")
-          source = source.replace(old, new, 1)
+
+          needle = "        let source = try Self.controllerSource()\n"
+          if method.count(needle) != 1:
+              raise SystemExit(f"expected one controller-source seam, found {method.count(needle)}")
+
+          addition = (
+              needle
+              + "\n"
+              + "        let artifactReads = try Self.section(\n"
+              + "            in: source,\n"
+              + "            from: \"    public func captureSnapshot() async throws -> PassiveBluetoothCaptureSession {\",\n"
+              + "            to: \"    private func beginTargetSessionIfNeeded(for identifier: UUID) throws {\"\n"
+              + "        )\n"
+              + "        #expect(artifactReads.contains(\"lastFinalizedArtifactAuthority = context.authority\"))\n"
+              + "\n"
+              + "        let teardown = try Self.section(\n"
+              + "            in: source,\n"
+              + "            from: \"    public func teardownActiveConnectionAfterFinalization() throws {\",\n"
+              + "            to: \"    private func cancelActiveConnection(cause:\"\n"
+              + "        )\n"
+              + "        let finalizationAuthorizationOffset = try Self.offset(\n"
+              + "            of: \"guard let finalizedAuthority = lastFinalizedArtifactAuthority,\",\n"
+              + "            in: teardown\n"
+              + "        )\n"
+              + "        let finalizedTeardownOffset = try Self.offset(\n"
+              + "            of: \"cancelActiveConnection(cause: .finalizedArtifactTeardown)\",\n"
+              + "            in: teardown\n"
+              + "        )\n"
+              + "        #expect(finalizationAuthorizationOffset < finalizedTeardownOffset)\n"
+          )
+          method = method.replace(needle, addition, 1)
+          source = source[:start] + method + source[end:]
           path.write_text(source)
           PY
           grep -Fq 'let finalizationAuthorizationOffset' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerSourceContractTests.swift
