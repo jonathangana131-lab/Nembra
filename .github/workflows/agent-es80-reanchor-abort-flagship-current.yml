@@ -1,0 +1,63 @@
+name: Agent ES80 reanchor abort recovery flagship current
+
+on:
+  push:
+    branches:
+      - integration/es80-v14-abort-recovery-flagship-current/chatgpt56
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/es80-v14-abort-recovery-flagship-current/chatgpt56
+          fetch-depth: 0
+      - name: Fetch reviewed current-shell overlay source
+        shell: bash
+        run: git fetch origin integration/es80-v14-abort-recovery-current-shell/chatgpt56
+      - name: Overlay exact six-file strict abort delta
+        shell: bash
+        run: |
+          git checkout bd07e9e2e6cef29605c1311af7defbd077aceeb4 -- \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContractTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneCoordinatorStrictRediscoveryCompatibilityTests.swift
+      - name: Verify current flagship plus strict abort truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          coordinator=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift
+          run=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift
+          controller=Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift
+          grep -F 'public enum FinalizationCleanupStatus' "$coordinator"
+          grep -F 'admission.previewForControllerStaging()' "$coordinator"
+          ! grep -F 'admission.stagingPreview()' "$coordinator"
+          grep -F 'func previewForControllerStaging() throws -> StagingPreview' "$run"
+          grep -F 'reopenAfterAbortedFreshTargetSession(' "$controller"
+          grep -F 'PassiveCoreBluetoothAbortedQueueResolution.resolve(' "$controller"
+          grep -F 'scheduleAbortedFreshTargetSessionRecoveryIfNeeded()' "$controller"
+          test -f NembraUITests/ES80ResearchCaptureUITests.swift
+          test -f Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneFinalShareIntegrity.swift
+          git diff --check
+      - name: Remove temporary workflow and checkpoint flagship composition
+        shell: bash
+        run: |
+          rm .github/workflows/agent-es80-reanchor-abort-flagship-current.yml
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneRun.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContractTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/ForegroundCoreBluetoothCaptureControllerExperimentOneRecoverableRediscoveryTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveBluetoothExperimentOneCoordinatorStrictRediscoveryCompatibilityTests.swift \
+            .github/workflows/agent-es80-reanchor-abort-flagship-current.yml
+          git commit -m 'feat(capture): reanchor strict abort recovery on flagship QA spine'
+          git push origin HEAD:integration/es80-v14-abort-recovery-flagship-current/chatgpt56
