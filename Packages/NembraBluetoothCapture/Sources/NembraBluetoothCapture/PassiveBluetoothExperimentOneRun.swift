@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -72,11 +73,13 @@ struct PassiveBluetoothExperimentOneCaptureEvidence: Equatable, Sendable {
 ///
 /// `consume()` is MainActor-isolated and one-shot. Aliasing the reference does not create another
 /// permit; the first consumer permanently burns the handoff. The returned payload also has a
-/// producer-file-private initializer and carries a process-local admission UUID, so a future
-/// controller can bind one exact consumption event instead of trusting equal scalar fields.
+/// producer-file-private initializer and carries a process-local admission UUID plus producer-issued
+/// monotonic admission time, so a future controller can bind one exact consumption event and require
+/// a genuinely post-admission rediscovery rather than trusting cached pre-admission catalog state.
 ///
-/// This is software ownership authority only. It does not authenticate the correlated physical
-/// device or assign any GATT/Tuya meaning.
+/// This is software ownership authority only. The monotonic timestamp is local callback chronology,
+/// not BLE/RF emission time. It does not authenticate the correlated physical device or assign any
+/// GATT/Tuya meaning.
 @MainActor
 final class PassiveBluetoothExperimentOneCaptureAdmission {
     enum ConsumptionError: Error, Equatable, Sendable {
@@ -85,17 +88,20 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
 
     struct Payload {
         let admissionIdentity: UUID
+        let issuedAtUptimeNanoseconds: UInt64
         let powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence
         let peripheralIdentifier: UUID
         let recorder: PassiveCoreBluetoothCaptureRecorder
 
         fileprivate init(
             admissionIdentity: UUID,
+            issuedAtUptimeNanoseconds: UInt64,
             powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
             peripheralIdentifier: UUID,
             recorder: PassiveCoreBluetoothCaptureRecorder
         ) {
             self.admissionIdentity = admissionIdentity
+            self.issuedAtUptimeNanoseconds = issuedAtUptimeNanoseconds
             self.powerCycleEvidence = powerCycleEvidence
             self.peripheralIdentifier = peripheralIdentifier
             self.recorder = recorder
@@ -106,12 +112,14 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
     private var hasBeenConsumed = false
 
     fileprivate init(
+        issuedAtUptimeNanoseconds: UInt64,
         powerCycleEvidence: PassiveBluetoothExperimentOnePowerCycleEvidence,
         peripheralIdentifier: UUID,
         recorder: PassiveCoreBluetoothCaptureRecorder
     ) {
         payload = Payload(
             admissionIdentity: UUID(),
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
             powerCycleEvidence: powerCycleEvidence,
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder
@@ -148,10 +156,11 @@ final class PassiveBluetoothExperimentOneCaptureAdmission {
 /// **Critical integration boundary:** this run and all authority-bearing result types remain
 /// package-internal. Raw recorder creation and Experiment One evidence promotion stay producer-file
 /// private. The sole widened seam is `issueCaptureAdmission()`: it derives the exact unique target
-/// from this run's completed four-window producer, creates this run's recorder, and returns one
-/// non-public one-shot handoff. The foreground controller still must consume that handoff and own
-/// recorder mutation plus finalized H-bounded artifact issuance before the app can legitimately
-/// expose Start/Finish/Share. Physical Experiment One remains blocked.
+/// from this run's completed four-window producer, creates this run's recorder, stamps the handoff
+/// with producer-owned monotonic issuance chronology, and returns one non-public one-shot handoff.
+/// The foreground controller still must consume that handoff and own recorder mutation plus finalized
+/// H-bounded artifact issuance before the app can legitimately expose Start/Finish/Share. Physical
+/// Experiment One remains blocked.
 @MainActor
 final class PassiveBluetoothExperimentOneRun {
     let vehicleIdentity: VehicleIdentity
@@ -187,8 +196,9 @@ final class PassiveBluetoothExperimentOneRun {
     /// The only same-module bridge from completed correlation into live capture ownership.
     ///
     /// Callers provide only a local recorder start timestamp. The target UUID, producer authority,
-    /// and mutable recorder all come from this exact run. A second call fails because the recorder is
-    /// one-shot per run, and the returned admission itself can also be consumed only once.
+    /// monotonic admission issuance time, and mutable recorder all come from this exact run. A second
+    /// call fails because the recorder is one-shot per run, and the returned admission itself can also
+    /// be consumed only once.
     func issueCaptureAdmission(
         startedAt: Date = Date()
     ) throws -> PassiveBluetoothExperimentOneCaptureAdmission {
@@ -203,7 +213,9 @@ final class PassiveBluetoothExperimentOneRun {
         }
 
         let recorder = try beginCaptureRecorder(startedAt: startedAt)
+        let issuedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
         return PassiveBluetoothExperimentOneCaptureAdmission(
+            issuedAtUptimeNanoseconds: issuedAtUptimeNanoseconds,
             powerCycleEvidence: evidence,
             peripheralIdentifier: peripheralIdentifier,
             recorder: recorder
