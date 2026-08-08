@@ -40,5 +40,6 @@ struct ForegroundCoreBluetoothCaptureControllerRecordedHorizonRecoveryTests {
         #expect(section.distance(from: section.startIndex, to: recordedCase) < section.distance(from: section.startIndex, to: commit))
         #expect(section.distance(from: section.startIndex, to: commit) < section.distance(from: section.startIndex, to: quarantine))
         #expect(!section[recordedCase..<commit].contains("await"))
+        #expect(!section[commit..<quarantine].contains("await"))
     }
 }
