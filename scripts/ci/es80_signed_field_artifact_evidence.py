@@ -96,16 +96,18 @@ def canonical_json_bytes(value: object) -> bytes:
 
 
 def _safe_member_path(name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if not name or path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+    # Reject ambiguous raw spellings before PurePosixPath normalizes them. Otherwise entries such as
+    # repeated separators or dot segments can become the same extraction destination while the
+    # retained IPA hash still describes two distinct archive members.
+    if not name or "\\" in name or "\x00" in name or name.startswith("/"):
         raise EvidenceError(f"IPA contains unsafe ZIP member path: {name!r}")
+    raw_parts = name.split("/")
+    if any(part in ("", ".", "..") for part in raw_parts):
+        raise EvidenceError(f"IPA contains unsafe ZIP member path: {name!r}")
+    path = PurePosixPath(name)
+    if path.is_absolute() or path.as_posix() != name:
+        raise EvidenceError(f"IPA contains noncanonical ZIP member path: {name!r}")
     return path
-
-
-def _require_unique_member_path(member: PurePosixPath, seen_members: set[PurePosixPath]) -> None:
-    if member in seen_members:
-        raise EvidenceError(f"IPA contains duplicate ZIP member path: {str(member)!r}")
-    seen_members.add(member)
 
 
 def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
@@ -115,11 +117,27 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
         raise EvidenceError("input is not a readable IPA/ZIP archive") from exc
 
     app_roots: set[str] = set()
-    seen_members: set[PurePosixPath] = set()
+    validated_members: list[tuple[zipfile.ZipInfo, PurePosixPath, int]] = []
+    exact_destinations: set[str] = set()
+    folded_destinations: dict[str, str] = {}
+
     with archive:
+        # Validate the complete topology before extracting the first byte. The trusted Mac is
+        # commonly case-insensitive, so exact duplicates and case-fold aliases are both ambiguous.
         for info in archive.infolist():
-            member = _safe_member_path(info.filename.rstrip("/"))
-            _require_unique_member_path(member, seen_members)
+            raw_name = info.filename[:-1] if info.filename.endswith("/") else info.filename
+            member = _safe_member_path(raw_name)
+            normalized = member.as_posix()
+            folded = normalized.casefold()
+            if normalized in exact_destinations:
+                raise EvidenceError(f"IPA contains duplicate ZIP member path: {normalized!r}")
+            prior = folded_destinations.get(folded)
+            if prior is not None:
+                raise EvidenceError(
+                    f"IPA contains case-colliding ZIP member paths: {prior!r} and {normalized!r}"
+                )
+            exact_destinations.add(normalized)
+            folded_destinations[folded] = normalized
 
             mode = (info.external_attr >> 16) & 0o177777
             if stat.S_ISLNK(mode):
@@ -133,7 +151,15 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
             resolved_parent = target.parent.resolve()
             if destination.resolve() not in (resolved_parent, *resolved_parent.parents):
                 raise EvidenceError(f"IPA member escapes extraction root: {info.filename}")
+            validated_members.append((info, member, mode))
 
+        if len(app_roots) != 1:
+            raise EvidenceError(
+                f"IPA must contain exactly one top-level Payload/*.app bundle; found {sorted(app_roots)!r}"
+            )
+
+        for info, member, mode in validated_members:
+            target = destination.joinpath(*member.parts)
             if info.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
@@ -144,10 +170,6 @@ def extract_ipa_safely(ipa_path: Path, destination: Path) -> Path:
             if permissions:
                 os.chmod(target, permissions)
 
-    if len(app_roots) != 1:
-        raise EvidenceError(
-            f"IPA must contain exactly one top-level Payload/*.app bundle; found {sorted(app_roots)!r}"
-        )
     app_path = destination / "Payload" / next(iter(app_roots))
     if not app_path.is_dir():
         raise EvidenceError("IPA app bundle was not extracted as a directory")
@@ -195,6 +217,67 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
+def _plist_from_codesign_entitlements(result: subprocess.CompletedProcess[str]) -> dict:
+    # codesign may emit entitlement XML on stdout or stderr depending on the tool revision. Parse
+    # only the plist document so surrounding diagnostics cannot be mistaken for entitlement data.
+    for text in (result.stdout, result.stderr):
+        if not text:
+            continue
+        start = text.find("<?xml")
+        end = text.rfind("</plist>")
+        if start == -1 or end == -1:
+            continue
+        payload = text[start : end + len("</plist>")].encode("utf-8")
+        try:
+            value = plistlib.loads(payload)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise EvidenceError("codesign did not expose a readable signed-entitlements plist")
+
+
+def _validate_signing_contract(
+    *,
+    team_identifier: str,
+    bundle_id: str,
+    profile: dict,
+    signed_entitlements: dict,
+) -> tuple[str, str]:
+    profile_teams = profile.get("TeamIdentifier")
+    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
+        raise EvidenceError("provisioning profile TeamIdentifier does not match code signature")
+    profile_uuid = profile.get("UUID")
+    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
+        raise EvidenceError("provisioning profile UUID is missing")
+
+    expiration = profile.get("ExpirationDate")
+    if not isinstance(expiration, datetime):
+        raise EvidenceError("provisioning profile ExpirationDate is missing")
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    else:
+        expiration = expiration.astimezone(timezone.utc)
+    if expiration <= datetime.now(timezone.utc):
+        raise EvidenceError("provisioning profile is expired")
+
+    expected_application_identifier = f"{team_identifier}.{bundle_id}"
+    profile_entitlements = profile.get("Entitlements")
+    if not isinstance(profile_entitlements, dict):
+        raise EvidenceError("provisioning profile Entitlements dictionary is missing")
+    if profile_entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError("provisioning profile application-identifier does not match signed Nembra bundle")
+    if profile_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+        raise EvidenceError("provisioning profile developer-team entitlement does not match code signature")
+
+    if signed_entitlements.get("application-identifier") != expected_application_identifier:
+        raise EvidenceError("signed app application-identifier entitlement does not match profile/team/bundle")
+    if signed_entitlements.get("com.apple.developer.team-identifier") != team_identifier:
+        raise EvidenceError("signed app developer-team entitlement does not match profile/code signature")
+
+    return profile_uuid.strip(), expiration.isoformat().replace("+00:00", "Z")
+
+
 def verify_signing(app_path: Path, bundle_id: str) -> SigningEvidence:
     if sys.platform != "darwin":
         raise EvidenceError("signed field IPA inspection requires macOS Apple signing tools")
@@ -235,33 +318,21 @@ def verify_signing(app_path: Path, bundle_id: str) -> SigningEvidence:
     if not isinstance(profile, dict):
         raise EvidenceError("embedded provisioning profile root is not a dictionary")
 
-    profile_teams = profile.get("TeamIdentifier")
-    if not isinstance(profile_teams, list) or team_identifier not in profile_teams:
-        raise EvidenceError("provisioning profile TeamIdentifier does not match code signature")
-    profile_uuid = profile.get("UUID")
-    if not isinstance(profile_uuid, str) or not profile_uuid.strip():
-        raise EvidenceError("provisioning profile UUID is missing")
-
-    expiration = profile.get("ExpirationDate")
-    if not isinstance(expiration, datetime):
-        raise EvidenceError("provisioning profile ExpirationDate is missing")
-    if expiration.tzinfo is None:
-        expiration = expiration.replace(tzinfo=timezone.utc)
-    else:
-        expiration = expiration.astimezone(timezone.utc)
-    if expiration <= datetime.now(timezone.utc):
-        raise EvidenceError("provisioning profile is expired")
-
-    entitlements = profile.get("Entitlements")
-    if not isinstance(entitlements, dict) or entitlements.get("application-identifier") != f"{team_identifier}.{bundle_id}":
-        raise EvidenceError("provisioning profile application-identifier does not match signed Nembra bundle")
+    signed_entitlements_result = _run([codesign, "-d", "--entitlements", ":-", str(app_path)])
+    signed_entitlements = _plist_from_codesign_entitlements(signed_entitlements_result)
+    profile_uuid, expiration_utc = _validate_signing_contract(
+        team_identifier=team_identifier,
+        bundle_id=bundle_id,
+        profile=profile,
+        signed_entitlements=signed_entitlements,
+    )
 
     return SigningEvidence(
         team_identifier=team_identifier,
         signing_authorities=authorities,
         code_directory_hash=code_directory_hash,
-        provisioning_profile_uuid=profile_uuid.strip(),
-        provisioning_profile_expiration_utc=expiration.isoformat().replace("+00:00", "Z"),
+        provisioning_profile_uuid=profile_uuid,
+        provisioning_profile_expiration_utc=expiration_utc,
     )
 
 
@@ -400,23 +471,20 @@ def self_test() -> None:
         pass
     else:
         raise AssertionError("uppercase SHA must fail canonicalization")
-    for bad in ("../Payload/Nembra.app", "/Payload/Nembra.app", "Payload/../Nembra.app"):
+    for bad in (
+        "../Payload/Nembra.app",
+        "/Payload/Nembra.app",
+        "Payload/../Nembra.app",
+        "Payload//Nembra.app/Info.plist",
+        "Payload/./Nembra.app/Info.plist",
+        "Payload\\Nembra.app\\Info.plist",
+    ):
         try:
             _safe_member_path(bad)
         except EvidenceError:
             pass
         else:
             raise AssertionError(f"unsafe ZIP member was accepted: {bad}")
-
-    duplicate_member = _safe_member_path("Payload/Nembra.app/Info.plist")
-    seen_members: set[PurePosixPath] = set()
-    _require_unique_member_path(duplicate_member, seen_members)
-    try:
-        _require_unique_member_path(duplicate_member, seen_members)
-    except EvidenceError:
-        pass
-    else:
-        raise AssertionError("duplicate ZIP member path was accepted")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
