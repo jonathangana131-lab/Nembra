@@ -864,7 +864,7 @@ struct ES80CaptureShellView: View {
 
                     Text("Truth boundary")
                         .font(.headline)
-                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. Repeated full-UUID correlation does not authenticate the physical ES80, and this screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
