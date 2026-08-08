@@ -5,18 +5,36 @@ public extension PassiveBluetoothExperimentOneCoordinator {
         case fieldExecutionNotAuthorized
     }
 
-    /// The only production construction path for the physical ES80 Experiment One owner.
+    /// The current production construction path used by NembraApp.
     ///
-    /// The package-owned mechanical field gate must already permit the physical procedure before a
-    /// live CoreBluetooth controller is created. In the current V14 build the gate has no GO case,
-    /// so this factory fails closed and SwiftUI cannot expose OFF/ON field actions merely because it
-    /// knows the coordinator type exists.
+    /// It intentionally remains tied to the zero-argument package field gate, which is hard NO-GO.
+    /// A Release launch marker, app preference, environment variable, or caller Boolean therefore
+    /// cannot construct a live ES80 controller in today's build.
     @MainActor
     static func makeAuthorizedES80() throws -> PassiveBluetoothExperimentOneCoordinator {
         guard PassiveBluetoothExperimentOneFieldExecutionGate.permitsPhysicalProcedure else {
             throw CanonicalES80ConstructionError.fieldExecutionNotAuthorized
         }
 
+        return try makeLiveES80Coordinator()
+    }
+
+    /// Future field-authorized construction seam.
+    ///
+    /// The caller must possess a `VerifiedAdmission` minted only from the package's cryptographically
+    /// verified external field authorization. The admission type has no public initializer, so this
+    /// overload does not create a caller-forgeable Boolean/setting path. Production cannot reach it
+    /// today because the package authorization trust root remains unconfigured and NembraApp still
+    /// calls the locked zero-argument factory.
+    @MainActor
+    static func makeAuthorizedES80(
+        verifiedAdmission _: PassiveBluetoothExperimentOneFieldExecutionGate.VerifiedAdmission
+    ) throws -> PassiveBluetoothExperimentOneCoordinator {
+        try makeLiveES80Coordinator()
+    }
+
+    @MainActor
+    private static func makeLiveES80Coordinator() throws -> PassiveBluetoothExperimentOneCoordinator {
         let controller = try ForegroundCoreBluetoothCaptureController(
             vehicleIdentity: VehicleProfile.aovoproES80.identity
         )
