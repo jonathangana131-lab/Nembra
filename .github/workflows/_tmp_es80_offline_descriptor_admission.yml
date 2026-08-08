@@ -1,0 +1,33 @@
+name: Temporary ES80 offline descriptor admission QA
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-offline-report-descriptor-admission/gpt56-go
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-offline-report-descriptor-admission/gpt56-go
+          fetch-depth: 0
+      - name: Focused package test
+        run: swift test --package-path Packages/NembraBluetoothCapture --filter PassiveBluetoothCaptureArtifactInputPolicyTests
+      - name: Full package tests
+        run: swift test --package-path Packages/NembraBluetoothCapture
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Self-delete temporary QA
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_tmp_es80_offline_descriptor_admission.yml
+          git commit -m "Remove temporary offline descriptor QA"
+          git push origin HEAD:fix/es80-v14-offline-report-descriptor-admission/gpt56-go
