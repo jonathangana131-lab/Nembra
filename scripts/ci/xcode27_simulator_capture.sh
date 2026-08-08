@@ -9,12 +9,29 @@ DERIVED_DATA="${DERIVED_DATA:-${RUNNER_TEMP:-/tmp}/NembraDerivedData}"
 RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
+CAPTURE_BUILD_IDENTIFIER="${NEMBRA_CAPTURE_BUILD_IDENTIFIER:-Capture Build V14-F1}"
+CAPTURE_PROCEDURE_ID="${NEMBRA_CAPTURE_PROCEDURE_ID:-ES80-FINGERPRINT-v1}"
+SOURCE_COMMIT_SHA="$(git rev-parse HEAD)"
+
+if [[ ! "$SOURCE_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Capture provenance requires an exact 40-hex Git commit, got: $SOURCE_COMMIT_SHA" >&2
+  exit 8
+fi
+
+if [[ -z "$CAPTURE_BUILD_IDENTIFIER" ]] || [[ "$CAPTURE_BUILD_IDENTIFIER" != "${CAPTURE_BUILD_IDENTIFIER//$'\n'/}" ]]; then
+  echo "Capture build identifier must be non-empty and single-line." >&2
+  exit 9
+fi
+
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf "$RESULT_BUNDLE"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
+  echo "capture_build_identifier=$CAPTURE_BUILD_IDENTIFIER"
+  echo "capture_source_commit_sha=$SOURCE_COMMIT_SHA"
+  echo "capture_procedure_id=$CAPTURE_PROCEDURE_ID"
   sw_vers
   xcodebuild -version
   xcrun simctl list runtimes
@@ -78,6 +95,8 @@ xcodebuild \
   -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
+  INFOPLIST_KEY_NembraCaptureBuildIdentifier="$CAPTURE_BUILD_IDENTIFIER" \
+  INFOPLIST_KEY_NembraCaptureBuildCommitSHA="$SOURCE_COMMIT_SHA" \
   test \
   | tee "$ARTIFACTS_DIR/logs/xcodebuild-test.log"
 TEST_STATUS=${PIPESTATUS[0]}
@@ -109,6 +128,83 @@ if [[ ! -d "$APP_PATH" ]]; then
   find "$DERIVED_DATA/Build/Products" -name 'Nembra.app' -print >&2 || true
   exit 4
 fi
+
+APP_INFO_PLIST="$APP_PATH/Info.plist"
+APP_EXECUTABLE="$APP_PATH/Nembra"
+if [[ ! -f "$APP_INFO_PLIST" ]] || [[ ! -f "$APP_EXECUTABLE" ]]; then
+  echo "Built Nembra app is missing Info.plist or executable bytes required for Capture provenance." >&2
+  exit 10
+fi
+
+EMBEDDED_BUILD_IDENTIFIER="$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+EMBEDDED_SOURCE_COMMIT_SHA="$(plutil -extract NembraCaptureBuildCommitSHA raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+if [[ "$EMBEDDED_BUILD_IDENTIFIER" != "$CAPTURE_BUILD_IDENTIFIER" ]]; then
+  echo "Built app Capture build identifier does not match the exact build invocation." >&2
+  exit 11
+fi
+if [[ "$EMBEDDED_SOURCE_COMMIT_SHA" != "$SOURCE_COMMIT_SHA" ]]; then
+  echo "Built app Capture source declaration does not match the exact checked-out commit." >&2
+  exit 12
+fi
+
+EXECUTABLE_SHA256="$(shasum -a 256 "$APP_EXECUTABLE" | awk '{print $1}')"
+EXECUTABLE_BYTE_COUNT="$(stat -f '%z' "$APP_EXECUTABLE")"
+if [[ ! "$EXECUTABLE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Could not derive a canonical SHA-256 for the built Nembra executable." >&2
+  exit 13
+fi
+
+python3 - \
+  "$ARTIFACTS_DIR/capture-build-record.json" \
+  "$CAPTURE_BUILD_IDENTIFIER" \
+  "$SOURCE_COMMIT_SHA" \
+  "$CAPTURE_PROCEDURE_ID" \
+  "$BUNDLE_ID" \
+  "$EXECUTABLE_SHA256" \
+  "$EXECUTABLE_BYTE_COUNT" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+(
+    output_path,
+    build_identifier,
+    source_commit_sha,
+    procedure_id,
+    bundle_id,
+    executable_sha256,
+    executable_byte_count,
+) = sys.argv[1:]
+
+record = {
+    "schemaVersion": 1,
+    "recordedAtUTC": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "buildIdentifier": build_identifier,
+    "sourceCommitSHA": source_commit_sha,
+    "procedureID": procedure_id,
+    "bundleIdentifier": bundle_id,
+    "executableSHA256": executable_sha256,
+    "executableByteCount": int(executable_byte_count),
+    "githubRunID": os.environ.get("GITHUB_RUN_ID"),
+    "githubRunAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+    "trustBoundary": (
+        "The source commit and build identifier are declarations injected by the exact-head build invocation. "
+        "The executable SHA-256 and byte count are evidence about the built executable bytes. This record binds "
+        "those values inside the trusted QA run; it is not a cryptographic source-to-binary attestation."
+    ),
+}
+
+with open(output_path, "w", encoding="utf-8") as handle:
+    json.dump(record, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+
+{
+  echo "capture_executable_sha256=$EXECUTABLE_SHA256"
+  echo "capture_executable_byte_count=$EXECUTABLE_BYTE_COUNT"
+  echo "capture_build_record=$ARTIFACTS_DIR/capture-build-record.json"
+} >> "$ARTIFACTS_DIR/environment.txt"
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
