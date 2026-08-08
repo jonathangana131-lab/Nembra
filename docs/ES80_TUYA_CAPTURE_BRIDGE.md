@@ -17,21 +17,21 @@ A structurally completed framing candidate remains only a public-family hypothes
 
 ## Current dependency shape
 
-This recovery is a dependent child of the accepted current-main passive-runtime composition at #383. Its refreshed parent `ebdb543bdd3885f4359fd6965644a7d2d65a48b3` is a non-destructive re-anchor of the previously source/execution-accepted passive payload onto `main@92e752e69ff6def4e2f4b3a92c173fc89a122a42` after unrelated ride-stat presentation work advanced main.
+This recovered bridge lineage sits on the accepted current-main passive-runtime composition at #383. Parent `ebdb543bdd3885f4359fd6965644a7d2d65a48b3` is a non-destructive re-anchor of the previously source/execution-accepted passive payload onto `main@92e752e69ff6def4e2f4b3a92c173fc89a122a42` after unrelated ride-stat presentation work advanced main.
 
-That parent carries the accepted analyzer chronology semantics already present on current main:
+The first refreshed bridge product #394 preserved target presence and scoped capture chronology but was later found to narrow an authoritative NembraCore continuity fact: it treated an unrelated-peripheral structured disconnect as if it were not a byte-continuity break for the selected target. This recovery preserves #394's accepted target/chronology work while consuming the Core continuity vocabulary directly.
+
+The parent carries the accepted analyzer chronology semantics already present on current main:
 
 - transcript-wide receipt chronology;
 - packet-zero restart after chronology admission;
 - scoped immutable receipt sequence authority.
 
-The bridge therefore does **not** replay or modify analyzer source. Its intended product delta is only:
+The bridge therefore does **not** replay or modify analyzer source. Its recovered product delta on #383 consists only of:
 
 - bridge source;
-- bridge regressions; and
+- bridge regressions, including the explicit cross-layer continuity contract; and
 - this bridge contract.
-
-#383's refreshed `ebdb543…` still requires its own fresh exact-final-head Xcode/iOS acceptance before merge. This child remains dependency-bound until that parent is accepted. A green dependent child is not permission to revive stale #260/#305 feature ancestry.
 
 The separately accepted ready-to-horizon composition remains a later runtime integration dependency. This bridge does not claim that a live capture has already been horizon-sealed correctly merely because an immutable test/session can be analyzed offline.
 
@@ -106,12 +106,16 @@ This is a compile-time software evidence boundary, not cryptographic attestation
 
 ## Continuity
 
-Candidate continuity starts at generation zero for one projection and advances only on gaps already explicit in the capture domain:
+Candidate continuity starts at generation zero for one projection and advances whenever the authoritative capture domain says `record.event.breaksByteContinuity == true`.
 
-- a structured disconnect for the exact selected peripheral; or
-- a global capture interruption.
+Today that Core vocabulary includes:
 
-A disconnect from another peripheral does not split the selected target. Interleaved callbacks from another GATT stream are filtered from that stream without being converted into fake byte gaps.
+- every structured `.connection(.disconnected)` event; and
+- every global capture interruption.
+
+Target attribution remains separate from continuity truth. A disconnect record carrying another peripheral identifier is **not** relabeled as a physical ES80 disconnect, but once NembraCore has classified that observed event as a raw-byte continuity break, the downstream framing bridge preserves the gap rather than making selected-target bytes on opposite sides eligible to splice.
+
+Interleaved callbacks that are not Core-declared continuity breaks remain filterable by target/GATT/origin without inventing fake byte gaps. The bridge consumes the Core property directly so future additions to the authoritative break vocabulary cannot silently drift from a narrower duplicated case list.
 
 An empty selected-target raw value cannot be represented truthfully by the candidate observation type, so projection fails with exact record/sequence/GATT/origin provenance rather than silently dropping it. Continuity-generation overflow also fails closed rather than wrapping.
 
@@ -135,15 +139,15 @@ A rejection remains useful falsifying evidence. The bridge does not shift offset
 
 ## Acceptance requirements
 
-Before this bridge is production research infrastructure:
+Before this recovered bridge is production research infrastructure:
 
-1. its exact three-path dependent product must pass focused/full package tests, the package-wide no-application-`writeValue(...)` guard, and a generic iOS Simulator package build on Xcode 27;
-2. the refreshed #383 passive parent `ebdb543…` must earn its own fresh exact-final-head acceptance and remain stable/mergeable against then-current main;
-3. this child must follow any later accepted parent move without replaying stale analyzer/runtime ancestry and rerun any acceptance invalidated by the moved base;
+1. its exact four-path product on the accepted #383 passive parent must pass full `NembraCore` and `NembraBluetoothCapture` warnings-as-errors tests, the package-wide no-application-`writeValue(...)` guard, and a generic iOS Simulator capture-package build on Xcode 27;
+2. source/test review must confirm every Core-declared `breaksByteContinuity` event advances candidate continuity while target attribution stays separate;
+3. the recovery must retain #394's exact target-presence and scoped-capture chronology guarantees without reviving stale bridge ancestry;
 4. the later ready/horizon live queue-cutoff and immutable-artifact composition must remain explicit before physical experiment authorization;
-5. the offline report/CLI should consume this accepted bridge descendant mechanically rather than maintain a second bridge or flatten sequence/scope/target-presence evidence.
+5. the offline report/CLI should consume this accepted bridge descendant mechanically rather than maintain a second bridge or flatten sequence/scope/target-presence/continuity evidence.
 
-Queued, running, skipped, stale, ancestor, or dependency-obsolete checks are not acceptance.
+Queued, running, skipped, stale, ancestor, or dependency-obsolete checks are not acceptance. Earlier green #394 execution proves the superseded bytes ran; it does not accept the continuity semantic defect discovered afterward.
 
 ## Intended physical workflow
 
@@ -162,4 +166,4 @@ Until that full ladder closes, **Experiment One remains DO NOT RUN**.
 
 This bridge adds no `writeValue`, command path, encryption/decryption key handling, device authentication, production `ScooterService`, Dashboard telemetry wiring, or vehicle-control acknowledgement.
 
-Its role is narrower: move trustworthy raw passive-capture evidence into reproducible bounded offline analysis while preserving target presence, capture identity, exact scoped receipt chronology, transport provenance, and known gaps.
+Its role is narrower: move trustworthy raw passive-capture evidence into reproducible bounded offline analysis while preserving target presence, capture identity, exact scoped receipt chronology, transport provenance, and every known capture-domain continuity gap.
