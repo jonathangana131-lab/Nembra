@@ -89,6 +89,26 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testPrimaryES80HomeRecomposesAtAccessibilityDynamicType() {
+        let app = launchOrdinary(
+            orientation: .portrait,
+            contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
+
+        XCTAssertTrue(
+            app.staticTexts["AOVOPRO ES80"].waitForExistence(timeout: 3),
+            "Accessibility-size ordinary launch must preserve the primary ES80 identity."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Scooter software not recognized"].waitForExistence(timeout: 3),
+            "Accessibility-size Home must keep the unsupported/unverified truth surface visible."
+        )
+        XCTAssertTrue(app.buttons["Vehicle controls"].exists)
+        XCTAssertFalse(app.buttons["Reconnect scooter"].exists)
+        keepScreenshot(named: "AOVOPRO ES80 Home Unverified Accessibility XXXL")
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
@@ -221,9 +241,21 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchOrdinary(orientation: UIDeviceOrientation) -> XCUIApplication {
+    private func launchOrdinary(
+        orientation: UIDeviceOrientation,
+        contentSizeCategory: String? = nil
+    ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
+        if let contentSizeCategory {
+            // Validation-only Simulator override used to exercise the SwiftUI
+            // Dynamic Type branch. It changes presentation only and is never a
+            // vehicle/simulation truth input.
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName",
+                contentSizeCategory
+            ]
+        }
         app.launch()
         return app
     }
