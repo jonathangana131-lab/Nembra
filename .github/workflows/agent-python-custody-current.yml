@@ -1,0 +1,48 @@
+name: Agent Python custody current
+
+on:
+  push:
+    branches:
+      - fix/es80-v14-python-custody-current-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/es80-v14-python-custody-current-gpt56
+          fetch-depth: 0
+
+      - name: Apply and validate pinned isolated Python custody
+        shell: bash
+        run: |
+          python3 -m py_compile .github/scripts/agent_python_custody_current.py
+          python3 .github/scripts/agent_python_custody_current.py
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py
+          git diff --check
+
+      - name: Self-delete helper and checkpoint repair
+        shell: bash
+        run: |
+          rm .github/workflows/agent-python-custody-current.yml
+          rm .github/scripts/agent_python_custody_current.py
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/xcode27-pr-command.yml \
+                  scripts/ci/xcode27_signed_field_candidate.sh \
+                  scripts/ci/tests/test_xcode27_signed_field_candidate_python_custody_source.py \
+                  .github/workflows/agent-python-custody-current.yml \
+                  .github/scripts/agent_python_custody_current.py
+          git diff --cached --check
+          git commit -m 'fix(capture): isolate signed-field Python custody'
+          git push origin HEAD:fix/es80-v14-python-custody-current-gpt56
