@@ -1,0 +1,39 @@
+name: Temp ES80 offline report validate
+
+on:
+  push:
+    branches:
+      - recover/es80-v14-offline-report-current
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Strict NembraCore
+        working-directory: Packages/NembraCore
+        run: swift test -Xswiftc -warnings-as-errors
+      - name: Strict Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test -Xswiftc -warnings-as-errors
+      - name: Explicit offline report executable
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift build --product nembra-es80-capture-report -Xswiftc -warnings-as-errors
+      - name: Smoke help
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift run nembra-es80-capture-report --help | grep -F 'PUBLIC-FAMILY FRAMING-CANDIDATE RESEARCH ONLY'
+      - name: Diff hygiene
+        run: git diff --check HEAD^ HEAD
+      - name: Remove validation workflow after green
+        if: success()
+        run: |
+          git config user.name "nembra-v14-validation"
+          git config user.email "nembra-v14-validation@users.noreply.github.com"
+          git rm .github/workflows/tmp-es80-offline-report-validate.yml
+          git commit -m "[Capture analyze v14] Record strict offline-report validation"
+          git push origin HEAD:${GITHUB_REF_NAME}
