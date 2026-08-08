@@ -70,7 +70,7 @@ struct PassiveBluetoothExperimentOneCoordinatorFinalizationCleanupTests {
         let end = try #require(
             source.range(of: "    public struct Status", range: start..<source.endIndex)?.lowerBound
         )
-        let declaration = source[start..<end]
+        let declaration = String(source[start..<end])
 
         #expect(declaration.contains("case notAttempted"))
         #expect(declaration.contains("case complete"))
