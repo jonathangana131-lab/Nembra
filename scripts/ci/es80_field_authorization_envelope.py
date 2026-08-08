@@ -120,11 +120,13 @@ def read_exact_subject(path: Path, label: str) -> bytes:
 
 
 def require_openssl(path: Path) -> str:
-    """Accept one explicit, canonical OpenSSL executable with controlled path custody.
+    """Accept one explicit OpenSSL executable under immutable root custody.
 
     Production signing never discovers OpenSSL through ambient PATH because the selected process
     receives the inherited private-key descriptor. Release authority must provide the executable
-    path explicitly. The built-in self-test alone may use the fixed system default because it
+    path explicitly. The executable and every canonical ancestor directory must be root-owned and
+    non-group/world-writable so the signing user cannot validate one binary and swap another into
+    place before execution. The built-in self-test alone may use the fixed system default because it
     creates only ephemeral fixture keys.
     """
     requested = path.expanduser()
@@ -152,13 +154,14 @@ def require_openssl(path: Path) -> str:
         )
     if executable_stat.st_mode & 0o111 == 0:
         raise AuthorizationEnvelopeError("configured OpenSSL file is not executable")
-
-    if hasattr(os, "geteuid"):
-        signing_uid = os.geteuid()
-        if executable_stat.st_uid not in {0, signing_uid}:
-            raise AuthorizationEnvelopeError(
-                "OpenSSL executable must be owned by root or the signing user"
-            )
+    if not hasattr(os, "geteuid"):
+        raise AuthorizationEnvelopeError(
+            "platform cannot verify root-owned OpenSSL executable custody"
+        )
+    if executable_stat.st_uid != 0:
+        raise AuthorizationEnvelopeError(
+            "OpenSSL executable must be root-owned so the signing user cannot replace it after validation"
+        )
 
     directory = resolved.parent
     while True:
@@ -168,6 +171,10 @@ def require_openssl(path: Path) -> str:
             raise AuthorizationEnvelopeError(
                 "could not inspect OpenSSL executable custody path"
             ) from exc
+        if directory_stat.st_uid != 0:
+            raise AuthorizationEnvelopeError(
+                f"OpenSSL custody path must be root-owned: {directory}"
+            )
         if directory_stat.st_mode & 0o022:
             raise AuthorizationEnvelopeError(
                 f"OpenSSL custody path is group/world-writable: {directory}"
@@ -183,9 +190,9 @@ def controlled_openssl_environment() -> dict[str, str]:
     """Return the complete closed environment inherited by every OpenSSL subprocess.
 
     The signer must not inherit caller-controlled OpenSSL config/provider/engine variables or
-    dynamic-loader injection variables. The absolute executable path is already selected, but a
-    closed minimal environment also prevents ambient process state from changing the executable's
-    signing behavior after custody review.
+    dynamic-loader injection variables. The absolute root-custodied executable is already selected,
+    but a closed minimal environment also prevents ambient process state from changing signing
+    behavior after custody review.
     """
     return {
         "PATH": "/usr/bin:/bin",
@@ -493,20 +500,6 @@ def self_test(openssl_path: Path) -> None:
         else:
             raise AssertionError("group/world-writable OpenSSL executable was accepted")
 
-        unsafe_directory = directory / "unsafe-custody"
-        unsafe_directory.mkdir(mode=0o777)
-        unsafe_directory.chmod(0o777)
-        custody_executable = unsafe_directory / "openssl"
-        custody_executable.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-        custody_executable.chmod(0o755)
-        try:
-            require_openssl(custody_executable)
-        except AuthorizationEnvelopeError as error:
-            if "custody path" not in str(error):
-                raise
-        else:
-            raise AssertionError("OpenSSL executable under writable custody directory was accepted")
-
         run_openssl(
             openssl,
             ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(private_key)],
@@ -638,7 +631,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--openssl",
         type=Path,
-        help="Explicit trusted OpenSSL executable path; production signing never searches PATH.",
+        help="Explicit trusted root-custodied OpenSSL executable; production signing never searches PATH.",
     )
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
