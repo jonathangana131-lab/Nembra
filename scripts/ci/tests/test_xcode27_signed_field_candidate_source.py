@@ -8,6 +8,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
 PRIVATE_RUNNER = Path(__file__).resolve().parents[1] / "es80_signed_field_artifact_private_runner.py"
+REPOSITORY_ROOT = PRIVATE_RUNNER.resolve().parents[2]
 
 
 class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
@@ -70,6 +71,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
         self.assertIn('python3 /dev/fd/7', self.source)
         self.assertIn('python3 /dev/fd/9', self.source)
         self.assertIn('--canonical-inspector-fd 8', self.source)
+        self.assertEqual(self.source.count('--repository-root "$ROOT"'), 2)
         self.assertNotIn('python3 scripts/ci/es80_signed_field_artifact_private_runner.py', self.source)
         self.assertLess(self.source.index('REPOSITORY_STATUS='), self.source.index('python3 /dev/fd/7'))
         self.assertLess(self.source.index('python3 /dev/fd/7'), self.source.index('git worktree add --detach'))
@@ -91,7 +93,11 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
             runner_fd = os.open(PRIVATE_RUNNER, os.O_RDONLY)
             try:
                 preflight = subprocess.run(
-                    [sys.executable, f"/dev/fd/{runner_fd}", "--validate-intended-device-udid-file", str(private_file)],
+                    [
+                        sys.executable, f"/dev/fd/{runner_fd}",
+                        "--validate-intended-device-udid-file", str(private_file),
+                        "--repository-root", str(REPOSITORY_ROOT),
+                    ],
                     pass_fds=(runner_fd,), check=False, capture_output=True, text=True,
                 )
             finally:
@@ -116,6 +122,7 @@ class SignedFieldCandidateProducerSourceTests(unittest.TestCase):
                         "--output-dir", str(root / "inspection"),
                         "--expected-source-sha", "a" * 40,
                         "--intended-device-udid-file", str(private_file),
+                        "--repository-root", str(REPOSITORY_ROOT),
                         "--canonical-inspector-fd", str(inspector_fd),
                     ],
                     pass_fds=(runner_fd, inspector_fd), check=False, capture_output=True, text=True,
