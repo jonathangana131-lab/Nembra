@@ -1,7 +1,6 @@
 from pathlib import Path
 import subprocess
 
-BASE = "50732571e01929ef22c79bd7f99178cf4f78a6bf"
 SOURCE = "28c9dde0398d14f353415b860d806215d597792b"
 CONTROLLER = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ForegroundCoreBluetoothCaptureController.swift")
 GATE = Path("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveCoreBluetoothObservationBoundaryQueueGate.swift")
@@ -9,29 +8,144 @@ CONTROLLER_TEST = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCap
 GATE_TEST = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/PassiveCoreBluetoothTerminalRealRecorderReopenTests.swift")
 
 
-def run(*args, input_text=None):
-    return subprocess.run(args, input=input_text, text=True, check=True, capture_output=True).stdout
+def run(*args):
+    return subprocess.run(args, text=True, check=True, capture_output=True).stdout
 
 
-run("git", "fetch", "--no-tags", "origin", BASE, SOURCE)
-
-# Compose the queue-gate authority delta first. It is isolated from the newer
-# Experiment One controller chronology changes.
-gate_patch = run("git", "diff", "--binary", BASE, SOURCE, "--", str(GATE))
-if not gate_patch.strip():
-    raise RuntimeError("terminal gate patch unexpectedly empty")
-subprocess.run(["git", "apply", "--3way", "--index", "-"], input=gate_patch, text=True, check=True)
-
-s = CONTROLLER.read_text()
-
-def once(old: str, new: str, label: str) -> None:
-    global s
-    count = s.count(old)
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
     if count != 1:
         raise RuntimeError(f"{label}: expected one current insertion point, found {count}")
-    s = s.replace(old, new, 1)
+    return text.replace(old, new, 1)
 
-once(
+
+run("git", "fetch", "--no-tags", "origin", SOURCE)
+
+# Compose only the terminal queue-gate semantics onto the current gate instead of
+# replaying #656's stale file ancestry.
+g = GATE.read_text()
+g = replace_once(
+    g,
+    "        case cutoffOverrun\n        case horizonArtifactNotReady\n",
+    "        case cutoffOverrun\n        case horizonArtifactNotReady\n"
+    "        case freshTargetSessionRequired\n"
+    "        case freshRecorderIdentityMismatch\n"
+    "        case terminalResolvedFrontierNotApplied(expected: UInt64, actual: UInt64)\n"
+    "        case terminalQueueChangedAfterResolution(expected: UInt64, actual: UInt64)\n",
+    "gate state errors",
+)
+g = replace_once(
+    g,
+    "    private var nextRevision: UInt64 = 1\n    private var committedReadyTransaction: Transaction?\n",
+    "    private var nextRevision: UInt64 = 1\n"
+    "    private var committedReadyTransaction: Transaction?\n"
+    "    /// Exact already-provisioned durable target session required after recovery.\n"
+    "    /// Weak reset cannot erase this one-shot bind.\n"
+    "    private var requiredReadyTargetSessionGeneration: UInt64?\n",
+    "gate required target session",
+)
+g = replace_once(
+    g,
+    "        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n        guard nextRevision != UInt64.max else {\n",
+    "        guard processedQueueSequence == nil else {\n            throw StateError.invalidTransition\n        }\n"
+    "        if let requiredReadyTargetSessionGeneration {\n"
+    "            guard authority.targetSessionGeneration == requiredReadyTargetSessionGeneration else {\n"
+    "                throw StateError.freshTargetSessionRequired\n"
+    "            }\n"
+    "        }\n"
+    "        guard nextRevision != UInt64.max else {\n",
+    "gate Ready authority requirement",
+)
+g = replace_once(
+    g,
+    "        let transaction = Transaction(\n            boundaryKind: .finiteAcquisitionReady,\n            queueCutoff: queueCutoff,\n            authority: authority,\n            revision: nextRevision\n        )\n        phase = .drainingReady(transaction)\n",
+    "        let transaction = Transaction(\n            boundaryKind: .finiteAcquisitionReady,\n            queueCutoff: queueCutoff,\n            authority: authority,\n            revision: nextRevision\n        )\n"
+    "        requiredReadyTargetSessionGeneration = nil\n"
+    "        phase = .drainingReady(transaction)\n",
+    "gate Ready consumes requirement",
+)
+old_tail = '''    /// Abort quarantine is intentionally irreversible in this slice. Raw FIFO
+    /// retirement alone cannot reopen lifecycle admission because retired positions
+    /// still need a separate globally-resolved frontier update. #450 owns that
+    /// producer and its successor integration must make fresh-session reopen consume
+    /// the producer-issued resolution receipt. Until then reset and Ready both fail.
+    @discardableResult
+    mutating func resetForNewCaptureSession() -> Bool {
+        guard phase == .awaitingReady else { return false }
+        committedReadyTransaction = nil
+        return true
+    }
+'''
+new_tail = '''    /// Reopens a successful terminal Horizon only after the controller has
+    /// installed the exact recorder whose construction earned producer-issued fresh-session
+    /// proof, applied the exact terminal resolution to its global resolved frontier, and
+    /// proved no callback advanced the FIFO tail afterward.
+    ///
+    /// This transition is synchronous on MainActor. It consumes the terminal transaction's
+    /// exact process-local UUID and binds the exact fresh target-session generation until
+    /// the next Ready begins. Receipt possession alone and a caller-chosen generation are
+    /// deliberately insufficient.
+    @MainActor
+    mutating func reopenAfterTerminalFreshTargetSession(
+        _ freshTargetSession: PassiveCoreBluetoothTerminalFreshTargetSession.Receipt,
+        installedRecorder: PassiveCoreBluetoothCaptureRecorder,
+        currentResolvedThroughQueueSequence: UInt64,
+        currentLastEnqueuedEventSequence: UInt64
+    ) throws {
+        guard case let .terminal(transaction) = phase else {
+            throw StateError.invalidTransition
+        }
+
+        let resolution = freshTargetSession.terminalResolution
+        guard resolution.terminalTransactionRevision == transaction.revision,
+              resolution.terminalTransactionIdentity == transaction.identity,
+              resolution.horizonQueueCutoff == transaction.queueCutoff,
+              resolution.previouslyResolvedThroughQueueSequence == transaction.queueCutoff else {
+            throw StateError.staleTransaction
+        }
+        guard resolution.terminalAuthority == transaction.authority else {
+            throw StateError.authorityChanged
+        }
+        guard freshTargetSession.recorderIdentity == ObjectIdentifier(installedRecorder) else {
+            throw StateError.freshRecorderIdentityMismatch
+        }
+        guard currentResolvedThroughQueueSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.terminalResolvedFrontierNotApplied(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentResolvedThroughQueueSequence
+            )
+        }
+        guard currentLastEnqueuedEventSequence == resolution.resolvedThroughQueueSequence else {
+            throw StateError.terminalQueueChangedAfterResolution(
+                expected: resolution.resolvedThroughQueueSequence,
+                actual: currentLastEnqueuedEventSequence
+            )
+        }
+        guard freshTargetSession.targetSessionGeneration > transaction.authority.targetSessionGeneration else {
+            throw StateError.freshTargetSessionRequired
+        }
+
+        committedReadyTransaction = nil
+        requiredReadyTargetSessionGeneration = freshTargetSession.targetSessionGeneration
+        phase = .awaitingReady
+    }
+
+    /// Abort quarantine remains irreversible here. Its sibling real-recorder producer
+    /// is separately owned and must converge without weakening terminal authority.
+    @discardableResult
+    mutating func resetForNewCaptureSession() -> Bool {
+        guard phase == .awaitingReady else { return false }
+        committedReadyTransaction = nil
+        return true
+    }
+'''
+g = replace_once(g, old_tail, new_tail, "gate terminal reopen")
+GATE.write_text(g)
+
+# Compose the controller consumer against the current flagship text.
+s = CONTROLLER.read_text()
+s = replace_once(
+    s,
     "    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n    private var targetState = PassiveCoreBluetoothTargetState()\n",
     "    private var lastFinalizedArtifactAuthority: PassiveCoreBluetoothArtifactAuthorityContext?\n"
     "    /// Exact successful-terminal FIFO resolution retained after immutable artifact\n"
@@ -41,7 +155,8 @@ once(
     "    private var targetState = PassiveCoreBluetoothTargetState()\n",
     "pending terminal receipt",
 )
-once(
+s = replace_once(
+    s,
     "    public func teardownActiveConnectionAfterFinalization() throws {\n        guard activePeripheral != nil else { return }\n",
     "    public func teardownActiveConnectionAfterFinalization() throws {\n"
     "        guard activePeripheral != nil else {\n"
@@ -50,7 +165,8 @@ once(
     "        }\n",
     "teardown idle recovery",
 )
-once(
+s = replace_once(
+    s,
     "            do {\n                _ = try resolveQueuedEvidenceAfterTerminalHorizon()\n            } catch {\n",
     "            do {\n"
     "                let terminalResolution = try resolveQueuedEvidenceAfterTerminalHorizon()\n"
@@ -140,7 +256,8 @@ method = '''    /// Consumes one sealed terminal lifecycle into the exact next d
 
 '''
 s = s.replace(marker, method + marker, 1)
-once(
+s = replace_once(
+    s,
     '''        // After Horizon admission/freeze, consume CoreBluetooth transport cleanup
         // only. The finalized/closing artifact authority is immutable.
         if observationBoundaryQueueGate.isTerminal || observationBoundaryBlocksArtifactMutation {
@@ -176,18 +293,14 @@ CONTROLLER_TEST.write_text(run("git", "show", f"{SOURCE}:{CONTROLLER_TEST}"))
 GATE_TEST.write_text(run("git", "show", f"{SOURCE}:{GATE_TEST}"))
 run("git", "add", str(CONTROLLER), str(GATE), str(CONTROLLER_TEST), str(GATE_TEST))
 
-# Current flagship contracts must survive the stale-base terminal composition.
 assert "func connectUsingExperimentOneAdmission(" in s
 assert "receivedAtUptimeNanoseconds >= payload.issuedAtUptimeNanoseconds" in s
 assert s.count("try self.requireForegroundEvidenceIntegrity()") >= 4
 assert "PassiveCoreBluetoothTerminalFreshTargetSession.create" in s
 assert "pendingTerminalQueueResolution" in s
-
-g = GATE.read_text()
 assert "reopenAfterTerminalFreshTargetSession" in g
 run("git", "diff", "--cached", "--check")
 
-# Leave only product/test changes in the durable commit.
 run("git", "rm", ".github/workflows/agent-terminal-fresh-session-v14.yml", ".github/agent_terminal_fresh_session_v14.py")
 run("git", "config", "user.name", "github-actions[bot]")
 run("git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
