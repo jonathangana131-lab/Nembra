@@ -56,7 +56,21 @@ struct ForegroundCoreBluetoothCaptureControllerAbortFreshSessionConsumerContract
         #expect(controller.contains("isSelectedTargetAwaitingTerminalCallback"))
         #expect(controller.contains("eventDrainTask == nil"))
         #expect(controller.contains("scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
-        #expect(controller.contains("connectionPhase = .idle\n        scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
+
+        let branchStart = try #require(
+            controller.range(of: "if case .abortQuarantined = observationBoundaryQueueGate.phase")?.lowerBound
+        )
+        let branchEnd = try #require(
+            controller.range(
+                of: "// A retired target may disconnect",
+                range: branchStart..<controller.endIndex
+            )?.lowerBound
+        )
+        let branch = controller[branchStart..<branchEnd]
+        let idleCleanup = try #require(branch.range(of: "clearActiveConnectionState(for: identifier)"))
+        let schedule = try #require(branch.range(of: "scheduleAbortedFreshTargetSessionRecoveryIfNeeded()"))
+        #expect(idleCleanup.lowerBound < schedule.lowerBound)
+
         #expect(controller.contains("captureFailed = false"))
         #expect(controller.contains("case .abortQuarantined"))
     }
