@@ -63,7 +63,14 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
             "package producer",
             "HORIZON READY",
             "healthItem(\"FINITE\"",
-            "healthItem(\"HORIZON\""
+            "healthItem(\"HORIZON\"",
+            "EXPERIMENT ONE",
+            "FIELD AUTHORITY",
+            "CORRELATION STOPPED",
+            "NO UNIQUE TARGET",
+            "AMBIGUOUS TARGET",
+            "CORRELATED TARGET",
+            "PASSIVE CONNECTION"
         ]
 
         for phrase in engineeringPhrasesThatMustStayOutOfPrimaryCopy {
@@ -80,6 +87,8 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         #expect(riderSurface.contains("Scooter ON"))
         #expect(riderSurface.contains("Share Capture"))
         #expect(riderSurface.contains("View Details"))
+        #expect(riderSurface.contains("CAPTURE PROGRESS"))
+        #expect(riderSurface.contains("SIGNAL"))
         #expect(riderSurface.contains("DISCOVERY"))
         #expect(riderSurface.contains("SEAL"))
     }
@@ -145,11 +154,50 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         }
     }
 
+
+    @Test("completion, Share recovery, progress, and Bluetooth fallback copy stays rider-first")
+    func recoveryAndProgressCopyStaysHumanFirst() throws {
+        let source = try Self.shellSource()
+
+        let riderVisibleLeaks = [
+            "Text(\"EXPERIMENT ONE\")",
+            "setup provenance at export time",
+            "temporary Share file could not be staged",
+            "did not earn analysis readiness",
+            "post-seal Bluetooth cleanup",
+            "another Experiment One run",
+            "scan-liveness",
+            "replaying consumed authority",
+            "Experiment One progress",
+            "Evidence, sealed.",
+            "Hold the evidence line.",
+            "Bind the real signal.",
+            "Correlation ambiguous",
+            "Fresh rediscovery"
+        ]
+
+        for leak in riderVisibleLeaks {
+            #expect(!source.contains(leak), "Rider-visible recovery/helper copy still leaks implementation language: \(leak)")
+        }
+
+        #expect(source.contains("CAPTURE PROGRESS"))
+        #expect(source.contains("Keep unplugged for the whole capture") == false)
+        #expect(source.contains("Capture is safe and ready for analysis, but Nembra could not prepare the Share file"))
+        #expect(source.contains("Capture progress, required observation complete and ready to seal"))
+        #expect(source.contains("case .ambiguousTargets: return \"Multiple signal matches\""))
+    }
+
     @Test("engineering truth remains available in Details instead of being deleted")
     func technicalTruthRemainsInDetails() throws {
         let source = try Self.shellSource()
         let detailsStart = try #require(source.range(of: "private var captureDetailsSheet"))
-        let details = source[detailsStart.lowerBound..<source.endIndex]
+        let detailsEnd = try #require(
+            source.range(
+                of: "private func phase(",
+                range: detailsStart.lowerBound..<source.endIndex
+            )
+        )
+        let details = source[detailsStart.lowerBound..<detailsEnd.lowerBound]
 
         #expect(details.contains("Truth boundary"))
         #expect(details.contains("CoreBluetooth"))
